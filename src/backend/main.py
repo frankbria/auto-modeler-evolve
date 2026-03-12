@@ -11,6 +11,7 @@ from api.data import router as data_router
 from api.features import router as features_router
 from api.models import router as models_router
 from api.projects import router as projects_router
+from api.validation import router as validation_router
 from db import create_db_and_tables
 
 DATA_DIR = Path(__file__).parent / "data"
@@ -47,6 +48,7 @@ app.include_router(data_router)
 app.include_router(chat_router)
 app.include_router(features_router)
 app.include_router(models_router)
+app.include_router(validation_router)
 
 
 @app.get("/health")

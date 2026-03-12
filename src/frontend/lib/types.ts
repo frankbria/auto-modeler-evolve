@@ -211,3 +211,85 @@ export interface TrainResponse {
   runs: ModelRun[]
   problem_type: string
 }
+
+// ---------------------------------------------------------------------------
+// Validation & Explainability (Phase 5)
+// ---------------------------------------------------------------------------
+
+export interface MetricWithCI {
+  mean: number
+  std: number
+  ci_low: number
+  ci_high: number
+  fold_scores: number[]
+}
+
+export interface ConfusionMatrixAnalysis {
+  type: "confusion_matrix"
+  labels: string[]
+  matrix: number[][]
+  test_accuracy: number
+  per_class_accuracy: Record<string, number>
+}
+
+export interface ResidualsAnalysis {
+  type: "residuals"
+  actual: number[]
+  predicted: number[]
+  residuals: number[]
+  mae: number
+  rmse: number
+}
+
+export type ErrorAnalysis = ConfusionMatrixAnalysis | ResidualsAnalysis
+
+export interface ValidationResult {
+  model_run_id: string
+  algorithm: string
+  display_name: string
+  target_column: string | null
+  problem_type: string
+  n_rows: number
+  n_folds: number
+  metrics: Record<string, MetricWithCI>
+  error_analysis: ErrorAnalysis
+  limitations: string[]
+}
+
+export interface ImportanceFeature {
+  column: string
+  importance: number
+  importance_pct: number
+  std: number
+  rank: number
+}
+
+export interface GlobalImportanceResult {
+  model_run_id: string
+  algorithm: string
+  display_name: string
+  target_column: string | null
+  features: ImportanceFeature[]
+  summary: string
+  problem_type: string
+  scoring_metric: string
+}
+
+export interface PredictionFactor {
+  column: string
+  original_value: string | number
+  impact: number
+  direction: "positive" | "negative" | "neutral"
+}
+
+export interface PredictionExplanation {
+  model_run_id: string
+  algorithm: string
+  display_name: string
+  target_column: string | null
+  row_index: number
+  prediction: string | number
+  probability: number | null
+  problem_type: string
+  top_factors: PredictionFactor[]
+}

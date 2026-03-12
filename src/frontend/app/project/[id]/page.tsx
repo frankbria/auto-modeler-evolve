@@ -18,6 +18,7 @@ import {
   RecommendationsPanel,
   ComparisonTable,
 } from "@/components/models/model-comparison"
+import { ValidationPanel } from "@/components/validation/validation-panel"
 import { api } from "@/lib/api"
 import { useAppStore } from "@/lib/store"
 import type {
@@ -33,7 +34,7 @@ import type {
 const WELCOME_MESSAGE =
   "Hi! I'm your data modeling assistant. Upload a CSV file to get started, or ask me anything about your data."
 
-type RightTab = "data" | "features" | "importance" | "models"
+type RightTab = "data" | "features" | "importance" | "models" | "validate"
 
 export default function ProjectWorkspace() {
   const params = useParams<{ id: string }>()
@@ -77,6 +78,7 @@ export default function ProjectWorkspace() {
   const [training, setTraining] = useState(false)
   const [modelComparison, setModelComparison] = useState<ModelComparison | null>(null)
   const [selectingModel, setSelectingModel] = useState<string | null>(null)
+  const [selectedModelRunId, setSelectedModelRunId] = useState<string | null>(null)
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
@@ -234,9 +236,10 @@ export default function ProjectWorkspace() {
       setModelComparison(comparison)
       const selected = comparison.rankings.find((r) => r.is_selected)
       if (selected) {
+        setSelectedModelRunId(selected.id)
         addMessage({
           role: "assistant",
-          content: `**${selected.display_name}** is now your selected model. When you're ready, we can move on to validation and deployment.`,
+          content: `**${selected.display_name}** is now your selected model. Switch to the **Validate** tab to run cross-validation and explore what drives predictions.`,
           timestamp: new Date().toISOString(),
         })
       }
@@ -446,7 +449,7 @@ export default function ProjectWorkspace() {
           <>
             {/* Tab Bar */}
             <div className="flex border-b">
-              {(["data", "features", "importance", "models"] as RightTab[]).map((tab) => (
+              {(["data", "features", "importance", "models", "validate"] as RightTab[]).map((tab) => (
                 <button
                   key={tab}
                   onClick={() => setActiveTab(tab)}
@@ -601,6 +604,28 @@ export default function ProjectWorkspace() {
                     </div>
                   )}
                 </div>
+              </ScrollArea>
+            )}
+
+            {activeTab === "validate" && (
+              <ScrollArea className="flex-1">
+                {selectedModelRunId ? (
+                  <ValidationPanel
+                    modelRunId={selectedModelRunId}
+                    displayName={
+                      modelComparison?.rankings.find((r) => r.id === selectedModelRunId)
+                        ?.display_name ?? "Selected Model"
+                    }
+                    totalRows={currentDataset.row_count}
+                  />
+                ) : (
+                  <div className="flex h-40 items-center justify-center p-8">
+                    <p className="text-center text-xs text-muted-foreground">
+                      No model selected yet. Go to the <strong>Models</strong> tab, train some
+                      models, and click <strong>Select</strong> on your preferred model.
+                    </p>
+                  </div>
+                )}
               </ScrollArea>
             )}
           </>
