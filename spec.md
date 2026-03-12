@@ -170,18 +170,17 @@ guides them forward through the natural flow.
 ### Phase 4: Model Training (Days 12-16)
 > Goal: Train, compare, and select models through conversation.
 
-- [ ] **Problem type detection** — Auto-detect classification vs regression from
+- [x] **Problem type detection** — Auto-detect classification vs regression from
       target variable. Confirm with user in plain language
-- [ ] **Model recommendations** — Suggest 2-4 appropriate algorithms based on dataset
+- [x] **Model recommendations** — Suggest 2-4 appropriate algorithms based on dataset
       size, feature count, and problem type. Explain each in non-technical terms
       ("Random Forest: like asking 100 experts and taking a vote")
-- [ ] **Training execution** — Train recommended models with sensible defaults.
-      Progress indicator in chat. Background job with SSE progress updates
-- [ ] **Model comparison dashboard** — Side-by-side metrics (accuracy, precision,
-      recall, R², MAE). Visual comparison charts. Plain-English summary: "Model A
-      is more accurate overall, but Model B is better at catching rare events"
-- [ ] **Model selection** — User picks their preferred model via chat or button.
-      AI explains trade-offs if user asks for help deciding
+- [~] **Training execution** — Train recommended models with sensible defaults.
+      Background thread training with status polling; SSE push deferred to later
+- [x] **Model comparison dashboard** — Side-by-side metrics (accuracy, precision,
+      recall, R², MAE). Plain-English summary + auto-recommendation of best model
+- [x] **Model selection** — User picks preferred model via button in Models tab;
+      is_selected stored, chat acknowledgement sent
 
 ### Phase 5: Validation & Explainability (Days 17-20)
 > Goal: Build trust through transparency — show what the model gets right and wrong.
