@@ -9,7 +9,7 @@ import type { ModelRecommendation, ModelRun, ModelComparison, ModelMetrics } fro
 
 interface ModelTrainingPanelProps {
   projectId: string
-  onModelSelected?: (runId: string) => void
+  onModelSelected?: (runId: string, algorithm: string) => void
 }
 
 const ALGORITHM_DISPLAY: Record<string, string> = {
@@ -100,12 +100,12 @@ export function ModelTrainingPanel({ projectId, onModelSelected }: ModelTraining
   }, [projectId, selectedAlgos])
 
   const handleSelect = useCallback(
-    async (runId: string) => {
+    async (runId: string, algorithm: string) => {
       try {
         await api.models.select(runId)
         const data = await api.models.runs(projectId)
         setRuns(data.runs)
-        onModelSelected?.(runId)
+        onModelSelected?.(runId, algorithm)
       } catch {
         // silent
       }
@@ -194,7 +194,7 @@ export function ModelTrainingPanel({ projectId, onModelSelected }: ModelTraining
                 run={run}
                 problemType={problemType}
                 isRecommended={comparison?.recommendation?.model_run_id === run.id}
-                onSelect={() => handleSelect(run.id)}
+                onSelect={() => handleSelect(run.id, run.algorithm)}
               />
             ))}
           </div>

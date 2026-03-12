@@ -200,3 +200,89 @@ export interface ModelComparison {
     reason: string
   } | null
 }
+
+// ---------------------------------------------------------------------------
+// Validation & Explainability (Phase 5)
+// ---------------------------------------------------------------------------
+
+export interface CrossValidationResult {
+  metric: string
+  scores: number[]
+  mean: number | null
+  std: number | null
+  ci_low: number | null
+  ci_high: number | null
+  n_splits: number
+  summary: string
+}
+
+export interface ConfusionMatrixResult {
+  type: "confusion_matrix"
+  matrix: number[][]
+  labels: string[]
+  total: number
+  correct: number
+  accuracy: number
+  summary: string
+}
+
+export interface ResidualsResult {
+  type: "residuals"
+  scatter: { predicted: number; residual: number }[]
+  mae: number
+  bias: number
+  std: number
+  percentile_75: number
+  percentile_90: number
+  summary: string
+}
+
+export type ErrorAnalysis = ConfusionMatrixResult | ResidualsResult
+
+export interface ConfidenceAssessment {
+  overall_confidence: "high" | "medium" | "low"
+  limitations: string[]
+  summary: string
+}
+
+export interface ValidationMetricsResponse {
+  model_run_id: string
+  algorithm: string
+  problem_type: string
+  held_out_metrics: Record<string, number>
+  cross_validation: CrossValidationResult
+  error_analysis: ErrorAnalysis
+  confidence: ConfidenceAssessment
+}
+
+export interface FeatureImportanceItem {
+  feature: string
+  importance: number
+  rank: number
+}
+
+export interface GlobalExplanationResponse {
+  model_run_id: string
+  algorithm: string
+  problem_type: string
+  feature_importance: FeatureImportanceItem[]
+  summary: string
+}
+
+export interface ContributionItem {
+  feature: string
+  value: number
+  mean_value: number
+  contribution: number
+  direction: "positive" | "negative"
+}
+
+export interface RowExplanationResponse {
+  model_run_id: string
+  row_index: number
+  actual_value: number | null
+  prediction: number | string
+  prediction_value: number
+  contributions: ContributionItem[]
+  summary: string
+}

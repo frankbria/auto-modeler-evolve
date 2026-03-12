@@ -15,6 +15,7 @@ import {
   FeatureSuggestionsPanel,
   FeatureImportancePanel,
 } from "@/components/features/feature-suggestions"
+import { ValidationPanel } from "@/components/validation/validation-panel"
 import { api } from "@/lib/api"
 import { useAppStore } from "@/lib/store"
 import type {
@@ -28,7 +29,7 @@ import type {
 const WELCOME_MESSAGE =
   "Hi! I'm your data modeling assistant. Upload a CSV file to get started, or ask me anything about your data."
 
-type RightTab = "data" | "features" | "importance" | "models"
+type RightTab = "data" | "features" | "importance" | "models" | "validate"
 
 export default function ProjectWorkspace() {
   const params = useParams<{ id: string }>()
@@ -63,6 +64,10 @@ export default function ProjectWorkspace() {
   const [importanceFeatures, setImportanceFeatures] = useState<FeatureImportanceEntry[]>([])
   const [importanceProblemType, setImportanceProblemType] = useState("")
   const [loadingImportance, setLoadingImportance] = useState(false)
+
+  // Validation state
+  const [selectedModelRunId, setSelectedModelRunId] = useState<string | null>(null)
+  const [selectedModelAlgorithm, setSelectedModelAlgorithm] = useState<string | null>(null)
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
@@ -340,19 +345,28 @@ export default function ProjectWorkspace() {
           <>
             {/* Tab Bar */}
             <div className="flex border-b">
-              {(["data", "features", "importance", "models"] as RightTab[]).map((tab) => (
-                <button
-                  key={tab}
-                  onClick={() => setActiveTab(tab)}
-                  className={`px-4 py-2.5 text-xs font-medium capitalize transition-colors ${
-                    activeTab === tab
-                      ? "border-b-2 border-primary text-foreground"
-                      : "text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  {tab === "importance" ? "Importance" : tab.charAt(0).toUpperCase() + tab.slice(1)}
-                </button>
-              ))}
+              {(["data", "features", "importance", "models", "validate"] as RightTab[]).map((tab) => {
+                const labels: Record<RightTab, string> = {
+                  data: "Data",
+                  features: "Features",
+                  importance: "Importance",
+                  models: "Models",
+                  validate: "Validate",
+                }
+                return (
+                  <button
+                    key={tab}
+                    onClick={() => setActiveTab(tab)}
+                    className={`px-4 py-2.5 text-xs font-medium capitalize transition-colors ${
+                      activeTab === tab
+                        ? "border-b-2 border-primary text-foreground"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {labels[tab]}
+                  </button>
+                )
+              })}
             </div>
 
             {activeTab === "data" && (
@@ -426,6 +440,16 @@ export default function ProjectWorkspace() {
               </ScrollArea>
             )}
 
+            {activeTab === "validate" && currentDataset && (
+              <div className="flex flex-1 flex-col overflow-hidden">
+                <ValidationPanel
+                  projectId={projectId}
+                  selectedRunId={selectedModelRunId}
+                  algorithmName={selectedModelAlgorithm}
+                />
+              </div>
+            )}
+
             {activeTab === "models" && currentDataset && (
               <ScrollArea className="flex-1">
                 <div className="p-4">
@@ -437,10 +461,12 @@ export default function ProjectWorkspace() {
                   </div>
                   <ModelTrainingPanel
                     projectId={projectId}
-                    onModelSelected={(runId) => {
+                    onModelSelected={(runId, algorithm) => {
+                      setSelectedModelRunId(runId)
+                      setSelectedModelAlgorithm(algorithm)
                       addMessage({
                         role: "assistant",
-                        content: `I have selected this model for your project. Next, we can validate it — or deploy it as a live prediction API. What would you like to do?`,
+                        content: `I have selected this model for your project. You can now go to the **Validate** tab to run cross-validation, see error analysis, and understand feature importance. Or we can deploy it as a live prediction API whenever you're ready.`,
                         timestamp: new Date().toISOString(),
                       })
                     }}

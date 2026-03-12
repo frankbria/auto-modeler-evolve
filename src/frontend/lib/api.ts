@@ -11,6 +11,9 @@ import type {
   ModelRun,
   TrainingStatus,
   ModelComparison,
+  ValidationMetricsResponse,
+  GlobalExplanationResponse,
+  RowExplanationResponse,
 } from "./types"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
@@ -147,5 +150,16 @@ export const api = {
       fetch(`${API_URL}/api/models/${modelRunId}/select`, {
         method: "POST",
       }).then((r) => r.json()),
+  },
+
+  validation: {
+    metrics: (modelRunId: string): Promise<ValidationMetricsResponse> =>
+      fetch(`${API_URL}/api/validate/${modelRunId}/metrics`).then((r) => r.json()),
+
+    explain: (modelRunId: string): Promise<GlobalExplanationResponse> =>
+      fetch(`${API_URL}/api/validate/${modelRunId}/explain`).then((r) => r.json()),
+
+    explainRow: (modelRunId: string, rowIndex: number): Promise<RowExplanationResponse> =>
+      fetch(`${API_URL}/api/validate/${modelRunId}/explain/${rowIndex}`).then((r) => r.json()),
   },
 }
