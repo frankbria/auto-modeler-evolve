@@ -485,7 +485,7 @@ JEOF
 fi
 
 # ── Step 6c: Ensure issue responses ──
-ISSUE_COUNT=$(grep -c '^### Issue' "$ISSUES_FILE" 2>/dev/null || echo 0)
+ISSUE_COUNT=$(grep -c '^### Issue' "$ISSUES_FILE" 2>/dev/null) || ISSUE_COUNT=0
 SESSION_COMMITS=$(git log --oneline "$SESSION_START_SHA"..HEAD --format="%s" | grep -v "session wrap-up\|auto-format\|journal entry" || true)
 if [ "$ISSUE_COUNT" -gt 0 ] && [ -n "$SESSION_COMMITS" ] && [ ! -f ISSUE_RESPONSE.md ]; then
     echo "  Issues existed but no ISSUE_RESPONSE.md — running agent to write responses..."
