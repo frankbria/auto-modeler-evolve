@@ -120,18 +120,18 @@ guides them forward through the natural flow.
 ### Phase 1: Foundation (Days 0-3)
 > Goal: A working chat interface that accepts data and shows basic analysis.
 
-- [ ] **Project scaffolding** — FastAPI backend + Next.js frontend in monorepo, with
+- [x] **Project scaffolding** — FastAPI backend + Next.js frontend in monorepo, with
       shared dev server configuration, CORS, and health check endpoint
-- [ ] **Database setup** — SQLite via SQLModel, with Project and Dataset tables,
+- [x] **Database setup** — SQLite via SQLModel, with Project and Dataset tables,
       migrations via Alembic
-- [ ] **File upload** — Drag-and-drop CSV upload with progress indicator, file
+- [x] **File upload** — Drag-and-drop CSV upload with progress indicator, file
       validation (size limits, CSV parsing), storage to local filesystem
-- [ ] **Data preview** — After upload, show first 10 rows in a clean table, column
+- [x] **Data preview** — After upload, show first 10 rows in a clean table, column
       types, row count, and basic stats (min, max, mean, nulls) in a summary card
-- [ ] **Chat interface shell** — Split-panel layout: chat on the left, data/viz on
+- [x] **Chat interface shell** — Split-panel layout: chat on the left, data/viz on
       the right. Text input with send button, message history, typing indicator.
       Streaming responses from backend via SSE
-- [ ] **Basic chat orchestration** — Connect chat to Claude API. System prompt
+- [x] **Basic chat orchestration** — Connect chat to Claude API. System prompt
       includes dataset context (columns, types, sample rows). User can ask questions
       about their data and get natural-language answers
 
