@@ -1,5 +1,9 @@
 # Journal
 
+## Day 1 — 08:00 — Phase 3 Complete: Feature Engineering
+
+Implemented all five Phase 3 features in one session. New `core/feature_engine.py` generates feature transformation suggestions purely from statistical analysis (no LLM needed): date-like string columns → date_decompose; right-skewed numerics (skewness > 1.5) → log_transform; low-cardinality categoricals (≤15) → one_hot; medium-cardinality (≤50) → label_encode; continuous floats with many values → bin_quartile; correlated numeric pairs (r ≥ 0.5) → interaction terms. `apply_transformations` returns a new DataFrame without mutating the input, plus a column mapping. `detect_problem_type` correctly handles float→regression, int with low cardinality→classification. `compute_feature_importance` uses sklearn mutual information, which handles mixed types. One bug fixed: the initial implementation classified float columns with few rows as classification (unique ≤ 10 threshold); fixed by separating float (always regression) from integer (cardinality check). Frontend extended with a 3-tab right panel (Data / Features / Importance), `FeatureSuggestionsPanel` with checkbox-select-and-apply UI, and `FeatureImportancePanel` with bar chart visualization. 71 backend tests pass; Next.js build clean. Next session: Phase 4 — model training.
+
 ## Day 1 — 12:04 — (auto-generated)
 
 Session commits: no commits made.
