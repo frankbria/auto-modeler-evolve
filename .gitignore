@@ -49,6 +49,9 @@ ISSUE_RESPONSE.md
 *.sqlite
 *.sqlite3
 
+# Logs
+logs/
+
 # Coverage
 htmlcov/
 .coverage
