@@ -1,0 +1,387 @@
+# Specification
+
+## Tech Stack
+
+### Backend (Python)
+- **Framework:** FastAPI
+- **Package Manager:** uv
+- **ML Libraries:** scikit-learn (core), pandas, numpy
+- **Feature Engineering:** feature-engine, category-encoders
+- **Explainability:** shap, lime
+- **Data Profiling:** ydata-profiling (formerly pandas-profiling)
+- **Model Serialization:** joblib
+- **LLM Integration:** Anthropic SDK (Claude) for chat + analysis narration
+- **Testing:** pytest + pytest-bdd
+- **Linting:** ruff + black
+
+### Frontend (TypeScript)
+- **Framework:** Next.js 15 (App Router)
+- **UI:** Shadcn/UI + Tailwind CSS (Nova template, gray scheme)
+- **Icons:** Hugeicons (@hugeicons/react)
+- **Font:** Nunito Sans
+- **Charts:** Recharts (or Nivo for complex visualizations)
+- **Chat UI:** Custom conversational interface with streaming responses
+- **File Upload:** react-dropzone
+- **State Management:** Zustand (lightweight, minimal boilerplate)
+- **Testing:** Jest (unit) + Playwright (E2E)
+
+### Database
+- **Primary:** SQLite (lightweight, zero-config — perfect for single-user/small-team)
+- **Purpose:** Store projects, datasets metadata, model runs, chat history
+- **File Storage:** Local filesystem for uploaded CSVs and serialized models
+
+### Deployment
+- **Model Serving:** FastAPI endpoint (same server, dedicated route)
+- **Dashboard:** Auto-generated Next.js page per deployed model
+- **Target:** Single VPS deployment (monorepo, shared process)
+
+---
+
+## Architecture
+
+### Monorepo Structure
+```
+auto-modeler-evolve/
+├── src/
+│   ├── backend/                  # FastAPI application
+│   │   ├── api/                  # Route handlers
+│   │   │   ├── chat.py           # Chat/conversation endpoints
+│   │   │   ├── data.py           # Upload, preview, profiling
+│   │   │   ├── features.py       # Feature engineering endpoints
+│   │   │   ├── models.py         # Training, comparison, selection
+│   │   │   ├── validation.py     # Model validation & explainability
+│   │   │   └── deploy.py         # Model deployment & prediction
+│   │   ├── core/                 # Business logic
+│   │   │   ├── analyzer.py       # Data analysis & pattern detection
+│   │   │   ├── feature_engine.py # Feature suggestion & transformation
+│   │   │   ├── trainer.py        # Model training & comparison
+│   │   │   ├── validator.py      # Cross-validation & metrics
+│   │   │   ├── explainer.py      # SHAP/LIME explanations
+│   │   │   └── deployer.py       # Model packaging & serving
+│   │   ├── chat/                 # Chat orchestration
+│   │   │   ├── orchestrator.py   # Conversation state machine
+│   │   │   ├── prompts.py        # LLM prompt templates
+│   │   │   └── narration.py      # Plain-English explanations
+│   │   ├── models/               # Database models (SQLModel)
+│   │   │   ├── project.py        # Project metadata
+│   │   │   ├── dataset.py        # Dataset records
+│   │   │   ├── feature_set.py    # Feature engineering history
+│   │   │   ├── model_run.py      # Training runs & results
+│   │   │   └── conversation.py   # Chat history
+│   │   ├── db.py                 # Database connection & migrations
+│   │   └── main.py               # FastAPI app entry point
+│   │
+│   └── frontend/                 # Next.js application
+│       ├── app/
+│       │   ├── page.tsx           # Landing / project list
+│       │   ├── project/[id]/
+│       │   │   ├── page.tsx       # Project workspace (chat + panels)
+│       │   │   ├── data/page.tsx  # Data explorer
+│       │   │   └── deploy/page.tsx# Deployment dashboard
+│       │   └── predict/[id]/
+│       │       └── page.tsx       # Public prediction dashboard
+│       ├── components/
+│       │   ├── chat/              # Chat interface components
+│       │   ├── data/              # Data preview, stats, charts
+│       │   ├── features/          # Feature cards, approval UI
+│       │   ├── models/            # Model comparison, selection
+│       │   ├── deploy/            # Deployment status, dashboard
+│       │   └── ui/               # Shadcn components
+│       └── lib/
+│           ├── api.ts             # Backend API client
+│           ├── store.ts           # Zustand stores
+│           └── types.ts           # Shared TypeScript types
+```
+
+### Communication Pattern
+- **Chat-first:** All user interactions flow through the chat interface
+- **Side panels:** Data previews, charts, and model comparisons render in a
+  split-panel layout alongside the chat
+- **Streaming:** LLM responses stream to the frontend via SSE (Server-Sent Events)
+- **Async jobs:** Long-running tasks (training, profiling) use background workers
+  with progress updates pushed to the chat
+
+### Conversation State Machine
+The chat orchestrator tracks where the user is in the workflow:
+
+```
+START → UPLOAD → EXPLORE → SHAPE → MODEL → VALIDATE → DEPLOY
+  ↑                                                       |
+  └───────── (new project) ────────────────────────────────┘
+```
+
+Users can jump between states freely ("go back to exploring") but the AI gently
+guides them forward through the natural flow.
+
+---
+
+## Features (Priority Order)
+
+### Phase 1: Foundation (Days 0-3)
+> Goal: A working chat interface that accepts data and shows basic analysis.
+
+- [ ] **Project scaffolding** — FastAPI backend + Next.js frontend in monorepo, with
+      shared dev server configuration, CORS, and health check endpoint
+- [ ] **Database setup** — SQLite via SQLModel, with Project and Dataset tables,
+      migrations via Alembic
+- [ ] **File upload** — Drag-and-drop CSV upload with progress indicator, file
+      validation (size limits, CSV parsing), storage to local filesystem
+- [ ] **Data preview** — After upload, show first 10 rows in a clean table, column
+      types, row count, and basic stats (min, max, mean, nulls) in a summary card
+- [ ] **Chat interface shell** — Split-panel layout: chat on the left, data/viz on
+      the right. Text input with send button, message history, typing indicator.
+      Streaming responses from backend via SSE
+- [ ] **Basic chat orchestration** — Connect chat to Claude API. System prompt
+      includes dataset context (columns, types, sample rows). User can ask questions
+      about their data and get natural-language answers
+
+### Phase 2: Analysis & Exploration (Days 4-7)
+> Goal: Users can ask questions and get visual, insightful answers about their data.
+
+- [ ] **Auto-profiling** — On upload, generate comprehensive data profile: distributions,
+      correlations, missing value patterns, outlier detection. Cache results in DB
+- [ ] **Natural language data queries** — User asks "which region has highest sales?"
+      → backend generates pandas query → returns result as text + chart
+- [ ] **Chart generation** — Bar, line, scatter, histogram, heatmap. Backend generates
+      chart configs (Recharts-compatible JSON), frontend renders them inline in chat
+- [ ] **Pattern detection** — Automated insights: trends, seasonality, correlations,
+      anomalies. Surfaced proactively in chat ("I noticed something interesting...")
+- [ ] **Data quality report** — Missing values, duplicates, type mismatches, outliers.
+      Presented as actionable suggestions ("Column X has 12% missing — want to fill
+      them with the median?")
+
+### Phase 3: Feature Engineering (Days 8-11)
+> Goal: AI suggests and applies feature transformations with user approval.
+
+- [ ] **Feature suggestions** — Based on column types and patterns, suggest
+      transformations: date decomposition, categorical encoding, binning, log
+      transforms, interaction features. Each with plain-English explanation
+- [ ] **Approval workflow** — Each suggestion shown as a card: what it does, why it
+      might help, preview of the result. User approves/rejects/modifies via chat
+      or button click
+- [ ] **Feature application** — Apply approved transformations, update dataset view,
+      show before/after comparison
+- [ ] **Target variable selection** — Guide user to pick what they want to predict.
+      Suggest classification vs regression based on target column type. Explain the
+      difference in plain language
+- [ ] **Feature importance preview** — Quick correlation/mutual-information analysis
+      to show which features are likely most predictive, before training
+
+### Phase 4: Model Training (Days 12-16)
+> Goal: Train, compare, and select models through conversation.
+
+- [ ] **Problem type detection** — Auto-detect classification vs regression from
+      target variable. Confirm with user in plain language
+- [ ] **Model recommendations** — Suggest 2-4 appropriate algorithms based on dataset
+      size, feature count, and problem type. Explain each in non-technical terms
+      ("Random Forest: like asking 100 experts and taking a vote")
+- [ ] **Training execution** — Train recommended models with sensible defaults.
+      Progress indicator in chat. Background job with SSE progress updates
+- [ ] **Model comparison dashboard** — Side-by-side metrics (accuracy, precision,
+      recall, R², MAE). Visual comparison charts. Plain-English summary: "Model A
+      is more accurate overall, but Model B is better at catching rare events"
+- [ ] **Model selection** — User picks their preferred model via chat or button.
+      AI explains trade-offs if user asks for help deciding
+
+### Phase 5: Validation & Explainability (Days 17-20)
+> Goal: Build trust through transparency — show what the model gets right and wrong.
+
+- [ ] **Cross-validation results** — K-fold validation with confidence intervals.
+      Presented as "This model is consistently accurate, not just lucky on one split"
+- [ ] **Confusion matrix / error analysis** — For classification: visual confusion
+      matrix with plain-English annotations. For regression: residual plots with
+      explanations. Highlight where the model struggles
+- [ ] **Feature importance (SHAP)** — Global feature importance chart. "The top 3
+      factors driving predictions are: region, season, and product category"
+- [ ] **Individual prediction explanations** — SHAP waterfall for single predictions.
+      "For this specific case, the model predicted high revenue because: large order
+      size (+23%), holiday season (+15%), returning customer (+8%)"
+- [ ] **Confidence & limitations** — Honest assessment of model limitations. "This
+      model hasn't seen data from Q4 — predictions for holiday season may be less
+      reliable"
+
+### Phase 6: Deployment (Days 21-25)
+> Goal: One-click deployment of model as API + interactive dashboard.
+
+- [ ] **Model packaging** — Serialize trained model + feature pipeline as a single
+      deployable artifact. Include metadata: training date, features used, metrics
+- [ ] **Prediction API** — Auto-generated FastAPI endpoint: POST /api/predict/{model_id}
+      with JSON input → JSON prediction output. Auto-generated OpenAPI docs
+- [ ] **Prediction dashboard** — Auto-generated Next.js page for each deployed model.
+      Form with input fields matching feature columns. Submit → see prediction +
+      explanation. Shareable URL
+- [ ] **Batch prediction** — Upload a CSV of new data → get predictions for all rows.
+      Download results as CSV with prediction + confidence columns
+- [ ] **Deployment management** — List deployed models, view usage stats, undeploy.
+      Simple status dashboard
+
+### Phase 7: Polish & Delight (Days 26-30)
+> Goal: Make it feel like working with a brilliant, patient colleague.
+
+- [ ] **Onboarding flow** — First-time user experience: guided tour, sample dataset
+      option ("Try it with our demo sales data"), contextual tips
+- [ ] **Project management** — Create, rename, delete, duplicate projects. Project
+      list with last-modified, model status, quick stats
+- [ ] **Chat memory across sessions** — Resume conversations. "Welcome back — last
+      time we were comparing models for your Q3 forecast. Want to pick up there?"
+- [ ] **Export & sharing** — Export analysis as PDF report. Share prediction dashboard
+      via public link. Download model as pickle for advanced users
+- [ ] **Responsive design** — Works on tablet (not phone — data work needs screen
+      real estate). Collapsible side panels, adaptive layout
+
+---
+
+## Data Model
+
+### Core Entities
+
+```
+Project
+├── id: UUID
+├── name: str
+├── description: str (optional)
+├── created_at: datetime
+├── updated_at: datetime
+├── status: enum (exploring, modeling, deployed)
+└── settings: JSON (preferences, defaults)
+
+Dataset
+├── id: UUID
+├── project_id: FK → Project
+├── filename: str
+├── file_path: str (local filesystem)
+├── row_count: int
+├── column_count: int
+├── columns: JSON (name, dtype, stats)
+├── profile: JSON (cached profiling results)
+├── uploaded_at: datetime
+└── size_bytes: int
+
+FeatureSet
+├── id: UUID
+├── dataset_id: FK → Dataset
+├── transformations: JSON (ordered list of applied transforms)
+├── column_mapping: JSON (original → engineered features)
+├── target_column: str
+├── created_at: datetime
+└── is_active: bool
+
+ModelRun
+├── id: UUID
+├── project_id: FK → Project
+├── feature_set_id: FK → FeatureSet
+├── algorithm: str
+├── hyperparameters: JSON
+├── metrics: JSON (accuracy, precision, recall, R², etc.)
+├── training_duration_ms: int
+├── model_path: str (serialized model file)
+├── is_selected: bool
+├── is_deployed: bool
+├── created_at: datetime
+└── shap_values_path: str (optional, cached SHAP)
+
+Conversation
+├── id: UUID
+├── project_id: FK → Project
+├── messages: JSON (list of {role, content, timestamp, metadata})
+├── state: enum (upload, explore, shape, model, validate, deploy)
+└── updated_at: datetime
+
+Deployment
+├── id: UUID
+├── model_run_id: FK → ModelRun
+├── endpoint_path: str (/api/predict/{model_id})
+├── dashboard_url: str
+├── is_active: bool
+├── request_count: int
+├── created_at: datetime
+└── last_predicted_at: datetime (optional)
+```
+
+---
+
+## API Design
+
+### Chat & Conversation
+- `POST /api/chat/{project_id}` — Send message, get streamed response (SSE)
+- `GET /api/chat/{project_id}/history` — Get conversation history
+
+### Data Management
+- `POST /api/data/upload` — Upload CSV, create dataset, return preview
+- `GET /api/data/{dataset_id}/preview` — First N rows + column stats
+- `GET /api/data/{dataset_id}/profile` — Full data profile (cached)
+- `GET /api/data/{dataset_id}/query` — Natural language → query → result
+
+### Feature Engineering
+- `GET /api/features/{dataset_id}/suggestions` — AI-generated feature suggestions
+- `POST /api/features/{dataset_id}/apply` — Apply selected transformations
+- `GET /api/features/{feature_set_id}/preview` — Preview transformed data
+
+### Model Training
+- `POST /api/models/{project_id}/train` — Start training run (background job)
+- `GET /api/models/{project_id}/status` — Training progress
+- `GET /api/models/{project_id}/compare` — Compare trained models
+- `POST /api/models/{model_run_id}/select` — Select model for deployment
+
+### Validation
+- `GET /api/validate/{model_run_id}/metrics` — Detailed validation metrics
+- `GET /api/validate/{model_run_id}/explain` — SHAP/feature importance
+- `GET /api/validate/{model_run_id}/explain/{row_index}` — Single prediction explanation
+
+### Deployment
+- `POST /api/deploy/{model_run_id}` — Deploy model (create endpoint + dashboard)
+- `POST /api/predict/{deployment_id}` — Make prediction (public endpoint)
+- `POST /api/predict/{deployment_id}/batch` — Batch prediction (CSV in, CSV out)
+- `GET /api/deployments` — List active deployments
+- `DELETE /api/deploy/{deployment_id}` — Undeploy model
+
+### Project Management
+- `POST /api/projects` — Create project
+- `GET /api/projects` — List projects
+- `GET /api/projects/{id}` — Get project details
+- `DELETE /api/projects/{id}` — Delete project
+
+---
+
+## Testing Strategy
+
+### Backend (pytest + pytest-bdd)
+- **Unit tests:** Core logic (analyzer, feature_engine, trainer, validator)
+- **Integration tests:** API endpoints with real SQLite database, real file uploads
+- **BDD scenarios:** End-to-end user stories ("Given I upload a sales CSV, When I
+  ask for a revenue prediction model, Then I get a trained model with metrics")
+- **No mocking:** Real services, real files, real ML training (use small datasets)
+
+### Frontend (Jest + Playwright)
+- **Unit tests:** Component rendering, store logic, API client
+- **E2E tests:** Full user flows — upload → explore → train → deploy
+- **Visual regression:** Chart rendering, responsive layout
+
+### Quality Gates
+- Coverage: >85%
+- Pass rate: 100%
+- All E2E scenarios pass before merge
+
+---
+
+## UX Principles (for the AI agent building this)
+
+1. **Chat is king.** The chat panel should feel like the natural way to do everything.
+   Side panels are for displaying results, not for input forms.
+
+2. **No jargon without explanation.** If you use a technical term, immediately follow
+   it with a plain-English equivalent. "R² (how well the model fits your data, from
+   0 to 1 — higher is better)"
+
+3. **Show, don't tell.** Every insight should come with a visualization. Don't just
+   say "there's a correlation" — show the scatter plot.
+
+4. **Celebrate progress.** When a model trains successfully, when accuracy is high,
+   when deployment completes — acknowledge it. Not with confetti, but with warm,
+   confident language.
+
+5. **Fail gracefully.** Bad data? Say what's wrong and suggest how to fix it. Model
+   performs poorly? Explain why and suggest next steps. Never show a stack trace.
+
+6. **Speed matters.** Show loading states, stream responses, cache aggressively.
+   The user should never wonder "is it doing something?"

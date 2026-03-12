@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Detect and verify project
+        run: |
+          # Run stack detection
+          chmod +x scripts/detect_stack.sh
+          STACK_JSON=$(bash scripts/detect_stack.sh src/ 2>/dev/null || echo '{"stack":"unknown"}')
+          STACK=$(echo "$STACK_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['stack'])")
+          echo "Detected stack: $STACK"
+
+          if [ "$STACK" = "unknown" ]; then
+            echo "No project stack detected yet — skipping build verification."
+            exit 0
+          fi
+
+          BUILD_CMD=$(echo "$STACK_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['build'])")
+          TEST_CMD=$(echo "$STACK_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['test'])")
+          LINT_CMD=$(echo "$STACK_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['lint'])")
+
+          cd src/
+
+          # Install dependencies based on stack
+          case "$STACK" in
+            typescript|javascript|nextjs)
+              npm ci || npm install
+              ;;
+            python)
+              pip install -e . 2>/dev/null || pip install -r requirements.txt 2>/dev/null || true
+              ;;
+            rust)
+              # Rust setup would go here
+              ;;
+          esac
+
+          # Run checks
+          if [ -n "$BUILD_CMD" ]; then
+            echo "Running build: $BUILD_CMD"
+            eval "$BUILD_CMD"
+          fi
+
+          if [ -n "$TEST_CMD" ]; then
+            echo "Running tests: $TEST_CMD"
+            eval "$TEST_CMD"
+          fi
+
+          if [ -n "$LINT_CMD" ]; then
+            echo "Running lint: $LINT_CMD"
+            eval "$LINT_CMD" || true
+          fi

@@ -1,0 +1,55 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+dist/
+build/
+
+# Node
+node_modules/
+.next/
+out/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data files (user uploads)
+uploads/
+*.csv
+!src/backend/tests/fixtures/*.csv
+
+# Model artifacts
+*.pkl
+*.joblib
+models/
+
+# Generated (code-evolve)
+ISSUES_TODAY.md
+ISSUE_RESPONSE.md
+
+# Claude Code
+.claude/
+
+# SQLite
+*.db
+*.sqlite
+*.sqlite3
+
+# Coverage
+htmlcov/
+.coverage
+coverage.xml

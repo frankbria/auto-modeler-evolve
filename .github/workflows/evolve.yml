@@ -1,0 +1,82 @@
+name: Evolution
+
+on:
+  schedule:
+    - cron: '0 */4 * * *'  # every 4 hours
+  workflow_dispatch:       # manual trigger
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  evolve:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Claude Code CLI
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Setup GitHub CLI
+        run: gh auth status
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git
+        run: |
+          git config user.name "code-evolve[bot]"
+          git config user.email "code-evolve[bot]@users.noreply.github.com"
+
+      - name: Run evolution session
+        id: attempt1
+        continue-on-error: true
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FORCE_RUN: ${{ github.event_name == 'workflow_dispatch' && 'true' || '' }}
+        run: |
+          chmod +x scripts/evolve.sh
+          ./scripts/evolve.sh
+
+      - name: Retry after 15min
+        id: attempt2
+        if: steps.attempt1.outcome == 'failure'
+        continue-on-error: true
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FORCE_RUN: ${{ github.event_name == 'workflow_dispatch' && 'true' || '' }}
+        run: |
+          echo "Waiting 15 minutes before retry..."
+          sleep 900
+          ./scripts/evolve.sh
+
+      - name: Retry after 45min
+        if: steps.attempt1.outcome == 'failure' && steps.attempt2.outcome == 'failure'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FORCE_RUN: ${{ github.event_name == 'workflow_dispatch' && 'true' || '' }}
+        run: |
+          echo "Waiting 45 minutes before retry..."
+          sleep 2700
+          ./scripts/evolve.sh
