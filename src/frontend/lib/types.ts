@@ -90,3 +90,54 @@ export interface QueryResponse {
   chart_spec: ChartSpec | null
   result_rows: Record<string, unknown>[]
 }
+
+// ---------------------------------------------------------------------------
+// Feature Engineering
+// ---------------------------------------------------------------------------
+
+export interface FeatureSuggestion {
+  id: string
+  column: string
+  transform_type:
+    | "date_decompose"
+    | "log_transform"
+    | "one_hot"
+    | "label_encode"
+    | "bin_quartile"
+    | "interaction"
+  title: string
+  description: string
+  preview_columns: string[]
+  example_values: (string | number | null)[]
+}
+
+export interface FeatureSetResult {
+  feature_set_id: string
+  column_mapping: Record<string, string[]>
+  new_columns: string[]
+  total_columns: number
+  preview: Record<string, unknown>[]
+}
+
+export interface TargetResult {
+  dataset_id: string
+  target_column: string
+  problem_type: "classification" | "regression" | null
+  reason: string
+  classes: string[]
+}
+
+export interface FeatureImportanceEntry {
+  column: string
+  importance: number
+  importance_pct: number
+  rank: number
+  description: string
+}
+
+export interface FeatureImportanceResult {
+  dataset_id: string
+  target_column: string
+  problem_type: string
+  features: FeatureImportanceEntry[]
+}

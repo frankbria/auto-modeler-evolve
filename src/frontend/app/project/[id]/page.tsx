@@ -10,12 +10,24 @@ import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { ChartMessage } from "@/components/chat/chart-message"
+import {
+  FeatureSuggestionsPanel,
+  FeatureImportancePanel,
+} from "@/components/features/feature-suggestions"
 import { api } from "@/lib/api"
 import { useAppStore } from "@/lib/store"
-import type { Dataset, DataInsight } from "@/lib/types"
+import type {
+  Dataset,
+  DataInsight,
+  FeatureSuggestion,
+  FeatureImportanceEntry,
+  FeatureSetResult,
+} from "@/lib/types"
 
 const WELCOME_MESSAGE =
   "Hi! I'm your data modeling assistant. Upload a CSV file to get started, or ask me anything about your data."
+
+type RightTab = "data" | "features" | "importance"
 
 export default function ProjectWorkspace() {
   const params = useParams<{ id: string }>()
@@ -41,6 +53,16 @@ export default function ProjectWorkspace() {
   const [chatInput, setChatInput] = useState("")
   const [uploading, setUploading] = useState(false)
   const [loadingProject, setLoadingProject] = useState(true)
+  const [activeTab, setActiveTab] = useState<RightTab>("data")
+
+  // Feature engineering state
+  const [featureSuggestions, setFeatureSuggestions] = useState<FeatureSuggestion[]>([])
+  const [loadingFeatures, setLoadingFeatures] = useState(false)
+  const [targetColumn, setTargetColumn] = useState("")
+  const [importanceFeatures, setImportanceFeatures] = useState<FeatureImportanceEntry[]>([])
+  const [importanceProblemType, setImportanceProblemType] = useState("")
+  const [loadingImportance, setLoadingImportance] = useState(false)
+
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -80,6 +102,41 @@ export default function ProjectWorkspace() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [messages])
+
+  // Load feature suggestions when switching to features tab
+  useEffect(() => {
+    if (activeTab === "features" && currentDataset && featureSuggestions.length === 0) {
+      setLoadingFeatures(true)
+      api.features
+        .suggestions(currentDataset.id)
+        .then((r) => setFeatureSuggestions(r.suggestions))
+        .catch(() => setFeatureSuggestions([]))
+        .finally(() => setLoadingFeatures(false))
+    }
+  }, [activeTab, currentDataset, featureSuggestions.length])
+
+  const handleLoadImportance = useCallback(async () => {
+    if (!currentDataset || !targetColumn.trim()) return
+    setLoadingImportance(true)
+    try {
+      const result = await api.features.importance(currentDataset.id, targetColumn.trim())
+      setImportanceFeatures(result.features)
+      setImportanceProblemType(result.problem_type)
+    } finally {
+      setLoadingImportance(false)
+    }
+  }, [currentDataset, targetColumn])
+
+  const handleFeatureApplied = useCallback(
+    (result: FeatureSetResult) => {
+      addMessage({
+        role: "assistant",
+        content: `I've applied your feature transformations. ${result.new_columns.length} new column${result.new_columns.length !== 1 ? "s" : ""} were created: ${result.new_columns.slice(0, 5).join(", ")}${result.new_columns.length > 5 ? "..." : ""}. The dataset now has ${result.total_columns} columns total.`,
+        timestamp: new Date().toISOString(),
+      })
+    },
+    [addMessage]
+  )
 
   const handleSendMessage = useCallback(async () => {
     const text = chatInput.trim()
@@ -167,8 +224,8 @@ export default function ProjectWorkspace() {
           uploaded_at: new Date().toISOString(),
         }
         setDataset(dataset, result.preview, result.column_stats, result.insights)
+        setFeatureSuggestions([]) // reset on new upload
 
-        // Surface upload insights in chat
         if (result.insights && result.insights.length > 0) {
           const insightLines = result.insights
             .slice(0, 3)
@@ -176,7 +233,7 @@ export default function ProjectWorkspace() {
             .join("\n")
           addMessage({
             role: "assistant",
-            content: `I've analyzed **${result.filename}** (${result.row_count.toLocaleString()} rows, ${result.column_count} columns). Here's what I noticed:\n\n${insightLines}\n\nWhat would you like to explore?`,
+            content: `I've analyzed **${result.filename}** (${result.row_count.toLocaleString()} rows, ${result.column_count} columns). Here's what I noticed:\n\n${insightLines}\n\nWhat would you like to explore? You can also check the **Features** tab to see transformation suggestions.`,
             timestamp: new Date().toISOString(),
           })
         }
@@ -276,17 +333,98 @@ export default function ProjectWorkspace() {
         </div>
       </div>
 
-      {/* Data Panel */}
+      {/* Right Panel */}
       <div className="flex w-3/5 flex-col overflow-hidden">
         {currentDataset ? (
-          <DataPreviewPanel
-            filename={currentDataset.filename}
-            rowCount={currentDataset.row_count}
-            columnCount={currentDataset.column_count}
-            preview={dataPreview}
-            stats={columnStats}
-            insights={dataInsights}
-          />
+          <>
+            {/* Tab Bar */}
+            <div className="flex border-b">
+              {(["data", "features", "importance"] as RightTab[]).map((tab) => (
+                <button
+                  key={tab}
+                  onClick={() => setActiveTab(tab)}
+                  className={`px-4 py-2.5 text-xs font-medium capitalize transition-colors ${
+                    activeTab === tab
+                      ? "border-b-2 border-primary text-foreground"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {tab === "importance" ? "Importance" : tab.charAt(0).toUpperCase() + tab.slice(1)}
+                </button>
+              ))}
+            </div>
+
+            {activeTab === "data" && (
+              <DataPreviewPanel
+                filename={currentDataset.filename}
+                rowCount={currentDataset.row_count}
+                columnCount={currentDataset.column_count}
+                preview={dataPreview}
+                stats={columnStats}
+                insights={dataInsights}
+              />
+            )}
+
+            {activeTab === "features" && (
+              <ScrollArea className="flex-1">
+                <div className="p-4">
+                  <div className="mb-3">
+                    <h3 className="text-sm font-semibold">Feature Suggestions</h3>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      Select transformations to apply. Approved features will be added as new columns.
+                    </p>
+                  </div>
+                  {loadingFeatures ? (
+                    <p className="text-xs text-muted-foreground">Analyzing columns...</p>
+                  ) : (
+                    <FeatureSuggestionsPanel
+                      datasetId={currentDataset.id}
+                      suggestions={featureSuggestions}
+                      onApplied={handleFeatureApplied}
+                    />
+                  )}
+                </div>
+              </ScrollArea>
+            )}
+
+            {activeTab === "importance" && (
+              <ScrollArea className="flex-1">
+                <div className="p-4">
+                  <div className="mb-3">
+                    <h3 className="text-sm font-semibold">Feature Importance</h3>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      Select a column to predict and see which features are most useful.
+                    </p>
+                  </div>
+                  <div className="mb-4 flex gap-2">
+                    <Input
+                      placeholder="Target column (e.g. revenue)"
+                      value={targetColumn}
+                      onChange={(e) => setTargetColumn(e.target.value)}
+                      className="text-xs"
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") handleLoadImportance()
+                      }}
+                    />
+                    <Button
+                      size="sm"
+                      onClick={handleLoadImportance}
+                      disabled={!targetColumn.trim() || loadingImportance}
+                    >
+                      {loadingImportance ? "..." : "Analyze"}
+                    </Button>
+                  </div>
+                  {importanceFeatures.length > 0 && (
+                    <FeatureImportancePanel
+                      features={importanceFeatures}
+                      targetColumn={targetColumn}
+                      problemType={importanceProblemType}
+                    />
+                  )}
+                </div>
+              </ScrollArea>
+            )}
+          </>
         ) : (
           <UploadPanel
             getRootProps={getRootProps}
@@ -419,7 +557,7 @@ function DataPreviewPanel({
                         )}
                         {col.min != null && col.max != null && (
                           <p>
-                            Range: {col.min} – {col.max}
+                            Range: {col.min} - {col.max}
                           </p>
                         )}
                         {col.outliers && col.outliers.count > 0 && (

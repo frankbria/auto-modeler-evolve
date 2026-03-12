@@ -1,4 +1,13 @@
-import type { UploadResponse, Project, ChatMessage, QueryResponse } from "./types"
+import type {
+  UploadResponse,
+  Project,
+  ChatMessage,
+  QueryResponse,
+  FeatureSuggestion,
+  FeatureSetResult,
+  TargetResult,
+  FeatureImportanceResult,
+} from "./types"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
 
@@ -58,5 +67,46 @@ export const api = {
 
     history: (projectId: string): Promise<{ messages: ChatMessage[] }> =>
       fetch(`${API_URL}/api/chat/${projectId}/history`).then((r) => r.json()),
+  },
+
+  features: {
+    suggestions: (
+      datasetId: string
+    ): Promise<{ dataset_id: string; suggestions: FeatureSuggestion[] }> =>
+      fetch(`${API_URL}/api/features/${datasetId}/suggestions`).then((r) =>
+        r.json()
+      ),
+
+    apply: (
+      datasetId: string,
+      transformations: { column: string; transform_type: string; params?: Record<string, unknown> }[]
+    ): Promise<FeatureSetResult> =>
+      fetch(`${API_URL}/api/features/${datasetId}/apply`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ transformations }),
+      }).then((r) => r.json()),
+
+    setTarget: (
+      datasetId: string,
+      targetColumn: string,
+      featureSetId?: string
+    ): Promise<TargetResult> =>
+      fetch(`${API_URL}/api/features/${datasetId}/target`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          target_column: targetColumn,
+          feature_set_id: featureSetId,
+        }),
+      }).then((r) => r.json()),
+
+    importance: (
+      datasetId: string,
+      targetColumn: string
+    ): Promise<FeatureImportanceResult> =>
+      fetch(
+        `${API_URL}/api/features/${datasetId}/importance?target_column=${encodeURIComponent(targetColumn)}`
+      ).then((r) => r.json()),
   },
 }
