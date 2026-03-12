@@ -138,15 +138,15 @@ guides them forward through the natural flow.
 ### Phase 2: Analysis & Exploration (Days 4-7)
 > Goal: Users can ask questions and get visual, insightful answers about their data.
 
-- [ ] **Auto-profiling** — On upload, generate comprehensive data profile: distributions,
+- [x] **Auto-profiling** — On upload, generate comprehensive data profile: distributions,
       correlations, missing value patterns, outlier detection. Cache results in DB
-- [ ] **Natural language data queries** — User asks "which region has highest sales?"
+- [x] **Natural language data queries** — User asks "which region has highest sales?"
       → backend generates pandas query → returns result as text + chart
-- [ ] **Chart generation** — Bar, line, scatter, histogram, heatmap. Backend generates
+- [x] **Chart generation** — Bar, line, scatter, histogram, heatmap. Backend generates
       chart configs (Recharts-compatible JSON), frontend renders them inline in chat
-- [ ] **Pattern detection** — Automated insights: trends, seasonality, correlations,
+- [x] **Pattern detection** — Automated insights: trends, seasonality, correlations,
       anomalies. Surfaced proactively in chat ("I noticed something interesting...")
-- [ ] **Data quality report** — Missing values, duplicates, type mismatches, outliers.
+- [x] **Data quality report** — Missing values, duplicates, type mismatches, outliers.
       Presented as actionable suggestions ("Column X has 12% missing — want to fill
       them with the median?")
 
