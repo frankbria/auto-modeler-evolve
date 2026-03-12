@@ -14,6 +14,10 @@ import {
   FeatureSuggestionsPanel,
   FeatureImportancePanel,
 } from "@/components/features/feature-suggestions"
+import {
+  RecommendationsPanel,
+  ComparisonTable,
+} from "@/components/models/model-comparison"
 import { api } from "@/lib/api"
 import { useAppStore } from "@/lib/store"
 import type {
@@ -22,12 +26,14 @@ import type {
   FeatureSuggestion,
   FeatureImportanceEntry,
   FeatureSetResult,
+  ModelRecommendation,
+  ModelComparison,
 } from "@/lib/types"
 
 const WELCOME_MESSAGE =
   "Hi! I'm your data modeling assistant. Upload a CSV file to get started, or ask me anything about your data."
 
-type RightTab = "data" | "features" | "importance"
+type RightTab = "data" | "features" | "importance" | "models"
 
 export default function ProjectWorkspace() {
   const params = useParams<{ id: string }>()
@@ -62,6 +68,15 @@ export default function ProjectWorkspace() {
   const [importanceFeatures, setImportanceFeatures] = useState<FeatureImportanceEntry[]>([])
   const [importanceProblemType, setImportanceProblemType] = useState("")
   const [loadingImportance, setLoadingImportance] = useState(false)
+
+  // Model training state
+  const [modelTargetColumn, setModelTargetColumn] = useState("")
+  const [modelRecommendations, setModelRecommendations] = useState<ModelRecommendation[]>([])
+  const [selectedAlgorithms, setSelectedAlgorithms] = useState<Set<string>>(new Set())
+  const [loadingRecommendations, setLoadingRecommendations] = useState(false)
+  const [training, setTraining] = useState(false)
+  const [modelComparison, setModelComparison] = useState<ModelComparison | null>(null)
+  const [selectingModel, setSelectingModel] = useState<string | null>(null)
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
@@ -137,6 +152,98 @@ export default function ProjectWorkspace() {
     },
     [addMessage]
   )
+
+  const handleLoadRecommendations = useCallback(async () => {
+    if (!currentDataset || !modelTargetColumn.trim()) return
+    setLoadingRecommendations(true)
+    try {
+      const result = await api.models.recommend(
+        projectId,
+        currentDataset.id,
+        modelTargetColumn.trim()
+      )
+      setModelRecommendations(result.recommendations)
+      // Pre-select all recommended algorithms
+      setSelectedAlgorithms(new Set(result.recommendations.map((r) => r.algorithm)))
+    } catch {
+      setModelRecommendations([])
+    } finally {
+      setLoadingRecommendations(false)
+    }
+  }, [currentDataset, modelTargetColumn, projectId])
+
+  const handleToggleAlgorithm = useCallback((algorithm: string) => {
+    setSelectedAlgorithms((prev) => {
+      const next = new Set(prev)
+      if (next.has(algorithm)) next.delete(algorithm)
+      else next.add(algorithm)
+      return next
+    })
+  }, [])
+
+  const handleTrain = useCallback(async () => {
+    if (!currentDataset || selectedAlgorithms.size === 0 || !modelTargetColumn.trim()) return
+    setTraining(true)
+    addMessage({
+      role: "assistant",
+      content: `Training ${selectedAlgorithms.size} model${selectedAlgorithms.size !== 1 ? "s" : ""} to predict **${modelTargetColumn}**... this will take a moment.`,
+      timestamp: new Date().toISOString(),
+    })
+    try {
+      await api.models.train(
+        projectId,
+        currentDataset.id,
+        modelTargetColumn.trim(),
+        Array.from(selectedAlgorithms)
+      )
+      const comparison = await api.models.compare(projectId)
+      setModelComparison(comparison)
+      const best = comparison.rankings[0]
+      if (best) {
+        const primaryMetric = comparison.primary_metric
+        const score = best.metrics?.[primaryMetric as keyof typeof best.metrics]
+        const scoreStr =
+          score != null
+            ? ["accuracy", "f1", "precision", "recall", "roc_auc"].includes(primaryMetric)
+              ? `${(score * 100).toFixed(1)}%`
+              : score.toFixed(3)
+            : "completed"
+        addMessage({
+          role: "assistant",
+          content: `Training complete! ${comparison.summary} Switch to the **Models** tab to compare results and select your preferred model.`,
+          timestamp: new Date().toISOString(),
+        })
+      }
+    } catch {
+      addMessage({
+        role: "assistant",
+        content: "Training encountered an error. Please check your target column and try again.",
+        timestamp: new Date().toISOString(),
+      })
+    } finally {
+      setTraining(false)
+    }
+  }, [currentDataset, selectedAlgorithms, modelTargetColumn, projectId, addMessage])
+
+  const handleSelectModel = useCallback(async (modelRunId: string) => {
+    setSelectingModel(modelRunId)
+    try {
+      await api.models.select(modelRunId)
+      // Refresh comparison to show updated selection
+      const comparison = await api.models.compare(projectId)
+      setModelComparison(comparison)
+      const selected = comparison.rankings.find((r) => r.is_selected)
+      if (selected) {
+        addMessage({
+          role: "assistant",
+          content: `**${selected.display_name}** is now your selected model. When you're ready, we can move on to validation and deployment.`,
+          timestamp: new Date().toISOString(),
+        })
+      }
+    } finally {
+      setSelectingModel(null)
+    }
+  }, [projectId, addMessage])
 
   const handleSendMessage = useCallback(async () => {
     const text = chatInput.trim()
@@ -339,7 +446,7 @@ export default function ProjectWorkspace() {
           <>
             {/* Tab Bar */}
             <div className="flex border-b">
-              {(["data", "features", "importance"] as RightTab[]).map((tab) => (
+              {(["data", "features", "importance", "models"] as RightTab[]).map((tab) => (
                 <button
                   key={tab}
                   onClick={() => setActiveTab(tab)}
@@ -349,7 +456,7 @@ export default function ProjectWorkspace() {
                       : "text-muted-foreground hover:text-foreground"
                   }`}
                 >
-                  {tab === "importance" ? "Importance" : tab.charAt(0).toUpperCase() + tab.slice(1)}
+                  {tab.charAt(0).toUpperCase() + tab.slice(1)}
                 </button>
               ))}
             </div>
@@ -420,6 +527,78 @@ export default function ProjectWorkspace() {
                       targetColumn={targetColumn}
                       problemType={importanceProblemType}
                     />
+                  )}
+                </div>
+              </ScrollArea>
+            )}
+
+            {activeTab === "models" && (
+              <ScrollArea className="flex-1">
+                <div className="p-4">
+                  <div className="mb-3">
+                    <h3 className="text-sm font-semibold">Model Training</h3>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      Pick what to predict and train multiple models to compare.
+                    </p>
+                  </div>
+
+                  {/* Target column input */}
+                  <div className="mb-4 flex gap-2">
+                    <Input
+                      placeholder="Column to predict (e.g. revenue)"
+                      value={modelTargetColumn}
+                      onChange={(e) => setModelTargetColumn(e.target.value)}
+                      className="text-xs"
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") handleLoadRecommendations()
+                      }}
+                    />
+                    <Button
+                      size="sm"
+                      onClick={handleLoadRecommendations}
+                      disabled={!modelTargetColumn.trim() || loadingRecommendations}
+                      variant="outline"
+                    >
+                      {loadingRecommendations ? "..." : "Suggest"}
+                    </Button>
+                  </div>
+
+                  {/* Recommendations */}
+                  {modelRecommendations.length > 0 && (
+                    <>
+                      <div className="mb-2">
+                        <p className="text-xs font-medium text-muted-foreground">
+                          Select models to train ({selectedAlgorithms.size} selected)
+                        </p>
+                      </div>
+                      <RecommendationsPanel
+                        recommendations={modelRecommendations}
+                        selected={selectedAlgorithms}
+                        onToggle={handleToggleAlgorithm}
+                      />
+                      <Button
+                        className="mt-4 w-full"
+                        size="sm"
+                        onClick={handleTrain}
+                        disabled={selectedAlgorithms.size === 0 || training}
+                      >
+                        {training
+                          ? `Training ${selectedAlgorithms.size} model${selectedAlgorithms.size !== 1 ? "s" : ""}...`
+                          : `Train ${selectedAlgorithms.size} model${selectedAlgorithms.size !== 1 ? "s" : ""}`}
+                      </Button>
+                    </>
+                  )}
+
+                  {/* Comparison results */}
+                  {modelComparison && modelComparison.rankings.length > 0 && (
+                    <div className="mt-6">
+                      <h4 className="mb-3 text-xs font-semibold">Results</h4>
+                      <ComparisonTable
+                        comparison={modelComparison}
+                        onSelect={handleSelectModel}
+                        selecting={selectingModel}
+                      />
+                    </div>
                   )}
                 </div>
               </ScrollArea>

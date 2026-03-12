@@ -32,10 +32,13 @@ uploads/
 *.csv
 !src/backend/tests/fixtures/*.csv
 
-# Model artifacts
+# Model artifacts (serialized ML files only, not source code)
 *.pkl
 *.joblib
-models/
+data/models/
+src/backend/data/models/
+!src/backend/models/
+!src/frontend/components/models/
 
 # Generated (code-evolve)
 ISSUES_TODAY.md

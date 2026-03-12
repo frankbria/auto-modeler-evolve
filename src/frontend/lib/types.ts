@@ -141,3 +141,73 @@ export interface FeatureImportanceResult {
   problem_type: string
   features: FeatureImportanceEntry[]
 }
+
+// ---------------------------------------------------------------------------
+// Model Training (Phase 4)
+// ---------------------------------------------------------------------------
+
+export interface ModelRecommendation {
+  algorithm: string
+  display_name: string
+  description: string
+  reason: string
+  hyperparameters: Record<string, unknown>
+}
+
+export interface ModelMetrics {
+  accuracy?: number
+  f1?: number
+  precision?: number
+  recall?: number
+  roc_auc?: number
+  r2?: number
+  mae?: number
+  rmse?: number
+}
+
+export interface ModelRun {
+  id: string
+  project_id: string
+  dataset_id: string
+  feature_set_id?: string | null
+  algorithm: string
+  display_name: string
+  target_column: string | null
+  problem_type: string | null
+  metrics: ModelMetrics | null
+  training_duration_ms: number | null
+  is_selected: boolean
+  status: "done" | "failed"
+  created_at: string
+}
+
+export interface ModelRanking {
+  id: string
+  algorithm: string
+  display_name: string
+  metrics: ModelMetrics | null
+  training_duration_ms: number | null
+  is_selected: boolean
+  rank: number
+}
+
+export interface ModelComparison {
+  summary: string
+  best_model_id: string | null
+  primary_metric: string
+  rankings: ModelRanking[]
+}
+
+export interface RecommendResponse {
+  project_id: string
+  dataset_id: string
+  target_column: string
+  problem_type: string
+  problem_type_reason: string
+  recommendations: ModelRecommendation[]
+}
+
+export interface TrainResponse {
+  runs: ModelRun[]
+  problem_type: string
+}
