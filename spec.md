@@ -153,18 +153,18 @@ guides them forward through the natural flow.
 ### Phase 3: Feature Engineering (Days 8-11)
 > Goal: AI suggests and applies feature transformations with user approval.
 
-- [ ] **Feature suggestions** — Based on column types and patterns, suggest
+- [x] **Feature suggestions** — Based on column types and patterns, suggest
       transformations: date decomposition, categorical encoding, binning, log
       transforms, interaction features. Each with plain-English explanation
-- [ ] **Approval workflow** — Each suggestion shown as a card: what it does, why it
+- [x] **Approval workflow** — Each suggestion shown as a card: what it does, why it
       might help, preview of the result. User approves/rejects/modifies via chat
       or button click
-- [ ] **Feature application** — Apply approved transformations, update dataset view,
+- [x] **Feature application** — Apply approved transformations, update dataset view,
       show before/after comparison
-- [ ] **Target variable selection** — Guide user to pick what they want to predict.
+- [x] **Target variable selection** — Guide user to pick what they want to predict.
       Suggest classification vs regression based on target column type. Explain the
       difference in plain language
-- [ ] **Feature importance preview** — Quick correlation/mutual-information analysis
+- [x] **Feature importance preview** — Quick correlation/mutual-information analysis
       to show which features are likely most predictive, before training
 
 ### Phase 4: Model Training (Days 12-16)
