@@ -7,6 +7,10 @@ import type {
   FeatureSetResult,
   TargetResult,
   FeatureImportanceResult,
+  ModelRecommendation,
+  ModelRun,
+  TrainingStatus,
+  ModelComparison,
 } from "./types"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
@@ -108,5 +112,40 @@ export const api = {
       fetch(
         `${API_URL}/api/features/${datasetId}/importance?target_column=${encodeURIComponent(targetColumn)}`
       ).then((r) => r.json()),
+  },
+
+  models: {
+    recommendations: (projectId: string): Promise<{
+      project_id: string
+      problem_type: string
+      target_column: string
+      n_rows: number
+      n_features: number
+      recommendations: ModelRecommendation[]
+    }> =>
+      fetch(`${API_URL}/api/models/${projectId}/recommendations`).then((r) =>
+        r.json()
+      ),
+
+    train: (
+      projectId: string,
+      algorithms: string[]
+    ): Promise<TrainingStatus> =>
+      fetch(`${API_URL}/api/models/${projectId}/train`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ algorithms }),
+      }).then((r) => r.json()),
+
+    runs: (projectId: string): Promise<{ project_id: string; runs: ModelRun[] }> =>
+      fetch(`${API_URL}/api/models/${projectId}/runs`).then((r) => r.json()),
+
+    compare: (projectId: string): Promise<ModelComparison> =>
+      fetch(`${API_URL}/api/models/${projectId}/compare`).then((r) => r.json()),
+
+    select: (modelRunId: string): Promise<ModelRun> =>
+      fetch(`${API_URL}/api/models/${modelRunId}/select`, {
+        method: "POST",
+      }).then((r) => r.json()),
   },
 }

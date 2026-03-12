@@ -9,6 +9,7 @@ import models  # noqa: F401 — ensures all SQLModel tables are registered befor
 from api.chat import router as chat_router
 from api.data import router as data_router
 from api.features import router as features_router
+from api.models import router as models_router
 from api.projects import router as projects_router
 from db import create_db_and_tables
 
@@ -43,6 +44,7 @@ app.include_router(projects_router)
 app.include_router(data_router)
 app.include_router(chat_router)
 app.include_router(features_router)
+app.include_router(models_router)
 
 
 @app.get("/health")

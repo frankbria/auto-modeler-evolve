@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { ChartMessage } from "@/components/chat/chart-message"
+import { ModelTrainingPanel } from "@/components/models/model-training-panel"
 import {
   FeatureSuggestionsPanel,
   FeatureImportancePanel,
@@ -27,7 +28,7 @@ import type {
 const WELCOME_MESSAGE =
   "Hi! I'm your data modeling assistant. Upload a CSV file to get started, or ask me anything about your data."
 
-type RightTab = "data" | "features" | "importance"
+type RightTab = "data" | "features" | "importance" | "models"
 
 export default function ProjectWorkspace() {
   const params = useParams<{ id: string }>()
@@ -339,7 +340,7 @@ export default function ProjectWorkspace() {
           <>
             {/* Tab Bar */}
             <div className="flex border-b">
-              {(["data", "features", "importance"] as RightTab[]).map((tab) => (
+              {(["data", "features", "importance", "models"] as RightTab[]).map((tab) => (
                 <button
                   key={tab}
                   onClick={() => setActiveTab(tab)}
@@ -421,6 +422,29 @@ export default function ProjectWorkspace() {
                       problemType={importanceProblemType}
                     />
                   )}
+                </div>
+              </ScrollArea>
+            )}
+
+            {activeTab === "models" && currentDataset && (
+              <ScrollArea className="flex-1">
+                <div className="p-4">
+                  <div className="mb-3">
+                    <h3 className="text-sm font-semibold">Model Training</h3>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      Train and compare ML models on your dataset. Make sure you have set a target column in the Features tab first.
+                    </p>
+                  </div>
+                  <ModelTrainingPanel
+                    projectId={projectId}
+                    onModelSelected={(runId) => {
+                      addMessage({
+                        role: "assistant",
+                        content: `I have selected this model for your project. Next, we can validate it — or deploy it as a live prediction API. What would you like to do?`,
+                        timestamp: new Date().toISOString(),
+                      })
+                    }}
+                  />
                 </div>
               </ScrollArea>
             )}
