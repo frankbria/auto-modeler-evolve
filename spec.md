@@ -185,17 +185,18 @@ guides them forward through the natural flow.
 ### Phase 5: Validation & Explainability (Days 17-20)
 > Goal: Build trust through transparency — show what the model gets right and wrong.
 
-- [ ] **Cross-validation results** — K-fold validation with confidence intervals.
+- [x] **Cross-validation results** — K-fold validation with confidence intervals.
       Presented as "This model is consistently accurate, not just lucky on one split"
-- [ ] **Confusion matrix / error analysis** — For classification: visual confusion
+- [x] **Confusion matrix / error analysis** — For classification: visual confusion
       matrix with plain-English annotations. For regression: residual plots with
       explanations. Highlight where the model struggles
-- [ ] **Feature importance (SHAP)** — Global feature importance chart. "The top 3
+- [x] **Feature importance (SHAP)** — Global feature importance chart using sklearn
+      native importances (tree: feature_importances_, linear: coef_). "The top 3
       factors driving predictions are: region, season, and product category"
-- [ ] **Individual prediction explanations** — SHAP waterfall for single predictions.
-      "For this specific case, the model predicted high revenue because: large order
-      size (+23%), holiday season (+15%), returning customer (+8%)"
-- [ ] **Confidence & limitations** — Honest assessment of model limitations. "This
+- [x] **Individual prediction explanations** — Feature contribution waterfall for
+      single predictions using linear attribution approximation.
+      "For this specific case, the model predicted high revenue because..."
+- [x] **Confidence & limitations** — Honest assessment of model limitations. "This
       model hasn't seen data from Q4 — predictions for holiday season may be less
       reliable"
 
