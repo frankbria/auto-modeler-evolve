@@ -9,9 +9,10 @@ import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
+import { ChartMessage } from "@/components/chat/chart-message"
 import { api } from "@/lib/api"
 import { useAppStore } from "@/lib/store"
-import type { Dataset } from "@/lib/types"
+import type { Dataset, DataInsight } from "@/lib/types"
 
 const WELCOME_MESSAGE =
   "Hi! I'm your data modeling assistant. Upload a CSV file to get started, or ask me anything about your data."
@@ -26,6 +27,7 @@ export default function ProjectWorkspace() {
     currentDataset,
     dataPreview,
     columnStats,
+    dataInsights,
     setDataset,
     messages,
     addMessage,
@@ -33,6 +35,7 @@ export default function ProjectWorkspace() {
     isStreaming,
     setStreaming,
     appendToLastMessage,
+    attachChartToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -48,8 +51,8 @@ export default function ProjectWorkspace() {
           api.chat.history(projectId),
         ])
         setCurrentProject(project)
-        if (history && history.length > 0) {
-          setMessages(history)
+        if (history?.messages && history.messages.length > 0) {
+          setMessages(history.messages)
         } else {
           setMessages([
             {
@@ -121,6 +124,8 @@ export default function ProjectWorkspace() {
               const json = JSON.parse(trimmed.slice(6))
               if (json.type === "token") {
                 appendToLastMessage(json.content)
+              } else if (json.type === "chart" && json.chart) {
+                attachChartToLastMessage(json.chart)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -131,9 +136,7 @@ export default function ProjectWorkspace() {
         }
       }
     } catch {
-      appendToLastMessage(
-        "\n\n[Connection error. Please try again.]"
-      )
+      appendToLastMessage("\n\n[Connection error. Please try again.]")
     } finally {
       setStreaming(false)
     }
@@ -144,6 +147,7 @@ export default function ProjectWorkspace() {
     addMessage,
     setStreaming,
     appendToLastMessage,
+    attachChartToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -162,7 +166,20 @@ export default function ProjectWorkspace() {
           column_count: result.column_count,
           uploaded_at: new Date().toISOString(),
         }
-        setDataset(dataset, result.preview, result.column_stats)
+        setDataset(dataset, result.preview, result.column_stats, result.insights)
+
+        // Surface upload insights in chat
+        if (result.insights && result.insights.length > 0) {
+          const insightLines = result.insights
+            .slice(0, 3)
+            .map((i: DataInsight) => `- ${i.title}: ${i.detail}`)
+            .join("\n")
+          addMessage({
+            role: "assistant",
+            content: `I've analyzed **${result.filename}** (${result.row_count.toLocaleString()} rows, ${result.column_count} columns). Here's what I noticed:\n\n${insightLines}\n\nWhat would you like to explore?`,
+            timestamp: new Date().toISOString(),
+          })
+        }
       } catch {
         addMessage({
           role: "assistant",
@@ -210,7 +227,7 @@ export default function ProjectWorkspace() {
                 className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
               >
                 <div
-                  className={`max-w-[85%] rounded-lg px-3 py-2 text-sm whitespace-pre-wrap ${
+                  className={`max-w-[90%] rounded-lg px-3 py-2 text-sm whitespace-pre-wrap ${
                     msg.role === "user"
                       ? "bg-muted text-foreground"
                       : "border bg-card text-card-foreground"
@@ -227,6 +244,7 @@ export default function ProjectWorkspace() {
                         <span className="animate-pulse delay-200">.</span>
                       </span>
                     )}
+                  {msg.chart && <ChartMessage spec={msg.chart} />}
                 </div>
               </div>
             ))}
@@ -237,7 +255,7 @@ export default function ProjectWorkspace() {
         <div className="border-t p-3">
           <div className="flex gap-2">
             <Input
-              placeholder="Type a message..."
+              placeholder="Ask about your data..."
               value={chatInput}
               onChange={(e) => setChatInput(e.target.value)}
               onKeyDown={(e) => {
@@ -267,6 +285,7 @@ export default function ProjectWorkspace() {
             columnCount={currentDataset.column_count}
             preview={dataPreview}
             stats={columnStats}
+            insights={dataInsights}
           />
         ) : (
           <UploadPanel
@@ -326,28 +345,53 @@ function DataPreviewPanel({
   columnCount,
   preview,
   stats,
+  insights,
 }: {
   filename: string
   rowCount: number
   columnCount: number
   preview: Record<string, unknown>[]
   stats: import("@/lib/types").ColumnStat[]
+  insights: DataInsight[]
 }) {
   const columns = preview.length > 0 ? Object.keys(preview[0]) : []
+
+  const severityClass = (s: DataInsight["severity"]) =>
+    s === "critical"
+      ? "bg-red-50 border-red-200 text-red-800 dark:bg-red-950 dark:border-red-900 dark:text-red-200"
+      : s === "warning"
+      ? "bg-amber-50 border-amber-200 text-amber-800 dark:bg-amber-950 dark:border-amber-900 dark:text-amber-200"
+      : "bg-blue-50 border-blue-200 text-blue-800 dark:bg-blue-950 dark:border-blue-900 dark:text-blue-200"
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
       {/* Header */}
       <div className="flex items-center gap-3 border-b px-4 py-3">
         <h2 className="text-sm font-semibold">{filename}</h2>
-        <Badge variant="outline">
-          {rowCount.toLocaleString()} rows
-        </Badge>
+        <Badge variant="outline">{rowCount.toLocaleString()} rows</Badge>
         <Badge variant="outline">{columnCount} columns</Badge>
       </div>
 
       <ScrollArea className="flex-1">
         <div className="p-4">
+          {/* Insights panel */}
+          {insights.length > 0 && (
+            <div className="mb-5">
+              <h3 className="mb-2 text-sm font-semibold">Insights</h3>
+              <div className="flex flex-col gap-2">
+                {insights.map((insight, i) => (
+                  <div
+                    key={i}
+                    className={`rounded-lg border px-3 py-2 text-xs ${severityClass(insight.severity)}`}
+                  >
+                    <p className="font-semibold">{insight.title}</p>
+                    <p className="mt-0.5 opacity-80">{insight.detail}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Column Stats */}
           {stats.length > 0 && (
             <div className="mb-6">
@@ -375,7 +419,14 @@ function DataPreviewPanel({
                         )}
                         {col.min != null && col.max != null && (
                           <p>
-                            Range: {col.min} - {col.max}
+                            Range: {col.min} – {col.max}
+                          </p>
+                        )}
+                        {col.outliers && col.outliers.count > 0 && (
+                          <p className="text-amber-600 dark:text-amber-400">
+                            {col.outliers.count} outlier
+                            {col.outliers.count !== 1 ? "s" : ""} (
+                            {col.outliers.pct.toFixed(1)}%)
                           </p>
                         )}
                       </div>
@@ -416,9 +467,7 @@ function DataPreviewPanel({
                           className="max-w-[200px] truncate whitespace-nowrap px-3 py-1.5"
                         >
                           {row[col] == null ? (
-                            <span className="text-muted-foreground/50">
-                              null
-                            </span>
+                            <span className="text-muted-foreground/50">null</span>
                           ) : (
                             String(row[col])
                           )}
