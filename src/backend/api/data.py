@@ -3,9 +3,11 @@ from pathlib import Path
 
 import pandas as pd
 from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile
+from pydantic import BaseModel
 from sqlmodel import Session
 
-from core.analyzer import analyze_dataframe
+from core.analyzer import analyze_dataframe, compute_full_profile
+from core.query_engine import run_nl_query
 from db import get_session
 from models.dataset import Dataset
 
@@ -13,6 +15,10 @@ router = APIRouter(prefix="/api/data", tags=["data"])
 
 UPLOAD_DIR = Path(__file__).parent.parent / "data" / "uploads"
 
+
+# ---------------------------------------------------------------------------
+# Upload
+# ---------------------------------------------------------------------------
 
 @router.post("/upload", status_code=201)
 def upload_csv(
@@ -38,7 +44,8 @@ def upload_csv(
             status_code=400, detail=f"Failed to parse CSV: {exc}"
         ) from exc
 
-    profile = analyze_dataframe(df)
+    # Full profiling on upload (includes distributions, correlations, patterns)
+    profile = compute_full_profile(df)
 
     dataset = Dataset(
         project_id=project_id,
@@ -63,8 +70,13 @@ def upload_csv(
         "column_count": dataset.column_count,
         "preview": preview_rows,
         "column_stats": profile["columns"],
+        "insights": profile.get("insights", []),
     }
 
+
+# ---------------------------------------------------------------------------
+# Preview
+# ---------------------------------------------------------------------------
 
 @router.get("/{dataset_id}/preview")
 def get_preview(dataset_id: str, session: Session = Depends(get_session)):
@@ -87,4 +99,66 @@ def get_preview(dataset_id: str, session: Session = Depends(get_session)):
         "column_count": dataset.column_count,
         "preview": preview_rows,
         "column_stats": column_stats,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Full profile (cached)
+# ---------------------------------------------------------------------------
+
+@router.get("/{dataset_id}/profile")
+def get_profile(dataset_id: str, session: Session = Depends(get_session)):
+    dataset = session.get(Dataset, dataset_id)
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    if dataset.profile:
+        return json.loads(dataset.profile)
+
+    # Regenerate if missing (e.g. old data uploaded before full profiling)
+    file_path = Path(dataset.file_path)
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Dataset file not found on disk")
+
+    df = pd.read_csv(file_path)
+    profile = compute_full_profile(df)
+    dataset.profile = json.dumps(profile)
+    session.add(dataset)
+    session.commit()
+
+    return profile
+
+
+# ---------------------------------------------------------------------------
+# Natural language query
+# ---------------------------------------------------------------------------
+
+class NLQueryRequest(BaseModel):
+    question: str
+
+
+@router.post("/{dataset_id}/query")
+def query_dataset(
+    dataset_id: str,
+    body: NLQueryRequest,
+    session: Session = Depends(get_session),
+):
+    dataset = session.get(Dataset, dataset_id)
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    file_path = Path(dataset.file_path)
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Dataset file not found on disk")
+
+    df = pd.read_csv(file_path)
+    column_info = json.loads(dataset.columns) if dataset.columns else []
+
+    result = run_nl_query(body.question, df, column_info)
+
+    return {
+        "question": body.question,
+        "answer": result.text,
+        "chart_spec": result.chart_spec,
+        "result_rows": result.result_rows,
     }

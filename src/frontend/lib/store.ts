@@ -4,6 +4,8 @@ import type {
   Dataset,
   ChatMessage,
   ColumnStat,
+  ChartSpec,
+  DataInsight,
 } from "./types"
 
 interface AppState {
@@ -12,6 +14,7 @@ interface AppState {
   currentDataset: Dataset | null
   dataPreview: Record<string, unknown>[]
   columnStats: ColumnStat[]
+  dataInsights: DataInsight[]
   messages: ChatMessage[]
   isStreaming: boolean
 
@@ -20,12 +23,14 @@ interface AppState {
   setDataset: (
     dataset: Dataset,
     preview: Record<string, unknown>[],
-    stats: ColumnStat[]
+    stats: ColumnStat[],
+    insights?: DataInsight[]
   ) => void
   addMessage: (message: ChatMessage) => void
   setMessages: (messages: ChatMessage[]) => void
   setStreaming: (streaming: boolean) => void
   appendToLastMessage: (content: string) => void
+  attachChartToLastMessage: (chart: ChartSpec) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -34,6 +39,7 @@ export const useAppStore = create<AppState>((set) => ({
   currentDataset: null,
   dataPreview: [],
   columnStats: [],
+  dataInsights: [],
   messages: [],
   isStreaming: false,
 
@@ -41,8 +47,13 @@ export const useAppStore = create<AppState>((set) => ({
 
   setCurrentProject: (project) => set({ currentProject: project }),
 
-  setDataset: (dataset, preview, stats) =>
-    set({ currentDataset: dataset, dataPreview: preview, columnStats: stats }),
+  setDataset: (dataset, preview, stats, insights = []) =>
+    set({
+      currentDataset: dataset,
+      dataPreview: preview,
+      columnStats: stats,
+      dataInsights: insights,
+    }),
 
   addMessage: (message) =>
     set((state) => ({ messages: [...state.messages, message] })),
@@ -56,10 +67,17 @@ export const useAppStore = create<AppState>((set) => ({
       const messages = [...state.messages]
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
-        messages[messages.length - 1] = {
-          ...last,
-          content: last.content + content,
-        }
+        messages[messages.length - 1] = { ...last, content: last.content + content }
+      }
+      return { messages }
+    }),
+
+  attachChartToLastMessage: (chart) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, chart }
       }
       return { messages }
     }),
