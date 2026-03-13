@@ -218,16 +218,16 @@ guides them forward through the natural flow.
 ### Phase 7: Polish & Delight (Days 26-30)
 > Goal: Make it feel like working with a brilliant, patient colleague.
 
-- [ ] **Onboarding flow** — First-time user experience: guided tour, sample dataset
-      option ("Try it with our demo sales data"), contextual tips
-- [ ] **Project management** — Create, rename, delete, duplicate projects. Project
-      list with last-modified, model status, quick stats
-- [ ] **Chat memory across sessions** — Resume conversations. "Welcome back — last
-      time we were comparing models for your Q3 forecast. Want to pick up there?"
-- [ ] **Export & sharing** — Export analysis as PDF report. Share prediction dashboard
-      via public link. Download model as pickle for advanced users
-- [ ] **Responsive design** — Works on tablet (not phone — data work needs screen
-      real estate). Collapsible side panels, adaptive layout
+- [~] **Onboarding flow** — Empty-state panel with contextual description on first visit;
+      guided tooltips in upload area. Sample dataset option deferred.
+- [x] **Project management** — Create, rename, delete, duplicate projects. Project
+      list with last-modified, model status, quick stats (dataset name, row count, model count)
+- [x] **Chat memory across sessions** — Resume conversations with "Welcome back" context
+      message summarising last active time and conversation snippet
+- [~] **Export & sharing** — Download model as .joblib pickle (done). PDF report and
+      public sharing link deferred.
+- [~] **Responsive design** — Collapsible side panel toggle; topbar breadcrumb navigation;
+      horizontal tab scroll. Full tablet breakpoint layout deferred.
 
 ---
 
