@@ -14,6 +14,9 @@ from core.query_engine import generate_chart_for_message
 from db import get_session
 from models.conversation import Conversation
 from models.dataset import Dataset
+from models.deployment import Deployment
+from models.feature_set import FeatureSet
+from models.model_run import ModelRun
 from models.project import Project
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
@@ -24,6 +27,46 @@ MAX_TOKENS = 1024
 
 class ChatMessage(BaseModel):
     message: str
+
+
+def _utcnow() -> datetime:
+    return datetime.now(UTC).replace(tzinfo=None)
+
+
+def _load_project_context(project_id: str, session: Session) -> dict:
+    """Load the full project context needed for the state-aware system prompt."""
+    dataset = session.exec(
+        select(Dataset).where(Dataset.project_id == project_id)
+    ).first()
+
+    # Latest active feature set (most recently created)
+    feature_set = None
+    if dataset:
+        feature_set = session.exec(
+            select(FeatureSet)
+            .where(FeatureSet.dataset_id == dataset.id, FeatureSet.is_active == True)  # noqa: E712
+            .order_by(FeatureSet.created_at.desc())  # type: ignore[arg-type]
+        ).first()
+
+    model_runs = list(
+        session.exec(
+            select(ModelRun).where(ModelRun.project_id == project_id)
+        ).all()
+    )
+
+    # Latest active deployment
+    deployment = session.exec(
+        select(Deployment)
+        .where(Deployment.project_id == project_id, Deployment.is_active == True)  # noqa: E712
+        .order_by(Deployment.created_at.desc())  # type: ignore[arg-type]
+    ).first()
+
+    return {
+        "dataset": dataset,
+        "feature_set": feature_set,
+        "model_runs": model_runs,
+        "deployment": deployment,
+    }
 
 
 @router.post("/{project_id}")
@@ -51,15 +94,20 @@ def send_message(
         {
             "role": "user",
             "content": body.message,
-            "timestamp": datetime.now(UTC).replace(tzinfo=None).isoformat(),
+            "timestamp": _utcnow().isoformat(),
         }
     )
 
-    # Get dataset for context (and for chart generation)
-    dataset_stmt = select(Dataset).where(Dataset.project_id == project_id)
-    dataset = session.exec(dataset_stmt).first()
+    # Load full project context for state-aware prompt
+    ctx = _load_project_context(project_id, session)
 
-    system_prompt = build_system_prompt(project, dataset)
+    system_prompt = build_system_prompt(
+        project,
+        dataset=ctx["dataset"],
+        feature_set=ctx["feature_set"],
+        model_runs=ctx["model_runs"],
+        deployment=ctx["deployment"],
+    )
 
     api_messages = [
         {"role": m["role"], "content": m["content"]} for m in messages
@@ -68,6 +116,7 @@ def send_message(
     client = anthropic.Anthropic()
 
     # Capture dataset info for post-stream chart generation
+    dataset = ctx["dataset"]
     dataset_file_path: str | None = dataset.file_path if dataset else None
     column_info: list = json.loads(dataset.columns) if (dataset and dataset.columns) else []
 
@@ -91,7 +140,7 @@ def send_message(
                 {
                     "role": "assistant",
                     "content": full_response,
-                    "timestamp": datetime.now(UTC).replace(tzinfo=None).isoformat(),
+                    "timestamp": _utcnow().isoformat(),
                 }
             )
             from db import engine
@@ -100,7 +149,7 @@ def send_message(
                 conv = save_session.get(Conversation, conversation.id)
                 if conv:
                     conv.messages = json.dumps(messages)
-                    conv.updated_at = datetime.now(UTC).replace(tzinfo=None)
+                    conv.updated_at = _utcnow()
                     save_session.add(conv)
                     save_session.commit()
 
