@@ -14,6 +14,8 @@ import type {
   ValidationMetricsResponse,
   GlobalExplanationResponse,
   RowExplanationResponse,
+  Deployment,
+  PredictionResult,
 } from "./types"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
@@ -161,5 +163,31 @@ export const api = {
 
     explainRow: (modelRunId: string, rowIndex: number): Promise<RowExplanationResponse> =>
       fetch(`${API_URL}/api/validate/${modelRunId}/explain/${rowIndex}`).then((r) => r.json()),
+  },
+
+  deploy: {
+    deploy: (modelRunId: string): Promise<Deployment> =>
+      fetch(`${API_URL}/api/deploy/${modelRunId}`, { method: "POST" }).then((r) =>
+        r.json()
+      ),
+
+    list: (): Promise<Deployment[]> =>
+      fetch(`${API_URL}/api/deployments`).then((r) => r.json()),
+
+    get: (deploymentId: string): Promise<Deployment> =>
+      fetch(`${API_URL}/api/deploy/${deploymentId}`).then((r) => r.json()),
+
+    undeploy: (deploymentId: string): Promise<Response> =>
+      fetch(`${API_URL}/api/deploy/${deploymentId}`, { method: "DELETE" }),
+
+    predict: (
+      deploymentId: string,
+      inputData: Record<string, unknown>
+    ): Promise<PredictionResult> =>
+      fetch(`${API_URL}/api/predict/${deploymentId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(inputData),
+      }).then((r) => r.json()),
   },
 }

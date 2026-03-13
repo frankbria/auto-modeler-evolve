@@ -16,6 +16,7 @@ import {
   FeatureImportancePanel,
 } from "@/components/features/feature-suggestions"
 import { ValidationPanel } from "@/components/validation/validation-panel"
+import { DeploymentPanel } from "@/components/deploy/deployment-panel"
 import { api } from "@/lib/api"
 import { useAppStore } from "@/lib/store"
 import type {
@@ -29,7 +30,7 @@ import type {
 const WELCOME_MESSAGE =
   "Hi! I'm your data modeling assistant. Upload a CSV file to get started, or ask me anything about your data."
 
-type RightTab = "data" | "features" | "importance" | "models" | "validate"
+type RightTab = "data" | "features" | "importance" | "models" | "validate" | "deploy"
 
 export default function ProjectWorkspace() {
   const params = useParams<{ id: string }>()
@@ -345,13 +346,14 @@ export default function ProjectWorkspace() {
           <>
             {/* Tab Bar */}
             <div className="flex border-b">
-              {(["data", "features", "importance", "models", "validate"] as RightTab[]).map((tab) => {
+              {(["data", "features", "importance", "models", "validate", "deploy"] as RightTab[]).map((tab) => {
                 const labels: Record<RightTab, string> = {
                   data: "Data",
                   features: "Features",
                   importance: "Importance",
                   models: "Models",
                   validate: "Validate",
+                  deploy: "Deploy",
                 }
                 return (
                   <button
@@ -448,6 +450,31 @@ export default function ProjectWorkspace() {
                   algorithmName={selectedModelAlgorithm}
                 />
               </div>
+            )}
+
+            {activeTab === "deploy" && currentDataset && (
+              <ScrollArea className="flex-1">
+                <div className="p-4">
+                  <div className="mb-3">
+                    <h3 className="text-sm font-semibold">Deploy Model</h3>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      One-click deployment as a live prediction API + shareable dashboard.
+                    </p>
+                  </div>
+                  <DeploymentPanel
+                    projectId={projectId}
+                    selectedRunId={selectedModelRunId}
+                    algorithmName={selectedModelAlgorithm}
+                    onDeployed={(dep) => {
+                      addMessage({
+                        role: "assistant",
+                        content: `Your model is live! Share this link with anyone: ${dep.dashboard_url}\n\nThey can fill in values and get instant predictions — no code required. Developers can also use the API endpoint directly: POST ${dep.endpoint_path}`,
+                        timestamp: new Date().toISOString(),
+                      })
+                    }}
+                  />
+                </div>
+              </ScrollArea>
             )}
 
             {activeTab === "models" && currentDataset && (

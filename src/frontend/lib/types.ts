@@ -286,3 +286,41 @@ export interface RowExplanationResponse {
   contributions: ContributionItem[]
   summary: string
 }
+
+// ---------------------------------------------------------------------------
+// Deployment (Phase 6)
+// ---------------------------------------------------------------------------
+
+export interface FeatureSchemaEntry {
+  name: string
+  type: "numeric" | "categorical"
+  options?: string[]   // categorical choices
+  median?: number      // numeric default
+}
+
+export interface Deployment {
+  id: string
+  model_run_id: string
+  project_id: string
+  endpoint_path: string
+  dashboard_url: string
+  is_active: boolean
+  request_count: number
+  algorithm: string | null
+  problem_type: string | null
+  feature_names: string[]
+  target_column: string | null
+  metrics: Record<string, number>
+  created_at: string | null
+  last_predicted_at: string | null
+  feature_schema?: FeatureSchemaEntry[]
+}
+
+export interface PredictionResult {
+  deployment_id: string
+  prediction: number | string
+  problem_type: string
+  target_column: string
+  feature_names: string[]
+  probabilities?: Record<string, number>
+}

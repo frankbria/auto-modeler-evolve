@@ -5,5 +5,6 @@ from models.dataset import Dataset
 from models.feature_set import FeatureSet
 from models.conversation import Conversation
 from models.model_run import ModelRun
+from models.deployment import Deployment
 
-__all__ = ["Project", "Dataset", "FeatureSet", "Conversation", "ModelRun"]
+__all__ = ["Project", "Dataset", "FeatureSet", "Conversation", "ModelRun", "Deployment"]
