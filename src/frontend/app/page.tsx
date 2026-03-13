@@ -166,6 +166,7 @@ export default function HomePage() {
           {projects.map((project) => (
             <Card
               key={project.id}
+              data-testid="project-card"
               className="cursor-pointer transition-colors hover:bg-muted/50"
               onClick={() => router.push(`/project/${project.id}`)}
             >

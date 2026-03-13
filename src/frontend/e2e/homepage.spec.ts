@@ -33,8 +33,11 @@ test.describe("AutoModeler homepage", () => {
   test("can create a new project", async ({ page }) => {
     await page.goto("/");
     await page.getByRole("button", { name: /new project/i }).click();
-    // After click, a project row/card should appear
-    await expect(page.getByText(/Untitled Project|New Project/i)).toBeVisible({
+    // Form appears — fill in a name and submit
+    await page.getByPlaceholder("Project name").fill("My E2E Project");
+    await page.getByRole("button", { name: /^create$/i }).click();
+    // After creation, the project card should appear
+    await expect(page.getByText("My E2E Project")).toBeVisible({
       timeout: 5_000,
     });
   });
@@ -58,7 +61,9 @@ test.describe("AutoModeler homepage", () => {
     await page.goto("/");
     await expect(page.getByText("Delete Me")).toBeVisible();
 
-    // Open the project menu and click delete
+    // Accept the confirm() dialog before clicking delete
+    page.on("dialog", (dialog) => dialog.accept());
+
     const card = page.locator('[data-testid="project-card"]', {
       hasText: "Delete Me",
     });
@@ -93,8 +98,8 @@ test.describe("Project workspace", () => {
     const sampleBtn = page.getByRole("button", { name: /load sample/i });
     await expect(sampleBtn).toBeVisible({ timeout: 5_000 });
     await sampleBtn.click();
-    // After loading sample data, the data preview should show
-    await expect(page.getByText(/rows|columns|sample/i)).toBeVisible({
+    // After loading sample data, the data preview should show row count badge
+    await expect(page.getByText("200 rows", { exact: true })).toBeVisible({
       timeout: 10_000,
     });
   });
