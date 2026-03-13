@@ -40,8 +40,12 @@ You are building software autonomously. Follow these rules exactly.
 3. Run lint if available — fix any warnings
 4. If any check fails, read the error and fix it. Keep trying until it passes.
 5. Only if you've tried 3+ times and are stuck, revert with `git checkout -- .`
-6. **Commit** — `git add -A && git commit -m "Day N (HH:MM): <short description>"`
-7. **Then move on to the next improvement.**
+6. **Update README.md** — keep the "Current Status" section accurate, and update other
+   sections when your changes affect them (new endpoints → API Overview table, new
+   dependencies → Tech Stack table, structural changes → Project Structure). Don't
+   rewrite the whole file — make surgical edits to the affected sections only.
+7. **Commit** — `git add -A && git commit -m "Day N (HH:MM): <short description>"`
+8. **Then move on to the next improvement.**
 
 ## Bootstrap session (Day 0)
 
