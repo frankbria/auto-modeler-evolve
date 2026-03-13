@@ -11,6 +11,7 @@ interface ModelTrainingPanelProps {
   projectId: string
   onModelSelected?: (runId: string, algorithm: string) => void
   onModelDownload?: (runId: string) => void
+  onModelReport?: (runId: string) => void
 }
 
 const ALGORITHM_DISPLAY: Record<string, string> = {
@@ -22,7 +23,7 @@ const ALGORITHM_DISPLAY: Record<string, string> = {
   gradient_boosting_classifier: "Gradient Boosting",
 }
 
-export function ModelTrainingPanel({ projectId, onModelSelected, onModelDownload }: ModelTrainingPanelProps) {
+export function ModelTrainingPanel({ projectId, onModelSelected, onModelDownload, onModelReport }: ModelTrainingPanelProps) {
   const [recommendations, setRecommendations] = useState<ModelRecommendation[]>([])
   const [problemType, setProblemType] = useState("")
   const [targetColumn, setTargetColumn] = useState("")
@@ -220,6 +221,7 @@ export function ModelTrainingPanel({ projectId, onModelSelected, onModelDownload
                 isRecommended={comparison?.recommendation?.model_run_id === run.id}
                 onSelect={() => handleSelect(run.id, run.algorithm)}
                 onDownload={onModelDownload ? () => onModelDownload(run.id) : undefined}
+                onReport={onModelReport ? () => onModelReport(run.id) : undefined}
               />
             ))}
           </div>
@@ -281,12 +283,14 @@ function RunCard({
   isRecommended,
   onSelect,
   onDownload,
+  onReport,
 }: {
   run: ModelRun
   problemType: string
   isRecommended: boolean
   onSelect: () => void
   onDownload?: () => void
+  onReport?: () => void
 }) {
   const displayName = ALGORITHM_DISPLAY[run.algorithm] ?? run.algorithm
 
@@ -332,6 +336,11 @@ function RunCard({
               {onDownload && (
                 <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={onDownload}>
                   Download .joblib
+                </Button>
+              )}
+              {onReport && (
+                <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={onReport}>
+                  Download Report
                 </Button>
               )}
             </div>

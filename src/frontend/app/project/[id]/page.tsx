@@ -82,6 +82,8 @@ export default function ProjectWorkspace() {
   const [loadingProject, setLoadingProject] = useState(true)
   const [activeTab, setActiveTab] = useState<RightTab>("data")
   const [rightPanelVisible, setRightPanelVisible] = useState(true)
+  // Mobile: which panel is active ("chat" | "panel")
+  const [mobileView, setMobileView] = useState<"chat" | "panel">("chat")
 
   // Feature engineering state
   const [featureSuggestions, setFeatureSuggestions] = useState<FeatureSuggestion[]>([])
@@ -358,22 +360,41 @@ export default function ProjectWorkspace() {
         <span className="text-xs font-medium truncate">
           {currentProject?.name ?? "Loading..."}
         </span>
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-2">
+          {/* Desktop: hide/show panel toggle */}
           <Button
             variant="ghost"
             size="sm"
-            className="h-7 px-2 text-xs"
+            className="hidden md:flex h-7 px-2 text-xs"
             onClick={() => setRightPanelVisible((v) => !v)}
           >
             {rightPanelVisible ? "Hide panel" : "Show panel"}
           </Button>
+          {/* Mobile: chat / panel toggle */}
+          <div className="flex md:hidden rounded-md border overflow-hidden text-xs">
+            <button
+              onClick={() => setMobileView("chat")}
+              className={`px-3 py-1 transition-colors ${mobileView === "chat" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
+            >
+              Chat
+            </button>
+            <button
+              onClick={() => setMobileView("panel")}
+              className={`px-3 py-1 transition-colors ${mobileView === "panel" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
+            >
+              Data
+            </button>
+          </div>
         </div>
       </div>
 
       <div className="flex flex-1 overflow-hidden">
-        {/* Chat Panel */}
+        {/* Chat Panel — full-width on mobile when active, fixed width on md+ */}
         <div
-          className={`flex flex-col border-r ${rightPanelVisible ? "w-2/5" : "flex-1"} transition-all`}
+          className={`flex flex-col border-r transition-all
+            ${mobileView === "chat" ? "flex" : "hidden"} md:flex
+            ${rightPanelVisible ? "md:w-2/5" : "md:flex-1"}
+            w-full`}
         >
           <ScrollArea className="flex-1 overflow-y-auto">
             <div className="flex flex-col gap-3 p-4">
@@ -432,9 +453,11 @@ export default function ProjectWorkspace() {
           </div>
         </div>
 
-        {/* Right Panel */}
-        {rightPanelVisible && (
-          <div className="flex w-3/5 flex-col overflow-hidden">
+        {/* Right Panel — full-width on mobile when active, 3/5 on md+ */}
+        {(rightPanelVisible || mobileView === "panel") && (
+          <div className={`flex flex-col overflow-hidden
+            ${mobileView === "panel" ? "flex" : "hidden"} md:flex
+            w-full md:w-3/5`}>
             {currentDataset ? (
               <>
                 {/* Tab Bar */}
@@ -592,6 +615,9 @@ export default function ProjectWorkspace() {
                         }}
                         onModelDownload={(runId) => {
                           window.open(api.models.downloadUrl(runId), "_blank")
+                        }}
+                        onModelReport={(runId) => {
+                          window.open(api.models.reportUrl(runId), "_blank")
                         }}
                       />
                     </div>

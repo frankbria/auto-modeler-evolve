@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -24,6 +24,14 @@ export function DeploymentPanel({
   const [deployment, setDeployment] = useState<Deployment | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [undeploying, setUndeploying] = useState(false)
+  const [copied, setCopied] = useState(false)
+
+  const handleCopyLink = useCallback((url: string) => {
+    navigator.clipboard.writeText(url).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    }).catch(() => {})
+  }, [])
 
   const handleDeploy = async () => {
     if (!selectedRunId) return
@@ -85,14 +93,24 @@ export function DeploymentPanel({
           <CardContent className="space-y-3 text-sm">
             <div>
               <p className="text-xs font-medium text-muted-foreground">Dashboard URL</p>
-              <a
-                href={deployment.dashboard_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="mt-0.5 block truncate text-primary underline-offset-2 hover:underline"
-              >
-                {dashboardUrl}
-              </a>
+              <div className="mt-0.5 flex items-center gap-2">
+                <a
+                  href={deployment.dashboard_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex-1 truncate text-primary underline-offset-2 hover:underline text-xs"
+                >
+                  {dashboardUrl}
+                </a>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-6 shrink-0 px-2 text-[10px]"
+                  onClick={() => handleCopyLink(dashboardUrl)}
+                >
+                  {copied ? "Copied!" : "Copy link"}
+                </Button>
+              </div>
               <p className="mt-1 text-xs text-muted-foreground">
                 Share this link — anyone can paste in values and see predictions.
               </p>

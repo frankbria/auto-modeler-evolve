@@ -181,6 +181,9 @@ export const api = {
     downloadUrl: (modelRunId: string): string =>
       `${API_URL}/api/models/${modelRunId}/download`,
 
+    reportUrl: (modelRunId: string): string =>
+      `${API_URL}/api/models/${modelRunId}/report`,
+
     trainingStreamUrl: (projectId: string): string =>
       `${API_URL}/api/models/${projectId}/training-stream`,
   },

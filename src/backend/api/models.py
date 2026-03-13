@@ -13,14 +13,16 @@ import queue
 import threading
 from pathlib import Path
 
+import joblib
 import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
 import db as _db
 from core.feature_engine import apply_transformations
+from core.report_generator import generate_model_report
 from core.trainer import (
     CLASSIFICATION_ALGORITHMS,
     REGRESSION_ALGORITHMS,
@@ -495,4 +497,104 @@ def download_model(model_run_id: str, session: Session = Depends(get_session)):
         path=str(model_path),
         filename=filename,
         media_type="application/octet-stream",
+    )
+
+
+# ---------------------------------------------------------------------------
+# 8. PDF Report
+# ---------------------------------------------------------------------------
+
+@router.get("/api/models/{model_run_id}/report")
+def download_report(model_run_id: str, session: Session = Depends(get_session)):
+    """Generate and download a PDF model report for the given run.
+
+    Includes project metadata, dataset overview, training metrics, feature
+    importance, and a confidence/limitations assessment.
+    """
+    run = session.get(ModelRun, model_run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Model run not found")
+    if run.status != "done":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Model is not ready (status: {run.status}). Wait for training to complete.",
+        )
+
+    # Gather project and dataset metadata
+    project = session.get(Project, run.project_id)
+    project_name = project.name if project else "Unknown Project"
+
+    dataset = session.exec(
+        select(Dataset).where(Dataset.project_id == run.project_id)
+    ).first()
+    dataset_filename = dataset.filename if dataset else "unknown.csv"
+    dataset_rows = dataset.row_count if dataset else 0
+    dataset_columns = dataset.column_count if dataset else 0
+
+    # Determine problem type from feature set
+    feature_set = None
+    if run.feature_set_id:
+        feature_set = session.get(FeatureSet, run.feature_set_id)
+    problem_type = (feature_set.problem_type if feature_set else None) or "regression"
+
+    metrics = json.loads(run.metrics) if run.metrics else {}
+
+    # Build feature importances by loading model (best-effort)
+    feature_importances = None
+    if run.model_path and Path(run.model_path).exists() and feature_set:
+        try:
+            from core.explainer import compute_feature_importance
+            from core.trainer import prepare_features
+
+            df = pd.read_csv(dataset.file_path)
+            transforms = json.loads(feature_set.transformations or "[]")
+            if transforms:
+                df, _ = apply_transformations(df, transforms)
+            target_col = feature_set.target_column or ""
+            feature_cols = [c for c in df.columns if c != target_col]
+            X, y, _ = prepare_features(df, feature_cols, target_col, problem_type)
+            pipeline = joblib.load(run.model_path)
+            model = pipeline.get("model") if isinstance(pipeline, dict) else pipeline
+            fi_result = compute_feature_importance(model, feature_cols)
+            feature_importances = fi_result.get("features", [])
+        except Exception:  # noqa: BLE001
+            feature_importances = None
+
+    # Confidence assessment (best-effort)
+    confidence_assessment = None
+    if metrics and feature_set:
+        try:
+            from core.validator import assess_confidence_limitations
+
+            dataset_info = {
+                "row_count": dataset_rows,
+                "column_count": dataset_columns,
+            }
+            confidence_assessment = assess_confidence_limitations(
+                metrics, problem_type, dataset_info
+            )
+        except Exception:  # noqa: BLE001
+            confidence_assessment = None
+
+    pdf_bytes = generate_model_report(
+        project_name=project_name,
+        dataset_filename=dataset_filename,
+        dataset_rows=dataset_rows,
+        dataset_columns=dataset_columns,
+        algorithm=run.algorithm,
+        problem_type=problem_type,
+        metrics=metrics,
+        summary=run.summary,
+        training_duration_ms=run.training_duration_ms,
+        feature_importances=feature_importances,
+        confidence_assessment=confidence_assessment,
+        created_at=run.created_at,
+    )
+
+    safe_algo = run.algorithm.lower().replace(" ", "_")
+    filename = f"automodeler_report_{safe_algo}_{run.id[:8]}.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
