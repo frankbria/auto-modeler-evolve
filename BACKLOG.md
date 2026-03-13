@@ -10,6 +10,13 @@ Living document for coordinating between bot instances and tracking ideation.
 <!-- Brief description of what you're doing this session. -->
 <!-- Remove your entry when you commit your session wrap-up. -->
 
+## Day 2 (20:05) — Error Resilience Audit + Correlation Heatmap
+
+Track A: Systematically test failure modes (corrupt CSV, empty dataset, single-row,
+all-null columns, training on bad data). Fix any issues found and verify helpful
+user-facing messages. Track B: Add interactive correlation heatmap visualization
+triggered naturally through chat ("show me correlations").
+
 
 ## Ideas to Explore
 
