@@ -10,6 +10,7 @@ import type { ModelRecommendation, ModelRun, ModelComparison, ModelMetrics } fro
 interface ModelTrainingPanelProps {
   projectId: string
   onModelSelected?: (runId: string, algorithm: string) => void
+  onModelDownload?: (runId: string) => void
 }
 
 const ALGORITHM_DISPLAY: Record<string, string> = {
@@ -21,7 +22,7 @@ const ALGORITHM_DISPLAY: Record<string, string> = {
   gradient_boosting_classifier: "Gradient Boosting",
 }
 
-export function ModelTrainingPanel({ projectId, onModelSelected }: ModelTrainingPanelProps) {
+export function ModelTrainingPanel({ projectId, onModelSelected, onModelDownload }: ModelTrainingPanelProps) {
   const [recommendations, setRecommendations] = useState<ModelRecommendation[]>([])
   const [problemType, setProblemType] = useState("")
   const [targetColumn, setTargetColumn] = useState("")
@@ -195,6 +196,7 @@ export function ModelTrainingPanel({ projectId, onModelSelected }: ModelTraining
                 problemType={problemType}
                 isRecommended={comparison?.recommendation?.model_run_id === run.id}
                 onSelect={() => handleSelect(run.id, run.algorithm)}
+                onDownload={onModelDownload ? () => onModelDownload(run.id) : undefined}
               />
             ))}
           </div>
@@ -255,11 +257,13 @@ function RunCard({
   problemType,
   isRecommended,
   onSelect,
+  onDownload,
 }: {
   run: ModelRun
   problemType: string
   isRecommended: boolean
   onSelect: () => void
+  onDownload?: () => void
 }) {
   const displayName = ALGORITHM_DISPLAY[run.algorithm] ?? run.algorithm
 
@@ -296,11 +300,18 @@ function RunCard({
                 Trained in {(run.training_duration_ms / 1000).toFixed(1)}s
               </p>
             )}
-            {!run.is_selected && (
-              <Button size="sm" variant="outline" className="mt-2 h-7 text-xs" onClick={onSelect}>
-                Select this model
-              </Button>
-            )}
+            <div className="mt-2 flex gap-2">
+              {!run.is_selected && (
+                <Button size="sm" variant="outline" className="h-7 text-xs" onClick={onSelect}>
+                  Select this model
+                </Button>
+              )}
+              {onDownload && (
+                <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={onDownload}>
+                  Download .joblib
+                </Button>
+              )}
+            </div>
           </div>
         )}
         {run.status === "failed" && run.error_message && (

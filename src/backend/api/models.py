@@ -14,6 +14,7 @@ from pathlib import Path
 
 import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
@@ -363,3 +364,33 @@ def select_model(model_run_id: str, session: Session = Depends(get_session)):
     session.refresh(run)
 
     return _run_to_dict(run)
+
+
+# ---------------------------------------------------------------------------
+# 6. Download model pickle
+# ---------------------------------------------------------------------------
+
+@router.get("/api/models/{model_run_id}/download")
+def download_model(model_run_id: str, session: Session = Depends(get_session)):
+    """Download the serialized model pipeline as a joblib pickle file."""
+    run = session.get(ModelRun, model_run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Model run not found")
+    if run.status != "done":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Model is not ready (status: {run.status}). Wait for training to complete.",
+        )
+    if not run.model_path:
+        raise HTTPException(status_code=404, detail="Model file not found")
+
+    model_path = Path(run.model_path)
+    if not model_path.exists():
+        raise HTTPException(status_code=404, detail="Model file missing from disk")
+
+    filename = f"automodeler_{run.algorithm}_{run.id[:8]}.joblib"
+    return FileResponse(
+        path=str(model_path),
+        filename=filename,
+        media_type="application/octet-stream",
+    )

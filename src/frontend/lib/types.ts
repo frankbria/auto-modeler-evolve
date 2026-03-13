@@ -5,6 +5,11 @@ export interface Project {
   created_at: string
   updated_at: string
   status: "exploring" | "modeling" | "deployed"
+  // optional quick stats (returned by list endpoint)
+  dataset_filename?: string
+  dataset_rows?: number
+  model_count?: number
+  has_deployment?: boolean
 }
 
 export interface ColumnStat {

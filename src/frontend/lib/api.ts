@@ -35,6 +35,21 @@ export const api = {
     get: (id: string): Promise<Project> =>
       fetch(`${API_URL}/api/projects/${id}`).then((r) => r.json()),
 
+    update: (
+      id: string,
+      body: { name?: string; description?: string }
+    ): Promise<Project> =>
+      fetch(`${API_URL}/api/projects/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }).then((r) => r.json()),
+
+    duplicate: (id: string): Promise<Project> =>
+      fetch(`${API_URL}/api/projects/${id}/duplicate`, {
+        method: "POST",
+      }).then((r) => r.json()),
+
     delete: (id: string): Promise<Response> =>
       fetch(`${API_URL}/api/projects/${id}`, { method: "DELETE" }),
   },
@@ -152,6 +167,9 @@ export const api = {
       fetch(`${API_URL}/api/models/${modelRunId}/select`, {
         method: "POST",
       }).then((r) => r.json()),
+
+    downloadUrl: (modelRunId: string): string =>
+      `${API_URL}/api/models/${modelRunId}/download`,
   },
 
   validation: {

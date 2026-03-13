@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState, useCallback } from "react"
-import { useParams } from "next/navigation"
+import { useParams, useRouter } from "next/navigation"
 import { useDropzone } from "react-dropzone"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -25,15 +25,39 @@ import type {
   FeatureSuggestion,
   FeatureImportanceEntry,
   FeatureSetResult,
+  ChatMessage as ChatMsg,
 } from "@/lib/types"
 
 const WELCOME_MESSAGE =
   "Hi! I'm your data modeling assistant. Upload a CSV file to get started, or ask me anything about your data."
 
+function buildWelcomeBackMessage(projectName: string, messages: ChatMsg[]): string {
+  const msgCount = messages.length
+  // Find the last assistant message to summarise what was happening
+  const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant")
+  const snippet = lastAssistant?.content?.slice(0, 120).replace(/\n/g, " ") ?? ""
+  const lastActive = messages[messages.length - 1]?.timestamp
+  const sinceMin = lastActive
+    ? Math.round((Date.now() - new Date(lastActive).getTime()) / 60_000)
+    : 0
+  const sinceStr =
+    sinceMin < 60
+      ? `${sinceMin} minute${sinceMin !== 1 ? "s" : ""} ago`
+      : `${Math.round(sinceMin / 60)} hour${Math.round(sinceMin / 60) !== 1 ? "s" : ""} ago`
+
+  const context = snippet ? `Last we were: "${snippet}..."` : ""
+  return (
+    `Welcome back to **${projectName}**! You have ${msgCount} messages in this session (last active ${sinceStr}). ` +
+    (context ? `${context} ` : "") +
+    `What would you like to work on?`
+  )
+}
+
 type RightTab = "data" | "features" | "importance" | "models" | "validate" | "deploy"
 
 export default function ProjectWorkspace() {
   const params = useParams<{ id: string }>()
+  const router = useRouter()
   const projectId = params.id
 
   const {
@@ -57,6 +81,7 @@ export default function ProjectWorkspace() {
   const [uploading, setUploading] = useState(false)
   const [loadingProject, setLoadingProject] = useState(true)
   const [activeTab, setActiveTab] = useState<RightTab>("data")
+  const [rightPanelVisible, setRightPanelVisible] = useState(true)
 
   // Feature engineering state
   const [featureSuggestions, setFeatureSuggestions] = useState<FeatureSuggestion[]>([])
@@ -81,7 +106,20 @@ export default function ProjectWorkspace() {
         ])
         setCurrentProject(project)
         if (history?.messages && history.messages.length > 0) {
-          setMessages(history.messages)
+          const msgs: ChatMsg[] = history.messages
+          // Add a "welcome back" context message if this is a returning visit
+          // (history has real conversation, not just the initial greeting)
+          const hasConversation = msgs.some((m) => m.role === "user")
+          if (hasConversation) {
+            const welcomeBack: ChatMsg = {
+              role: "assistant",
+              content: buildWelcomeBackMessage(project.name, msgs),
+              timestamp: new Date().toISOString(),
+            }
+            setMessages([...msgs, welcomeBack])
+          } else {
+            setMessages(msgs)
+          }
         } else {
           setMessages([
             {
@@ -244,6 +282,8 @@ export default function ProjectWorkspace() {
             timestamp: new Date().toISOString(),
           })
         }
+        // Show right panel on upload if hidden
+        setRightPanelVisible(true)
       } catch {
         addMessage({
           role: "assistant",
@@ -274,241 +314,268 @@ export default function ProjectWorkspace() {
   }
 
   return (
-    <div className="flex h-[calc(100vh-3rem)]">
-      {/* Chat Panel */}
-      <div className="flex w-2/5 flex-col border-r">
-        <div className="border-b px-4 py-3">
-          <h2 className="text-sm font-semibold">
-            {currentProject?.name ?? "Chat"}
-          </h2>
-        </div>
-
-        <ScrollArea className="flex-1 overflow-y-auto">
-          <div className="flex flex-col gap-3 p-4">
-            {messages.map((msg, i) => (
-              <div
-                key={i}
-                className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
-              >
-                <div
-                  className={`max-w-[90%] rounded-lg px-3 py-2 text-sm whitespace-pre-wrap ${
-                    msg.role === "user"
-                      ? "bg-muted text-foreground"
-                      : "border bg-card text-card-foreground"
-                  }`}
-                >
-                  {msg.content}
-                  {isStreaming &&
-                    i === messages.length - 1 &&
-                    msg.role === "assistant" &&
-                    msg.content === "" && (
-                      <span className="inline-flex gap-1">
-                        <span className="animate-pulse">.</span>
-                        <span className="animate-pulse delay-100">.</span>
-                        <span className="animate-pulse delay-200">.</span>
-                      </span>
-                    )}
-                  {msg.chart && <ChartMessage spec={msg.chart} />}
-                </div>
-              </div>
-            ))}
-            <div ref={messagesEndRef} />
-          </div>
-        </ScrollArea>
-
-        <div className="border-t p-3">
-          <div className="flex gap-2">
-            <Input
-              placeholder="Ask about your data..."
-              value={chatInput}
-              onChange={(e) => setChatInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault()
-                  handleSendMessage()
-                }
-              }}
-              disabled={isStreaming}
-            />
-            <Button
-              onClick={handleSendMessage}
-              disabled={isStreaming || !chatInput.trim()}
-            >
-              Send
-            </Button>
-          </div>
+    <div className="flex h-screen flex-col">
+      {/* Top bar */}
+      <div className="flex h-10 shrink-0 items-center gap-3 border-b px-4">
+        <button
+          onClick={() => router.push("/")}
+          className="text-xs text-muted-foreground hover:text-foreground"
+        >
+          ← Projects
+        </button>
+        <span className="text-xs text-muted-foreground">/</span>
+        <span className="text-xs font-medium truncate">
+          {currentProject?.name ?? "Loading..."}
+        </span>
+        <div className="ml-auto">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 px-2 text-xs"
+            onClick={() => setRightPanelVisible((v) => !v)}
+          >
+            {rightPanelVisible ? "Hide panel" : "Show panel"}
+          </Button>
         </div>
       </div>
 
-      {/* Right Panel */}
-      <div className="flex w-3/5 flex-col overflow-hidden">
-        {currentDataset ? (
-          <>
-            {/* Tab Bar */}
-            <div className="flex border-b">
-              {(["data", "features", "importance", "models", "validate", "deploy"] as RightTab[]).map((tab) => {
-                const labels: Record<RightTab, string> = {
-                  data: "Data",
-                  features: "Features",
-                  importance: "Importance",
-                  models: "Models",
-                  validate: "Validate",
-                  deploy: "Deploy",
-                }
-                return (
-                  <button
-                    key={tab}
-                    onClick={() => setActiveTab(tab)}
-                    className={`px-4 py-2.5 text-xs font-medium capitalize transition-colors ${
-                      activeTab === tab
-                        ? "border-b-2 border-primary text-foreground"
-                        : "text-muted-foreground hover:text-foreground"
+      <div className="flex flex-1 overflow-hidden">
+        {/* Chat Panel */}
+        <div
+          className={`flex flex-col border-r ${rightPanelVisible ? "w-2/5" : "flex-1"} transition-all`}
+        >
+          <ScrollArea className="flex-1 overflow-y-auto">
+            <div className="flex flex-col gap-3 p-4">
+              {messages.map((msg, i) => (
+                <div
+                  key={i}
+                  className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+                >
+                  <div
+                    className={`max-w-[90%] rounded-lg px-3 py-2 text-sm whitespace-pre-wrap ${
+                      msg.role === "user"
+                        ? "bg-muted text-foreground"
+                        : "border bg-card text-card-foreground"
                     }`}
                   >
-                    {labels[tab]}
-                  </button>
-                )
-              })}
+                    {msg.content}
+                    {isStreaming &&
+                      i === messages.length - 1 &&
+                      msg.role === "assistant" &&
+                      msg.content === "" && (
+                        <span className="inline-flex gap-1">
+                          <span className="animate-pulse">.</span>
+                          <span className="animate-pulse delay-100">.</span>
+                          <span className="animate-pulse delay-200">.</span>
+                        </span>
+                      )}
+                    {msg.chart && <ChartMessage spec={msg.chart} />}
+                  </div>
+                </div>
+              ))}
+              <div ref={messagesEndRef} />
             </div>
+          </ScrollArea>
 
-            {activeTab === "data" && (
-              <DataPreviewPanel
-                filename={currentDataset.filename}
-                rowCount={currentDataset.row_count}
-                columnCount={currentDataset.column_count}
-                preview={dataPreview}
-                stats={columnStats}
-                insights={dataInsights}
+          <div className="border-t p-3">
+            <div className="flex gap-2">
+              <Input
+                placeholder="Ask about your data..."
+                value={chatInput}
+                onChange={(e) => setChatInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault()
+                    handleSendMessage()
+                  }
+                }}
+                disabled={isStreaming}
+              />
+              <Button
+                onClick={handleSendMessage}
+                disabled={isStreaming || !chatInput.trim()}
+              >
+                Send
+              </Button>
+            </div>
+          </div>
+        </div>
+
+        {/* Right Panel */}
+        {rightPanelVisible && (
+          <div className="flex w-3/5 flex-col overflow-hidden">
+            {currentDataset ? (
+              <>
+                {/* Tab Bar */}
+                <div className="flex border-b overflow-x-auto">
+                  {(["data", "features", "importance", "models", "validate", "deploy"] as RightTab[]).map((tab) => {
+                    const labels: Record<RightTab, string> = {
+                      data: "Data",
+                      features: "Features",
+                      importance: "Importance",
+                      models: "Models",
+                      validate: "Validate",
+                      deploy: "Deploy",
+                    }
+                    return (
+                      <button
+                        key={tab}
+                        onClick={() => setActiveTab(tab)}
+                        className={`shrink-0 px-4 py-2.5 text-xs font-medium capitalize transition-colors ${
+                          activeTab === tab
+                            ? "border-b-2 border-primary text-foreground"
+                            : "text-muted-foreground hover:text-foreground"
+                        }`}
+                      >
+                        {labels[tab]}
+                      </button>
+                    )
+                  })}
+                </div>
+
+                {activeTab === "data" && (
+                  <DataPreviewPanel
+                    filename={currentDataset.filename}
+                    rowCount={currentDataset.row_count}
+                    columnCount={currentDataset.column_count}
+                    preview={dataPreview}
+                    stats={columnStats}
+                    insights={dataInsights}
+                  />
+                )}
+
+                {activeTab === "features" && (
+                  <ScrollArea className="flex-1">
+                    <div className="p-4">
+                      <div className="mb-3">
+                        <h3 className="text-sm font-semibold">Feature Suggestions</h3>
+                        <p className="mt-0.5 text-xs text-muted-foreground">
+                          Select transformations to apply. Approved features will be added as new columns.
+                        </p>
+                      </div>
+                      {loadingFeatures ? (
+                        <p className="text-xs text-muted-foreground">Analyzing columns...</p>
+                      ) : (
+                        <FeatureSuggestionsPanel
+                          datasetId={currentDataset.id}
+                          suggestions={featureSuggestions}
+                          onApplied={handleFeatureApplied}
+                        />
+                      )}
+                    </div>
+                  </ScrollArea>
+                )}
+
+                {activeTab === "importance" && (
+                  <ScrollArea className="flex-1">
+                    <div className="p-4">
+                      <div className="mb-3">
+                        <h3 className="text-sm font-semibold">Feature Importance</h3>
+                        <p className="mt-0.5 text-xs text-muted-foreground">
+                          Select a column to predict and see which features are most useful.
+                        </p>
+                      </div>
+                      <div className="mb-4 flex gap-2">
+                        <Input
+                          placeholder="Target column (e.g. revenue)"
+                          value={targetColumn}
+                          onChange={(e) => setTargetColumn(e.target.value)}
+                          className="text-xs"
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") handleLoadImportance()
+                          }}
+                        />
+                        <Button
+                          size="sm"
+                          onClick={handleLoadImportance}
+                          disabled={!targetColumn.trim() || loadingImportance}
+                        >
+                          {loadingImportance ? "..." : "Analyze"}
+                        </Button>
+                      </div>
+                      {importanceFeatures.length > 0 && (
+                        <FeatureImportancePanel
+                          features={importanceFeatures}
+                          targetColumn={targetColumn}
+                          problemType={importanceProblemType}
+                        />
+                      )}
+                    </div>
+                  </ScrollArea>
+                )}
+
+                {activeTab === "validate" && currentDataset && (
+                  <div className="flex flex-1 flex-col overflow-hidden">
+                    <ValidationPanel
+                      projectId={projectId}
+                      selectedRunId={selectedModelRunId}
+                      algorithmName={selectedModelAlgorithm}
+                    />
+                  </div>
+                )}
+
+                {activeTab === "deploy" && currentDataset && (
+                  <ScrollArea className="flex-1">
+                    <div className="p-4">
+                      <div className="mb-3">
+                        <h3 className="text-sm font-semibold">Deploy Model</h3>
+                        <p className="mt-0.5 text-xs text-muted-foreground">
+                          One-click deployment as a live prediction API + shareable dashboard.
+                        </p>
+                      </div>
+                      <DeploymentPanel
+                        projectId={projectId}
+                        selectedRunId={selectedModelRunId}
+                        algorithmName={selectedModelAlgorithm}
+                        onDeployed={(dep) => {
+                          addMessage({
+                            role: "assistant",
+                            content: `Your model is live! Share this link with anyone: ${dep.dashboard_url}\n\nThey can fill in values and get instant predictions — no code required. Developers can also use the API endpoint directly: POST ${dep.endpoint_path}`,
+                            timestamp: new Date().toISOString(),
+                          })
+                        }}
+                      />
+                    </div>
+                  </ScrollArea>
+                )}
+
+                {activeTab === "models" && currentDataset && (
+                  <ScrollArea className="flex-1">
+                    <div className="p-4">
+                      <div className="mb-3">
+                        <h3 className="text-sm font-semibold">Model Training</h3>
+                        <p className="mt-0.5 text-xs text-muted-foreground">
+                          Train and compare ML models on your dataset. Make sure you have set a target column in the Features tab first.
+                        </p>
+                      </div>
+                      <ModelTrainingPanel
+                        projectId={projectId}
+                        onModelSelected={(runId, algorithm) => {
+                          setSelectedModelRunId(runId)
+                          setSelectedModelAlgorithm(algorithm)
+                          addMessage({
+                            role: "assistant",
+                            content: `I have selected this model for your project. You can now go to the **Validate** tab to run cross-validation, see error analysis, and understand feature importance. Or we can deploy it as a live prediction API whenever you're ready.`,
+                            timestamp: new Date().toISOString(),
+                          })
+                        }}
+                        onModelDownload={(runId) => {
+                          window.open(api.models.downloadUrl(runId), "_blank")
+                        }}
+                      />
+                    </div>
+                  </ScrollArea>
+                )}
+              </>
+            ) : (
+              <UploadPanel
+                getRootProps={getRootProps}
+                getInputProps={getInputProps}
+                isDragActive={isDragActive}
+                uploading={uploading}
               />
             )}
-
-            {activeTab === "features" && (
-              <ScrollArea className="flex-1">
-                <div className="p-4">
-                  <div className="mb-3">
-                    <h3 className="text-sm font-semibold">Feature Suggestions</h3>
-                    <p className="mt-0.5 text-xs text-muted-foreground">
-                      Select transformations to apply. Approved features will be added as new columns.
-                    </p>
-                  </div>
-                  {loadingFeatures ? (
-                    <p className="text-xs text-muted-foreground">Analyzing columns...</p>
-                  ) : (
-                    <FeatureSuggestionsPanel
-                      datasetId={currentDataset.id}
-                      suggestions={featureSuggestions}
-                      onApplied={handleFeatureApplied}
-                    />
-                  )}
-                </div>
-              </ScrollArea>
-            )}
-
-            {activeTab === "importance" && (
-              <ScrollArea className="flex-1">
-                <div className="p-4">
-                  <div className="mb-3">
-                    <h3 className="text-sm font-semibold">Feature Importance</h3>
-                    <p className="mt-0.5 text-xs text-muted-foreground">
-                      Select a column to predict and see which features are most useful.
-                    </p>
-                  </div>
-                  <div className="mb-4 flex gap-2">
-                    <Input
-                      placeholder="Target column (e.g. revenue)"
-                      value={targetColumn}
-                      onChange={(e) => setTargetColumn(e.target.value)}
-                      className="text-xs"
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") handleLoadImportance()
-                      }}
-                    />
-                    <Button
-                      size="sm"
-                      onClick={handleLoadImportance}
-                      disabled={!targetColumn.trim() || loadingImportance}
-                    >
-                      {loadingImportance ? "..." : "Analyze"}
-                    </Button>
-                  </div>
-                  {importanceFeatures.length > 0 && (
-                    <FeatureImportancePanel
-                      features={importanceFeatures}
-                      targetColumn={targetColumn}
-                      problemType={importanceProblemType}
-                    />
-                  )}
-                </div>
-              </ScrollArea>
-            )}
-
-            {activeTab === "validate" && currentDataset && (
-              <div className="flex flex-1 flex-col overflow-hidden">
-                <ValidationPanel
-                  projectId={projectId}
-                  selectedRunId={selectedModelRunId}
-                  algorithmName={selectedModelAlgorithm}
-                />
-              </div>
-            )}
-
-            {activeTab === "deploy" && currentDataset && (
-              <ScrollArea className="flex-1">
-                <div className="p-4">
-                  <div className="mb-3">
-                    <h3 className="text-sm font-semibold">Deploy Model</h3>
-                    <p className="mt-0.5 text-xs text-muted-foreground">
-                      One-click deployment as a live prediction API + shareable dashboard.
-                    </p>
-                  </div>
-                  <DeploymentPanel
-                    projectId={projectId}
-                    selectedRunId={selectedModelRunId}
-                    algorithmName={selectedModelAlgorithm}
-                    onDeployed={(dep) => {
-                      addMessage({
-                        role: "assistant",
-                        content: `Your model is live! Share this link with anyone: ${dep.dashboard_url}\n\nThey can fill in values and get instant predictions — no code required. Developers can also use the API endpoint directly: POST ${dep.endpoint_path}`,
-                        timestamp: new Date().toISOString(),
-                      })
-                    }}
-                  />
-                </div>
-              </ScrollArea>
-            )}
-
-            {activeTab === "models" && currentDataset && (
-              <ScrollArea className="flex-1">
-                <div className="p-4">
-                  <div className="mb-3">
-                    <h3 className="text-sm font-semibold">Model Training</h3>
-                    <p className="mt-0.5 text-xs text-muted-foreground">
-                      Train and compare ML models on your dataset. Make sure you have set a target column in the Features tab first.
-                    </p>
-                  </div>
-                  <ModelTrainingPanel
-                    projectId={projectId}
-                    onModelSelected={(runId, algorithm) => {
-                      setSelectedModelRunId(runId)
-                      setSelectedModelAlgorithm(algorithm)
-                      addMessage({
-                        role: "assistant",
-                        content: `I have selected this model for your project. You can now go to the **Validate** tab to run cross-validation, see error analysis, and understand feature importance. Or we can deploy it as a live prediction API whenever you're ready.`,
-                        timestamp: new Date().toISOString(),
-                      })
-                    }}
-                  />
-                </div>
-              </ScrollArea>
-            )}
-          </>
-        ) : (
-          <UploadPanel
-            getRootProps={getRootProps}
-            getInputProps={getInputProps}
-            isDragActive={isDragActive}
-            uploading={uploading}
-          />
+          </div>
         )}
       </div>
     </div>
@@ -546,6 +613,10 @@ function UploadPanel({
             <p className="text-sm font-medium">Drop your CSV here</p>
             <p className="mt-1 text-xs text-muted-foreground">
               or click to browse
+            </p>
+            <p className="mt-3 text-xs text-muted-foreground max-w-xs text-center">
+              AutoModeler will profile your data, suggest features, train models,
+              and help you deploy — all through conversation.
             </p>
           </>
         )}

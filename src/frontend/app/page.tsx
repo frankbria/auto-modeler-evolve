@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { api } from "@/lib/api"
 import { useAppStore } from "@/lib/store"
+import type { Project } from "@/lib/types"
 
 export default function HomePage() {
   const router = useRouter()
@@ -22,6 +23,8 @@ export default function HomePage() {
   const [newName, setNewName] = useState("")
   const [creating, setCreating] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [renamingId, setRenamingId] = useState<string | null>(null)
+  const [renameValue, setRenameValue] = useState("")
 
   useEffect(() => {
     api.projects
@@ -44,6 +47,35 @@ export default function HomePage() {
     }
   }
 
+  async function handleDelete(id: string, e: React.MouseEvent) {
+    e.stopPropagation()
+    if (!confirm("Delete this project? This cannot be undone.")) return
+    await api.projects.delete(id)
+    setProjects(projects.filter((p) => p.id !== id))
+  }
+
+  async function handleDuplicate(id: string, e: React.MouseEvent) {
+    e.stopPropagation()
+    const copy = await api.projects.duplicate(id)
+    setProjects([...projects, copy])
+  }
+
+  function startRename(project: Project, e: React.MouseEvent) {
+    e.stopPropagation()
+    setRenamingId(project.id)
+    setRenameValue(project.name)
+  }
+
+  async function commitRename(id: string) {
+    if (!renameValue.trim()) {
+      setRenamingId(null)
+      return
+    }
+    const updated = await api.projects.update(id, { name: renameValue.trim() })
+    setProjects(projects.map((p) => (p.id === id ? { ...p, ...updated } : p)))
+    setRenamingId(null)
+  }
+
   function statusVariant(status: string) {
     switch (status) {
       case "deployed":
@@ -63,12 +95,18 @@ export default function HomePage() {
     })
   }
 
+  function formatRows(n: number) {
+    if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M rows`
+    if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K rows`
+    return `${n} rows`
+  }
+
   return (
     <div className="mx-auto max-w-3xl px-6 py-12">
       <div className="mb-8">
         <h1 className="text-3xl font-bold tracking-tight">AutoModeler</h1>
         <p className="mt-1 text-muted-foreground">
-          AI-powered data modeling
+          AI-powered data modeling — upload a spreadsheet, get predictions
         </p>
       </div>
 
@@ -81,6 +119,10 @@ export default function HomePage() {
               onChange={(e) => setNewName(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter") handleCreate()
+                if (e.key === "Escape") {
+                  setShowForm(false)
+                  setNewName("")
+                }
               }}
               autoFocus
             />
@@ -105,9 +147,20 @@ export default function HomePage() {
       {loading ? (
         <p className="text-sm text-muted-foreground">Loading projects...</p>
       ) : projects.length === 0 ? (
-        <p className="text-sm text-muted-foreground">
-          No projects yet. Create your first project above.
-        </p>
+        <div className="rounded-xl border border-dashed p-10 text-center">
+          <p className="text-sm font-medium">No projects yet</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Create a project to get started. Upload a CSV and AutoModeler will
+            guide you from data to a live prediction API — no code required.
+          </p>
+          <Button
+            className="mt-4"
+            variant="outline"
+            onClick={() => setShowForm(true)}
+          >
+            Create your first project
+          </Button>
+        </div>
       ) : (
         <div className="grid gap-3">
           {projects.map((project) => (
@@ -116,21 +169,82 @@ export default function HomePage() {
               className="cursor-pointer transition-colors hover:bg-muted/50"
               onClick={() => router.push(`/project/${project.id}`)}
             >
-              <CardHeader>
+              <CardHeader className="pb-2">
                 <CardTitle className="flex items-center gap-2">
-                  {project.name}
+                  {renamingId === project.id ? (
+                    <Input
+                      value={renameValue}
+                      onChange={(e) => setRenameValue(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") commitRename(project.id)
+                        if (e.key === "Escape") setRenamingId(null)
+                      }}
+                      onBlur={() => commitRename(project.id)}
+                      onClick={(e) => e.stopPropagation()}
+                      autoFocus
+                      className="h-7 text-sm font-semibold"
+                    />
+                  ) : (
+                    <span className="truncate">{project.name}</span>
+                  )}
                   <Badge variant={statusVariant(project.status)}>
                     {project.status}
                   </Badge>
+                  {project.has_deployment && (
+                    <Badge variant="default" className="text-xs">
+                      live
+                    </Badge>
+                  )}
                 </CardTitle>
                 {project.description && (
                   <CardDescription>{project.description}</CardDescription>
                 )}
               </CardHeader>
               <CardContent>
-                <p className="text-xs text-muted-foreground">
-                  Created {formatDate(project.created_at)}
-                </p>
+                <div className="flex items-center justify-between">
+                  <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
+                    <span>Modified {formatDate(project.updated_at)}</span>
+                    {project.dataset_filename && (
+                      <span>
+                        {project.dataset_filename}
+                        {project.dataset_rows != null &&
+                          ` · ${formatRows(project.dataset_rows)}`}
+                      </span>
+                    )}
+                    {(project.model_count ?? 0) > 0 && (
+                      <span>
+                        {project.model_count} model
+                        {project.model_count !== 1 ? "s" : ""} trained
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex shrink-0 gap-1">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-xs"
+                      onClick={(e) => startRename(project, e)}
+                    >
+                      Rename
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-xs"
+                      onClick={(e) => handleDuplicate(project.id, e)}
+                    >
+                      Duplicate
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-xs text-destructive hover:text-destructive"
+                      onClick={(e) => handleDelete(project.id, e)}
+                    >
+                      Delete
+                    </Button>
+                  </div>
+                </div>
               </CardContent>
             </Card>
           ))}
