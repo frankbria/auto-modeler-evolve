@@ -114,7 +114,11 @@ def _numeric_distribution(series: pd.Series) -> dict:
     """Histogram bins for a numeric column (up to 20 bins)."""
     if series.empty:
         return {"bins": [], "counts": []}
-    counts, bin_edges = np.histogram(series, bins=min(20, series.nunique()))
+    # Drop inf values so np.histogram doesn't crash on unbounded range
+    finite_series = series[np.isfinite(series)]
+    if finite_series.empty:
+        return {"bins": [], "counts": []}
+    counts, bin_edges = np.histogram(finite_series, bins=min(20, finite_series.nunique()))
     bins = [round(float(e), 4) for e in bin_edges[:-1]]
     return {"bins": bins, "counts": [int(c) for c in counts]}
 

@@ -1,6 +1,8 @@
 import json
+import math
 import shutil
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile
@@ -18,6 +20,20 @@ router = APIRouter(prefix="/api/data", tags=["data"])
 
 UPLOAD_DIR = Path(__file__).parent.parent / "data" / "uploads"
 SAMPLE_CSV = Path(__file__).parent.parent / "data" / "sample" / "sample_sales.csv"
+
+
+def _sanitize_rows(rows: list[dict]) -> list[dict[str, Any]]:
+    """Replace NaN/inf floats with None so JSON serialization never crashes."""
+    clean = []
+    for row in rows:
+        safe: dict[str, Any] = {}
+        for k, v in row.items():
+            if isinstance(v, float) and (math.isnan(v) or math.isinf(v)):
+                safe[k] = None
+            else:
+                safe[k] = v
+        clean.append(safe)
+    return clean
 
 
 # ---------------------------------------------------------------------------
@@ -65,7 +81,7 @@ def upload_csv(
     session.commit()
     session.refresh(dataset)
 
-    preview_rows = df.head(10).to_dict(orient="records")
+    preview_rows = _sanitize_rows(df.head(10).to_dict(orient="records"))
 
     # Inject a proactive bot message into the project conversation
     try:
@@ -107,7 +123,7 @@ def get_preview(dataset_id: str, session: Session = Depends(get_session)):
         raise HTTPException(status_code=404, detail="Dataset file not found on disk")
 
     df = pd.read_csv(file_path)
-    preview_rows = df.head(10).to_dict(orient="records")
+    preview_rows = _sanitize_rows(df.head(10).to_dict(orient="records"))
     column_stats = json.loads(dataset.columns) if dataset.columns else []
 
     insights = []
@@ -214,7 +230,7 @@ def load_sample_dataset(body: SampleLoadRequest, session: Session = Depends(get_
     ).first()
     if existing:
         df_existing = pd.read_csv(existing.file_path)
-        preview_rows = df_existing.head(10).to_dict(orient="records")
+        preview_rows = _sanitize_rows(df_existing.head(10).to_dict(orient="records"))
         column_stats = json.loads(existing.columns) if existing.columns else []
         return {
             "dataset_id": existing.id,
@@ -252,7 +268,7 @@ def load_sample_dataset(body: SampleLoadRequest, session: Session = Depends(get_
     session.commit()
     session.refresh(dataset)
 
-    preview_rows = df.head(10).to_dict(orient="records")
+    preview_rows = _sanitize_rows(df.head(10).to_dict(orient="records"))
 
     # Inject a proactive bot message into the project conversation
     try:
