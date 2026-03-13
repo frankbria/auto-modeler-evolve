@@ -24,6 +24,7 @@ import db as _db
 from chat.narration import append_bot_message_to_conversation, narrate_training_complete
 from core.feature_engine import apply_transformations
 from core.report_generator import generate_model_report
+from core.chart_builder import build_model_comparison_radar
 from core.trainer import (
     CLASSIFICATION_ALGORITHMS,
     REGRESSION_ALGORITHMS,
@@ -431,6 +432,57 @@ def compare_models(project_id: str, session: Session = Depends(get_session)):
         "models": models,
         "recommendation": recommendation,
     }
+
+
+# ---------------------------------------------------------------------------
+# 4b. Model comparison radar chart
+# ---------------------------------------------------------------------------
+
+@router.get("/api/models/{project_id}/comparison-radar")
+def comparison_radar(project_id: str, session: Session = Depends(get_session)):
+    """Return a radar chart spec comparing all completed model runs.
+
+    Returns 204 No Content when fewer than 2 models are done (radar needs 2+).
+    """
+    project = session.get(Project, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    completed_runs = session.exec(
+        select(ModelRun).where(
+            ModelRun.project_id == project_id,
+            ModelRun.status == "done",
+        )
+    ).all()
+
+    dataset = session.exec(
+        select(Dataset).where(Dataset.project_id == project_id)
+    ).first()
+    feature_set = None
+    if dataset:
+        feature_set = session.exec(
+            select(FeatureSet).where(
+                FeatureSet.dataset_id == dataset.id,
+                FeatureSet.is_active == True,  # noqa: E712
+            )
+        ).first()
+
+    problem_type = (feature_set.problem_type if feature_set else None) or "regression"
+
+    models_data = [
+        {
+            "algorithm": r.algorithm,
+            "run_id": r.id,
+            "metrics": json.loads(r.metrics) if r.metrics else {},
+        }
+        for r in completed_runs
+    ]
+
+    chart = build_model_comparison_radar(models_data, problem_type)
+    if chart is None:
+        return Response(status_code=204)
+
+    return {"project_id": project_id, "problem_type": problem_type, "chart": chart}
 
 
 # ---------------------------------------------------------------------------

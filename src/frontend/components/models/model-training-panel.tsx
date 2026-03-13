@@ -1,11 +1,20 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
+import {
+  RadarChart,
+  Radar,
+  PolarGrid,
+  PolarAngleAxis,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+} from "recharts"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { api } from "@/lib/api"
-import type { ModelRecommendation, ModelRun, ModelComparison, ModelMetrics } from "@/lib/types"
+import type { ChartSpec, ModelRecommendation, ModelRun, ModelComparison, ModelMetrics } from "@/lib/types"
 
 interface ModelTrainingPanelProps {
   projectId: string
@@ -30,6 +39,7 @@ export function ModelTrainingPanel({ projectId, onModelSelected, onModelDownload
   const [selectedAlgos, setSelectedAlgos] = useState<Set<string>>(new Set())
   const [runs, setRuns] = useState<ModelRun[]>([])
   const [comparison, setComparison] = useState<ModelComparison | null>(null)
+  const [radarChart, setRadarChart] = useState<ChartSpec | null>(null)
   const [loading, setLoading] = useState(true)
   const [training, setTraining] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -50,10 +60,18 @@ export function ModelTrainingPanel({ projectId, onModelSelected, onModelDownload
         // Restore any runs from a previous training session
         if (runsData.runs && runsData.runs.length > 0) {
           setRuns(runsData.runs)
-          // Load comparison summary if there are completed runs
+          // Load comparison summary and radar if there are completed runs
           const hasDone = runsData.runs.some((r: ModelRun) => r.status === "done")
           if (hasDone) {
-            api.models.compare(projectId).then(setComparison).catch(() => {})
+            Promise.all([
+              api.models.compare(projectId),
+              api.models.comparisonRadar(projectId),
+            ])
+              .then(([cmp, radar]) => {
+                setComparison(cmp)
+                setRadarChart(radar?.chart ?? null)
+              })
+              .catch(() => {})
           }
         }
       })
@@ -73,12 +91,14 @@ export function ModelTrainingPanel({ projectId, onModelSelected, onModelDownload
         const event = JSON.parse(e.data)
         if (event.type === "all_done") {
           es.close()
-          const [data, cmp] = await Promise.all([
+          const [data, cmp, radar] = await Promise.all([
             api.models.runs(projectId),
             api.models.compare(projectId),
+            api.models.comparisonRadar(projectId),
           ])
           setRuns(data.runs)
           setComparison(cmp)
+          setRadarChart(radar?.chart ?? null)
         } else if (event.type === "status" || event.type === "done" || event.type === "failed") {
           setRuns((prev) =>
             prev.map((r) =>
@@ -250,6 +270,47 @@ export function ModelTrainingPanel({ projectId, onModelSelected, onModelDownload
           </p>
         </div>
       )}
+
+      {/* Radar chart — only when 2+ models are compared */}
+      {radarChart && radarChart.data.length > 0 && (
+        <ModelRadarChart chart={radarChart} />
+      )}
+    </div>
+  )
+}
+
+
+// Palette for radar polygons — one color per model
+const RADAR_COLORS = ["#6366f1", "#f59e0b", "#10b981", "#ef4444", "#8b5cf6"]
+
+function ModelRadarChart({ chart }: { chart: ChartSpec }) {
+  return (
+    <div>
+      <h4 className="mb-2 text-xs font-semibold">{chart.title}</h4>
+      <p className="mb-2 text-[11px] text-muted-foreground">
+        Normalized 0–1 (higher = better on every axis)
+      </p>
+      <ResponsiveContainer width="100%" height={220}>
+        <RadarChart data={chart.data}>
+          <PolarGrid />
+          <PolarAngleAxis dataKey={chart.x_key} tick={{ fontSize: 10 }} />
+          <Tooltip
+            contentStyle={{ fontSize: 11 }}
+            formatter={(v) => (typeof v === "number" ? `${(v * 100).toFixed(0)}%` : String(v))}
+          />
+          <Legend wrapperStyle={{ fontSize: 10 }} />
+          {chart.y_keys.map((key, i) => (
+            <Radar
+              key={key}
+              name={key}
+              dataKey={key}
+              stroke={RADAR_COLORS[i % RADAR_COLORS.length]}
+              fill={RADAR_COLORS[i % RADAR_COLORS.length]}
+              fillOpacity={0.15}
+            />
+          ))}
+        </RadarChart>
+      </ResponsiveContainer>
     </div>
   )
 }

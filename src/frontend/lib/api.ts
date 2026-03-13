@@ -173,6 +173,11 @@ export const api = {
     compare: (projectId: string): Promise<ModelComparison> =>
       fetch(`${API_URL}/api/models/${projectId}/compare`).then((r) => r.json()),
 
+    comparisonRadar: (projectId: string): Promise<{ chart: import("./types").ChartSpec } | null> =>
+      fetch(`${API_URL}/api/models/${projectId}/comparison-radar`).then((r) =>
+        r.status === 204 ? null : r.json()
+      ),
+
     select: (modelRunId: string): Promise<ModelRun> =>
       fetch(`${API_URL}/api/models/${modelRunId}/select`, {
         method: "POST",

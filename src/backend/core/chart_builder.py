@@ -265,6 +265,89 @@ def build_correlation_heatmap(
     }
 
 
+def build_model_comparison_radar(
+    models: list[dict],
+    problem_type: str,
+) -> dict[str, Any] | None:
+    """Build a radar chart spec for comparing trained models side-by-side.
+
+    Each model becomes a colored polygon on the radar. Metrics are normalized
+    to [0, 1] so all spokes are comparable (higher always means better).
+
+    Normalization rules:
+      - r2, accuracy, f1, precision, recall  → already 0-1, clip at 0
+      - mae, rmse                             → inverted: 1 - value/max_value
+                                                (worst model → 0, best → 1)
+
+    Args:
+        models:       list of {"algorithm": str, "metrics": dict, "run_id": str}
+        problem_type: "regression" or "classification"
+
+    Returns None if fewer than 2 done models are provided (radar needs comparison).
+    """
+    done = [m for m in models if m.get("metrics") and m.get("algorithm")]
+    if len(done) < 2:
+        return None
+
+    if problem_type == "regression":
+        higher_is_better = ["r2"]
+        lower_is_better = ["mae", "rmse"]
+        metric_labels = {"r2": "R²", "mae": "MAE Score", "rmse": "RMSE Score"}
+    else:
+        higher_is_better = ["accuracy", "f1", "precision", "recall"]
+        lower_is_better = []
+        metric_labels = {
+            "accuracy": "Accuracy",
+            "f1": "F1 Score",
+            "precision": "Precision",
+            "recall": "Recall",
+        }
+
+    all_metrics = list(metric_labels.keys())
+
+    # Gather raw values per metric across all models
+    raw: dict[str, list[float]] = {m: [] for m in all_metrics}
+    for model in done:
+        metrics = model["metrics"]
+        for key in all_metrics:
+            raw[key].append(float(metrics.get(key, 0.0) or 0.0))
+
+    # Normalize to [0, 1]
+    def _normalize(key: str, values: list[float]) -> list[float]:
+        if key in lower_is_better:
+            mx = max(values) if values else 1.0
+            if mx == 0:
+                return [1.0] * len(values)
+            return [max(0.0, 1.0 - v / mx) for v in values]
+        else:
+            return [max(0.0, min(1.0, v)) for v in values]
+
+    normalized: dict[str, list[float]] = {
+        key: _normalize(key, raw[key]) for key in all_metrics
+    }
+
+    # Build radar data: one dict per metric-spoke
+    data = []
+    for metric_key in all_metrics:
+        entry: dict[str, Any] = {"metric": metric_labels[metric_key]}
+        for i, model in enumerate(done):
+            algo_name = model["algorithm"].replace("_", " ").title()
+            entry[algo_name] = round(normalized[metric_key][i], 3)
+        data.append(entry)
+
+    algo_names = [m["algorithm"].replace("_", " ").title() for m in done]
+
+    return {
+        "chart_type": "radar",
+        "title": "Model Comparison",
+        "data": data,
+        "x_key": "metric",
+        "y_keys": algo_names,
+        "x_label": "Metric",
+        "y_label": "Normalized Score (higher = better)",
+    }
+
+
 def _jsonify(value: Any) -> Any:
     """Convert numpy scalars and NaN to JSON-safe Python types."""
     if isinstance(value, float) and np.isnan(value):
