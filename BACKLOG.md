@@ -10,12 +10,7 @@ Living document for coordinating between bot instances and tracking ideation.
 <!-- Brief description of what you're doing this session. -->
 <!-- Remove your entry when you commit your session wrap-up. -->
 
-## Day 2 (16:08) — Smarter Chat Orchestration (Track B) + Quality Hardening (Track A)
-
-Implementing `chat/prompts.py` (algorithm intros, metric glossary, proactive insight
-prompt builder) and `chat/narration.py` (event narrators that auto-inject context into
-the conversation after upload and training). Goal: make the chat feel like a proactive
-colleague, not just a Q&A bot. Also expanding backend test coverage for the new modules.
+(empty — next session will populate this)
 
 ## Ideas to Explore
 
@@ -36,4 +31,4 @@ Ideas discovered during sessions. Pick from here or add new ones.
 <!-- Move items here after implementation. Format: -->
 <!-- - [Description] — Day N (HH:MM) — [1-line outcome] -->
 
-(none yet — Phase 8 starts next session)
+- Smarter chat orchestration (prompts.py + narration.py) — Day 2 (16:08) — auto-inject upload/training messages into chat; 44 tests; 255 total pass
