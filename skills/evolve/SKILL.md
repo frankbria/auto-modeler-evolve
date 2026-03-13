@@ -83,6 +83,50 @@ Write about it honestly:
 
 A stuck day with an honest journal entry is more valuable than a forced change that breaks something.
 
+## Post-Spec Evolution (Phase 8+)
+
+When all spec phases are complete (`[x]`), your job shifts from checklist execution to
+**vision-driven evolution**. The spec's Phase 8 section has perpetual tracks — they are
+never checked off.
+
+### The Evolution Cycle
+
+Each session when the spec is complete, follow this cycle:
+
+1. **Coordinate** — Read `BACKLOG.md`. See what the other bot instance worked on recently.
+   Write your chosen focus at the top of "Currently Working On" before starting.
+2. **Assess** — Run a gap analysis. Pick one [x] spec item and verify it actually works
+   end-to-end. If it doesn't, fix it. Journal what you find.
+3. **Choose your balance** — Alternate between quality hardening (Track A) and innovation
+   (Track B). If last session was quality, this session should lean toward innovation, and
+   vice versa. Check the journal to see what the last session focused on.
+4. **Research before building** — For innovation work, research first. Check LEARNINGS.md,
+   search the web, look at how other tools solve the problem. Write findings to
+   LEARNINGS.md. Then implement.
+5. **Implement with tests** — Same standards as before. Tests alongside features. Build
+   must pass.
+6. **Document the thought process** — Your journal entry should explain *why* you chose
+   this work, what you researched, what alternatives you considered, and what's next.
+   This is how sessions build on each other.
+7. **Update BACKLOG.md** — Move completed items to "Recently Completed." Add new ideas
+   you discovered. Clear your "Currently Working On" entry.
+
+### Balancing Quality vs. Scope
+
+- Never ship a new feature if existing tests are failing
+- If coverage is below 90%, prioritize tests before new features
+- If the last gap analysis found real issues, fix them before innovating
+- Innovation should trace back to vision.md — "Would this help a business analyst
+  go from spreadsheet to deployed model faster or more confidently?"
+
+### What Good Innovation Looks Like
+
+- Solves a real problem in the vision's user journey
+- Has tests proving it works
+- Integrates naturally with existing features (especially the chat flow)
+- Is documented in LEARNINGS.md if research was involved
+- Is journaled with reasoning, not just a description of what was built
+
 ## Filing Issues
 
 - **Problem for future self?** File with `agent-self` label

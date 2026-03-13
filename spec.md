@@ -231,6 +231,69 @@ guides them forward through the natural flow.
       horizontal tab scroll; mobile Chat/Data toggle in topbar switches panels full-screen
       on small viewports; side-by-side layout preserved on md+ breakpoint.
 
+### Phase 8: Continuous Evolution (Perpetual)
+> Goal: Move beyond the initial spec. Research, ideate, and implement — guided by the
+> vision, not a fixed checklist. Balance quality hardening with scope expansion.
+>
+> These items are **never checked off**. Each session, pick work from one or more of
+> these tracks based on what will have the most impact right now.
+
+#### Track A — Quality Hardening
+
+- [ ] **Gap analysis** — Compare what spec.md claims is done against the actual code.
+      Does every [x] item truly work end-to-end? Are there shallow implementations that
+      pass tests but don't deliver the full user experience described in the spec? Fix
+      discrepancies and journal what you find.
+- [ ] **E2E test build-out** — Expand Playwright coverage to the full user journey:
+      upload CSV → explore data → ask questions → get charts → approve features → train
+      models → validate → deploy → predict. Each critical path should have its own test
+      file. Target: every spec phase has at least one E2E scenario.
+- [ ] **Unit test coverage to 100%** — Identify uncovered backend modules and frontend
+      components. Write targeted tests for edge cases, error paths, and boundary
+      conditions. Use `pytest --cov` and Jest coverage reports to find gaps.
+- [ ] **Integration tests** — Build tests that exercise real cross-boundary flows:
+      upload → profile → chat about data (hits Claude API mock or stub) → train → deploy
+      → predict. These complement E2E by testing backend flows without browser overhead.
+- [ ] **Self-demo capability** — Build a scripted demo that can run autonomously to
+      prove the platform works. Upload sample data, run through the full workflow, capture
+      screenshots or output at each stage. This becomes the smoke test and the showcase.
+- [ ] **Error resilience audit** — Systematically test failure modes: corrupt CSV,
+      empty dataset, single-row data, all-null columns, model training failure, deployment
+      of a terrible model. Verify every failure produces a helpful user-facing message.
+- [ ] **Performance baseline** — Measure and record response times for key operations
+      (upload profiling, model training, prediction). Establish baselines so future
+      changes can be compared. Identify and fix any obvious bottlenecks.
+
+#### Track B — Vision-Driven Innovation
+
+- [ ] **Research external models and data sources** — Investigate integrating external
+      ML models (XGBoost, LightGBM, neural networks via scikit-learn MLPClassifier),
+      additional data connectors (Excel, Google Sheets, database connections), or
+      pre-trained models for common use cases (sales forecasting, churn prediction).
+      Document findings in LEARNINGS.md before implementing.
+- [ ] **Smarter chat orchestration** — Evolve the conversation AI: richer prompt
+      templates (prompts.py), narrative explanations (narration.py), proactive insights
+      ("I noticed your R² dropped when I removed feature X — want to add it back?"),
+      and multi-turn reasoning about model selection trade-offs.
+- [ ] **Advanced visualizations** — Heat maps for correlation matrices, interactive
+      scatter plots with brushing/linking, time-series decomposition charts, model
+      comparison radar charts. Each viz should be triggered naturally through chat.
+- [ ] **Data transformation pipeline** — Support for multi-step, reorderable
+      transformation pipelines with undo. Let users build complex feature engineering
+      flows through conversation.
+- [ ] **Multi-dataset support** — Allow joining/merging multiple CSVs within a project.
+      The chat guides the user through selecting join keys and resolving conflicts.
+- [ ] **Template projects** — Pre-built project templates for common use cases (sales
+      forecasting, customer churn, demand prediction) with sample data, pre-configured
+      features, and guided conversation flows.
+
+#### Track C — Coordination
+
+- [ ] **Update BACKLOG.md** — Before starting work, check BACKLOG.md for what the other
+      bot instance is working on or has recently explored. Write your chosen focus at the
+      top before implementing. After the session, move completed items to the "Done" section
+      and add any new ideas you discovered.
+
 ---
 
 ## Data Model

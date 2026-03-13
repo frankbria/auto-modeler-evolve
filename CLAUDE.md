@@ -106,7 +106,8 @@ These files are protected and must never be modified by the agent:
 | File | Purpose | Mutability |
 |------|---------|-----------|
 | vision.md | North star | Human-edited |
-| spec.md | Blueprint with checklist | Human + agent (checkboxes) |
+| spec.md | Blueprint with checklist (Phase 8+ items are perpetual) | Human + agent (checkboxes) |
 | JOURNAL.md | Session log | Append-only (top) |
 | LEARNINGS.md | Cached knowledge | Append (new sections) |
+| BACKLOG.md | Evolution coordination + ideation board | Agent-managed (read before, update after) |
 | DAY_COUNT | Evolution day | Written each run |
