@@ -49,28 +49,51 @@ export function ModelTrainingPanel({ projectId, onModelSelected, onModelDownload
       .finally(() => setLoading(false))
   }, [projectId])
 
-  // Poll for run status while any are in progress
+  // Subscribe to SSE training stream while any runs are in progress
   useEffect(() => {
     const inProgress = runs.some((r) => r.status === "pending" || r.status === "training")
     if (!inProgress) return
 
-    const interval = setInterval(async () => {
-      try {
-        const data = await api.models.runs(projectId)
-        setRuns(data.runs)
+    const es = new EventSource(api.models.trainingStreamUrl(projectId))
 
-        // When all done, load comparison
-        const allDone = data.runs.every((r) => r.status === "done" || r.status === "failed")
-        if (allDone) {
-          const cmp = await api.models.compare(projectId)
+    es.onmessage = async (e) => {
+      try {
+        const event = JSON.parse(e.data)
+        if (event.type === "all_done") {
+          es.close()
+          const [data, cmp] = await Promise.all([
+            api.models.runs(projectId),
+            api.models.compare(projectId),
+          ])
+          setRuns(data.runs)
           setComparison(cmp)
+        } else if (event.type === "status" || event.type === "done" || event.type === "failed") {
+          setRuns((prev) =>
+            prev.map((r) =>
+              r.id === event.run_id
+                ? {
+                    ...r,
+                    status: event.status,
+                    metrics: event.metrics ?? r.metrics,
+                    summary: event.summary ?? r.summary,
+                    training_duration_ms: event.training_duration_ms ?? r.training_duration_ms,
+                    error_message: event.error ?? r.error_message,
+                  }
+                : r
+            )
+          )
         }
       } catch {
-        // silent
+        // malformed event — ignore
       }
-    }, 1500)
+    }
 
-    return () => clearInterval(interval)
+    es.onerror = () => {
+      es.close()
+      api.models.runs(projectId).then((d) => setRuns(d.runs)).catch(() => {})
+    }
+
+    return () => es.close()
   }, [runs, projectId])
 
   const toggleAlgo = useCallback((algo: string) => {

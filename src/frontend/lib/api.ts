@@ -65,6 +65,16 @@ export const api = {
       }).then((r) => r.json())
     },
 
+    loadSample: (projectId: string): Promise<UploadResponse> =>
+      fetch(`${API_URL}/api/data/sample`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ project_id: projectId }),
+      }).then((r) => r.json()),
+
+    sampleInfo: (): Promise<{ filename: string; row_count: number; column_count: number; columns: string[]; description: string }> =>
+      fetch(`${API_URL}/api/data/sample/info`).then((r) => r.json()),
+
     preview: (
       datasetId: string
     ): Promise<{ rows: Record<string, unknown>[] }> =>
@@ -170,6 +180,9 @@ export const api = {
 
     downloadUrl: (modelRunId: string): string =>
       `${API_URL}/api/models/${modelRunId}/download`,
+
+    trainingStreamUrl: (projectId: string): string =>
+      `${API_URL}/api/models/${projectId}/training-stream`,
   },
 
   validation: {

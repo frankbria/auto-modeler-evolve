@@ -1,19 +1,22 @@
 import json
+import shutil
 from pathlib import Path
 
 import pandas as pd
 from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile
 from pydantic import BaseModel
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from core.analyzer import analyze_dataframe, compute_full_profile
 from core.query_engine import run_nl_query
 from db import get_session
 from models.dataset import Dataset
+from models.project import Project
 
 router = APIRouter(prefix="/api/data", tags=["data"])
 
 UPLOAD_DIR = Path(__file__).parent.parent / "data" / "uploads"
+SAMPLE_CSV = Path(__file__).parent.parent / "data" / "sample" / "sample_sales.csv"
 
 
 # ---------------------------------------------------------------------------
@@ -161,4 +164,98 @@ def query_dataset(
         "answer": result.text,
         "chart_spec": result.chart_spec,
         "result_rows": result.result_rows,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Sample dataset loader (onboarding)
+# ---------------------------------------------------------------------------
+
+class SampleLoadRequest(BaseModel):
+    project_id: str
+
+
+@router.post("/sample", status_code=201)
+def load_sample_dataset(body: SampleLoadRequest, session: Session = Depends(get_session)):
+    """Copy the bundled sample sales CSV into the given project as its dataset.
+
+    Idempotent: if the project already has a dataset, returns the existing one.
+    """
+    project = session.get(Project, body.project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    # Check for existing dataset
+    existing = session.exec(
+        select(Dataset).where(Dataset.project_id == body.project_id)
+    ).first()
+    if existing:
+        df_existing = pd.read_csv(existing.file_path)
+        preview_rows = df_existing.head(10).to_dict(orient="records")
+        column_stats = json.loads(existing.columns) if existing.columns else []
+        return {
+            "dataset_id": existing.id,
+            "filename": existing.filename,
+            "row_count": existing.row_count,
+            "column_count": existing.column_count,
+            "preview": preview_rows,
+            "column_stats": column_stats,
+            "insights": [],
+            "already_existed": True,
+        }
+
+    if not SAMPLE_CSV.exists():
+        raise HTTPException(status_code=500, detail="Sample dataset not found on server")
+
+    project_upload_dir = UPLOAD_DIR / body.project_id
+    project_upload_dir.mkdir(parents=True, exist_ok=True)
+    dest = project_upload_dir / "sample_sales.csv"
+    shutil.copy2(SAMPLE_CSV, dest)
+
+    df = pd.read_csv(dest)
+    profile = compute_full_profile(df)
+
+    dataset = Dataset(
+        project_id=body.project_id,
+        filename="sample_sales.csv",
+        file_path=str(dest),
+        row_count=profile["row_count"],
+        column_count=profile["column_count"],
+        columns=json.dumps(profile["columns"]),
+        profile=json.dumps(profile),
+        size_bytes=dest.stat().st_size,
+    )
+    session.add(dataset)
+    session.commit()
+    session.refresh(dataset)
+
+    preview_rows = df.head(10).to_dict(orient="records")
+
+    return {
+        "dataset_id": dataset.id,
+        "filename": dataset.filename,
+        "row_count": dataset.row_count,
+        "column_count": dataset.column_count,
+        "preview": preview_rows,
+        "column_stats": profile["columns"],
+        "insights": profile.get("insights", []),
+        "already_existed": False,
+    }
+
+
+@router.get("/sample/info")
+def sample_info():
+    """Return metadata about the bundled sample dataset (no auth needed)."""
+    if not SAMPLE_CSV.exists():
+        raise HTTPException(status_code=404, detail="Sample dataset not available")
+    df = pd.read_csv(SAMPLE_CSV)
+    return {
+        "filename": "sample_sales.csv",
+        "row_count": len(df),
+        "column_count": len(df.columns),
+        "columns": list(df.columns),
+        "description": (
+            "Monthly sales data with 200 rows across 5 product lines and 4 regions. "
+            "Good for predicting revenue."
+        ),
     }

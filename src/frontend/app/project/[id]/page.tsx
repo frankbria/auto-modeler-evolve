@@ -305,6 +305,37 @@ export default function ProjectWorkspace() {
     disabled: uploading,
   })
 
+  const handleLoadSample = useCallback(async () => {
+    setUploading(true)
+    try {
+      const result = await api.data.loadSample(projectId)
+      const dataset: Dataset = {
+        id: result.dataset_id,
+        project_id: projectId,
+        filename: result.filename,
+        row_count: result.row_count,
+        column_count: result.column_count,
+        uploaded_at: new Date().toISOString(),
+      }
+      setDataset(dataset, result.preview, result.column_stats, result.insights ?? [])
+      setFeatureSuggestions([])
+      setRightPanelVisible(true)
+      addMessage({
+        role: "assistant",
+        content: `I've loaded the sample sales dataset — **${result.row_count} rows** across 5 product lines and 4 regions. This data contains monthly sales figures with date, product, region, revenue, and units sold.\n\nYou can use this to try predicting **revenue** using the other columns. Ask me anything about the data, or jump to the **Features** tab to get started.`,
+        timestamp: new Date().toISOString(),
+      })
+    } catch {
+      addMessage({
+        role: "assistant",
+        content: "There was a problem loading the sample data. Please try again.",
+        timestamp: new Date().toISOString(),
+      })
+    } finally {
+      setUploading(false)
+    }
+  }, [projectId, setDataset, addMessage])
+
   if (loadingProject) {
     return (
       <div className="flex h-[calc(100vh-3rem)] items-center justify-center">
@@ -573,6 +604,7 @@ export default function ProjectWorkspace() {
                 getInputProps={getInputProps}
                 isDragActive={isDragActive}
                 uploading={uploading}
+                onLoadSample={handleLoadSample}
               />
             )}
           </div>
@@ -587,17 +619,19 @@ function UploadPanel({
   getInputProps,
   isDragActive,
   uploading,
+  onLoadSample,
 }: {
   getRootProps: ReturnType<typeof useDropzone>["getRootProps"]
   getInputProps: ReturnType<typeof useDropzone>["getInputProps"]
   isDragActive: boolean
   uploading: boolean
+  onLoadSample: () => void
 }) {
   return (
-    <div className="flex flex-1 items-center justify-center p-8">
+    <div className="flex flex-1 flex-col items-center justify-center gap-4 p-8">
       <div
         {...getRootProps()}
-        className={`flex h-64 w-full max-w-md cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed transition-colors ${
+        className={`flex h-56 w-full max-w-md cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed transition-colors ${
           isDragActive
             ? "border-primary bg-primary/5"
             : "border-muted-foreground/25 hover:border-muted-foreground/50"
@@ -611,9 +645,7 @@ function UploadPanel({
         ) : (
           <>
             <p className="text-sm font-medium">Drop your CSV here</p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              or click to browse
-            </p>
+            <p className="mt-1 text-xs text-muted-foreground">or click to browse</p>
             <p className="mt-3 text-xs text-muted-foreground max-w-xs text-center">
               AutoModeler will profile your data, suggest features, train models,
               and help you deploy — all through conversation.
@@ -621,6 +653,18 @@ function UploadPanel({
           </>
         )}
       </div>
+
+      {!uploading && (
+        <div className="flex flex-col items-center gap-1">
+          <p className="text-xs text-muted-foreground">Don&apos;t have a dataset handy?</p>
+          <button
+            onClick={onLoadSample}
+            className="text-xs text-primary hover:underline underline-offset-2"
+          >
+            Load sample sales data (200 rows, 5 columns)
+          </button>
+        </div>
+      )}
     </div>
   )
 }

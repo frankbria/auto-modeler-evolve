@@ -9,12 +9,13 @@ Workflow:
 """
 
 import json
+import queue
 import threading
 from pathlib import Path
 
 import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
@@ -35,6 +36,15 @@ from models.model_run import ModelRun
 from models.project import Project
 
 router = APIRouter(tags=["models"])
+
+# ---------------------------------------------------------------------------
+# In-process event bus for SSE training progress
+# ---------------------------------------------------------------------------
+_lock = threading.Lock()
+# project_id → Queue of dicts (or None sentinel for end-of-stream)
+_training_queues: dict[str, queue.Queue] = {}
+# project_id → count of still-running training threads
+_training_counters: dict[str, int] = {}
 
 MODELS_DIR = Path(__file__).parent.parent / "data" / "models"
 
@@ -106,8 +116,27 @@ def _run_to_dict(run: ModelRun) -> dict:
 # Background training worker
 # ---------------------------------------------------------------------------
 
+def _push_event(project_id: str, event: dict) -> None:
+    """Thread-safe: post an event to the project's SSE queue if one exists."""
+    with _lock:
+        q = _training_queues.get(project_id)
+    if q is not None:
+        q.put(event)
+
+
+def _finish_training_thread(project_id: str) -> None:
+    """Decrement the counter; post sentinel when all threads are done."""
+    with _lock:
+        _training_counters[project_id] = _training_counters.get(project_id, 1) - 1
+        remaining = _training_counters[project_id]
+        q = _training_queues.get(project_id)
+    if remaining <= 0 and q is not None:
+        q.put(None)  # sentinel: close SSE stream
+
+
 def _train_in_background(
     model_run_id: str,
+    project_id: str,
     df: pd.DataFrame,
     feature_cols: list[str],
     target_col: str,
@@ -115,15 +144,18 @@ def _train_in_background(
     problem_type: str,
     model_dir: Path,
 ) -> None:
-    """Runs in a daemon thread. Updates ModelRun status in DB."""
+    """Runs in a daemon thread. Updates ModelRun status in DB and pushes SSE events."""
     # Mark as training
     with Session(_db.engine) as session:
         run = session.get(ModelRun, model_run_id)
         if not run:
+            _finish_training_thread(project_id)
             return
         run.status = "training"
         session.add(run)
         session.commit()
+
+    _push_event(project_id, {"type": "status", "run_id": model_run_id, "status": "training", "algorithm": algorithm})
 
     try:
         X, y, _ = prepare_features(df, feature_cols, target_col, problem_type)
@@ -140,6 +172,16 @@ def _train_in_background(
                 session.add(run)
                 session.commit()
 
+        _push_event(project_id, {
+            "type": "done",
+            "run_id": model_run_id,
+            "status": "done",
+            "algorithm": algorithm,
+            "metrics": result["metrics"],
+            "summary": result["summary"],
+            "training_duration_ms": result["training_duration_ms"],
+        })
+
     except Exception as exc:  # noqa: BLE001
         with Session(_db.engine) as session:
             run = session.get(ModelRun, model_run_id)
@@ -148,6 +190,11 @@ def _train_in_background(
                 run.error_message = str(exc)[:500]
                 session.add(run)
                 session.commit()
+
+        _push_event(project_id, {"type": "failed", "run_id": model_run_id, "status": "failed", "algorithm": algorithm, "error": str(exc)[:200]})
+
+    finally:
+        _finish_training_thread(project_id)
 
 
 # ---------------------------------------------------------------------------
@@ -221,6 +268,11 @@ def start_training(
     feature_cols = [c for c in df.columns if c != target_col]
     model_dir = MODELS_DIR / project_id
 
+    # Set up SSE event queue for this training batch
+    with _lock:
+        _training_queues[project_id] = queue.Queue()
+        _training_counters[project_id] = len(body.algorithms)
+
     run_ids = []
     for algo in body.algorithms:
         run = ModelRun(
@@ -239,6 +291,7 @@ def start_training(
             target=_train_in_background,
             args=(
                 run.id,
+                project_id,
                 df.copy(),
                 feature_cols,
                 target_col,
@@ -367,7 +420,56 @@ def select_model(model_run_id: str, session: Session = Depends(get_session)):
 
 
 # ---------------------------------------------------------------------------
-# 6. Download model pickle
+# 6. Training progress SSE stream
+# ---------------------------------------------------------------------------
+
+@router.get("/api/models/{project_id}/training-stream")
+def training_stream(project_id: str):
+    """Server-Sent Events stream for real-time training progress.
+
+    Subscribe immediately after POST /api/models/{project_id}/train.
+    The stream closes automatically when all runs complete or fail.
+    If no training queue exists (already finished), returns a single done event.
+    """
+    with _lock:
+        q = _training_queues.get(project_id)
+
+    def event_generator():
+        # If no queue, training already completed — emit done and close
+        if q is None:
+            yield f"data: {json.dumps({'type': 'all_done'})}\n\n"
+            return
+
+        while True:
+            try:
+                event = q.get(timeout=60)  # 60s max wait per event
+            except queue.Empty:
+                # Heartbeat keep-alive so connection doesn't time out
+                yield ": keep-alive\n\n"
+                continue
+
+            if event is None:
+                # Sentinel: all training threads finished
+                with _lock:
+                    _training_queues.pop(project_id, None)
+                    _training_counters.pop(project_id, None)
+                yield f"data: {json.dumps({'type': 'all_done'})}\n\n"
+                return
+
+            yield f"data: {json.dumps(event)}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
+# 7. Download model pickle
 # ---------------------------------------------------------------------------
 
 @router.get("/api/models/{model_run_id}/download")

@@ -31,6 +31,7 @@ Thumbs.db
 uploads/
 *.csv
 !src/backend/tests/fixtures/*.csv
+!src/backend/data/sample/*.csv
 
 # Model artifacts (serialized ML models — not source code)
 *.pkl
