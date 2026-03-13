@@ -1,8 +1,12 @@
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Optional
 from uuid import uuid4
 
 from sqlmodel import Field, SQLModel
+
+
+def _utcnow() -> datetime:
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 class Deployment(SQLModel, table=True):
@@ -20,5 +24,5 @@ class Deployment(SQLModel, table=True):
     feature_names: Optional[str] = None   # JSON list
     target_column: Optional[str] = None
     metrics: Optional[str] = None         # JSON metrics dict
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_utcnow)
     last_predicted_at: Optional[datetime] = None

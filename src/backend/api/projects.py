@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -108,7 +108,7 @@ def update_project(
         project.name = body.name
     if body.description is not None:
         project.description = body.description
-    project.updated_at = datetime.utcnow()
+    project.updated_at = datetime.now(UTC).replace(tzinfo=None)
     session.add(project)
     session.commit()
     session.refresh(project)

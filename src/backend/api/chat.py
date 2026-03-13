@@ -1,5 +1,5 @@
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 import anthropic
@@ -51,7 +51,7 @@ def send_message(
         {
             "role": "user",
             "content": body.message,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(UTC).replace(tzinfo=None).isoformat(),
         }
     )
 
@@ -91,7 +91,7 @@ def send_message(
                 {
                     "role": "assistant",
                     "content": full_response,
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "timestamp": datetime.now(UTC).replace(tzinfo=None).isoformat(),
                 }
             )
             from db import engine
@@ -100,7 +100,7 @@ def send_message(
                 conv = save_session.get(Conversation, conversation.id)
                 if conv:
                     conv.messages = json.dumps(messages)
-                    conv.updated_at = datetime.utcnow()
+                    conv.updated_at = datetime.now(UTC).replace(tzinfo=None)
                     save_session.add(conv)
                     save_session.commit()
 

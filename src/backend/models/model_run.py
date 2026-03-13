@@ -1,8 +1,12 @@
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Optional
 from uuid import uuid4
 
 from sqlmodel import Field, SQLModel
+
+
+def _utcnow() -> datetime:
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 class ModelRun(SQLModel, table=True):
@@ -19,4 +23,4 @@ class ModelRun(SQLModel, table=True):
     is_deployed: bool = False
     status: str = Field(default="pending")  # pending | training | done | failed
     error_message: Optional[str] = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_utcnow)

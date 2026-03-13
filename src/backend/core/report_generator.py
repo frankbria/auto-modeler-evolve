@@ -10,7 +10,7 @@ Generates a clean, professional PDF report summarising:
 from __future__ import annotations
 
 import io
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from reportlab.lib import colors
@@ -116,7 +116,7 @@ def generate_model_report(
     # ── Header ──────────────────────────────────────────────────────────────
     elements.append(Paragraph("AutoModeler", caption_style))
     elements.append(Paragraph(f"Model Report — {project_name}", title_style))
-    report_date = (created_at or datetime.utcnow()).strftime("%B %d, %Y")
+    report_date = (created_at or datetime.now(UTC).replace(tzinfo=None)).strftime("%B %d, %Y")
     elements.append(Paragraph(f"Generated {report_date}", subtitle_style))
     elements.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#E5E7EB")))
     elements.append(Spacer(1, 0.4 * cm))

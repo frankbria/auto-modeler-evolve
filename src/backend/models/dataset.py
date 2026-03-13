@@ -1,8 +1,12 @@
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Optional
 from uuid import uuid4
 
 from sqlmodel import Field, SQLModel
+
+
+def _utcnow() -> datetime:
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 class Dataset(SQLModel, table=True):
@@ -14,5 +18,5 @@ class Dataset(SQLModel, table=True):
     column_count: int = 0
     columns: Optional[str] = None   # JSON list of column stat dicts
     profile: Optional[str] = None   # JSON full profiling results
-    uploaded_at: datetime = Field(default_factory=datetime.utcnow)
+    uploaded_at: datetime = Field(default_factory=_utcnow)
     size_bytes: int = 0

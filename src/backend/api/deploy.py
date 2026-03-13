@@ -12,7 +12,7 @@ Routes:
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pandas as pd
@@ -247,7 +247,7 @@ def make_prediction(
 
     # Update usage stats
     deployment.request_count += 1
-    deployment.last_predicted_at = datetime.utcnow()
+    deployment.last_predicted_at = datetime.now(UTC).replace(tzinfo=None)
     session.add(deployment)
     session.commit()
 
@@ -288,7 +288,7 @@ def batch_prediction(
 
     # Update usage stats
     deployment.request_count += 1
-    deployment.last_predicted_at = datetime.utcnow()
+    deployment.last_predicted_at = datetime.now(UTC).replace(tzinfo=None)
     session.add(deployment)
     session.commit()
 
