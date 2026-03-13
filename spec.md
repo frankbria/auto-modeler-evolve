@@ -249,18 +249,20 @@ guides them forward through the natural flow.
       models → validate → deploy → predict. Each critical path should have its own test
       file. Target: every spec phase has at least one E2E scenario.
       *Day 2 (10:00): 33 E2E tests — upload.spec.ts (10), training.spec.ts (8), deploy.spec.ts (9), home.spec.ts (6). Also fixed 2 real UX bugs: dataset state not restored on navigation, ModelTrainingPanel not loading existing runs on mount.*
-- [ ] **Unit test coverage to 100%** — Identify uncovered backend modules and frontend
+- [~] **Unit test coverage to 100%** — Identify uncovered backend modules and frontend
       components. Write targeted tests for edge cases, error paths, and boundary
       conditions. Use `pytest --cov` and Jest coverage reports to find gaps.
+      *Day 2 (20:05): query_engine.py 14%→92%, total backend 92%→95%. Remaining: frontend Jest coverage; explainer.py and validator.py edge paths.*
 - [ ] **Integration tests** — Build tests that exercise real cross-boundary flows:
       upload → profile → chat about data (hits Claude API mock or stub) → train → deploy
       → predict. These complement E2E by testing backend flows without browser overhead.
 - [ ] **Self-demo capability** — Build a scripted demo that can run autonomously to
       prove the platform works. Upload sample data, run through the full workflow, capture
       screenshots or output at each stage. This becomes the smoke test and the showcase.
-- [ ] **Error resilience audit** — Systematically test failure modes: corrupt CSV,
+- [~] **Error resilience audit** — Systematically test failure modes: corrupt CSV,
       empty dataset, single-row data, all-null columns, model training failure, deployment
       of a terrible model. Verify every failure produces a helpful user-facing message.
+      *Day 2 (20:05): 22 new tests; fixed 2 real bugs (NaN in preview rows, inf in histogram); training/deploy edge cases covered. Remaining: model training failure + terribly-performing model path.*
 - [ ] **Performance baseline** — Measure and record response times for key operations
       (upload profiling, model training, prediction). Establish baselines so future
       changes can be compared. Identify and fix any obvious bottlenecks.
@@ -276,9 +278,10 @@ guides them forward through the natural flow.
       templates (prompts.py), narrative explanations (narration.py), proactive insights
       ("I noticed your R² dropped when I removed feature X — want to add it back?"),
       and multi-turn reasoning about model selection trade-offs.
-- [ ] **Advanced visualizations** — Heat maps for correlation matrices, interactive
+- [~] **Advanced visualizations** — Heat maps for correlation matrices, interactive
       scatter plots with brushing/linking, time-series decomposition charts, model
       comparison radar charts. Each viz should be triggered naturally through chat.
+      *Day 2 (20:05): correlation heatmap added — build_correlation_heatmap(), /api/data/{id}/correlations endpoint, frontend HeatmapChart CSS-grid renderer with color scale. Remaining: radar chart for model comparison, time-series decomposition.*
 - [ ] **Data transformation pipeline** — Support for multi-step, reorderable
       transformation pipelines with undo. Let users build complex feature engineering
       flows through conversation.
