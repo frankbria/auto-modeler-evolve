@@ -29,9 +29,6 @@ export NVM_DIR="$HOME/.nvm"
 # Ensure claude is on PATH
 export PATH="$HOME/.local/bin:$PATH"
 
-# Load API key from environment file
-[ -f "$HOME/.env.automodeler" ] && . "$HOME/.env.automodeler"
-
 # Project directory
 cd /home/frankbria/projects/auto-modeler-evolve
 
