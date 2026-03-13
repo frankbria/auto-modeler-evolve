@@ -19,6 +19,7 @@ import {
   ComparisonTable,
 } from "@/components/models/model-comparison"
 import { ValidationPanel } from "@/components/validation/validation-panel"
+import { DeployPanel } from "@/components/deploy/deploy-panel"
 import { api } from "@/lib/api"
 import { useAppStore } from "@/lib/store"
 import type {
@@ -34,7 +35,7 @@ import type {
 const WELCOME_MESSAGE =
   "Hi! I'm your data modeling assistant. Upload a CSV file to get started, or ask me anything about your data."
 
-type RightTab = "data" | "features" | "importance" | "models" | "validate"
+type RightTab = "data" | "features" | "importance" | "models" | "validate" | "deploy"
 
 export default function ProjectWorkspace() {
   const params = useParams<{ id: string }>()
@@ -449,7 +450,7 @@ export default function ProjectWorkspace() {
           <>
             {/* Tab Bar */}
             <div className="flex border-b">
-              {(["data", "features", "importance", "models", "validate"] as RightTab[]).map((tab) => (
+              {(["data", "features", "importance", "models", "validate", "deploy"] as RightTab[]).map((tab) => (
                 <button
                   key={tab}
                   onClick={() => setActiveTab(tab)}
@@ -623,6 +624,40 @@ export default function ProjectWorkspace() {
                     <p className="text-center text-xs text-muted-foreground">
                       No model selected yet. Go to the <strong>Models</strong> tab, train some
                       models, and click <strong>Select</strong> on your preferred model.
+                    </p>
+                  </div>
+                )}
+              </ScrollArea>
+            )}
+
+            {activeTab === "deploy" && (
+              <ScrollArea className="flex-1">
+                {selectedModelRunId ? (
+                  <DeployPanel
+                    modelRunId={selectedModelRunId}
+                    displayName={
+                      modelComparison?.rankings.find((r) => r.id === selectedModelRunId)
+                        ?.display_name ?? "Selected Model"
+                    }
+                    targetColumn={modelTargetColumn || null}
+                    problemType={
+                      modelComparison?.rankings.find((r) => r.id === selectedModelRunId)
+                        ? (modelComparison.rankings.find((r) => r.id === selectedModelRunId) as any)?.problem_type ?? null
+                        : null
+                    }
+                    onMessageOut={(msg) =>
+                      addMessage({
+                        role: "assistant",
+                        content: msg,
+                        timestamp: new Date().toISOString(),
+                      })
+                    }
+                  />
+                ) : (
+                  <div className="flex h-40 items-center justify-center p-8">
+                    <p className="text-center text-xs text-muted-foreground">
+                      No model selected yet. Go to the <strong>Models</strong> tab, train and
+                      select your preferred model before deploying.
                     </p>
                   </div>
                 )}

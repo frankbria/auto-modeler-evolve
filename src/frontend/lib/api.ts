@@ -14,6 +14,8 @@ import type {
   ValidationResult,
   GlobalImportanceResult,
   PredictionExplanation,
+  Deployment,
+  PredictResult,
 } from "./types"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
@@ -168,5 +170,41 @@ export const api = {
       fetch(`${API_URL}/api/validate/${modelRunId}/explain/${rowIndex}`).then((r) =>
         r.json()
       ),
+  },
+
+  deploy: {
+    deploy: (modelRunId: string): Promise<Deployment> =>
+      fetch(`${API_URL}/api/deploy/${modelRunId}`, { method: "POST" }).then((r) => r.json()),
+
+    list: (projectId?: string): Promise<{ deployments: Deployment[] }> =>
+      fetch(
+        `${API_URL}/api/deployments${projectId ? `?project_id=${projectId}` : ""}`
+      ).then((r) => r.json()),
+
+    get: (deploymentId: string): Promise<Deployment> =>
+      fetch(`${API_URL}/api/deployments/${deploymentId}`).then((r) => r.json()),
+
+    undeploy: (deploymentId: string): Promise<Response> =>
+      fetch(`${API_URL}/api/deploy/${deploymentId}`, { method: "DELETE" }),
+
+    predict: (
+      deploymentId: string,
+      inputs: Record<string, string | number | null>
+    ): Promise<PredictResult> =>
+      fetch(`${API_URL}/api/predict/${deploymentId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ inputs }),
+      }).then((r) => r.json()),
+
+    predictBatch: (deploymentId: string, file: File): Promise<Response> =>
+      fetch(`${API_URL}/api/predict/${deploymentId}/batch`, {
+        method: "POST",
+        body: (() => {
+          const form = new FormData()
+          form.append("file", file)
+          return form
+        })(),
+      }),
   },
 }

@@ -293,3 +293,39 @@ export interface PredictionExplanation {
   problem_type: string
   top_factors: PredictionFactor[]
 }
+
+// ---------------------------------------------------------------------------
+// Deployment (Phase 6)
+// ---------------------------------------------------------------------------
+
+export interface FeatureSchemaEntry {
+  name: string
+  dtype: "numeric" | "categorical"
+  sample_values: (string | number)[]
+}
+
+export interface Deployment {
+  id: string
+  model_run_id: string
+  project_id: string
+  is_active: boolean
+  request_count: number
+  created_at: string
+  last_predicted_at: string | null
+  feature_schema: FeatureSchemaEntry[]
+  algorithm?: string
+  display_name?: string
+  target_column?: string | null
+  problem_type?: string
+  metrics?: ModelMetrics | null
+}
+
+export interface PredictResult {
+  deployment_id: string
+  prediction: string | number
+  probability: number | null
+  interpretation: string
+  target_column: string | null
+  algorithm: string
+  problem_type: string
+}
