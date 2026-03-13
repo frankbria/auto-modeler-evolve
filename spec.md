@@ -175,8 +175,8 @@ guides them forward through the natural flow.
 - [x] **Model recommendations** — Suggest 2-4 appropriate algorithms based on dataset
       size, feature count, and problem type. Explain each in non-technical terms
       ("Random Forest: like asking 100 experts and taking a vote")
-- [~] **Training execution** — Train recommended models with sensible defaults.
-      Background thread training with status polling; SSE push deferred to later
+- [x] **Training execution** — Train recommended models with sensible defaults.
+      Background thread training with real-time SSE push via EventSource subscription.
 - [x] **Model comparison dashboard** — Side-by-side metrics (accuracy, precision,
       recall, R², MAE). Plain-English summary + auto-recommendation of best model
 - [x] **Model selection** — User picks preferred model via button in Models tab;
@@ -218,8 +218,8 @@ guides them forward through the natural flow.
 ### Phase 7: Polish & Delight (Days 26-30)
 > Goal: Make it feel like working with a brilliant, patient colleague.
 
-- [~] **Onboarding flow** — Empty-state panel with contextual description on first visit;
-      guided tooltips in upload area. Sample dataset option deferred.
+- [x] **Onboarding flow** — Empty-state panel with contextual description on first visit;
+      guided tooltips in upload area. Sample dataset (200-row sales CSV) loads with one click.
 - [x] **Project management** — Create, rename, delete, duplicate projects. Project
       list with last-modified, model status, quick stats (dataset name, row count, model count)
 - [x] **Chat memory across sessions** — Resume conversations with "Welcome back" context
