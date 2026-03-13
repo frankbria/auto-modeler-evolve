@@ -104,6 +104,11 @@ else
 fi
 echo ""
 
+# ── Step 0b: Pull latest from remote ──
+echo "-> Pulling latest from remote..."
+git pull --rebase --autostash 2>/dev/null && echo "  Up to date." || echo "  Pull failed (non-fatal, continuing with local state)."
+echo ""
+
 # ── Step 1: Detect project stack ──
 echo "-> Detecting project stack..."
 STACK_JSON=$(bash scripts/detect_stack.sh "$PROJECT_DIR" 2>/dev/null || echo '{"stack":"unknown","build":"","test":"","lint":"","format":""}')
