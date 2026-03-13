@@ -253,9 +253,10 @@ guides them forward through the natural flow.
       components. Write targeted tests for edge cases, error paths, and boundary
       conditions. Use `pytest --cov` and Jest coverage reports to find gaps.
       *Day 2 (20:05): query_engine.py 14%→92%, total backend 92%→95%. Remaining: frontend Jest coverage; explainer.py and validator.py edge paths.*
-- [ ] **Integration tests** — Build tests that exercise real cross-boundary flows:
+- [x] **Integration tests** — Build tests that exercise real cross-boundary flows:
       upload → profile → chat about data (hits Claude API mock or stub) → train → deploy
       → predict. These complement E2E by testing backend flows without browser overhead.
+      *Day 2 (14:00): 11 integration tests in test_integration_flow.py — cover upload, profile, feature suggestions, training, compare, deploy, single predict, batch predict, undeploy, multi-model comparison, narration, validation, and explainability. All 11 pass.*
 - [ ] **Self-demo capability** — Build a scripted demo that can run autonomously to
       prove the platform works. Upload sample data, run through the full workflow, capture
       screenshots or output at each stage. This becomes the smoke test and the showcase.
@@ -281,7 +282,8 @@ guides them forward through the natural flow.
 - [~] **Advanced visualizations** — Heat maps for correlation matrices, interactive
       scatter plots with brushing/linking, time-series decomposition charts, model
       comparison radar charts. Each viz should be triggered naturally through chat.
-      *Day 2 (20:05): correlation heatmap added — build_correlation_heatmap(), /api/data/{id}/correlations endpoint, frontend HeatmapChart CSS-grid renderer with color scale. Remaining: radar chart for model comparison, time-series decomposition.*
+      *Day 2 (20:05): correlation heatmap added — build_correlation_heatmap(), /api/data/{id}/correlations endpoint, frontend HeatmapChart CSS-grid renderer with color scale. Remaining: time-series decomposition.*
+      *Day 2 (14:00): radar chart for model comparison — build_model_comparison_radar() normalizes all metrics to 0-1, /api/models/{id}/comparison-radar endpoint returns 204 when <2 models, Recharts RadarChart renders in training panel with one polygon per model.*
 - [ ] **Data transformation pipeline** — Support for multi-step, reorderable
       transformation pipelines with undo. Let users build complex feature engineering
       flows through conversation.
