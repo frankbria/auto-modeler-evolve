@@ -110,6 +110,13 @@ def get_preview(dataset_id: str, session: Session = Depends(get_session)):
     preview_rows = df.head(10).to_dict(orient="records")
     column_stats = json.loads(dataset.columns) if dataset.columns else []
 
+    insights = []
+    if dataset.profile:
+        try:
+            insights = json.loads(dataset.profile).get("insights", [])
+        except Exception:  # noqa: BLE001
+            pass
+
     return {
         "dataset_id": dataset.id,
         "filename": dataset.filename,
@@ -117,6 +124,7 @@ def get_preview(dataset_id: str, session: Session = Depends(get_session)):
         "column_count": dataset.column_count,
         "preview": preview_rows,
         "column_stats": column_stats,
+        "insights": insights,
     }
 
 

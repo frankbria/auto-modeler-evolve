@@ -5,7 +5,8 @@ export interface Project {
   created_at: string
   updated_at: string
   status: "exploring" | "modeling" | "deployed"
-  // optional quick stats (returned by list endpoint)
+  // optional quick stats (returned by list and get endpoints)
+  dataset_id?: string
   dataset_filename?: string
   dataset_rows?: number
   model_count?: number

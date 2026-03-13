@@ -244,10 +244,11 @@ guides them forward through the natural flow.
       Does every [x] item truly work end-to-end? Are there shallow implementations that
       pass tests but don't deliver the full user experience described in the spec? Fix
       discrepancies and journal what you find.
-- [ ] **E2E test build-out** — Expand Playwright coverage to the full user journey:
+- [x] **E2E test build-out** — Expand Playwright coverage to the full user journey:
       upload CSV → explore data → ask questions → get charts → approve features → train
       models → validate → deploy → predict. Each critical path should have its own test
       file. Target: every spec phase has at least one E2E scenario.
+      *Day 2 (10:00): 33 E2E tests — upload.spec.ts (10), training.spec.ts (8), deploy.spec.ts (9), home.spec.ts (6). Also fixed 2 real UX bugs: dataset state not restored on navigation, ModelTrainingPanel not loading existing runs on mount.*
 - [ ] **Unit test coverage to 100%** — Identify uncovered backend modules and frontend
       components. Write targeted tests for edge cases, error paths, and boundary
       conditions. Use `pytest --cov` and Jest coverage reports to find gaps.

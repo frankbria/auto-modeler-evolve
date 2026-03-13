@@ -33,6 +33,7 @@ class ProjectResponse(BaseModel):
 
 
 class ProjectWithStats(ProjectResponse):
+    dataset_id: Optional[str] = None
     dataset_filename: Optional[str] = None
     dataset_rows: Optional[int] = None
     model_count: int = 0
@@ -78,6 +79,7 @@ def list_projects(session: Session = Depends(get_session)):
                 created_at=project.created_at,
                 updated_at=project.updated_at,
                 status=project.status,
+                dataset_id=dataset.id if dataset else None,
                 dataset_filename=dataset.filename if dataset else None,
                 dataset_rows=dataset.row_count if dataset else None,
                 model_count=model_count,
@@ -87,12 +89,41 @@ def list_projects(session: Session = Depends(get_session)):
     return result
 
 
-@router.get("/{project_id}", response_model=ProjectResponse)
+@router.get("/{project_id}", response_model=ProjectWithStats)
 def get_project(project_id: str, session: Session = Depends(get_session)):
     project = session.get(Project, project_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
-    return project
+    dataset = session.exec(
+        select(Dataset).where(Dataset.project_id == project_id)
+    ).first()
+    model_count = len(
+        session.exec(
+            select(ModelRun).where(
+                ModelRun.project_id == project_id,
+                ModelRun.status == "done",
+            )
+        ).all()
+    )
+    has_deployment = any(
+        mr.is_deployed
+        for mr in session.exec(
+            select(ModelRun).where(ModelRun.project_id == project_id)
+        ).all()
+    )
+    return ProjectWithStats(
+        id=project.id,
+        name=project.name,
+        description=project.description,
+        created_at=project.created_at,
+        updated_at=project.updated_at,
+        status=project.status,
+        dataset_id=dataset.id if dataset else None,
+        dataset_filename=dataset.filename if dataset else None,
+        dataset_rows=dataset.row_count if dataset else None,
+        model_count=model_count,
+        has_deployment=has_deployment,
+    )
 
 
 @router.patch("/{project_id}", response_model=ProjectResponse)

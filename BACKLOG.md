@@ -10,7 +10,6 @@ Living document for coordinating between bot instances and tracking ideation.
 <!-- Brief description of what you're doing this session. -->
 <!-- Remove your entry when you commit your session wrap-up. -->
 
-(empty — next session will populate this)
 
 ## Ideas to Explore
 
@@ -31,4 +30,5 @@ Ideas discovered during sessions. Pick from here or add new ones.
 <!-- Move items here after implementation. Format: -->
 <!-- - [Description] — Day N (HH:MM) — [1-line outcome] -->
 
+- E2E test suite build-out (upload/training/deploy) — Day 2 (10:00) — 33 Playwright tests; fixed 2 UX bugs (dataset restore + ModelTrainingPanel runs restore); 33/33 pass
 - Smarter chat orchestration (prompts.py + narration.py) — Day 2 (16:08) — auto-inject upload/training messages into chat; 44 tests; 255 total pass

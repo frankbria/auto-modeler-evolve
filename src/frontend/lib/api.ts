@@ -77,7 +77,7 @@ export const api = {
 
     preview: (
       datasetId: string
-    ): Promise<{ rows: Record<string, unknown>[] }> =>
+    ): Promise<UploadResponse> =>
       fetch(`${API_URL}/api/data/${datasetId}/preview`).then((r) => r.json()),
 
     profile: (datasetId: string) =>

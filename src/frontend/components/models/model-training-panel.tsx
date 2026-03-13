@@ -34,17 +34,28 @@ export function ModelTrainingPanel({ projectId, onModelSelected, onModelDownload
   const [training, setTraining] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Load recommendations on mount
+  // Load recommendations and any existing runs on mount
   useEffect(() => {
-    api.models
-      .recommendations(projectId)
-      .then((data) => {
-        setRecommendations(data.recommendations)
-        setProblemType(data.problem_type)
-        setTargetColumn(data.target_column)
+    Promise.all([
+      api.models.recommendations(projectId),
+      api.models.runs(projectId).catch(() => ({ runs: [] })),
+    ])
+      .then(([recData, runsData]) => {
+        setRecommendations(recData.recommendations)
+        setProblemType(recData.problem_type)
+        setTargetColumn(recData.target_column)
         // Pre-select the first 2 algorithms
-        const defaults = data.recommendations.slice(0, 2).map((r) => r.algorithm)
+        const defaults = recData.recommendations.slice(0, 2).map((r) => r.algorithm)
         setSelectedAlgos(new Set(defaults))
+        // Restore any runs from a previous training session
+        if (runsData.runs && runsData.runs.length > 0) {
+          setRuns(runsData.runs)
+          // Load comparison summary if there are completed runs
+          const hasDone = runsData.runs.some((r: ModelRun) => r.status === "done")
+          if (hasDone) {
+            api.models.compare(projectId).then(setComparison).catch(() => {})
+          }
+        }
       })
       .catch((e) => setError(e?.message ?? "Could not load recommendations"))
       .finally(() => setLoading(false))

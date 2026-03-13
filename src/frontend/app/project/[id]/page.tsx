@@ -107,6 +107,38 @@ export default function ProjectWorkspace() {
           api.chat.history(projectId),
         ])
         setCurrentProject(project)
+
+        // Restore dataset state when navigating back to an existing project
+        if (project.dataset_id) {
+          try {
+            const data = await api.data.preview(project.dataset_id)
+            const dataset: Dataset = {
+              id: data.dataset_id,
+              project_id: projectId,
+              filename: data.filename,
+              row_count: data.row_count,
+              column_count: data.column_count,
+              uploaded_at: project.updated_at,
+            }
+            setDataset(dataset, data.preview, data.column_stats, data.insights ?? [])
+            setRightPanelVisible(true)
+          } catch {
+            // Dataset file missing — show upload panel to re-upload
+          }
+
+          // Restore selected model run ID so the Deploy tab works without re-selecting
+          try {
+            const runsData = await api.models.runs(projectId)
+            const selected = runsData.runs.find((r) => r.is_selected)
+            if (selected) {
+              setSelectedModelRunId(selected.id)
+              setSelectedModelAlgorithm(selected.algorithm)
+            }
+          } catch {
+            // No runs yet or feature set missing — ignore
+          }
+        }
+
         if (history?.messages && history.messages.length > 0) {
           const msgs: ChatMsg[] = history.messages
           // Add a "welcome back" context message if this is a returning visit
@@ -144,7 +176,7 @@ export default function ProjectWorkspace() {
       }
     }
     load()
-  }, [projectId, setCurrentProject, setMessages])
+  }, [projectId, setCurrentProject, setDataset, setMessages])
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
