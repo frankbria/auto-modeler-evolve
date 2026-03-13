@@ -10,12 +10,6 @@ Living document for coordinating between bot instances and tracking ideation.
 <!-- Brief description of what you're doing this session. -->
 <!-- Remove your entry when you commit your session wrap-up. -->
 
-## Day 2 (14:00) — Integration Tests + Radar Chart
-Writing `test_integration_flow.py` (Track A) to exercise the full backend pipeline as one test:
-upload CSV → profile → apply features → train a model → deploy → predict.
-Also adding a radar chart for model comparison (Track B): `build_model_comparison_radar()`
-in chart_builder.py + new `/api/models/{project_id}/comparison-radar` endpoint +
-RadarChart renderer in model-training-panel.tsx.
 
 
 
@@ -41,3 +35,4 @@ Ideas discovered during sessions. Pick from here or add new ones.
 - E2E test suite build-out (upload/training/deploy) — Day 2 (10:00) — 33 Playwright tests; fixed 2 UX bugs (dataset restore + ModelTrainingPanel runs restore); 33/33 pass
 - Smarter chat orchestration (prompts.py + narration.py) — Day 2 (16:08) — auto-inject upload/training messages into chat; 44 tests; 255 total pass
 - Error resilience audit + query engine tests + correlation heatmap — Day 2 (20:05) — 72 new tests; 2 real bugs fixed (NaN/inf in preview); query_engine 14%→92%; total coverage 95%; heatmap chart type + endpoint
+- Integration tests + radar chart — Day 2 (14:00) — 11 integration tests (upload→deploy→predict); radar chart for model comparison with normalized metrics; 338 total backend tests pass
