@@ -203,16 +203,16 @@ guides them forward through the natural flow.
 ### Phase 6: Deployment (Days 21-25)
 > Goal: One-click deployment of model as API + interactive dashboard.
 
-- [ ] **Model packaging** — Serialize trained model + feature pipeline as a single
+- [x] **Model packaging** — Serialize trained model + feature pipeline as a single
       deployable artifact. Include metadata: training date, features used, metrics
-- [ ] **Prediction API** — Auto-generated FastAPI endpoint: POST /api/predict/{model_id}
+- [x] **Prediction API** — Auto-generated FastAPI endpoint: POST /api/predict/{model_id}
       with JSON input → JSON prediction output. Auto-generated OpenAPI docs
-- [ ] **Prediction dashboard** — Auto-generated Next.js page for each deployed model.
+- [x] **Prediction dashboard** — Auto-generated Next.js page for each deployed model.
       Form with input fields matching feature columns. Submit → see prediction +
       explanation. Shareable URL
-- [ ] **Batch prediction** — Upload a CSV of new data → get predictions for all rows.
+- [x] **Batch prediction** — Upload a CSV of new data → get predictions for all rows.
       Download results as CSV with prediction + confidence columns
-- [ ] **Deployment management** — List deployed models, view usage stats, undeploy.
+- [x] **Deployment management** — List deployed models, view usage stats, undeploy.
       Simple status dashboard
 
 ### Phase 7: Polish & Delight (Days 26-30)
