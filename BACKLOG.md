@@ -10,12 +10,6 @@ Living document for coordinating between bot instances and tracking ideation.
 <!-- Brief description of what you're doing this session. -->
 <!-- Remove your entry when you commit your session wrap-up. -->
 
-## Day 2 (20:05) — Error Resilience Audit + Correlation Heatmap
-
-Track A: Systematically test failure modes (corrupt CSV, empty dataset, single-row,
-all-null columns, training on bad data). Fix any issues found and verify helpful
-user-facing messages. Track B: Add interactive correlation heatmap visualization
-triggered naturally through chat ("show me correlations").
 
 
 ## Ideas to Explore
@@ -39,3 +33,4 @@ Ideas discovered during sessions. Pick from here or add new ones.
 
 - E2E test suite build-out (upload/training/deploy) — Day 2 (10:00) — 33 Playwright tests; fixed 2 UX bugs (dataset restore + ModelTrainingPanel runs restore); 33/33 pass
 - Smarter chat orchestration (prompts.py + narration.py) — Day 2 (16:08) — auto-inject upload/training messages into chat; 44 tests; 255 total pass
+- Error resilience audit + query engine tests + correlation heatmap — Day 2 (20:05) — 72 new tests; 2 real bugs fixed (NaN/inf in preview); query_engine 14%→92%; total coverage 95%; heatmap chart type + endpoint
