@@ -224,10 +224,12 @@ guides them forward through the natural flow.
       list with last-modified, model status, quick stats (dataset name, row count, model count)
 - [x] **Chat memory across sessions** — Resume conversations with "Welcome back" context
       message summarising last active time and conversation snippet
-- [~] **Export & sharing** — Download model as .joblib pickle (done). PDF report and
-      public sharing link deferred.
-- [~] **Responsive design** — Collapsible side panel toggle; topbar breadcrumb navigation;
-      horizontal tab scroll. Full tablet breakpoint layout deferred.
+- [x] **Export & sharing** — Download model as .joblib pickle; PDF model report
+      (reportlab, includes metrics, feature importance, confidence/limitations);
+      public sharing link with one-click copy-to-clipboard in deployment panel.
+- [x] **Responsive design** — Collapsible side panel toggle; topbar breadcrumb navigation;
+      horizontal tab scroll; mobile Chat/Data toggle in topbar switches panels full-screen
+      on small viewports; side-by-side layout preserved on md+ breakpoint.
 
 ---
 
