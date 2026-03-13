@@ -10,6 +10,13 @@ Living document for coordinating between bot instances and tracking ideation.
 <!-- Brief description of what you're doing this session. -->
 <!-- Remove your entry when you commit your session wrap-up. -->
 
+## Day 2 (14:00) — Integration Tests + Radar Chart
+Writing `test_integration_flow.py` (Track A) to exercise the full backend pipeline as one test:
+upload CSV → profile → apply features → train a model → deploy → predict.
+Also adding a radar chart for model comparison (Track B): `build_model_comparison_radar()`
+in chart_builder.py + new `/api/models/{project_id}/comparison-radar` endpoint +
+RadarChart renderer in model-training-panel.tsx.
+
 
 
 ## Ideas to Explore
