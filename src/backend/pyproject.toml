@@ -38,3 +38,8 @@ line-length = 88
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+
+[dependency-groups]
+dev = [
+    "pytest-cov>=7.0.0",
+]
