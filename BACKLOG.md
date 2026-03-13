@@ -10,7 +10,12 @@ Living document for coordinating between bot instances and tracking ideation.
 <!-- Brief description of what you're doing this session. -->
 <!-- Remove your entry when you commit your session wrap-up. -->
 
-(empty — next session will populate this)
+## Day 2 (16:08) — Smarter Chat Orchestration (Track B) + Quality Hardening (Track A)
+
+Implementing `chat/prompts.py` (algorithm intros, metric glossary, proactive insight
+prompt builder) and `chat/narration.py` (event narrators that auto-inject context into
+the conversation after upload and training). Goal: make the chat feel like a proactive
+colleague, not just a Q&A bot. Also expanding backend test coverage for the new modules.
 
 ## Ideas to Explore
 

@@ -21,6 +21,7 @@ from pydantic import BaseModel
 from sqlmodel import Session, select
 
 import db as _db
+from chat.narration import append_bot_message_to_conversation, narrate_training_complete
 from core.feature_engine import apply_transformations
 from core.report_generator import generate_model_report
 from core.trainer import (
@@ -134,6 +135,53 @@ def _finish_training_thread(project_id: str) -> None:
         q = _training_queues.get(project_id)
     if remaining <= 0 and q is not None:
         q.put(None)  # sentinel: close SSE stream
+        # Inject training-complete narration into the project conversation
+        try:
+            _narrate_training_done(project_id)
+        except Exception:  # noqa: BLE001
+            pass  # Narration is nice-to-have; never crash the training thread
+
+
+def _narrate_training_done(project_id: str) -> None:
+    """Load completed runs and append a training-complete bot message."""
+    with Session(_db.engine) as session:
+        runs = list(session.exec(
+            select(ModelRun).where(
+                ModelRun.project_id == project_id,
+                ModelRun.status.in_(["done", "failed"]),  # type: ignore[attr-defined]
+            )
+        ).all())
+        if not runs:
+            return
+
+        # Determine problem type from active feature set
+        dataset = session.exec(
+            select(Dataset).where(Dataset.project_id == project_id)
+        ).first()
+        feature_set = None
+        if dataset:
+            feature_set = session.exec(
+                select(FeatureSet).where(
+                    FeatureSet.dataset_id == dataset.id,
+                    FeatureSet.is_active == True,  # noqa: E712
+                )
+            ).first()
+
+        problem_type = (feature_set.problem_type if feature_set else None) or "regression"
+        target_col = (feature_set.target_column if feature_set else None) or "target"
+
+        runs_dicts = [
+            {
+                "algorithm": r.algorithm,
+                "status": r.status,
+                "metrics": json.loads(r.metrics) if r.metrics else {},
+                "summary": r.summary or "",
+            }
+            for r in runs
+        ]
+
+        message = narrate_training_complete(runs_dicts, problem_type, target_col)
+        append_bot_message_to_conversation(project_id, message, session)
 
 
 def _train_in_background(

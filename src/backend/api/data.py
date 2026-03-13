@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
+from chat.narration import append_bot_message_to_conversation, narrate_upload
 from core.analyzer import analyze_dataframe, compute_full_profile
 from core.query_engine import run_nl_query
 from db import get_session
@@ -65,6 +66,20 @@ def upload_csv(
     session.refresh(dataset)
 
     preview_rows = df.head(10).to_dict(orient="records")
+
+    # Inject a proactive bot message into the project conversation
+    try:
+        col_names = [c["name"] for c in profile["columns"]] if profile.get("columns") else list(df.columns)
+        narration = narrate_upload(
+            filename=dataset.filename,
+            row_count=dataset.row_count,
+            col_count=dataset.column_count,
+            insights=profile.get("insights"),
+            column_names=col_names,
+        )
+        append_bot_message_to_conversation(project_id, narration, session)
+    except Exception:  # noqa: BLE001
+        pass  # Narration is nice-to-have; never block the upload response
 
     return {
         "dataset_id": dataset.id,
@@ -230,6 +245,20 @@ def load_sample_dataset(body: SampleLoadRequest, session: Session = Depends(get_
     session.refresh(dataset)
 
     preview_rows = df.head(10).to_dict(orient="records")
+
+    # Inject a proactive bot message into the project conversation
+    try:
+        col_names = [c["name"] for c in profile["columns"]] if profile.get("columns") else list(df.columns)
+        narration = narrate_upload(
+            filename=dataset.filename,
+            row_count=dataset.row_count,
+            col_count=dataset.column_count,
+            insights=profile.get("insights"),
+            column_names=col_names,
+        )
+        append_bot_message_to_conversation(body.project_id, narration, session)
+    except Exception:  # noqa: BLE001
+        pass  # Narration is nice-to-have; never block the response
 
     return {
         "dataset_id": dataset.id,
