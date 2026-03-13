@@ -31,6 +31,18 @@ interface ChartMessageProps {
 export function ChartMessage({ spec }: ChartMessageProps) {
   const { chart_type, title, data, x_key, y_keys, x_label, y_label } = spec
 
+  // Heatmap uses its own layout (not Recharts)
+  if (chart_type === "heatmap") {
+    return (
+      <div className="mt-2 rounded-lg border bg-card p-3">
+        {title && (
+          <p className="mb-2 text-xs font-semibold text-muted-foreground">{title}</p>
+        )}
+        <HeatmapChart data={data} columns={y_keys} />
+      </div>
+    )
+  }
+
   return (
     <div className="mt-2 rounded-lg border bg-card p-3">
       {title && (
@@ -42,6 +54,108 @@ export function ChartMessage({ spec }: ChartMessageProps) {
         <ResponsiveContainer width="100%" height="100%">
           {renderChart(chart_type, data, x_key, y_keys, x_label, y_label)}
         </ResponsiveContainer>
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Heatmap renderer (correlation matrix)
+// ---------------------------------------------------------------------------
+
+function corrColor(value: number | null | undefined): string {
+  if (value === null || value === undefined) return "hsl(var(--muted))"
+  // Map [-1, 1] to color: negative=red, zero=white/gray, positive=blue
+  const clamped = Math.max(-1, Math.min(1, value))
+  if (clamped >= 0) {
+    // 0 → near-white, 1 → blue
+    const intensity = Math.round(clamped * 80)
+    return `hsl(220 80% ${100 - intensity}%)`
+  } else {
+    // 0 → near-white, -1 → red
+    const intensity = Math.round(-clamped * 80)
+    return `hsl(0 80% ${100 - intensity}%)`
+  }
+}
+
+function textColor(value: number | null | undefined): string {
+  if (value === null || value === undefined) return "hsl(var(--muted-foreground))"
+  return Math.abs(value ?? 0) > 0.5 ? "white" : "hsl(var(--foreground))"
+}
+
+function HeatmapChart({
+  data,
+  columns,
+}: {
+  data: Record<string, unknown>[]
+  columns: string[]
+}) {
+  const cellSize = Math.max(28, Math.min(48, Math.floor(240 / (columns.length + 1))))
+  const labelWidth = 64
+
+  return (
+    <div className="overflow-x-auto">
+      <div style={{ display: "inline-block", minWidth: labelWidth + columns.length * cellSize }}>
+        {/* Column header row */}
+        <div style={{ display: "flex", marginLeft: labelWidth }}>
+          {columns.map((col) => (
+            <div
+              key={col}
+              style={{ width: cellSize, fontSize: 9, textAlign: "center", overflow: "hidden" }}
+              className="text-muted-foreground font-medium px-0.5 truncate"
+              title={col}
+            >
+              {col.length > 6 ? col.slice(0, 6) + "…" : col}
+            </div>
+          ))}
+        </div>
+        {/* Data rows */}
+        {data.map((row) => {
+          const rowLabel = String(row.row ?? "")
+          return (
+            <div key={rowLabel} style={{ display: "flex", alignItems: "center" }}>
+              {/* Row label */}
+              <div
+                style={{ width: labelWidth, fontSize: 9, textAlign: "right", paddingRight: 4, flexShrink: 0 }}
+                className="text-muted-foreground font-medium truncate"
+                title={rowLabel}
+              >
+                {rowLabel.length > 8 ? rowLabel.slice(0, 8) + "…" : rowLabel}
+              </div>
+              {/* Cells */}
+              {columns.map((col) => {
+                const val = row[col] as number | null | undefined
+                return (
+                  <div
+                    key={col}
+                    style={{
+                      width: cellSize,
+                      height: cellSize,
+                      backgroundColor: corrColor(val),
+                      color: textColor(val),
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: 9,
+                      fontWeight: 500,
+                      border: "1px solid hsl(var(--border))",
+                      cursor: "default",
+                    }}
+                    title={`${rowLabel} × ${col}: ${val != null ? val.toFixed(3) : "N/A"}`}
+                  >
+                    {val != null ? val.toFixed(2) : ""}
+                  </div>
+                )
+              })}
+            </div>
+          )
+        })}
+        {/* Legend */}
+        <div className="mt-1 flex items-center gap-1" style={{ marginLeft: labelWidth }}>
+          <span className="text-[8px] text-muted-foreground">−1</span>
+          <div style={{ background: "linear-gradient(to right, hsl(0 80% 20%), hsl(0 80% 100%), hsl(220 80% 20%))", height: 6, flex: 1, borderRadius: 3 }} />
+          <span className="text-[8px] text-muted-foreground">+1</span>
+        </div>
       </div>
     </div>
   )

@@ -11,6 +11,7 @@ from sqlmodel import Session, select
 
 from chat.narration import append_bot_message_to_conversation, narrate_upload
 from core.analyzer import analyze_dataframe, compute_full_profile
+from core.chart_builder import build_correlation_heatmap
 from core.query_engine import run_nl_query
 from db import get_session
 from models.dataset import Dataset
@@ -293,6 +294,53 @@ def load_sample_dataset(body: SampleLoadRequest, session: Session = Depends(get_
         "column_stats": profile["columns"],
         "insights": profile.get("insights", []),
         "already_existed": False,
+    }
+
+
+@router.get("/{dataset_id}/correlations")
+def get_correlations(dataset_id: str, session: Session = Depends(get_session)):
+    """Return correlation matrix as a heatmap chart spec.
+
+    Uses cached profile when available; falls back to computing on demand.
+    Returns 200 with chart_spec=null when there are fewer than 2 numeric columns.
+    """
+    dataset = session.get(Dataset, dataset_id)
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    # Try cached profile first
+    correlations: dict = {}
+    if dataset.profile:
+        try:
+            profile = json.loads(dataset.profile)
+            correlations = profile.get("correlations", {})
+        except Exception:  # noqa: BLE001
+            pass
+
+    # Recompute if missing
+    if not correlations:
+        file_path = Path(dataset.file_path)
+        if not file_path.exists():
+            raise HTTPException(status_code=404, detail="Dataset file not found on disk")
+        df = pd.read_csv(file_path)
+        profile = compute_full_profile(df)
+        correlations = profile.get("correlations", {})
+
+    columns = correlations.get("columns", [])
+    matrix = correlations.get("matrix", [])
+
+    if len(columns) < 2:
+        return {
+            "dataset_id": dataset_id,
+            "chart_spec": None,
+            "message": "Need at least 2 numeric columns to show a correlation matrix.",
+        }
+
+    heatmap = build_correlation_heatmap(matrix, columns)
+    return {
+        "dataset_id": dataset_id,
+        "chart_spec": heatmap,
+        "pairs": correlations.get("pairs", []),
     }
 
 

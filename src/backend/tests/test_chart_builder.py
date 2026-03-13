@@ -6,6 +6,7 @@ import pytest
 
 from core.chart_builder import (
     build_bar_chart,
+    build_correlation_heatmap,
     build_histogram,
     build_line_chart,
     build_pie_chart,
@@ -175,3 +176,54 @@ class TestChartFromQueryResultFallback:
         })
         result = chart_from_query_result(df, "All strings", x_col="month")
         assert result is None
+
+
+# ---------------------------------------------------------------------------
+# build_correlation_heatmap
+# ---------------------------------------------------------------------------
+
+class TestBuildCorrelationHeatmap:
+    def _make_matrix(self, columns):
+        """Create a synthetic corr matrix dict (same shape as _corr_matrix_dict output)."""
+        import numpy as np
+        n = len(columns)
+        data = np.eye(n)
+        rows = []
+        for i, col in enumerate(columns):
+            row = {"column": col}
+            for j, other in enumerate(columns):
+                row[other] = round(float(data[i, j]), 3)
+            rows.append(row)
+        return rows
+
+    def test_basic_heatmap(self):
+        cols = ["revenue", "units", "price"]
+        matrix = self._make_matrix(cols)
+        spec = build_correlation_heatmap(matrix, cols)
+        assert spec["chart_type"] == "heatmap"
+        assert spec["y_keys"] == cols
+        assert spec["x_key"] == "row"
+        assert len(spec["data"]) == len(cols)
+
+    def test_diagonal_is_one(self):
+        cols = ["a", "b"]
+        matrix = self._make_matrix(cols)
+        spec = build_correlation_heatmap(matrix, cols)
+        for row in spec["data"]:
+            assert row[row["row"]] == 1.0
+
+    def test_custom_title(self):
+        cols = ["x", "y"]
+        matrix = self._make_matrix(cols)
+        spec = build_correlation_heatmap(matrix, cols, title="My Heatmap")
+        assert spec["title"] == "My Heatmap"
+
+    def test_two_column_matrix(self):
+        cols = ["a", "b"]
+        matrix = [
+            {"column": "a", "a": 1.0, "b": 0.75},
+            {"column": "b", "a": 0.75, "b": 1.0},
+        ]
+        spec = build_correlation_heatmap(matrix, cols)
+        row_a = next(r for r in spec["data"] if r["row"] == "a")
+        assert row_a["b"] == 0.75

@@ -308,3 +308,54 @@ class TestUploadWithProfile:
             assert "insights" in profile
 
         asyncio.get_event_loop().run_until_complete(run())
+
+
+# ---------------------------------------------------------------------------
+# GET /api/data/{dataset_id}/correlations
+# ---------------------------------------------------------------------------
+
+class TestCorrelationsEndpoint:
+    async def test_returns_heatmap_spec(self, client, sample_csv_content):
+        # Create project + upload data
+        proj = await client.post("/api/projects", json={"name": "corr-test"})
+        assert proj.status_code == 201
+        pid = proj.json()["id"]
+
+        up = await client.post(
+            "/api/data/upload",
+            data={"project_id": pid},
+            files={"file": ("data.csv", sample_csv_content, "text/csv")},
+        )
+        assert up.status_code == 201
+        dataset_id = up.json()["dataset_id"]
+
+        resp = await client.get(f"/api/data/{dataset_id}/correlations")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["chart_spec"] is not None
+        assert data["chart_spec"]["chart_type"] == "heatmap"
+        assert "pairs" in data
+
+    async def test_nonexistent_dataset_404(self, client):
+        resp = await client.get("/api/data/no-such-dataset/correlations")
+        assert resp.status_code == 404
+
+    async def test_no_numeric_columns(self, client):
+        # Upload CSV with only categorical columns
+        proj = await client.post("/api/projects", json={"name": "no-numeric"})
+        pid = proj.json()["id"]
+        csv = b"color,size\nred,small\nblue,large\ngreen,medium\n"
+        up = await client.post(
+            "/api/data/upload",
+            data={"project_id": pid},
+            files={"file": ("cat.csv", csv, "text/csv")},
+        )
+        assert up.status_code == 201
+        dataset_id = up.json()["dataset_id"]
+
+        resp = await client.get(f"/api/data/{dataset_id}/correlations")
+        assert resp.status_code == 200
+        # Should return null chart_spec with a helpful message
+        data = resp.json()
+        assert data["chart_spec"] is None
+        assert "message" in data

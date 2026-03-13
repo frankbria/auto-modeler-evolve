@@ -5,7 +5,7 @@ The frontend receives these as JSON and passes them directly to Recharts compone
 
 Chart spec shape (all charts):
   {
-    "chart_type": "bar" | "line" | "histogram" | "scatter" | "pie",
+    "chart_type": "bar" | "line" | "histogram" | "scatter" | "pie" | "heatmap",
     "title": str,
     "data": [...],           # Recharts data array
     "x_key": str,            # key used for x-axis
@@ -13,6 +13,11 @@ Chart spec shape (all charts):
     "x_label": str,
     "y_label": str,
   }
+
+For "heatmap" chart type (correlation matrix):
+  "data": [{"row": "col_a", "col_a": 1.0, "col_b": 0.85, ...}, ...]
+  "x_key": "row"
+  "y_keys": [list of column names]
 """
 
 from __future__ import annotations
@@ -224,6 +229,40 @@ def chart_from_query_result(
             )
 
     return None
+
+
+def build_correlation_heatmap(
+    corr_matrix: list[dict],
+    columns: list[str],
+    title: str = "Correlation Matrix",
+) -> dict[str, Any]:
+    """Build a heatmap chart spec from a pre-computed correlation matrix.
+
+    corr_matrix: row-oriented list from _corr_matrix_dict, each entry has
+      {"column": col_name, col1: val, col2: val, ...}
+    columns: ordered list of column names in the matrix
+
+    Returns a chart spec with chart_type="heatmap". The frontend renders each
+    cell with a color based on the correlation value (-1 → red, 0 → white, 1 → blue).
+    """
+    # Normalise: rename "column" key to "row" for clarity in the frontend
+    data = []
+    for row in corr_matrix:
+        entry: dict[str, Any] = {"row": row.get("column", "")}
+        for col in columns:
+            val = row.get(col)
+            entry[col] = round(float(val), 3) if val is not None else None
+        data.append(entry)
+
+    return {
+        "chart_type": "heatmap",
+        "title": title,
+        "data": data,
+        "x_key": "row",
+        "y_keys": columns,
+        "x_label": "",
+        "y_label": "",
+    }
 
 
 def _jsonify(value: Any) -> Any:

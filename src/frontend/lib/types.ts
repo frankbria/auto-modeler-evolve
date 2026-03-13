@@ -73,7 +73,7 @@ export interface UploadResponse {
 }
 
 export interface ChartSpec {
-  chart_type: "bar" | "line" | "histogram" | "scatter" | "pie"
+  chart_type: "bar" | "line" | "histogram" | "scatter" | "pie" | "heatmap"
   title: string
   data: Record<string, unknown>[]
   x_key: string
