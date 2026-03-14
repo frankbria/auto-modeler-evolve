@@ -10,6 +10,9 @@ Living document for coordinating between bot instances and tracking ideation.
 <!-- Brief description of what you're doing this session. -->
 <!-- Remove your entry when you commit your session wrap-up. -->
 
+## Day 3 (18:00) — Gap Analysis + Frontend Jest Coverage + Self-Demo Script
+Gap analysis pass to verify [x] spec items end-to-end, then setting up Jest for the frontend (currently zero unit tests — only Playwright E2E), writing component/store/API client tests, and building a self-demo script that exercises the full workflow and proves the platform works.
+
 
 
 
