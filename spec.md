@@ -256,6 +256,7 @@ guides them forward through the natural flow.
       *Day 2 (20:05): query_engine.py 14%→92%, total backend 92%→95%. Remaining: frontend Jest coverage; explainer.py and validator.py edge paths.*
       *Day 3 (00:09): chart_builder 73%→100%, orchestrator 78%→100%, api/chat 37%→98%, total backend 94%→97%. 400 tests pass. Remaining: frontend Jest coverage.*
       *Day 3 (18:00): frontend Jest set up (next/jest + @testing-library/react + jest-fetch-mock); 69 unit tests covering store mutations, API client HTTP shapes, ChartMessage rendering (all 6 types), cn() utility. Frontend + backend = 469 total tests.*
+      *Day 3 (06:00): 4 new frontend test suites (deployment-panel 17, model-training-panel 15, validation-panel 25, feature-suggestions-panel 25); api.ts 100% coverage. Total: 150 frontend + 530 backend = 680 tests. api.ts 100%, deployment-panel 99%, validation-panel 89%, feature-suggestions 38% (sub-components not yet tested).*
 - [x] **Integration tests** — Build tests that exercise real cross-boundary flows:
       upload → profile → chat about data (hits Claude API mock or stub) → train → deploy
       → predict. These complement E2E by testing backend flows without browser overhead.
