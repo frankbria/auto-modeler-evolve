@@ -3,6 +3,7 @@ import json
 import math
 import re
 import shutil
+import sqlite3
 import urllib.request
 from pathlib import Path
 from typing import Any
@@ -837,4 +838,165 @@ def upload_from_url(body: UrlImportRequest, session: Session = Depends(get_sessi
         "column_stats": profile["columns"],
         "insights": profile.get("insights", []),
         "source": source_label,
+    }
+
+
+# ---------------------------------------------------------------------------
+# SQLite database connector
+# ---------------------------------------------------------------------------
+# Allows analysts to upload a .db file, browse its tables, and extract
+# any table (or a custom SELECT query) as a Dataset — same pipeline as CSV.
+
+_DB_UPLOADS_DIR = UPLOAD_DIR.parent / "db_uploads"
+
+
+@router.post("/upload-db", status_code=201)
+async def upload_sqlite_db(
+    project_id: str = Form(...),
+    file: UploadFile = Form(...),
+    session: Session = Depends(get_session),
+):
+    """Upload a SQLite database file (.db or .sqlite).
+
+    Returns a list of tables in the database so the user can choose which
+    table to extract as a Dataset.  The file is stored temporarily under
+    data/db_uploads/{project_id}/.
+    """
+    project = session.get(Project, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    filename = file.filename or "database.db"
+    ext = Path(filename).suffix.lower()
+    if ext not in (".db", ".sqlite", ".sqlite3"):
+        raise HTTPException(
+            status_code=400,
+            detail="Only SQLite database files (.db, .sqlite, .sqlite3) are accepted",
+        )
+
+    db_dir = _DB_UPLOADS_DIR / project_id
+    db_dir.mkdir(parents=True, exist_ok=True)
+    db_path = db_dir / filename
+    db_path.write_bytes(await file.read())
+
+    try:
+        conn = sqlite3.connect(str(db_path))
+        cursor = conn.cursor()
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+        tables = [row[0] for row in cursor.fetchall()]
+        conn.close()
+    except sqlite3.DatabaseError as exc:
+        db_path.unlink(missing_ok=True)
+        raise HTTPException(
+            status_code=400, detail=f"File is not a valid SQLite database: {exc}"
+        ) from exc
+
+    if not tables:
+        db_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=400, detail="Database contains no tables")
+
+    return {
+        "project_id": project_id,
+        "db_filename": filename,
+        "db_path": str(db_path),
+        "tables": tables,
+        "table_count": len(tables),
+    }
+
+
+class DbExtractRequest(BaseModel):
+    project_id: str
+    db_path: str   # path returned by upload-db
+    table_name: str
+    query: str | None = None  # optional SQL override (must be SELECT)
+    save_as_filename: str | None = None
+
+
+@router.post("/extract-db", status_code=201)
+def extract_db_table(body: DbExtractRequest, session: Session = Depends(get_session)):
+    """Extract a table (or custom SELECT query) from an uploaded SQLite database.
+
+    Creates a new Dataset record with the extracted data — identical to
+    uploading a CSV. The query must be a SELECT statement for safety.
+    """
+    project = session.get(Project, body.project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    db_path = Path(body.db_path)
+    if not db_path.exists():
+        raise HTTPException(status_code=404, detail="Database file not found. Upload it first.")
+
+    # Validate query is read-only
+    query = body.query or f"SELECT * FROM [{body.table_name}]"
+    if not query.strip().upper().startswith("SELECT"):
+        raise HTTPException(
+            status_code=400,
+            detail="Only SELECT queries are allowed for database extraction",
+        )
+
+    try:
+        conn = sqlite3.connect(str(db_path))
+        df = pd.read_sql_query(query, conn)
+        conn.close()
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(
+            status_code=400, detail=f"Query failed: {exc}"
+        ) from exc
+
+    if df.empty:
+        raise HTTPException(status_code=400, detail="Query returned no rows")
+
+    # Persist as CSV so downstream pipeline is unchanged
+    out_filename = body.save_as_filename or f"{body.table_name}.csv"
+    if not out_filename.endswith(".csv"):
+        out_filename += ".csv"
+    project_upload_dir = UPLOAD_DIR / body.project_id
+    project_upload_dir.mkdir(parents=True, exist_ok=True)
+    out_path = project_upload_dir / out_filename
+    df.to_csv(out_path, index=False)
+
+    profile = compute_full_profile(df)
+
+    dataset = Dataset(
+        project_id=body.project_id,
+        filename=out_filename,
+        file_path=str(out_path),
+        row_count=profile["row_count"],
+        column_count=profile["column_count"],
+        columns=json.dumps(profile["columns"]),
+        profile=json.dumps(profile),
+        size_bytes=out_path.stat().st_size,
+    )
+    session.add(dataset)
+    session.commit()
+    session.refresh(dataset)
+
+    preview_rows = _sanitize_rows(df.head(10).to_dict(orient="records"))
+
+    # Proactive narration (best-effort)
+    try:
+        col_names = [c["name"] for c in profile["columns"]] if profile.get("columns") else list(df.columns)
+        narration = narrate_upload(
+            filename=out_filename,
+            row_count=dataset.row_count,
+            col_count=dataset.column_count,
+            insights=profile.get("insights"),
+            column_names=col_names,
+        )
+        append_bot_message_to_conversation(body.project_id, narration, session)
+    except Exception:  # noqa: BLE001
+        pass
+
+    return {
+        "dataset_id": dataset.id,
+        "filename": dataset.filename,
+        "row_count": dataset.row_count,
+        "column_count": dataset.column_count,
+        "table_name": body.table_name,
+        "query": query,
+        "preview": preview_rows,
+        "column_stats": profile["columns"],
+        "insights": profile.get("insights", []),
+        "source": "SQLite",
     }

@@ -89,6 +89,31 @@ export const api = {
     sampleInfo: (): Promise<{ filename: string; row_count: number; column_count: number; columns: string[]; description: string }> =>
       fetch(`${API_URL}/api/data/sample/info`).then((r) => r.json()),
 
+    uploadDb: (
+      projectId: string,
+      file: File
+    ): Promise<{ project_id: string; db_filename: string; db_path: string; tables: string[]; table_count: number }> => {
+      const form = new FormData()
+      form.append("project_id", projectId)
+      form.append("file", file)
+      return fetch(`${API_URL}/api/data/upload-db`, {
+        method: "POST",
+        body: form,
+      }).then((r) => r.json())
+    },
+
+    extractDb: (
+      projectId: string,
+      dbPath: string,
+      tableName: string,
+      query?: string
+    ): Promise<UploadResponse & { table_name: string; query: string; source: string }> =>
+      fetch(`${API_URL}/api/data/extract-db`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ project_id: projectId, db_path: dbPath, table_name: tableName, query }),
+      }).then((r) => r.json()),
+
     preview: (
       datasetId: string
     ): Promise<UploadResponse> =>
