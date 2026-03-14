@@ -1,0 +1,10 @@
+{
+  "upload_200_rows_ms": 28.5,
+  "upload_1000_rows_ms": 27.4,
+  "profile_cached_ms": 1.7,
+  "correlations_ms": 2.2,
+  "feature_suggestions_ms": 5.7,
+  "train_linear_regression_ms": 217.6,
+  "recommendations_ms": 3.3,
+  "single_prediction_ms": 4.4
+}
