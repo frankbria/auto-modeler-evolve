@@ -269,17 +269,19 @@ guides them forward through the natural flow.
       of a terrible model. Verify every failure produces a helpful user-facing message.
       *Day 2 (20:05): 22 new tests; fixed 2 real bugs (NaN in preview rows, inf in histogram); training/deploy edge cases covered. Remaining: model training failure + terribly-performing model path.*
       *Day 3 (00:09): model training failure (run→failed, error_message populated), partial failure (1 algo fails, others continue), terrible model (low R², still deployable), constant target, all-failed narration. All paths covered.*
-- [ ] **Performance baseline** — Measure and record response times for key operations
+- [x] **Performance baseline** — Measure and record response times for key operations
       (upload profiling, model training, prediction). Establish baselines so future
       changes can be compared. Identify and fix any obvious bottlenecks.
+      *Day 3 (04:31): 8 performance tests with real timings — upload 200 rows: 28ms, cached profile: 2ms, correlations: 2ms, feature suggestions: 6ms, linear regression train: 218ms, single prediction: 4ms. Results persisted to performance_baseline.json for future comparison.*
 
 #### Track B — Vision-Driven Innovation
 
-- [ ] **Research external models and data sources** — Investigate integrating external
+- [x] **Research external models and data sources** — Investigate integrating external
       ML models (XGBoost, LightGBM, neural networks via scikit-learn MLPClassifier),
       additional data connectors (Excel, Google Sheets, database connections), or
       pre-trained models for common use cases (sales forecasting, churn prediction).
       Document findings in LEARNINGS.md before implementing.
+      *Day 3 (04:31): XGBoost 3.2.0 and LightGBM 4.6.0 integrated into trainer.py algorithm registries (both regression + classification). Optional imports with graceful fallback if not installed. feature_importances_ accessible — compatible with existing explainer.py. 16 tests; all pass. xgboost/lightgbm added to pyproject.toml.*
 - [ ] **Smarter chat orchestration** — Evolve the conversation AI: richer prompt
       templates (prompts.py), narrative explanations (narration.py), proactive insights
       ("I noticed your R² dropped when I removed feature X — want to add it back?"),
@@ -295,9 +297,10 @@ guides them forward through the natural flow.
       flows through conversation.
 - [ ] **Multi-dataset support** — Allow joining/merging multiple CSVs within a project.
       The chat guides the user through selecting join keys and resolving conflicts.
-- [ ] **Template projects** — Pre-built project templates for common use cases (sales
+- [x] **Template projects** — Pre-built project templates for common use cases (sales
       forecasting, customer churn, demand prediction) with sample data, pre-configured
       features, and guided conversation flows.
+      *Day 3 (04:31): 3 templates (sales_forecast/customer_churn/demand_forecast) with GET /api/templates, GET /api/templates/{id}, POST /api/templates/{id}/apply. Each template ships with sample CSV (200/300/250 rows), pre-configured target column + problem type, suggested algorithms, and a conversation starter message. 20 tests, all pass.*
 
 #### Track C — Coordination
 
