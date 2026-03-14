@@ -282,6 +282,7 @@ guides them forward through the natural flow.
       pre-trained models for common use cases (sales forecasting, churn prediction).
       Document findings in LEARNINGS.md before implementing.
       *Day 3 (04:31): XGBoost 3.2.0 and LightGBM 4.6.0 integrated into trainer.py algorithm registries (both regression + classification). Optional imports with graceful fallback if not installed. feature_importances_ accessible — compatible with existing explainer.py. 16 tests; all pass. xgboost/lightgbm added to pyproject.toml.*
+      *Day 3 (12:03): Excel/XLSX upload (.xlsx/.xls) via openpyxl — converts to CSV on ingest; all downstream endpoints work unchanged. MLPRegressor/MLPClassifier added to algorithm registry with size-aware recommendation messages. 21 new tests; 530 total. Frontend dropzone updated to accept xlsx/xls.*
 - [x] **Smarter chat orchestration** — Evolve the conversation AI: richer prompt
       templates (prompts.py), narrative explanations (narration.py), proactive insights
       ("I noticed your R² dropped when I removed feature X — want to add it back?"),
