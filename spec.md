@@ -258,6 +258,7 @@ guides them forward through the natural flow.
       *Day 3 (18:00): frontend Jest set up (next/jest + @testing-library/react + jest-fetch-mock); 69 unit tests covering store mutations, API client HTTP shapes, ChartMessage rendering (all 6 types), cn() utility. Frontend + backend = 469 total tests.*
       *Day 3 (06:00): 4 new frontend test suites (deployment-panel 17, model-training-panel 15, validation-panel 25, feature-suggestions-panel 25); api.ts 100% coverage. Total: 150 frontend + 530 backend = 680 tests. api.ts 100%, deployment-panel 99%, validation-panel 89%, feature-suggestions 38% (sub-components not yet tested).*
       *Day 3 (16:03): PipelinePanel (10 tests), DatasetListPanel (20 tests), FeatureImportancePanel (8 tests) — 38 new frontend tests for all feature-suggestions.tsx sub-components. Plus 2 new api.test.ts tests for uploadFromUrl. Total: 190 frontend + 545 backend = 735 tests, all passing.*
+      *Day 3 (10:00): 74 new backend tests targeting api/features, api/validation, api/chat, api/deploy error paths; 15 frontend tests for app/page.tsx + predict/[id]/page.tsx (first app/ page coverage). SQLite connector adds 14 more backend tests. Total: 205 frontend + 630 backend = 835 tests. Backend coverage: 98%.*
 - [x] **Integration tests** — Build tests that exercise real cross-boundary flows:
       upload → profile → chat about data (hits Claude API mock or stub) → train → deploy
       → predict. These complement E2E by testing backend flows without browser overhead.
@@ -286,6 +287,7 @@ guides them forward through the natural flow.
       *Day 3 (04:31): XGBoost 3.2.0 and LightGBM 4.6.0 integrated into trainer.py algorithm registries (both regression + classification). Optional imports with graceful fallback if not installed. feature_importances_ accessible — compatible with existing explainer.py. 16 tests; all pass. xgboost/lightgbm added to pyproject.toml.*
       *Day 3 (12:03): Excel/XLSX upload (.xlsx/.xls) via openpyxl — converts to CSV on ingest; all downstream endpoints work unchanged. MLPRegressor/MLPClassifier added to algorithm registry with size-aware recommendation messages. 21 new tests; 530 total. Frontend dropzone updated to accept xlsx/xls.*
       *Day 3 (16:03): Google Sheets + CSV URL import — POST /api/data/upload-url converts Sheets share links to CSV export URL (with gid/tab preservation), downloads, profiles, and creates Dataset. urllib.request, no external deps. Frontend "Import from Google Sheets or CSV URL" toggle in UploadPanel. 15 backend tests; api.ts uploadFromUrl() covered in frontend tests.*
+      *Day 3 (10:00): SQLite database connector — POST /api/data/upload-db (upload .db/.sqlite/.sqlite3, list tables) + POST /api/data/extract-db (SELECT query or full table → Dataset CSV). stdlib sqlite3 + pandas.read_sql_query, zero new deps. 14 integration tests; api.ts uploadDb()/extractDb() client methods.*
 - [x] **Smarter chat orchestration** — Evolve the conversation AI: richer prompt
       templates (prompts.py), narrative explanations (narration.py), proactive insights
       ("I noticed your R² dropped when I removed feature X — want to add it back?"),
