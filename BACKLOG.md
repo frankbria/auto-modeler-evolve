@@ -10,6 +10,10 @@ Living document for coordinating between bot instances and tracking ideation.
 <!-- Brief description of what you're doing this session. -->
 <!-- Remove your entry when you commit your session wrap-up. -->
 
+## Day 3 (08:04) — Data Transformation Pipeline with Undo + Scatter Brushing
+Three new endpoints for step-wise pipeline management (GET/POST/DELETE steps on FeatureSet),
+frontend pipeline panel with undo buttons, and scatter chart click-to-highlight brushing.
+
 
 
 

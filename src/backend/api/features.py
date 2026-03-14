@@ -1,11 +1,16 @@
 """Feature engineering API endpoints.
 
 Workflow:
-1. GET  /api/features/{dataset_id}/suggestions   → list of transform suggestions
-2. POST /api/features/{dataset_id}/apply         → apply approved transforms, create FeatureSet
-3. GET  /api/features/{feature_set_id}/preview   → preview transformed columns
-4. POST /api/features/{dataset_id}/target        → set target column + detect problem type
-5. GET  /api/features/{dataset_id}/importance    → mutual-information importance scores
+1. GET  /api/features/{dataset_id}/suggestions        → list of transform suggestions
+2. POST /api/features/{dataset_id}/apply              → apply approved transforms, create FeatureSet
+3. GET  /api/features/{feature_set_id}/preview        → preview transformed columns
+4. POST /api/features/{dataset_id}/target             → set target column + detect problem type
+5. GET  /api/features/{dataset_id}/importance         → mutual-information importance scores
+
+Pipeline step management (incremental add/undo):
+6. GET  /api/features/{feature_set_id}/steps          → list current pipeline steps
+7. POST /api/features/{feature_set_id}/steps          → append a single step
+8. DELETE /api/features/{feature_set_id}/steps/{idx}  → remove step by index (undo)
 """
 
 import json
@@ -197,6 +202,135 @@ def set_target(
 
 # ---------------------------------------------------------------------------
 # 5. Feature importance
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# 6. List pipeline steps for a FeatureSet
+# ---------------------------------------------------------------------------
+
+@router.get("/{feature_set_id}/steps")
+def list_pipeline_steps(feature_set_id: str, session: Session = Depends(get_session)):
+    """Return the ordered list of transformation steps in the pipeline."""
+    feature_set = session.get(FeatureSet, feature_set_id)
+    if not feature_set:
+        raise HTTPException(status_code=404, detail="FeatureSet not found")
+    steps = json.loads(feature_set.transformations or "[]")
+    return {
+        "feature_set_id": feature_set_id,
+        "step_count": len(steps),
+        "steps": [{"index": i, **step} for i, step in enumerate(steps)],
+    }
+
+
+# ---------------------------------------------------------------------------
+# 7. Append a single step to the pipeline
+# ---------------------------------------------------------------------------
+
+class AddStepRequest(BaseModel):
+    column: str
+    transform_type: str
+    params: dict = {}
+
+
+@router.post("/{feature_set_id}/steps", status_code=201)
+def add_pipeline_step(
+    feature_set_id: str,
+    body: AddStepRequest,
+    session: Session = Depends(get_session),
+):
+    """Append one transformation step to the pipeline and return the updated preview."""
+    feature_set = session.get(FeatureSet, feature_set_id)
+    if not feature_set:
+        raise HTTPException(status_code=404, detail="FeatureSet not found")
+
+    steps = json.loads(feature_set.transformations or "[]")
+    new_step: dict = {"column": body.column, "transform_type": body.transform_type}
+    if body.params:
+        new_step["params"] = body.params
+    steps.append(new_step)
+
+    # Recompute column_mapping with the updated pipeline
+    dataset = session.get(Dataset, feature_set.dataset_id)
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+    file_path = Path(dataset.file_path)
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Dataset file not found on disk")
+    df = pd.read_csv(file_path)
+
+    from core.feature_engine import apply_transformations
+    transformed_df, column_mapping = apply_transformations(df, steps)
+
+    feature_set.transformations = json.dumps(steps)
+    feature_set.column_mapping = json.dumps(column_mapping)
+    session.add(feature_set)
+    session.commit()
+
+    new_columns = sorted(set(transformed_df.columns) - set(df.columns))
+    return {
+        "feature_set_id": feature_set_id,
+        "step_index": len(steps) - 1,
+        "step_count": len(steps),
+        "new_columns": new_columns,
+        "total_columns": len(transformed_df.columns),
+        "preview": transformed_df.head(5).to_dict(orient="records"),
+    }
+
+
+# ---------------------------------------------------------------------------
+# 8. Remove (undo) a step by index
+# ---------------------------------------------------------------------------
+
+@router.delete("/{feature_set_id}/steps/{step_index}", status_code=200)
+def remove_pipeline_step(
+    feature_set_id: str,
+    step_index: int,
+    session: Session = Depends(get_session),
+):
+    """Remove the transformation step at position step_index (undo)."""
+    feature_set = session.get(FeatureSet, feature_set_id)
+    if not feature_set:
+        raise HTTPException(status_code=404, detail="FeatureSet not found")
+
+    steps = json.loads(feature_set.transformations or "[]")
+    if step_index < 0 or step_index >= len(steps):
+        raise HTTPException(
+            status_code=422,
+            detail=f"step_index {step_index} out of range (pipeline has {len(steps)} steps)",
+        )
+
+    removed = steps.pop(step_index)
+
+    # Recompute column_mapping without the removed step
+    dataset = session.get(Dataset, feature_set.dataset_id)
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+    file_path = Path(dataset.file_path)
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Dataset file not found on disk")
+    df = pd.read_csv(file_path)
+
+    from core.feature_engine import apply_transformations
+    transformed_df, column_mapping = apply_transformations(df, steps)
+
+    feature_set.transformations = json.dumps(steps)
+    feature_set.column_mapping = json.dumps(column_mapping)
+    session.add(feature_set)
+    session.commit()
+
+    new_columns = sorted(set(transformed_df.columns) - set(df.columns))
+    return {
+        "feature_set_id": feature_set_id,
+        "removed_step": removed,
+        "step_count": len(steps),
+        "steps": [{"index": i, **s} for i, s in enumerate(steps)],
+        "new_columns": new_columns,
+        "total_columns": len(transformed_df.columns),
+    }
+
+
+# ---------------------------------------------------------------------------
+# 9. Feature importance
 # ---------------------------------------------------------------------------
 
 @router.get("/{dataset_id}/importance")

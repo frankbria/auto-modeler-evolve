@@ -101,6 +101,7 @@ dev = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "pytest-asyncio" },
     { name = "pytest-cov" },
 ]
 
@@ -129,7 +130,10 @@ requires-dist = [
 provides-extras = ["dev"]
 
 [package.metadata.requires-dev]
-dev = [{ name = "pytest-cov", specifier = ">=7.0.0" }]
+dev = [
+    { name = "pytest-asyncio", specifier = ">=1.3.0" },
+    { name = "pytest-cov", specifier = ">=7.0.0" },
+]
 
 [[package]]
 name = "black"
