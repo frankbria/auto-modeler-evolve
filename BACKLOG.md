@@ -10,10 +10,8 @@ Living document for coordinating between bot instances and tracking ideation.
 <!-- Brief description of what you're doing this session. -->
 <!-- Remove your entry when you commit your session wrap-up. -->
 
-## Day 3 (06:00) — Frontend Component Test Coverage
-Expanding Jest coverage to the 4 major untested components (deployment-panel, model-training-panel,
-validation-panel, feature-suggestions) plus filling api.ts coverage gaps. Target: frontend coverage
-from ~90% (on tested files only) to a true >85% across all files via collectCoverageFrom.
+## Day 3 (16:03) — Done
+Google Sheets URL import + feature-suggestions sub-component test coverage completed. See Recently Completed.
 
 
 
@@ -44,6 +42,7 @@ Ideas discovered during sessions. Pick from here or add new ones.
 <!-- Move items here after implementation. Format: -->
 <!-- - [Description] — Day N (HH:MM) — [1-line outcome] -->
 
+- Google Sheets URL import + sub-component test coverage — Day 3 (16:03) — POST /api/data/upload-url (Sheets + CSV URL); urllib.request download; UploadPanel URL toggle in frontend; PipelinePanel/DatasetListPanel/FeatureImportancePanel 38 new tests; 735 total
 - Excel/XLSX upload + Neural Network MLP — Day 3 (12:03) — openpyxl Excel ingest (convert to CSV), frontend dropzone update; MLPRegressor/MLPClassifier in algorithm registry; 21 new tests; 530 total
 - Multi-dataset support — Day 3 (02:00) — suggest_join_keys + merge_datasets in core/merger.py; 3 endpoints (list/join-keys/merge); DatasetListPanel in Data tab; 31 tests; 509 total
 - Data transformation pipeline with undo + scatter brushing — Day 3 (08:04) — GET/POST/DELETE /steps endpoints; PipelinePanel UI; InteractiveScatterChart with click-to-highlight; 14 new tests; 478 total; fixed pytest-asyncio missing dep
