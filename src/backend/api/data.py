@@ -1,6 +1,9 @@
+import io
 import json
 import math
+import re
 import shutil
+import urllib.request
 from pathlib import Path
 from typing import Any
 
@@ -670,4 +673,168 @@ def merge_project_datasets(
         "conflict_columns": result["conflict_columns"],
         "preview": result["preview_rows"],
         "column_stats": profile["columns"],
+    }
+
+
+# ---------------------------------------------------------------------------
+# URL import (Google Sheets + generic CSV URLs)
+# ---------------------------------------------------------------------------
+
+_GSHEETS_PATTERN = re.compile(
+    r"https://docs\.google\.com/spreadsheets/d/([A-Za-z0-9_\-]+)"
+)
+_GSHEETS_GID_PATTERN = re.compile(r"gid=([0-9]+)")
+
+
+def _sheets_to_csv_url(url: str) -> str:
+    """Convert a Google Sheets share/edit URL to a direct CSV export URL.
+
+    Preserves the gid (tab ID) if present so multi-sheet workbooks are
+    imported from the correct tab.
+    """
+    match = _GSHEETS_PATTERN.search(url)
+    if not match:
+        raise ValueError("URL does not look like a Google Sheets link")
+    sheet_id = match.group(1)
+    gid_match = _GSHEETS_GID_PATTERN.search(url)
+    export_url = (
+        f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv"
+    )
+    if gid_match:
+        export_url += f"&gid={gid_match.group(1)}"
+    return export_url
+
+
+def _is_google_sheets_url(url: str) -> bool:
+    return bool(_GSHEETS_PATTERN.search(url))
+
+
+class UrlImportRequest(BaseModel):
+    url: str
+    project_id: str
+    filename: str | None = None  # optional override; defaults to derived from URL
+
+
+@router.post("/upload-url", status_code=201)
+def upload_from_url(body: UrlImportRequest, session: Session = Depends(get_session)):
+    """Import a dataset from a URL (Google Sheets public link or direct CSV URL).
+
+    For Google Sheets: the sheet must be shared as "Anyone with the link can view".
+    Converts Google Sheets URLs to direct CSV export URLs automatically.
+    For other URLs: fetches directly and expects CSV content.
+    """
+    project = session.get(Project, body.project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    url = body.url.strip()
+    if not url.startswith(("http://", "https://")):
+        raise HTTPException(status_code=400, detail="URL must start with http:// or https://")
+
+    # Resolve the actual download URL
+    download_url = url
+    source_label = "URL"
+    if _is_google_sheets_url(url):
+        try:
+            download_url = _sheets_to_csv_url(url)
+            source_label = "Google Sheets"
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    # Download the CSV content
+    try:
+        req = urllib.request.Request(
+            download_url,
+            headers={"User-Agent": "AutoModeler/1.0"},
+        )
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            raw_bytes = resp.read()
+    except Exception as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Failed to fetch data from {source_label}: {exc}",
+        ) from exc
+
+    # Derive a filename
+    if body.filename:
+        stored_filename = body.filename if body.filename.endswith(".csv") else body.filename + ".csv"
+    elif _is_google_sheets_url(url):
+        m = _GSHEETS_PATTERN.search(url)
+        stored_filename = f"sheets_{m.group(1)[:12]}.csv" if m else "sheets_import.csv"
+    else:
+        # Use the last path segment of the URL, fall back to "import.csv"
+        path_part = url.rstrip("/").split("/")[-1].split("?")[0]
+        stored_filename = path_part if path_part.endswith(".csv") else "import.csv"
+
+    # Parse as CSV
+    try:
+        df = pd.read_csv(io.BytesIO(raw_bytes))
+    except Exception as exc:
+        raise HTTPException(
+            status_code=400, detail=f"Downloaded content could not be parsed as CSV: {exc}"
+        ) from exc
+
+    if df.empty:
+        raise HTTPException(status_code=400, detail="Imported dataset is empty")
+
+    # Save to filesystem
+    project_upload_dir = UPLOAD_DIR / body.project_id
+    project_upload_dir.mkdir(parents=True, exist_ok=True)
+    file_path = project_upload_dir / stored_filename
+    df.to_csv(file_path, index=False)
+
+    profile = compute_full_profile(df)
+
+    dataset = Dataset(
+        project_id=body.project_id,
+        filename=stored_filename,
+        file_path=str(file_path),
+        row_count=profile["row_count"],
+        column_count=profile["column_count"],
+        columns=json.dumps(profile["columns"]),
+        profile=json.dumps(profile),
+        size_bytes=file_path.stat().st_size,
+    )
+    session.add(dataset)
+    session.commit()
+    session.refresh(dataset)
+
+    preview_rows = _sanitize_rows(df.head(10).to_dict(orient="records"))
+
+    # Proactive narration (best-effort)
+    try:
+        col_names = [c["name"] for c in profile["columns"]] if profile.get("columns") else list(df.columns)
+        narration = narrate_upload(
+            filename=dataset.filename,
+            row_count=dataset.row_count,
+            col_count=dataset.column_count,
+            insights=profile.get("insights"),
+            column_names=col_names,
+        )
+        append_bot_message_to_conversation(body.project_id, narration, session)
+        dataset_summary = ", ".join(col_names[:8])
+        profile_highlights = json.dumps(
+            {k: profile[k] for k in ("patterns", "warnings", "correlations") if k in profile},
+            default=str,
+        )
+        ai_insight = narrate_data_insights_ai(
+            dataset_summary=dataset_summary,
+            profile_highlights=profile_highlights,
+            n_rows=dataset.row_count,
+            n_cols=dataset.column_count,
+        )
+        if ai_insight:
+            append_bot_message_to_conversation(body.project_id, ai_insight, session)
+    except Exception:  # noqa: BLE001
+        pass
+
+    return {
+        "dataset_id": dataset.id,
+        "filename": dataset.filename,
+        "row_count": dataset.row_count,
+        "column_count": dataset.column_count,
+        "preview": preview_rows,
+        "column_stats": profile["columns"],
+        "insights": profile.get("insights", []),
+        "source": source_label,
     }

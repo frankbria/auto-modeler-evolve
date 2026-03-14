@@ -104,6 +104,24 @@ describe("api.data", () => {
     expect(body.project_id).toBe("proj-1")
   })
 
+  it("uploadFromUrl() sends POST to /api/data/upload-url with url and project_id", async () => {
+    fetchMock.mockResponseOnce(JSON.stringify({ dataset_id: "ds3", row_count: 50, source: "Google Sheets" }))
+    const url = "https://docs.google.com/spreadsheets/d/SHEET_ID/edit"
+    await api.data.uploadFromUrl("proj-1", url)
+    expect(fetchMock.mock.calls[0][0]).toBe(`${BASE}/api/data/upload-url`)
+    expect(fetchMock.mock.calls[0][1]?.method).toBe("POST")
+    const body = JSON.parse(fetchMock.mock.calls[0][1]?.body as string)
+    expect(body.project_id).toBe("proj-1")
+    expect(body.url).toBe(url)
+  })
+
+  it("uploadFromUrl() includes optional filename when provided", async () => {
+    fetchMock.mockResponseOnce(JSON.stringify({ dataset_id: "ds3", row_count: 50 }))
+    await api.data.uploadFromUrl("proj-1", "https://example.com/data.csv", "my_data")
+    const body = JSON.parse(fetchMock.mock.calls[0][1]?.body as string)
+    expect(body.filename).toBe("my_data")
+  })
+
   it("preview() calls GET /api/data/:id/preview", async () => {
     fetchMock.mockResponseOnce(JSON.stringify({ dataset_id: "ds1" }))
     await api.data.preview("ds1")

@@ -375,6 +375,32 @@ export default function ProjectWorkspace() {
     }
   }, [projectId, setDataset, addMessage])
 
+  const handleImportUrl = useCallback(async (url: string) => {
+    setUploading(true)
+    try {
+      const result = await api.data.uploadFromUrl(projectId, url)
+      const dataset: Dataset = {
+        id: result.dataset_id,
+        project_id: projectId,
+        filename: result.filename,
+        row_count: result.row_count,
+        column_count: result.column_count,
+        uploaded_at: new Date().toISOString(),
+      }
+      setDataset(dataset, result.preview, result.column_stats, result.insights ?? [])
+      setFeatureSuggestions([])
+      setRightPanelVisible(true)
+    } catch {
+      addMessage({
+        role: "assistant",
+        content: "There was a problem importing from that URL. Make sure it is a public Google Sheets link or a direct CSV URL.",
+        timestamp: new Date().toISOString(),
+      })
+    } finally {
+      setUploading(false)
+    }
+  }, [projectId, setDataset, addMessage])
+
   if (loadingProject) {
     return (
       <div className="flex h-[calc(100vh-3rem)] items-center justify-center">
@@ -685,6 +711,7 @@ export default function ProjectWorkspace() {
                 isDragActive={isDragActive}
                 uploading={uploading}
                 onLoadSample={handleLoadSample}
+                onImportUrl={handleImportUrl}
               />
             )}
           </div>
@@ -700,13 +727,18 @@ function UploadPanel({
   isDragActive,
   uploading,
   onLoadSample,
+  onImportUrl,
 }: {
   getRootProps: ReturnType<typeof useDropzone>["getRootProps"]
   getInputProps: ReturnType<typeof useDropzone>["getInputProps"]
   isDragActive: boolean
   uploading: boolean
   onLoadSample: () => void
+  onImportUrl: (url: string) => void
 }) {
+  const [urlInput, setUrlInput] = useState("")
+  const [urlOpen, setUrlOpen] = useState(false)
+
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-4 p-8">
       <div
@@ -735,14 +767,56 @@ function UploadPanel({
       </div>
 
       {!uploading && (
-        <div className="flex flex-col items-center gap-1">
-          <p className="text-xs text-muted-foreground">Don&apos;t have a dataset handy?</p>
-          <button
-            onClick={onLoadSample}
-            className="text-xs text-primary hover:underline underline-offset-2"
-          >
-            Load sample sales data (200 rows, 5 columns)
-          </button>
+        <div className="flex flex-col items-center gap-3 w-full max-w-md">
+          <div className="flex flex-col items-center gap-1">
+            <p className="text-xs text-muted-foreground">Don&apos;t have a dataset handy?</p>
+            <button
+              onClick={onLoadSample}
+              className="text-xs text-primary hover:underline underline-offset-2"
+            >
+              Load sample sales data (200 rows, 5 columns)
+            </button>
+          </div>
+
+          <div className="flex flex-col items-center gap-1 w-full">
+            <button
+              onClick={() => setUrlOpen((v) => !v)}
+              className="text-xs text-muted-foreground hover:text-primary hover:underline underline-offset-2"
+            >
+              {urlOpen ? "Cancel" : "Import from Google Sheets or CSV URL"}
+            </button>
+            {urlOpen && (
+              <div className="flex w-full gap-2 mt-1">
+                <input
+                  type="url"
+                  value={urlInput}
+                  onChange={(e) => setUrlInput(e.target.value)}
+                  placeholder="https://docs.google.com/spreadsheets/d/..."
+                  className="flex-1 rounded-md border border-border bg-background px-3 py-1.5 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && urlInput.trim()) {
+                      onImportUrl(urlInput.trim())
+                      setUrlInput("")
+                      setUrlOpen(false)
+                    }
+                  }}
+                />
+                <button
+                  onClick={() => {
+                    if (urlInput.trim()) {
+                      onImportUrl(urlInput.trim())
+                      setUrlInput("")
+                      setUrlOpen(false)
+                    }
+                  }}
+                  disabled={!urlInput.trim()}
+                  className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground disabled:opacity-50 hover:bg-primary/90 transition-colors"
+                >
+                  Import
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>

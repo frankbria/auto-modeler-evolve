@@ -75,6 +75,17 @@ export const api = {
         body: JSON.stringify({ project_id: projectId }),
       }).then((r) => r.json()),
 
+    uploadFromUrl: (
+      projectId: string,
+      url: string,
+      filename?: string
+    ): Promise<UploadResponse & { source: string }> =>
+      fetch(`${API_URL}/api/data/upload-url`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ project_id: projectId, url, filename }),
+      }).then((r) => r.json()),
+
     sampleInfo: (): Promise<{ filename: string; row_count: number; column_count: number; columns: string[]; description: string }> =>
       fetch(`${API_URL}/api/data/sample/info`).then((r) => r.json()),
 
