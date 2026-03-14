@@ -30,7 +30,7 @@ import type {
 } from "@/lib/types"
 
 const WELCOME_MESSAGE =
-  "Hi! I'm your data modeling assistant. Upload a CSV file to get started, or ask me anything about your data."
+  "Hi! I'm your data modeling assistant. Upload a CSV or Excel file to get started, or ask me anything about your data."
 
 function buildWelcomeBackMessage(projectName: string, messages: ChatMsg[]): string {
   const msgCount = messages.length
@@ -323,7 +323,7 @@ export default function ProjectWorkspace() {
         addMessage({
           role: "assistant",
           content:
-            "There was a problem uploading your file. Please make sure it is a valid CSV and try again.",
+            "There was a problem uploading your file. Please make sure it is a valid CSV or Excel file (.csv, .xlsx, .xls) and try again.",
           timestamp: new Date().toISOString(),
         })
       } finally {
@@ -335,7 +335,11 @@ export default function ProjectWorkspace() {
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
-    accept: { "text/csv": [".csv"] },
+    accept: {
+      "text/csv": [".csv"],
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [".xlsx"],
+      "application/vnd.ms-excel": [".xls"],
+    },
     maxFiles: 1,
     disabled: uploading,
   })
@@ -717,10 +721,10 @@ function UploadPanel({
         {uploading ? (
           <p className="text-sm text-muted-foreground">Uploading...</p>
         ) : isDragActive ? (
-          <p className="text-sm font-medium">Drop your CSV here</p>
+          <p className="text-sm font-medium">Drop your file here</p>
         ) : (
           <>
-            <p className="text-sm font-medium">Drop your CSV here</p>
+            <p className="text-sm font-medium">Drop your CSV or Excel file here</p>
             <p className="mt-1 text-xs text-muted-foreground">or click to browse</p>
             <p className="mt-3 text-xs text-muted-foreground max-w-xs text-center">
               AutoModeler will profile your data, suggest features, train models,

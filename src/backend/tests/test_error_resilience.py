@@ -69,11 +69,13 @@ async def _upload_csv(client: AsyncClient, project_id: str, csv_bytes: bytes, fi
 
 class TestUploadErrorHandling:
 
-    async def test_upload_non_csv_extension_rejected(self, client):
+    async def test_upload_non_accepted_extension_rejected(self, client):
+        """A .json file (not csv/xlsx/xls) is rejected with 400."""
         pid = await _create_project(client, "reject-non-csv")
-        resp = await _upload_csv(client, pid, b"a,b\n1,2", filename="data.xlsx")
+        resp = await _upload_csv(client, pid, b'{"a":1}', filename="data.json")
         assert resp.status_code == 400
-        assert "CSV" in resp.json()["detail"] or "csv" in resp.json()["detail"].lower()
+        detail = resp.json()["detail"].lower()
+        assert "accepted" in detail or "csv" in detail or "excel" in detail
 
     async def test_upload_binary_file_rejected(self, client):
         pid = await _create_project(client, "reject-binary")

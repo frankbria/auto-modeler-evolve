@@ -24,6 +24,7 @@ from sklearn.ensemble import (
     RandomForestRegressor,
 )
 from sklearn.linear_model import LinearRegression, LogisticRegression
+from sklearn.neural_network import MLPClassifier, MLPRegressor
 
 try:
     from xgboost import XGBClassifier, XGBRegressor
@@ -119,6 +120,24 @@ def _build_regression_algorithms() -> dict[str, dict]:
                 "n_jobs": -1, "verbose": -1,
             },
         }
+    algos["neural_network_regressor"] = {
+        "name": "Neural Network",
+        "description": "A multi-layer perceptron that learns non-linear patterns.",
+        "plain_english": (
+            "Inspired by the brain — layers of connected nodes learn complex, "
+            "non-linear relationships. Can capture patterns that trees miss, "
+            "but needs more data to shine."
+        ),
+        "best_for": "Medium-to-large datasets with complex, non-linear relationships",
+        "class": MLPRegressor,
+        "params": {
+            "hidden_layer_sizes": (100, 50),
+            "max_iter": 500,
+            "random_state": 42,
+            "early_stopping": True,
+            "validation_fraction": 0.1,
+        },
+    }
     return algos
 
 
@@ -189,6 +208,24 @@ def _build_classification_algorithms() -> dict[str, dict]:
                 "n_jobs": -1, "verbose": -1,
             },
         }
+    algos["neural_network_classifier"] = {
+        "name": "Neural Network",
+        "description": "A multi-layer perceptron that learns non-linear patterns.",
+        "plain_english": (
+            "Inspired by the brain — layers of connected nodes learn complex, "
+            "non-linear relationships between features. "
+            "Returns probability scores for each class."
+        ),
+        "best_for": "Complex classification with many features and sufficient data",
+        "class": MLPClassifier,
+        "params": {
+            "hidden_layer_sizes": (100, 50),
+            "max_iter": 500,
+            "random_state": 42,
+            "early_stopping": True,
+            "validation_fraction": 0.1,
+        },
+    }
     return algos
 
 
@@ -231,6 +268,16 @@ def recommend_models(
 
 
 def _why_recommended(algorithm: str, n_rows: int, n_features: int) -> str:
+    if "neural_network" in algorithm:
+        if n_rows < 500:
+            return (
+                f"Neural networks need data to learn — {n_rows} rows is on the small "
+                "side, so other algorithms may outperform it here."
+            )
+        return (
+            f"With {n_rows} rows and {n_features} features, a neural network can "
+            "capture non-linear patterns that tree models might miss."
+        )
     if n_rows < 200:
         if "linear" in algorithm or "logistic" in algorithm:
             return (

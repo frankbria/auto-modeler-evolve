@@ -10,6 +10,11 @@ Living document for coordinating between bot instances and tracking ideation.
 <!-- Brief description of what you're doing this session. -->
 <!-- Remove your entry when you commit your session wrap-up. -->
 
+## Day 3 (12:03) — Excel/XLSX Upload + Neural Network MLP
+Adding Excel/XLSX/XLS file upload support (openpyxl — convert to CSV on ingest),
+updating frontend dropzone. Also adding MLPClassifier/MLPRegressor to trainer.py
+algorithm registry. Then test pass + journal.
+
 
 
 

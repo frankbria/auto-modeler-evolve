@@ -27,6 +27,25 @@ router = APIRouter(prefix="/api/data", tags=["data"])
 UPLOAD_DIR = Path(__file__).parent.parent / "data" / "uploads"
 SAMPLE_CSV = Path(__file__).parent.parent / "data" / "sample" / "sample_sales.csv"
 
+_ACCEPTED_EXTENSIONS = {".csv", ".xlsx", ".xls"}
+_ACCEPTED_MIME_TYPES = {
+    "text/csv",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.ms-excel",
+}
+
+
+def _load_df_from_path(path: Path) -> pd.DataFrame:
+    """Load a DataFrame from CSV or Excel file."""
+    ext = path.suffix.lower()
+    if ext in (".xlsx", ".xls"):
+        return pd.read_excel(path, engine="openpyxl")
+    return pd.read_csv(path)
+
+
+def _is_accepted_file(filename: str) -> bool:
+    return Path(filename).suffix.lower() in _ACCEPTED_EXTENSIONS
+
 
 def _sanitize_rows(rows: list[dict]) -> list[dict[str, Any]]:
     """Replace NaN/inf floats with None so JSON serialization never crashes."""
@@ -52,22 +71,37 @@ def upload_csv(
     project_id: str = Form(...),
     session: Session = Depends(get_session),
 ):
-    if not file.filename or not file.filename.lower().endswith(".csv"):
-        raise HTTPException(status_code=400, detail="Only CSV files are accepted")
+    if not file.filename or not _is_accepted_file(file.filename):
+        raise HTTPException(
+            status_code=400,
+            detail="Only CSV and Excel files (.csv, .xlsx, .xls) are accepted",
+        )
 
     project_upload_dir = UPLOAD_DIR / project_id
     project_upload_dir.mkdir(parents=True, exist_ok=True)
 
-    file_path = project_upload_dir / file.filename
+    original_path = project_upload_dir / file.filename
     contents = file.file.read()
-    file_path.write_bytes(contents)
+    original_path.write_bytes(contents)
 
     try:
-        df = pd.read_csv(file_path)
+        ext = Path(file.filename).suffix.lower()
+        if ext in (".xlsx", ".xls"):
+            df = pd.read_excel(original_path, engine="openpyxl")
+            # Store as CSV so all downstream readers use a consistent format
+            csv_filename = Path(file.filename).stem + ".csv"
+            file_path = project_upload_dir / csv_filename
+            df.to_csv(file_path, index=False)
+            original_path.unlink(missing_ok=True)  # drop the xlsx; keep only CSV
+            stored_filename = csv_filename
+        else:
+            df = pd.read_csv(original_path)
+            file_path = original_path
+            stored_filename = file.filename
     except Exception as exc:
-        file_path.unlink(missing_ok=True)
+        original_path.unlink(missing_ok=True)
         raise HTTPException(
-            status_code=400, detail=f"Failed to parse CSV: {exc}"
+            status_code=400, detail=f"Failed to parse file: {exc}"
         ) from exc
 
     # Full profiling on upload (includes distributions, correlations, patterns)
@@ -75,7 +109,7 @@ def upload_csv(
 
     dataset = Dataset(
         project_id=project_id,
-        filename=file.filename,
+        filename=stored_filename,
         file_path=str(file_path),
         row_count=profile["row_count"],
         column_count=profile["column_count"],
