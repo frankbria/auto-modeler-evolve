@@ -1,5 +1,6 @@
 "use client"
 
+import { useState } from "react"
 import {
   Bar,
   BarChart,
@@ -16,6 +17,7 @@ import {
   YAxis,
   ResponsiveContainer,
   Legend,
+  ReferenceLine,
 } from "recharts"
 import type { ChartSpec } from "@/lib/types"
 
@@ -39,6 +41,18 @@ export function ChartMessage({ spec }: ChartMessageProps) {
           <p className="mb-2 text-xs font-semibold text-muted-foreground">{title}</p>
         )}
         <HeatmapChart data={data} columns={y_keys} />
+      </div>
+    )
+  }
+
+  // Scatter uses an interactive component with click-to-highlight
+  if (chart_type === "scatter") {
+    return (
+      <div className="mt-2 rounded-lg border bg-card p-3">
+        {title && (
+          <p className="mb-2 text-xs font-semibold text-muted-foreground">{title}</p>
+        )}
+        <InteractiveScatterChart data={data} xLabel={x_label} yLabel={y_label} />
       </div>
     )
   }
@@ -161,6 +175,140 @@ function HeatmapChart({
   )
 }
 
+// ---------------------------------------------------------------------------
+// Interactive Scatter Chart — click to highlight a point
+// ---------------------------------------------------------------------------
+
+interface ScatterPoint {
+  x: number
+  y: number
+  label?: string
+  [key: string]: unknown
+}
+
+interface ActivePoint {
+  x: number
+  y: number
+  label?: string
+}
+
+function InteractiveScatterChart({
+  data,
+  xLabel,
+  yLabel,
+}: {
+  data: Record<string, unknown>[]
+  xLabel: string
+  yLabel: string
+}) {
+  const [activePoint, setActivePoint] = useState<ActivePoint | null>(null)
+  const axisStyle = { fontSize: 10, fill: "hsl(var(--muted-foreground))" }
+  const tooltipStyle = {
+    contentStyle: {
+      fontSize: 11,
+      backgroundColor: "hsl(var(--card))",
+      border: "1px solid hsl(var(--border))",
+      borderRadius: 6,
+    },
+  }
+
+  const points = data as ScatterPoint[]
+
+  function handleClick(point: ScatterPoint | null) {
+    if (!point) return
+    if (activePoint && activePoint.x === point.x && activePoint.y === point.y) {
+      setActivePoint(null)  // deselect on second click
+    } else {
+      setActivePoint({ x: point.x, y: point.y, label: point.label })
+    }
+  }
+
+  // Split data into highlighted and non-highlighted for rendering
+  const highlighted = activePoint
+    ? points.filter((p) => p.x === activePoint.x && p.y === activePoint.y)
+    : []
+  const normal = activePoint
+    ? points.filter((p) => !(p.x === activePoint.x && p.y === activePoint.y))
+    : points
+
+  return (
+    <div className="h-52 w-full">
+      <ResponsiveContainer width="100%" height="100%">
+        <ScatterChart margin={{ top: 4, right: 8, bottom: 20, left: 8 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+          <XAxis
+            dataKey="x"
+            type="number"
+            name={xLabel}
+            tick={axisStyle}
+            label={xLabel ? { value: xLabel, position: "insideBottom", offset: -12, style: axisStyle } : undefined}
+          />
+          <YAxis
+            dataKey="y"
+            type="number"
+            name={yLabel}
+            tick={axisStyle}
+            label={yLabel ? { value: yLabel, angle: -90, position: "insideLeft", style: axisStyle } : undefined}
+          />
+          <Tooltip
+            cursor={{ strokeDasharray: "3 3" }}
+            {...tooltipStyle}
+          />
+          {/* Reference lines at selected point */}
+          {activePoint && (
+            <>
+              <ReferenceLine
+                x={activePoint.x}
+                stroke={COLORS[2]}
+                strokeDasharray="4 4"
+                strokeOpacity={0.7}
+              />
+              <ReferenceLine
+                y={activePoint.y}
+                stroke={COLORS[2]}
+                strokeDasharray="4 4"
+                strokeOpacity={0.7}
+              />
+            </>
+          )}
+          {/* Regular points */}
+          <Scatter
+            data={normal}
+            fill={COLORS[0]}
+            fillOpacity={activePoint ? 0.35 : 0.8}
+            onClick={(point) => handleClick(point as unknown as ScatterPoint)}
+            style={{ cursor: "pointer" }}
+          />
+          {/* Highlighted point */}
+          {highlighted.length > 0 && (
+            <Scatter
+              data={highlighted}
+              fill={COLORS[2]}
+              fillOpacity={1}
+              onClick={() => setActivePoint(null)}
+              style={{ cursor: "pointer" }}
+              r={6}
+            />
+          )}
+        </ScatterChart>
+      </ResponsiveContainer>
+      {activePoint && (
+        <p className="mt-0.5 text-center text-[10px] text-muted-foreground">
+          Selected: ({xLabel || "x"} = {activePoint.x}, {yLabel || "y"} = {activePoint.y})
+          {activePoint.label && ` — ${activePoint.label}`}
+          <button
+            onClick={() => setActivePoint(null)}
+            className="ml-2 text-primary hover:underline"
+          >
+            Clear
+          </button>
+        </p>
+      )}
+    </div>
+  )
+}
+
+
 function renderChart(
   chartType: ChartSpec["chart_type"],
   data: Record<string, unknown>[],
@@ -220,17 +368,6 @@ function renderChart(
             />
           ))}
         </LineChart>
-      )
-
-    case "scatter":
-      return (
-        <ScatterChart margin={{ top: 4, right: 8, bottom: 20, left: 8 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-          <XAxis dataKey="x" type="number" name={xLabel} tick={axisStyle} />
-          <YAxis dataKey="y" type="number" name={yLabel} tick={axisStyle} />
-          <Tooltip cursor={{ strokeDasharray: "3 3" }} {...tooltipStyle} />
-          <Scatter data={data} fill={COLORS[0]} />
-        </ScatterChart>
       )
 
     case "pie":

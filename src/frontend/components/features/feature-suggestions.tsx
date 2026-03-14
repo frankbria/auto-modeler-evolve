@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -149,6 +149,98 @@ export function FeatureSuggestionsPanel({ datasetId, suggestions, onApplied }: P
           </div>
         )
       })}
+    </div>
+  )
+}
+
+
+// ---------------------------------------------------------------------------
+// PipelinePanel — shows active transformation steps with undo support
+// ---------------------------------------------------------------------------
+
+interface PipelineStep {
+  index: number
+  column: string
+  transform_type: string
+  params?: Record<string, unknown>
+}
+
+interface PipelinePanelProps {
+  featureSetId: string
+  onStepRemoved?: (newColumns: string[]) => void
+}
+
+export function PipelinePanel({ featureSetId, onStepRemoved }: PipelinePanelProps) {
+  const [steps, setSteps] = useState<PipelineStep[]>([])
+  const [loading, setLoading] = useState(true)
+  const [removing, setRemoving] = useState<number | null>(null)
+
+  useEffect(() => {
+    api.features.getSteps(featureSetId).then((res) => {
+      setSteps(res.steps)
+      setLoading(false)
+    }).catch(() => setLoading(false))
+  }, [featureSetId])
+
+  async function handleUndo(stepIndex: number) {
+    setRemoving(stepIndex)
+    try {
+      const res = await api.features.removeStep(featureSetId, stepIndex)
+      setSteps(res.steps)
+      onStepRemoved?.(res.new_columns)
+    } finally {
+      setRemoving(null)
+    }
+  }
+
+  if (loading) {
+    return <p className="text-xs text-muted-foreground">Loading pipeline…</p>
+  }
+
+  if (steps.length === 0) {
+    return (
+      <p className="text-xs text-muted-foreground">
+        No transformations applied yet. Select suggestions above and click Apply.
+      </p>
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <p className="text-xs text-muted-foreground">
+        {steps.length} transformation{steps.length !== 1 ? "s" : ""} in pipeline
+      </p>
+      {steps.map((step) => (
+        <div
+          key={step.index}
+          className="flex items-center gap-2 rounded-md border border-border bg-muted/30 px-2.5 py-1.5"
+        >
+          <span className="flex-shrink-0 rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-mono text-primary">
+            {step.index + 1}
+          </span>
+          <div className="flex-1 min-w-0">
+            <span className="text-xs font-medium truncate">{step.column}</span>
+            <span className="mx-1.5 text-muted-foreground">→</span>
+            <span
+              className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
+                TRANSFORM_COLORS[step.transform_type as FeatureSuggestion["transform_type"]] ??
+                "bg-gray-100 text-gray-800"
+              }`}
+            >
+              {TRANSFORM_LABELS[step.transform_type as FeatureSuggestion["transform_type"]] ??
+                step.transform_type}
+            </span>
+          </div>
+          <button
+            onClick={() => handleUndo(step.index)}
+            disabled={removing !== null}
+            className="flex-shrink-0 rounded px-1.5 py-0.5 text-[10px] text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-40 transition-colors"
+            title="Undo this step"
+          >
+            {removing === step.index ? "…" : "Undo"}
+          </button>
+        </div>
+      ))}
     </div>
   )
 }

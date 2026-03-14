@@ -170,6 +170,46 @@ export const api = {
       fetch(
         `${API_URL}/api/features/${datasetId}/importance?target_column=${encodeURIComponent(targetColumn)}`
       ).then((r) => r.json()),
+
+    // Pipeline step management (incremental add/undo)
+    getSteps: (featureSetId: string): Promise<{
+      feature_set_id: string
+      step_count: number
+      steps: Array<{ index: number; column: string; transform_type: string; params?: Record<string, unknown> }>
+    }> =>
+      fetch(`${API_URL}/api/features/${featureSetId}/steps`).then((r) => r.json()),
+
+    addStep: (
+      featureSetId: string,
+      step: { column: string; transform_type: string; params?: Record<string, unknown> }
+    ): Promise<{
+      feature_set_id: string
+      step_index: number
+      step_count: number
+      new_columns: string[]
+      total_columns: number
+      preview: Record<string, unknown>[]
+    }> =>
+      fetch(`${API_URL}/api/features/${featureSetId}/steps`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(step),
+      }).then((r) => r.json()),
+
+    removeStep: (
+      featureSetId: string,
+      stepIndex: number
+    ): Promise<{
+      feature_set_id: string
+      removed_step: { column: string; transform_type: string }
+      step_count: number
+      steps: Array<{ index: number; column: string; transform_type: string }>
+      new_columns: string[]
+      total_columns: number
+    }> =>
+      fetch(`${API_URL}/api/features/${featureSetId}/steps/${stepIndex}`, {
+        method: "DELETE",
+      }).then((r) => r.json()),
   },
 
   models: {
