@@ -21,6 +21,10 @@ const config = {
     "app/**/*.{ts,tsx}",
     "!**/*.d.ts",
     "!**/ui/**",
+    // types.ts is pure TypeScript interface declarations — no runtime code to cover
+    "!lib/types.ts",
+    // layout.tsx is a Next.js root layout — not meaningfully unit-testable
+    "!app/layout.tsx",
   ],
   // Exclude Playwright E2E tests from Jest
   testPathIgnorePatterns: ["/node_modules/", "/.next/", "/e2e/"],

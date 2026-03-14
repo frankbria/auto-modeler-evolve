@@ -21,3 +21,8 @@ Object.assign(navigator, {
 if (!Element.prototype.getAnimations) {
   Element.prototype.getAnimations = () => []
 }
+
+// jsdom doesn't implement scrollIntoView — stub it so refs that call it don't crash.
+if (!Element.prototype.scrollIntoView) {
+  Element.prototype.scrollIntoView = () => {}
+}
