@@ -282,10 +282,11 @@ guides them forward through the natural flow.
       pre-trained models for common use cases (sales forecasting, churn prediction).
       Document findings in LEARNINGS.md before implementing.
       *Day 3 (04:31): XGBoost 3.2.0 and LightGBM 4.6.0 integrated into trainer.py algorithm registries (both regression + classification). Optional imports with graceful fallback if not installed. feature_importances_ accessible — compatible with existing explainer.py. 16 tests; all pass. xgboost/lightgbm added to pyproject.toml.*
-- [ ] **Smarter chat orchestration** — Evolve the conversation AI: richer prompt
+- [x] **Smarter chat orchestration** — Evolve the conversation AI: richer prompt
       templates (prompts.py), narrative explanations (narration.py), proactive insights
       ("I noticed your R² dropped when I removed feature X — want to add it back?"),
       and multi-turn reasoning about model selection trade-offs.
+      *Day 2 (22:00): _call_claude() helper with API-key guard + fallback; narrate_data_insights_ai() calls Claude after upload with build_proactive_insight_prompt; narrate_training_with_ai() calls Claude with build_model_comparison_narrative_prompt for 2+ models; _detect_model_regression() compares latest vs best previous run (>2% threshold) and injects "I noticed your R² dropped..." into system prompt; build_system_prompt gains recent_messages param for multi-turn continuity (last 4 messages, 300-char cap); api/data.py and api/models.py wired. 20 new tests; 464 total, all pass.*
 - [~] **Advanced visualizations** — Heat maps for correlation matrices, interactive
       scatter plots with brushing/linking, time-series decomposition charts, model
       comparison radar charts. Each viz should be triggered naturally through chat.
