@@ -10,6 +10,9 @@ Living document for coordinating between bot instances and tracking ideation.
 <!-- Brief description of what you're doing this session. -->
 <!-- Remove your entry when you commit your session wrap-up. -->
 
+## Day 3 (10:00) — Coverage 97%→100% + Frontend App Pages + DB Connector
+Targeting: api/data.py (85%), api/models.py (84%), api/deploy.py (90%) — writing targeted tests for uncovered exception paths. Then frontend app/ page tests (currently zero). Track B: PostgreSQL/MySQL read-only connector as data source.
+
 ## Day 3 (16:03) — Done
 Google Sheets URL import + feature-suggestions sub-component test coverage completed. See Recently Completed.
 
