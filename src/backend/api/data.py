@@ -10,8 +10,8 @@ from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from chat.narration import append_bot_message_to_conversation, narrate_upload
-from core.analyzer import analyze_dataframe, compute_full_profile
-from core.chart_builder import build_correlation_heatmap
+from core.analyzer import analyze_dataframe, compute_full_profile, detect_time_columns
+from core.chart_builder import build_correlation_heatmap, build_timeseries_chart
 from core.query_engine import run_nl_query
 from db import get_session
 from models.dataset import Dataset
@@ -341,6 +341,92 @@ def get_correlations(dataset_id: str, session: Session = Depends(get_session)):
         "dataset_id": dataset_id,
         "chart_spec": heatmap,
         "pairs": correlations.get("pairs", []),
+    }
+
+
+@router.get("/{dataset_id}/timeseries")
+def get_timeseries(
+    dataset_id: str,
+    value_column: str | None = None,
+    window: int = 7,
+    session: Session = Depends(get_session),
+):
+    """Return a time-series decomposition chart for a dataset.
+
+    Detects date columns automatically. If value_column is not specified,
+    uses the first numeric column as the value series.
+
+    Returns:
+    - date_columns: list of detected date columns
+    - value_columns: list of available numeric columns
+    - chart_spec: line chart with original + rolling average + trend (or null if no date column)
+    """
+    dataset = session.get(Dataset, dataset_id)
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    file_path = Path(dataset.file_path)
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Dataset file not found on disk")
+
+    df = pd.read_csv(file_path)
+
+    # Detect date columns
+    date_cols = detect_time_columns(df)
+
+    # Get numeric columns (excluding the date column)
+    numeric_cols = [
+        c for c in df.select_dtypes(include="number").columns.tolist()
+        if c not in date_cols
+    ]
+
+    if not date_cols:
+        return {
+            "dataset_id": dataset_id,
+            "date_columns": [],
+            "value_columns": numeric_cols,
+            "chart_spec": None,
+            "message": "No date/time column detected. Time-series analysis requires a date column.",
+        }
+
+    if not numeric_cols:
+        return {
+            "dataset_id": dataset_id,
+            "date_columns": date_cols,
+            "value_columns": [],
+            "chart_spec": None,
+            "message": "No numeric columns available for time-series analysis.",
+        }
+
+    # Use specified value column or fall back to first numeric
+    chosen_value_col = value_column if value_column in numeric_cols else numeric_cols[0]
+    date_col = date_cols[0]
+
+    # Parse date column and sort
+    try:
+        df[date_col] = pd.to_datetime(df[date_col], errors="coerce")
+        df_sorted = df.dropna(subset=[date_col]).sort_values(date_col)
+    except Exception:  # noqa: BLE001
+        df_sorted = df
+
+    dates = df_sorted[date_col].astype(str).tolist()
+    values = df_sorted[chosen_value_col].tolist()
+
+    # Limit to 500 points to keep chart rendering fast
+    if len(dates) > 500:
+        step = len(dates) // 500
+        dates = dates[::step]
+        values = values[::step]
+
+    chart_spec = build_timeseries_chart(dates, values, chosen_value_col, window=window)
+
+    return {
+        "dataset_id": dataset_id,
+        "date_columns": date_cols,
+        "value_columns": numeric_cols,
+        "date_column": date_col,
+        "value_column": chosen_value_col,
+        "chart_spec": chart_spec,
     }
 
 

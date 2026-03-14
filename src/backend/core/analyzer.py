@@ -262,6 +262,35 @@ def _detect_patterns(
     return insights
 
 
+def detect_time_columns(df: pd.DataFrame) -> list[str]:
+    """Return a list of column names that look like date/time series.
+
+    Heuristic: tries pd.to_datetime on the first 10 non-null values.
+    Returns columns where at least 80% of those samples parse successfully.
+    """
+    time_cols = []
+    for col in df.columns:
+        if pd.api.types.is_datetime64_any_dtype(df[col]):
+            time_cols.append(col)
+            continue
+        # Only check string/object columns
+        if str(df[col].dtype) not in ("object", "str", "string"):
+            continue
+        sample = df[col].dropna().head(10)
+        if sample.empty:
+            continue
+        successes = 0
+        for val in sample:
+            try:
+                pd.to_datetime(str(val))
+                successes += 1
+            except (ValueError, TypeError):
+                pass
+        if successes / len(sample) >= 0.8:
+            time_cols.append(col)
+    return time_cols
+
+
 def _looks_like_date(value: str) -> bool:
     """Quick heuristic: does the value look like a date string?"""
     import re

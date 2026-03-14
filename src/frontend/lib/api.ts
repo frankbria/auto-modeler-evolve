@@ -89,6 +89,34 @@ export const api = {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ question }),
       }).then((r) => r.json()),
+
+    timeseries: (
+      datasetId: string,
+      valueColumn?: string,
+      window?: number
+    ): Promise<{
+      dataset_id: string
+      date_columns: string[]
+      value_columns: string[]
+      date_column?: string
+      value_column?: string
+      chart_spec: import("./types").ChartSpec | null
+      message?: string
+    }> => {
+      const params = new URLSearchParams()
+      if (valueColumn) params.set("value_column", valueColumn)
+      if (window) params.set("window", window.toString())
+      const qs = params.toString() ? `?${params}` : ""
+      return fetch(`${API_URL}/api/data/${datasetId}/timeseries${qs}`).then((r) => r.json())
+    },
+
+    correlations: (datasetId: string): Promise<{
+      dataset_id: string
+      chart_spec: import("./types").ChartSpec | null
+      pairs?: Array<{ col_a: string; col_b: string; correlation: number }>
+      message?: string
+    }> =>
+      fetch(`${API_URL}/api/data/${datasetId}/correlations`).then((r) => r.json()),
   },
 
   chat: {

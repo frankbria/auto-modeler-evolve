@@ -348,6 +348,69 @@ def build_model_comparison_radar(
     }
 
 
+def build_timeseries_chart(
+    dates: list,
+    values: list[float],
+    column_name: str,
+    window: int = 7,
+) -> dict[str, Any]:
+    """Build a time-series line chart with original values and rolling average.
+
+    Args:
+        dates:       List of date labels (strings) for the x-axis.
+        values:      Numeric values aligned with dates.
+        column_name: The name of the value column (shown as y-label).
+        window:      Rolling average window size (default 7). Auto-adjusted
+                     to min(window, len//3) so it works on short series.
+
+    Returns a chart spec with three series:
+        - "{column_name}": raw values
+        - "{window}-period average": rolling mean
+        - "Trend": linear trend line
+    The frontend renders this as a multi-series line chart.
+    """
+    n = len(values)
+    if n == 0:
+        return build_line_chart([], {}, f"{column_name} over time", x_label="Date", y_label=column_name)
+
+    # Adjust window to dataset length
+    effective_window = max(2, min(window, n // 3)) if n >= 6 else 1
+
+    # Rolling average
+    rolling_avg: list[Any] = []
+    for i in range(n):
+        start = max(0, i - effective_window + 1)
+        chunk = [v for v in values[start:i + 1] if v is not None and not (isinstance(v, float) and np.isnan(v))]
+        rolling_avg.append(round(sum(chunk) / len(chunk), 4) if chunk else None)
+
+    # Linear trend (OLS via numpy)
+    finite_indices = [i for i, v in enumerate(values) if v is not None and not (isinstance(v, float) and np.isnan(v))]
+    finite_values = [values[i] for i in finite_indices]
+    trend: list[Any] = [None] * n
+    if len(finite_indices) >= 2:
+        x_arr = np.array(finite_indices, dtype=float)
+        y_arr = np.array(finite_values, dtype=float)
+        # Fit y = m*x + b
+        m, b = np.polyfit(x_arr, y_arr, 1)
+        for i in range(n):
+            trend[i] = round(float(m * i + b), 4)
+
+    avg_label = f"{effective_window}-period avg"
+    y_series = {
+        column_name: [_jsonify(v) for v in values],
+        avg_label: rolling_avg,
+        "Trend": trend,
+    }
+
+    return build_line_chart(
+        x_values=[str(d) for d in dates],
+        y_series=y_series,
+        title=f"{column_name} over time",
+        x_label="Date",
+        y_label=column_name,
+    )
+
+
 def _jsonify(value: Any) -> Any:
     """Convert numpy scalars and NaN to JSON-safe Python types."""
     if isinstance(value, float) and np.isnan(value):

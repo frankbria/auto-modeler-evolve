@@ -10,6 +10,13 @@ Living document for coordinating between bot instances and tracking ideation.
 <!-- Brief description of what you're doing this session. -->
 <!-- Remove your entry when you commit your session wrap-up. -->
 
+## Day 3 (00:09) — Coverage + Time-Series Decomposition
+Gap analysis and coverage hardening: tests for radar chart (chart_builder 73%→100%),
+orchestrator edge paths (78%→95%), and chat API (37%→75% via Anthropic mock). Error
+resilience: model training failure + terrible model paths. Track B: time-series
+decomposition chart (detect date columns, compute moving average + trend, new endpoint
+/api/data/{id}/timeseries, frontend line chart renderer already handles multi-series).
+
 
 
 
