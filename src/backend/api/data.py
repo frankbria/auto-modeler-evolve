@@ -16,6 +16,7 @@ from chat.narration import (
 )
 from core.analyzer import analyze_dataframe, compute_full_profile, detect_time_columns
 from core.chart_builder import build_correlation_heatmap, build_timeseries_chart
+from core.merger import merge_datasets, suggest_join_keys
 from core.query_engine import run_nl_query
 from db import get_session
 from models.dataset import Dataset
@@ -478,4 +479,161 @@ def sample_info():
             "Monthly sales data with 200 rows across 5 product lines and 4 regions. "
             "Good for predicting revenue."
         ),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Multi-dataset support
+# ---------------------------------------------------------------------------
+
+@router.get("/project/{project_id}/datasets")
+def list_project_datasets(project_id: str, session: Session = Depends(get_session)):
+    """List all datasets uploaded to a project."""
+    project = session.get(Project, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    datasets = session.exec(
+        select(Dataset).where(Dataset.project_id == project_id)
+    ).all()
+
+    return [
+        {
+            "dataset_id": ds.id,
+            "filename": ds.filename,
+            "row_count": ds.row_count,
+            "column_count": ds.column_count,
+            "uploaded_at": ds.uploaded_at.isoformat(),
+            "size_bytes": ds.size_bytes,
+        }
+        for ds in datasets
+    ]
+
+
+class JoinKeysRequest(BaseModel):
+    dataset_id_1: str
+    dataset_id_2: str
+
+
+@router.post("/join-keys")
+def get_join_key_suggestions(body: JoinKeysRequest, session: Session = Depends(get_session)):
+    """Suggest candidate join keys for merging two datasets.
+
+    Returns common columns ranked by uniqueness — the best join key candidates first.
+    """
+    ds1 = session.get(Dataset, body.dataset_id_1)
+    ds2 = session.get(Dataset, body.dataset_id_2)
+    if not ds1:
+        raise HTTPException(status_code=404, detail=f"Dataset {body.dataset_id_1} not found")
+    if not ds2:
+        raise HTTPException(status_code=404, detail=f"Dataset {body.dataset_id_2} not found")
+
+    path1, path2 = Path(ds1.file_path), Path(ds2.file_path)
+    if not path1.exists():
+        raise HTTPException(status_code=404, detail="Left dataset file not found on disk")
+    if not path2.exists():
+        raise HTTPException(status_code=404, detail="Right dataset file not found on disk")
+
+    df1 = pd.read_csv(path1)
+    df2 = pd.read_csv(path2)
+    suggestions = suggest_join_keys(df1, df2)
+
+    return {
+        "dataset_id_1": body.dataset_id_1,
+        "dataset_id_2": body.dataset_id_2,
+        "join_key_suggestions": suggestions,
+        "common_column_count": len(suggestions),
+    }
+
+
+class MergeRequest(BaseModel):
+    dataset_id_1: str
+    dataset_id_2: str
+    join_key: str
+    how: str = "inner"  # inner | left | right | outer
+    suffix_left: str = "_left"
+    suffix_right: str = "_right"
+    save_as_filename: str | None = None  # defaults to "{file1}+{file2}_merged.csv"
+
+
+@router.post("/{project_id}/merge", status_code=201)
+def merge_project_datasets(
+    project_id: str,
+    body: MergeRequest,
+    session: Session = Depends(get_session),
+):
+    """Merge two datasets within a project on a shared join key.
+
+    Creates a new Dataset record for the merged result.
+    Returns preview + full column stats for the merged dataset.
+    """
+    project = session.get(Project, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    ds1 = session.get(Dataset, body.dataset_id_1)
+    ds2 = session.get(Dataset, body.dataset_id_2)
+    if not ds1:
+        raise HTTPException(status_code=404, detail=f"Dataset {body.dataset_id_1} not found")
+    if not ds2:
+        raise HTTPException(status_code=404, detail=f"Dataset {body.dataset_id_2} not found")
+
+    path1, path2 = Path(ds1.file_path), Path(ds2.file_path)
+    if not path1.exists():
+        raise HTTPException(status_code=404, detail="Left dataset file not found on disk")
+    if not path2.exists():
+        raise HTTPException(status_code=404, detail="Right dataset file not found on disk")
+
+    df1 = pd.read_csv(path1)
+    df2 = pd.read_csv(path2)
+
+    try:
+        result = merge_datasets(
+            df1,
+            df2,
+            join_key=body.join_key,
+            how=body.how,
+            suffix_left=body.suffix_left,
+            suffix_right=body.suffix_right,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    merged_df: pd.DataFrame = result["merged_df"]
+
+    # Persist merged CSV
+    base1 = Path(ds1.filename).stem
+    base2 = Path(ds2.filename).stem
+    out_filename = body.save_as_filename or f"{base1}+{base2}_merged.csv"
+    project_upload_dir = UPLOAD_DIR / project_id
+    project_upload_dir.mkdir(parents=True, exist_ok=True)
+    out_path = project_upload_dir / out_filename
+    merged_df.to_csv(out_path, index=False)
+
+    profile = compute_full_profile(merged_df)
+
+    dataset = Dataset(
+        project_id=project_id,
+        filename=out_filename,
+        file_path=str(out_path),
+        row_count=profile["row_count"],
+        column_count=profile["column_count"],
+        columns=json.dumps(profile["columns"]),
+        profile=json.dumps(profile),
+        size_bytes=out_path.stat().st_size,
+    )
+    session.add(dataset)
+    session.commit()
+    session.refresh(dataset)
+
+    return {
+        "dataset_id": dataset.id,
+        "filename": dataset.filename,
+        "row_count": dataset.row_count,
+        "column_count": dataset.column_count,
+        "join_key": body.join_key,
+        "how": body.how,
+        "conflict_columns": result["conflict_columns"],
+        "preview": result["preview_rows"],
+        "column_stats": profile["columns"],
     }

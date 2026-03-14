@@ -14,6 +14,7 @@ import { ModelTrainingPanel } from "@/components/models/model-training-panel"
 import {
   FeatureSuggestionsPanel,
   FeatureImportancePanel,
+  DatasetListPanel,
 } from "@/components/features/feature-suggestions"
 import { ValidationPanel } from "@/components/validation/validation-panel"
 import { DeploymentPanel } from "@/components/deploy/deployment-panel"
@@ -520,14 +521,31 @@ export default function ProjectWorkspace() {
                 </div>
 
                 {activeTab === "data" && (
-                  <DataPreviewPanel
-                    filename={currentDataset.filename}
-                    rowCount={currentDataset.row_count}
-                    columnCount={currentDataset.column_count}
-                    preview={dataPreview}
-                    stats={columnStats}
-                    insights={dataInsights}
-                  />
+                  <div className="flex flex-1 flex-col overflow-hidden">
+                    <DataPreviewPanel
+                      filename={currentDataset.filename}
+                      rowCount={currentDataset.row_count}
+                      columnCount={currentDataset.column_count}
+                      preview={dataPreview}
+                      stats={columnStats}
+                      insights={dataInsights}
+                    />
+                    <div className="border-t px-4 py-3">
+                      <h3 className="mb-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                        Project Datasets
+                      </h3>
+                      <DatasetListPanel
+                        projectId={projectId}
+                        onMerged={(result) => {
+                          addMessage({
+                            role: "assistant",
+                            content: `I've merged the two datasets on **${result.join_key}** (${result.how} join). The result has ${result.row_count.toLocaleString()} rows and ${result.column_count} columns, saved as **${result.filename}**.${result.conflict_columns.length > 0 ? ` Columns that appeared in both datasets were renamed with suffixes: ${result.conflict_columns.join(", ")}.` : ""} You can now use this merged dataset for feature engineering and model training.`,
+                            timestamp: new Date().toISOString(),
+                          })
+                        }}
+                      />
+                    </div>
+                  </div>
                 )}
 
                 {activeTab === "features" && (
@@ -752,7 +770,7 @@ function DataPreviewPanel({
       : "bg-blue-50 border-blue-200 text-blue-800 dark:bg-blue-950 dark:border-blue-900 dark:text-blue-200"
 
   return (
-    <div className="flex flex-1 flex-col overflow-hidden">
+    <div className="flex flex-1 min-h-0 flex-col overflow-hidden">
       {/* Header */}
       <div className="flex items-center gap-3 border-b px-4 py-3">
         <h2 className="text-sm font-semibold">{filename}</h2>

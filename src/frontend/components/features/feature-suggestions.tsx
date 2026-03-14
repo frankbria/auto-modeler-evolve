@@ -4,7 +4,14 @@ import { useState, useEffect } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import type { FeatureSuggestion, FeatureSetResult, FeatureImportanceEntry } from "@/lib/types"
+import type {
+  FeatureSuggestion,
+  FeatureSetResult,
+  FeatureImportanceEntry,
+  DatasetListItem,
+  JoinKeySuggestion,
+  MergeResponse,
+} from "@/lib/types"
 import { api } from "@/lib/api"
 
 const TRANSFORM_LABELS: Record<FeatureSuggestion["transform_type"], string> = {
@@ -241,6 +248,239 @@ export function PipelinePanel({ featureSetId, onStepRemoved }: PipelinePanelProp
           </button>
         </div>
       ))}
+    </div>
+  )
+}
+
+
+// ---------------------------------------------------------------------------
+// DatasetListPanel — lists project datasets + guided merge UI
+// ---------------------------------------------------------------------------
+
+interface DatasetListPanelProps {
+  projectId: string
+  onMerged?: (result: MergeResponse) => void
+}
+
+export function DatasetListPanel({ projectId, onMerged }: DatasetListPanelProps) {
+  const [datasets, setDatasets] = useState<DatasetListItem[]>([])
+  const [loading, setLoading] = useState(true)
+
+  // Merge UI state
+  const [mergeOpen, setMergeOpen] = useState(false)
+  const [leftId, setLeftId] = useState("")
+  const [rightId, setRightId] = useState("")
+  const [joinKeys, setJoinKeys] = useState<JoinKeySuggestion[]>([])
+  const [loadingKeys, setLoadingKeys] = useState(false)
+  const [joinKey, setJoinKey] = useState("")
+  const [joinHow, setJoinHow] = useState("inner")
+  const [merging, setMerging] = useState(false)
+  const [mergeResult, setMergeResult] = useState<MergeResponse | null>(null)
+  const [mergeError, setMergeError] = useState("")
+
+  useEffect(() => {
+    api.data
+      .listByProject(projectId)
+      .then(setDatasets)
+      .catch(() => setDatasets([]))
+      .finally(() => setLoading(false))
+  }, [projectId])
+
+  // When both datasets are selected, fetch join key suggestions
+  useEffect(() => {
+    if (!leftId || !rightId || leftId === rightId) {
+      setJoinKeys([])
+      setJoinKey("")
+      return
+    }
+    setLoadingKeys(true)
+    api.data
+      .joinKeys(leftId, rightId)
+      .then((r) => {
+        setJoinKeys(r.join_key_suggestions)
+        const best = r.join_key_suggestions.find((k) => k.recommended)
+        setJoinKey(best?.name ?? r.join_key_suggestions[0]?.name ?? "")
+      })
+      .catch(() => setJoinKeys([]))
+      .finally(() => setLoadingKeys(false))
+  }, [leftId, rightId])
+
+  async function handleMerge() {
+    if (!leftId || !rightId || !joinKey) return
+    setMerging(true)
+    setMergeError("")
+    setMergeResult(null)
+    try {
+      const result = await api.data.merge(projectId, {
+        dataset_id_1: leftId,
+        dataset_id_2: rightId,
+        join_key: joinKey,
+        how: joinHow,
+      })
+      setMergeResult(result)
+      // Refresh the dataset list
+      const updated = await api.data.listByProject(projectId)
+      setDatasets(updated)
+      onMerged?.(result)
+    } catch {
+      setMergeError("Merge failed. Check that the join key exists in both datasets.")
+    } finally {
+      setMerging(false)
+    }
+  }
+
+  if (loading) {
+    return <p className="text-xs text-muted-foreground">Loading datasets…</p>
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center justify-between">
+        <p className="text-xs text-muted-foreground">
+          {datasets.length} dataset{datasets.length !== 1 ? "s" : ""} in this project
+        </p>
+        {datasets.length >= 2 && (
+          <button
+            onClick={() => setMergeOpen((v) => !v)}
+            className="text-xs text-primary hover:underline underline-offset-2"
+          >
+            {mergeOpen ? "Cancel merge" : "Merge two datasets"}
+          </button>
+        )}
+      </div>
+
+      {/* Dataset list */}
+      <div className="flex flex-col gap-1.5">
+        {datasets.map((ds) => (
+          <div
+            key={ds.dataset_id}
+            className="flex items-center gap-2 rounded-md border border-border bg-muted/20 px-3 py-2"
+          >
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-medium truncate">{ds.filename}</p>
+              <p className="text-[10px] text-muted-foreground">
+                {ds.row_count.toLocaleString()} rows · {ds.column_count} columns
+              </p>
+            </div>
+            <Badge variant="secondary" className="text-[10px] shrink-0">
+              {new Date(ds.uploaded_at).toLocaleDateString()}
+            </Badge>
+          </div>
+        ))}
+      </div>
+
+      {/* Merge UI */}
+      {mergeOpen && datasets.length >= 2 && (
+        <div className="rounded-lg border border-dashed border-primary/40 bg-primary/5 p-3 flex flex-col gap-3">
+          <p className="text-xs font-semibold">Merge datasets</p>
+          <p className="text-[11px] text-muted-foreground">
+            Combine two datasets on a shared column. Conflicting column names get a suffix to avoid clashes.
+          </p>
+
+          <div className="grid grid-cols-2 gap-2">
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] text-muted-foreground">Left dataset</label>
+              <select
+                value={leftId}
+                onChange={(e) => setLeftId(e.target.value)}
+                className="rounded-md border border-border bg-background px-2 py-1 text-xs"
+              >
+                <option value="">Select…</option>
+                {datasets.map((ds) => (
+                  <option key={ds.dataset_id} value={ds.dataset_id}>
+                    {ds.filename}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] text-muted-foreground">Right dataset</label>
+              <select
+                value={rightId}
+                onChange={(e) => setRightId(e.target.value)}
+                className="rounded-md border border-border bg-background px-2 py-1 text-xs"
+              >
+                <option value="">Select…</option>
+                {datasets
+                  .filter((ds) => ds.dataset_id !== leftId)
+                  .map((ds) => (
+                    <option key={ds.dataset_id} value={ds.dataset_id}>
+                      {ds.filename}
+                    </option>
+                  ))}
+              </select>
+            </div>
+          </div>
+
+          {loadingKeys && (
+            <p className="text-[11px] text-muted-foreground">Finding common columns…</p>
+          )}
+
+          {!loadingKeys && joinKeys.length > 0 && (
+            <div className="grid grid-cols-2 gap-2">
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] text-muted-foreground">Join on</label>
+                <select
+                  value={joinKey}
+                  onChange={(e) => setJoinKey(e.target.value)}
+                  className="rounded-md border border-border bg-background px-2 py-1 text-xs"
+                >
+                  {joinKeys.map((k) => (
+                    <option key={k.name} value={k.name}>
+                      {k.name} {k.recommended ? "★" : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] text-muted-foreground">Join type</label>
+                <select
+                  value={joinHow}
+                  onChange={(e) => setJoinHow(e.target.value)}
+                  className="rounded-md border border-border bg-background px-2 py-1 text-xs"
+                >
+                  <option value="inner">Inner — keep matching rows only</option>
+                  <option value="left">Left — keep all rows from left</option>
+                  <option value="right">Right — keep all rows from right</option>
+                  <option value="outer">Outer — keep all rows from both</option>
+                </select>
+              </div>
+            </div>
+          )}
+
+          {!loadingKeys && leftId && rightId && joinKeys.length === 0 && (
+            <p className="text-[11px] text-amber-600">
+              No common columns found — these datasets cannot be merged directly.
+            </p>
+          )}
+
+          {mergeError && (
+            <p className="text-[11px] text-destructive">{mergeError}</p>
+          )}
+
+          {mergeResult && (
+            <div className="rounded-md border border-green-200 bg-green-50 px-3 py-2 text-[11px] dark:border-green-900 dark:bg-green-950">
+              <p className="font-semibold text-green-800 dark:text-green-200">
+                Merged! {mergeResult.row_count.toLocaleString()} rows · {mergeResult.column_count} columns
+              </p>
+              <p className="mt-0.5 text-green-700 dark:text-green-300">
+                Saved as <strong>{mergeResult.filename}</strong>
+                {mergeResult.conflict_columns.length > 0
+                  ? ` (${mergeResult.conflict_columns.length} column${mergeResult.conflict_columns.length !== 1 ? "s" : ""} renamed with suffixes)`
+                  : ""}
+              </p>
+            </div>
+          )}
+
+          <Button
+            size="sm"
+            onClick={handleMerge}
+            disabled={!leftId || !rightId || !joinKey || merging || joinKeys.length === 0}
+          >
+            {merging ? "Merging…" : "Merge datasets"}
+          </Button>
+        </div>
+      )}
     </div>
   )
 }

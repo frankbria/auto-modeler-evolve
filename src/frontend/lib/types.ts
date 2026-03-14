@@ -62,6 +62,38 @@ export interface Dataset {
   uploaded_at: string
 }
 
+export interface DatasetListItem {
+  dataset_id: string
+  filename: string
+  row_count: number
+  column_count: number
+  uploaded_at: string
+  size_bytes: number
+}
+
+export interface JoinKeySuggestion {
+  name: string
+  dtype_left: string
+  dtype_right: string
+  unique_left: number
+  unique_right: number
+  uniqueness_left: number
+  uniqueness_right: number
+  recommended: boolean
+}
+
+export interface MergeResponse {
+  dataset_id: string
+  filename: string
+  row_count: number
+  column_count: number
+  join_key: string
+  how: string
+  conflict_columns: string[]
+  preview: Record<string, unknown>[]
+  column_stats: ColumnStat[]
+}
+
 export interface UploadResponse {
   dataset_id: string
   filename: string

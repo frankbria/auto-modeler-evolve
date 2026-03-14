@@ -16,6 +16,9 @@ import type {
   RowExplanationResponse,
   Deployment,
   PredictionResult,
+  DatasetListItem,
+  JoinKeySuggestion,
+  MergeResponse,
 } from "./types"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
@@ -117,6 +120,42 @@ export const api = {
       message?: string
     }> =>
       fetch(`${API_URL}/api/data/${datasetId}/correlations`).then((r) => r.json()),
+
+    listByProject: (projectId: string): Promise<DatasetListItem[]> =>
+      fetch(`${API_URL}/api/data/project/${projectId}/datasets`).then((r) => r.json()),
+
+    joinKeys: (
+      datasetId1: string,
+      datasetId2: string
+    ): Promise<{
+      dataset_id_1: string
+      dataset_id_2: string
+      join_key_suggestions: JoinKeySuggestion[]
+      common_column_count: number
+    }> =>
+      fetch(`${API_URL}/api/data/join-keys`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dataset_id_1: datasetId1, dataset_id_2: datasetId2 }),
+      }).then((r) => r.json()),
+
+    merge: (
+      projectId: string,
+      body: {
+        dataset_id_1: string
+        dataset_id_2: string
+        join_key: string
+        how: string
+        suffix_left?: string
+        suffix_right?: string
+        save_as_filename?: string
+      }
+    ): Promise<MergeResponse> =>
+      fetch(`${API_URL}/api/data/${projectId}/merge`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }).then((r) => r.json()),
   },
 
   chat: {
