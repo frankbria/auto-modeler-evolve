@@ -167,7 +167,7 @@ def _parse_question_to_spec(
         if raw.lower() == "null":
             return None
         return json.loads(raw)
-    except (json.JSONDecodeError, anthropic.APIError, IndexError):
+    except Exception:  # noqa: BLE001 — catch auth errors, network errors, parse errors
         return None
 
 
