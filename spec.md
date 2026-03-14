@@ -253,6 +253,7 @@ guides them forward through the natural flow.
       components. Write targeted tests for edge cases, error paths, and boundary
       conditions. Use `pytest --cov` and Jest coverage reports to find gaps.
       *Day 2 (20:05): query_engine.py 14%→92%, total backend 92%→95%. Remaining: frontend Jest coverage; explainer.py and validator.py edge paths.*
+      *Day 3 (00:09): chart_builder 73%→100%, orchestrator 78%→100%, api/chat 37%→98%, total backend 94%→97%. 400 tests pass. Remaining: frontend Jest coverage.*
 - [x] **Integration tests** — Build tests that exercise real cross-boundary flows:
       upload → profile → chat about data (hits Claude API mock or stub) → train → deploy
       → predict. These complement E2E by testing backend flows without browser overhead.
@@ -260,10 +261,11 @@ guides them forward through the natural flow.
 - [ ] **Self-demo capability** — Build a scripted demo that can run autonomously to
       prove the platform works. Upload sample data, run through the full workflow, capture
       screenshots or output at each stage. This becomes the smoke test and the showcase.
-- [~] **Error resilience audit** — Systematically test failure modes: corrupt CSV,
+- [x] **Error resilience audit** — Systematically test failure modes: corrupt CSV,
       empty dataset, single-row data, all-null columns, model training failure, deployment
       of a terrible model. Verify every failure produces a helpful user-facing message.
       *Day 2 (20:05): 22 new tests; fixed 2 real bugs (NaN in preview rows, inf in histogram); training/deploy edge cases covered. Remaining: model training failure + terribly-performing model path.*
+      *Day 3 (00:09): model training failure (run→failed, error_message populated), partial failure (1 algo fails, others continue), terrible model (low R², still deployable), constant target, all-failed narration. All paths covered.*
 - [ ] **Performance baseline** — Measure and record response times for key operations
       (upload profiling, model training, prediction). Establish baselines so future
       changes can be compared. Identify and fix any obvious bottlenecks.
@@ -284,6 +286,7 @@ guides them forward through the natural flow.
       comparison radar charts. Each viz should be triggered naturally through chat.
       *Day 2 (20:05): correlation heatmap added — build_correlation_heatmap(), /api/data/{id}/correlations endpoint, frontend HeatmapChart CSS-grid renderer with color scale. Remaining: time-series decomposition.*
       *Day 2 (14:00): radar chart for model comparison — build_model_comparison_radar() normalizes all metrics to 0-1, /api/models/{id}/comparison-radar endpoint returns 204 when <2 models, Recharts RadarChart renders in training panel with one polygon per model.*
+      *Day 3 (00:09): time-series decomposition — detect_time_columns() auto-finds date columns, build_timeseries_chart() produces original + rolling avg + OLS trend, GET /api/data/{id}/timeseries endpoint, api.ts timeseries() client method. 21 tests. Remaining: brushing/linking on scatter.*
 - [ ] **Data transformation pipeline** — Support for multi-step, reorderable
       transformation pipelines with undo. Let users build complex feature engineering
       flows through conversation.
