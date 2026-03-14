@@ -289,4 +289,121 @@ describe("api.deploy", () => {
     expect(body.region).toBe("North")
     expect(body.units).toBe(10)
   })
+
+  it("get() calls GET /api/deploy/:id", async () => {
+    fetchMock.mockResponseOnce(JSON.stringify({ id: "dep-1" }))
+    await api.deploy.get("dep-1")
+    expect(fetchMock).toHaveBeenCalledWith(`${BASE}/api/deploy/dep-1`)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Data — coverage for sampleInfo, profile, listByProject, joinKeys, merge
+// ---------------------------------------------------------------------------
+
+describe("api.data — additional endpoints", () => {
+  it("sampleInfo() calls GET /api/data/sample/info", async () => {
+    fetchMock.mockResponseOnce(JSON.stringify({ filename: "sample.csv", row_count: 200 }))
+    const result = await api.data.sampleInfo()
+    expect(fetchMock).toHaveBeenCalledWith(`${BASE}/api/data/sample/info`)
+    expect(result.row_count).toBe(200)
+  })
+
+  it("profile() calls GET /api/data/:id/profile", async () => {
+    fetchMock.mockResponseOnce(JSON.stringify({ columns: [] }))
+    await api.data.profile("ds1")
+    expect(fetchMock).toHaveBeenCalledWith(`${BASE}/api/data/ds1/profile`)
+  })
+
+  it("listByProject() calls GET /api/data/project/:id/datasets", async () => {
+    fetchMock.mockResponseOnce(JSON.stringify([{ dataset_id: "ds1" }]))
+    const result = await api.data.listByProject("proj-1")
+    expect(fetchMock).toHaveBeenCalledWith(`${BASE}/api/data/project/proj-1/datasets`)
+    expect(result).toHaveLength(1)
+  })
+
+  it("joinKeys() sends POST with two dataset IDs", async () => {
+    fetchMock.mockResponseOnce(JSON.stringify({ join_key_suggestions: [] }))
+    await api.data.joinKeys("ds1", "ds2")
+    const body = JSON.parse(fetchMock.mock.calls[0][1]?.body as string)
+    expect(body.dataset_id_1).toBe("ds1")
+    expect(body.dataset_id_2).toBe("ds2")
+    expect(fetchMock.mock.calls[0][0]).toBe(`${BASE}/api/data/join-keys`)
+  })
+
+  it("merge() sends POST to /api/data/:projectId/merge", async () => {
+    fetchMock.mockResponseOnce(JSON.stringify({ dataset_id: "ds-merged", row_count: 300 }))
+    await api.data.merge("proj-1", {
+      dataset_id_1: "ds1",
+      dataset_id_2: "ds2",
+      join_key: "customer_id",
+      how: "inner",
+    })
+    expect(fetchMock.mock.calls[0][0]).toBe(`${BASE}/api/data/proj-1/merge`)
+    const body = JSON.parse(fetchMock.mock.calls[0][1]?.body as string)
+    expect(body.join_key).toBe("customer_id")
+    expect(body.how).toBe("inner")
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Features — coverage for getSteps, addStep, removeStep
+// ---------------------------------------------------------------------------
+
+describe("api.features — pipeline step management", () => {
+  it("getSteps() calls GET /api/features/:id/steps", async () => {
+    fetchMock.mockResponseOnce(JSON.stringify({ feature_set_id: "fs1", step_count: 2, steps: [] }))
+    await api.features.getSteps("fs1")
+    expect(fetchMock).toHaveBeenCalledWith(`${BASE}/api/features/fs1/steps`)
+  })
+
+  it("addStep() sends POST with step data", async () => {
+    fetchMock.mockResponseOnce(JSON.stringify({ feature_set_id: "fs1", step_count: 1 }))
+    await api.features.addStep("fs1", { column: "date", transform_type: "date_decompose" })
+    expect(fetchMock.mock.calls[0][1]?.method).toBe("POST")
+    const body = JSON.parse(fetchMock.mock.calls[0][1]?.body as string)
+    expect(body.column).toBe("date")
+    expect(body.transform_type).toBe("date_decompose")
+    expect(fetchMock.mock.calls[0][0]).toBe(`${BASE}/api/features/fs1/steps`)
+  })
+
+  it("removeStep() sends DELETE to /api/features/:id/steps/:index", async () => {
+    fetchMock.mockResponseOnce(JSON.stringify({ feature_set_id: "fs1", step_count: 0 }))
+    await api.features.removeStep("fs1", 2)
+    expect(fetchMock.mock.calls[0][0]).toBe(`${BASE}/api/features/fs1/steps/2`)
+    expect(fetchMock.mock.calls[0][1]?.method).toBe("DELETE")
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Models — coverage for recommendations, runs, compare
+// ---------------------------------------------------------------------------
+
+describe("api.models — additional endpoints", () => {
+  it("recommendations() calls GET /api/models/:id/recommendations", async () => {
+    fetchMock.mockResponseOnce(JSON.stringify({ recommendations: [], problem_type: "regression" }))
+    const result = await api.models.recommendations("proj-1")
+    expect(fetchMock).toHaveBeenCalledWith(`${BASE}/api/models/proj-1/recommendations`)
+    expect(result.problem_type).toBe("regression")
+  })
+
+  it("runs() calls GET /api/models/:id/runs", async () => {
+    fetchMock.mockResponseOnce(JSON.stringify({ project_id: "proj-1", runs: [] }))
+    const result = await api.models.runs("proj-1")
+    expect(fetchMock).toHaveBeenCalledWith(`${BASE}/api/models/proj-1/runs`)
+    expect(result.runs).toHaveLength(0)
+  })
+
+  it("compare() calls GET /api/models/:id/compare", async () => {
+    fetchMock.mockResponseOnce(JSON.stringify({ project_id: "proj-1", models: [], recommendation: null }))
+    const result = await api.models.compare("proj-1")
+    expect(fetchMock).toHaveBeenCalledWith(`${BASE}/api/models/proj-1/compare`)
+    expect(result.recommendation).toBeNull()
+  })
+
+  it("comparisonRadar() parses JSON on 200 response", async () => {
+    fetchMock.mockResponseOnce(JSON.stringify({ chart: { chart_type: "radar" } }))
+    const result = await api.models.comparisonRadar("proj-1")
+    expect(result?.chart.chart_type).toBe("radar")
+  })
 })

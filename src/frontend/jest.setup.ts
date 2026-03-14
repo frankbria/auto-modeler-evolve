@@ -15,3 +15,9 @@ Object.assign(navigator, {
     readText: jest.fn().mockResolvedValue(""),
   },
 })
+
+// @base-ui/react ScrollArea uses getAnimations() which is not implemented in jsdom.
+// Stub it so components using ScrollArea don't crash in tests.
+if (!Element.prototype.getAnimations) {
+  Element.prototype.getAnimations = () => []
+}
