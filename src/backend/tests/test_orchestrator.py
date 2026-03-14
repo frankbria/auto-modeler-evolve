@@ -195,3 +195,106 @@ class TestBuildSystemPrompt:
         # Should not raise even with no model_runs arg
         prompt = build_system_prompt(project)
         assert isinstance(prompt, str)
+
+
+class TestDetectModelRegression:
+    def test_no_runs_returns_none(self):
+        from chat.orchestrator import _detect_model_regression
+        assert _detect_model_regression([]) is None
+
+    def test_single_run_returns_none(self):
+        from chat.orchestrator import _detect_model_regression
+        mr = make_model_run(status="done", metrics='{"r2": 0.85}')
+        mr.created_at = "2024-01-01"
+        assert _detect_model_regression([mr]) is None
+
+    def test_improving_model_returns_none(self):
+        """No regression insight when the latest model is better."""
+        import json
+        from chat.orchestrator import _detect_model_regression
+        mr1 = make_model_run(status="done", metrics=json.dumps({"r2": 0.80}))
+        mr1.created_at = "2024-01-01"
+        mr2 = make_model_run(status="done", metrics=json.dumps({"r2": 0.90}))
+        mr2.created_at = "2024-01-02"
+        assert _detect_model_regression([mr1, mr2]) is None
+
+    def test_regressing_model_returns_insight(self):
+        """Regression insight returned when latest model is meaningfully worse."""
+        import json
+        from chat.orchestrator import _detect_model_regression
+        mr1 = make_model_run(algorithm="RandomForest", status="done", metrics=json.dumps({"r2": 0.90}))
+        mr1.created_at = "2024-01-01"
+        mr2 = make_model_run(algorithm="LinearRegression", status="done", metrics=json.dumps({"r2": 0.70}))
+        mr2.created_at = "2024-01-02"
+        result = _detect_model_regression([mr1, mr2])
+        assert result is not None
+        assert "LinearRegression" in result
+        assert "RandomForest" in result or "previous" in result
+
+    def test_small_regression_no_alert(self):
+        """Tiny drops (<2%) should not trigger an alert to avoid noise."""
+        import json
+        from chat.orchestrator import _detect_model_regression
+        mr1 = make_model_run(status="done", metrics=json.dumps({"r2": 0.900}))
+        mr1.created_at = "2024-01-01"
+        mr2 = make_model_run(status="done", metrics=json.dumps({"r2": 0.895}))  # <2% drop
+        mr2.created_at = "2024-01-02"
+        assert _detect_model_regression([mr1, mr2]) is None
+
+
+class TestBuildSystemPromptNewFeatures:
+    def test_recent_messages_included_in_prompt(self):
+        """System prompt includes recent conversation context when provided."""
+        from chat.orchestrator import build_system_prompt
+        project = make_project()
+        recent_messages = [
+            {"role": "user", "content": "Which region is performing best?"},
+            {"role": "assistant", "content": "The North region leads with 45% of revenue."},
+        ]
+        prompt = build_system_prompt(project, recent_messages=recent_messages)
+        assert "North region" in prompt or "performing best" in prompt
+
+    def test_recent_messages_truncated_to_300_chars(self):
+        """Long messages are truncated in the context section."""
+        from chat.orchestrator import build_system_prompt
+        project = make_project()
+        long_content = "X" * 500
+        recent_messages = [{"role": "user", "content": long_content}]
+        prompt = build_system_prompt(project, recent_messages=recent_messages)
+        # The prompt should contain truncation indicator
+        assert "…" in prompt
+
+    def test_no_recent_messages_no_context_section(self):
+        """Prompt omits the context section when no recent messages."""
+        from chat.orchestrator import build_system_prompt
+        project = make_project()
+        prompt = build_system_prompt(project, recent_messages=None)
+        assert "Recent Conversation Context" not in prompt
+
+    def test_model_regression_insight_in_prompt(self):
+        """Proactive regression insight appears in system prompt."""
+        import json
+        from chat.orchestrator import build_system_prompt
+        project = make_project()
+        ds = make_dataset()
+        ds.columns = None
+        ds.profile = None
+        mr1 = make_model_run(algorithm="RandomForest", status="done", metrics=json.dumps({"r2": 0.90}))
+        mr1.created_at = "2024-01-01"
+        mr2 = make_model_run(algorithm="LinearRegression", status="done", metrics=json.dumps({"r2": 0.65}))
+        mr2.created_at = "2024-01-02"
+        prompt = build_system_prompt(project, dataset=ds, model_runs=[mr1, mr2])
+        assert "Proactive Insight" in prompt
+        assert "LinearRegression" in prompt or "R²" in prompt
+
+    def test_no_regression_insight_when_improving(self):
+        """No proactive insight section when models are improving."""
+        import json
+        from chat.orchestrator import build_system_prompt
+        project = make_project()
+        mr1 = make_model_run(status="done", metrics=json.dumps({"r2": 0.75}))
+        mr1.created_at = "2024-01-01"
+        mr2 = make_model_run(status="done", metrics=json.dumps({"r2": 0.90}))
+        mr2.created_at = "2024-01-02"
+        prompt = build_system_prompt(project, model_runs=[mr1, mr2])
+        assert "Proactive Insight" not in prompt

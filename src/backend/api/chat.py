@@ -101,12 +101,17 @@ def send_message(
     # Load full project context for state-aware prompt
     ctx = _load_project_context(project_id, session)
 
+    # Pass recent conversation messages for multi-turn context
+    # Exclude the just-appended user message (last item) — Claude already gets
+    # the full message list; we only want the preceding turns for the system prompt
+    recent_for_context = messages[:-1][-6:]  # up to 3 exchanges before this message
     system_prompt = build_system_prompt(
         project,
         dataset=ctx["dataset"],
         feature_set=ctx["feature_set"],
         model_runs=ctx["model_runs"],
         deployment=ctx["deployment"],
+        recent_messages=recent_for_context if recent_for_context else None,
     )
 
     api_messages = [

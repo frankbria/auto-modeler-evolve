@@ -9,7 +9,11 @@ from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
-from chat.narration import append_bot_message_to_conversation, narrate_upload
+from chat.narration import (
+    append_bot_message_to_conversation,
+    narrate_data_insights_ai,
+    narrate_upload,
+)
 from core.analyzer import analyze_dataframe, compute_full_profile, detect_time_columns
 from core.chart_builder import build_correlation_heatmap, build_timeseries_chart
 from core.query_engine import run_nl_query
@@ -95,6 +99,21 @@ def upload_csv(
             column_names=col_names,
         )
         append_bot_message_to_conversation(project_id, narration, session)
+
+        # Follow up with a Claude-generated AI insight (best-effort, async-safe)
+        dataset_summary = ", ".join(col_names[:8])
+        profile_highlights = json.dumps(
+            {k: profile[k] for k in ("patterns", "warnings", "correlations") if k in profile},
+            default=str,
+        )
+        ai_insight = narrate_data_insights_ai(
+            dataset_summary=dataset_summary,
+            profile_highlights=profile_highlights,
+            n_rows=dataset.row_count,
+            n_cols=dataset.column_count,
+        )
+        if ai_insight:
+            append_bot_message_to_conversation(project_id, ai_insight, session)
     except Exception:  # noqa: BLE001
         pass  # Narration is nice-to-have; never block the upload response
 
@@ -282,6 +301,20 @@ def load_sample_dataset(body: SampleLoadRequest, session: Session = Depends(get_
             column_names=col_names,
         )
         append_bot_message_to_conversation(body.project_id, narration, session)
+
+        dataset_summary = ", ".join(col_names[:8])
+        profile_highlights = json.dumps(
+            {k: profile[k] for k in ("patterns", "warnings", "correlations") if k in profile},
+            default=str,
+        )
+        ai_insight = narrate_data_insights_ai(
+            dataset_summary=dataset_summary,
+            profile_highlights=profile_highlights,
+            n_rows=dataset.row_count,
+            n_cols=dataset.column_count,
+        )
+        if ai_insight:
+            append_bot_message_to_conversation(body.project_id, ai_insight, session)
     except Exception:  # noqa: BLE001
         pass  # Narration is nice-to-have; never block the response
 

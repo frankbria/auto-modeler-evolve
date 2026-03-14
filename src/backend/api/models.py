@@ -21,7 +21,11 @@ from pydantic import BaseModel
 from sqlmodel import Session, select
 
 import db as _db
-from chat.narration import append_bot_message_to_conversation, narrate_training_complete
+from chat.narration import (
+    append_bot_message_to_conversation,
+    narrate_training_complete,
+    narrate_training_with_ai,
+)
 from core.feature_engine import apply_transformations
 from core.report_generator import generate_model_report
 from core.chart_builder import build_model_comparison_radar
@@ -181,7 +185,8 @@ def _narrate_training_done(project_id: str) -> None:
             for r in runs
         ]
 
-        message = narrate_training_complete(runs_dicts, problem_type, target_col)
+        # Try Claude-powered AI narration first; fall back to static ranking summary
+        message = narrate_training_with_ai(runs_dicts, problem_type, target_col)
         append_bot_message_to_conversation(project_id, message, session)
 
 

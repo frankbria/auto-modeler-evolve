@@ -212,3 +212,144 @@ class TestAppendBotMessage:
             assert len(messages) == 2
             assert messages[1]["role"] == "assistant"
             assert messages[1]["content"] == "Welcome back!"
+
+
+class TestCallClaude:
+    def test_returns_fallback_when_no_api_key(self, monkeypatch):
+        """_call_claude returns fallback immediately if ANTHROPIC_API_KEY not set."""
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        from chat.narration import _call_claude
+        result = _call_claude("some prompt", fallback="static fallback")
+        assert result == "static fallback"
+
+    def test_returns_fallback_on_api_error(self, monkeypatch):
+        """_call_claude returns fallback if anthropic raises any exception."""
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+        from unittest.mock import MagicMock, patch
+        mock_client = MagicMock()
+        mock_client.messages.create.side_effect = Exception("API error")
+        with patch("anthropic.Anthropic", return_value=mock_client):
+            from chat.narration import _call_claude
+            result = _call_claude("some prompt", fallback="fallback text")
+        assert result == "fallback text"
+
+    def test_returns_claude_response_on_success(self, monkeypatch):
+        """_call_claude returns the model's text content on success."""
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+        from unittest.mock import MagicMock, patch
+        mock_content = MagicMock()
+        mock_content.text = "  AI generated insight.  "
+        mock_response = MagicMock()
+        mock_response.content = [mock_content]
+        mock_client = MagicMock()
+        mock_client.messages.create.return_value = mock_response
+        with patch("anthropic.Anthropic", return_value=mock_client):
+            from chat.narration import _call_claude
+            result = _call_claude("some prompt", fallback="fallback")
+        assert result == "AI generated insight."
+
+
+class TestNarrateDataInsightsAi:
+    def test_returns_none_without_api_key(self, monkeypatch):
+        """narrate_data_insights_ai returns None when API key is absent."""
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        from chat.narration import narrate_data_insights_ai
+        result = narrate_data_insights_ai("revenue, region", "{}", 200, 5)
+        assert result is None
+
+    def test_returns_string_when_claude_succeeds(self, monkeypatch):
+        """narrate_data_insights_ai returns the AI insight string on success."""
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+        from unittest.mock import MagicMock, patch
+        mock_content = MagicMock()
+        mock_content.text = "I noticed your top region drives 60% of revenue."
+        mock_response = MagicMock()
+        mock_response.content = [mock_content]
+        mock_client = MagicMock()
+        mock_client.messages.create.return_value = mock_response
+        with patch("anthropic.Anthropic", return_value=mock_client):
+            from chat.narration import narrate_data_insights_ai
+            result = narrate_data_insights_ai("revenue, region", "{}", 200, 5)
+        assert result is not None
+        assert "revenue" in result or "region" in result or "60" in result
+
+    def test_returns_none_when_claude_returns_empty(self, monkeypatch):
+        """narrate_data_insights_ai returns None if Claude response is empty."""
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+        from unittest.mock import MagicMock, patch
+        mock_content = MagicMock()
+        mock_content.text = ""
+        mock_response = MagicMock()
+        mock_response.content = [mock_content]
+        mock_client = MagicMock()
+        mock_client.messages.create.return_value = mock_response
+        with patch("anthropic.Anthropic", return_value=mock_client):
+            from chat.narration import narrate_data_insights_ai
+            result = narrate_data_insights_ai("col1, col2", "{}", 10, 2)
+        assert result is None
+
+
+class TestNarrateTrainingWithAi:
+    def test_falls_back_to_static_for_single_model(self, monkeypatch):
+        """Single completed model: should use static narration without calling Claude."""
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+        from unittest.mock import MagicMock, patch
+        mock_client = MagicMock()
+        with patch("anthropic.Anthropic", return_value=mock_client):
+            from chat.narration import narrate_training_with_ai
+            runs = [{"algorithm": "LinearRegression", "status": "done", "metrics": {"r2": 0.85}, "summary": ""}]
+            result = narrate_training_with_ai(runs, "regression", "revenue")
+        # Static narration should not call Claude for single model
+        mock_client.messages.create.assert_not_called()
+        assert "LinearRegression" in result
+
+    def test_falls_back_when_no_api_key(self, monkeypatch):
+        """narrate_training_with_ai falls back to static when API key absent."""
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        from chat.narration import narrate_training_with_ai
+        runs = [
+            {"algorithm": "LinearRegression", "status": "done", "metrics": {"r2": 0.72}, "summary": ""},
+            {"algorithm": "RandomForestRegressor", "status": "done", "metrics": {"r2": 0.88}, "summary": ""},
+        ]
+        result = narrate_training_with_ai(runs, "regression", "revenue")
+        assert isinstance(result, str)
+        assert "LinearRegression" in result or "RandomForest" in result
+
+    def test_uses_claude_for_multiple_models(self, monkeypatch):
+        """narrate_training_with_ai calls Claude and returns AI-authored text for 2+ models."""
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+        from unittest.mock import MagicMock, patch
+        mock_content = MagicMock()
+        mock_content.text = "RandomForest wins on R² but LinearRegression is more explainable."
+        mock_response = MagicMock()
+        mock_response.content = [mock_content]
+        mock_client = MagicMock()
+        mock_client.messages.create.return_value = mock_response
+        with patch("anthropic.Anthropic", return_value=mock_client):
+            from chat.narration import narrate_training_with_ai
+            runs = [
+                {"algorithm": "LinearRegression", "status": "done", "metrics": {"r2": 0.72}, "summary": ""},
+                {"algorithm": "RandomForestRegressor", "status": "done", "metrics": {"r2": 0.88}, "summary": ""},
+            ]
+            result = narrate_training_with_ai(runs, "regression", "revenue")
+        assert "RandomForest" in result or "explainable" in result
+        assert "Validate" in result  # CTA appended
+
+    def test_appends_validate_cta_to_ai_response(self, monkeypatch):
+        """The CTA directing user to Validate tab is always appended."""
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+        from unittest.mock import MagicMock, patch
+        mock_content = MagicMock()
+        mock_content.text = "Model comparison complete."
+        mock_response = MagicMock()
+        mock_response.content = [mock_content]
+        mock_client = MagicMock()
+        mock_client.messages.create.return_value = mock_response
+        with patch("anthropic.Anthropic", return_value=mock_client):
+            from chat.narration import narrate_training_with_ai
+            runs = [
+                {"algorithm": "A", "status": "done", "metrics": {"r2": 0.7}, "summary": ""},
+                {"algorithm": "B", "status": "done", "metrics": {"r2": 0.8}, "summary": ""},
+            ]
+            result = narrate_training_with_ai(runs, "regression", "target")
+        assert "Validate" in result

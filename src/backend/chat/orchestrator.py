@@ -94,19 +94,88 @@ _STATE_GUIDANCE: dict[str, str] = {
 # System prompt builder
 # ---------------------------------------------------------------------------
 
+def _detect_model_regression(model_runs: list[ModelRun]) -> str | None:
+    """Return a proactive insight if the most recently trained model performs worse.
+
+    Compares the latest completed run against the best previously completed run.
+    Returns a plain-English heads-up string, or None if no regression is detected.
+    """
+    completed = sorted(
+        [mr for mr in model_runs if mr.status == "done"],
+        key=lambda mr: mr.created_at or "",
+    )
+    if len(completed) < 2:
+        return None
+
+    latest = completed[-1]
+    previous_best = max(completed[:-1], key=lambda mr: _primary_metric(mr))
+
+    latest_score = _primary_metric(latest)
+    best_score = _primary_metric(previous_best)
+
+    if latest_score is None or best_score is None:
+        return None
+
+    # Flag a meaningful drop (>2% relative) so we don't over-alert on noise
+    if best_score > 0 and (best_score - latest_score) / best_score > 0.02:
+        metric_name = _metric_label(latest)
+        return (
+            f"I noticed your most recent model ({latest.algorithm}) has a lower "
+            f"{metric_name} ({latest_score:.3f}) than your best previous run "
+            f"({previous_best.algorithm}: {best_score:.3f}). "
+            "This can happen if feature transformations changed or the training set "
+            "was different. Want me to help compare them in detail?"
+        )
+    return None
+
+
+def _primary_metric(run: ModelRun) -> float | None:
+    """Extract the primary scalar metric from a model run for comparison."""
+    if not run.metrics:
+        return None
+    try:
+        m = json.loads(run.metrics)
+        return m.get("r2") or m.get("accuracy") or m.get("f1")
+    except (json.JSONDecodeError, TypeError):
+        return None
+
+
+def _metric_label(run: ModelRun) -> str:
+    """Return the name of the primary metric for a run (R² vs accuracy)."""
+    if not run.metrics:
+        return "score"
+    try:
+        m = json.loads(run.metrics)
+        if "r2" in m:
+            return "R²"
+        if "accuracy" in m:
+            return "accuracy"
+        return "score"
+    except (json.JSONDecodeError, TypeError):
+        return "score"
+
+
 def build_system_prompt(
     project: Project,
     dataset: Optional[Dataset] = None,
     feature_set: Optional[FeatureSet] = None,
     model_runs: Optional[list[ModelRun]] = None,
     deployment: Optional[Deployment] = None,
+    recent_messages: Optional[list[dict]] = None,
 ) -> str:
     """Build a Claude system prompt with full project context and stage guidance.
 
     The prompt positions the assistant as a helpful data analyst colleague
     who speaks in plain English and explains technical terms when used.
-    It also includes state-specific guidance so Claude proactively guides
-    users through the UPLOAD → EXPLORE → SHAPE → MODEL → VALIDATE → DEPLOY flow.
+    It also includes:
+    - State-specific guidance for the UPLOAD → EXPLORE → SHAPE → MODEL → VALIDATE → DEPLOY flow
+    - Recent conversation context so Claude can reason across multiple turns
+    - Proactive model regression detection ("I noticed your R² dropped...")
+
+    Args:
+        recent_messages: Last N conversation messages (role + content dicts) to
+            include as multi-turn context. Claude uses these to reference earlier
+            insights and avoid contradicting itself across turns.
     """
     if model_runs is None:
         model_runs = []
@@ -220,5 +289,31 @@ def build_system_prompt(
             f"API endpoint: {deployment.endpoint_path}\n"
             f"Predictions served: {deployment.request_count:,}"
         )
+
+    # Proactive model regression insight
+    if model_runs:
+        regression_insight = _detect_model_regression(model_runs)
+        if regression_insight:
+            parts.append(f"\n## Proactive Insight\n{regression_insight}")
+
+    # Multi-turn conversation context (last few turns for continuity)
+    if recent_messages:
+        # Include up to the last 4 messages (2 user + 2 assistant exchanges)
+        # to help Claude reason across turns without bloating the prompt
+        snippet_messages = recent_messages[-4:]
+        context_lines = []
+        for msg in snippet_messages:
+            role = msg.get("role", "user").capitalize()
+            content = str(msg.get("content", ""))[:300]  # Cap at 300 chars per msg
+            if len(str(msg.get("content", ""))) > 300:
+                content += "…"
+            context_lines.append(f"  [{role}]: {content}")
+        if context_lines:
+            parts.append(
+                "\n## Recent Conversation Context\n"
+                "Use this to maintain continuity — reference earlier insights, "
+                "avoid repeating yourself, and build on what was already discussed:\n"
+                + "\n".join(context_lines)
+            )
 
     return "\n\n".join(parts)

@@ -12,6 +12,40 @@ Usage:
 from __future__ import annotations
 
 import json
+import os
+
+
+# ---------------------------------------------------------------------------
+# Claude API helper (best-effort, always falls back to static text)
+# ---------------------------------------------------------------------------
+
+_CLAUDE_MODEL = "claude-haiku-4-5-20251001"
+_CLAUDE_MAX_TOKENS = 512
+
+
+def _call_claude(prompt: str, fallback: str) -> str:
+    """Call Claude synchronously and return the text response.
+
+    Returns *fallback* immediately if:
+    - ANTHROPIC_API_KEY is not set in the environment
+    - The API call fails for any reason (network, quota, rate limit, etc.)
+
+    This ensures narration never blocks or crashes event flows.
+    """
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        return fallback
+    try:
+        import anthropic
+
+        client = anthropic.Anthropic()
+        message = client.messages.create(
+            model=_CLAUDE_MODEL,
+            max_tokens=_CLAUDE_MAX_TOKENS,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        return message.content[0].text.strip()  # type: ignore[index]
+    except Exception:  # noqa: BLE001
+        return fallback
 
 
 # ---------------------------------------------------------------------------
@@ -57,6 +91,37 @@ def narrate_upload(
     )
 
     return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# AI-powered proactive data insight (second message after upload)
+# ---------------------------------------------------------------------------
+
+def narrate_data_insights_ai(
+    dataset_summary: str,
+    profile_highlights: str,
+    n_rows: int,
+    n_cols: int,
+) -> str | None:
+    """Call Claude to generate a proactive, AI-authored insight about the data.
+
+    Returns None if Claude is unavailable — callers should skip injecting
+    the message in that case rather than injecting an empty string.
+
+    This supplements the static `narrate_upload` message with a genuinely
+    intelligent observation ("I noticed that your top 3 regions account for
+    80% of revenue — that's unusual concentration, worth investigating").
+    """
+    from chat.prompts import build_proactive_insight_prompt
+
+    prompt = build_proactive_insight_prompt(
+        dataset_summary=dataset_summary,
+        profile_highlights=profile_highlights,
+        n_rows=n_rows,
+        n_cols=n_cols,
+    )
+    result = _call_claude(prompt, fallback="")
+    return result if result else None
 
 
 # ---------------------------------------------------------------------------
@@ -195,6 +260,52 @@ def narrate_training_complete(
     )
 
     return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# AI-powered training completion narration (multi-turn model trade-off reasoning)
+# ---------------------------------------------------------------------------
+
+def narrate_training_with_ai(
+    runs: list[dict],
+    problem_type: str,
+    target_column: str,
+) -> str:
+    """Generate a rich, Claude-authored training completion narrative.
+
+    Uses `build_model_comparison_narrative_prompt` to ask Claude to reason
+    about trade-offs between the trained models (accuracy vs. explainability,
+    overfitting risk, dataset size fit). Falls back to `narrate_training_complete`
+    if Claude is unavailable.
+
+    This is the "multi-turn reasoning about model selection trade-offs" spec item —
+    Claude produces a narrative that references the specific models, metrics, and
+    what they mean for the user's prediction goal.
+    """
+    from chat.prompts import build_model_comparison_narrative_prompt
+
+    completed = [r for r in runs if r.get("status") == "done"]
+    static_fallback = narrate_training_complete(runs, problem_type, target_column)
+
+    if len(completed) < 2:
+        # Single model or all failed — static narration is sufficient
+        return static_fallback
+
+    prompt = build_model_comparison_narrative_prompt(
+        models=completed,
+        problem_type=problem_type,
+        target_column=target_column,
+    )
+    ai_text = _call_claude(prompt, fallback="")
+    if not ai_text:
+        return static_fallback
+
+    # Append the standard CTA so users know what to do next
+    return (
+        ai_text
+        + "\n\nHead to the **Validate** tab to see detailed performance metrics, "
+        "or ask me to explain which model you should pick and why."
+    )
 
 
 # ---------------------------------------------------------------------------
