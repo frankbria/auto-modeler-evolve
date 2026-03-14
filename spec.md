@@ -298,8 +298,9 @@ guides them forward through the natural flow.
       transformation pipelines with undo. Let users build complex feature engineering
       flows through conversation.
       *Day 3 (08:04): 3 new endpoints on FeatureSet — GET /steps (list), POST /steps (append one step), DELETE /steps/{index} (undo). Each mutation re-applies the full pipeline and returns updated preview + new_columns. Frontend PipelinePanel component shows ordered steps with per-step Undo buttons; loaded on mount from GET /steps. api.ts getSteps/addStep/removeStep client methods. 14 tests, all pass.*
-- [ ] **Multi-dataset support** — Allow joining/merging multiple CSVs within a project.
+- [x] **Multi-dataset support** — Allow joining/merging multiple CSVs within a project.
       The chat guides the user through selecting join keys and resolving conflicts.
+      *Day 3 (02:00): suggest_join_keys() ranks common columns by uniqueness ratio; merge_datasets() handles inner/left/right/outer joins with automatic suffix for conflicting column names. 3 new endpoints (list, join-keys, merge); DatasetListPanel in Data tab with guided merge UI (select 2 datasets → auto-suggest join key → pick join type → preview result). 31 tests, all pass.*
 - [x] **Template projects** — Pre-built project templates for common use cases (sales
       forecasting, customer churn, demand prediction) with sample data, pre-configured
       features, and guided conversation flows.
