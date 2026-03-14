@@ -240,10 +240,11 @@ guides them forward through the natural flow.
 
 #### Track A — Quality Hardening
 
-- [ ] **Gap analysis** — Compare what spec.md claims is done against the actual code.
+- [x] **Gap analysis** — Compare what spec.md claims is done against the actual code.
       Does every [x] item truly work end-to-end? Are there shallow implementations that
       pass tests but don't deliver the full user experience described in the spec? Fix
       discrepancies and journal what you find.
+      *Day 3 (18:00): Full analysis pass. All [x] items verified present. Two real gaps found and fixed: (1) NL query returns 500 instead of graceful fallback when API key missing; (2) self-demo revealed training requires `apply` before `set_target` — workflow is correct but demo script needed updating. No missing Phase 1-7 features detected.*
 - [x] **E2E test build-out** — Expand Playwright coverage to the full user journey:
       upload CSV → explore data → ask questions → get charts → approve features → train
       models → validate → deploy → predict. Each critical path should have its own test
@@ -254,13 +255,15 @@ guides them forward through the natural flow.
       conditions. Use `pytest --cov` and Jest coverage reports to find gaps.
       *Day 2 (20:05): query_engine.py 14%→92%, total backend 92%→95%. Remaining: frontend Jest coverage; explainer.py and validator.py edge paths.*
       *Day 3 (00:09): chart_builder 73%→100%, orchestrator 78%→100%, api/chat 37%→98%, total backend 94%→97%. 400 tests pass. Remaining: frontend Jest coverage.*
+      *Day 3 (18:00): frontend Jest set up (next/jest + @testing-library/react + jest-fetch-mock); 69 unit tests covering store mutations, API client HTTP shapes, ChartMessage rendering (all 6 types), cn() utility. Frontend + backend = 469 total tests.*
 - [x] **Integration tests** — Build tests that exercise real cross-boundary flows:
       upload → profile → chat about data (hits Claude API mock or stub) → train → deploy
       → predict. These complement E2E by testing backend flows without browser overhead.
       *Day 2 (14:00): 11 integration tests in test_integration_flow.py — cover upload, profile, feature suggestions, training, compare, deploy, single predict, batch predict, undeploy, multi-model comparison, narration, validation, and explainability. All 11 pass.*
-- [ ] **Self-demo capability** — Build a scripted demo that can run autonomously to
+- [x] **Self-demo capability** — Build a scripted demo that can run autonomously to
       prove the platform works. Upload sample data, run through the full workflow, capture
       screenshots or output at each stage. This becomes the smoke test and the showcase.
+      *Day 3 (18:00): scripts/demo.py — 15-step autonomous smoke test (upload→NL query→feature suggestions→apply→target→train→compare→validate→importance→deploy→predict→batch→undeploy). 15/15 PASS in ~3s. Also fixed a real backend bug: NL query threw unhandled TypeError (not caught by anthropic.APIError) when ANTHROPIC_API_KEY missing.*
 - [x] **Error resilience audit** — Systematically test failure modes: corrupt CSV,
       empty dataset, single-row data, all-null columns, model training failure, deployment
       of a terrible model. Verify every failure produces a helpful user-facing message.
