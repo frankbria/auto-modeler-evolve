@@ -14,6 +14,8 @@ dependencies = [
     "scikit-learn>=1.4.0",
     "scipy>=1.12.0",
     "reportlab>=4.0.0",
+    "xgboost>=2.0.0",
+    "lightgbm>=4.0.0",
 ]
 
 [project.optional-dependencies]
