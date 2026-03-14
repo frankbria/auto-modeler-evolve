@@ -1,5 +1,34 @@
 # Journal
 
+## Day 3 — 20:02 — Coverage 98%→99% (686 backend tests, 53 new targeted tests)
+
+Pure coverage hardening session: pushed backend from 98% to 99% by writing 53 targeted tests in `test_final_coverage.py` covering the specific uncovered branches across 20+ source modules.
+
+**Coverage strategy:** Ran `pytest --cov=. --cov-report=term-missing -q --tb=no` to identify exactly which lines (and branches) remained uncovered, then wrote minimal tests for each. Grouped by module into test classes for clarity.
+
+**Key fixes across modules:**
+- `core/explainer.py`: multiclass logistic regression `coef_.ndim == 2` path (line 78), classification `predict_proba` for contributions (118-120), empty contributions early return (170), classification-specific summary text (176-177)
+- `core/validator.py`: "weak" CV quality label (85), missing `class_labels` default (114), under/over prediction bias detection (197-200), classification accuracy <0.7 (237, 244), feature ratio heuristic (250), "low" confidence scoring (288)
+- `core/orchestrator.py`: `_primary_metric()` edge cases — None metrics JSON, empty metrics dict, bad JSON string; `_metric_label()` "R²" vs "accuracy" vs unknown; `_detect_model_regression()` with `None` score
+- `core/deployer.py`: classification `predict_proba` branch (174-180, 213-214), empty `label_encoders` dict (63)
+- `core/feature_engine.py`: all-NaN numeric column path (98), unknown transform type silenced (301-303), target not in df (404), no X_parts (423), importance description variants (497, 499)
+- `core/query_engine.py`: Claude returning `"null"` string → Python None (168), numpy scalar `.item()` conversion (331)
+- `chat/narration.py`: string warnings (not list) in `narrate_profile_highlights` (151-152), `ValueError` in correlation computation (166-167)
+- `core/analyzer.py`: all-inf series in `_numeric_distribution` (120), numpy generic in `_safe_scalar` (309)
+- `core/report_generator.py`: `None` metrics skipped in iteration (248)
+- API endpoints: `DELETE /api/projects/{id}` nonexistent project (404), template file missing (162), deploy 404s (69, 73), deploy with transforms pre-applied (110), validation with transforms (87), model file download (600-601), select non-done model (518-519), narration exception silencing (156-157, 357-358, 829-830), profile file missing (222), timeseries exception (481-482), bad CSV URL (773-774)
+
+**Hard discoveries during implementation:**
+- `conftest.py` client fixture does NOT patch `UPLOAD_DIR` — needed own `ac` fixture patching `data_module.UPLOAD_DIR`, `models_module.MODELS_DIR`, `deploy_module.DEPLOY_DIR` per test class
+- FastAPI Form endpoints require `data={"project_id": ...}` not URL query params — 422 otherwise
+- Train endpoint returns `202 Accepted` (not 201) and key is `model_run_ids` (not `run_ids`)
+- Float y column → regression, integer y column with <10 unique → classification; SIMPLE_CSV must use floats
+- `sorted()` on SQLModel objects with `MagicMock` `created_at` fails — must set string dates
+
+**What remains at 1% (73 lines):** ImportError branches for xgboost/lightgbm when the libraries ARE installed (lines 32-33, 38-39 in trainer.py — only reachable if we uninstall them) and SSE streaming endpoint tests (require live connection, not testable with async client). Both are architecturally impossible to cover without removing libraries or using a fundamentally different test approach. The gap is documented and accepted.
+
+**Total: 686 backend tests, 99% coverage (9196 statements, 73 missing).** Frontend stays at 205 tests. Combined: 891 tests.
+
 ## Day 3 — 10:00 — Coverage 98% + App Page Tests + SQLite Connector (835 tests)
 
 Three threads this session: **backend coverage push**, **first app/ page tests**, and **SQLite database connector (Track B)**.
