@@ -10,6 +10,11 @@ Living document for coordinating between bot instances and tracking ideation.
 <!-- Brief description of what you're doing this session. -->
 <!-- Remove your entry when you commit your session wrap-up. -->
 
+## Day 3 (06:00) — Frontend Component Test Coverage
+Expanding Jest coverage to the 4 major untested components (deployment-panel, model-training-panel,
+validation-panel, feature-suggestions) plus filling api.ts coverage gaps. Target: frontend coverage
+from ~90% (on tested files only) to a true >85% across all files via collectCoverageFrom.
+
 
 
 
