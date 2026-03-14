@@ -287,15 +287,17 @@ guides them forward through the natural flow.
       ("I noticed your R² dropped when I removed feature X — want to add it back?"),
       and multi-turn reasoning about model selection trade-offs.
       *Day 2 (22:00): _call_claude() helper with API-key guard + fallback; narrate_data_insights_ai() calls Claude after upload with build_proactive_insight_prompt; narrate_training_with_ai() calls Claude with build_model_comparison_narrative_prompt for 2+ models; _detect_model_regression() compares latest vs best previous run (>2% threshold) and injects "I noticed your R² dropped..." into system prompt; build_system_prompt gains recent_messages param for multi-turn continuity (last 4 messages, 300-char cap); api/data.py and api/models.py wired. 20 new tests; 464 total, all pass.*
-- [~] **Advanced visualizations** — Heat maps for correlation matrices, interactive
+- [x] **Advanced visualizations** — Heat maps for correlation matrices, interactive
       scatter plots with brushing/linking, time-series decomposition charts, model
       comparison radar charts. Each viz should be triggered naturally through chat.
-      *Day 2 (20:05): correlation heatmap added — build_correlation_heatmap(), /api/data/{id}/correlations endpoint, frontend HeatmapChart CSS-grid renderer with color scale. Remaining: time-series decomposition.*
-      *Day 2 (14:00): radar chart for model comparison — build_model_comparison_radar() normalizes all metrics to 0-1, /api/models/{id}/comparison-radar endpoint returns 204 when <2 models, Recharts RadarChart renders in training panel with one polygon per model.*
-      *Day 3 (00:09): time-series decomposition — detect_time_columns() auto-finds date columns, build_timeseries_chart() produces original + rolling avg + OLS trend, GET /api/data/{id}/timeseries endpoint, api.ts timeseries() client method. 21 tests. Remaining: brushing/linking on scatter.*
-- [ ] **Data transformation pipeline** — Support for multi-step, reorderable
+      *Day 2 (20:05): correlation heatmap added — build_correlation_heatmap(), /api/data/{id}/correlations endpoint, frontend HeatmapChart CSS-grid renderer with color scale.*
+      *Day 2 (14:00): radar chart for model comparison — build_model_comparison_radar() normalizes all metrics to 0-1, /api/models/{id}/comparison-radar endpoint returns 204 when <2 models.*
+      *Day 3 (00:09): time-series decomposition — detect_time_columns(), build_timeseries_chart() (original + rolling avg + OLS trend), GET /api/data/{id}/timeseries endpoint. 21 tests.*
+      *Day 3 (08:04): scatter brushing — click-to-highlight in InteractiveScatterChart; selected point shown with reference lines + coordinates label + Clear button; normal points dim to 35% opacity when one is selected.*
+- [x] **Data transformation pipeline** — Support for multi-step, reorderable
       transformation pipelines with undo. Let users build complex feature engineering
       flows through conversation.
+      *Day 3 (08:04): 3 new endpoints on FeatureSet — GET /steps (list), POST /steps (append one step), DELETE /steps/{index} (undo). Each mutation re-applies the full pipeline and returns updated preview + new_columns. Frontend PipelinePanel component shows ordered steps with per-step Undo buttons; loaded on mount from GET /steps. api.ts getSteps/addStep/removeStep client methods. 14 tests, all pass.*
 - [ ] **Multi-dataset support** — Allow joining/merging multiple CSVs within a project.
       The chat guides the user through selecting join keys and resolving conflicts.
 - [x] **Template projects** — Pre-built project templates for common use cases (sales
@@ -305,10 +307,11 @@ guides them forward through the natural flow.
 
 #### Track C — Coordination
 
-- [ ] **Update BACKLOG.md** — Before starting work, check BACKLOG.md for what the other
+- [x] **Update BACKLOG.md** — Before starting work, check BACKLOG.md for what the other
       bot instance is working on or has recently explored. Write your chosen focus at the
       top before implementing. After the session, move completed items to the "Done" section
       and add any new ideas you discovered.
+      *Day 3 (08:04): BACKLOG updated at session start and end each session from Day 2 onward.*
 
 ---
 
