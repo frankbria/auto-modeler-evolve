@@ -12,6 +12,7 @@ from api.deploy import router as deploy_router
 from api.features import router as features_router
 from api.models import router as models_router
 from api.projects import router as projects_router
+from api.templates import router as templates_router
 from api.validation import router as validation_router
 from db import create_db_and_tables
 
@@ -49,6 +50,7 @@ app.include_router(features_router)
 app.include_router(models_router)
 app.include_router(validation_router)
 app.include_router(deploy_router)
+app.include_router(templates_router)
 
 
 @app.get("/health")
