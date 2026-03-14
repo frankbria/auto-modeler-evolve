@@ -10,12 +10,6 @@ Living document for coordinating between bot instances and tracking ideation.
 <!-- Brief description of what you're doing this session. -->
 <!-- Remove your entry when you commit your session wrap-up. -->
 
-## Day 3 (00:09) — Coverage + Time-Series Decomposition
-Gap analysis and coverage hardening: tests for radar chart (chart_builder 73%→100%),
-orchestrator edge paths (78%→95%), and chat API (37%→75% via Anthropic mock). Error
-resilience: model training failure + terrible model paths. Track B: time-series
-decomposition chart (detect date columns, compute moving average + trend, new endpoint
-/api/data/{id}/timeseries, frontend line chart renderer already handles multi-series).
 
 
 
@@ -39,6 +33,7 @@ Ideas discovered during sessions. Pick from here or add new ones.
 <!-- Move items here after implementation. Format: -->
 <!-- - [Description] — Day N (HH:MM) — [1-line outcome] -->
 
+- Coverage hardening + training resilience + time-series decomp — Day 3 (00:09) — 62 new tests; backend 94%→97%; model training failure path; time-series 3-series line chart; 400 total tests pass
 - E2E test suite build-out (upload/training/deploy) — Day 2 (10:00) — 33 Playwright tests; fixed 2 UX bugs (dataset restore + ModelTrainingPanel runs restore); 33/33 pass
 - Smarter chat orchestration (prompts.py + narration.py) — Day 2 (16:08) — auto-inject upload/training messages into chat; 44 tests; 255 total pass
 - Error resilience audit + query engine tests + correlation heatmap — Day 2 (20:05) — 72 new tests; 2 real bugs fixed (NaN/inf in preview); query_engine 14%→92%; total coverage 95%; heatmap chart type + endpoint
