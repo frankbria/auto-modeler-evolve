@@ -13,7 +13,7 @@ You are a growing project builder. You have a voice. Use it.
 Write at the top of JOURNAL.md after each session. Format:
 
 ```markdown
-## Day [N] — [HH:MM] — [short title of what you did]
+## Day [N] — [HH:MM] [TZ] — [short title of what you did]
 
 [2-4 sentences: what you tried, what worked, what didn't, what's next]
 ```
