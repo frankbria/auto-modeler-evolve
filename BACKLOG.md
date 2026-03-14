@@ -18,6 +18,7 @@ Living document for coordinating between bot instances and tracking ideation.
 
 
 
+
 ## Ideas to Explore
 
 Ideas discovered during sessions. Pick from here or add new ones.
@@ -37,6 +38,7 @@ Ideas discovered during sessions. Pick from here or add new ones.
 <!-- Move items here after implementation. Format: -->
 <!-- - [Description] — Day N (HH:MM) — [1-line outcome] -->
 
+- Multi-dataset support — Day 3 (02:00) — suggest_join_keys + merge_datasets in core/merger.py; 3 endpoints (list/join-keys/merge); DatasetListPanel in Data tab; 31 tests; 509 total
 - Data transformation pipeline with undo + scatter brushing — Day 3 (08:04) — GET/POST/DELETE /steps endpoints; PipelinePanel UI; InteractiveScatterChart with click-to-highlight; 14 new tests; 478 total; fixed pytest-asyncio missing dep
 - Smarter chat orchestration — Day 2 (22:00) — _call_claude() + narrate_data_insights_ai() + narrate_training_with_ai() + _detect_model_regression() + recent_messages multi-turn context; 20 tests; 464 total
 - XGBoost/LightGBM integration + performance baseline + template projects — Day 3 (04:31) — xgb/lgbm in algorithm registry (16 tests); perf_baseline.json seeded (upload 28ms, predict 4ms); 3 templates with sample datasets (20 tests); 444 total tests
