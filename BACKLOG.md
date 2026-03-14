@@ -10,10 +10,6 @@ Living document for coordinating between bot instances and tracking ideation.
 <!-- Brief description of what you're doing this session. -->
 <!-- Remove your entry when you commit your session wrap-up. -->
 
-## Day 3 (14:00) — Frontend Coverage Push (63% → 85%+)
-Focus: app/project/[id]/page.tsx is 0% (970 lines). Writing comprehensive tests for the main workspace
-page + filling gaps in model-training-panel (79%) and validation-panel (89%). Goal: hit 85% frontend
-statement coverage so both frontend and backend meet the spec quality gate.
 
 ## Day 3 (20:02) — Done
 99% backend coverage (686 backend + 205 frontend = 891 total tests). 53 new targeted tests across 20+ modules. Remaining 1% = ImportError branches + SSE streaming (architecturally uncoverable without uninstalling libraries). See JOURNAL Day 3 (20:02).
@@ -43,6 +39,8 @@ Ideas discovered during sessions. Pick from here or add new ones.
 - Multi-dataset join/merge through conversation
 
 ## Recently Completed
+
+- Frontend coverage 63%→91% — Day 3 (14:00) — 49 workspace page tests; scrollIntoView jsdom stub; types.ts+layout.tsx excluded from coverage; 254 frontend + 686 backend = 940 total tests; both stacks exceed 85% target
 
 <!-- Move items here after implementation. Format: -->
 <!-- - [Description] — Day N (HH:MM) — [1-line outcome] -->
