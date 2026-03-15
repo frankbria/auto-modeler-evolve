@@ -364,6 +364,27 @@ export interface PredictionResult {
 }
 
 // ---------------------------------------------------------------------------
+// Prediction Explanation (Phase 8)
+// ---------------------------------------------------------------------------
+
+export interface FeatureContribution {
+  feature: string
+  value: number
+  mean_value: number
+  contribution: number
+  direction: "positive" | "negative"
+}
+
+export interface PredictionExplanation {
+  prediction: number | string
+  target_column: string
+  problem_type: string
+  contributions: FeatureContribution[]
+  summary: string
+  top_drivers: string[]
+}
+
+// ---------------------------------------------------------------------------
 // Prediction Monitoring (Phase 8)
 // ---------------------------------------------------------------------------
 

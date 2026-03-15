@@ -39,6 +39,9 @@ class PredictionPipeline:
     problem_type: str = "regression"
     target_encoder: Optional[LabelEncoder] = None
     target_classes: Optional[list] = None
+    # Statistics for explanation (stored at build time)
+    feature_means: dict[str, float] = field(default_factory=dict)
+    feature_stds: dict[str, float] = field(default_factory=dict)
 
     def transform(self, input_dict: dict) -> np.ndarray:
         """Transform a single row dict into a feature vector for prediction."""
@@ -110,6 +113,8 @@ def build_prediction_pipeline(
         if pd.api.types.is_numeric_dtype(series):
             pipeline.column_types[col] = "numeric"
             pipeline.medians[col] = float(series.median())
+            pipeline.feature_means[col] = float(series.mean())
+            pipeline.feature_stds[col] = float(series.std()) if len(series) > 1 else 1.0
         else:
             pipeline.column_types[col] = "categorical"
             le = LabelEncoder()
@@ -240,3 +245,91 @@ def get_feature_schema(pipeline_path: str) -> list[dict]:
             entry["median"] = pipeline.medians.get(col, 0.0)
         schema.append(entry)
     return schema
+
+
+# ---------------------------------------------------------------------------
+# Prediction explanation
+# ---------------------------------------------------------------------------
+
+
+def explain_prediction(
+    pipeline_path: str,
+    model_path: str,
+    input_data: dict,
+) -> dict:
+    """Explain a single prediction using feature contributions.
+
+    Uses global feature importance multiplied by normalised deviation from mean.
+    Works with any sklearn estimator that has feature_importances_ or coef_.
+
+    Returns:
+        {
+          prediction: decoded prediction value,
+          contributions: [{feature, value, mean_value, contribution, direction}],
+          summary: str,
+          top_drivers: [str],   # plain-English top-3 driver names
+        }
+    """
+    from core.explainer import compute_feature_importance
+
+    pipeline = load_pipeline(pipeline_path)
+    model = joblib.load(model_path)
+
+    x_vec = pipeline.transform(input_data).flatten()  # shape (n_features,)
+
+    # Get global feature importance
+    feature_names = pipeline.feature_names
+    importance_list = compute_feature_importance(model, feature_names)
+    imp_map = {item["feature"]: item["importance"] for item in importance_list}
+
+    # Use stored means/stds (fall back to 0/1 for old pipelines without them)
+    contributions = []
+    for i, col in enumerate(feature_names):
+        imp = imp_map.get(col, 0.0)
+        mean_val = getattr(pipeline, "feature_means", {}).get(col, float(x_vec[i]))
+        std_val = getattr(pipeline, "feature_stds", {}).get(col, 1.0)
+        if std_val < 1e-10:
+            std_val = 1.0
+
+        deviation = (float(x_vec[i]) - mean_val) / std_val
+        contrib = imp * deviation
+
+        contributions.append({
+            "feature": col,
+            "value": round(float(x_vec[i]), 4),
+            "mean_value": round(mean_val, 4),
+            "contribution": round(float(contrib), 6),
+            "direction": "positive" if contrib >= 0 else "negative",
+        })
+
+    # Sort by absolute contribution (highest first)
+    contributions.sort(key=lambda c: abs(c["contribution"]), reverse=True)
+
+    # Make prediction for display
+    raw = model.predict(x_vec.reshape(1, -1))[0]
+    decoded = pipeline.decode_prediction(raw)
+
+    # Build plain-English summary
+    top = contributions[:3] if contributions else []
+    drivers = [c["feature"] for c in top if abs(c["contribution"]) > 1e-8]
+    top_names = " and ".join(f"'{d}'" for d in drivers[:2]) if drivers else "the input features"
+
+    if pipeline.problem_type == "classification":
+        summary = (
+            f"Predicted {pipeline.target_column} = {decoded}. "
+            f"The prediction was primarily driven by {top_names}."
+        )
+    else:
+        summary = (
+            f"Predicted {pipeline.target_column} = {decoded}. "
+            f"The main factors were {top_names}."
+        )
+
+    return {
+        "prediction": decoded,
+        "target_column": pipeline.target_column,
+        "problem_type": pipeline.problem_type,
+        "contributions": contributions,
+        "summary": summary,
+        "top_drivers": drivers[:3],
+    }

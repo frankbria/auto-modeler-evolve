@@ -433,5 +433,15 @@ export const api = {
 
     health: (deploymentId: string): Promise<import("./types").ModelHealth> =>
       fetch(`${API_URL}/api/deploy/${deploymentId}/health`).then((r) => r.json()),
+
+    explain: (deploymentId: string, inputs: Record<string, unknown>): Promise<import("./types").PredictionExplanation> =>
+      fetch(`${API_URL}/api/predict/${deploymentId}/explain`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(inputs),
+      }).then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        return r.json()
+      }),
   },
 }

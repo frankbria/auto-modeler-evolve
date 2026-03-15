@@ -7,7 +7,101 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { api } from "@/lib/api"
-import type { Deployment, FeatureSchemaEntry, PredictionResult } from "@/lib/types"
+import type { Deployment, FeatureSchemaEntry, PredictionResult, PredictionExplanation, FeatureContribution } from "@/lib/types"
+
+// ---------------------------------------------------------------------------
+// Feature contribution waterfall (horizontal bar chart)
+// ---------------------------------------------------------------------------
+
+function ContributionBar({
+  item,
+  maxAbs,
+}: {
+  item: FeatureContribution
+  maxAbs: number
+}) {
+  const pct = maxAbs > 0 ? Math.abs(item.contribution) / maxAbs : 0
+  const barWidth = Math.max(2, Math.round(pct * 100))
+  const isPositive = item.direction === "positive"
+
+  return (
+    <div className="flex items-center gap-2 text-xs">
+      <div className="w-32 shrink-0 truncate text-right text-muted-foreground" title={item.feature}>
+        {item.feature.replace(/_/g, " ")}
+      </div>
+      <div className="flex flex-1 items-center gap-1">
+        {/* Left (negative) side */}
+        <div className="flex flex-1 justify-end">
+          {!isPositive && (
+            <div
+              className="h-4 rounded-l bg-red-400/70"
+              style={{ width: `${barWidth}%` }}
+              title={`contribution: ${item.contribution.toFixed(4)}`}
+            />
+          )}
+        </div>
+        {/* Centre divider */}
+        <div className="h-5 w-px bg-border shrink-0" />
+        {/* Right (positive) side */}
+        <div className="flex flex-1 justify-start">
+          {isPositive && (
+            <div
+              className="h-4 rounded-r bg-primary/60"
+              style={{ width: `${barWidth}%` }}
+              title={`contribution: ${item.contribution.toFixed(4)}`}
+            />
+          )}
+        </div>
+      </div>
+      <div className="w-20 shrink-0 text-muted-foreground tabular-nums">
+        {item.value} <span className="text-[10px]">(avg {item.mean_value})</span>
+      </div>
+    </div>
+  )
+}
+
+function ExplanationCard({ explanation }: { explanation: PredictionExplanation }) {
+  const top = explanation.contributions.slice(0, 8)
+  const maxAbs = Math.max(...top.map((c) => Math.abs(c.contribution)), 1e-8)
+
+  return (
+    <Card className="border-primary/20 bg-primary/5">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-base">Why this prediction?</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <p className="text-sm text-muted-foreground">{explanation.summary}</p>
+
+        {/* Legend */}
+        <div className="flex items-center gap-4 text-[10px] text-muted-foreground">
+          <span className="flex items-center gap-1">
+            <span className="inline-block h-2 w-4 rounded bg-red-400/70" />
+            Pushed prediction down
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="inline-block h-2 w-4 rounded bg-primary/60" />
+            Pushed prediction up
+          </span>
+        </div>
+
+        {/* Contribution bars */}
+        <div className="space-y-1.5">
+          {top.map((item) => (
+            <ContributionBar key={item.feature} item={item} maxAbs={maxAbs} />
+          ))}
+        </div>
+
+        <p className="text-[10px] text-muted-foreground">
+          Each bar shows how much that feature pushed the prediction relative to the training average.
+        </p>
+      </CardContent>
+    </Card>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Main prediction dashboard
+// ---------------------------------------------------------------------------
 
 export default function PredictionDashboard() {
   const params = useParams<{ id: string }>()
@@ -19,7 +113,10 @@ export default function PredictionDashboard() {
   const [inputs, setInputs] = useState<Record<string, string>>({})
   const [predicting, setPredicting] = useState(false)
   const [result, setResult] = useState<PredictionResult | null>(null)
+  const [explanation, setExplanation] = useState<PredictionExplanation | null>(null)
   const [predError, setPredError] = useState<string | null>(null)
+  const [showExplanation, setShowExplanation] = useState(false)
+  const [fetchingExplanation, setFetchingExplanation] = useState(false)
 
   useEffect(() => {
     api.deploy
@@ -43,13 +140,8 @@ export default function PredictionDashboard() {
       .finally(() => setLoading(false))
   }, [deploymentId])
 
-  const handlePredict = async () => {
-    if (!deployment) return
-    setPredicting(true)
-    setPredError(null)
-    setResult(null)
-
-    // Coerce numeric inputs
+  const buildPayload = () => {
+    if (!deployment) return {}
     const payload: Record<string, unknown> = {}
     for (const entry of deployment.feature_schema ?? []) {
       const raw = inputs[entry.name] ?? ""
@@ -59,7 +151,18 @@ export default function PredictionDashboard() {
         payload[entry.name] = raw
       }
     }
+    return payload
+  }
 
+  const handlePredict = async () => {
+    if (!deployment) return
+    setPredicting(true)
+    setPredError(null)
+    setResult(null)
+    setExplanation(null)
+    setShowExplanation(false)
+
+    const payload = buildPayload()
     try {
       const r = await api.deploy.predict(deploymentId, payload)
       setResult(r)
@@ -67,6 +170,25 @@ export default function PredictionDashboard() {
       setPredError("Prediction failed. Please check your inputs and try again.")
     } finally {
       setPredicting(false)
+    }
+  }
+
+  const handleExplain = async () => {
+    if (!deployment || !result) return
+    if (explanation) {
+      setShowExplanation(true)
+      return
+    }
+    setFetchingExplanation(true)
+    const payload = buildPayload()
+    try {
+      const exp = await api.deploy.explain(deploymentId, payload)
+      setExplanation(exp)
+      setShowExplanation(true)
+    } catch {
+      // Silently fall back — explanation is optional enhancement
+    } finally {
+      setFetchingExplanation(false)
     }
   }
 
@@ -223,8 +345,28 @@ export default function PredictionDashboard() {
                   </div>
                 </div>
               )}
+
+              {/* Explain button */}
+              <Button
+                size="sm"
+                variant="outline"
+                className="w-full"
+                onClick={handleExplain}
+                disabled={fetchingExplanation}
+              >
+                {fetchingExplanation
+                  ? "Analyzing..."
+                  : showExplanation
+                  ? "Hide explanation"
+                  : "Why this prediction?"}
+              </Button>
             </CardContent>
           </Card>
+        )}
+
+        {/* Explanation waterfall */}
+        {showExplanation && explanation && (
+          <ExplanationCard explanation={explanation} />
         )}
 
         <p className="text-center text-xs text-muted-foreground">

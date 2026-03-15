@@ -27,6 +27,7 @@ from sqlmodel import Session, select
 import db as _db
 from core.deployer import (
     build_prediction_pipeline,
+    explain_prediction,
     get_feature_schema,
     predict_batch,
     predict_single,
@@ -323,7 +324,42 @@ def batch_prediction(
 
 
 # ---------------------------------------------------------------------------
-# 7. Prediction analytics
+# 7. Prediction explanation (live — explain why the model predicted X)
+# ---------------------------------------------------------------------------
+
+
+@router.post("/api/predict/{deployment_id}/explain")
+def explain_single_prediction(
+    deployment_id: str,
+    input_data: dict,
+    session: Session = Depends(get_session),
+):
+    """Explain a single prediction using feature contributions.
+
+    Takes the same feature dict as /api/predict/{deployment_id}.
+    Returns prediction + per-feature contributions so the dashboard can
+    show "why did the model predict this?" in plain language.
+
+    Returns:
+        {prediction, target_column, problem_type, contributions, summary, top_drivers}
+    """
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment or not deployment.is_active:
+        raise HTTPException(status_code=404, detail="Deployment not found or inactive")
+
+    if not deployment.pipeline_path or not Path(deployment.pipeline_path).exists():
+        raise HTTPException(status_code=500, detail="Prediction pipeline not found on disk")
+
+    run = session.get(ModelRun, deployment.model_run_id)
+    if not run or not run.model_path or not Path(run.model_path).exists():
+        raise HTTPException(status_code=500, detail="Model file not found on disk")
+
+    result = explain_prediction(deployment.pipeline_path, run.model_path, input_data)
+    return result
+
+
+# ---------------------------------------------------------------------------
+# 8. Prediction analytics
 # ---------------------------------------------------------------------------
 
 

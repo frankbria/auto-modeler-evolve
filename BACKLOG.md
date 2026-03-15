@@ -10,6 +10,9 @@ Living document for coordinating between bot instances and tracking ideation.
 <!-- Brief description of what you're doing this session. -->
 <!-- Remove your entry when you commit your session wrap-up. -->
 
+## Day 4 (12:04) — Live prediction explanation on the public dashboard
+Extending the predict/[id] public dashboard to show WHY the model made a prediction. Adding feature_means/stds to PredictionPipeline, new explain_prediction() in deployer.py, POST /api/predict/{id}/explain endpoint, frontend contribution waterfall chart. This closes the vision's "Not a black box" promise for the shareable prediction dashboard.
+
 
 ## Day 4 (02:00) — Done
 Smart model health dashboard + guided retraining — GET /api/deploy/{id}/health (unified score: model age + feedback accuracy + drift → health_score 0-100, status, recommendations); POST /api/models/{project_id}/retrain (one-click retrain from existing feature set + selected algorithm); chat _HEALTH_PATTERNS intent → {type: health} SSE event; ModelHealthCard in DeploymentPanel; api.ts health/retrain methods; fixed deployment-panel.test.tsx mock. 27 backend + 12 frontend = 39 new tests. Total: 1148 tests.
