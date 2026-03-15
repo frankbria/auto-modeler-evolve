@@ -325,6 +325,13 @@ guides them forward through the natural flow.
       the training average. FeatureContribution + PredictionExplanation types added.
       Closes the vision's "Not a black box" promise for the shareable analyst dashboard.
       *Day 4 (12:04): 11 backend + 6 frontend = 17 new tests. Total: ~870 backend + 306 frontend.*
+- [x] **Prediction session history on public dashboard** — The predict/[id] page tracks all
+      predictions made in the current browser session. After the first prediction, a "Session
+      History" section appears showing a table of all past predictions (sequence #, time, result)
+      with a "Download CSV" button that exports the full session including all feature inputs.
+      PredictionHistoryRecord type added. History capped at 20 entries per session.
+      *Day 4 (06:00): pure frontend implementation. 4 new page tests. Closes the analyst use
+      case: "take predictions back to my VP" without needing the full deployment panel.*
 - [x] **Prediction drift detection + what-if analysis** — Two new Phase 8 capabilities:
       (1) GET /api/deploy/{id}/drift compares early vs recent prediction distributions using
       only PredictionLog — no schema migration needed. Regression: z-score of mean shift;
@@ -357,6 +364,7 @@ guides them forward through the natural flow.
       *Day 2 (14:00): radar chart for model comparison — build_model_comparison_radar() normalizes all metrics to 0-1, /api/models/{id}/comparison-radar endpoint returns 204 when <2 models.*
       *Day 3 (00:09): time-series decomposition — detect_time_columns(), build_timeseries_chart() (original + rolling avg + OLS trend), GET /api/data/{id}/timeseries endpoint. 21 tests.*
       *Day 3 (08:04): scatter brushing — click-to-highlight in InteractiveScatterChart; selected point shown with reference lines + coordinates label + Clear button; normal points dim to 35% opacity when one is selected.*
+      *Day 4 (06:00): box plot chart type — build_boxplot() with Tukey-fence whiskers, grouped or single-column; GET /api/data/{id}/boxplot endpoint; BoxPlotChart SVG renderer in chat-message.tsx. 19 backend + 8 frontend = 27 new tests.*
 - [x] **Data transformation pipeline** — Support for multi-step, reorderable
       transformation pipelines with undo. Let users build complex feature engineering
       flows through conversation.
