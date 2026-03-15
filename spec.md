@@ -300,6 +300,13 @@ guides them forward through the natural flow.
       summary. Uses Claude when ANTHROPIC_API_KEY is present; falls back to structured static narrative.
       Perfect for "share with VP" use case. api.projects.narrative() in frontend API client.
       *Day 4 (04:44): 21 backend tests. Context dict includes dataset, features, model, deployment.*
+- [x] **Prediction feedback loop** — Users record actual outcomes after predictions:
+      POST /api/predict/{id}/feedback stores FeedbackRecord (actual_value/actual_label,
+      is_correct auto-computed by comparing stored prediction to provided label).
+      GET /api/deploy/{id}/feedback-accuracy aggregates real-world MAE (regression) or
+      accuracy (classification) across all recorded feedback. FeedbackCard in
+      DeploymentPanel shows stats and feedback form. api.ts submitFeedback() + feedbackAccuracy().
+      *Day 4 (08:06): 21 backend tests, all passing. Closes the loop between predictions and reality.*
 - [x] **Prediction drift detection + what-if analysis** — Two new Phase 8 capabilities:
       (1) GET /api/deploy/{id}/drift compares early vs recent prediction distributions using
       only PredictionLog — no schema migration needed. Regression: z-score of mean shift;
