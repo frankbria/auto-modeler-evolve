@@ -1,17 +1,108 @@
 "use client"
 
-import { useState, useCallback } from "react"
+import { useState, useCallback, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { api } from "@/lib/api"
-import type { Deployment } from "@/lib/types"
+import type { Deployment, DeploymentAnalytics, ModelReadiness } from "@/lib/types"
 
 interface DeploymentPanelProps {
   projectId: string
   selectedRunId: string | null
   algorithmName: string | null
   onDeployed?: (deployment: Deployment) => void
+}
+
+function ReadinessBadge({ verdict }: { verdict: ModelReadiness["verdict"] }) {
+  if (verdict === "ready") return <Badge className="bg-green-100 text-green-800 border-green-200">Ready to deploy</Badge>
+  if (verdict === "needs_attention") return <Badge className="bg-yellow-100 text-yellow-800 border-yellow-200">Needs attention</Badge>
+  return <Badge className="bg-red-100 text-red-800 border-red-200">Not ready</Badge>
+}
+
+function ReadinessCard({ readiness }: { readiness: ModelReadiness }) {
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-sm">Model Readiness</CardTitle>
+          <div className="flex items-center gap-2">
+            <span className="text-2xl font-bold">{readiness.score}</span>
+            <span className="text-xs text-muted-foreground">/100</span>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        <ReadinessBadge verdict={readiness.verdict} />
+        <p className="text-xs text-muted-foreground">{readiness.summary}</p>
+        <div className="space-y-1">
+          {readiness.checks.map((check) => (
+            <div key={check.id} className="flex items-start gap-1.5 text-xs">
+              <span className={check.passed ? "text-green-600" : "text-red-500"}>
+                {check.passed ? "✓" : "✗"}
+              </span>
+              <span className={check.passed ? "text-foreground" : "text-muted-foreground"}>
+                {check.label}
+              </span>
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+function AnalyticsMiniChart({ data }: { data: { date: string; count: number }[] }) {
+  if (!data.length) return null
+  const max = Math.max(...data.map((d) => d.count), 1)
+  const recent = data.slice(-7)
+  return (
+    <div className="flex items-end gap-0.5 h-10">
+      {recent.map((d) => (
+        <div key={d.date} className="flex-1 flex flex-col items-center gap-0.5">
+          <div
+            className="w-full rounded-sm bg-primary/60"
+            style={{ height: `${Math.max(2, (d.count / max) * 36)}px` }}
+            title={`${d.date}: ${d.count} predictions`}
+          />
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function AnalyticsCard({ analytics }: { analytics: DeploymentAnalytics }) {
+  const hasData = analytics.predictions_by_day.length > 0
+  const avgText = analytics.recent_avg !== null
+    ? `Avg prediction: ${analytics.recent_avg}`
+    : null
+  const classText = analytics.class_counts
+    ? Object.entries(analytics.class_counts)
+        .sort(([, a], [, b]) => b - a)
+        .slice(0, 3)
+        .map(([label, count]) => `${label}: ${count}`)
+        .join("  ·  ")
+    : null
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm">Usage Analytics</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-2 text-xs">
+        <div className="flex items-center justify-between text-muted-foreground">
+          <span>Total predictions: <strong className="text-foreground">{analytics.total_predictions}</strong></span>
+          {hasData && <span className="text-[10px]">last 7 days</span>}
+        </div>
+        {hasData && <AnalyticsMiniChart data={analytics.predictions_by_day} />}
+        {avgText && <p className="text-muted-foreground">{avgText}</p>}
+        {classText && <p className="text-muted-foreground">{classText}</p>}
+        {!hasData && (
+          <p className="text-muted-foreground italic">No predictions yet — share the dashboard link to get started.</p>
+        )}
+      </CardContent>
+    </Card>
+  )
 }
 
 export function DeploymentPanel({
@@ -25,6 +116,30 @@ export function DeploymentPanel({
   const [error, setError] = useState<string | null>(null)
   const [undeploying, setUndeploying] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [readiness, setReadiness] = useState<ModelReadiness | null>(null)
+  const [analytics, setAnalytics] = useState<DeploymentAnalytics | null>(null)
+
+  // Load readiness check when a run is selected
+  useEffect(() => {
+    if (!selectedRunId) {
+      setReadiness(null)
+      return
+    }
+    api.models.readiness(selectedRunId)
+      .then(setReadiness)
+      .catch(() => {/* not ready yet — ignore */})
+  }, [selectedRunId])
+
+  // Load analytics when deployed
+  useEffect(() => {
+    if (!deployment) {
+      setAnalytics(null)
+      return
+    }
+    api.deploy.analytics(deployment.id)
+      .then(setAnalytics)
+      .catch(() => {})
+  }, [deployment])
 
   const handleCopyLink = useCallback((url: string) => {
     navigator.clipboard.writeText(url).then(() => {
@@ -137,6 +252,8 @@ export function DeploymentPanel({
           </CardContent>
         </Card>
 
+        {analytics && <AnalyticsCard analytics={analytics} />}
+
         <div className="flex justify-end">
           <Button
             variant="outline"
@@ -153,6 +270,8 @@ export function DeploymentPanel({
 
   return (
     <div className="space-y-4">
+      {readiness && <ReadinessCard readiness={readiness} />}
+
       <div className="rounded-lg border p-4">
         <h4 className="text-sm font-semibold">Ready to deploy</h4>
         <p className="mt-1 text-xs text-muted-foreground">
@@ -164,7 +283,7 @@ export function DeploymentPanel({
           <li>✓ Auto-generated prediction form with your feature columns</li>
           <li>✓ JSON API endpoint for developers</li>
           <li>✓ Batch prediction via CSV upload</li>
-          <li>✓ Usage statistics dashboard</li>
+          <li>✓ Usage analytics dashboard</li>
         </ul>
       </div>
 

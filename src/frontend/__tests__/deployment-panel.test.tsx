@@ -18,12 +18,18 @@ jest.mock("../lib/api", () => ({
     deploy: {
       deploy: jest.fn(),
       undeploy: jest.fn(),
+      analytics: jest.fn(),
+    },
+    models: {
+      readiness: jest.fn(),
     },
   },
 }))
 
 const mockDeploy = api.deploy.deploy as jest.MockedFunction<typeof api.deploy.deploy>
 const mockUndeploy = api.deploy.undeploy as jest.MockedFunction<typeof api.deploy.undeploy>
+const mockAnalytics = api.deploy.analytics as jest.MockedFunction<typeof api.deploy.analytics>
+const mockReadiness = api.models.readiness as jest.MockedFunction<typeof api.models.readiness>
 
 const makeDeployment = (overrides: Partial<Deployment> = {}): Deployment => ({
   id: "dep-1",
@@ -43,8 +49,39 @@ const makeDeployment = (overrides: Partial<Deployment> = {}): Deployment => ({
   ...overrides,
 })
 
+const makeAnalytics = (): import("../lib/types").DeploymentAnalytics => ({
+  deployment_id: "dep-1",
+  total_predictions: 0,
+  predictions_by_day: [],
+  prediction_distribution: [],
+  recent_avg: null,
+  class_counts: null,
+  problem_type: "regression",
+})
+
+const makeReadiness = (overrides: Partial<import("../lib/types").ModelReadiness> = {}): import("../lib/types").ModelReadiness => ({
+  model_run_id: "run-1",
+  algorithm: "Random Forest",
+  score: 80,
+  verdict: "ready",
+  summary: "Your model scores 80/100. Ready to deploy.",
+  problem_type: "regression",
+  checks: [
+    { id: "training_complete", label: "Training completed", passed: true, weight: 10 },
+    { id: "sufficient_data", label: "Sufficient data (20 rows)", passed: false, weight: 20 },
+    { id: "model_accuracy", label: "R² = 0.85", passed: true, weight: 30 },
+    { id: "features", label: "3 features used", passed: true, weight: 15 },
+    { id: "data_quality", label: "Data quality (0.0% missing)", passed: true, weight: 15 },
+    { id: "model_selected", label: "Marked as preferred model", passed: true, weight: 10 },
+  ],
+  ...overrides,
+})
+
 beforeEach(() => {
   jest.clearAllMocks()
+  // Default: readiness and analytics reject silently (component handles gracefully)
+  mockReadiness.mockRejectedValue(new Error("not ready"))
+  mockAnalytics.mockRejectedValue(new Error("no analytics"))
 })
 
 describe("DeploymentPanel — no model selected", () => {
@@ -298,5 +335,196 @@ describe("DeploymentPanel — deployed state", () => {
       expect(screen.getByText(/model deployed/i)).toBeInTheDocument()
     )
     expect(screen.queryByText(/last used/i)).not.toBeInTheDocument()
+  })
+})
+
+describe("DeploymentPanel — readiness card", () => {
+  it("shows readiness card when readiness data is loaded", async () => {
+    mockReadiness.mockResolvedValueOnce(makeReadiness())
+    render(
+      <DeploymentPanel
+        projectId="proj-1"
+        selectedRunId="run-1"
+        algorithmName="Random Forest"
+      />
+    )
+    await waitFor(() =>
+      expect(screen.getByText(/model readiness/i)).toBeInTheDocument()
+    )
+  })
+
+  it("shows readiness score", async () => {
+    mockReadiness.mockResolvedValueOnce(makeReadiness({ score: 80 }))
+    render(
+      <DeploymentPanel
+        projectId="proj-1"
+        selectedRunId="run-1"
+        algorithmName="Random Forest"
+      />
+    )
+    await waitFor(() =>
+      expect(screen.getByText("80")).toBeInTheDocument()
+    )
+  })
+
+  it("shows Ready to deploy badge for passing models", async () => {
+    mockReadiness.mockResolvedValueOnce(makeReadiness({ verdict: "ready" }))
+    render(
+      <DeploymentPanel
+        projectId="proj-1"
+        selectedRunId="run-1"
+        algorithmName="Random Forest"
+      />
+    )
+    await waitFor(() =>
+      expect(screen.getByText(/ready to deploy/i)).toBeInTheDocument()
+    )
+  })
+
+  it("shows Needs attention badge for borderline models", async () => {
+    mockReadiness.mockResolvedValueOnce(makeReadiness({ verdict: "needs_attention" }))
+    render(
+      <DeploymentPanel
+        projectId="proj-1"
+        selectedRunId="run-1"
+        algorithmName="Random Forest"
+      />
+    )
+    await waitFor(() =>
+      expect(screen.getByText(/needs attention/i)).toBeInTheDocument()
+    )
+  })
+
+  it("shows Not ready badge for poor models", async () => {
+    mockReadiness.mockResolvedValueOnce(makeReadiness({ verdict: "not_ready" }))
+    render(
+      <DeploymentPanel
+        projectId="proj-1"
+        selectedRunId="run-1"
+        algorithmName="Random Forest"
+      />
+    )
+    await waitFor(() =>
+      expect(screen.getByText(/not ready/i)).toBeInTheDocument()
+    )
+  })
+
+  it("shows check labels in readiness card", async () => {
+    mockReadiness.mockResolvedValueOnce(makeReadiness())
+    render(
+      <DeploymentPanel
+        projectId="proj-1"
+        selectedRunId="run-1"
+        algorithmName="Random Forest"
+      />
+    )
+    await waitFor(() =>
+      expect(screen.getByText(/training completed/i)).toBeInTheDocument()
+    )
+  })
+
+  it("does not show readiness card when readiness fetch fails", async () => {
+    mockReadiness.mockRejectedValue(new Error("model not done"))
+    render(
+      <DeploymentPanel
+        projectId="proj-1"
+        selectedRunId="run-1"
+        algorithmName="Random Forest"
+      />
+    )
+    // Small wait to ensure no crash
+    await new Promise((r) => setTimeout(r, 50))
+    expect(screen.queryByText(/model readiness/i)).not.toBeInTheDocument()
+  })
+
+  it("does not show readiness when no run selected", () => {
+    render(
+      <DeploymentPanel
+        projectId="proj-1"
+        selectedRunId={null}
+        algorithmName={null}
+      />
+    )
+    expect(mockReadiness).not.toHaveBeenCalled()
+  })
+})
+
+describe("DeploymentPanel — analytics card", () => {
+  it("shows analytics card after deployment", async () => {
+    mockDeploy.mockResolvedValueOnce(makeDeployment())
+    mockAnalytics.mockResolvedValueOnce(makeAnalytics())
+    render(
+      <DeploymentPanel
+        projectId="proj-1"
+        selectedRunId="run-1"
+        algorithmName="Random Forest"
+      />
+    )
+    fireEvent.click(screen.getByRole("button", { name: /deploy model/i }))
+    await waitFor(() =>
+      expect(screen.getByText(/model deployed/i)).toBeInTheDocument()
+    )
+    await waitFor(() =>
+      expect(screen.getByText(/usage analytics/i)).toBeInTheDocument()
+    )
+  })
+
+  it("shows total prediction count in analytics", async () => {
+    mockDeploy.mockResolvedValueOnce(makeDeployment())
+    mockAnalytics.mockResolvedValueOnce({ ...makeAnalytics(), total_predictions: 17 })
+    render(
+      <DeploymentPanel
+        projectId="proj-1"
+        selectedRunId="run-1"
+        algorithmName="Random Forest"
+      />
+    )
+    fireEvent.click(screen.getByRole("button", { name: /deploy model/i }))
+    await waitFor(() =>
+      expect(screen.getByText(/total predictions/i)).toBeInTheDocument()
+    )
+    await waitFor(() =>
+      expect(screen.getByText("17")).toBeInTheDocument()
+    )
+  })
+
+  it("shows 'no predictions yet' when no data", async () => {
+    mockDeploy.mockResolvedValueOnce(makeDeployment())
+    mockAnalytics.mockResolvedValueOnce(makeAnalytics())
+    render(
+      <DeploymentPanel
+        projectId="proj-1"
+        selectedRunId="run-1"
+        algorithmName="Random Forest"
+      />
+    )
+    fireEvent.click(screen.getByRole("button", { name: /deploy model/i }))
+    await waitFor(() =>
+      expect(screen.getByText(/model deployed/i)).toBeInTheDocument()
+    )
+    await waitFor(() =>
+      expect(screen.getByText(/no predictions yet/i)).toBeInTheDocument()
+    )
+  })
+
+  it("shows average prediction value when available", async () => {
+    mockDeploy.mockResolvedValueOnce(makeDeployment())
+    mockAnalytics.mockResolvedValueOnce({
+      ...makeAnalytics(),
+      total_predictions: 5,
+      recent_avg: 142.5,
+      predictions_by_day: [{ date: "2026-03-15", count: 5 }],
+    })
+    render(
+      <DeploymentPanel
+        projectId="proj-1"
+        selectedRunId="run-1"
+        algorithmName="Random Forest"
+      />
+    )
+    fireEvent.click(screen.getByRole("button", { name: /deploy model/i }))
+    await waitFor(() =>
+      expect(screen.getByText(/avg prediction/i)).toBeInTheDocument()
+    )
   })
 })

@@ -1,22 +1,25 @@
 """Model deployment & prediction API endpoints.
 
 Routes:
-  POST   /api/deploy/{model_run_id}           — deploy a trained model
-  GET    /api/deployments                      — list all active deployments
-  GET    /api/deploy/{deployment_id}           — deployment detail + feature schema
-  DELETE /api/deploy/{deployment_id}           — undeploy (soft delete)
-  POST   /api/predict/{deployment_id}          — single prediction (JSON → JSON)
-  POST   /api/predict/{deployment_id}/batch    — batch prediction (CSV → CSV)
+  POST   /api/deploy/{model_run_id}                — deploy a trained model
+  GET    /api/deployments                           — list all active deployments
+  GET    /api/deploy/{deployment_id}                — deployment detail + feature schema
+  DELETE /api/deploy/{deployment_id}                — undeploy (soft delete)
+  POST   /api/predict/{deployment_id}               — single prediction (JSON → JSON)
+  POST   /api/predict/{deployment_id}/batch         — batch prediction (CSV → CSV)
+  GET    /api/deploy/{deployment_id}/analytics      — prediction usage analytics
+  GET    /api/deploy/{deployment_id}/logs           — paginated prediction log
 """
 
 from __future__ import annotations
 
 import json
+from collections import defaultdict
 from datetime import UTC, datetime
 from pathlib import Path
 
 import pandas as pd
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import Response
 from sqlmodel import Session, select
 
@@ -34,6 +37,7 @@ from models.dataset import Dataset
 from models.deployment import Deployment
 from models.feature_set import FeatureSet
 from models.model_run import ModelRun
+from models.prediction_log import PredictionLog
 
 router = APIRouter(tags=["deployment"])
 
@@ -249,6 +253,23 @@ def make_prediction(
     deployment.request_count += 1
     deployment.last_predicted_at = datetime.now(UTC).replace(tzinfo=None)
     session.add(deployment)
+
+    # Log prediction for analytics
+    prediction_value = result.get("prediction")
+    numeric_value: float | None = None
+    try:
+        numeric_value = float(prediction_value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        pass
+
+    log_entry = PredictionLog(
+        deployment_id=deployment_id,
+        input_features=json.dumps(input_data),
+        prediction=json.dumps(prediction_value),
+        prediction_numeric=numeric_value,
+        confidence=result.get("confidence"),
+    )
+    session.add(log_entry)
     session.commit()
 
     return {
@@ -297,6 +318,135 @@ def batch_prediction(
         media_type="text/csv",
         headers={"Content-Disposition": "attachment; filename=predictions.csv"},
     )
+
+
+# ---------------------------------------------------------------------------
+# 7. Prediction analytics
+# ---------------------------------------------------------------------------
+
+
+@router.get("/api/deploy/{deployment_id}/analytics")
+def get_deployment_analytics(
+    deployment_id: str,
+    days: int = Query(7, ge=1, le=90),
+    session: Session = Depends(get_session),
+):
+    """Return usage analytics for a deployment.
+
+    Returns:
+    - predictions_by_day: list of {date, count} for the last `days` days
+    - total_predictions: total all-time count
+    - prediction_distribution: histogram buckets for numeric predictions
+    - recent_avg: mean prediction value (regression only)
+    - class_counts: {label: count} for classification models
+    """
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment:
+        raise HTTPException(status_code=404, detail="Deployment not found")
+
+    logs = session.exec(
+        select(PredictionLog).where(PredictionLog.deployment_id == deployment_id)
+    ).all()
+
+    # --- Predictions by day (last N days) ---
+    day_counts: dict[str, int] = defaultdict(int)
+    for log in logs:
+        day_key = log.created_at.strftime("%Y-%m-%d")
+        day_counts[day_key] += 1
+
+    predictions_by_day = [
+        {"date": date, "count": count}
+        for date, count in sorted(day_counts.items())
+    ]
+
+    # --- Prediction distribution ---
+    numeric_vals = [log.prediction_numeric for log in logs if log.prediction_numeric is not None]
+    prediction_distribution: list[dict] = []
+    recent_avg: float | None = None
+
+    if numeric_vals:
+        recent_avg = round(sum(numeric_vals) / len(numeric_vals), 4)
+        # Build histogram with up to 10 buckets
+        min_val, max_val = min(numeric_vals), max(numeric_vals)
+        if min_val == max_val:
+            prediction_distribution = [{"bucket": str(round(min_val, 3)), "count": len(numeric_vals)}]
+        else:
+            bucket_size = (max_val - min_val) / 10
+            buckets: dict[int, int] = defaultdict(int)
+            for v in numeric_vals:
+                idx = min(int((v - min_val) / bucket_size), 9)
+                buckets[idx] += 1
+            prediction_distribution = [
+                {
+                    "bucket": f"{round(min_val + i * bucket_size, 2)}–{round(min_val + (i+1) * bucket_size, 2)}",
+                    "count": buckets[i],
+                }
+                for i in range(10)
+                if buckets[i] > 0
+            ]
+
+    # --- Classification class counts ---
+    class_counts: dict[str, int] = defaultdict(int)
+    for log in logs:
+        if log.prediction_numeric is None:
+            try:
+                label = str(json.loads(log.prediction))
+                class_counts[label] += 1
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+    return {
+        "deployment_id": deployment_id,
+        "total_predictions": deployment.request_count,
+        "predictions_by_day": predictions_by_day,
+        "prediction_distribution": prediction_distribution,
+        "recent_avg": recent_avg,
+        "class_counts": dict(class_counts) if class_counts else None,
+        "problem_type": deployment.problem_type,
+    }
+
+
+# ---------------------------------------------------------------------------
+# 8. Prediction log (paginated)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/api/deploy/{deployment_id}/logs")
+def get_prediction_logs(
+    deployment_id: str,
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    session: Session = Depends(get_session),
+):
+    """Return a paginated list of individual prediction records."""
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment:
+        raise HTTPException(status_code=404, detail="Deployment not found")
+
+    all_logs = session.exec(
+        select(PredictionLog).where(PredictionLog.deployment_id == deployment_id)
+    ).all()
+
+    # Sort by most recent first
+    sorted_logs = sorted(all_logs, key=lambda l: l.created_at, reverse=True)
+    page = sorted_logs[offset : offset + limit]
+
+    return {
+        "deployment_id": deployment_id,
+        "total": len(all_logs),
+        "offset": offset,
+        "limit": limit,
+        "logs": [
+            {
+                "id": log.id,
+                "input_features": json.loads(log.input_features),
+                "prediction": json.loads(log.prediction),
+                "confidence": log.confidence,
+                "created_at": log.created_at.isoformat(),
+            }
+            for log in page
+        ],
+    }
 
 
 # ---------------------------------------------------------------------------

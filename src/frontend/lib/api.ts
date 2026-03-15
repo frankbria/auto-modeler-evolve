@@ -334,6 +334,9 @@ export const api = {
 
     trainingStreamUrl: (projectId: string): string =>
       `${API_URL}/api/models/${projectId}/training-stream`,
+
+    readiness: (modelRunId: string): Promise<import("./types").ModelReadiness> =>
+      fetch(`${API_URL}/api/models/${modelRunId}/readiness`).then((r) => r.json()),
   },
 
   validation: {
@@ -371,5 +374,11 @@ export const api = {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(inputData),
       }).then((r) => r.json()),
+
+    analytics: (deploymentId: string, days?: number): Promise<import("./types").DeploymentAnalytics> =>
+      fetch(`${API_URL}/api/deploy/${deploymentId}/analytics${days ? `?days=${days}` : ""}`).then((r) => r.json()),
+
+    logs: (deploymentId: string, limit?: number, offset?: number): Promise<import("./types").PredictionLogsResponse> =>
+      fetch(`${API_URL}/api/deploy/${deploymentId}/logs?limit=${limit ?? 20}&offset=${offset ?? 0}`).then((r) => r.json()),
   },
 }

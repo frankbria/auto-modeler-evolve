@@ -1,4 +1,5 @@
 import json
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -24,6 +25,13 @@ router = APIRouter(prefix="/api/chat", tags=["chat"])
 MODEL = "claude-haiku-4-5-20251001"
 MAX_TOKENS = 1024
 
+# Keywords that trigger an inline model readiness assessment
+_READINESS_PATTERNS = re.compile(
+    r"\b(ready|readiness|production.ready|deploy|is.*(model|it).*ready|can.*deploy|"
+    r"should.*deploy|good enough|production|go.live|ship it|launch)\b",
+    re.IGNORECASE,
+)
+
 
 class ChatMessage(BaseModel):
     message: str
@@ -31,6 +39,73 @@ class ChatMessage(BaseModel):
 
 def _utcnow() -> datetime:
     return datetime.now(UTC).replace(tzinfo=None)
+
+
+def _compute_readiness(run: ModelRun, dataset: Dataset | None, feature_set: FeatureSet | None) -> dict:
+    """Inline model readiness calculation (same logic as /api/models/{id}/readiness)."""
+    metrics = json.loads(run.metrics) if run.metrics else {}
+    problem_type = (feature_set.problem_type if feature_set else None) or "regression"
+    row_count = dataset.row_count if dataset else 0
+    feature_count = len(json.loads(feature_set.column_mapping or "{}")) if feature_set else 0
+
+    checks: list[dict] = []
+    total_points = 0
+    earned_points = 0
+
+    # Training complete
+    total_points += 10
+    earned_points += 10
+    checks.append({"id": "training_complete", "label": "Training completed", "passed": True, "weight": 10})
+
+    # Sufficient data
+    total_points += 20
+    data_ok = row_count >= 100
+    earned_points += 20 if data_ok else (10 if row_count >= 50 else 0)
+    checks.append({"id": "sufficient_data", "label": f"Sufficient data ({row_count} rows)", "passed": data_ok, "weight": 20})
+
+    # Accuracy
+    total_points += 30
+    if problem_type == "regression":
+        r2 = metrics.get("r2", 0.0)
+        perf_ok = r2 >= 0.7
+        earned_points += 30 if perf_ok else (15 if r2 >= 0.5 else 0)
+        checks.append({"id": "accuracy", "label": f"R² = {r2:.3f} (threshold: 0.70)", "passed": perf_ok, "weight": 30})
+    else:
+        acc = metrics.get("accuracy", 0.0)
+        perf_ok = acc >= 0.8
+        earned_points += 30 if perf_ok else (15 if acc >= 0.65 else 0)
+        checks.append({"id": "accuracy", "label": f"Accuracy = {acc:.1%} (threshold: 80%)", "passed": perf_ok, "weight": 30})
+
+    # Features
+    total_points += 15
+    has_features = feature_count > 1
+    earned_points += 15 if has_features else 5
+    checks.append({"id": "features", "label": f"{feature_count} features used", "passed": has_features, "weight": 15})
+
+    # Data quality
+    total_points += 15
+    profile = json.loads(dataset.profile or "{}") if dataset else {}
+    missing_pct = profile.get("missing_percentage", 0.0)
+    dq_ok = missing_pct < 10.0
+    earned_points += 15 if dq_ok else (8 if missing_pct < 30.0 else 0)
+    checks.append({"id": "data_quality", "label": f"Data quality ({missing_pct:.1f}% missing)", "passed": dq_ok, "weight": 15})
+
+    # Selected
+    total_points += 10
+    earned_points += 10 if run.is_selected else 0
+    checks.append({"id": "selected", "label": "Marked as preferred model", "passed": run.is_selected, "weight": 10})
+
+    score = round((earned_points / total_points) * 100) if total_points > 0 else 0
+    verdict = "ready" if score >= 85 else ("needs_attention" if score >= 60 else "not_ready")
+
+    return {
+        "model_run_id": run.id,
+        "algorithm": run.algorithm,
+        "score": score,
+        "verdict": verdict,
+        "checks": checks,
+        "problem_type": problem_type,
+    }
 
 
 def _load_project_context(project_id: str, session: Session) -> dict:
@@ -125,6 +200,30 @@ def send_message(
     dataset_file_path: str | None = dataset.file_path if dataset else None
     column_info: list = json.loads(dataset.columns) if (dataset and dataset.columns) else []
 
+    # Check if this is a readiness-related question
+    readiness_data: dict | None = None
+    if _READINESS_PATTERNS.search(body.message):
+        completed_runs = [mr for mr in ctx["model_runs"] if mr.status == "done"]
+        selected_run = next((mr for mr in completed_runs if mr.is_selected), None)
+        target_run = selected_run or (completed_runs[-1] if completed_runs else None)
+        if target_run:
+            try:
+                readiness_data = _compute_readiness(target_run, ctx["dataset"], ctx["feature_set"])
+                # Inject readiness summary into system prompt so Claude can incorporate it
+                score = readiness_data["score"]
+                verdict = readiness_data["verdict"]
+                passed = sum(1 for c in readiness_data["checks"] if c["passed"])
+                total = len(readiness_data["checks"])
+                system_prompt += (
+                    f"\n\n## Model Readiness Check (just computed)\n"
+                    f"Algorithm: {target_run.algorithm} | Score: {score}/100 | "
+                    f"Verdict: {verdict.upper()} | Checks passed: {passed}/{total}\n"
+                    "Reference this assessment in your response. Be specific about the score "
+                    "and what the user should do next."
+                )
+            except Exception:  # noqa: BLE001
+                pass  # Readiness check is nice-to-have; never crash chat
+
     def stream_response():
         full_response = ""
         try:
@@ -157,6 +256,10 @@ def send_message(
                     conv.updated_at = _utcnow()
                     save_session.add(conv)
                     save_session.commit()
+
+        # Emit readiness card if computed
+        if readiness_data:
+            yield f"data: {json.dumps({'type': 'readiness', 'readiness': readiness_data})}\n\n"
 
         # After text stream, opportunistically generate a chart if the
         # message is about data and we have a dataset loaded

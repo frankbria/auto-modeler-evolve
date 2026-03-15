@@ -703,3 +703,197 @@ def download_report(model_run_id: str, session: Session = Depends(get_session)):
         media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+# ---------------------------------------------------------------------------
+# Model readiness assessment
+# ---------------------------------------------------------------------------
+
+
+@router.get("/api/models/{model_run_id}/readiness")
+def get_model_readiness(
+    model_run_id: str,
+    session: Session = Depends(get_session),
+):
+    """Evaluate whether a model is production-ready.
+
+    Returns a readiness score (0–100) plus a plain-English checklist of
+    what passed, what needs attention, and what to do next.
+    """
+    run = session.get(ModelRun, model_run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Model run not found")
+    if run.status != "done":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Model is not ready (status: {run.status}). Wait for training to complete.",
+        )
+
+    metrics = json.loads(run.metrics) if run.metrics else {}
+
+    # Gather context
+    dataset = session.exec(
+        select(Dataset).where(Dataset.project_id == run.project_id)
+    ).first()
+    feature_set = None
+    if run.feature_set_id:
+        feature_set = session.get(FeatureSet, run.feature_set_id)
+
+    problem_type = (feature_set.problem_type if feature_set else None) or "regression"
+    row_count = dataset.row_count if dataset else 0
+    feature_count = len(json.loads(feature_set.column_mapping or "{}")) if feature_set else 0
+
+    # --- Checklist evaluation ---
+    checks: list[dict] = []
+    total_points = 0
+    earned_points = 0
+
+    # 1. Training completed successfully
+    total_points += 10
+    earned_points += 10
+    checks.append({
+        "id": "training_complete",
+        "label": "Training completed successfully",
+        "passed": True,
+        "detail": f"Model trained in {run.training_duration_ms or 0}ms using {run.algorithm}.",
+        "weight": 10,
+    })
+
+    # 2. Sufficient training data
+    total_points += 20
+    min_rows = 100
+    data_ok = row_count >= min_rows
+    earned_points += 20 if data_ok else (10 if row_count >= 50 else 0)
+    checks.append({
+        "id": "sufficient_data",
+        "label": "Sufficient training data",
+        "passed": data_ok,
+        "detail": (
+            f"{row_count} rows used for training. "
+            + ("Great — models generally improve with more data." if data_ok
+               else f"Consider collecting more data (recommended: {min_rows}+ rows).")
+        ),
+        "weight": 20,
+    })
+
+    # 3. Accuracy / performance threshold
+    total_points += 30
+    if problem_type == "regression":
+        r2 = metrics.get("r2", 0.0)
+        perf_ok = r2 >= 0.7
+        perf_partial = r2 >= 0.5
+        earned_points += 30 if perf_ok else (15 if perf_partial else 0)
+        checks.append({
+            "id": "model_accuracy",
+            "label": "Meets accuracy threshold",
+            "passed": perf_ok,
+            "detail": (
+                f"R² = {r2:.3f} "
+                + ("— excellent fit. Model explains most of the variance in your data." if perf_ok
+                   else "— moderate fit. Consider more features or a different algorithm." if perf_partial
+                   else "— poor fit. The model may not be reliable for production use.")
+            ),
+            "weight": 30,
+        })
+    else:
+        acc = metrics.get("accuracy", 0.0)
+        perf_ok = acc >= 0.8
+        perf_partial = acc >= 0.65
+        earned_points += 30 if perf_ok else (15 if perf_partial else 0)
+        checks.append({
+            "id": "model_accuracy",
+            "label": "Meets accuracy threshold",
+            "passed": perf_ok,
+            "detail": (
+                f"Accuracy = {acc:.1%} "
+                + ("— strong performance. Model is predicting reliably." if perf_ok
+                   else "— moderate performance. Consider feature improvements." if perf_partial
+                   else "— below threshold. Review your features and target column.")
+            ),
+            "weight": 30,
+        })
+
+    # 4. Features are meaningful (more than 1 feature)
+    total_points += 15
+    has_features = feature_count > 1
+    earned_points += 15 if has_features else 5
+    checks.append({
+        "id": "feature_quality",
+        "label": "Multiple features used",
+        "passed": has_features,
+        "detail": (
+            f"{feature_count} features in the model. "
+            + ("Good diversity of input signals." if has_features
+               else "Only 1 feature — consider adding more input columns to improve predictions.")
+        ),
+        "weight": 15,
+    })
+
+    # 5. No data quality warnings (missing values handled)
+    total_points += 15
+    profile = json.loads(dataset.profile or "{}") if dataset else {}
+    missing_pct = profile.get("missing_percentage", 0.0)
+    data_quality_ok = missing_pct < 10.0
+    earned_points += 15 if data_quality_ok else (8 if missing_pct < 30.0 else 0)
+    checks.append({
+        "id": "data_quality",
+        "label": "Data quality is acceptable",
+        "passed": data_quality_ok,
+        "detail": (
+            f"{missing_pct:.1f}% missing values across all columns. "
+            + ("Data looks clean." if data_quality_ok
+               else "High missing data rate — review your dataset for completeness.")
+        ),
+        "weight": 15,
+    })
+
+    # 6. Model is selected for deployment
+    total_points += 10
+    is_selected = run.is_selected
+    earned_points += 10 if is_selected else 0
+    checks.append({
+        "id": "model_selected",
+        "label": "Marked as the preferred model",
+        "passed": is_selected,
+        "detail": (
+            "This model is selected as the best for this project."
+            if is_selected
+            else "Mark this model as selected in the Models tab to confirm it's your preferred choice."
+        ),
+        "weight": 10,
+    })
+
+    score = round((earned_points / total_points) * 100) if total_points > 0 else 0
+
+    # Build verdict
+    if score >= 85:
+        verdict = "ready"
+        summary = (
+            f"Your {run.algorithm} model scores {score}/100 on the readiness checklist. "
+            "It's well-trained, has good accuracy, and uses quality data. "
+            "You're ready to deploy."
+        )
+    elif score >= 60:
+        verdict = "needs_attention"
+        failing = [c["label"] for c in checks if not c["passed"]]
+        summary = (
+            f"Your model scores {score}/100. It could go live, but a few things could be improved: "
+            + ", ".join(failing) + ". See details below."
+        )
+    else:
+        verdict = "not_ready"
+        failing = [c["label"] for c in checks if not c["passed"]]
+        summary = (
+            f"Your model scores {score}/100 and isn't quite ready for production. "
+            "Key issues: " + ", ".join(failing) + ". Address these before deploying."
+        )
+
+    return {
+        "model_run_id": model_run_id,
+        "algorithm": run.algorithm,
+        "score": score,
+        "verdict": verdict,
+        "summary": summary,
+        "checks": checks,
+        "problem_type": problem_type,
+    }

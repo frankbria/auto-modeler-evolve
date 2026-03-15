@@ -362,3 +362,55 @@ export interface PredictionResult {
   feature_names: string[]
   probabilities?: Record<string, number>
 }
+
+// ---------------------------------------------------------------------------
+// Prediction Monitoring (Phase 8)
+// ---------------------------------------------------------------------------
+
+export interface DeploymentAnalytics {
+  deployment_id: string
+  total_predictions: number
+  predictions_by_day: { date: string; count: number }[]
+  prediction_distribution: { bucket: string; count: number }[]
+  recent_avg: number | null
+  class_counts: Record<string, number> | null
+  problem_type: string | null
+}
+
+export interface PredictionLogEntry {
+  id: string
+  input_features: Record<string, unknown>
+  prediction: unknown
+  confidence: number | null
+  created_at: string
+}
+
+export interface PredictionLogsResponse {
+  deployment_id: string
+  total: number
+  offset: number
+  limit: number
+  logs: PredictionLogEntry[]
+}
+
+// ---------------------------------------------------------------------------
+// Model Readiness (Phase 8)
+// ---------------------------------------------------------------------------
+
+export interface ReadinessCheck {
+  id: string
+  label: string
+  passed: boolean
+  detail?: string
+  weight: number
+}
+
+export interface ModelReadiness {
+  model_run_id: string
+  algorithm: string
+  score: number
+  verdict: "ready" | "needs_attention" | "not_ready"
+  summary: string
+  checks: ReadinessCheck[]
+  problem_type: string
+}
