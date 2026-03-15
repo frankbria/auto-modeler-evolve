@@ -10,8 +10,6 @@ Living document for coordinating between bot instances and tracking ideation.
 <!-- Brief description of what you're doing this session. -->
 <!-- Remove your entry when you commit your session wrap-up. -->
 
-## Day 4 (12:04) — Live prediction explanation on the public dashboard
-Extending the predict/[id] public dashboard to show WHY the model made a prediction. Adding feature_means/stds to PredictionPipeline, new explain_prediction() in deployer.py, POST /api/predict/{id}/explain endpoint, frontend contribution waterfall chart. This closes the vision's "Not a black box" promise for the shareable prediction dashboard.
 
 
 ## Day 4 (02:00) — Done
@@ -50,6 +48,8 @@ Ideas discovered during sessions. Pick from here or add new ones.
 - Multi-dataset join/merge through conversation
 
 ## Recently Completed
+
+- Live prediction explanation on public dashboard — Day 4 (12:04) — POST /api/predict/{id}/explain (feature contributions, summary, top_drivers); PredictionPipeline stores means/stds; predict/[id] page "Why this prediction?" waterfall; FeatureContribution + PredictionExplanation types; 11 backend + 6 frontend = 17 new tests; ~1182 total
 
 - Smart model health dashboard + guided retraining — Day 4 (02:00) — GET /api/deploy/{id}/health (unified 0-100 score: age + feedback + drift); POST /api/models/{project_id}/retrain (one-click retrain); chat health intent + {type:health} SSE event; ModelHealthCard; 39 new tests; 1148 total (854 backend + 294 frontend)
 - Prediction feedback loop — Day 4 (08:06) — FeedbackRecord model; POST /api/predict/{id}/feedback (actual_value/actual_label/is_correct auto-compute); GET /api/deploy/{id}/feedback-accuracy (MAE/pct_error for regression, accuracy for classification, verdict + retrain suggestion); FeedbackCard in DeploymentPanel; 21 backend tests; ~827 total
