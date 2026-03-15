@@ -54,7 +54,7 @@ src/
 - Python 3.12+
 - Node.js 18+
 - [uv](https://docs.astral.sh/uv/) package manager
-- Anthropic API key
+- Anthropic OAuth token (via `claude auth login` or `ANTHROPIC_AUTH_TOKEN` env var)
 
 ### Backend
 
@@ -62,7 +62,7 @@ src/
 cd src/backend
 uv venv
 uv sync
-ANTHROPIC_API_KEY=sk-... uv run uvicorn main:app --reload --port 8000
+ANTHROPIC_AUTH_TOKEN=sk-ant-oat01-... uv run uvicorn main:app --reload --port 8000
 ```
 
 ### Frontend
@@ -111,8 +111,8 @@ framework -- a self-evolving project builder. An AI agent reads `vision.md` and
 `spec.md`, then autonomously implements features session after session.
 
 ```bash
-# Run an evolution session
-ANTHROPIC_API_KEY=sk-... ./scripts/evolve.sh
+# Run an evolution session (uses OAuth from `claude auth login` or env var)
+CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-... ./scripts/evolve.sh
 ```
 
 See `spec.md` for the full feature checklist and `JOURNAL.md` for the build log.

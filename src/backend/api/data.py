@@ -19,6 +19,7 @@ from chat.narration import (
     narrate_upload,
 )
 from core.analyzer import analyze_dataframe, compute_full_profile, detect_time_columns
+from core.anomaly import detect_anomalies
 from core.chart_builder import build_boxplot, build_correlation_heatmap, build_timeseries_chart
 from core.merger import merge_datasets, suggest_join_keys
 from core.query_engine import run_nl_query
@@ -1049,3 +1050,64 @@ def get_boxplot(
 
     chart_spec = build_boxplot(df, value_col=column, group_col=groupby)
     return chart_spec
+
+
+# ---------------------------------------------------------------------------
+# Anomaly detection — multi-dimensional outlier identification
+# ---------------------------------------------------------------------------
+
+
+class AnomalyRequest(BaseModel):
+    features: list[str]
+    contamination: float = 0.05
+    n_top: int = 20
+
+
+@router.post("/{dataset_id}/anomalies")
+def run_anomaly_detection(
+    dataset_id: str,
+    body: AnomalyRequest,
+    session: Session = Depends(get_session),
+) -> dict:
+    """Detect anomalous rows using IsolationForest across selected features.
+
+    Unlike per-column outlier detection, this finds rows that are unusual
+    *across multiple features simultaneously* — e.g., low price + high quantity
+    in the "Premium" category.
+
+    Args:
+        features: Numeric column names to consider (non-numeric are silently dropped).
+        contamination: Expected fraction of anomalies (0.01–0.5, default 0.05).
+        n_top: Number of top anomalies to return (default 20).
+
+    Returns:
+        {
+            dataset_id, anomaly_count, total_rows, contamination_used,
+            top_anomalies: [{row_index, anomaly_score, is_anomaly, values}],
+            summary, features_used
+        }
+    """
+    dataset = session.get(Dataset, dataset_id)
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    file_path = Path(dataset.file_path)
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Dataset file not found on disk")
+
+    if not body.features:
+        raise HTTPException(status_code=400, detail="At least one feature must be specified")
+
+    df = _load_df_from_path(file_path)
+
+    try:
+        result = detect_anomalies(
+            df,
+            features=body.features,
+            contamination=body.contamination,
+            n_top=body.n_top,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return {"dataset_id": dataset_id, **result}

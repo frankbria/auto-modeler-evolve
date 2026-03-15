@@ -88,6 +88,15 @@ _ANALYTICS_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# Keywords that trigger anomaly detection on the current dataset
+_ANOMALY_PATTERNS = re.compile(
+    r"\b(anomal|unusual.*record|outlier|strange.*data|weird.*record|"
+    r"suspicious|find.*weird|anything.*odd|odd.*row|odd.*record|"
+    r"which.*record.*unusual|unusual.*data|data.*unusual|"
+    r"detect.*anomal|spot.*anomal|identify.*anomal|show.*anomal)",
+    re.IGNORECASE,
+)
+
 
 class ChatMessage(BaseModel):
     message: str
@@ -617,6 +626,30 @@ def send_message(
             "Reference the prediction count in your response and mention the Analytics card."
         )
 
+    # Check for anomaly detection request
+    anomaly_event: dict | None = None
+    if _ANOMALY_PATTERNS.search(body.message) and ctx["dataset"]:
+        try:
+            from core.anomaly import detect_anomalies as _detect
+            import json as _json
+            _ds = ctx["dataset"]
+            _file_path = Path(_ds.file_path)
+            if _file_path.exists():
+                _df = pd.read_csv(_file_path)
+                _numeric_cols = _df.select_dtypes(include="number").columns.tolist()[:10]
+                if _numeric_cols:
+                    _result = _detect(_df, features=_numeric_cols, contamination=0.05, n_top=10)
+                    anomaly_event = {"dataset_id": _ds.id, **_result}
+                    system_prompt += (
+                        f"\n\n## Anomaly Detection Results\n"
+                        f"{_result['summary']}\n"
+                        f"Features analysed: {', '.join(_result['features_used'])}.\n"
+                        "The Anomaly Detection card is now visible in the Data tab. "
+                        "Tell the user what you found and suggest they examine the top anomalous rows."
+                    )
+        except Exception:  # noqa: BLE001
+            pass  # Anomaly detection is nice-to-have; never crash chat
+
     # Pre-compute follow-up suggestions (based on state + current message)
     current_state = detect_state(
         ctx["dataset"], ctx["feature_set"], ctx["model_runs"], ctx["deployment"]
@@ -690,6 +723,10 @@ def send_message(
         # Emit analytics trigger if detected
         if analytics_event:
             yield f"data: {json.dumps({'type': 'analytics', 'analytics': analytics_event})}\n\n"
+
+        # Emit anomaly detection results if computed
+        if anomaly_event:
+            yield f"data: {json.dumps({'type': 'anomalies', 'anomalies': anomaly_event})}\n\n"
 
         # Emit follow-up suggestion chips (always, if we have any)
         if suggestions_list:

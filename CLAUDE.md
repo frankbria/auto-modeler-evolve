@@ -83,14 +83,14 @@ feel like chatting with a smart colleague. Key principles:
 ## Running Locally
 
 ```bash
-# Full evolution cycle
-ANTHROPIC_API_KEY=sk-... ./scripts/evolve.sh
+# Full evolution cycle (uses OAuth from `claude auth login` or env var)
+CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-... ./scripts/evolve.sh
 
 # With specific model
-ANTHROPIC_API_KEY=sk-... MODEL=claude-opus-4-6 ./scripts/evolve.sh
+CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-... MODEL=claude-opus-4-6 ./scripts/evolve.sh
 
 # Force run (bypass schedule gate)
-ANTHROPIC_API_KEY=sk-... FORCE_RUN=true ./scripts/evolve.sh
+CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-... FORCE_RUN=true ./scripts/evolve.sh
 ```
 
 ## Safety Rules

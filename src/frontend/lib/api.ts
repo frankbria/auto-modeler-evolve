@@ -23,6 +23,7 @@ import type {
   ProjectNarrative,
   ModelVersionHistory,
   ProjectAlerts,
+  AnomalyResult,
 } from "./types"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
@@ -178,6 +179,22 @@ export const api = {
       if (groupby) params.set("groupby", groupby)
       return fetch(`${API_URL}/api/data/${datasetId}/boxplot?${params}`).then((r) => r.json())
     },
+
+    detectAnomalies: (
+      datasetId: string,
+      features: string[],
+      contamination?: number,
+      nTop?: number
+    ): Promise<AnomalyResult> =>
+      fetch(`${API_URL}/api/data/${datasetId}/anomalies`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          features,
+          contamination: contamination ?? 0.05,
+          n_top: nTop ?? 20,
+        }),
+      }).then((r) => r.json()),
 
     listByProject: (projectId: string): Promise<DatasetListItem[]> =>
       fetch(`${API_URL}/api/data/project/${projectId}/datasets`).then((r) => r.json()),

@@ -336,6 +336,7 @@ _STATE_SUGGESTIONS: dict[str, list[str]] = {
         "Show me a correlation heatmap",
         "What are the main outliers?",
         "Which features are most correlated?",
+        "Are there any unusual records in this data?",
     ],
     "shape": [
         "What features do you recommend?",

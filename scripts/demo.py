@@ -178,7 +178,7 @@ class DemoRunner:
         assert len(body.get("column_stats", [])) > 0, "Column stats missing"
 
     def query_data(self):
-        """Natural language query — requires ANTHROPIC_API_KEY. Soft failure if unavailable."""
+        """Natural language query — requires Anthropic auth token. Soft failure if unavailable."""
         assert self.dataset_id, "No dataset_id"
         status, body = _post(
             f"{self.base}/api/data/{self.dataset_id}/query",

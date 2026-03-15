@@ -27,12 +27,12 @@ def _call_claude(prompt: str, fallback: str) -> str:
     """Call Claude synchronously and return the text response.
 
     Returns *fallback* immediately if:
-    - ANTHROPIC_API_KEY is not set in the environment
+    - No Anthropic auth token is configured in the environment
     - The API call fails for any reason (network, quota, rate limit, etc.)
 
     This ensures narration never blocks or crashes event flows.
     """
-    if not os.environ.get("ANTHROPIC_API_KEY"):
+    if not (os.environ.get("ANTHROPIC_AUTH_TOKEN") or os.environ.get("ANTHROPIC_API_KEY")):
         return fallback
     try:
         import anthropic

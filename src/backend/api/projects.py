@@ -193,7 +193,7 @@ def generate_project_narrative(
     trained models, deployment status, prediction analytics — and synthesises them
     into a coherent narrative that a business analyst can share with stakeholders.
 
-    Uses Claude when ANTHROPIC_API_KEY is available; falls back to a structured
+    Uses Claude when an Anthropic auth token is available; falls back to a structured
     static summary otherwise.
     """
     project = session.get(Project, project_id)
@@ -311,17 +311,17 @@ def generate_project_narrative(
 
 def _generate_narrative(ctx: dict) -> str:
     """Generate narrative via Claude API or static fallback."""
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-    if api_key and not api_key.startswith("sk-placeholder"):
+    auth_token = os.environ.get("ANTHROPIC_AUTH_TOKEN", "") or os.environ.get("ANTHROPIC_API_KEY", "")
+    if auth_token and not auth_token.startswith("sk-placeholder"):
         try:
-            return _call_claude_narrative(ctx, api_key)
+            return _call_claude_narrative(ctx)
         except Exception:  # noqa: BLE001
             pass  # Fall through to static narrative
 
     return _static_narrative(ctx)
 
 
-def _call_claude_narrative(ctx: dict, api_key: str) -> str:
+def _call_claude_narrative(ctx: dict) -> str:
     """Call Claude to generate the narrative."""
     import anthropic
 
@@ -372,7 +372,7 @@ Project context:
 {deploy_section}
 """
 
-    client = anthropic.Anthropic(api_key=api_key)
+    client = anthropic.Anthropic()
     message = client.messages.create(
         model="claude-haiku-4-5-20251001",
         max_tokens=600,

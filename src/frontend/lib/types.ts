@@ -660,3 +660,24 @@ export interface ScenarioComparison {
   scenarios: ScenarioResult[]
   summary: string
 }
+
+// ---------------------------------------------------------------------------
+// Anomaly Detection (Phase 8)
+// ---------------------------------------------------------------------------
+
+export interface AnomalyRecord {
+  row_index: number
+  anomaly_score: number
+  is_anomaly: boolean
+  values: Record<string, number | null>
+}
+
+export interface AnomalyResult {
+  dataset_id: string
+  anomaly_count: number
+  total_rows: number
+  contamination_used: number
+  top_anomalies: AnomalyRecord[]
+  summary: string
+  features_used: string[]
+}

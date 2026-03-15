@@ -2,7 +2,7 @@ name: Evolution
 
 on:
   schedule:
-    - cron: '0 */4 * * *'  # every 4 hours
+    - cron: '0 */8 * * *'  # every 8 hours
   workflow_dispatch:       # manual trigger
 
 permissions:
@@ -47,7 +47,8 @@ jobs:
         id: attempt1
         continue-on-error: true
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          ANTHROPIC_AUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           REPO: ${{ github.repository }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           FORCE_RUN: ${{ github.event_name == 'workflow_dispatch' && 'true' || '' }}
@@ -60,7 +61,8 @@ jobs:
         if: steps.attempt1.outcome == 'failure'
         continue-on-error: true
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          ANTHROPIC_AUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           REPO: ${{ github.repository }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           FORCE_RUN: ${{ github.event_name == 'workflow_dispatch' && 'true' || '' }}
@@ -72,7 +74,8 @@ jobs:
       - name: Retry after 45min
         if: steps.attempt1.outcome == 'failure' && steps.attempt2.outcome == 'failure'
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          ANTHROPIC_AUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           REPO: ${{ github.repository }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           FORCE_RUN: ${{ github.event_name == 'workflow_dispatch' && 'true' || '' }}

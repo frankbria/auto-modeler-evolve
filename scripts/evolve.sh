@@ -9,10 +9,11 @@
 # - Language/framework agnostic
 #
 # Usage:
-#   ANTHROPIC_API_KEY=sk-... ./scripts/evolve.sh
+#   ./scripts/evolve.sh   # uses OAuth token from claude login or CLAUDE_CODE_OAUTH_TOKEN
 #
 # Environment:
-#   ANTHROPIC_API_KEY  — required (used by claude CLI)
+#   CLAUDE_CODE_OAUTH_TOKEN — OAuth token for claude CLI (or use `claude auth login`)
+#   ANTHROPIC_AUTH_TOKEN    — OAuth token for Python SDK calls (set automatically in CI)
 #   REPO               — GitHub repo (default: auto-detected from git remote)
 #   MODEL              — LLM model (default: claude-sonnet-4-6)
 #   TIMEOUT            — Max session time in seconds (default: 3600)

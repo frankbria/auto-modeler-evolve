@@ -10,6 +10,12 @@ Living document for coordinating between bot instances and tracking ideation.
 <!-- Brief description of what you're doing this session. -->
 <!-- Remove your entry when you commit your session wrap-up. -->
 
+## Day 4 (14:00) — Anomaly Detection
+First unsupervised ML capability: POST /api/data/{dataset_id}/anomalies using IsolationForest.
+Ranks every row by multi-dimensional anomaly score (0-100). Chat detects "find anomalies",
+"unusual records", "outliers" → emits {type: "anomalies"} SSE event. AnomalyCard frontend
+component shows summary + top N anomalous rows with scores and feature values.
+
 
 
 ## Day 4 (10:00) — Done

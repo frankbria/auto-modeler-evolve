@@ -5,7 +5,7 @@ Covers:
 - Basic response shape (project_id, narrative string, generated_at)
 - Narrative includes project name
 - Works at each workflow stage (no data, data only, trained model, deployed)
-- Static fallback works without ANTHROPIC_API_KEY
+- Static fallback works without Anthropic auth
 - Context dict includes expected keys
 """
 
@@ -46,6 +46,7 @@ Widget B,North,2000.00,18
 
 @pytest.fixture
 def client(tmp_path, monkeypatch):
+    monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
 
     test_db = str(tmp_path / "test.db")
