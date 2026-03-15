@@ -290,6 +290,13 @@ guides them forward through the natural flow.
       *Day 4 (00:08): PredictionLog model; GET /api/deploy/{id}/analytics + /logs; GET
       /api/models/{id}/readiness (6-check scorecard); chat intent detection; frontend panel
       upgrades. 34 backend + 12 frontend = 46 new tests. Total: 720 backend + 266 frontend = 986.*
+- [x] **Hyperparameter auto-tuning** — `core/tuner.py` with per-algorithm RandomizedSearchCV
+      param grids (RF, GB, XGB, LGB, LogReg). `POST /api/models/{id}/tune` runs n_iter=20/cv=3
+      in background thread, creates a new `{algorithm}_tuned` ModelRun, pushes SSE events.
+      Chat intent detection (_TUNE_PATTERNS) for "tune/optimize/improve model" keywords →
+      emits {type:tune} SSE event with model_run_id. `api.ts.models.tune()` frontend method.
+      *Day 3 (22:00): 22 new backend tests (unit + integration + chat intent). 760 backend tests, all passing.*
+
 - [x] **Prediction drift detection + what-if analysis** — Two new Phase 8 capabilities:
       (1) GET /api/deploy/{id}/drift compares early vs recent prediction distributions using
       only PredictionLog — no schema migration needed. Regression: z-score of mean shift;
