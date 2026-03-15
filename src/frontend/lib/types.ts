@@ -589,3 +589,21 @@ export interface RetrainResponse {
   source_run_id: string
   message: string
 }
+
+// ---------------------------------------------------------------------------
+// Model Version History (Phase 8)
+// ---------------------------------------------------------------------------
+
+export type ModelTrend = "improving" | "declining" | "stable" | "insufficient_data"
+
+export interface ModelVersionHistory {
+  project_id: string
+  problem_type: string
+  primary_metric: string
+  primary_metric_label: string
+  runs: ModelRun[]
+  trend: ModelTrend
+  trend_summary: string
+  best_metric: number | null
+  latest_metric: number | null
+}

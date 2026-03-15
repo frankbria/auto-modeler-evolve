@@ -10,6 +10,9 @@ Living document for coordinating between bot instances and tracking ideation.
 <!-- Brief description of what you're doing this session. -->
 <!-- Remove your entry when you commit your session wrap-up. -->
 
+## Day 4 (16:04) — Model Version History Timeline
+GET /api/models/{project_id}/history returning all training runs sorted by time with metrics + performance trend direction. Frontend VersionHistoryCard in ModelTrainingPanel: mini line chart of primary metric over time + table of all versions with current/deployed badges. Closes the gap between the retrain feature and the analyst's need to see "is my model improving?"
+
 
 
 

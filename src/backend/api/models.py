@@ -395,6 +395,144 @@ def list_runs(project_id: str, session: Session = Depends(get_session)):
 
 
 # ---------------------------------------------------------------------------
+# 3b. Model version history (timeline of all training runs)
+# ---------------------------------------------------------------------------
+
+@router.get("/api/models/{project_id}/history")
+def model_history(project_id: str, session: Session = Depends(get_session)):
+    """Return the full training history for a project, sorted oldest-first.
+
+    Includes all runs (done, failed, pending, training) with their metrics,
+    a performance trend computed over completed runs, and the primary metric
+    key/label for the frontend to render the timeline chart.
+
+    Response shape:
+        {
+          project_id: str,
+          problem_type: str,
+          primary_metric: str,           # "r2" | "accuracy"
+          primary_metric_label: str,     # "R²" | "Accuracy"
+          runs: [...],                   # all runs, oldest first
+          trend: "improving" | "declining" | "stable" | "insufficient_data",
+          trend_summary: str,            # plain-English trend description
+          best_metric: float | None,
+          latest_metric: float | None,
+        }
+    """
+    project = session.get(Project, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    # Determine problem_type from active feature set
+    dataset = session.exec(
+        select(Dataset).where(Dataset.project_id == project_id)
+    ).first()
+    feature_set = None
+    if dataset:
+        feature_set = session.exec(
+            select(FeatureSet).where(
+                FeatureSet.dataset_id == dataset.id,
+                FeatureSet.is_active == True,  # noqa: E712
+            )
+        ).first()
+
+    problem_type = (feature_set.problem_type if feature_set else None) or "regression"
+    primary_metric = "r2" if problem_type == "regression" else "accuracy"
+    primary_metric_label = "R²" if problem_type == "regression" else "Accuracy"
+
+    all_runs = session.exec(
+        select(ModelRun)
+        .where(ModelRun.project_id == project_id)
+        .order_by(ModelRun.created_at)  # type: ignore[attr-defined]
+    ).all()
+
+    runs_list = [_run_to_dict(r) for r in all_runs]
+
+    # Extract primary metric values from completed runs (oldest first)
+    completed_metrics = [
+        r["metrics"][primary_metric]
+        for r in runs_list
+        if r["status"] == "done"
+        and r["metrics"]
+        and primary_metric in r["metrics"]
+        and r["metrics"][primary_metric] is not None
+    ]
+
+    best_metric = max(completed_metrics) if completed_metrics else None
+    latest_metric = completed_metrics[-1] if completed_metrics else None
+
+    # Trend: compare first half vs second half of completed runs
+    trend, trend_summary = _compute_trend(completed_metrics, primary_metric_label)
+
+    return {
+        "project_id": project_id,
+        "problem_type": problem_type,
+        "primary_metric": primary_metric,
+        "primary_metric_label": primary_metric_label,
+        "runs": runs_list,
+        "trend": trend,
+        "trend_summary": trend_summary,
+        "best_metric": round(best_metric, 4) if best_metric is not None else None,
+        "latest_metric": round(latest_metric, 4) if latest_metric is not None else None,
+    }
+
+
+def _compute_trend(
+    metrics: list[float],
+    metric_label: str,
+) -> tuple[str, str]:
+    """Compute a trend direction and plain-English description from a time series.
+
+    Uses linear regression slope over the sequence to determine trend direction.
+    Requires at least 2 data points; returns "insufficient_data" otherwise.
+    """
+    import numpy as np
+
+    n = len(metrics)
+    if n < 2:
+        return "insufficient_data", "Not enough training runs to determine a trend yet."
+
+    x = np.arange(n, dtype=float)
+    y = np.array(metrics, dtype=float)
+    # Linear regression slope via least squares
+    x_mean = x.mean()
+    y_mean = y.mean()
+    slope = float(np.sum((x - x_mean) * (y - y_mean)) / np.sum((x - x_mean) ** 2))
+
+    # Use the larger of (1% of range) and (2% of mean) as the stable threshold.
+    # The 2%-of-mean floor prevents noise in tight ranges from being flagged as trends.
+    metric_range = max(abs(y.max() - y.min()), 1e-9)
+    threshold = max(0.01 * metric_range, abs(float(y_mean)) * 0.02, 1e-6)
+
+    best = float(y.max())
+    latest = float(y[-1])
+    delta = latest - float(y[0])
+
+    if slope > threshold:
+        trend = "improving"
+        pct = abs(delta / (float(y[0]) + 1e-9)) * 100
+        summary = (
+            f"{metric_label} has improved by {pct:.1f}% over {n} training runs. "
+            "Keep going — the model is getting better with each iteration."
+        )
+    elif slope < -threshold:
+        trend = "declining"
+        pct = abs(delta / (float(y[0]) + 1e-9)) * 100
+        summary = (
+            f"{metric_label} has declined by {pct:.1f}% over {n} training runs. "
+            "Consider adjusting your features or trying a different algorithm."
+        )
+    else:
+        trend = "stable"
+        summary = (
+            f"{metric_label} is stable at {best:.3f} across {n} training runs. "
+            "The model performance is consistent — try hyperparameter tuning to improve further."
+        )
+
+    return trend, summary
+
+
+# ---------------------------------------------------------------------------
 # 4. Compare
 # ---------------------------------------------------------------------------
 

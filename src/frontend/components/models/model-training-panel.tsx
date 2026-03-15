@@ -9,12 +9,17 @@ import {
   Tooltip,
   Legend,
   ResponsiveContainer,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
 } from "recharts"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { api } from "@/lib/api"
-import type { ChartSpec, ModelRecommendation, ModelRun, ModelComparison, ModelMetrics, TuningResult } from "@/lib/types"
+import type { ChartSpec, ModelRecommendation, ModelRun, ModelComparison, ModelMetrics, TuningResult, ModelVersionHistory } from "@/lib/types"
 
 interface ModelTrainingPanelProps {
   projectId: string
@@ -45,14 +50,16 @@ export function ModelTrainingPanel({ projectId, onModelSelected, onModelDownload
   const [error, setError] = useState<string | null>(null)
   const [tuningRunId, setTuningRunId] = useState<string | null>(null)
   const [tuningResults, setTuningResults] = useState<Record<string, TuningResult>>({})
+  const [versionHistory, setVersionHistory] = useState<ModelVersionHistory | null>(null)
 
   // Load recommendations and any existing runs on mount
   useEffect(() => {
     Promise.all([
       api.models.recommendations(projectId),
       api.models.runs(projectId).catch(() => ({ runs: [] })),
+      api.models.history(projectId).catch(() => null),
     ])
-      .then(([recData, runsData]) => {
+      .then(([recData, runsData, histData]) => {
         setRecommendations(recData.recommendations)
         setProblemType(recData.problem_type)
         setTargetColumn(recData.target_column)
@@ -76,6 +83,7 @@ export function ModelTrainingPanel({ projectId, onModelSelected, onModelDownload
               .catch(() => {})
           }
         }
+        if (histData) setVersionHistory(histData)
       })
       .catch((e) => setError(e?.message ?? "Could not load recommendations"))
       .finally(() => setLoading(false))
@@ -93,14 +101,16 @@ export function ModelTrainingPanel({ projectId, onModelSelected, onModelDownload
         const event = JSON.parse(e.data)
         if (event.type === "all_done") {
           es.close()
-          const [data, cmp, radar] = await Promise.all([
+          const [data, cmp, radar, hist] = await Promise.all([
             api.models.runs(projectId),
             api.models.compare(projectId),
             api.models.comparisonRadar(projectId),
+            api.models.history(projectId).catch(() => null),
           ])
           setRuns(data.runs)
           setComparison(cmp)
           setRadarChart(radar?.chart ?? null)
+          if (hist) setVersionHistory(hist)
         } else if (event.type === "status" || event.type === "done" || event.type === "failed") {
           setRuns((prev) =>
             prev.map((r) =>
@@ -300,6 +310,11 @@ export function ModelTrainingPanel({ projectId, onModelSelected, onModelDownload
       {/* Radar chart — only when 2+ models are compared */}
       {radarChart && radarChart.data.length > 0 && (
         <ModelRadarChart chart={radarChart} />
+      )}
+
+      {/* Version history timeline — shown when 2+ completed runs exist */}
+      {versionHistory && versionHistory.runs.filter((r) => r.status === "done").length >= 2 && (
+        <VersionHistoryCard history={versionHistory} />
       )}
     </div>
   )
@@ -550,6 +565,159 @@ function TuningCard({ result, problemType }: { result: TuningResult; problemType
               .join(", ")}
           </div>
         )}
+      </CardContent>
+    </Card>
+  )
+}
+
+
+// ---------------------------------------------------------------------------
+// VersionHistoryCard — timeline of all completed training runs
+// ---------------------------------------------------------------------------
+
+const TREND_BADGE: Record<string, { label: string; className: string }> = {
+  improving: { label: "Improving", className: "bg-green-100 text-green-800 border-green-200" },
+  declining: { label: "Declining", className: "bg-red-100 text-red-800 border-red-200" },
+  stable: { label: "Stable", className: "bg-blue-100 text-blue-800 border-blue-200" },
+  insufficient_data: { label: "Collecting data", className: "bg-gray-100 text-gray-700 border-gray-200" },
+}
+
+function VersionHistoryCard({ history }: { history: ModelVersionHistory }) {
+  const completedRuns = history.runs
+    .filter((r) => r.status === "done" && r.metrics != null)
+    .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+
+  const chartData = completedRuns.map((r, i) => {
+    const m = r.metrics as unknown as Record<string, number>
+    return {
+      run: `#${i + 1}`,
+      value: m[history.primary_metric] ?? null,
+      algorithm: r.algorithm,
+    }
+  })
+
+  const trendInfo = TREND_BADGE[history.trend] ?? TREND_BADGE.insufficient_data
+  const isRegression = history.problem_type === "regression"
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-xs">Model Version History</CardTitle>
+          <Badge className={`text-[10px] ${trendInfo.className}`}>
+            {trendInfo.label}
+          </Badge>
+        </div>
+        <p className="text-[11px] text-muted-foreground mt-0.5">{history.trend_summary}</p>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {/* Metric line chart */}
+        <ResponsiveContainer width="100%" height={100}>
+          <LineChart data={chartData} margin={{ top: 4, right: 8, bottom: 4, left: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+            <XAxis dataKey="run" tick={{ fontSize: 10 }} />
+            <YAxis
+              tick={{ fontSize: 10 }}
+              width={36}
+              domain={isRegression ? [-0.1, 1] : [0, 1]}
+              tickFormatter={(v) =>
+                isRegression ? v.toFixed(2) : `${(v * 100).toFixed(0)}%`
+              }
+            />
+            <Tooltip
+              contentStyle={{ fontSize: 11 }}
+              formatter={(v) =>
+                typeof v === "number"
+                  ? isRegression
+                    ? v.toFixed(3)
+                    : `${(v * 100).toFixed(1)}%`
+                  : String(v)
+              }
+            />
+            <Line
+              type="monotone"
+              dataKey="value"
+              stroke="#6366f1"
+              strokeWidth={2}
+              dot={{ r: 3 }}
+              name={history.primary_metric_label}
+            />
+          </LineChart>
+        </ResponsiveContainer>
+
+        {/* Summary stats */}
+        <div className="flex gap-4 text-xs">
+          <span>
+            Best:{" "}
+            <strong>
+              {history.best_metric != null
+                ? isRegression
+                  ? history.best_metric.toFixed(3)
+                  : `${(history.best_metric * 100).toFixed(1)}%`
+                : "—"}
+            </strong>
+          </span>
+          <span>
+            Latest:{" "}
+            <strong>
+              {history.latest_metric != null
+                ? isRegression
+                  ? history.latest_metric.toFixed(3)
+                  : `${(history.latest_metric * 100).toFixed(1)}%`
+                : "—"}
+            </strong>
+          </span>
+          <span>
+            Runs: <strong>{completedRuns.length}</strong>
+          </span>
+        </div>
+
+        {/* Run table */}
+        <div className="overflow-x-auto">
+          <table className="w-full text-[11px]">
+            <thead>
+              <tr className="border-b text-muted-foreground">
+                <th className="text-left pb-1 pr-2">#</th>
+                <th className="text-left pb-1 pr-2">Algorithm</th>
+                <th className="text-right pb-1 pr-2">{history.primary_metric_label}</th>
+                <th className="text-right pb-1">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {completedRuns.map((run, i) => {
+                const m = run.metrics as unknown as Record<string, number>
+                const val = m[history.primary_metric]
+                return (
+                  <tr key={run.id} className="border-b border-muted/40 last:border-0">
+                    <td className="py-1 pr-2 text-muted-foreground">{i + 1}</td>
+                    <td className="py-1 pr-2 font-mono">{run.algorithm.replace(/_/g, " ")}</td>
+                    <td className="py-1 pr-2 text-right font-medium">
+                      {val != null
+                        ? isRegression
+                          ? val.toFixed(3)
+                          : `${(val * 100).toFixed(1)}%`
+                        : "—"}
+                    </td>
+                    <td className="py-1 text-right">
+                      <div className="flex justify-end gap-1">
+                        {run.is_selected && (
+                          <Badge className="text-[9px] bg-indigo-100 text-indigo-800 border-indigo-200 px-1 py-0">
+                            Current
+                          </Badge>
+                        )}
+                        {run.is_deployed && (
+                          <Badge className="text-[9px] bg-green-100 text-green-800 border-green-200 px-1 py-0">
+                            Live
+                          </Badge>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
       </CardContent>
     </Card>
   )

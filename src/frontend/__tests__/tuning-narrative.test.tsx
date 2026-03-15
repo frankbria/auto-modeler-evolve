@@ -51,6 +51,8 @@ jest.mock("../lib/api", () => ({
       downloadUrl: jest.fn().mockReturnValue("/download"),
       reportUrl: jest.fn().mockReturnValue("/report"),
       readiness: jest.fn(),
+      history: jest.fn(),
+      retrain: jest.fn(),
     },
   },
 }))
@@ -115,6 +117,9 @@ const SAMPLE_TUNING_NOT_TUNABLE: TuningResult = {
   tuned_run: null,
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const mockHistory = (api as any).models.history as jest.Mock
+
 // ── Helper ───────────────────────────────────────────────────────────────────
 function setupPanelWithRun(run: ModelRun = SAMPLE_RUN) {
   mockRecs.mockResolvedValue({
@@ -128,6 +133,17 @@ function setupPanelWithRun(run: ModelRun = SAMPLE_RUN) {
   mockRuns.mockResolvedValue({ project_id: "proj-1", runs: [run] })
   mockCompare.mockResolvedValue({ project_id: "proj-1", problem_type: "regression", models: [run], recommendation: null })
   mockRadar.mockResolvedValue(null)
+  mockHistory.mockResolvedValue({
+    project_id: "proj-1",
+    problem_type: "regression",
+    primary_metric: "r2",
+    primary_metric_label: "R²",
+    runs: [run],
+    trend: "insufficient_data",
+    trend_summary: "Not enough training runs to determine a trend yet.",
+    best_metric: null,
+    latest_metric: null,
+  })
 }
 
 // ──────────────────────────────────────────────────────────────────────────────

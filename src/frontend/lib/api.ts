@@ -21,6 +21,7 @@ import type {
   MergeResponse,
   TuningResult,
   ProjectNarrative,
+  ModelVersionHistory,
 } from "./types"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
@@ -364,6 +365,9 @@ export const api = {
       fetch(`${API_URL}/api/models/${projectId}/retrain`, { method: "POST" }).then((r) =>
         r.json()
       ),
+
+    history: (projectId: string): Promise<ModelVersionHistory> =>
+      fetch(`${API_URL}/api/models/${projectId}/history`).then((r) => r.json()),
   },
 
   validation: {

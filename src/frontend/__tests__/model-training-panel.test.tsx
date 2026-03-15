@@ -38,6 +38,9 @@ jest.mock("../lib/api", () => ({
       trainingStreamUrl: jest.fn().mockReturnValue("/api/models/proj-1/training-stream"),
       downloadUrl: jest.fn().mockReturnValue("/api/models/run-1/download"),
       reportUrl: jest.fn().mockReturnValue("/api/models/run-1/report"),
+      history: jest.fn(),
+      tune: jest.fn(),
+      retrain: jest.fn(),
     },
   },
 }))
@@ -97,6 +100,9 @@ const defaultRecsResponse = {
   ],
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const mockHistory = (api as any).models.history as jest.Mock
+
 beforeEach(() => {
   jest.clearAllMocks()
   MockEventSource.instances = []
@@ -104,6 +110,17 @@ beforeEach(() => {
   mockRuns.mockResolvedValue({ project_id: "proj-1", runs: [] })
   mockCompare.mockResolvedValue(makeComparison())
   mockRadar.mockResolvedValue(null)
+  mockHistory.mockResolvedValue({
+    project_id: "proj-1",
+    problem_type: "regression",
+    primary_metric: "r2",
+    primary_metric_label: "R²",
+    runs: [],
+    trend: "insufficient_data",
+    trend_summary: "Not enough training runs to determine a trend yet.",
+    best_metric: null,
+    latest_metric: null,
+  })
 })
 
 describe("ModelTrainingPanel — loading and error states", () => {
