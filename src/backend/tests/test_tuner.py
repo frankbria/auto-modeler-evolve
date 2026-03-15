@@ -302,56 +302,71 @@ class TestTuneEndpoint:
         assert "status" in r.json()["detail"]
 
     def test_tune_untuneable_algorithm(self, client, tmp_path):
-        """Tuning linear_regression should return 400."""
-        from sqlmodel import Session
-        from models.model_run import ModelRun
-
+        """Tuning linear_regression returns 201 with tunable=False (graceful, no error)."""
+        # Need a real feature_set_id — go through full upload/apply/target workflow
         r = client.post("/api/projects", json={"name": "P"})
         project_id = r.json()["id"]
 
-        with Session(db_module.engine) as session:
-            run = ModelRun(
-                project_id=project_id,
-                feature_set_id=None,
-                algorithm="linear_regression",
-                hyperparameters="{}",
-                status="done",
-                metrics="{}",
-            )
-            session.add(run)
-            session.commit()
-            session.refresh(run)
-            run_id = run.id
+        r = client.post(
+            "/api/data/upload",
+            files={"file": ("sales.csv", io.BytesIO(SAMPLE_CSV), "text/csv")},
+            data={"project_id": project_id},
+        )
+        dataset_id = r.json()["dataset_id"]
 
+        r = client.post(f"/api/features/{dataset_id}/apply", json={"transformations": []})
+        assert r.status_code in (200, 201)
+
+        client.post(
+            f"/api/features/{dataset_id}/target",
+            json={"target_column": "revenue", "problem_type": "regression"},
+        )
+
+        # Train linear_regression
+        r = client.post(
+            f"/api/models/{project_id}/train",
+            json={"algorithms": ["linear_regression"]},
+        )
+        assert r.status_code == 202
+        run_id = r.json()["model_run_ids"][0]
+
+        # Poll until done
+        import time
+        for _ in range(60):
+            runs = client.get(f"/api/models/{project_id}/runs").json()["runs"]
+            run = next((r for r in runs if r["id"] == run_id), None)
+            if run and run["status"] in ("done", "failed"):
+                break
+            time.sleep(0.5)
+
+        # Tune — expects graceful 201 with tunable=False
         r = client.post(f"/api/models/{run_id}/tune")
-        assert r.status_code == 400
-        assert "no tunable hyperparameters" in r.json()["detail"]
+        assert r.status_code == 201
+        body = r.json()
+        assert body["tunable"] is False
+        assert body["tuned_model_run_id"] is None
 
     def test_tune_full_workflow(self, client, tmp_path):
-        """Full integration: train RF, then tune, verify new tuned run appears."""
+        """Full integration: train RF, then tune, verify synchronous tuned result."""
         project_id, model_run_id = _setup_trained_model(
             client, tmp_path, algorithm="random_forest_regressor"
         )
 
         r = client.post(f"/api/models/{model_run_id}/tune")
-        assert r.status_code == 202
+        assert r.status_code == 201
         body = r.json()
-        assert body["status"] == "tuning_started"
+        assert body["tunable"] is True
         assert "tuned_model_run_id" in body
+        assert body["tuned_model_run_id"] is not None
         tuned_run_id = body["tuned_model_run_id"]
 
-        # Poll until tuned run completes (max 60s)
-        import time
-        for _ in range(120):
-            runs = client.get(f"/api/models/{project_id}/runs").json()["runs"]
-            tuned = next((r for r in runs if r["id"] == tuned_run_id), None)
-            if tuned and tuned["status"] in ("done", "failed"):
-                break
-            time.sleep(0.5)
+        # The tuned run should already be done (synchronous endpoint)
+        runs = client.get(f"/api/models/{project_id}/runs").json()["runs"]
+        tuned = next((r for r in runs if r["id"] == tuned_run_id), None)
 
         assert tuned is not None
         assert tuned["status"] == "done"
-        assert tuned["algorithm"] == "random_forest_regressor_tuned"
+        assert tuned["algorithm"] == "random_forest_regressor"
         assert tuned["metrics"] is not None
         assert "r2" in tuned["metrics"]
 

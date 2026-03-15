@@ -488,3 +488,45 @@ export interface ProjectNarrative {
   generated_at: string
   context: Record<string, unknown>
 }
+
+// ---------------------------------------------------------------------------
+// Prediction Feedback (Phase 8)
+// ---------------------------------------------------------------------------
+
+export interface FeedbackRecord {
+  id: string
+  deployment_id: string
+  prediction_log_id: string | null
+  actual_value: number | null
+  actual_label: string | null
+  is_correct: boolean | null
+  comment: string | null
+  created_at: string
+  message: string
+}
+
+export type FeedbackAccuracyStatus =
+  | "no_feedback"
+  | "feedback_only"
+  | "computed"
+
+export interface FeedbackAccuracy {
+  deployment_id: string
+  status: FeedbackAccuracyStatus
+  total_feedback: number
+  message: string
+  problem_type: string | null
+  // Regression fields
+  paired_count?: number
+  mae?: number
+  pct_error?: number
+  avg_actual?: number
+  // Classification fields
+  rated_count?: number
+  correct_count?: number
+  incorrect_count?: number
+  unknown_count?: number
+  accuracy_from_feedback?: number
+  // Both
+  verdict?: "excellent" | "good" | "moderate" | "poor"
+}

@@ -38,6 +38,7 @@ from models.dataset import Dataset
 from models.deployment import Deployment
 from models.feature_set import FeatureSet
 from models.model_run import ModelRun
+from models.feedback_record import FeedbackRecord
 from models.prediction_log import PredictionLog
 
 router = APIRouter(tags=["deployment"])
@@ -719,6 +720,244 @@ def whatif_prediction(
         "original_probabilities": original_result.get("probabilities"),
         "modified_probabilities": modified_result.get("probabilities"),
     }
+
+
+# ---------------------------------------------------------------------------
+# 11. Prediction feedback — record actual outcomes
+# ---------------------------------------------------------------------------
+
+
+class FeedbackRequest(BaseModel):
+    prediction_log_id: str | None = None
+    actual_value: float | None = None    # For regression: true numeric outcome
+    actual_label: str | None = None      # For classification: true class label
+    is_correct: bool | None = None       # For classification: optional override
+    comment: str | None = None           # Free-text note from the user
+
+
+@router.post("/api/predict/{deployment_id}/feedback", status_code=201)
+def submit_feedback(
+    deployment_id: str,
+    body: FeedbackRequest,
+    session: Session = Depends(get_session),
+):
+    """Record the actual outcome for a past prediction.
+
+    This closes the feedback loop: after a prediction is made and the real
+    outcome is known, the user can record it here. The system tracks how often
+    the model was right over time.
+
+    For regression models: provide ``actual_value`` (the true numeric outcome).
+    For classification models: provide ``actual_label`` and/or ``is_correct``.
+
+    If ``prediction_log_id`` is provided, we can auto-compute ``is_correct``
+    for classification by comparing the stored prediction to the actual label.
+    """
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment:
+        raise HTTPException(status_code=404, detail="Deployment not found")
+
+    if body.actual_value is None and body.actual_label is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Provide at least one of: actual_value (regression) or actual_label (classification).",
+        )
+
+    # Auto-compute is_correct for classification when we have the prediction log
+    is_correct = body.is_correct
+    if is_correct is None and body.prediction_log_id and body.actual_label:
+        log_entry = session.get(PredictionLog, body.prediction_log_id)
+        if log_entry:
+            try:
+                stored_pred = str(json.loads(log_entry.prediction))
+                is_correct = (stored_pred == body.actual_label)
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+    record = FeedbackRecord(
+        deployment_id=deployment_id,
+        prediction_log_id=body.prediction_log_id,
+        actual_value=body.actual_value,
+        actual_label=body.actual_label,
+        is_correct=is_correct,
+        comment=body.comment,
+    )
+    session.add(record)
+    session.commit()
+    session.refresh(record)
+
+    return {
+        "id": record.id,
+        "deployment_id": deployment_id,
+        "prediction_log_id": record.prediction_log_id,
+        "actual_value": record.actual_value,
+        "actual_label": record.actual_label,
+        "is_correct": record.is_correct,
+        "comment": record.comment,
+        "created_at": record.created_at.isoformat(),
+        "message": "Feedback recorded. Thank you — this helps improve the model over time.",
+    }
+
+
+# ---------------------------------------------------------------------------
+# 12. Feedback accuracy stats
+# ---------------------------------------------------------------------------
+
+
+@router.get("/api/deploy/{deployment_id}/feedback-accuracy")
+def get_feedback_accuracy(
+    deployment_id: str,
+    session: Session = Depends(get_session),
+):
+    """Compute real-world prediction accuracy from user feedback.
+
+    For regression: shows mean absolute error between predicted and actual values,
+    and a ±% error rate.
+
+    For classification: shows how often the model predicted the right class
+    (based on user-provided is_correct flags or computed comparisons).
+
+    Returns ``status: "no_feedback"`` when no records exist yet.
+    """
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment:
+        raise HTTPException(status_code=404, detail="Deployment not found")
+
+    feedback_records = session.exec(
+        select(FeedbackRecord).where(FeedbackRecord.deployment_id == deployment_id)
+    ).all()
+
+    total_feedback = len(feedback_records)
+
+    if total_feedback == 0:
+        return {
+            "deployment_id": deployment_id,
+            "status": "no_feedback",
+            "total_feedback": 0,
+            "message": (
+                "No feedback recorded yet. After making predictions and seeing the "
+                "real outcomes, record them using POST /api/predict/{id}/feedback to "
+                "track how well the model is performing in practice."
+            ),
+            "problem_type": deployment.problem_type,
+        }
+
+    problem_type = deployment.problem_type or "regression"
+
+    if problem_type == "regression":
+        # Compute MAE between actual and predicted values
+        pairs = []
+        for fb in feedback_records:
+            if fb.actual_value is not None and fb.prediction_log_id:
+                log_entry = session.get(PredictionLog, fb.prediction_log_id)
+                if log_entry and log_entry.prediction_numeric is not None:
+                    pairs.append((fb.actual_value, log_entry.prediction_numeric))
+
+        if not pairs:
+            # We have feedback but no paired prediction logs — just report count
+            actual_values = [fb.actual_value for fb in feedback_records if fb.actual_value is not None]
+            return {
+                "deployment_id": deployment_id,
+                "status": "feedback_only",
+                "total_feedback": total_feedback,
+                "actual_values_recorded": len(actual_values),
+                "message": (
+                    f"{total_feedback} actual outcome(s) recorded. "
+                    "Link prediction_log_id to feedback entries to compute error metrics."
+                ),
+                "problem_type": problem_type,
+            }
+
+        actual_vals, predicted_vals = zip(*pairs, strict=False)
+        mae = sum(abs(a - p) for a, p in pairs) / len(pairs)
+        avg_actual = sum(actual_vals) / len(actual_vals)
+        pct_error = (mae / (abs(avg_actual) + 1e-9)) * 100
+
+        if pct_error < 5:
+            verdict = "excellent"
+            verdict_msg = "Excellent — predictions are very close to actual outcomes."
+        elif pct_error < 15:
+            verdict = "good"
+            verdict_msg = "Good accuracy — predictions are reasonably close to actual outcomes."
+        elif pct_error < 30:
+            verdict = "moderate"
+            verdict_msg = "Moderate accuracy — consider adding more features or retraining with newer data."
+        else:
+            verdict = "poor"
+            verdict_msg = "Predictions are significantly off. Retraining is recommended."
+
+        return {
+            "deployment_id": deployment_id,
+            "status": "computed",
+            "total_feedback": total_feedback,
+            "paired_count": len(pairs),
+            "mae": round(mae, 4),
+            "pct_error": round(pct_error, 2),
+            "avg_actual": round(avg_actual, 4),
+            "verdict": verdict,
+            "message": (
+                f"Based on {len(pairs)} matched prediction(s): "
+                f"mean absolute error = {mae:.4f} ({pct_error:.1f}% of average actual value). "
+                + verdict_msg
+            ),
+            "problem_type": problem_type,
+        }
+
+    else:
+        # Classification: count correct vs incorrect
+        correct_records = [fb for fb in feedback_records if fb.is_correct is True]
+        incorrect_records = [fb for fb in feedback_records if fb.is_correct is False]
+        unknown_records = [fb for fb in feedback_records if fb.is_correct is None]
+
+        correct_count = len(correct_records)
+        incorrect_count = len(incorrect_records)
+        rated_count = correct_count + incorrect_count
+
+        if rated_count == 0:
+            return {
+                "deployment_id": deployment_id,
+                "status": "feedback_only",
+                "total_feedback": total_feedback,
+                "message": (
+                    f"{total_feedback} feedback record(s) found, but none have is_correct set. "
+                    "Provide actual_label with feedback to enable accuracy tracking."
+                ),
+                "problem_type": problem_type,
+            }
+
+        accuracy = correct_count / rated_count
+
+        if accuracy >= 0.9:
+            verdict = "excellent"
+            verdict_msg = "Excellent real-world accuracy — the model is performing as expected."
+        elif accuracy >= 0.75:
+            verdict = "good"
+            verdict_msg = "Good real-world accuracy — the model is mostly reliable."
+        elif accuracy >= 0.6:
+            verdict = "moderate"
+            verdict_msg = "Moderate accuracy. Consider reviewing feature inputs or retraining."
+        else:
+            verdict = "poor"
+            verdict_msg = "Below-expected accuracy in practice. Retraining is recommended."
+
+        return {
+            "deployment_id": deployment_id,
+            "status": "computed",
+            "total_feedback": total_feedback,
+            "rated_count": rated_count,
+            "correct_count": correct_count,
+            "incorrect_count": incorrect_count,
+            "unknown_count": len(unknown_records),
+            "accuracy_from_feedback": round(accuracy, 4),
+            "verdict": verdict,
+            "message": (
+                f"Based on {rated_count} rated prediction(s): "
+                f"the model was correct {correct_count} time(s) — "
+                f"{accuracy:.1%} real-world accuracy. "
+                + verdict_msg
+            ),
+            "problem_type": problem_type,
+        }
 
 
 # ---------------------------------------------------------------------------

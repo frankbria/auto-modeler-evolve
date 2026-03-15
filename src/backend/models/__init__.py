@@ -7,5 +7,6 @@ from models.conversation import Conversation
 from models.model_run import ModelRun
 from models.deployment import Deployment
 from models.prediction_log import PredictionLog
+from models.feedback_record import FeedbackRecord
 
-__all__ = ["Project", "Dataset", "FeatureSet", "Conversation", "ModelRun", "Deployment", "PredictionLog"]
+__all__ = ["Project", "Dataset", "FeatureSet", "Conversation", "ModelRun", "Deployment", "PredictionLog", "FeedbackRecord"]

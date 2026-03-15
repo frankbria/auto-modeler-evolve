@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { api } from "@/lib/api"
-import type { Deployment, DeploymentAnalytics, ModelReadiness, DriftReport, WhatIfResult } from "@/lib/types"
+import type { Deployment, DeploymentAnalytics, ModelReadiness, DriftReport, WhatIfResult, FeedbackAccuracy } from "@/lib/types"
 
 interface DeploymentPanelProps {
   projectId: string
@@ -263,6 +263,118 @@ function WhatIfCard({ deployment }: { deployment: Deployment }) {
   )
 }
 
+function FeedbackCard({ deploymentId, problemType }: { deploymentId: string; problemType: string | null }) {
+  const [accuracy, setAccuracy] = useState<FeedbackAccuracy | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [submitted, setSubmitted] = useState(false)
+  const [actualValue, setActualValue] = useState("")
+  const [actualLabel, setActualLabel] = useState("")
+  const [comment, setComment] = useState("")
+  const [error, setError] = useState<string | null>(null)
+
+  const loadAccuracy = useCallback(() => {
+    setLoading(true)
+    api.deploy.feedbackAccuracy(deploymentId)
+      .then(setAccuracy)
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [deploymentId])
+
+  useEffect(() => { loadAccuracy() }, [loadAccuracy])
+
+  const verdictColor = (v?: string) => {
+    if (v === "excellent") return "text-green-600"
+    if (v === "good") return "text-blue-600"
+    if (v === "moderate") return "text-yellow-600"
+    return "text-red-600"
+  }
+
+  const handleSubmit = async () => {
+    setSubmitting(true)
+    setError(null)
+    try {
+      const body: Record<string, unknown> = {}
+      if (problemType === "regression" && actualValue) {
+        const n = parseFloat(actualValue)
+        if (isNaN(n)) { setError("Enter a valid number."); return }
+        body.actual_value = n
+      } else if (actualLabel) {
+        body.actual_label = actualLabel
+        body.is_correct = undefined  // let backend compute
+      } else {
+        setError("Enter an actual value before submitting.")
+        return
+      }
+      if (comment) body.comment = comment
+      await api.deploy.submitFeedback(deploymentId, body)
+      setSubmitted(true)
+      setActualValue("")
+      setActualLabel("")
+      setComment("")
+      await loadAccuracy()
+    } catch {
+      setError("Failed to submit feedback.")
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm">Real-world Accuracy</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {accuracy && accuracy.status === "computed" && (
+          <div className="space-y-1">
+            <p className={`text-sm font-semibold ${verdictColor(accuracy.verdict)}`}>
+              {accuracy.problem_type === "regression"
+                ? `${accuracy.pct_error?.toFixed(1)}% avg error (MAE ${accuracy.mae?.toFixed(3)})`
+                : `${((accuracy.accuracy_from_feedback ?? 0) * 100).toFixed(0)}% real-world accuracy`}
+            </p>
+            <p className="text-xs text-muted-foreground">{accuracy.message}</p>
+          </div>
+        )}
+        {accuracy && accuracy.status !== "computed" && (
+          <p className="text-xs text-muted-foreground">{accuracy.message}</p>
+        )}
+        {loading && <p className="text-xs text-muted-foreground">Loading…</p>}
+
+        <div className="border-t pt-3 space-y-2">
+          <p className="text-xs font-medium">Record an actual outcome</p>
+          {problemType === "regression" ? (
+            <input
+              className="w-full rounded border bg-background px-2 py-1 text-xs"
+              placeholder="Actual value (e.g. 1234.56)"
+              value={actualValue}
+              onChange={(e) => setActualValue(e.target.value)}
+            />
+          ) : (
+            <input
+              className="w-full rounded border bg-background px-2 py-1 text-xs"
+              placeholder="Actual class label (e.g. 'churned')"
+              value={actualLabel}
+              onChange={(e) => setActualLabel(e.target.value)}
+            />
+          )}
+          <input
+            className="w-full rounded border bg-background px-2 py-1 text-xs"
+            placeholder="Optional note (e.g. 'Customer actually churned in Q3')"
+            value={comment}
+            onChange={(e) => setComment(e.target.value)}
+          />
+          {error && <p className="text-xs text-destructive">{error}</p>}
+          {submitted && <p className="text-xs text-green-600">Feedback recorded!</p>}
+          <Button size="sm" className="w-full" onClick={handleSubmit} disabled={submitting}>
+            {submitting ? "Saving…" : "Submit Feedback"}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
 export function DeploymentPanel({
   projectId,
   selectedRunId,
@@ -418,6 +530,7 @@ export function DeploymentPanel({
         {analytics && <AnalyticsCard analytics={analytics} />}
         {drift && <DriftCard drift={drift} />}
         {deployment && <WhatIfCard deployment={deployment} />}
+        {deployment && <FeedbackCard deploymentId={deployment.id} problemType={deployment.problem_type} />}
 
         <div className="flex justify-end">
           <Button

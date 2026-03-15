@@ -406,5 +406,24 @@ export const api = {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ base, overrides }),
       }).then((r) => r.json()),
+
+    submitFeedback: (
+      deploymentId: string,
+      body: {
+        prediction_log_id?: string
+        actual_value?: number
+        actual_label?: string
+        is_correct?: boolean
+        comment?: string
+      }
+    ): Promise<import("./types").FeedbackRecord> =>
+      fetch(`${API_URL}/api/predict/${deploymentId}/feedback`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }).then((r) => r.json()),
+
+    feedbackAccuracy: (deploymentId: string): Promise<import("./types").FeedbackAccuracy> =>
+      fetch(`${API_URL}/api/deploy/${deploymentId}/feedback-accuracy`).then((r) => r.json()),
   },
 }
