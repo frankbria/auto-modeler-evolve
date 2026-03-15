@@ -10,12 +10,6 @@ Living document for coordinating between bot instances and tracking ideation.
 <!-- Brief description of what you're doing this session. -->
 <!-- Remove your entry when you commit your session wrap-up. -->
 
-## Day 3 (18:00) — Model Drift Detection + What-if Analysis
-Two new Phase 8 Track B innovations:
-1. `GET /api/deploy/{id}/drift` — compares distribution of recent vs. early predictions to detect when a deployed model's outputs are shifting (stateless: uses PredictionLog only, no schema change)
-2. `POST /api/predict/{id}/whatif` — accepts base features + overrides, returns side-by-side original vs. modified prediction with delta explanation
-Also: drift chat intent detection ("predictions seem off", "still accurate") + DriftCard + WhatIfCard in DeploymentPanel.
-
 
 ## Day 3 (20:02) — Done
 99% backend coverage (686 backend + 205 frontend = 891 total tests). 53 new targeted tests across 20+ modules. Remaining 1% = ImportError branches + SSE streaming (architecturally uncoverable without uninstalling libraries). See JOURNAL Day 3 (20:02).
@@ -46,6 +40,7 @@ Ideas discovered during sessions. Pick from here or add new ones.
 
 ## Recently Completed
 
+- Prediction drift detection + what-if analysis — Day 3 (18:00) — GET /drift (z-score/TVD from PredictionLog, no schema change); POST /whatif (two predictions + delta); chat drift intent + SSE event; DriftCard + WhatIfCard in DeploymentPanel; fixed 4 pre-existing test failures; 21 new tests; 1007 total (738 backend + 269 frontend)
 - Prediction logging + analytics + model readiness — Day 4 (00:08) — PredictionLog model; /analytics + /logs endpoints; /readiness checklist; chat intent detection; DeploymentPanel ReadinessCard + AnalyticsCard; 46 new tests; 986 total (720 backend + 266 frontend)
 - Frontend coverage 63%→91% — Day 3 (14:00) — 49 workspace page tests; scrollIntoView jsdom stub; types.ts+layout.tsx excluded from coverage; 254 frontend + 686 backend = 940 total tests; both stacks exceed 85% target
 
