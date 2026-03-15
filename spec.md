@@ -348,6 +348,12 @@ guides them forward through the natural flow.
       best/worst outcome identification, and a plain-English summary. Perfect for "what if revenue if region = X vs Y vs Z?"
       VP meeting prep. api.deploy.scenarios() in frontend API client; ScenarioComparison + ScenarioResult types added.
       *Day 4 (20:03): 12 backend + 10 frontend = 22 new tests. Total: 951 backend + 348 frontend = 1299.*
+- [x] **Anomaly detection** — POST /api/data/{dataset_id}/anomalies runs IsolationForest across selected numeric features to find
+      multi-dimensional outliers (e.g., row where revenue, quantity, AND category together look suspicious — not just one column at a time).
+      Returns per-row anomaly scores 0-100, top-N anomalous records with feature values, plain-English summary. Chat detects
+      "find anomalies", "unusual records", "outliers", "suspicious" → injects summary into system prompt + emits {type: "anomalies"}
+      SSE event. AnomalyCard in Data tab shows summary, features analysed, top rows table with score badges, and manual re-scan button.
+      *Day 4 (14:00): 22 backend + 11 frontend = 33 new tests. Total: 978 backend + 359 frontend = 1337.*
 - [x] **Chat follow-up suggestion chips** — After each AI response, the backend emits a {type: "suggestions"} SSE event
       with 2-3 context-aware follow-up questions chosen from a per-state pool (6 states × 4-6 suggestions each) plus dynamic
       additions based on available project artefacts (best algorithm name, accuracy metric, deployment request count).
