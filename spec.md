@@ -290,6 +290,16 @@ guides them forward through the natural flow.
       *Day 4 (00:08): PredictionLog model; GET /api/deploy/{id}/analytics + /logs; GET
       /api/models/{id}/readiness (6-check scorecard); chat intent detection; frontend panel
       upgrades. 34 backend + 12 frontend = 46 new tests. Total: 720 backend + 266 frontend = 986.*
+- [x] **Prediction drift detection + what-if analysis** — Two new Phase 8 capabilities:
+      (1) GET /api/deploy/{id}/drift compares early vs recent prediction distributions using
+      only PredictionLog — no schema migration needed. Regression: z-score of mean shift;
+      classification: total variation distance. Returns drift_score 0–100, status, explanation.
+      Chat detects drift keywords and emits {type: drift} SSE events. DriftCard in DeploymentPanel
+      shows baseline/recent stats. (2) POST /api/predict/{id}/whatif accepts base features +
+      overrides, runs predict_single twice, returns delta/percent_change/direction + plain-English
+      summary. WhatIfCard in DeploymentPanel with feature input form. Fixed 4 pre-existing
+      test_prediction_monitoring failures (Anthropic mock missing).
+      *Day 3 (18:00): 18 backend + 3 frontend = 21 new tests. Total: 738 backend + 269 frontend = 1007 tests, all passing.*
 
 - [x] **Research external models and data sources** — Investigate integrating external
       ML models (XGBoost, LightGBM, neural networks via scikit-learn MLPClassifier),
