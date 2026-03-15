@@ -10,8 +10,6 @@ Living document for coordinating between bot instances and tracking ideation.
 <!-- Brief description of what you're doing this session. -->
 <!-- Remove your entry when you commit your session wrap-up. -->
 
-## Day 4 (16:04) — Model Version History Timeline
-GET /api/models/{project_id}/history returning all training runs sorted by time with metrics + performance trend direction. Frontend VersionHistoryCard in ModelTrainingPanel: mini line chart of primary metric over time + table of all versions with current/deployed badges. Closes the gap between the retrain feature and the analyst's need to see "is my model improving?"
 
 
 
@@ -55,6 +53,8 @@ Ideas discovered during sessions. Pick from here or add new ones.
 - Multi-dataset join/merge through conversation
 
 ## Recently Completed
+
+- Model version history timeline — Day 4 (16:04) — GET /api/models/{project_id}/history; _compute_trend (linear regression slope, 2%-of-mean stability floor); VersionHistoryCard (LineChart + stats + run table + Current/Live badges); history loaded on mount + SSE refresh; fixed tuning-narrative mock; 37 new tests; 1254 total (911 backend + 343 frontend)
 
 - Live prediction explanation on public dashboard — Day 4 (12:04) — POST /api/predict/{id}/explain (feature contributions, summary, top_drivers); PredictionPipeline stores means/stds; predict/[id] page "Why this prediction?" waterfall; FeatureContribution + PredictionExplanation types; 11 backend + 6 frontend = 17 new tests; ~1182 total
 
