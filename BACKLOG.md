@@ -10,12 +10,6 @@ Living document for coordinating between bot instances and tracking ideation.
 <!-- Brief description of what you're doing this session. -->
 <!-- Remove your entry when you commit your session wrap-up. -->
 
-## Day 3 (22:00) — Hyperparameter Auto-Tuning
-Track B innovation: `core/tuner.py` (RandomizedSearchCV with per-algorithm param grids);
-`POST /api/models/{model_run_id}/tune` (background thread, SSE events);
-chat intent detection ("tune", "optimize", "improve my model");
-frontend TuneButton + `api.ts.tuneModel()`; tests.
-This closes the loop from "initial model" → "best possible model" without user needing to know what hyperparameters are.
 
 
 ## Day 3 (20:02) — Done
@@ -47,6 +41,7 @@ Ideas discovered during sessions. Pick from here or add new ones.
 
 ## Recently Completed
 
+- Hyperparameter auto-tuning — Day 3 (22:00) — core/tuner.py (RandomizedSearchCV per-algo grids); POST /tune endpoint (bg thread, SSE); chat _TUNE_PATTERNS intent + {type:tune} event; api.ts.models.tune(); 22 new tests; 760 backend total
 - Prediction drift detection + what-if analysis — Day 3 (18:00) — GET /drift (z-score/TVD from PredictionLog, no schema change); POST /whatif (two predictions + delta); chat drift intent + SSE event; DriftCard + WhatIfCard in DeploymentPanel; fixed 4 pre-existing test failures; 21 new tests; 1007 total (738 backend + 269 frontend)
 - Prediction logging + analytics + model readiness — Day 4 (00:08) — PredictionLog model; /analytics + /logs endpoints; /readiness checklist; chat intent detection; DeploymentPanel ReadinessCard + AnalyticsCard; 46 new tests; 986 total (720 backend + 266 frontend)
 - Frontend coverage 63%→91% — Day 3 (14:00) — 49 workspace page tests; scrollIntoView jsdom stub; types.ts+layout.tsx excluded from coverage; 254 frontend + 686 backend = 940 total tests; both stacks exceed 85% target
