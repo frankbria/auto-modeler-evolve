@@ -332,6 +332,17 @@ guides them forward through the natural flow.
       PredictionHistoryRecord type added. History capped at 20 entries per session.
       *Day 4 (06:00): pure frontend implementation. 4 new page tests. Closes the analyst use
       case: "take predictions back to my VP" without needing the full deployment panel.*
+- [x] **Model version history timeline** — GET /api/models/{project_id}/history returns all
+      training runs sorted oldest-first with primary metric (r2/accuracy), trend direction
+      (improving/declining/stable/insufficient_data, computed via linear regression slope with
+      2%-of-mean stability floor), best/latest metric. _compute_trend helper is independently
+      testable. Frontend VersionHistoryCard in ModelTrainingPanel: mini Recharts LineChart of
+      primary metric over time, summary stats row (Best/Latest/Runs), per-run table with
+      Current/Live badges. Card only appears when 2+ completed runs exist. History loaded on
+      mount and refreshed after SSE all_done event. Closes the retrain-feedback loop: analysts
+      can see "is my model actually improving across sessions?"
+      *Day 4 (16:04): 19 backend + 18 frontend = 37 new tests. Total: 911 backend + 343 frontend = 1254.*
+
 - [x] **Prediction drift detection + what-if analysis** — Two new Phase 8 capabilities:
       (1) GET /api/deploy/{id}/drift compares early vs recent prediction distributions using
       only PredictionLog — no schema migration needed. Regression: z-score of mean shift;
