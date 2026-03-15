@@ -37,6 +37,7 @@ from core.trainer import (
     recommend_models,
     train_single_model,
 )
+from core.tuner import is_tunable, tune_model
 from db import get_session
 from models.dataset import Dataset
 from models.feature_set import FeatureSet
@@ -896,4 +897,191 @@ def get_model_readiness(
         "summary": summary,
         "checks": checks,
         "problem_type": problem_type,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Hyperparameter auto-tuning
+# ---------------------------------------------------------------------------
+
+def _tune_in_background(
+    original_run_id: str,
+    tuned_run_id: str,
+    project_id: str,
+    df: pd.DataFrame,
+    feature_cols: list[str],
+    target_col: str,
+    algorithm: str,
+    problem_type: str,
+    model_dir: Path,
+) -> None:
+    """Background thread: run RandomizedSearchCV and save a new tuned ModelRun."""
+    with Session(_db.engine) as session:
+        run = session.get(ModelRun, tuned_run_id)
+        if not run:
+            _finish_training_thread(project_id)
+            return
+        run.status = "training"
+        session.add(run)
+        session.commit()
+
+    _push_event(project_id, {
+        "type": "status",
+        "run_id": tuned_run_id,
+        "status": "training",
+        "algorithm": f"{algorithm}_tuned",
+    })
+
+    try:
+        X, y, _ = prepare_features(df, feature_cols, target_col, problem_type)
+        result = tune_model(
+            algorithm=algorithm,
+            problem_type=problem_type,
+            X=X,
+            y=y,
+            model_run_id=original_run_id,
+            model_dir=model_dir,
+        )
+
+        with Session(_db.engine) as session:
+            run = session.get(ModelRun, tuned_run_id)
+            if run:
+                run.status = "done"
+                run.metrics = json.dumps(result["metrics"])
+                run.model_path = result["model_path"]
+                run.training_duration_ms = result["training_duration_ms"]
+                run.summary = result["summary"]
+                run.hyperparameters = json.dumps(result["best_params"])
+                session.add(run)
+                session.commit()
+
+        _push_event(project_id, {
+            "type": "done",
+            "run_id": tuned_run_id,
+            "status": "done",
+            "algorithm": f"{algorithm}_tuned",
+            "metrics": result["metrics"],
+            "summary": result["summary"],
+            "training_duration_ms": result["training_duration_ms"],
+            "is_tuned": True,
+        })
+
+    except Exception as exc:  # noqa: BLE001
+        with Session(_db.engine) as session:
+            run = session.get(ModelRun, tuned_run_id)
+            if run:
+                run.status = "failed"
+                run.error_message = str(exc)[:500]
+                session.add(run)
+                session.commit()
+
+        _push_event(project_id, {
+            "type": "failed",
+            "run_id": tuned_run_id,
+            "status": "failed",
+            "algorithm": f"{algorithm}_tuned",
+            "error": str(exc)[:200],
+        })
+
+    finally:
+        _finish_training_thread(project_id)
+
+
+@router.post("/api/models/{model_run_id}/tune", status_code=202)
+def tune_existing_model(
+    model_run_id: str,
+    session: Session = Depends(get_session),
+):
+    """Auto-tune hyperparameters for a trained model using RandomizedSearchCV.
+
+    Creates a new ModelRun with `{algorithm}_tuned` and the best-found
+    hyperparameters. Returns immediately; poll /runs for status.
+    """
+    run = session.get(ModelRun, model_run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Model run not found")
+    if run.status != "done":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot tune a model with status '{run.status}'. Wait for training to complete.",
+        )
+
+    if not is_tunable(run.algorithm):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Algorithm '{run.algorithm}' has no tunable hyperparameters. "
+                "Try Random Forest, Gradient Boosting, XGBoost, or LightGBM."
+            ),
+        )
+
+    # Gather project context
+    project_id = run.project_id
+    feature_set = session.get(FeatureSet, run.feature_set_id) if run.feature_set_id else None
+    if not feature_set:
+        raise HTTPException(
+            status_code=400,
+            detail="No active feature set found for this model run.",
+        )
+
+    dataset = session.exec(
+        select(Dataset).where(Dataset.project_id == project_id)
+    ).first()
+    if not dataset or not Path(dataset.file_path).exists():
+        raise HTTPException(status_code=404, detail="Dataset file not found on disk")
+
+    problem_type = feature_set.problem_type or "regression"
+    target_col = feature_set.target_column or ""
+
+    df = pd.read_csv(dataset.file_path)
+    transforms = json.loads(feature_set.transformations or "[]")
+    if transforms:
+        from core.feature_engine import apply_transformations as _apply
+        df, _ = _apply(df, transforms)
+
+    feature_cols = [c for c in df.columns if c != target_col]
+    model_dir = MODELS_DIR / project_id
+
+    # Create the new tuned model run
+    tuned_run = ModelRun(
+        project_id=project_id,
+        feature_set_id=feature_set.id,
+        algorithm=f"{run.algorithm}_tuned",
+        hyperparameters=json.dumps({}),
+        status="pending",
+    )
+    session.add(tuned_run)
+    session.commit()
+    session.refresh(tuned_run)
+
+    with _lock:
+        _training_queues[project_id] = queue.Queue()
+        _training_counters[project_id] = 1
+
+    t = threading.Thread(
+        target=_tune_in_background,
+        args=(
+            model_run_id,
+            tuned_run.id,
+            project_id,
+            df.copy(),
+            feature_cols,
+            target_col,
+            run.algorithm,
+            problem_type,
+            model_dir,
+        ),
+        daemon=True,
+    )
+    t.start()
+
+    return {
+        "original_model_run_id": model_run_id,
+        "tuned_model_run_id": tuned_run.id,
+        "algorithm": run.algorithm,
+        "status": "tuning_started",
+        "message": (
+            f"Tuning {run.algorithm} with RandomizedSearchCV (20 iterations, 3-fold CV). "
+            "Poll GET /api/models/{project_id}/runs for status updates."
+        ),
     }

@@ -10,6 +10,13 @@ Living document for coordinating between bot instances and tracking ideation.
 <!-- Brief description of what you're doing this session. -->
 <!-- Remove your entry when you commit your session wrap-up. -->
 
+## Day 3 (22:00) — Hyperparameter Auto-Tuning
+Track B innovation: `core/tuner.py` (RandomizedSearchCV with per-algorithm param grids);
+`POST /api/models/{model_run_id}/tune` (background thread, SSE events);
+chat intent detection ("tune", "optimize", "improve my model");
+frontend TuneButton + `api.ts.tuneModel()`; tests.
+This closes the loop from "initial model" → "best possible model" without user needing to know what hyperparameters are.
+
 
 ## Day 3 (20:02) — Done
 99% backend coverage (686 backend + 205 frontend = 891 total tests). 53 new targeted tests across 20+ modules. Remaining 1% = ImportError branches + SSE streaming (architecturally uncoverable without uninstalling libraries). See JOURNAL Day 3 (20:02).

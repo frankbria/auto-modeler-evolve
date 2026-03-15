@@ -337,6 +337,9 @@ export const api = {
 
     readiness: (modelRunId: string): Promise<import("./types").ModelReadiness> =>
       fetch(`${API_URL}/api/models/${modelRunId}/readiness`).then((r) => r.json()),
+
+    tune: (modelRunId: string): Promise<{ tuned_model_run_id: string; status: string; message: string }> =>
+      fetch(`${API_URL}/api/models/${modelRunId}/tune`, { method: "POST" }).then((r) => r.json()),
   },
 
   validation: {

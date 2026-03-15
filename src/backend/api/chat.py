@@ -41,6 +41,15 @@ _DRIFT_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# Keywords that trigger a hyperparameter tuning suggestion
+_TUNE_PATTERNS = re.compile(
+    r"\b(tune|tuning|optimize|optimise|improve.*model|better.*model|model.*better|"
+    r"increase accuracy|boost performance|hyperparameter|grid search|random search|"
+    r"can.*do better|make.*better|improve.*accuracy|improve.*performance|"
+    r"best.*hyperparameter|find.*best.*param)\b",
+    re.IGNORECASE,
+)
+
 
 class ChatMessage(BaseModel):
     message: str
@@ -298,6 +307,31 @@ def send_message(
             except Exception:  # noqa: BLE001
                 pass  # Readiness check is nice-to-have; never crash chat
 
+    # Check if this is a tune/optimize request
+    tune_data: dict | None = None
+    if _TUNE_PATTERNS.search(body.message):
+        completed_runs = [mr for mr in ctx["model_runs"] if mr.status == "done"]
+        selected_run = next((mr for mr in completed_runs if mr.is_selected), None)
+        target_run = selected_run or (completed_runs[-1] if completed_runs else None)
+        if target_run:
+            from core.tuner import is_tunable as _is_tunable
+            if _is_tunable(target_run.algorithm):
+                tune_data = {
+                    "model_run_id": target_run.id,
+                    "algorithm": target_run.algorithm,
+                    "metrics": json.loads(target_run.metrics) if target_run.metrics else {},
+                }
+                system_prompt += (
+                    f"\n\n## Hyperparameter Tuning Available\n"
+                    f"The user is asking about improving model performance. "
+                    f"Their current best model is {target_run.algorithm} "
+                    f"(metrics: {tune_data['metrics']}). "
+                    "Inform them that you can automatically tune the hyperparameters using "
+                    "RandomizedSearchCV to find better settings — no technical knowledge needed. "
+                    "Tell them the Tune button is now available in the Models tab, or they can "
+                    "say 'go ahead and tune it' to start immediately."
+                )
+
     # Check if this is a drift-related question
     drift_data: dict | None = None
     if _DRIFT_PATTERNS.search(body.message) and ctx["deployment"]:
@@ -362,6 +396,10 @@ def send_message(
         # Emit drift card if computed
         if drift_data:
             yield f"data: {json.dumps({'type': 'drift', 'drift': drift_data})}\n\n"
+
+        # Emit tune suggestion if detected
+        if tune_data:
+            yield f"data: {json.dumps({'type': 'tune', 'tune': tune_data})}\n\n"
 
         # After text stream, opportunistically generate a chart if the
         # message is about data and we have a dataset loaded
