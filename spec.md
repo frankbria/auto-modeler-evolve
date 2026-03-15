@@ -343,6 +343,18 @@ guides them forward through the natural flow.
       can see "is my model actually improving across sessions?"
       *Day 4 (16:04): 19 backend + 18 frontend = 37 new tests. Total: 911 backend + 343 frontend = 1254.*
 
+- [x] **Model monitoring alerts + chat-triggered visualizations** — Proactive system-wide health alerts:
+      GET /api/projects/{id}/alerts scans all active deployments for four alert types: stale_model
+      (>60 days=warning, >90=critical), no_predictions (deployed >1 day with 0 requests), drift_detected
+      (from PredictionLog when ≥40 logs), poor_feedback (classification accuracy <70% or regression
+      pct_error >30% from FeedbackRecord). Returns sorted list (critical-first). AlertsCard in
+      DeploymentPanel: "Check for Alerts" button, severity badges, recommendation text, "Show N more"
+      collapse, externalAlerts prop for chat SSE push. Chat detects "any alerts?", "monitor", "check my
+      models" → injects summary + emits {type: alerts} SSE event. Chat also detects "show model history"
+      → {type: history} and "how many predictions" → {type: analytics} SSE events for triggering
+      existing panels from conversational queries. Three compiled regex pattern groups added to chat.py.
+      *Day 4 (10:00): 23 backend + 13 frontend = 36 new tests. Total: 934 backend + 338 frontend = 1272.*
+
 - [x] **Prediction drift detection + what-if analysis** — Two new Phase 8 capabilities:
       (1) GET /api/deploy/{id}/drift compares early vs recent prediction distributions using
       only PredictionLog — no schema migration needed. Regression: z-score of mean shift;

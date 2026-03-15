@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { api } from "@/lib/api"
-import type { Deployment, DeploymentAnalytics, ModelReadiness, DriftReport, WhatIfResult, FeedbackAccuracy, ModelHealth } from "@/lib/types"
+import type { Deployment, DeploymentAnalytics, ModelReadiness, DriftReport, WhatIfResult, FeedbackAccuracy, ModelHealth, ProjectAlerts, ProjectAlert } from "@/lib/types"
 
 interface DeploymentPanelProps {
   projectId: string
@@ -486,6 +486,122 @@ function ModelHealthCard({
   )
 }
 
+function AlertSeverityBadge({ severity }: { severity: ProjectAlert["severity"] }) {
+  if (severity === "critical") return <Badge className="bg-red-100 text-red-800 border-red-200">Critical</Badge>
+  return <Badge className="bg-yellow-100 text-yellow-800 border-yellow-200">Warning</Badge>
+}
+
+function AlertTypeLabel({ type }: { type: ProjectAlert["type"] }) {
+  const labels: Record<ProjectAlert["type"], string> = {
+    stale_model: "Stale model",
+    no_predictions: "No usage",
+    drift_detected: "Drift detected",
+    poor_feedback: "Poor accuracy",
+  }
+  return <span className="text-xs font-medium text-muted-foreground">{labels[type]}</span>
+}
+
+export function AlertsCard({
+  projectId,
+  externalAlerts,
+}: {
+  projectId: string
+  externalAlerts?: ProjectAlerts | null
+}) {
+  const [alerts, setAlerts] = useState<ProjectAlerts | null>(externalAlerts ?? null)
+  const [loading, setLoading] = useState(false)
+  const [expanded, setExpanded] = useState(false)
+
+  // When chat SSE pushes new alerts, display them immediately
+  useEffect(() => {
+    if (externalAlerts) {
+      setAlerts(externalAlerts)
+      setExpanded(true)
+    }
+  }, [externalAlerts])
+
+  const loadAlerts = async () => {
+    setLoading(true)
+    try {
+      const result = await api.projects.alerts(projectId)
+      setAlerts(result)
+    } catch {
+      // Silent fail — alerts are optional
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  if (!alerts) {
+    return (
+      <Card>
+        <CardContent className="pt-4 pb-4">
+          <Button size="sm" variant="outline" className="w-full" onClick={loadAlerts} disabled={loading}>
+            {loading ? "Scanning…" : "Check for Alerts"}
+          </Button>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  const hasAlerts = alerts.alert_count > 0
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-sm">Model Alerts</CardTitle>
+          <div className="flex items-center gap-1.5">
+            {alerts.critical_count > 0 && (
+              <span className="rounded-full bg-red-100 text-red-800 text-[10px] font-bold px-1.5 py-0.5">
+                {alerts.critical_count} critical
+              </span>
+            )}
+            {alerts.warning_count > 0 && (
+              <span className="rounded-full bg-yellow-100 text-yellow-800 text-[10px] font-bold px-1.5 py-0.5">
+                {alerts.warning_count} warning
+              </span>
+            )}
+            {!hasAlerts && (
+              <Badge className="bg-green-100 text-green-800 border-green-200">All clear</Badge>
+            )}
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {!hasAlerts && (
+          <p className="text-xs text-muted-foreground">No issues detected across active deployments.</p>
+        )}
+        {hasAlerts && (
+          <div className="space-y-2">
+            {(expanded ? alerts.alerts : alerts.alerts.slice(0, 2)).map((alert, i) => (
+              <div key={i} className="rounded border p-2 space-y-1">
+                <div className="flex items-center gap-1.5">
+                  <AlertSeverityBadge severity={alert.severity} />
+                  <AlertTypeLabel type={alert.type} />
+                </div>
+                <p className="text-xs text-foreground">{alert.message}</p>
+                <p className="text-xs text-muted-foreground italic">→ {alert.recommendation}</p>
+              </div>
+            ))}
+            {alerts.alert_count > 2 && !expanded && (
+              <button
+                className="text-xs text-muted-foreground underline"
+                onClick={() => setExpanded(true)}
+              >
+                Show {alerts.alert_count - 2} more…
+              </button>
+            )}
+          </div>
+        )}
+        <Button size="sm" variant="ghost" className="w-full text-xs" onClick={loadAlerts} disabled={loading}>
+          {loading ? "Scanning…" : "Refresh alerts"}
+        </Button>
+      </CardContent>
+    </Card>
+  )
+}
+
 export function DeploymentPanel({
   projectId,
   selectedRunId,
@@ -643,6 +759,7 @@ export function DeploymentPanel({
         {deployment && <WhatIfCard deployment={deployment} />}
         {deployment && <FeedbackCard deploymentId={deployment.id} problemType={deployment.problem_type} />}
         {deployment && <ModelHealthCard deploymentId={deployment.id} projectId={projectId} />}
+        <AlertsCard projectId={projectId} />
 
         <div className="flex justify-end">
           <Button

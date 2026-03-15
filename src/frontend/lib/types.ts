@@ -607,3 +607,27 @@ export interface ModelVersionHistory {
   best_metric: number | null
   latest_metric: number | null
 }
+
+// ---------------------------------------------------------------------------
+// Model Monitoring Alerts (Phase 8)
+// ---------------------------------------------------------------------------
+
+export type AlertSeverity = "critical" | "warning"
+export type AlertType = "stale_model" | "no_predictions" | "drift_detected" | "poor_feedback"
+
+export interface ProjectAlert {
+  deployment_id: string
+  algorithm: string
+  severity: AlertSeverity
+  type: AlertType
+  message: string
+  recommendation: string
+}
+
+export interface ProjectAlerts {
+  project_id: string
+  alert_count: number
+  critical_count: number
+  warning_count: number
+  alerts: ProjectAlert[]
+}

@@ -22,6 +22,7 @@ import type {
   TuningResult,
   ProjectNarrative,
   ModelVersionHistory,
+  ProjectAlerts,
 } from "./types"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
@@ -63,6 +64,9 @@ export const api = {
       fetch(`${API_URL}/api/projects/${id}/narrative`, { method: "POST" }).then((r) =>
         r.json()
       ),
+
+    alerts: (id: string): Promise<ProjectAlerts> =>
+      fetch(`${API_URL}/api/projects/${id}/alerts`).then((r) => r.json()),
   },
 
   data: {

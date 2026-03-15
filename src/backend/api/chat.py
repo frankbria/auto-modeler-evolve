@@ -60,6 +60,34 @@ _TUNE_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# Keywords that trigger a cross-deployment alerts scan
+# Note: no trailing \b — patterns use .* wildcards so plurals ("alerts") work fine
+_ALERTS_PATTERNS = re.compile(
+    r"\b(any.*alert|alert.*model|monitor|check.*model|model.*issue|problem.*model|"
+    r"system.*status|health.*check|model.*health.*all|all.*model.*health|"
+    r"\bissues\b|anything.*wrong|something.*wrong|model.*ok|models.*ok|"
+    r"status.*update|how.*model.*doing|all.*deployment)",
+    re.IGNORECASE,
+)
+
+# Keywords that trigger the model version history card
+_HISTORY_PATTERNS = re.compile(
+    r"\b(version.*histor|model.*histor|show.*histor|past.*run|previous.*run|"
+    r"training.*histor|model.*over.*time|how.*model.*improv|model.*progress|"
+    r"show.*improvement|histor.*model|how.*improv|trend.*model|"
+    r"model.*trend|improving.*over|getting.*better)",
+    re.IGNORECASE,
+)
+
+# Keywords that trigger the prediction analytics card
+_ANALYTICS_PATTERNS = re.compile(
+    r"\b(prediction.*analytic|analytic.*prediction|how.*many.*prediction|"
+    r"prediction.*count|usage.*stat|stat.*usage|prediction.*volume|"
+    r"prediction.*log|log.*prediction|how.*often.*predict|prediction.*traffic|"
+    r"show.*analytic|prediction.*usage|usage.*dashboard)",
+    re.IGNORECASE,
+)
+
 
 class ChatMessage(BaseModel):
     message: str
@@ -498,6 +526,97 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Drift check is nice-to-have; never crash chat
 
+    # Check for cross-deployment alerts request
+    alerts_data: dict | None = None
+    if _ALERTS_PATTERNS.search(body.message):
+        try:
+            from datetime import UTC as _UTC
+
+            active_deployments = list(
+                session.exec(
+                    select(Deployment).where(
+                        Deployment.project_id == project_id,
+                        Deployment.is_active == True,  # noqa: E712
+                    )
+                ).all()
+            )
+            alert_list: list[dict] = []
+            now_ts = datetime.now(UTC).replace(tzinfo=None)
+
+            for dep in active_deployments:
+                run_a = session.get(ModelRun, dep.model_run_id)
+                alg = dep.algorithm or "model"
+                age_d = 0
+                if run_a and run_a.created_at:
+                    age_d = max(0, (now_ts - run_a.created_at).days)
+                if age_d > 60:
+                    alert_list.append({
+                        "deployment_id": dep.id, "algorithm": alg,
+                        "severity": "critical" if age_d > 90 else "warning",
+                        "type": "stale_model",
+                        "message": f"'{alg}' is {age_d} days old.",
+                        "recommendation": "Consider retraining with more recent data.",
+                    })
+                if dep.request_count == 0 and dep.created_at:
+                    dep_age = max(0, (now_ts - dep.created_at).days)
+                    if dep_age >= 1:
+                        alert_list.append({
+                            "deployment_id": dep.id, "algorithm": alg,
+                            "severity": "warning", "type": "no_predictions",
+                            "message": f"'{alg}' has been deployed {dep_age} day(s) with no predictions.",
+                            "recommendation": "Share the dashboard link to start receiving predictions.",
+                        })
+
+            alerts_data = {
+                "project_id": project_id,
+                "alert_count": len(alert_list),
+                "critical_count": sum(1 for a in alert_list if a["severity"] == "critical"),
+                "warning_count": sum(1 for a in alert_list if a["severity"] == "warning"),
+                "alerts": alert_list,
+            }
+            alert_summary = (
+                f"{len(alert_list)} alert(s) found: "
+                f"{alerts_data['critical_count']} critical, {alerts_data['warning_count']} warning."
+                if alert_list else "No active alerts — all deployments look healthy."
+            )
+            system_prompt += (
+                f"\n\n## Deployment Alerts (just scanned)\n{alert_summary}\n"
+                "Summarise the alert status for the user. If there are critical alerts, "
+                "guide them on what to do. If everything is healthy, reassure them."
+            )
+        except Exception:  # noqa: BLE001
+            pass  # Alerts are nice-to-have; never crash chat
+
+    # Check for model version history request
+    history_event: dict | None = None
+    if _HISTORY_PATTERNS.search(body.message) and ctx["model_runs"]:
+        completed = [mr for mr in ctx["model_runs"] if mr.status == "done"]
+        if len(completed) >= 2:
+            history_event = {"project_id": project_id}
+            system_prompt += (
+                "\n\n## Model Version History\n"
+                f"The project has {len(completed)} completed training run(s). "
+                "The Version History card is now visible in the Models tab — it shows "
+                "a timeline of model performance and trend direction. "
+                "Tell the user their model history is available in the Models tab."
+            )
+
+    # Check for prediction analytics request
+    analytics_event: dict | None = None
+    if _ANALYTICS_PATTERNS.search(body.message) and ctx["deployment"]:
+        dep_for_analytics = ctx["deployment"]
+        count = dep_for_analytics.request_count
+        analytics_event = {
+            "deployment_id": dep_for_analytics.id,
+            "total_predictions": count,
+        }
+        system_prompt += (
+            f"\n\n## Prediction Analytics\n"
+            f"The active deployment has logged {count} prediction(s) total. "
+            "The Analytics card is visible in the Deployment tab with a usage chart. "
+            "Reference the prediction count in your response and mention the Analytics card."
+        )
+
     def stream_response():
         full_response = ""
         try:
@@ -546,6 +665,18 @@ def send_message(
         # Emit model health card if computed
         if health_data:
             yield f"data: {json.dumps({'type': 'health', 'health': health_data})}\n\n"
+
+        # Emit deployment alerts if scanned
+        if alerts_data:
+            yield f"data: {json.dumps({'type': 'alerts', 'alerts': alerts_data})}\n\n"
+
+        # Emit model history trigger if detected
+        if history_event:
+            yield f"data: {json.dumps({'type': 'history', 'history': history_event})}\n\n"
+
+        # Emit analytics trigger if detected
+        if analytics_event:
+            yield f"data: {json.dumps({'type': 'analytics', 'analytics': analytics_event})}\n\n"
 
         # After text stream, opportunistically generate a chart if the
         # message is about data and we have a dataset loaded

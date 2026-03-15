@@ -11,7 +11,8 @@ Living document for coordinating between bot instances and tracking ideation.
 <!-- Remove your entry when you commit your session wrap-up. -->
 
 
-
+## Day 4 (10:00) — Done
+Model monitoring alerts + chat-triggered visualizations — GET /api/projects/{id}/alerts (stale_model/no_predictions/drift_detected/poor_feedback alerts, critical-first sort); AlertsCard in DeploymentPanel (button + externalAlerts prop); _ALERTS_PATTERNS / _HISTORY_PATTERNS / _ANALYTICS_PATTERNS chat intent detection → {type: alerts/history/analytics} SSE events; 23 backend + 13 frontend = 36 new tests. Total: 1272 tests (934 backend + 338 frontend).
 
 
 ## Day 4 (06:00) — Done

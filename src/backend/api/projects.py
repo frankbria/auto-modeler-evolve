@@ -11,6 +11,7 @@ from db import get_session
 from models.dataset import Dataset
 from models.deployment import Deployment
 from models.feature_set import FeatureSet
+from models.feedback_record import FeedbackRecord
 from models.model_run import ModelRun
 from models.prediction_log import PredictionLog
 from models.project import Project
@@ -449,3 +450,185 @@ def _static_narrative(ctx: dict) -> str:
         )
 
     return "".join(parts)
+
+
+# ---------------------------------------------------------------------------
+# Model Monitoring Alerts
+# ---------------------------------------------------------------------------
+
+
+@router.get("/{project_id}/alerts")
+def get_project_alerts(
+    project_id: str,
+    session: Session = Depends(get_session),
+):
+    """Scan all active deployments for actionable health alerts.
+
+    For each active deployment in the project, checks:
+    - Model age (stale_model): deployed model > 60 days old
+    - Prediction drift (drift_detected): distribution shift from PredictionLog
+    - Real-world accuracy (poor_feedback): feedback accuracy < 70%
+    - Usage gap (no_predictions): active deployment with zero usage after 1 day
+
+    Returns alerts sorted by severity (critical → warning).
+    """
+    project = session.get(Project, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    deployments = session.exec(
+        select(Deployment).where(
+            Deployment.project_id == project_id,
+            Deployment.is_active == True,  # noqa: E712
+        )
+    ).all()
+
+    alerts: list[dict] = []
+    now = datetime.now(UTC).replace(tzinfo=None)
+
+    for dep in deployments:
+        run = session.get(ModelRun, dep.model_run_id)
+        algorithm_label = dep.algorithm or "model"
+
+        # --- Alert: stale model (age > 60 days) ---
+        age_days = 0
+        if run and run.created_at:
+            age_days = max(0, (now - run.created_at).days)
+        if age_days > 90:
+            alerts.append({
+                "deployment_id": dep.id,
+                "algorithm": algorithm_label,
+                "severity": "critical",
+                "type": "stale_model",
+                "message": f"Model '{algorithm_label}' is {age_days} days old — predictions may be unreliable.",
+                "recommendation": "Retrain the model with current data using the Retrain button.",
+            })
+        elif age_days > 60:
+            alerts.append({
+                "deployment_id": dep.id,
+                "algorithm": algorithm_label,
+                "severity": "warning",
+                "type": "stale_model",
+                "message": f"Model '{algorithm_label}' is {age_days} days old — consider refreshing.",
+                "recommendation": "Review recent predictions and consider retraining if accuracy has changed.",
+            })
+
+        # --- Alert: no predictions (deployed > 1 day with zero usage) ---
+        if dep.request_count == 0:
+            deployed_days = 0
+            if dep.created_at:
+                deployed_days = max(0, (now - dep.created_at).days)
+            if deployed_days >= 1:
+                alerts.append({
+                    "deployment_id": dep.id,
+                    "algorithm": algorithm_label,
+                    "severity": "warning",
+                    "type": "no_predictions",
+                    "message": f"'{algorithm_label}' has been deployed for {deployed_days} day(s) but received no predictions.",
+                    "recommendation": "Share the prediction dashboard link, or use the API to make predictions.",
+                })
+
+        # --- Alert: drift detection (requires 40+ prediction logs) ---
+        logs = session.exec(
+            select(PredictionLog).where(PredictionLog.deployment_id == dep.id)
+        ).all()
+        if len(logs) >= 40:
+            logs_sorted = sorted(logs, key=lambda l: l.created_at)
+            window = 20
+            baseline = logs_sorted[:window]
+            recent = logs_sorted[-window:]
+            problem_type = dep.problem_type or "regression"
+
+            drift_score: int | None = None
+            if problem_type == "regression":
+                b_vals = [l.prediction_numeric for l in baseline if l.prediction_numeric is not None]
+                r_vals = [l.prediction_numeric for l in recent if l.prediction_numeric is not None]
+                if b_vals and r_vals:
+                    b_mean = sum(b_vals) / len(b_vals)
+                    r_mean = sum(r_vals) / len(r_vals)
+                    b_std = (sum((v - b_mean) ** 2 for v in b_vals) / len(b_vals)) ** 0.5
+                    z = abs(r_mean - b_mean) / (b_std + 1e-9)
+                    drift_score = min(100, int(z * 33))
+            else:
+                b_preds = [l.prediction for l in baseline if l.prediction]
+                r_preds = [l.prediction for l in recent if l.prediction]
+                all_labels = set(b_preds + r_preds)
+                if all_labels:
+                    bn, rn = len(b_preds) or 1, len(r_preds) or 1
+                    tvd = 0.5 * sum(
+                        abs(b_preds.count(c) / bn - r_preds.count(c) / rn)
+                        for c in all_labels
+                    )
+                    drift_score = min(100, int(tvd * 200))
+
+            if drift_score is not None and drift_score >= 60:
+                severity = "critical" if drift_score >= 80 else "warning"
+                alerts.append({
+                    "deployment_id": dep.id,
+                    "algorithm": algorithm_label,
+                    "severity": severity,
+                    "type": "drift_detected",
+                    "message": f"Prediction drift detected for '{algorithm_label}' (drift score: {drift_score}/100).",
+                    "recommendation": "Review your input data for changes and consider retraining with more recent examples.",
+                })
+
+        # --- Alert: poor real-world accuracy (feedback accuracy < 70%) ---
+        feedback_records = session.exec(
+            select(FeedbackRecord).where(FeedbackRecord.deployment_id == dep.id)
+        ).all()
+        problem_type = dep.problem_type or "regression"
+        if problem_type == "classification":
+            rated = [fb for fb in feedback_records if fb.is_correct is not None]
+            if len(rated) >= 3:
+                accuracy = sum(1 for fb in rated if fb.is_correct) / len(rated)
+                if accuracy < 0.7:
+                    severity = "critical" if accuracy < 0.5 else "warning"
+                    alerts.append({
+                        "deployment_id": dep.id,
+                        "algorithm": algorithm_label,
+                        "severity": severity,
+                        "type": "poor_feedback",
+                        "message": (
+                            f"Real-world accuracy for '{algorithm_label}' is {accuracy:.0%} "
+                            f"(based on {len(rated)} feedback records)."
+                        ),
+                        "recommendation": "Retrain with updated labelled examples or add more features.",
+                    })
+        else:
+            paired = [fb for fb in feedback_records if fb.actual_value is not None]
+            if len(paired) >= 3:
+                preds = []
+                for fb in paired:
+                    if fb.prediction_log_id:
+                        log = session.get(PredictionLog, fb.prediction_log_id)
+                        if log and log.prediction_numeric is not None:
+                            preds.append((log.prediction_numeric, fb.actual_value))
+                if preds:
+                    mae = sum(abs(p - a) for p, a in preds) / len(preds)
+                    avg_actual = sum(a for _, a in preds) / len(preds)
+                    pct_err = abs(mae / (avg_actual + 1e-9))
+                    if pct_err > 0.30:
+                        severity = "critical" if pct_err > 0.50 else "warning"
+                        alerts.append({
+                            "deployment_id": dep.id,
+                            "algorithm": algorithm_label,
+                            "severity": severity,
+                            "type": "poor_feedback",
+                            "message": (
+                                f"Real-world predictions for '{algorithm_label}' are off by "
+                                f"{pct_err:.0%} on average (MAE: {mae:.3f})."
+                            ),
+                            "recommendation": "Gather more training data that reflects current patterns and retrain.",
+                        })
+
+    # Sort: critical first, then warning; then by deployment_id for stability
+    severity_order = {"critical": 0, "warning": 1}
+    alerts.sort(key=lambda a: (severity_order.get(a["severity"], 2), a["deployment_id"]))
+
+    return {
+        "project_id": project_id,
+        "alert_count": len(alerts),
+        "critical_count": sum(1 for a in alerts if a["severity"] == "critical"),
+        "warning_count": sum(1 for a in alerts if a["severity"] == "warning"),
+        "alerts": alerts,
+    }
