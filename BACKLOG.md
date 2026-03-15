@@ -10,11 +10,6 @@ Living document for coordinating between bot instances and tracking ideation.
 <!-- Brief description of what you're doing this session. -->
 <!-- Remove your entry when you commit your session wrap-up. -->
 
-## Day 4 (14:00) — Anomaly Detection
-First unsupervised ML capability: POST /api/data/{dataset_id}/anomalies using IsolationForest.
-Ranks every row by multi-dimensional anomaly score (0-100). Chat detects "find anomalies",
-"unusual records", "outliers" → emits {type: "anomalies"} SSE event. AnomalyCard frontend
-component shows summary + top N anomalous rows with scores and feature values.
 
 
 
@@ -62,6 +57,7 @@ Ideas discovered during sessions. Pick from here or add new ones.
 
 ## Recently Completed
 
+- Anomaly detection — Day 4 (14:00) — core/anomaly.py (IsolationForest, NaN-tolerant, score 0-100); POST /api/data/{id}/anomalies; chat _ANOMALY_PATTERNS → {type:anomalies} SSE + system prompt injection; AnomalyCard (summary, features used, scored table, scan button); explore suggestion chip "Are there any unusual records?"; 33 new tests; 978 backend + 359 frontend = 1337 total
 - Scenario comparison + chat suggestion chips — Day 4 (20:03) — POST /api/predict/{id}/scenarios (N labelled what-ifs → N predictions + best/worst summary); generate_suggestions() (6-state pool, dynamic artefact-aware additions); {type:suggestions} SSE event; clickable pill chips in frontend; 22 backend + 10 frontend = 32 new tests; 1299 total (951 backend + 348 frontend)
 
 - Model version history timeline — Day 4 (16:04) — GET /api/models/{project_id}/history; _compute_trend (linear regression slope, 2%-of-mean stability floor); VersionHistoryCard (LineChart + stats + run table + Current/Live badges); history loaded on mount + SSE refresh; fixed tuning-narrative mock; 37 new tests; 1254 total (911 backend + 343 frontend)
