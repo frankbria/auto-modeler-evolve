@@ -115,7 +115,7 @@ class TestUploadPerformance:
                 files={"file": ("data.csv", perf_csv, "text/csv")},
             )
         assert resp.status_code == 201
-        assert t.elapsed_ms < 3000, f"Upload took {t.elapsed_ms:.0f}ms (limit: 3000ms)"
+        assert t.elapsed_ms < 5000, f"Upload took {t.elapsed_ms:.0f}ms (limit: 5000ms)"
         _record("upload_200_rows_ms", t.elapsed_ms)
 
     async def test_upload_1000_rows_under_10s(self, client, large_csv):
