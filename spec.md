@@ -343,6 +343,18 @@ guides them forward through the natural flow.
       can see "is my model actually improving across sessions?"
       *Day 4 (16:04): 19 backend + 18 frontend = 37 new tests. Total: 911 backend + 343 frontend = 1254.*
 
+- [x] **Bulk scenario comparison** — POST /api/predict/{id}/scenarios accepts a base feature dict and up to 10 labelled
+      override sets. Returns the base prediction plus per-scenario result (delta, percent_change, direction, probabilities),
+      best/worst outcome identification, and a plain-English summary. Perfect for "what if revenue if region = X vs Y vs Z?"
+      VP meeting prep. api.deploy.scenarios() in frontend API client; ScenarioComparison + ScenarioResult types added.
+      *Day 4 (20:03): 12 backend + 10 frontend = 22 new tests. Total: 951 backend + 348 frontend = 1299.*
+- [x] **Chat follow-up suggestion chips** — After each AI response, the backend emits a {type: "suggestions"} SSE event
+      with 2-3 context-aware follow-up questions chosen from a per-state pool (6 states × 4-6 suggestions each) plus dynamic
+      additions based on available project artefacts (best algorithm name, accuracy metric, deployment request count).
+      Frontend shows clickable pill-shaped chips below the chat input; clicking prefills the input without sending.
+      generate_suggestions() in orchestrator.py independently testable. Directly implements the "smart colleague"
+      vision principle for non-technical users who don't know what to ask.
+      *Day 4 (20:03): included in 22 tests above.*
 - [x] **Model monitoring alerts + chat-triggered visualizations** — Proactive system-wide health alerts:
       GET /api/projects/{id}/alerts scans all active deployments for four alert types: stale_model
       (>60 days=warning, >90=critical), no_predictions (deployed >1 day with 0 requests), drift_detected

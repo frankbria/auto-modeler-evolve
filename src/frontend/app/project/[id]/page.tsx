@@ -98,6 +98,9 @@ export default function ProjectWorkspace() {
   const [selectedModelRunId, setSelectedModelRunId] = useState<string | null>(null)
   const [selectedModelAlgorithm, setSelectedModelAlgorithm] = useState<string | null>(null)
 
+  // Chat follow-up suggestion chips
+  const [chatSuggestions, setChatSuggestions] = useState<string[]>([])
+
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -223,6 +226,7 @@ export default function ProjectWorkspace() {
     if (!text || isStreaming) return
 
     setChatInput("")
+    setChatSuggestions([])  // clear previous suggestions when a new message is sent
     addMessage({
       role: "user",
       content: text,
@@ -263,6 +267,8 @@ export default function ProjectWorkspace() {
                 appendToLastMessage(json.content)
               } else if (json.type === "chart" && json.chart) {
                 attachChartToLastMessage(json.chart)
+              } else if (json.type === "suggestions" && Array.isArray(json.suggestions)) {
+                setChatSuggestions(json.suggestions)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -493,6 +499,24 @@ export default function ProjectWorkspace() {
           </ScrollArea>
 
           <div className="border-t p-3">
+            {/* Follow-up suggestion chips */}
+            {!isStreaming && chatSuggestions.length > 0 && (
+              <div className="mb-2 flex flex-wrap gap-1.5" data-testid="suggestion-chips">
+                {chatSuggestions.map((suggestion, i) => (
+                  <button
+                    key={i}
+                    onClick={() => {
+                      setChatInput(suggestion)
+                      setChatSuggestions([])
+                    }}
+                    className="rounded-full border border-primary/30 bg-primary/5 px-3 py-1 text-xs text-primary hover:bg-primary/10 transition-colors"
+                    data-testid="suggestion-chip"
+                  >
+                    {suggestion}
+                  </button>
+                ))}
+              </div>
+            )}
             <div className="flex gap-2">
               <Input
                 placeholder="Ask about your data..."

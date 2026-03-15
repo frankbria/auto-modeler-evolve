@@ -1,5 +1,11 @@
 # Journal
 
+## Day 4 — 20:03 — Scenario Comparison + Chat Suggestion Chips (951 backend + 348 frontend = 1299 tests)
+
+The platform had strong monitoring and drift detection, but two user-facing gaps remained: (1) analysts attending VP meetings needed to compare multiple "what if" scenarios in one shot rather than running the what-if endpoint repeatedly, and (2) non-technical users would land on the chat screen and not know what to ask — breaking the "smart colleague" promise from the vision.
+
+`POST /api/predict/{id}/scenarios` accepts a base feature dict and up to 10 labelled override sets, runs all predictions in one call, computes delta/percent_change/direction vs the base, identifies best/worst outcomes, and returns a plain-English summary ("Base revenue = $1,200. Best outcome: 'High volume' → $2,300 (+91.7%). Worst: 'Low season' → $850 (−29.2%)"). The limit of 10 scenarios is validated. `api.deploy.scenarios()` and the `ScenarioComparison`/`ScenarioResult` types were added to the frontend API client. Chat follow-up suggestion chips use a new `generate_suggestions()` function in `orchestrator.py` that picks 2-3 context-aware questions from a per-state pool (6 workflow states × 4-6 suggestions each) with dynamic additions based on real project artefacts (best algorithm name, R²/accuracy value, deployment request count). The backend emits a `{type: "suggestions"}` SSE event after each AI response; the frontend renders clickable pill chips above the input box that prefill without auto-sending. 22 backend tests + 10 frontend tests = 32 new. All 1299 tests pass.
+
 ## Day 4 — 10:00 — Model Monitoring Alerts + Chat-Triggered Visualizations (934 backend + 338 frontend = 1272 tests)
 
 The version history timeline (Day 4 16:04) gave analysts the ability to see if their model was improving, but there was no proactive signal — no way for the system to say "hey, something looks wrong." This session adds exactly that: a **model monitoring alerts system** that scans all active deployments and surfaces health issues automatically.

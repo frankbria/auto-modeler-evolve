@@ -317,3 +317,133 @@ def build_system_prompt(
             )
 
     return "\n\n".join(parts)
+
+
+# ---------------------------------------------------------------------------
+# Suggestion generation — context-aware follow-up prompts for the user
+# ---------------------------------------------------------------------------
+
+# Per-state base suggestions surfaced when no more specific context applies
+_STATE_SUGGESTIONS: dict[str, list[str]] = {
+    "upload": [
+        "Show me the sample sales dataset",
+        "What kind of data works best?",
+        "How do I import from Google Sheets?",
+    ],
+    "explore": [
+        "Which column has the most missing values?",
+        "Are there any seasonal patterns?",
+        "Show me a correlation heatmap",
+        "What are the main outliers?",
+        "Which features are most correlated?",
+    ],
+    "shape": [
+        "What features do you recommend?",
+        "Explain one-hot encoding in plain language",
+        "Apply all suggested features",
+        "What should I use as my target column?",
+    ],
+    "model": [
+        "Train all recommended models",
+        "Which algorithm is easiest to explain?",
+        "What do the accuracy numbers mean?",
+        "Show me the feature importance",
+    ],
+    "validate": [
+        "Is this model good enough to deploy?",
+        "Where does the model struggle?",
+        "What's driving the top predictions?",
+        "Show me the feature importance",
+        "Can I improve accuracy?",
+    ],
+    "deploy": [
+        "How do I share this with my team?",
+        "Is my model still accurate?",
+        "How many predictions have been made?",
+        "Should I retrain the model?",
+        "Check for any alerts",
+    ],
+}
+
+
+def generate_suggestions(
+    state: str,
+    dataset: Optional[Dataset] = None,
+    feature_set: Optional[FeatureSet] = None,
+    model_runs: Optional[list[ModelRun]] = None,
+    deployment: Optional[Deployment] = None,
+    last_user_message: str = "",
+) -> list[str]:
+    """Return 3 context-aware follow-up suggestions for the current project state.
+
+    Suggestions are chosen from a state-specific pool, with dynamic additions
+    based on what data is actually available in the project (e.g., offer to show
+    a correlation heatmap only if a dataset exists, suggest retraining only if
+    a deployment exists).
+
+    Args:
+        state: Current workflow state (upload/explore/shape/model/validate/deploy)
+        dataset: The project's active dataset, if any.
+        feature_set: The active feature set, if any.
+        model_runs: All model runs for the project.
+        deployment: The active deployment, if any.
+        last_user_message: The user's most recent message (used to avoid
+            echoing back nearly the same suggestion they just asked).
+
+    Returns:
+        List of 2-3 plain-English question strings the user could click to send.
+    """
+    if model_runs is None:
+        model_runs = []
+
+    # Start with state-specific pool and add dynamic suggestions
+    pool: list[str] = list(_STATE_SUGGESTIONS.get(state, []))
+
+    # Dynamic additions based on project state
+    completed_runs = [mr for mr in model_runs if mr.status == "done"]
+    selected_run = next((mr for mr in completed_runs if mr.is_selected), None)
+
+    if state == "explore" and dataset:
+        # If dataset has many columns, offer a quick stats summary
+        if dataset.column_count and dataset.column_count > 5:
+            pool.insert(0, "Give me a quick summary of all columns")
+        # Offer to move forward if user seems ready
+        pool.append("I'm ready to build a model — what should I predict?")
+
+    if state == "shape" and feature_set and feature_set.target_column:
+        pool.insert(0, f"Why did you suggest predicting '{feature_set.target_column}'?")
+
+    if state == "model" and completed_runs:
+        best_run = max(completed_runs, key=lambda mr: _primary_metric(mr) or 0.0)
+        pool.insert(0, f"Why is {best_run.algorithm} the best option?")
+        pool.append("How accurate is this model in practical terms?")
+
+    if state == "validate" and selected_run:
+        m = json.loads(selected_run.metrics) if selected_run.metrics else {}
+        if "r2" in m:
+            pool.insert(0, f"What does R²={m['r2']:.2f} mean for my business?")
+        elif "accuracy" in m:
+            pool.insert(0, f"What does {m['accuracy']:.0%} accuracy mean in practice?")
+
+    if state == "deploy" and deployment:
+        pool.insert(0, "How do I use the prediction API?")
+        if deployment.request_count > 0:
+            pool.insert(1, f"Show me the last {min(5, deployment.request_count)} predictions")
+
+    # Filter out any suggestion that's too similar to what the user just asked
+    lower_msg = last_user_message.lower()
+    filtered = [
+        s for s in pool
+        if not any(word in lower_msg for word in s.lower().split()[:3])
+    ]
+    # Fall back to unfiltered pool if we over-filtered
+    candidate_pool = filtered if len(filtered) >= 3 else pool
+
+    # Return first 3 unique suggestions
+    seen: set[str] = set()
+    result: list[str] = []
+    for s in candidate_pool:
+        if s not in seen and len(result) < 3:
+            seen.add(s)
+            result.append(s)
+    return result

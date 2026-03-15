@@ -631,3 +631,32 @@ export interface ProjectAlerts {
   warning_count: number
   alerts: ProjectAlert[]
 }
+
+// ---------------------------------------------------------------------------
+// Scenario Comparison (Phase 8)
+// ---------------------------------------------------------------------------
+
+export interface ScenarioItem {
+  label: string
+  overrides: Record<string, string | number>
+}
+
+export interface ScenarioResult {
+  label: string
+  overrides: Record<string, string | number>
+  prediction: string | number
+  delta: number | null
+  percent_change: number | null
+  direction: string | null
+  probabilities: Record<string, number> | null
+}
+
+export interface ScenarioComparison {
+  deployment_id: string
+  base_prediction: string | number
+  base_probabilities: Record<string, number> | null
+  problem_type: string | null
+  target_column: string | null
+  scenarios: ScenarioResult[]
+  summary: string
+}

@@ -461,5 +461,19 @@ export const api = {
         if (!r.ok) throw new Error(`HTTP ${r.status}`)
         return r.json()
       }),
+
+    scenarios: (
+      deploymentId: string,
+      base: Record<string, unknown>,
+      scenarios: Array<{ label: string; overrides: Record<string, unknown> }>
+    ): Promise<import("./types").ScenarioComparison> =>
+      fetch(`${API_URL}/api/predict/${deploymentId}/scenarios`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ base, scenarios }),
+      }).then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        return r.json()
+      }),
   },
 }

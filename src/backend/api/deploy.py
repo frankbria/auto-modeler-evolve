@@ -7,6 +7,7 @@ Routes:
   DELETE /api/deploy/{deployment_id}                — undeploy (soft delete)
   POST   /api/predict/{deployment_id}               — single prediction (JSON → JSON)
   POST   /api/predict/{deployment_id}/batch         — batch prediction (CSV → CSV)
+  POST   /api/predict/{deployment_id}/scenarios     — bulk scenario comparison (N what-ifs in one call)
   GET    /api/deploy/{deployment_id}/analytics      — prediction usage analytics
   GET    /api/deploy/{deployment_id}/logs           — paginated prediction log
 """
@@ -759,7 +760,175 @@ def whatif_prediction(
 
 
 # ---------------------------------------------------------------------------
-# 11. Prediction feedback — record actual outcomes
+# 11. Bulk scenario comparison — run multiple what-if inputs side by side
+# ---------------------------------------------------------------------------
+
+
+class ScenarioItem(BaseModel):
+    label: str           # Human-readable label for this scenario (e.g. "High Marketing")
+    overrides: dict      # Feature overrides on top of base (same as WhatIfRequest.overrides)
+
+
+class ScenarioRequest(BaseModel):
+    base: dict           # Base feature values (used as the baseline prediction)
+    scenarios: list[ScenarioItem]  # Up to 10 scenarios to compare
+
+
+@router.post("/api/predict/{deployment_id}/scenarios")
+def compare_scenarios(
+    deployment_id: str,
+    body: ScenarioRequest,
+    session: Session = Depends(get_session),
+):
+    """Run multiple prediction scenarios against a shared base case.
+
+    Accepts a base feature dict and up to 10 labelled override sets.
+    Returns the base prediction plus a result for each scenario including
+    delta, percent change, and direction vs the base.  Ideal for "what if
+    revenue if region = X vs Y vs Z?" analysis.
+
+    Request body:
+        {
+          "base": {feature: value, ...},
+          "scenarios": [
+            {"label": "Scenario A", "overrides": {feature: new_value, ...}},
+            ...
+          ]
+        }
+
+    Returns:
+        {
+          "deployment_id": str,
+          "base_prediction": decoded value,
+          "problem_type": str,
+          "target_column": str,
+          "scenarios": [
+            {
+              "label": str,
+              "overrides": dict,
+              "prediction": decoded value,
+              "delta": float | None,
+              "percent_change": float | None,
+              "direction": str | None,   # "increase" | "decrease" | "no change"
+              "probabilities": dict | None,  # classification only
+            }
+          ],
+          "summary": str,  # plain-English comparison of all scenarios
+        }
+    """
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment or not deployment.is_active:
+        raise HTTPException(status_code=404, detail="Deployment not found or inactive")
+
+    if not deployment.pipeline_path or not Path(deployment.pipeline_path).exists():
+        raise HTTPException(status_code=500, detail="Prediction pipeline not found on disk")
+
+    run = session.get(ModelRun, deployment.model_run_id)
+    if not run or not run.model_path or not Path(run.model_path).exists():
+        raise HTTPException(status_code=500, detail="Model file not found on disk")
+
+    if len(body.scenarios) > 10:
+        raise HTTPException(status_code=400, detail="Maximum 10 scenarios allowed per request")
+
+    if not body.scenarios:
+        raise HTTPException(status_code=400, detail="At least one scenario is required")
+
+    # Base prediction
+    base_result = predict_single(deployment.pipeline_path, run.model_path, body.base)
+    base_pred = base_result["prediction"]
+
+    # Numeric base value for delta calculations
+    base_numeric: float | None = None
+    try:
+        base_numeric = float(base_pred)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        pass
+
+    # Run each scenario
+    scenario_results = []
+    for scenario in body.scenarios:
+        modified_input = {**body.base, **scenario.overrides}
+        result = predict_single(deployment.pipeline_path, run.model_path, modified_input)
+        pred = result["prediction"]
+
+        delta: float | None = None
+        percent_change: float | None = None
+        direction: str | None = None
+
+        if base_numeric is not None:
+            try:
+                mod_num = float(pred)  # type: ignore[arg-type]
+                delta = round(mod_num - base_numeric, 4)
+                if base_numeric != 0:
+                    percent_change = round((delta / abs(base_numeric)) * 100, 2)
+                direction = "increase" if delta > 0 else ("decrease" if delta < 0 else "no change")
+            except (TypeError, ValueError):
+                pass
+        else:
+            # Classification: direction based on class change
+            direction = "same" if pred == base_pred else "changed"
+
+        scenario_results.append({
+            "label": scenario.label,
+            "overrides": scenario.overrides,
+            "prediction": pred,
+            "delta": delta,
+            "percent_change": percent_change,
+            "direction": direction,
+            "probabilities": result.get("probabilities"),
+        })
+
+    # Build a plain-English summary
+    target_col = deployment.target_column or "the target"
+    if base_numeric is not None:
+        # Regression: find best and worst scenarios
+        sorted_by_delta = sorted(
+            [s for s in scenario_results if s["delta"] is not None],
+            key=lambda s: s["delta"],  # type: ignore[arg-type]
+            reverse=True,
+        )
+        if sorted_by_delta:
+            best = sorted_by_delta[0]
+            worst = sorted_by_delta[-1]
+            if best["label"] == worst["label"]:
+                summary = (
+                    f"Base {target_col} = {base_pred}. "
+                    f"Scenario '{best['label']}' predicts {best['prediction']} "
+                    f"(Δ {best['delta']:+.4f})."
+                )
+            else:
+                summary = (
+                    f"Base {target_col} = {base_pred}. "
+                    f"Best outcome: '{best['label']}' → {best['prediction']} "
+                    f"({best['percent_change']:+.1f}%). "
+                    f"Worst outcome: '{worst['label']}' → {worst['prediction']} "
+                    f"({worst['percent_change']:+.1f}%)."
+                    if (best["percent_change"] is not None and worst["percent_change"] is not None)
+                    else f"Base = {base_pred}. Range: {worst['prediction']} to {best['prediction']}."
+                )
+        else:
+            summary = f"Base {target_col} = {base_pred}. {len(scenario_results)} scenario(s) computed."
+    else:
+        # Classification: count class changes
+        changed = sum(1 for s in scenario_results if s["direction"] == "changed")
+        summary = (
+            f"Base predicted class: '{base_pred}'. "
+            f"{changed} of {len(scenario_results)} scenario(s) predict a different class."
+        )
+
+    return {
+        "deployment_id": deployment_id,
+        "base_prediction": base_pred,
+        "base_probabilities": base_result.get("probabilities"),
+        "problem_type": deployment.problem_type,
+        "target_column": deployment.target_column,
+        "scenarios": scenario_results,
+        "summary": summary,
+    }
+
+
+# ---------------------------------------------------------------------------
+# 12. Prediction feedback — record actual outcomes
 # ---------------------------------------------------------------------------
 
 

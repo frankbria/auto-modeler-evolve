@@ -10,7 +10,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
-from chat.orchestrator import build_system_prompt
+from chat.orchestrator import build_system_prompt, detect_state, generate_suggestions
 from core.query_engine import generate_chart_for_message
 from db import get_session
 from models.conversation import Conversation
@@ -617,6 +617,19 @@ def send_message(
             "Reference the prediction count in your response and mention the Analytics card."
         )
 
+    # Pre-compute follow-up suggestions (based on state + current message)
+    current_state = detect_state(
+        ctx["dataset"], ctx["feature_set"], ctx["model_runs"], ctx["deployment"]
+    )
+    suggestions_list = generate_suggestions(
+        state=current_state,
+        dataset=ctx["dataset"],
+        feature_set=ctx["feature_set"],
+        model_runs=ctx["model_runs"],
+        deployment=ctx["deployment"],
+        last_user_message=body.message,
+    )
+
     def stream_response():
         full_response = ""
         try:
@@ -677,6 +690,10 @@ def send_message(
         # Emit analytics trigger if detected
         if analytics_event:
             yield f"data: {json.dumps({'type': 'analytics', 'analytics': analytics_event})}\n\n"
+
+        # Emit follow-up suggestion chips (always, if we have any)
+        if suggestions_list:
+            yield f"data: {json.dumps({'type': 'suggestions', 'suggestions': suggestions_list})}\n\n"
 
         # After text stream, opportunistically generate a chart if the
         # message is about data and we have a dataset loaded
