@@ -19,6 +19,8 @@ import type {
   DatasetListItem,
   JoinKeySuggestion,
   MergeResponse,
+  TuningResult,
+  ProjectNarrative,
 } from "./types"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
@@ -55,6 +57,11 @@ export const api = {
 
     delete: (id: string): Promise<Response> =>
       fetch(`${API_URL}/api/projects/${id}`, { method: "DELETE" }),
+
+    narrative: (id: string): Promise<ProjectNarrative> =>
+      fetch(`${API_URL}/api/projects/${id}/narrative`, { method: "POST" }).then((r) =>
+        r.json()
+      ),
   },
 
   data: {
@@ -338,8 +345,10 @@ export const api = {
     readiness: (modelRunId: string): Promise<import("./types").ModelReadiness> =>
       fetch(`${API_URL}/api/models/${modelRunId}/readiness`).then((r) => r.json()),
 
-    tune: (modelRunId: string): Promise<{ tuned_model_run_id: string; status: string; message: string }> =>
-      fetch(`${API_URL}/api/models/${modelRunId}/tune`, { method: "POST" }).then((r) => r.json()),
+    tune: (modelRunId: string): Promise<TuningResult> =>
+      fetch(`${API_URL}/api/models/${modelRunId}/tune`, { method: "POST" }).then((r) =>
+        r.json()
+      ),
   },
 
   validation: {

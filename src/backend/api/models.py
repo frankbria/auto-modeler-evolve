@@ -32,12 +32,13 @@ from core.chart_builder import build_model_comparison_radar
 from core.trainer import (
     CLASSIFICATION_ALGORITHMS,
     REGRESSION_ALGORITHMS,
+    get_tuning_grid,
     pick_best_model,
     prepare_features,
     recommend_models,
     train_single_model,
+    tune_model,
 )
-from core.tuner import is_tunable, tune_model
 from db import get_session
 from models.dataset import Dataset
 from models.feature_set import FeatureSet
@@ -901,101 +902,24 @@ def get_model_readiness(
 
 
 # ---------------------------------------------------------------------------
-# Hyperparameter auto-tuning
+# 9. Hyperparameter auto-tuning
 # ---------------------------------------------------------------------------
 
-def _tune_in_background(
-    original_run_id: str,
-    tuned_run_id: str,
-    project_id: str,
-    df: pd.DataFrame,
-    feature_cols: list[str],
-    target_col: str,
-    algorithm: str,
-    problem_type: str,
-    model_dir: Path,
-) -> None:
-    """Background thread: run RandomizedSearchCV and save a new tuned ModelRun."""
-    with Session(_db.engine) as session:
-        run = session.get(ModelRun, tuned_run_id)
-        if not run:
-            _finish_training_thread(project_id)
-            return
-        run.status = "training"
-        session.add(run)
-        session.commit()
 
-    _push_event(project_id, {
-        "type": "status",
-        "run_id": tuned_run_id,
-        "status": "training",
-        "algorithm": f"{algorithm}_tuned",
-    })
-
-    try:
-        X, y, _ = prepare_features(df, feature_cols, target_col, problem_type)
-        result = tune_model(
-            algorithm=algorithm,
-            problem_type=problem_type,
-            X=X,
-            y=y,
-            model_run_id=original_run_id,
-            model_dir=model_dir,
-        )
-
-        with Session(_db.engine) as session:
-            run = session.get(ModelRun, tuned_run_id)
-            if run:
-                run.status = "done"
-                run.metrics = json.dumps(result["metrics"])
-                run.model_path = result["model_path"]
-                run.training_duration_ms = result["training_duration_ms"]
-                run.summary = result["summary"]
-                run.hyperparameters = json.dumps(result["best_params"])
-                session.add(run)
-                session.commit()
-
-        _push_event(project_id, {
-            "type": "done",
-            "run_id": tuned_run_id,
-            "status": "done",
-            "algorithm": f"{algorithm}_tuned",
-            "metrics": result["metrics"],
-            "summary": result["summary"],
-            "training_duration_ms": result["training_duration_ms"],
-            "is_tuned": True,
-        })
-
-    except Exception as exc:  # noqa: BLE001
-        with Session(_db.engine) as session:
-            run = session.get(ModelRun, tuned_run_id)
-            if run:
-                run.status = "failed"
-                run.error_message = str(exc)[:500]
-                session.add(run)
-                session.commit()
-
-        _push_event(project_id, {
-            "type": "failed",
-            "run_id": tuned_run_id,
-            "status": "failed",
-            "algorithm": f"{algorithm}_tuned",
-            "error": str(exc)[:200],
-        })
-
-    finally:
-        _finish_training_thread(project_id)
-
-
-@router.post("/api/models/{model_run_id}/tune", status_code=202)
-def tune_existing_model(
+@router.post("/api/models/{model_run_id}/tune", status_code=201)
+def tune_model_endpoint(
     model_run_id: str,
     session: Session = Depends(get_session),
 ):
-    """Auto-tune hyperparameters for a trained model using RandomizedSearchCV.
+    """Auto-tune hyperparameters for a completed model run.
 
-    Creates a new ModelRun with `{algorithm}_tuned` and the best-found
-    hyperparameters. Returns immediately; poll /runs for status.
+    Runs RandomizedSearchCV on the algorithm used in the original run,
+    creates a new ModelRun with the tuned model, and returns a comparison
+    of before vs. after metrics.
+
+    - For algorithms with no tunable hyperparameters (e.g. Linear Regression),
+      returns tunable=false with an explanation.
+    - The new run is NOT automatically selected; the user can compare and choose.
     """
     run = session.get(ModelRun, model_run_id)
     if not run:
@@ -1003,85 +927,142 @@ def tune_existing_model(
     if run.status != "done":
         raise HTTPException(
             status_code=400,
-            detail=f"Cannot tune a model with status '{run.status}'. Wait for training to complete.",
+            detail=f"Can only tune completed runs (status is '{run.status}').",
         )
 
-    if not is_tunable(run.algorithm):
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f"Algorithm '{run.algorithm}' has no tunable hyperparameters. "
-                "Try Random Forest, Gradient Boosting, XGBoost, or LightGBM."
-            ),
-        )
-
-    # Gather project context
-    project_id = run.project_id
+    # Gather feature set + dataset
     feature_set = session.get(FeatureSet, run.feature_set_id) if run.feature_set_id else None
     if not feature_set:
-        raise HTTPException(
-            status_code=400,
-            detail="No active feature set found for this model run.",
-        )
+        raise HTTPException(status_code=400, detail="Feature set not found for this run.")
 
     dataset = session.exec(
-        select(Dataset).where(Dataset.project_id == project_id)
+        select(Dataset).where(Dataset.id == feature_set.dataset_id)
     ).first()
-    if not dataset or not Path(dataset.file_path).exists():
-        raise HTTPException(status_code=404, detail="Dataset file not found on disk")
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found.")
+
+    file_path = Path(dataset.file_path)
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Dataset file not found on disk.")
 
     problem_type = feature_set.problem_type or "regression"
     target_col = feature_set.target_column or ""
 
-    df = pd.read_csv(dataset.file_path)
+    # Check if algorithm is tunable before loading data
+    param_grid = get_tuning_grid(run.algorithm)
+    if param_grid is None:
+        original_metrics = json.loads(run.metrics) if run.metrics else {}
+        return {
+            "original_model_run_id": model_run_id,
+            "tuned_model_run_id": None,
+            "algorithm": run.algorithm,
+            "tunable": False,
+            "original_metrics": original_metrics,
+            "tuned_metrics": None,
+            "best_params": None,
+            "improved": False,
+            "improvement_pct": None,
+            "summary": (
+                f"{run.algorithm.replace('_', ' ').title()} has no hyperparameters "
+                "to tune — it's already using the optimal configuration."
+            ),
+        }
+
+    # Load + transform dataset
+    df = pd.read_csv(file_path)
     transforms = json.loads(feature_set.transformations or "[]")
     if transforms:
-        from core.feature_engine import apply_transformations as _apply
-        df, _ = _apply(df, transforms)
+        from core.feature_engine import apply_transformations
+        df, _ = apply_transformations(df, transforms)
 
     feature_cols = [c for c in df.columns if c != target_col]
-    model_dir = MODELS_DIR / project_id
+    model_dir = MODELS_DIR / run.project_id
 
-    # Create the new tuned model run
+    X, y, _ = prepare_features(df, feature_cols, target_col, problem_type)
+
+    # Create placeholder ModelRun for tuned model
     tuned_run = ModelRun(
-        project_id=project_id,
-        feature_set_id=feature_set.id,
-        algorithm=f"{run.algorithm}_tuned",
-        hyperparameters=json.dumps({}),
-        status="pending",
+        project_id=run.project_id,
+        feature_set_id=run.feature_set_id,
+        algorithm=run.algorithm,
+        hyperparameters=json.dumps({"tuned": True, "original_run_id": model_run_id}),
+        status="training",
     )
     session.add(tuned_run)
     session.commit()
     session.refresh(tuned_run)
 
-    with _lock:
-        _training_queues[project_id] = queue.Queue()
-        _training_counters[project_id] = 1
+    try:
+        result = tune_model(X, y, run.algorithm, problem_type, model_dir, tuned_run.id)
+    except Exception as exc:
+        tuned_run.status = "failed"
+        tuned_run.error_message = str(exc)[:500]
+        session.add(tuned_run)
+        session.commit()
+        raise HTTPException(status_code=500, detail=f"Tuning failed: {exc}") from exc
 
-    t = threading.Thread(
-        target=_tune_in_background,
-        args=(
-            model_run_id,
-            tuned_run.id,
-            project_id,
-            df.copy(),
-            feature_cols,
-            target_col,
-            run.algorithm,
-            problem_type,
-            model_dir,
-        ),
-        daemon=True,
-    )
-    t.start()
+    original_metrics = json.loads(run.metrics) if run.metrics else {}
+    tuned_metrics = result["metrics"]
+
+    # Determine improvement
+    improved = False
+    improvement_pct: float | None = None
+    if tuned_metrics and original_metrics:
+        primary = "r2" if problem_type == "regression" else "accuracy"
+        orig_score = original_metrics.get(primary, 0.0)
+        tuned_score = tuned_metrics.get(primary, 0.0)
+        if orig_score and orig_score != 0:
+            improvement_pct = round(((tuned_score - orig_score) / abs(orig_score)) * 100, 2)
+        improved = bool(tuned_score > orig_score)
+
+    # Save tuned run
+    tuned_run.status = "done"
+    tuned_run.metrics = json.dumps(tuned_metrics)
+    tuned_run.model_path = result["model_path"]
+    tuned_run.training_duration_ms = result["training_duration_ms"]
+    tuned_run.summary = result["summary"]
+    tuned_run.hyperparameters = json.dumps({
+        "tuned": True,
+        "original_run_id": model_run_id,
+        "best_params": result["best_params"],
+    })
+    session.add(tuned_run)
+    session.commit()
+    session.refresh(tuned_run)
+
+    # Build human-readable comparison summary
+    if improved and improvement_pct is not None:
+        primary = "R²" if problem_type == "regression" else "accuracy"
+        orig_val = original_metrics.get("r2" if problem_type == "regression" else "accuracy", 0)
+        tuned_val = tuned_metrics.get("r2" if problem_type == "regression" else "accuracy", 0)
+        comparison_summary = (
+            f"Tuning improved {primary} from {orig_val:.3f} to {tuned_val:.3f} "
+            f"(+{improvement_pct:.1f}%). Best settings: "
+            + ", ".join(f"{k}={v}" for k, v in result["best_params"].items())
+            + "."
+        )
+    elif improvement_pct is not None and improvement_pct < 0:
+        comparison_summary = (
+            "Tuning did not improve this model — the default settings are already "
+            "well-suited for your data. The original model remains the best choice."
+        )
+    else:
+        comparison_summary = (
+            "Tuning complete. Metrics are equivalent to the default — "
+            "the original hyperparameters were already close to optimal."
+        )
 
     return {
         "original_model_run_id": model_run_id,
         "tuned_model_run_id": tuned_run.id,
         "algorithm": run.algorithm,
-        "status": "tuning_started",
-        "message": (
-            f"Tuning {run.algorithm} with RandomizedSearchCV (20 iterations, 3-fold CV). "
-            "Poll GET /api/models/{project_id}/runs for status updates."
-        ),
+        "tunable": True,
+        "original_metrics": original_metrics,
+        "tuned_metrics": tuned_metrics,
+        "best_params": result["best_params"],
+        "tuned_cv_score": result["tuned_cv_score"],
+        "improved": improved,
+        "improvement_pct": improvement_pct,
+        "summary": comparison_summary,
+        "tuned_run": _run_to_dict(tuned_run),
     }

@@ -457,3 +457,34 @@ export interface WhatIfResult {
   original_probabilities?: Record<string, number>
   modified_probabilities?: Record<string, number>
 }
+
+// ---------------------------------------------------------------------------
+// Hyperparameter Tuning (Phase 8)
+// ---------------------------------------------------------------------------
+
+export interface TuningResult {
+  original_model_run_id: string
+  tuned_model_run_id: string | null
+  algorithm: string
+  tunable: boolean
+  original_metrics: Record<string, number> | null
+  tuned_metrics: Record<string, number> | null
+  best_params: Record<string, unknown> | null
+  tuned_cv_score: number | null
+  improved: boolean
+  improvement_pct: number | null
+  summary: string
+  tuned_run: ModelRun | null
+}
+
+// ---------------------------------------------------------------------------
+// AI Project Narrative (Phase 8)
+// ---------------------------------------------------------------------------
+
+export interface ProjectNarrative {
+  project_id: string
+  project_name: string
+  narrative: string
+  generated_at: string
+  context: Record<string, unknown>
+}

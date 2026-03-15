@@ -1,3 +1,5 @@
+import json
+import os
 from datetime import UTC, datetime
 from typing import Optional
 
@@ -7,7 +9,10 @@ from sqlmodel import Session, select
 
 from db import get_session
 from models.dataset import Dataset
+from models.deployment import Deployment
+from models.feature_set import FeatureSet
 from models.model_run import ModelRun
+from models.prediction_log import PredictionLog
 from models.project import Project
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
@@ -169,3 +174,278 @@ def delete_project(project_id: str, session: Session = Depends(get_session)):
         raise HTTPException(status_code=404, detail="Project not found")
     session.delete(project)
     session.commit()
+
+
+# ---------------------------------------------------------------------------
+# AI Project Narrative
+# ---------------------------------------------------------------------------
+
+
+@router.post("/{project_id}/narrative")
+def generate_project_narrative(
+    project_id: str,
+    session: Session = Depends(get_session),
+):
+    """Generate a plain-English executive summary of the project.
+
+    Gathers all available project artifacts — dataset stats, engineered features,
+    trained models, deployment status, prediction analytics — and synthesises them
+    into a coherent narrative that a business analyst can share with stakeholders.
+
+    Uses Claude when ANTHROPIC_API_KEY is available; falls back to a structured
+    static summary otherwise.
+    """
+    project = session.get(Project, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    # ---- Gather context -------------------------------------------------------
+
+    dataset = session.exec(
+        select(Dataset).where(Dataset.project_id == project_id)
+    ).first()
+
+    feature_set = None
+    if dataset:
+        feature_set = session.exec(
+            select(FeatureSet).where(
+                FeatureSet.dataset_id == dataset.id,
+                FeatureSet.is_active == True,  # noqa: E712
+            )
+        ).first()
+
+    completed_runs = session.exec(
+        select(ModelRun).where(
+            ModelRun.project_id == project_id,
+            ModelRun.status == "done",
+        )
+    ).all()
+
+    selected_run = next((r for r in completed_runs if r.is_selected), None)
+    best_run = selected_run or (completed_runs[0] if completed_runs else None)
+
+    deployment = None
+    prediction_count = 0
+    if best_run and best_run.is_deployed:
+        deployment = session.exec(
+            select(Deployment).where(
+                Deployment.model_run_id == best_run.id,
+                Deployment.is_active == True,  # noqa: E712
+            )
+        ).first()
+        if deployment:
+            prediction_count = session.exec(
+                select(PredictionLog).where(
+                    PredictionLog.deployment_id == deployment.id
+                )
+            ).__class__  # just count
+            logs = session.exec(
+                select(PredictionLog).where(
+                    PredictionLog.deployment_id == deployment.id
+                )
+            ).all()
+            prediction_count = len(logs)
+
+    # Build context dict for narrative generation
+    ctx: dict = {
+        "project_name": project.name,
+        "project_description": project.description or "",
+        "created_at": project.created_at.strftime("%B %d, %Y") if project.created_at else "recently",
+    }
+
+    if dataset:
+        profile = json.loads(dataset.profile or "{}") if dataset.profile else {}
+        ctx["dataset"] = {
+            "filename": dataset.filename,
+            "rows": dataset.row_count,
+            "columns": dataset.column_count,
+            "missing_pct": profile.get("missing_percentage", 0),
+            "has_outliers": bool(profile.get("outlier_columns")),
+        }
+
+    if feature_set:
+        transforms = json.loads(feature_set.transformations or "[]")
+        column_mapping = json.loads(feature_set.column_mapping or "{}")
+        ctx["features"] = {
+            "target_column": feature_set.target_column,
+            "problem_type": feature_set.problem_type,
+            "n_transforms": len(transforms),
+            "n_engineered_features": len(column_mapping),
+            "transform_types": list({t.get("type", "") for t in transforms if isinstance(t, dict)}),
+        }
+
+    if best_run:
+        metrics = json.loads(best_run.metrics) if best_run.metrics else {}
+        ctx["model"] = {
+            "algorithm": best_run.algorithm,
+            "metrics": metrics,
+            "summary": best_run.summary or "",
+            "is_selected": best_run.is_selected,
+            "n_models_compared": len(completed_runs),
+        }
+
+    if deployment:
+        ctx["deployment"] = {
+            "is_live": True,
+            "endpoint": deployment.endpoint_path,
+            "dashboard_url": deployment.dashboard_url,
+            "prediction_count": prediction_count,
+            "created_at": deployment.created_at.strftime("%B %d, %Y") if deployment.created_at else "recently",
+        }
+    else:
+        ctx["deployment"] = {"is_live": False}
+
+    # ---- Generate narrative ---------------------------------------------------
+
+    narrative = _generate_narrative(ctx)
+
+    return {
+        "project_id": project_id,
+        "project_name": project.name,
+        "narrative": narrative,
+        "context": ctx,
+        "generated_at": datetime.now(UTC).replace(tzinfo=None).isoformat(),
+    }
+
+
+def _generate_narrative(ctx: dict) -> str:
+    """Generate narrative via Claude API or static fallback."""
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if api_key and not api_key.startswith("sk-placeholder"):
+        try:
+            return _call_claude_narrative(ctx, api_key)
+        except Exception:  # noqa: BLE001
+            pass  # Fall through to static narrative
+
+    return _static_narrative(ctx)
+
+
+def _call_claude_narrative(ctx: dict, api_key: str) -> str:
+    """Call Claude to generate the narrative."""
+    import anthropic
+
+    dataset_section = ""
+    if "dataset" in ctx:
+        d = ctx["dataset"]
+        dataset_section = (
+            f"Dataset: {d['filename']} ({d['rows']:,} rows, {d['columns']} columns, "
+            f"{d['missing_pct']:.1f}% missing values)"
+        )
+
+    features_section = ""
+    if "features" in ctx:
+        f = ctx["features"]
+        features_section = (
+            f"Feature engineering: target column '{f['target_column']}', "
+            f"problem type: {f['problem_type']}, "
+            f"{f['n_transforms']} transformations applied, "
+            f"{f['n_engineered_features']} features engineered"
+        )
+
+    model_section = ""
+    if "model" in ctx:
+        m = ctx["model"]
+        metrics_str = ", ".join(f"{k}={v}" for k, v in m["metrics"].items() if k not in ("train_size", "test_size"))
+        model_section = (
+            f"Best model: {m['algorithm']} ({metrics_str}), "
+            f"compared against {m['n_models_compared']} total model(s)"
+        )
+
+    deploy_section = ""
+    if ctx.get("deployment", {}).get("is_live"):
+        dep = ctx["deployment"]
+        deploy_section = (
+            f"Deployment: live since {dep['created_at']}, "
+            f"{dep['prediction_count']} predictions made so far"
+        )
+
+    prompt = f"""You are summarising an AutoModeler project for a business stakeholder.
+Write a concise, plain-English executive summary (3-5 paragraphs) for the project named "{ctx['project_name']}".
+Focus on: what was analysed, what was discovered, the model performance in simple terms, and the business value.
+Avoid technical jargon. Do not use bullet points. Write in a warm, confident tone as if written by a data analyst colleague.
+
+Project context:
+{dataset_section}
+{features_section}
+{model_section}
+{deploy_section}
+"""
+
+    client = anthropic.Anthropic(api_key=api_key)
+    message = client.messages.create(
+        model="claude-haiku-4-5-20251001",
+        max_tokens=600,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    return message.content[0].text.strip()
+
+
+def _static_narrative(ctx: dict) -> str:
+    """Build a structured narrative without an LLM."""
+    parts = []
+
+    project_name = ctx["project_name"]
+    created = ctx.get("created_at", "recently")
+    parts.append(f"**{project_name}** — AutoModeler Analysis Report\n")
+    parts.append(f"Created {created}.\n")
+
+    if "dataset" in ctx:
+        d = ctx["dataset"]
+        quality = "clean" if d["missing_pct"] < 5 else "mostly complete" if d["missing_pct"] < 20 else "with some gaps"
+        parts.append(
+            f"The analysis is based on **{d['filename']}** — "
+            f"{d['rows']:,} rows and {d['columns']} columns of data, {quality} "
+            f"({d['missing_pct']:.1f}% missing values). "
+        )
+
+    if "features" in ctx:
+        f = ctx["features"]
+        parts.append(
+            f"The goal is to predict **{f['target_column']}** "
+            f"({f['problem_type']}). "
+        )
+        if f["n_transforms"] > 0:
+            parts.append(
+                f"{f['n_transforms']} feature transformations were applied to prepare "
+                f"the data for modelling, yielding {f['n_engineered_features']} input features. "
+            )
+
+    parts.append("\n")
+
+    if "model" in ctx:
+        m = ctx["model"]
+        metrics = m["metrics"]
+        if "r2" in metrics:
+            r2 = metrics["r2"]
+            quality = "excellent" if r2 >= 0.9 else "good" if r2 >= 0.7 else "moderate"
+            parts.append(
+                f"The best model — **{m['algorithm'].replace('_', ' ').title()}** — "
+                f"achieves an R² of {r2:.2f} ({quality} fit). "
+                f"On average, predictions are within {metrics.get('mae', 0):.2f} units of the actual value. "
+            )
+        elif "accuracy" in metrics:
+            acc = metrics["accuracy"]
+            parts.append(
+                f"The best model — **{m['algorithm'].replace('_', ' ').title()}** — "
+                f"correctly classifies {acc:.1%} of cases. "
+                f"F1 score: {metrics.get('f1', 0):.2f}. "
+            )
+        if m["n_models_compared"] > 1:
+            parts.append(f"{m['n_models_compared']} algorithms were trained and compared. ")
+
+    parts.append("\n")
+
+    dep = ctx.get("deployment", {})
+    if dep.get("is_live"):
+        parts.append(
+            f"The model is **live and accepting predictions** (deployed {dep.get('created_at', 'recently')}). "
+            f"It has processed {dep.get('prediction_count', 0):,} prediction request(s) so far. "
+            f"The prediction dashboard is available at `{dep.get('dashboard_url', '')}`. "
+        )
+    else:
+        parts.append(
+            "The model has not yet been deployed. Once deployed, it will be accessible "
+            "via a shareable prediction dashboard and a REST API endpoint."
+        )
+
+    return "".join(parts)

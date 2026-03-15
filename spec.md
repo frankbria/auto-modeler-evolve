@@ -290,13 +290,16 @@ guides them forward through the natural flow.
       *Day 4 (00:08): PredictionLog model; GET /api/deploy/{id}/analytics + /logs; GET
       /api/models/{id}/readiness (6-check scorecard); chat intent detection; frontend panel
       upgrades. 34 backend + 12 frontend = 46 new tests. Total: 720 backend + 266 frontend = 986.*
-- [x] **Hyperparameter auto-tuning** — `core/tuner.py` with per-algorithm RandomizedSearchCV
-      param grids (RF, GB, XGB, LGB, LogReg). `POST /api/models/{id}/tune` runs n_iter=20/cv=3
-      in background thread, creates a new `{algorithm}_tuned` ModelRun, pushes SSE events.
-      Chat intent detection (_TUNE_PATTERNS) for "tune/optimize/improve model" keywords →
-      emits {type:tune} SSE event with model_run_id. `api.ts.models.tune()` frontend method.
-      *Day 3 (22:00): 22 new backend tests (unit + integration + chat intent). 760 backend tests, all passing.*
-
+- [x] **Hyperparameter auto-tuning** — POST /api/models/{run_id}/tune uses RandomizedSearchCV to find
+      better settings for the selected model. Returns before/after metrics, improvement %, and best params.
+      TuningCard in ModelTrainingPanel shows the result inline. Non-tunable algorithms (linear regression)
+      return a graceful explanation. get_tuning_grid() exposes per-algorithm param grids.
+      *Day 4 (04:44): 25 backend + 13 frontend = 38 new tests. Total: ~770 backend + 282 frontend = ~1052.*
+- [x] **AI project narrative generator** — POST /api/projects/{id}/narrative synthesises all project
+      artifacts (dataset, features, model metrics, deployment status) into a plain-English executive
+      summary. Uses Claude when ANTHROPIC_API_KEY is present; falls back to structured static narrative.
+      Perfect for "share with VP" use case. api.projects.narrative() in frontend API client.
+      *Day 4 (04:44): 21 backend tests. Context dict includes dataset, features, model, deployment.*
 - [x] **Prediction drift detection + what-if analysis** — Two new Phase 8 capabilities:
       (1) GET /api/deploy/{id}/drift compares early vs recent prediction distributions using
       only PredictionLog — no schema migration needed. Regression: z-score of mean shift;

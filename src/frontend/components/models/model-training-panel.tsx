@@ -14,7 +14,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { api } from "@/lib/api"
-import type { ChartSpec, ModelRecommendation, ModelRun, ModelComparison, ModelMetrics } from "@/lib/types"
+import type { ChartSpec, ModelRecommendation, ModelRun, ModelComparison, ModelMetrics, TuningResult } from "@/lib/types"
 
 interface ModelTrainingPanelProps {
   projectId: string
@@ -43,6 +43,8 @@ export function ModelTrainingPanel({ projectId, onModelSelected, onModelDownload
   const [loading, setLoading] = useState(true)
   const [training, setTraining] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [tuningRunId, setTuningRunId] = useState<string | null>(null)
+  const [tuningResults, setTuningResults] = useState<Record<string, TuningResult>>({})
 
   // Load recommendations and any existing runs on mount
   useEffect(() => {
@@ -169,6 +171,24 @@ export function ModelTrainingPanel({ projectId, onModelSelected, onModelDownload
     [projectId, onModelSelected]
   )
 
+  const handleTune = useCallback(
+    async (runId: string) => {
+      setTuningRunId(runId)
+      try {
+        const result = await api.models.tune(runId)
+        setTuningResults((prev) => ({ ...prev, [runId]: result }))
+        // Refresh runs to include the newly created tuned run
+        const data = await api.models.runs(projectId)
+        setRuns(data.runs)
+      } catch {
+        // silent — TuningCard will show error state
+      } finally {
+        setTuningRunId(null)
+      }
+    },
+    [projectId]
+  )
+
   if (loading) {
     return <p className="text-xs text-muted-foreground p-4">Loading model recommendations...</p>
   }
@@ -245,15 +265,21 @@ export function ModelTrainingPanel({ projectId, onModelSelected, onModelDownload
           </div>
           <div className="flex flex-col gap-2">
             {runs.map((run) => (
-              <RunCard
-                key={run.id}
-                run={run}
-                problemType={problemType}
-                isRecommended={comparison?.recommendation?.model_run_id === run.id}
-                onSelect={() => handleSelect(run.id, run.algorithm)}
-                onDownload={onModelDownload ? () => onModelDownload(run.id) : undefined}
-                onReport={onModelReport ? () => onModelReport(run.id) : undefined}
-              />
+              <div key={run.id}>
+                <RunCard
+                  run={run}
+                  problemType={problemType}
+                  isRecommended={comparison?.recommendation?.model_run_id === run.id}
+                  onSelect={() => handleSelect(run.id, run.algorithm)}
+                  onDownload={onModelDownload ? () => onModelDownload(run.id) : undefined}
+                  onReport={onModelReport ? () => onModelReport(run.id) : undefined}
+                  onTune={() => handleTune(run.id)}
+                  isTuning={tuningRunId === run.id}
+                />
+                {tuningResults[run.id] && (
+                  <TuningCard result={tuningResults[run.id]} problemType={problemType} />
+                )}
+              </div>
             ))}
           </div>
         </div>
@@ -356,6 +382,8 @@ function RunCard({
   onSelect,
   onDownload,
   onReport,
+  onTune,
+  isTuning,
 }: {
   run: ModelRun
   problemType: string
@@ -363,6 +391,8 @@ function RunCard({
   onSelect: () => void
   onDownload?: () => void
   onReport?: () => void
+  onTune?: () => void
+  isTuning?: boolean
 }) {
   const displayName = ALGORITHM_DISPLAY[run.algorithm] ?? run.algorithm
 
@@ -399,10 +429,21 @@ function RunCard({
                 Trained in {(run.training_duration_ms / 1000).toFixed(1)}s
               </p>
             )}
-            <div className="mt-2 flex gap-2">
+            <div className="mt-2 flex flex-wrap gap-2">
               {!run.is_selected && (
                 <Button size="sm" variant="outline" className="h-7 text-xs" onClick={onSelect}>
                   Select this model
+                </Button>
+              )}
+              {onTune && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs"
+                  onClick={onTune}
+                  disabled={isTuning}
+                >
+                  {isTuning ? "Tuning..." : "Auto-Tune"}
                 </Button>
               )}
               {onDownload && (
@@ -449,5 +490,67 @@ function MetricsRow({ metrics, problemType }: { metrics: ModelMetrics; problemTy
       <span>F1 <strong>{m.f1?.toFixed(3) ?? "—"}</strong></span>
       <span>Precision <strong>{m.precision?.toFixed(3) ?? "—"}</strong></span>
     </div>
+  )
+}
+
+
+function TuningCard({ result, problemType }: { result: TuningResult; problemType: string }) {
+  if (!result.tunable) {
+    return (
+      <div className="mt-1 rounded border border-muted px-3 py-2 text-xs text-muted-foreground">
+        {result.summary}
+      </div>
+    )
+  }
+
+  const primary = problemType === "regression" ? "r2" : "accuracy"
+  const origVal = result.original_metrics?.[primary]
+  const tunedVal = result.tuned_metrics?.[primary]
+  const improved = result.improved
+
+  return (
+    <Card className={`mt-1 ${improved ? "border-blue-200 bg-blue-50 dark:border-blue-900 dark:bg-blue-950" : "border-muted"}`}>
+      <CardHeader className="pb-1">
+        <CardTitle className="text-xs">
+          Auto-Tune Result
+          {improved && (
+            <Badge className="ml-2 bg-blue-100 text-blue-800 border-blue-200 text-[10px]">
+              Improved +{result.improvement_pct?.toFixed(1)}%
+            </Badge>
+          )}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-1">
+        <p className="text-xs text-muted-foreground">{result.summary}</p>
+        {origVal != null && tunedVal != null && (
+          <div className="flex gap-4 text-xs mt-1">
+            <span>
+              Before:{" "}
+              <strong>
+                {primary === "accuracy"
+                  ? `${(origVal * 100).toFixed(1)}%`
+                  : origVal.toFixed(3)}
+              </strong>
+            </span>
+            <span>
+              After:{" "}
+              <strong className={improved ? "text-blue-700 dark:text-blue-300" : ""}>
+                {primary === "accuracy"
+                  ? `${(tunedVal * 100).toFixed(1)}%`
+                  : tunedVal.toFixed(3)}
+              </strong>
+            </span>
+          </div>
+        )}
+        {result.best_params && Object.keys(result.best_params).length > 0 && (
+          <div className="mt-1 text-[10px] text-muted-foreground/70">
+            Best params:{" "}
+            {Object.entries(result.best_params)
+              .map(([k, v]) => `${k}=${v}`)
+              .join(", ")}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   )
 }

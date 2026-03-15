@@ -46,7 +46,7 @@ from sklearn.metrics import (
     r2_score,
     recall_score,
 )
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import RandomizedSearchCV, train_test_split
 from sklearn.preprocessing import LabelEncoder
 
 
@@ -516,6 +516,198 @@ def _classification_summary(metrics: dict) -> str:
         f"{pct}% accuracy on the held-out test set. "
         f"F1 = {f1:.2f} (balances precision and recall; 1.0 is perfect)."
     )
+
+
+# ---------------------------------------------------------------------------
+# Hyperparameter tuning
+# ---------------------------------------------------------------------------
+
+# Parameter grids for RandomizedSearchCV.
+# Algorithms with no meaningful hyperparameters are excluded (linear_regression).
+_TUNING_GRIDS: dict[str, dict] = {
+    "random_forest_regressor": {
+        "n_estimators": [50, 100, 200, 300],
+        "max_depth": [None, 5, 10, 15],
+        "min_samples_split": [2, 5, 10],
+        "min_samples_leaf": [1, 2, 4],
+    },
+    "random_forest_classifier": {
+        "n_estimators": [50, 100, 200, 300],
+        "max_depth": [None, 5, 10, 15],
+        "min_samples_split": [2, 5, 10],
+        "min_samples_leaf": [1, 2, 4],
+    },
+    "gradient_boosting_regressor": {
+        "n_estimators": [50, 100, 200],
+        "max_depth": [2, 3, 5],
+        "learning_rate": [0.01, 0.05, 0.1, 0.2],
+        "subsample": [0.8, 1.0],
+    },
+    "gradient_boosting_classifier": {
+        "n_estimators": [50, 100, 200],
+        "max_depth": [2, 3, 5],
+        "learning_rate": [0.01, 0.05, 0.1, 0.2],
+        "subsample": [0.8, 1.0],
+    },
+    "logistic_regression": {
+        "C": [0.01, 0.1, 1.0, 10.0, 100.0],
+        "max_iter": [500, 1000, 2000],
+    },
+    "xgboost_regressor": {
+        "n_estimators": [50, 100, 200],
+        "max_depth": [3, 5, 7],
+        "learning_rate": [0.01, 0.05, 0.1],
+        "subsample": [0.8, 1.0],
+    },
+    "xgboost_classifier": {
+        "n_estimators": [50, 100, 200],
+        "max_depth": [3, 5, 7],
+        "learning_rate": [0.01, 0.05, 0.1],
+        "subsample": [0.8, 1.0],
+    },
+    "lightgbm_regressor": {
+        "n_estimators": [50, 100, 200],
+        "max_depth": [-1, 5, 10],
+        "learning_rate": [0.01, 0.05, 0.1],
+        "num_leaves": [20, 31, 50],
+    },
+    "lightgbm_classifier": {
+        "n_estimators": [50, 100, 200],
+        "max_depth": [-1, 5, 10],
+        "learning_rate": [0.01, 0.05, 0.1],
+        "num_leaves": [20, 31, 50],
+    },
+}
+
+
+def get_tuning_grid(algorithm: str) -> dict | None:
+    """Return the hyperparameter search grid for an algorithm, or None if not tunable."""
+    return _TUNING_GRIDS.get(algorithm)
+
+
+def tune_model(
+    X: np.ndarray,
+    y: np.ndarray,
+    algorithm: str,
+    problem_type: str,
+    model_dir: Path,
+    new_model_run_id: str,
+    n_iter: int = 10,
+    cv: int = 3,
+) -> dict:
+    """Run RandomizedSearchCV to find better hyperparameters for the given algorithm.
+
+    Uses the base model class from the algorithm registry with the tuning grid.
+    Trains the best estimator on the full training split and saves it.
+
+    Returns:
+        {
+            best_params: dict,
+            tuned_cv_score: float,    # CV score of best params
+            metrics: dict,            # Held-out metrics of retrained tuned model
+            model_path: str,
+            training_duration_ms: int,
+            summary: str,
+            tunable: bool,            # False if no grid defined for this algorithm
+        }
+    """
+    algorithms = (
+        REGRESSION_ALGORITHMS if problem_type == "regression"
+        else CLASSIFICATION_ALGORITHMS
+    )
+    if algorithm not in algorithms:
+        raise ValueError(
+            f"Unknown algorithm '{algorithm}'. "
+            f"Valid choices: {sorted(algorithms)}"
+        )
+
+    param_grid = _TUNING_GRIDS.get(algorithm)
+    info = algorithms[algorithm]
+    model_class = info["class"]
+    default_params = dict(info["params"])
+
+    # Strip params that RandomizedSearchCV will override
+    if not param_grid:
+        # Not tunable — just retrain with defaults and return "already optimal"
+        return {
+            "best_params": default_params,
+            "tuned_cv_score": None,
+            "metrics": None,
+            "model_path": None,
+            "training_duration_ms": 0,
+            "summary": (
+                f"{info['name']} has no hyperparameters to tune — "
+                "it's already using the optimal settings."
+            ),
+            "tunable": False,
+        }
+
+    # Train/test split
+    n = len(X)
+    if n >= 10:
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=0.2, random_state=42
+        )
+    else:
+        X_train = X_test = X
+        y_train = y_test = y
+
+    # Scoring metric
+    scoring = "r2" if problem_type == "regression" else "f1_weighted"
+
+    # Base model with fixed defaults that we don't want to tune (e.g. random_state, verbosity)
+    fixed_params = {
+        k: v for k, v in default_params.items()
+        if k not in param_grid
+    }
+    base_model = model_class(**fixed_params)
+
+    start = time.time()
+    search = RandomizedSearchCV(
+        estimator=base_model,
+        param_distributions=param_grid,
+        n_iter=min(n_iter, 10),
+        scoring=scoring,
+        cv=min(cv, 3),
+        random_state=42,
+        n_jobs=-1,
+        refit=True,
+        error_score="raise",
+    )
+    search.fit(X_train, y_train)
+    elapsed_ms = int((time.time() - start) * 1000)
+
+    best_model = search.best_estimator_
+    best_params = {k: v for k, v in search.best_params_.items()}
+    tuned_cv_score = round(float(search.best_score_), 4)
+
+    y_pred = best_model.predict(X_test)
+
+    if problem_type == "regression":
+        metrics = _regression_metrics(y_test, y_pred)
+        summary = _regression_summary(metrics)
+    else:
+        metrics = _classification_metrics(y_test, y_pred)
+        summary = _classification_summary(metrics)
+
+    metrics["train_size"] = len(X_train)
+    metrics["test_size"] = len(X_test)
+
+    # Save tuned model
+    model_dir.mkdir(parents=True, exist_ok=True)
+    model_path = str(model_dir / f"{new_model_run_id}.joblib")
+    import joblib as _jl
+    _jl.dump(best_model, model_path)
+
+    return {
+        "best_params": best_params,
+        "tuned_cv_score": tuned_cv_score,
+        "metrics": metrics,
+        "model_path": model_path,
+        "training_duration_ms": elapsed_ms,
+        "summary": summary,
+        "tunable": True,
+    }
 
 
 # ---------------------------------------------------------------------------
