@@ -307,6 +307,14 @@ guides them forward through the natural flow.
       accuracy (classification) across all recorded feedback. FeedbackCard in
       DeploymentPanel shows stats and feedback form. api.ts submitFeedback() + feedbackAccuracy().
       *Day 4 (08:06): 21 backend tests, all passing. Closes the loop between predictions and reality.*
+- [x] **Smart model health dashboard + guided retraining** — GET /api/deploy/{id}/health computes a
+      unified 0-100 health score combining model age (freshness), feedback accuracy (real-world
+      performance), and drift (distribution stability). POST /api/models/{project_id}/retrain
+      one-click retrains using existing feature set and selected algorithm. Chat detects "model health",
+      "should I retrain", "update model" etc. → injects health context into system prompt + emits
+      {type: health} SSE event. ModelHealthCard in DeploymentPanel shows score, status badge,
+      per-component breakdown, recommendations, and Retrain button.
+      *Day 4 (02:00): 27 backend + 12 frontend = 39 new tests. Total: 854 backend + 294 frontend = 1148.*
 - [x] **Prediction drift detection + what-if analysis** — Two new Phase 8 capabilities:
       (1) GET /api/deploy/{id}/drift compares early vs recent prediction distributions using
       only PredictionLog — no schema migration needed. Regression: z-score of mean shift;
