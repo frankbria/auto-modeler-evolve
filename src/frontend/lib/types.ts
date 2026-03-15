@@ -530,3 +530,41 @@ export interface FeedbackAccuracy {
   // Both
   verdict?: "excellent" | "good" | "moderate" | "poor"
 }
+
+
+// ---------------------------------------------------------------------------
+// Model Health (Phase 8)
+// ---------------------------------------------------------------------------
+
+export type ModelHealthStatus = "healthy" | "warning" | "critical"
+
+export interface ModelHealth {
+  deployment_id: string
+  health_score: number
+  status: ModelHealthStatus
+  model_age_days: number
+  component_scores: {
+    age: number
+    feedback: number | null
+    drift: number | null
+  }
+  component_notes: {
+    age: string
+    feedback: string
+    drift: string
+  }
+  recommendations: string[]
+  has_feedback_data: boolean
+  has_drift_data: boolean
+  algorithm: string | null
+  problem_type: string | null
+}
+
+export interface RetrainResponse {
+  project_id: string
+  model_run_ids: string[]
+  algorithms: string[]
+  status: string
+  source_run_id: string
+  message: string
+}

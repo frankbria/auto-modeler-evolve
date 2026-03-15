@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { api } from "@/lib/api"
-import type { Deployment, DeploymentAnalytics, ModelReadiness, DriftReport, WhatIfResult, FeedbackAccuracy } from "@/lib/types"
+import type { Deployment, DeploymentAnalytics, ModelReadiness, DriftReport, WhatIfResult, FeedbackAccuracy, ModelHealth } from "@/lib/types"
 
 interface DeploymentPanelProps {
   projectId: string
@@ -375,6 +375,117 @@ function FeedbackCard({ deploymentId, problemType }: { deploymentId: string; pro
   )
 }
 
+function HealthBadge({ status }: { status: ModelHealth["status"] }) {
+  if (status === "healthy") return <Badge className="bg-green-100 text-green-800 border-green-200">Healthy</Badge>
+  if (status === "warning") return <Badge className="bg-yellow-100 text-yellow-800 border-yellow-200">Warning</Badge>
+  return <Badge className="bg-red-100 text-red-800 border-red-200">Critical</Badge>
+}
+
+function ModelHealthCard({
+  deploymentId,
+  projectId,
+}: {
+  deploymentId: string
+  projectId: string
+}) {
+  const [health, setHealth] = useState<ModelHealth | null>(null)
+  const [retraining, setRetraining] = useState(false)
+  const [retrainMessage, setRetrainMessage] = useState<string | null>(null)
+
+  useEffect(() => {
+    api.deploy.health(deploymentId)
+      .then(setHealth)
+      .catch(() => {})
+  }, [deploymentId])
+
+  const handleRetrain = async () => {
+    setRetraining(true)
+    setRetrainMessage(null)
+    try {
+      const result = await api.models.retrain(projectId)
+      setRetrainMessage(result.message)
+    } catch {
+      setRetrainMessage("Retraining failed. Please try again.")
+    } finally {
+      setRetraining(false)
+    }
+  }
+
+  if (!health) return null
+
+  const scoreColor =
+    health.health_score >= 75 ? "text-green-600" :
+    health.health_score >= 50 ? "text-yellow-600" : "text-red-600"
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-sm">Model Health</CardTitle>
+          <HealthBadge status={health.status} />
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="flex items-center gap-3">
+          <span className={`text-3xl font-bold tabular-nums ${scoreColor}`}>
+            {health.health_score}
+          </span>
+          <div className="text-xs text-muted-foreground">
+            <div>out of 100</div>
+            <div>{health.model_age_days} day(s) old</div>
+          </div>
+        </div>
+
+        <div className="space-y-1">
+          {[
+            { label: "Freshness", score: health.component_scores.age, note: health.component_notes.age },
+            health.has_feedback_data
+              ? { label: "Real-world accuracy", score: health.component_scores.feedback, note: health.component_notes.feedback }
+              : null,
+            health.has_drift_data
+              ? { label: "Distribution stability", score: health.component_scores.drift, note: health.component_notes.drift }
+              : null,
+          ]
+            .filter(Boolean)
+            .map((item) => (
+              <div key={item!.label} className="flex items-center justify-between text-xs">
+                <span className="text-muted-foreground">{item!.label}</span>
+                <span className={
+                  (item!.score ?? 100) >= 75 ? "font-medium text-green-600" :
+                  (item!.score ?? 100) >= 50 ? "font-medium text-yellow-600" : "font-medium text-red-600"
+                }>
+                  {item!.score ?? "—"}/100
+                </span>
+              </div>
+            ))}
+        </div>
+
+        {health.recommendations.length > 0 && (
+          <div className="border-t pt-2 space-y-1">
+            {health.recommendations.map((rec, i) => (
+              <p key={i} className="text-xs text-muted-foreground">· {rec}</p>
+            ))}
+          </div>
+        )}
+
+        {retrainMessage && (
+          <p className="text-xs text-blue-600">{retrainMessage}</p>
+        )}
+
+        <Button
+          size="sm"
+          variant="outline"
+          className="w-full"
+          onClick={handleRetrain}
+          disabled={retraining}
+        >
+          {retraining ? "Starting retrain…" : "Retrain Model"}
+        </Button>
+      </CardContent>
+    </Card>
+  )
+}
+
 export function DeploymentPanel({
   projectId,
   selectedRunId,
@@ -531,6 +642,7 @@ export function DeploymentPanel({
         {drift && <DriftCard drift={drift} />}
         {deployment && <WhatIfCard deployment={deployment} />}
         {deployment && <FeedbackCard deploymentId={deployment.id} problemType={deployment.problem_type} />}
+        {deployment && <ModelHealthCard deploymentId={deployment.id} projectId={projectId} />}
 
         <div className="flex justify-end">
           <Button

@@ -10,6 +10,9 @@ Living document for coordinating between bot instances and tracking ideation.
 <!-- Brief description of what you're doing this session. -->
 <!-- Remove your entry when you commit your session wrap-up. -->
 
+## Day 4 (02:00) — Smart Model Health Dashboard + Guided Retraining
+Track B: GET /api/deploy/{id}/health (unified score: model age + feedback accuracy + drift → health_score 0-100, status, recommendations), POST /api/models/{project_id}/retrain (reuse existing feature set + selected algorithm), chat retrain intent + SSE event, ModelHealthCard in DeploymentPanel, api.ts methods. Target ~25 backend + ~8 frontend = ~33 new tests.
+
 ## Day 4 (08:06) — Done
 Prediction feedback loop — FeedbackRecord model, POST /api/predict/{id}/feedback, GET /api/deploy/{id}/feedback-accuracy, FeedbackCard in DeploymentPanel. Also fixed 2 tuner test failures. 21 new tests. Total: ~827 backend tests.
 

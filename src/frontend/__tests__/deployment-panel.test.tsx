@@ -20,9 +20,18 @@ jest.mock("../lib/api", () => ({
       undeploy: jest.fn(),
       analytics: jest.fn(),
       drift: jest.fn(),
+      feedbackAccuracy: jest.fn().mockResolvedValue({
+        status: "no_feedback",
+        total_feedback: 0,
+        message: "No feedback yet.",
+        problem_type: "regression",
+      }),
+      submitFeedback: jest.fn(),
+      health: jest.fn().mockResolvedValue(null),
     },
     models: {
       readiness: jest.fn(),
+      retrain: jest.fn(),
     },
   },
 }))

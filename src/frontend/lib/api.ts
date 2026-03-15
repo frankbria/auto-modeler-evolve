@@ -349,6 +349,11 @@ export const api = {
       fetch(`${API_URL}/api/models/${modelRunId}/tune`, { method: "POST" }).then((r) =>
         r.json()
       ),
+
+    retrain: (projectId: string): Promise<import("./types").RetrainResponse> =>
+      fetch(`${API_URL}/api/models/${projectId}/retrain`, { method: "POST" }).then((r) =>
+        r.json()
+      ),
   },
 
   validation: {
@@ -425,5 +430,8 @@ export const api = {
 
     feedbackAccuracy: (deploymentId: string): Promise<import("./types").FeedbackAccuracy> =>
       fetch(`${API_URL}/api/deploy/${deploymentId}/feedback-accuracy`).then((r) => r.json()),
+
+    health: (deploymentId: string): Promise<import("./types").ModelHealth> =>
+      fetch(`${API_URL}/api/deploy/${deploymentId}/health`).then((r) => r.json()),
   },
 }

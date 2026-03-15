@@ -961,6 +961,213 @@ def get_feedback_accuracy(
 
 
 # ---------------------------------------------------------------------------
+# 13. Unified model health score
+# ---------------------------------------------------------------------------
+
+
+@router.get("/api/deploy/{deployment_id}/health")
+def get_model_health(
+    deployment_id: str,
+    session: Session = Depends(get_session),
+):
+    """Return a unified health score for a deployed model.
+
+    Combines three signals into a single 0-100 health score:
+    - Model age: how long since training (freshness degrades over time)
+    - Feedback accuracy: real-world performance from user-recorded outcomes
+    - Prediction drift: distribution shift detected from PredictionLog
+
+    Returns:
+    - health_score: 0–100 (100 = perfectly healthy)
+    - status: "healthy" | "warning" | "critical"
+    - component_scores: individual scores for each signal
+    - recommendations: plain-English actions to take
+    """
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment:
+        raise HTTPException(status_code=404, detail="Deployment not found")
+
+    run = session.get(ModelRun, deployment.model_run_id)
+
+    # ----- Component 1: Model age score -----
+    age_days = 0
+    age_score = 100
+    age_note = "Model is fresh."
+    if run and run.created_at:
+        now = datetime.now(UTC).replace(tzinfo=None)
+        age_days = max(0, (now - run.created_at).days)
+        if age_days <= 30:
+            age_score = 100
+            age_note = f"Model is {age_days} day(s) old — still fresh."
+        elif age_days <= 60:
+            age_score = 75
+            age_note = f"Model is {age_days} day(s) old — consider retraining monthly."
+        elif age_days <= 90:
+            age_score = 50
+            age_note = f"Model is {age_days} day(s) old — retraining is recommended."
+        else:
+            age_score = 25
+            age_note = f"Model is {age_days} day(s) old — likely stale. Retrain with recent data."
+
+    # ----- Component 2: Feedback accuracy score -----
+    feedback_score = 100
+    feedback_note = "No feedback recorded yet."
+    feedback_records = session.exec(
+        select(FeedbackRecord).where(FeedbackRecord.deployment_id == deployment_id)
+    ).all()
+    if feedback_records:
+        problem_type = deployment.problem_type or "regression"
+        if problem_type == "regression":
+            pairs = []
+            for fb in feedback_records:
+                if fb.actual_value is not None and fb.prediction_log_id:
+                    log_entry = session.get(PredictionLog, fb.prediction_log_id)
+                    if log_entry and log_entry.prediction_numeric is not None:
+                        pairs.append((fb.actual_value, log_entry.prediction_numeric))
+            if pairs:
+                avg_actual = sum(a for a, _ in pairs) / len(pairs)
+                mae = sum(abs(a - p) for a, p in pairs) / len(pairs)
+                pct_error = (mae / (abs(avg_actual) + 1e-9)) * 100
+                if pct_error < 5:
+                    feedback_score = 100
+                    feedback_note = f"Excellent accuracy ({pct_error:.1f}% error)."
+                elif pct_error < 15:
+                    feedback_score = 75
+                    feedback_note = f"Good accuracy ({pct_error:.1f}% error)."
+                elif pct_error < 30:
+                    feedback_score = 50
+                    feedback_note = f"Moderate accuracy ({pct_error:.1f}% error). Consider retraining."
+                else:
+                    feedback_score = 20
+                    feedback_note = f"Poor accuracy ({pct_error:.1f}% error). Retraining strongly recommended."
+        else:
+            # Classification: use is_correct ratios
+            rated = [fb for fb in feedback_records if fb.is_correct is not None]
+            if rated:
+                accuracy = sum(1 for fb in rated if fb.is_correct) / len(rated)
+                if accuracy >= 0.9:
+                    feedback_score = 100
+                    feedback_note = f"Excellent accuracy ({accuracy:.1%} correct)."
+                elif accuracy >= 0.75:
+                    feedback_score = 75
+                    feedback_note = f"Good accuracy ({accuracy:.1%} correct)."
+                elif accuracy >= 0.6:
+                    feedback_score = 50
+                    feedback_note = f"Moderate accuracy ({accuracy:.1%} correct). Consider retraining."
+                else:
+                    feedback_score = 20
+                    feedback_note = f"Poor accuracy ({accuracy:.1%} correct). Retraining strongly recommended."
+
+    # ----- Component 3: Drift score -----
+    drift_health_score = 100
+    drift_note = "Not enough predictions to assess drift."
+    all_logs = session.exec(
+        select(PredictionLog).where(PredictionLog.deployment_id == deployment_id)
+    ).all()
+    if len(all_logs) >= 40:  # minimum for drift comparison
+        logs_sorted = sorted(all_logs, key=lambda l: l.created_at)
+        window = 20
+        baseline_logs = logs_sorted[:window]
+        recent_logs = logs_sorted[-window:]
+        problem_type = deployment.problem_type or "regression"
+
+        if problem_type == "regression":
+            baseline_vals = [l.prediction_numeric for l in baseline_logs if l.prediction_numeric is not None]
+            recent_vals = [l.prediction_numeric for l in recent_logs if l.prediction_numeric is not None]
+            if baseline_vals and recent_vals:
+                b_mean = sum(baseline_vals) / len(baseline_vals)
+                r_mean = sum(recent_vals) / len(recent_vals)
+                b_std = (sum((v - b_mean) ** 2 for v in baseline_vals) / len(baseline_vals)) ** 0.5
+                z = abs(r_mean - b_mean) / (b_std + 1e-9)
+                if z < 1.0:
+                    drift_health_score = 100
+                    drift_note = "Prediction distribution is stable."
+                elif z < 2.0:
+                    drift_health_score = 60
+                    drift_note = "Mild drift detected — monitor closely."
+                else:
+                    drift_health_score = 25
+                    drift_note = "Significant drift detected — retraining is strongly recommended."
+        else:
+            # Classification: total variation distance
+            baseline_preds = [str(json.loads(l.prediction)) for l in baseline_logs if l.prediction]
+            recent_preds = [str(json.loads(l.prediction)) for l in recent_logs if l.prediction]
+            all_classes = set(baseline_preds + recent_preds)
+            if all_classes and baseline_preds and recent_preds:
+                b_n, r_n = len(baseline_preds), len(recent_preds)
+                tvd = 0.5 * sum(
+                    abs(baseline_preds.count(c) / b_n - recent_preds.count(c) / r_n)
+                    for c in all_classes
+                )
+                if tvd < 0.1:
+                    drift_health_score = 100
+                    drift_note = "Prediction class distribution is stable."
+                elif tvd < 0.25:
+                    drift_health_score = 60
+                    drift_note = "Mild class distribution shift — monitor closely."
+                else:
+                    drift_health_score = 25
+                    drift_note = "Significant class shift detected — retraining is strongly recommended."
+
+    # ----- Composite score: weighted average -----
+    # Weights: feedback matters most (if available), then drift, then age
+    has_feedback = len(feedback_records) > 0
+    has_drift_data = len(all_logs) >= 40
+
+    if has_feedback and has_drift_data:
+        health_score = int(feedback_score * 0.4 + drift_health_score * 0.35 + age_score * 0.25)
+    elif has_feedback:
+        health_score = int(feedback_score * 0.55 + age_score * 0.45)
+    elif has_drift_data:
+        health_score = int(drift_health_score * 0.6 + age_score * 0.4)
+    else:
+        health_score = age_score
+
+    # ----- Status label -----
+    if health_score >= 75:
+        status = "healthy"
+    elif health_score >= 50:
+        status = "warning"
+    else:
+        status = "critical"
+
+    # ----- Recommendations -----
+    recommendations = []
+    if age_score < 75:
+        recommendations.append("Retrain the model with more recent data to improve freshness.")
+    if feedback_score < 75 and has_feedback:
+        recommendations.append("Real-world accuracy is declining — consider retraining or adding features.")
+    if drift_health_score < 75 and has_drift_data:
+        recommendations.append("Prediction drift detected — the input data may have changed; retraining is advised.")
+    if not has_feedback:
+        recommendations.append("Record actual outcomes using the feedback form to enable real-world accuracy tracking.")
+    if not recommendations:
+        recommendations.append("Model health is good. Continue monitoring for drift and feedback accuracy.")
+
+    return {
+        "deployment_id": deployment_id,
+        "health_score": health_score,
+        "status": status,
+        "model_age_days": age_days,
+        "component_scores": {
+            "age": age_score,
+            "feedback": feedback_score if has_feedback else None,
+            "drift": drift_health_score if has_drift_data else None,
+        },
+        "component_notes": {
+            "age": age_note,
+            "feedback": feedback_note,
+            "drift": drift_note,
+        },
+        "recommendations": recommendations,
+        "has_feedback_data": has_feedback,
+        "has_drift_data": has_drift_data,
+        "algorithm": deployment.algorithm,
+        "problem_type": deployment.problem_type,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Helper: serialize deployment
 # ---------------------------------------------------------------------------
 

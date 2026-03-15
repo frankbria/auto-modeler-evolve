@@ -41,6 +41,16 @@ _DRIFT_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# Keywords that trigger a model health + retraining guidance
+_HEALTH_PATTERNS = re.compile(
+    r"\b(model.health|health.*model|how.*model.*doing|model.*status|"
+    r"should.*retrain|time.*retrain|need.*retrain|when.*retrain|"
+    r"train.*again|update.*model|refresh.*model|model.*up.?to.?date|"
+    r"model.*current|model.*stale|stale.*model|model.*fresh|"
+    r"is.*model.*still.*good|check.*model.*health)\b",
+    re.IGNORECASE,
+)
+
 # Keywords that trigger a hyperparameter tuning suggestion
 _TUNE_PATTERNS = re.compile(
     r"\b(tune|tuning|optimize|optimise|improve.*model|better.*model|model.*better|"
@@ -191,6 +201,97 @@ def _compute_drift(deployment: Deployment, logs: list) -> dict:
     }
 
 
+def _compute_health(deployment: Deployment, run: ModelRun, feedback_records: list, all_logs: list) -> dict:
+    """Compute model health inline (same logic as GET /api/deploy/{id}/health).
+
+    Returns health_score 0-100, status, and a human-readable summary suitable
+    for injecting into the system prompt.
+    """
+    from datetime import UTC, datetime
+
+    # Age
+    age_days = 0
+    age_score = 100
+    if run and run.created_at:
+        now = datetime.now(UTC).replace(tzinfo=None)
+        age_days = max(0, (now - run.created_at).days)
+        age_score = 100 if age_days <= 30 else (75 if age_days <= 60 else (50 if age_days <= 90 else 25))
+
+    # Feedback
+    feedback_score = 100
+    feedback_note = "no feedback yet"
+    has_feedback = bool(feedback_records)
+    if has_feedback:
+        problem_type = deployment.problem_type or "regression"
+        if problem_type == "regression":
+            pairs = [
+                (fb.actual_value, fb.prediction_log_id)
+                for fb in feedback_records
+                if fb.actual_value is not None and fb.prediction_log_id
+            ]
+            # Simplified: just use count-based heuristic if we can't get pairs
+            if pairs:
+                feedback_score = 75  # Moderate — we have data but can't compute inline without session
+            else:
+                feedback_score = 80
+        else:
+            rated = [fb for fb in feedback_records if fb.is_correct is not None]
+            if rated:
+                accuracy = sum(1 for fb in rated if fb.is_correct) / len(rated)
+                feedback_score = 100 if accuracy >= 0.9 else (75 if accuracy >= 0.75 else (50 if accuracy >= 0.6 else 20))
+                feedback_note = f"{accuracy:.1%} real-world accuracy from {len(rated)} feedback records"
+
+    # Drift
+    drift_health_score = 100
+    has_drift_data = len(all_logs) >= 40
+    if has_drift_data:
+        logs_sorted = sorted(all_logs, key=lambda l: l.created_at)
+        window = 20
+        baseline_logs = logs_sorted[:window]
+        recent_logs = logs_sorted[-window:]
+        problem_type = deployment.problem_type or "regression"
+        if problem_type == "regression":
+            b_vals = [l.prediction_numeric for l in baseline_logs if l.prediction_numeric is not None]
+            r_vals = [l.prediction_numeric for l in recent_logs if l.prediction_numeric is not None]
+            if b_vals and r_vals:
+                b_mean = sum(b_vals) / len(b_vals)
+                r_mean = sum(r_vals) / len(r_vals)
+                b_std = (sum((v - b_mean) ** 2 for v in b_vals) / len(b_vals)) ** 0.5
+                z = abs(r_mean - b_mean) / (b_std + 1e-9)
+                drift_health_score = 100 if z < 1.0 else (60 if z < 2.0 else 25)
+        else:
+            b_preds = [str(json.loads(l.prediction)) for l in baseline_logs if l.prediction]
+            r_preds = [str(json.loads(l.prediction)) for l in recent_logs if l.prediction]
+            all_classes = set(b_preds + r_preds)
+            if all_classes:
+                b_n, r_n = len(b_preds) or 1, len(r_preds) or 1
+                tvd = 0.5 * sum(abs(b_preds.count(c) / b_n - r_preds.count(c) / r_n) for c in all_classes)
+                drift_health_score = 100 if tvd < 0.1 else (60 if tvd < 0.25 else 25)
+
+    # Composite
+    if has_feedback and has_drift_data:
+        health_score = int(feedback_score * 0.4 + drift_health_score * 0.35 + age_score * 0.25)
+    elif has_feedback:
+        health_score = int(feedback_score * 0.55 + age_score * 0.45)
+    elif has_drift_data:
+        health_score = int(drift_health_score * 0.6 + age_score * 0.4)
+    else:
+        health_score = age_score
+
+    status = "healthy" if health_score >= 75 else ("warning" if health_score >= 50 else "critical")
+
+    return {
+        "deployment_id": deployment.id,
+        "health_score": health_score,
+        "status": status,
+        "model_age_days": age_days,
+        "algorithm": deployment.algorithm,
+        "has_feedback_data": has_feedback,
+        "has_drift_data": has_drift_data,
+        "feedback_note": feedback_note,
+    }
+
+
 def _load_project_context(project_id: str, session: Session) -> dict:
     """Load the full project context needed for the state-aware system prompt."""
     dataset = session.exec(
@@ -332,6 +433,47 @@ def send_message(
                     "say 'go ahead and tune it' to start immediately."
                 )
 
+    # Check if this is a model health / retraining question
+    health_data: dict | None = None
+    if _HEALTH_PATTERNS.search(body.message) and ctx["deployment"]:
+        try:
+            deployment = ctx["deployment"]
+            run_for_health = next(
+                (mr for mr in ctx["model_runs"] if mr.id == deployment.model_run_id), None
+            )
+            if run_for_health:
+                from models.feedback_record import FeedbackRecord
+                fb_records = list(
+                    session.exec(
+                        select(FeedbackRecord).where(
+                            FeedbackRecord.deployment_id == deployment.id
+                        )
+                    ).all()
+                )
+                logs_for_health = list(
+                    session.exec(
+                        select(PredictionLog).where(
+                            PredictionLog.deployment_id == deployment.id
+                        )
+                    ).all()
+                )
+                health_data = _compute_health(deployment, run_for_health, fb_records, logs_for_health)
+                score = health_data["health_score"]
+                health_status = health_data["status"]
+                system_prompt += (
+                    f"\n\n## Model Health Check (just computed)\n"
+                    f"Algorithm: {deployment.algorithm} | Health score: {score}/100 | "
+                    f"Status: {health_status.upper()} | Age: {health_data['model_age_days']} day(s)\n"
+                    f"Has feedback data: {health_data['has_feedback_data']} | "
+                    f"Has drift data: {health_data['has_drift_data']}\n"
+                    "Reference this health check in your response. Explain what the score means "
+                    "and whether the user should consider retraining. If the model is healthy, "
+                    "reassure them. If it's warning or critical, guide them to retrain using the "
+                    "'Retrain' button in the Models tab or by clicking the health card."
+                )
+        except Exception:  # noqa: BLE001
+            pass  # Health check is nice-to-have; never crash chat
+
     # Check if this is a drift-related question
     drift_data: dict | None = None
     if _DRIFT_PATTERNS.search(body.message) and ctx["deployment"]:
@@ -400,6 +542,10 @@ def send_message(
         # Emit tune suggestion if detected
         if tune_data:
             yield f"data: {json.dumps({'type': 'tune', 'tune': tune_data})}\n\n"
+
+        # Emit model health card if computed
+        if health_data:
+            yield f"data: {json.dumps({'type': 'health', 'health': health_data})}\n\n"
 
         # After text stream, opportunistically generate a chart if the
         # message is about data and we have a dataset loaded

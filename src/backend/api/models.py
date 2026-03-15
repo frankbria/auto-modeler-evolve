@@ -1066,3 +1066,119 @@ def tune_model_endpoint(
         "summary": comparison_summary,
         "tuned_run": _run_to_dict(tuned_run),
     }
+
+
+# ---------------------------------------------------------------------------
+# 10. Smart retrain — reuse existing feature set + selected algorithm
+# ---------------------------------------------------------------------------
+
+
+@router.post("/api/models/{project_id}/retrain", status_code=202)
+def retrain_model(
+    project_id: str,
+    session: Session = Depends(get_session),
+):
+    """Start a new training run using the project's current configuration.
+
+    Finds the most recently selected (or most recent completed) model run to
+    determine which algorithm to use. Reuses the existing active FeatureSet.
+    This is the "one-click refresh" endpoint — the user doesn't need to pick
+    an algorithm again.
+
+    Returns the same shape as POST /api/models/{project_id}/train.
+    """
+    _, dataset, feature_set = _get_project_context(project_id, session)
+
+    # Find the algorithm to reuse from the most recent selected or completed run
+    all_done_runs = session.exec(
+        select(ModelRun).where(
+            ModelRun.project_id == project_id,
+            ModelRun.status == "done",  # type: ignore[arg-type]
+        )
+    ).all()
+
+    if not all_done_runs:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "No completed model runs found. "
+                "Train a model first before using retrain."
+            ),
+        )
+
+    # Prefer the selected run; fall back to the most recently created done run
+    selected = next((r for r in all_done_runs if r.is_selected), None)
+    source_run = selected or sorted(all_done_runs, key=lambda r: r.created_at)[-1]
+    algorithm = source_run.algorithm
+
+    # Strip "_tuned" suffix if present — retrain from the base algorithm
+    base_algorithm = algorithm.replace("_tuned", "")
+    problem_type = feature_set.problem_type or "regression"
+    valid_algos = (
+        set(REGRESSION_ALGORITHMS)
+        if problem_type == "regression"
+        else set(CLASSIFICATION_ALGORITHMS)
+    )
+    if base_algorithm not in valid_algos:
+        # Fall back to a recommended algorithm if the stored one is unrecognised
+        recs = recommend_models(problem_type, dataset.row_count, dataset.column_count)
+        base_algorithm = recs[0]["algorithm"] if recs else list(valid_algos)[0]
+
+    target_col = feature_set.target_column  # type: ignore[assignment]
+
+    # Load and transform dataset
+    file_path = Path(dataset.file_path)
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Dataset file not found on disk")
+
+    df = pd.read_csv(file_path)
+    transforms = json.loads(feature_set.transformations or "[]")
+    if transforms:
+        df, _ = apply_transformations(df, transforms)
+
+    feature_cols = [c for c in df.columns if c != target_col]
+    model_dir = MODELS_DIR / project_id
+
+    # Set up SSE queue for this training batch
+    with _lock:
+        _training_queues[project_id] = queue.Queue()
+        _training_counters[project_id] = 1
+
+    run = ModelRun(
+        project_id=project_id,
+        feature_set_id=feature_set.id,
+        algorithm=base_algorithm,
+        hyperparameters=json.dumps({"retrain": True, "source_run_id": source_run.id}),
+        status="pending",
+    )
+    session.add(run)
+    session.commit()
+    session.refresh(run)
+
+    t = threading.Thread(
+        target=_train_in_background,
+        args=(
+            run.id,
+            project_id,
+            df.copy(),
+            feature_cols,
+            target_col,
+            base_algorithm,
+            problem_type,
+            model_dir,
+        ),
+        daemon=True,
+    )
+    t.start()
+
+    return {
+        "project_id": project_id,
+        "model_run_ids": [run.id],
+        "algorithms": [base_algorithm],
+        "status": "training_started",
+        "source_run_id": source_run.id,
+        "message": (
+            f"Retraining {base_algorithm} with your current data and features. "
+            "Poll GET /api/models/{project_id}/runs for status updates."
+        ),
+    }
