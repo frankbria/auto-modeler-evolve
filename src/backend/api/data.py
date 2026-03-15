@@ -19,7 +19,7 @@ from chat.narration import (
     narrate_upload,
 )
 from core.analyzer import analyze_dataframe, compute_full_profile, detect_time_columns
-from core.chart_builder import build_correlation_heatmap, build_timeseries_chart
+from core.chart_builder import build_boxplot, build_correlation_heatmap, build_timeseries_chart
 from core.merger import merge_datasets, suggest_join_keys
 from core.query_engine import run_nl_query
 from db import get_session
@@ -1000,3 +1000,52 @@ def extract_db_table(body: DbExtractRequest, session: Session = Depends(get_sess
         "insights": profile.get("insights", []),
         "source": "SQLite",
     }
+
+
+# ---------------------------------------------------------------------------
+# Box plot — grouped distribution comparison
+# ---------------------------------------------------------------------------
+
+@router.get("/{dataset_id}/boxplot")
+def get_boxplot(
+    dataset_id: str,
+    column: str,
+    groupby: str | None = None,
+    session: Session = Depends(get_session),
+) -> dict:
+    """Return a boxplot chart spec for a numeric column, optionally grouped.
+
+    GET /api/data/{dataset_id}/boxplot?column=sales&groupby=region
+
+    Returns a chart spec with chart_type="boxplot" and one box per group.
+    When groupby is omitted, returns a single box for the whole column.
+    """
+    dataset = session.get(Dataset, dataset_id)
+    if dataset is None:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    try:
+        df = pd.read_csv(dataset.file_path)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"Could not read dataset: {exc}") from exc
+
+    if column not in df.columns:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Column '{column}' not found. Available: {list(df.columns)}",
+        )
+
+    if not pd.api.types.is_numeric_dtype(df[column]):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Column '{column}' is not numeric. Box plots require a numeric column.",
+        )
+
+    if groupby is not None and groupby not in df.columns:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Group column '{groupby}' not found. Available: {list(df.columns)}",
+        )
+
+    chart_spec = build_boxplot(df, value_col=column, group_col=groupby)
+    return chart_spec

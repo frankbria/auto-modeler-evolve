@@ -103,6 +103,14 @@ function ExplanationCard({ explanation }: { explanation: PredictionExplanation }
 // Main prediction dashboard
 // ---------------------------------------------------------------------------
 
+interface PredictionHistoryRecord {
+  id: number
+  inputs: Record<string, string>
+  prediction: string | number
+  probabilities?: Record<string, number>
+  timestamp: string
+}
+
 export default function PredictionDashboard() {
   const params = useParams<{ id: string }>()
   const deploymentId = params.id
@@ -117,6 +125,8 @@ export default function PredictionDashboard() {
   const [predError, setPredError] = useState<string | null>(null)
   const [showExplanation, setShowExplanation] = useState(false)
   const [fetchingExplanation, setFetchingExplanation] = useState(false)
+  const [history, setHistory] = useState<PredictionHistoryRecord[]>([])
+  const [historyCounter, setHistoryCounter] = useState(0)
 
   useEffect(() => {
     api.deploy
@@ -166,6 +176,18 @@ export default function PredictionDashboard() {
     try {
       const r = await api.deploy.predict(deploymentId, payload)
       setResult(r)
+      setHistoryCounter((n) => {
+        const next = n + 1
+        const record: PredictionHistoryRecord = {
+          id: next,
+          inputs: { ...inputs },
+          prediction: r.prediction,
+          probabilities: r.probabilities,
+          timestamp: new Date().toLocaleTimeString(),
+        }
+        setHistory((prev) => [record, ...prev].slice(0, 20))
+        return next
+      })
     } catch {
       setPredError("Prediction failed. Please check your inputs and try again.")
     } finally {
@@ -367,6 +389,77 @@ export default function PredictionDashboard() {
         {/* Explanation waterfall */}
         {showExplanation && explanation && (
           <ExplanationCard explanation={explanation} />
+        )}
+
+        {/* Session history */}
+        {history.length > 0 && (
+          <Card>
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm">
+                  Session History ({history.length})
+                </CardTitle>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 text-xs"
+                  onClick={() => {
+                    const schema = deployment.feature_schema ?? []
+                    const headers = [
+                      "#",
+                      "Time",
+                      ...schema.map((e) => e.name),
+                      "Prediction",
+                    ]
+                    const rows = [...history].reverse().map((rec) => [
+                      rec.id,
+                      rec.timestamp,
+                      ...schema.map((e) => rec.inputs[e.name] ?? ""),
+                      rec.prediction,
+                    ])
+                    const csv = [headers, ...rows]
+                      .map((r) => r.map(String).join(","))
+                      .join("\n")
+                    const blob = new Blob([csv], { type: "text/csv" })
+                    const url = URL.createObjectURL(blob)
+                    const a = document.createElement("a")
+                    a.href = url
+                    a.download = `predictions-session.csv`
+                    a.click()
+                    URL.revokeObjectURL(url)
+                  }}
+                >
+                  Download CSV
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b bg-muted/40">
+                      <th className="px-3 py-1.5 text-left font-medium text-muted-foreground">#</th>
+                      <th className="px-3 py-1.5 text-left font-medium text-muted-foreground">Time</th>
+                      <th className="px-3 py-1.5 text-right font-medium text-muted-foreground">Prediction</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {history.map((rec) => (
+                      <tr key={rec.id} className="border-b last:border-0 hover:bg-muted/20">
+                        <td className="px-3 py-1.5 tabular-nums text-muted-foreground">{rec.id}</td>
+                        <td className="px-3 py-1.5 text-muted-foreground">{rec.timestamp}</td>
+                        <td className="px-3 py-1.5 text-right font-medium tabular-nums">
+                          {typeof rec.prediction === "number"
+                            ? rec.prediction.toLocaleString(undefined, { maximumFractionDigits: 4 })
+                            : String(rec.prediction)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
         )}
 
         <p className="text-center text-xs text-muted-foreground">

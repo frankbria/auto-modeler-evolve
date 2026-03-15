@@ -164,6 +164,16 @@ export const api = {
     }> =>
       fetch(`${API_URL}/api/data/${datasetId}/correlations`).then((r) => r.json()),
 
+    boxplot: (
+      datasetId: string,
+      column: string,
+      groupby?: string
+    ): Promise<import("./types").ChartSpec> => {
+      const params = new URLSearchParams({ column })
+      if (groupby) params.set("groupby", groupby)
+      return fetch(`${API_URL}/api/data/${datasetId}/boxplot?${params}`).then((r) => r.json())
+    },
+
     listByProject: (projectId: string): Promise<DatasetListItem[]> =>
       fetch(`${API_URL}/api/data/project/${projectId}/datasets`).then((r) => r.json()),
 

@@ -57,6 +57,18 @@ export function ChartMessage({ spec }: ChartMessageProps) {
     )
   }
 
+  // Box plot uses SVG renderer (Recharts has no native box plot)
+  if (chart_type === "boxplot") {
+    return (
+      <div className="mt-2 rounded-lg border bg-card p-3">
+        {title && (
+          <p className="mb-2 text-xs font-semibold text-muted-foreground">{title}</p>
+        )}
+        <BoxPlotChart data={data} xLabel={x_label} yLabel={y_label} />
+      </div>
+    )
+  }
+
   return (
     <div className="mt-2 rounded-lg border bg-card p-3">
       {title && (
@@ -397,4 +409,164 @@ function renderChart(
     default:
       return <div className="text-xs text-muted-foreground">Chart unavailable</div>
   }
+}
+
+// ---------------------------------------------------------------------------
+// Box plot SVG renderer
+// ---------------------------------------------------------------------------
+
+interface BoxRow {
+  group: string
+  min: number
+  q1: number
+  median: number
+  q3: number
+  max: number
+  mean?: number
+  count?: number
+}
+
+function BoxPlotChart({
+  data,
+  xLabel,
+  yLabel,
+}: {
+  data: Record<string, unknown>[]
+  xLabel: string
+  yLabel: string
+}) {
+  const rows = data as BoxRow[]
+  if (rows.length === 0) return <p className="text-xs text-muted-foreground">No data</p>
+
+  const SVG_H = 200
+  const SVG_W = Math.max(300, rows.length * 80 + 60)
+  const PAD = { top: 16, right: 16, bottom: 40, left: 52 }
+  const plotH = SVG_H - PAD.top - PAD.bottom
+  const plotW = SVG_W - PAD.left - PAD.right
+
+  const allVals = rows.flatMap((r) => [r.min, r.q1, r.median, r.q3, r.max])
+  const yMin = Math.min(...allVals)
+  const yMax = Math.max(...allVals)
+  const yRange = yMax - yMin || 1
+
+  const scaleY = (v: number) => PAD.top + plotH - ((v - yMin) / yRange) * plotH
+  const boxW = Math.min(40, plotW / rows.length / 1.5)
+  const boxCx = (i: number) => PAD.left + (i + 0.5) * (plotW / rows.length)
+
+  // Y axis ticks (4 evenly spaced)
+  const ticks = Array.from({ length: 5 }, (_, i) => yMin + (yRange * i) / 4)
+
+  const BOX_COLOR = "#6366f1"
+  const MED_COLOR = "#ec4899"
+
+  return (
+    <svg
+      viewBox={`0 0 ${SVG_W} ${SVG_H}`}
+      className="w-full"
+      style={{ height: SVG_H }}
+      aria-label="Box plot chart"
+    >
+      {/* Y axis ticks */}
+      {ticks.map((t, i) => (
+        <g key={i}>
+          <line
+            x1={PAD.left}
+            x2={PAD.left + plotW}
+            y1={scaleY(t)}
+            y2={scaleY(t)}
+            stroke="hsl(var(--border))"
+            strokeWidth={0.5}
+          />
+          <text
+            x={PAD.left - 6}
+            y={scaleY(t) + 4}
+            textAnchor="end"
+            fontSize={9}
+            fill="hsl(var(--muted-foreground))"
+          >
+            {t.toLocaleString(undefined, { maximumFractionDigits: 1 })}
+          </text>
+        </g>
+      ))}
+
+      {/* Y axis label */}
+      <text
+        transform={`rotate(-90)`}
+        x={-(PAD.top + plotH / 2)}
+        y={14}
+        textAnchor="middle"
+        fontSize={9}
+        fill="hsl(var(--muted-foreground))"
+      >
+        {yLabel}
+      </text>
+
+      {/* Boxes */}
+      {rows.map((row, i) => {
+        const cx = boxCx(i)
+        const x0 = cx - boxW / 2
+
+        const yQ1 = scaleY(row.q1)
+        const yQ3 = scaleY(row.q3)
+        const yMed = scaleY(row.median)
+        const yMinS = scaleY(row.min)
+        const yMaxS = scaleY(row.max)
+        const capW = boxW * 0.4
+
+        return (
+          <g key={row.group} role="img" aria-label={`${row.group}: median ${row.median}`}>
+            {/* Whisker stem */}
+            <line x1={cx} x2={cx} y1={yMinS} y2={yMaxS} stroke={BOX_COLOR} strokeWidth={1.5} />
+            {/* Min cap */}
+            <line x1={cx - capW / 2} x2={cx + capW / 2} y1={yMinS} y2={yMinS} stroke={BOX_COLOR} strokeWidth={1.5} />
+            {/* Max cap */}
+            <line x1={cx - capW / 2} x2={cx + capW / 2} y1={yMaxS} y2={yMaxS} stroke={BOX_COLOR} strokeWidth={1.5} />
+            {/* IQR box */}
+            <rect
+              x={x0}
+              y={yQ3}
+              width={boxW}
+              height={Math.max(1, yQ1 - yQ3)}
+              fill={`${BOX_COLOR}33`}
+              stroke={BOX_COLOR}
+              strokeWidth={1.5}
+              rx={2}
+            />
+            {/* Median line */}
+            <line x1={x0} x2={x0 + boxW} y1={yMed} y2={yMed} stroke={MED_COLOR} strokeWidth={2} />
+
+            {/* X-axis label */}
+            <text
+              x={cx}
+              y={SVG_H - PAD.bottom + 14}
+              textAnchor="middle"
+              fontSize={9}
+              fill="hsl(var(--muted-foreground))"
+            >
+              {String(row.group).length > 10 ? String(row.group).slice(0, 9) + "…" : String(row.group)}
+            </text>
+          </g>
+        )
+      })}
+
+      {/* X axis label */}
+      <text
+        x={PAD.left + plotW / 2}
+        y={SVG_H - 4}
+        textAnchor="middle"
+        fontSize={9}
+        fill="hsl(var(--muted-foreground))"
+      >
+        {xLabel}
+      </text>
+
+      {/* Legend */}
+      <g>
+        <rect x={PAD.left} y={PAD.top - 12} width={8} height={8} fill={`${BOX_COLOR}33`} stroke={BOX_COLOR} rx={1} />
+        <text x={PAD.left + 10} y={PAD.top - 5} fontSize={8} fill="hsl(var(--muted-foreground))">IQR</text>
+        <line x1={PAD.left + 28} x2={PAD.left + 36} y1={PAD.top - 9} y2={PAD.top - 9} stroke={MED_COLOR} strokeWidth={2} />
+        <text x={PAD.left + 38} y={PAD.top - 5} fontSize={8} fill="hsl(var(--muted-foreground))">Median</text>
+      </g>
+    </svg>
+  )
 }

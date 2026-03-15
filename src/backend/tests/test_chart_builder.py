@@ -6,6 +6,7 @@ import pytest
 
 from core.chart_builder import (
     build_bar_chart,
+    build_boxplot,
     build_correlation_heatmap,
     build_histogram,
     build_line_chart,
@@ -227,3 +228,121 @@ class TestBuildCorrelationHeatmap:
         spec = build_correlation_heatmap(matrix, cols)
         row_a = next(r for r in spec["data"] if r["row"] == "a")
         assert row_a["b"] == 0.75
+
+
+# ---------------------------------------------------------------------------
+# build_boxplot — new chart type
+# ---------------------------------------------------------------------------
+
+class TestBuildBoxplot:
+    def _make_df(self) -> pd.DataFrame:
+        """Synthetic sales DataFrame: numeric 'sales', categorical 'region'."""
+        return pd.DataFrame({
+            "sales": [10, 20, 30, 40, 50, 15, 25, 35, 45, 55],
+            "region": ["North"] * 5 + ["South"] * 5,
+        })
+
+    # --- chart_type and structure ---
+    def test_chart_type_is_boxplot(self):
+        df = self._make_df()
+        spec = build_boxplot(df, value_col="sales")
+        assert spec["chart_type"] == "boxplot"
+
+    def test_x_key_is_group(self):
+        df = self._make_df()
+        spec = build_boxplot(df, value_col="sales")
+        assert spec["x_key"] == "group"
+
+    def test_y_keys_contain_quartiles(self):
+        df = self._make_df()
+        spec = build_boxplot(df, value_col="sales")
+        for key in ("min", "q1", "median", "q3", "max"):
+            assert key in spec["y_keys"]
+
+    # --- single-column (no group) ---
+    def test_single_column_returns_one_box(self):
+        df = self._make_df()
+        spec = build_boxplot(df, value_col="sales")
+        assert len(spec["data"]) == 1
+        assert spec["data"][0]["group"] == "sales"
+
+    def test_single_column_stats_correct(self):
+        df = pd.DataFrame({"v": [1.0, 2.0, 3.0, 4.0, 5.0]})
+        spec = build_boxplot(df, value_col="v")
+        box = spec["data"][0]
+        assert box["median"] == 3.0
+        # pandas default linear interpolation: Q1=2.0, Q3=4.0 for [1,2,3,4,5]
+        assert box["q1"] == pytest.approx(2.0, abs=0.01)
+        assert box["q3"] == pytest.approx(4.0, abs=0.01)
+
+    # --- grouped ---
+    def test_grouped_returns_one_box_per_group(self):
+        df = self._make_df()
+        spec = build_boxplot(df, value_col="sales", group_col="region")
+        assert len(spec["data"]) == 2
+        groups = {r["group"] for r in spec["data"]}
+        assert groups == {"North", "South"}
+
+    def test_grouped_sorted_by_median_desc(self):
+        df = self._make_df()
+        spec = build_boxplot(df, value_col="sales", group_col="region")
+        medians = [r["median"] for r in spec["data"]]
+        assert medians == sorted(medians, reverse=True)
+
+    def test_grouped_each_box_has_required_keys(self):
+        df = self._make_df()
+        spec = build_boxplot(df, value_col="sales", group_col="region")
+        for box in spec["data"]:
+            for key in ("group", "min", "q1", "median", "q3", "max", "mean", "count"):
+                assert key in box, f"Missing key: {key}"
+
+    def test_min_lte_q1_lte_median_lte_q3_lte_max(self):
+        df = self._make_df()
+        spec = build_boxplot(df, value_col="sales", group_col="region")
+        for box in spec["data"]:
+            assert box["min"] <= box["q1"] <= box["median"] <= box["q3"] <= box["max"]
+
+    # --- limit ---
+    def test_limit_caps_groups(self):
+        df = pd.DataFrame({
+            "v": range(100),
+            "g": [str(i) for i in range(100)],  # 100 distinct groups
+        })
+        spec = build_boxplot(df, value_col="v", group_col="g", limit=5)
+        assert len(spec["data"]) <= 5
+
+    # --- title ---
+    def test_auto_title_single_col(self):
+        df = pd.DataFrame({"revenue": [1, 2, 3]})
+        spec = build_boxplot(df, value_col="revenue")
+        assert "revenue" in spec["title"].lower()
+
+    def test_auto_title_grouped(self):
+        df = self._make_df()
+        spec = build_boxplot(df, value_col="sales", group_col="region")
+        assert "sales" in spec["title"] and "region" in spec["title"]
+
+    def test_explicit_title_respected(self):
+        df = self._make_df()
+        spec = build_boxplot(df, value_col="sales", title="My Custom Title")
+        assert spec["title"] == "My Custom Title"
+
+    # --- edge cases ---
+    def test_empty_column_returns_empty_data(self):
+        df = pd.DataFrame({"v": [float("nan"), float("nan")]})
+        spec = build_boxplot(df, value_col="v")
+        assert spec["data"] == []
+
+    def test_nonexistent_group_col_falls_back_to_single(self):
+        # group_col not in df → fall back to single-box behaviour
+        df = pd.DataFrame({"v": [1, 2, 3]})
+        spec = build_boxplot(df, value_col="v", group_col="missing")
+        assert len(spec["data"]) == 1
+
+    def test_whiskers_use_tukey_fence(self):
+        # Add a clear outlier; whisker should not extend to it
+        values = list(range(1, 11)) + [1000]  # 1000 is an outlier
+        df = pd.DataFrame({"v": values})
+        spec = build_boxplot(df, value_col="v")
+        box = spec["data"][0]
+        assert box["max"] < 1000  # whisker stops before outlier

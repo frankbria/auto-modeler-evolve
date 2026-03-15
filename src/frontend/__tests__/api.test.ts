@@ -154,6 +154,23 @@ describe("api.data", () => {
     await api.data.correlations("ds1")
     expect(fetchMock).toHaveBeenCalledWith(`${BASE}/api/data/ds1/correlations`)
   })
+
+  it("boxplot() without groupby calls GET /api/data/:id/boxplot?column=X", async () => {
+    fetchMock.mockResponseOnce(JSON.stringify({ chart_type: "boxplot", data: [] }))
+    await api.data.boxplot("ds1", "revenue")
+    const url = fetchMock.mock.calls[0][0] as string
+    expect(url).toContain("/api/data/ds1/boxplot")
+    expect(url).toContain("column=revenue")
+    expect(url).not.toContain("groupby")
+  })
+
+  it("boxplot() with groupby appends groupby param", async () => {
+    fetchMock.mockResponseOnce(JSON.stringify({ chart_type: "boxplot", data: [] }))
+    await api.data.boxplot("ds1", "revenue", "region")
+    const url = fetchMock.mock.calls[0][0] as string
+    expect(url).toContain("column=revenue")
+    expect(url).toContain("groupby=region")
+  })
 })
 
 // ---------------------------------------------------------------------------

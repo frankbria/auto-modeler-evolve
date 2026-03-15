@@ -139,6 +139,103 @@ describe("ChartMessage", () => {
     expect(titleEl).not.toBeInTheDocument()
   })
 
+  it("renders boxplot chart without crashing", () => {
+    render(
+      <ChartMessage
+        spec={makeSpec({
+          chart_type: "boxplot",
+          title: "Revenue Distribution by Region",
+          data: [
+            { group: "North", min: 800, q1: 1000, median: 1300, q3: 1600, max: 2000, mean: 1300, count: 5 },
+            { group: "South", min: 400, q1: 600, median: 900, q3: 1200, max: 1800, mean: 900, count: 5 },
+          ],
+          x_key: "group",
+          y_keys: ["min", "q1", "median", "q3", "max"],
+          x_label: "Region",
+          y_label: "Revenue",
+        })}
+      />
+    )
+    expect(screen.getByText("Revenue Distribution by Region")).toBeInTheDocument()
+  })
+
+  it("boxplot shows group labels", () => {
+    render(
+      <ChartMessage
+        spec={makeSpec({
+          chart_type: "boxplot",
+          title: "Distribution",
+          data: [
+            { group: "Alpha", min: 1, q1: 2, median: 3, q3: 4, max: 5, mean: 3, count: 10 },
+            { group: "Beta", min: 2, q1: 3, median: 4, q3: 5, max: 6, mean: 4, count: 10 },
+          ],
+          x_key: "group",
+          y_keys: ["min", "q1", "median", "q3", "max"],
+          x_label: "Category",
+          y_label: "Value",
+        })}
+      />
+    )
+    expect(screen.getByText("Alpha")).toBeInTheDocument()
+    expect(screen.getByText("Beta")).toBeInTheDocument()
+  })
+
+  it("boxplot with empty data shows no data message", () => {
+    render(
+      <ChartMessage
+        spec={makeSpec({
+          chart_type: "boxplot",
+          title: "Empty Box Plot",
+          data: [],
+          x_key: "group",
+          y_keys: ["min", "q1", "median", "q3", "max"],
+          x_label: "",
+          y_label: "Value",
+        })}
+      />
+    )
+    expect(screen.getByText("No data")).toBeInTheDocument()
+  })
+
+  it("boxplot renders SVG element", () => {
+    const { container } = render(
+      <ChartMessage
+        spec={makeSpec({
+          chart_type: "boxplot",
+          title: "SVG Test",
+          data: [
+            { group: "A", min: 1, q1: 2, median: 3, q3: 4, max: 5, mean: 3, count: 5 },
+          ],
+          x_key: "group",
+          y_keys: ["min", "q1", "median", "q3", "max"],
+          x_label: "Group",
+          y_label: "Value",
+        })}
+      />
+    )
+    expect(container.querySelector("svg")).not.toBeNull()
+  })
+
+  it("boxplot truncates long group labels at 10 chars", () => {
+    render(
+      <ChartMessage
+        spec={makeSpec({
+          chart_type: "boxplot",
+          title: "Long Labels",
+          data: [
+            { group: "VeryLongGroupName", min: 1, q1: 2, median: 3, q3: 4, max: 5, mean: 3, count: 5 },
+          ],
+          x_key: "group",
+          y_keys: ["min", "q1", "median", "q3", "max"],
+          x_label: "Group",
+          y_label: "Value",
+        })}
+      />
+    )
+    // BoxPlotChart slices at 9 chars: "VeryLongGroupName" → "VeryLongG…"
+    expect(screen.getByText("VeryLongG…")).toBeInTheDocument()
+  })
+
   it("multi-series line chart renders without crashing", () => {
     render(
       <ChartMessage

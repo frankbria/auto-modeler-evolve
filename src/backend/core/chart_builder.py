@@ -5,7 +5,7 @@ The frontend receives these as JSON and passes them directly to Recharts compone
 
 Chart spec shape (all charts):
   {
-    "chart_type": "bar" | "line" | "histogram" | "scatter" | "pie" | "heatmap",
+    "chart_type": "bar" | "line" | "histogram" | "scatter" | "pie" | "heatmap" | "boxplot",
     "title": str,
     "data": [...],           # Recharts data array
     "x_key": str,            # key used for x-axis
@@ -18,6 +18,11 @@ For "heatmap" chart type (correlation matrix):
   "data": [{"row": "col_a", "col_a": 1.0, "col_b": 0.85, ...}, ...]
   "x_key": "row"
   "y_keys": [list of column names]
+
+For "boxplot" chart type (distribution comparison):
+  "data": [{"group": str, "min": f, "q1": f, "median": f, "q3": f, "max": f, "mean": f}, ...]
+  "x_key": "group"
+  "y_keys": ["min", "q1", "median", "q3", "max"]
 """
 
 from __future__ import annotations
@@ -409,6 +414,85 @@ def build_timeseries_chart(
         x_label="Date",
         y_label=column_name,
     )
+
+
+def build_boxplot(
+    df: pd.DataFrame,
+    value_col: str,
+    group_col: str | None = None,
+    title: str = "",
+    limit: int = 15,
+) -> dict[str, Any]:
+    """Box-and-whisker chart for distribution comparison.
+
+    When group_col is None: a single box for the entire value column.
+    When group_col is provided: one box per category, sorted by median descending.
+
+    Each box encodes:
+      min, Q1 (25th pct), median, Q3 (75th pct), max, mean
+    Whiskers use the Tukey fence (1.5 × IQR), capped at actual data range
+    so the chart shows the non-outlier spread naturally.
+
+    Returns chart_type="boxplot" which the frontend renders as SVG boxes.
+    """
+    col_data = df[value_col].dropna()
+    if col_data.empty:
+        return {
+            "chart_type": "boxplot",
+            "title": title or f"Distribution of {value_col}",
+            "data": [],
+            "x_key": "group",
+            "y_keys": ["min", "q1", "median", "q3", "max"],
+            "x_label": group_col or "",
+            "y_label": value_col,
+        }
+
+    def _box_stats(series: pd.Series) -> dict[str, Any]:
+        q1 = float(series.quantile(0.25))
+        q3 = float(series.quantile(0.75))
+        iqr = q3 - q1
+        fence_lo = q1 - 1.5 * iqr
+        fence_hi = q3 + 1.5 * iqr
+        non_outliers = series[(series >= fence_lo) & (series <= fence_hi)]
+        return {
+            "min": round(float(non_outliers.min()) if not non_outliers.empty else series.min(), 4),
+            "q1": round(q1, 4),
+            "median": round(float(series.median()), 4),
+            "q3": round(q3, 4),
+            "max": round(float(non_outliers.max()) if not non_outliers.empty else series.max(), 4),
+            "mean": round(float(series.mean()), 4),
+            "count": int(series.count()),
+        }
+
+    if group_col is None or group_col not in df.columns:
+        stats = _box_stats(col_data)
+        data = [{"group": value_col, **stats}]
+    else:
+        groups = df[group_col].dropna().unique()
+        rows = []
+        for grp in groups:
+            subset = df.loc[df[group_col] == grp, value_col].dropna()
+            if subset.empty:
+                continue
+            stats = _box_stats(subset)
+            rows.append({"group": str(grp), **stats})
+        # Sort by median descending, cap at limit
+        rows.sort(key=lambda r: r["median"], reverse=True)
+        data = rows[:limit]
+
+    return {
+        "chart_type": "boxplot",
+        "title": title or (
+            f"Distribution of {value_col} by {group_col}"
+            if group_col
+            else f"Distribution of {value_col}"
+        ),
+        "data": data,
+        "x_key": "group",
+        "y_keys": ["min", "q1", "median", "q3", "max"],
+        "x_label": group_col or value_col,
+        "y_label": value_col,
+    }
 
 
 def _jsonify(value: Any) -> Any:

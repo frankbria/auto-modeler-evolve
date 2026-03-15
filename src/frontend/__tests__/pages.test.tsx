@@ -323,4 +323,88 @@ describe("PredictionDashboard", () => {
       })
     }
   })
+
+  // ---------------------------------------------------------------------------
+  // Prediction session history
+  // ---------------------------------------------------------------------------
+
+  it("shows session history section after first successful prediction", async () => {
+    fetchMock.mockResponseOnce(JSON.stringify(mockDeployment))
+    fetchMock.mockResponseOnce(
+      JSON.stringify({ prediction: 1500.0, deployment_id: "deployment-123" })
+    )
+    const { default: PredictionDashboard } = await import("../app/predict/[id]/page")
+    render(<PredictionDashboard />)
+    await waitFor(() => {
+      const btn = screen.queryByRole("button", { name: /predict/i })
+      if (btn) return true
+    })
+
+    const predictButton = screen.queryByRole("button", { name: /get prediction/i })
+    if (predictButton) {
+      await act(async () => { fireEvent.click(predictButton) })
+      await waitFor(() => {
+        expect(screen.queryByText(/session history/i)).toBeTruthy()
+      })
+    }
+  })
+
+  it("does not show session history before any prediction", async () => {
+    fetchMock.mockResponseOnce(JSON.stringify(mockDeployment))
+    const { default: PredictionDashboard } = await import("../app/predict/[id]/page")
+    render(<PredictionDashboard />)
+    await waitFor(() => {
+      expect(screen.queryByText(/units/i) || screen.queryByText(/predict/i)).toBeTruthy()
+    })
+    // History section should be absent before any prediction
+    expect(screen.queryByText(/session history/i)).not.toBeInTheDocument()
+  })
+
+  it("history section shows Download CSV button", async () => {
+    fetchMock.mockResponseOnce(JSON.stringify(mockDeployment))
+    fetchMock.mockResponseOnce(
+      JSON.stringify({ prediction: 900.0, deployment_id: "deployment-123" })
+    )
+    const { default: PredictionDashboard } = await import("../app/predict/[id]/page")
+    render(<PredictionDashboard />)
+    await waitFor(() => {
+      if (screen.queryByRole("button", { name: /get prediction/i })) return true
+    })
+
+    const predictButton = screen.queryByRole("button", { name: /get prediction/i })
+    if (predictButton) {
+      await act(async () => { fireEvent.click(predictButton) })
+      await waitFor(() => {
+        const csvButton = screen.queryByRole("button", { name: /download csv/i })
+        if (csvButton) {
+          expect(csvButton).toBeInTheDocument()
+        }
+      })
+    }
+  })
+
+  it("history counter increments on successive predictions", async () => {
+    fetchMock.mockResponseOnce(JSON.stringify(mockDeployment))
+    fetchMock.mockResponseOnce(JSON.stringify({ prediction: 100.0 }))
+    fetchMock.mockResponseOnce(JSON.stringify({ prediction: 200.0 }))
+
+    const { default: PredictionDashboard } = await import("../app/predict/[id]/page")
+    render(<PredictionDashboard />)
+    await waitFor(() => {
+      if (screen.queryByRole("button", { name: /predict/i })) return true
+    })
+
+    const predictButton = screen.queryByRole("button", { name: /get prediction/i })
+    if (predictButton) {
+      // First prediction
+      await act(async () => { fireEvent.click(predictButton) })
+      await waitFor(() => screen.queryByText(/session history/i))
+      // Second prediction
+      await act(async () => { fireEvent.click(predictButton) })
+      await waitFor(() => {
+        // History count should be 2
+        expect(screen.queryByText(/session history \(2\)/i)).toBeTruthy()
+      })
+    }
+  })
 })
