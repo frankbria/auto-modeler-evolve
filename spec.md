@@ -315,6 +315,16 @@ guides them forward through the natural flow.
       {type: health} SSE event. ModelHealthCard in DeploymentPanel shows score, status badge,
       per-component breakdown, recommendations, and Retrain button.
       *Day 4 (02:00): 27 backend + 12 frontend = 39 new tests. Total: 854 backend + 294 frontend = 1148.*
+- [x] **Live prediction explanation on public dashboard** — The predict/[id] shareable dashboard
+      now explains WHY the model made each prediction. POST /api/predict/{deployment_id}/explain
+      returns feature contributions (importance × normalised deviation from training mean) sorted
+      by absolute impact, plus a plain-English summary and top_drivers list. PredictionPipeline
+      stores feature_means + feature_stds at build time for accurate attribution.
+      Frontend: "Why this prediction?" button appears after each result → ContributionBar waterfall
+      chart with red (pushed down) / blue (pushed up) bars showing each feature's impact vs
+      the training average. FeatureContribution + PredictionExplanation types added.
+      Closes the vision's "Not a black box" promise for the shareable analyst dashboard.
+      *Day 4 (12:04): 11 backend + 6 frontend = 17 new tests. Total: ~870 backend + 306 frontend.*
 - [x] **Prediction drift detection + what-if analysis** — Two new Phase 8 capabilities:
       (1) GET /api/deploy/{id}/drift compares early vs recent prediction distributions using
       only PredictionLog — no schema migration needed. Regression: z-score of mean shift;
