@@ -281,6 +281,16 @@ guides them forward through the natural flow.
 
 #### Track B — Vision-Driven Innovation
 
+- [x] **Prediction logging & monitoring** — Track every prediction made via PredictionLog
+      SQLModel table (inputs, output, timestamp, confidence). Analytics endpoint returns
+      per-day counts, histogram distribution, recent average. Logs endpoint returns paginated
+      prediction history. DeploymentPanel upgraded with AnalyticsCard (mini bar chart + totals)
+      and ReadinessCard (score + checklist). Chat detects readiness intent and emits structured
+      readiness events alongside Claude response.
+      *Day 4 (00:08): PredictionLog model; GET /api/deploy/{id}/analytics + /logs; GET
+      /api/models/{id}/readiness (6-check scorecard); chat intent detection; frontend panel
+      upgrades. 34 backend + 12 frontend = 46 new tests. Total: 720 backend + 266 frontend = 986.*
+
 - [x] **Research external models and data sources** — Investigate integrating external
       ML models (XGBoost, LightGBM, neural networks via scikit-learn MLPClassifier),
       additional data connectors (Excel, Google Sheets, database connections), or
