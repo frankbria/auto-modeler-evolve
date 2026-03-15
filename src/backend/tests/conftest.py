@@ -1,34 +1,32 @@
 """Test configuration and shared fixtures."""
 import pytest
-import tempfile
-import os
 from httpx import AsyncClient, ASGITransport
-from sqlmodel import create_engine, Session, SQLModel
-
-# Use in-memory SQLite for tests
-TEST_DATABASE_URL = "sqlite:///./test_automodeler.db"
+from sqlmodel import create_engine, SQLModel
 
 
 @pytest.fixture(autouse=True)
 def set_test_env(tmp_path, monkeypatch):
     """Use temp directory for all file operations in tests."""
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
-    yield
-    # Cleanup test DB if exists
-    if os.path.exists("test_automodeler.db"):
-        os.unlink("test_automodeler.db")
+    yield tmp_path
 
 
 @pytest.fixture
-async def client(set_test_env):
+async def client(tmp_path, set_test_env):
     """Async HTTP client that hits the FastAPI app directly."""
-    # Import after env is set so db.py picks up the temp dir
     import db
+    import models.project  # noqa
+    import models.dataset  # noqa
+    import models.feature_set  # noqa
+    import models.conversation  # noqa
+    import models.model_run  # noqa
+    import models.deployment  # noqa
+    import models.prediction_log  # noqa
     from main import app
 
-    # Re-init DB with test path
-    db.engine = create_engine(TEST_DATABASE_URL, echo=False)
-    db.DATA_DIR = set_test_env if isinstance(set_test_env, str) else "./test_data"
+    test_db = str(tmp_path / "test.db")
+    db.engine = create_engine(f"sqlite:///{test_db}", echo=False)
+    db.DATA_DIR = tmp_path
     SQLModel.metadata.create_all(db.engine)
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
