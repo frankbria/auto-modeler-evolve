@@ -21,6 +21,7 @@ from pathlib import Path
 import pandas as pd
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import Response
+from pydantic import BaseModel
 from sqlmodel import Session, select
 
 import db as _db
@@ -446,6 +447,277 @@ def get_prediction_logs(
             }
             for log in page
         ],
+    }
+
+
+# ---------------------------------------------------------------------------
+# 9. Drift detection
+# ---------------------------------------------------------------------------
+
+
+@router.get("/api/deploy/{deployment_id}/drift")
+def get_prediction_drift(
+    deployment_id: str,
+    window: int = Query(20, ge=5, le=200, description="Predictions per comparison window"),
+    session: Session = Depends(get_session),
+):
+    """Detect if the model's prediction distribution has shifted over time.
+
+    Compares the first `window` predictions (baseline) against the most recent
+    `window` predictions to detect distribution shift without requiring training
+    data — uses only the PredictionLog.
+
+    Returns:
+    - status: "insufficient_data" | "stable" | "mild_drift" | "significant_drift"
+    - drift_score: 0–100 (0 = no drift, 100 = extreme drift)
+    - explanation: plain-English description
+    - baseline_stats / recent_stats: mean, std, count for numeric models
+    - baseline_dist / recent_dist: class proportions for classification models
+    """
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment:
+        raise HTTPException(status_code=404, detail="Deployment not found")
+
+    all_logs = session.exec(
+        select(PredictionLog)
+        .where(PredictionLog.deployment_id == deployment_id)
+    ).all()
+    logs_sorted = sorted(all_logs, key=lambda l: l.created_at)
+
+    min_required = window * 2
+    if len(logs_sorted) < min_required:
+        return {
+            "deployment_id": deployment_id,
+            "status": "insufficient_data",
+            "drift_score": None,
+            "explanation": (
+                f"Not enough predictions yet to detect drift. "
+                f"Need at least {min_required} predictions (currently {len(logs_sorted)})."
+            ),
+            "baseline_stats": None,
+            "recent_stats": None,
+            "baseline_dist": None,
+            "recent_dist": None,
+            "problem_type": deployment.problem_type,
+        }
+
+    baseline_logs = logs_sorted[:window]
+    recent_logs = logs_sorted[-window:]
+
+    problem_type = deployment.problem_type or "regression"
+
+    if problem_type == "regression":
+        baseline_vals = [l.prediction_numeric for l in baseline_logs if l.prediction_numeric is not None]
+        recent_vals = [l.prediction_numeric for l in recent_logs if l.prediction_numeric is not None]
+
+        if not baseline_vals or not recent_vals:
+            return {
+                "deployment_id": deployment_id,
+                "status": "insufficient_data",
+                "drift_score": None,
+                "explanation": "No numeric prediction values found to compare.",
+                "baseline_stats": None,
+                "recent_stats": None,
+                "baseline_dist": None,
+                "recent_dist": None,
+                "problem_type": problem_type,
+            }
+
+        b_mean = sum(baseline_vals) / len(baseline_vals)
+        r_mean = sum(recent_vals) / len(recent_vals)
+        b_std = (sum((v - b_mean) ** 2 for v in baseline_vals) / len(baseline_vals)) ** 0.5
+
+        # Z-score of recent mean vs baseline distribution
+        z = abs(r_mean - b_mean) / (b_std + 1e-9)
+        drift_score = min(100, int(z * 33))  # z=3 → 99
+
+        if z < 1.0:
+            status = "stable"
+            explanation = (
+                f"Prediction values are stable. Recent average ({r_mean:.3f}) is "
+                f"close to the baseline average ({b_mean:.3f})."
+            )
+        elif z < 2.0:
+            status = "mild_drift"
+            explanation = (
+                f"Mild drift detected. Recent average ({r_mean:.3f}) has shifted "
+                f"from the baseline ({b_mean:.3f}) — a {abs(r_mean - b_mean):.3f} difference. "
+                "This may reflect normal variation or a gradual change in your data."
+            )
+        else:
+            status = "significant_drift"
+            explanation = (
+                f"Significant drift detected. Recent predictions average {r_mean:.3f} "
+                f"vs baseline {b_mean:.3f} — a {abs(r_mean - b_mean):.3f} shift "
+                f"({z:.1f} standard deviations). Consider retraining with newer data."
+            )
+
+        r_std = (sum((v - r_mean) ** 2 for v in recent_vals) / len(recent_vals)) ** 0.5
+        baseline_stats = {"mean": round(b_mean, 4), "std": round(b_std, 4), "count": len(baseline_vals)}
+        recent_stats = {"mean": round(r_mean, 4), "std": round(r_std, 4), "count": len(recent_vals)}
+
+        return {
+            "deployment_id": deployment_id,
+            "status": status,
+            "drift_score": drift_score,
+            "explanation": explanation,
+            "baseline_stats": baseline_stats,
+            "recent_stats": recent_stats,
+            "baseline_dist": None,
+            "recent_dist": None,
+            "problem_type": problem_type,
+        }
+
+    else:
+        # Classification: compare class distribution proportions
+        def _class_dist(logs: list) -> dict[str, float]:
+            counts: dict[str, int] = {}
+            for l in logs:
+                try:
+                    label = str(json.loads(l.prediction))
+                except (json.JSONDecodeError, TypeError):
+                    label = "unknown"
+                counts[label] = counts.get(label, 0) + 1
+            total = sum(counts.values()) or 1
+            return {k: round(v / total, 4) for k, v in counts.items()}
+
+        baseline_dist = _class_dist(baseline_logs)
+        recent_dist = _class_dist(recent_logs)
+        all_classes = set(baseline_dist) | set(recent_dist)
+
+        # Total variation distance (max class-proportion difference)
+        tvd = sum(
+            abs(recent_dist.get(c, 0) - baseline_dist.get(c, 0))
+            for c in all_classes
+        ) / 2
+
+        drift_score = min(100, int(tvd * 200))  # TVD 0.5 → 100
+
+        if tvd < 0.1:
+            status = "stable"
+            explanation = "Class distribution is stable — predictions are consistent with baseline patterns."
+        elif tvd < 0.25:
+            status = "mild_drift"
+            explanation = (
+                f"Mild class distribution shift (TVD={tvd:.2f}). "
+                "Some class proportions have changed since deployment."
+            )
+        else:
+            status = "significant_drift"
+            explanation = (
+                f"Significant class distribution shift (TVD={tvd:.2f}). "
+                "The mix of predicted classes has changed substantially — this may indicate "
+                "data drift or a shift in your user base. Consider retraining."
+            )
+
+        return {
+            "deployment_id": deployment_id,
+            "status": status,
+            "drift_score": drift_score,
+            "explanation": explanation,
+            "baseline_stats": None,
+            "recent_stats": None,
+            "baseline_dist": baseline_dist,
+            "recent_dist": recent_dist,
+            "problem_type": problem_type,
+        }
+
+
+# ---------------------------------------------------------------------------
+# 10. What-if analysis
+# ---------------------------------------------------------------------------
+
+
+class WhatIfRequest(BaseModel):
+    base: dict
+    overrides: dict
+
+
+@router.post("/api/predict/{deployment_id}/whatif")
+def whatif_prediction(
+    deployment_id: str,
+    body: WhatIfRequest,
+    session: Session = Depends(get_session),
+):
+    """Compare predictions with and without feature overrides.
+
+    Accepts a base feature dict and a set of override values. Returns the
+    original prediction, the modified prediction, and the delta — in plain
+    language so users understand the effect of changing a specific feature.
+
+    Example: "What would the revenue be if region was 'West' instead of 'East'?"
+    """
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment or not deployment.is_active:
+        raise HTTPException(status_code=404, detail="Deployment not found or inactive")
+
+    if not deployment.pipeline_path or not Path(deployment.pipeline_path).exists():
+        raise HTTPException(status_code=500, detail="Prediction pipeline not found on disk")
+
+    run = session.get(ModelRun, deployment.model_run_id)
+    if not run or not run.model_path or not Path(run.model_path).exists():
+        raise HTTPException(status_code=500, detail="Model file not found on disk")
+
+    # Original prediction
+    original_result = predict_single(deployment.pipeline_path, run.model_path, body.base)
+
+    # Modified prediction (base + overrides)
+    modified_input = {**body.base, **body.overrides}
+    modified_result = predict_single(deployment.pipeline_path, run.model_path, modified_input)
+
+    original_pred = original_result["prediction"]
+    modified_pred = modified_result["prediction"]
+
+    # Compute delta for numeric predictions
+    delta: float | None = None
+    percent_change: float | None = None
+    direction: str | None = None
+    try:
+        orig_num = float(original_pred)  # type: ignore[arg-type]
+        mod_num = float(modified_pred)  # type: ignore[arg-type]
+        delta = round(mod_num - orig_num, 4)
+        percent_change = round((delta / (orig_num + 1e-9)) * 100, 2) if orig_num != 0 else None
+        direction = "increase" if delta > 0 else ("decrease" if delta < 0 else "no change")
+    except (TypeError, ValueError):
+        pass
+
+    # Plain-English summary
+    changed_features = list(body.overrides.keys())
+    changes_text = ", ".join(
+        f"{k}: {body.base.get(k, '?')} → {v}" for k, v in body.overrides.items()
+    )
+    if delta is not None and direction != "no change":
+        summary = (
+            f"Changing {changes_text} would {direction} the prediction "
+            f"from {original_pred} to {modified_pred} (Δ {delta:+.4f}"
+            + (f", {percent_change:+.1f}%" if percent_change is not None else "")
+            + ")."
+        )
+    elif delta == 0:
+        summary = f"Changing {changes_text} has no effect on the prediction ({original_pred})."
+    else:
+        # Classification
+        if original_pred == modified_pred:
+            summary = f"Changing {changes_text} does not change the predicted class ({original_pred})."
+        else:
+            summary = (
+                f"Changing {changes_text} changes the prediction "
+                f"from '{original_pred}' to '{modified_pred}'."
+            )
+
+    return {
+        "deployment_id": deployment_id,
+        "original_prediction": original_pred,
+        "modified_prediction": modified_pred,
+        "changed_features": changed_features,
+        "delta": delta,
+        "percent_change": percent_change,
+        "direction": direction,
+        "summary": summary,
+        "problem_type": deployment.problem_type,
+        "target_column": deployment.target_column,
+        "original_probabilities": original_result.get("probabilities"),
+        "modified_probabilities": modified_result.get("probabilities"),
     }
 
 

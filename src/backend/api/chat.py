@@ -18,6 +18,7 @@ from models.dataset import Dataset
 from models.deployment import Deployment
 from models.feature_set import FeatureSet
 from models.model_run import ModelRun
+from models.prediction_log import PredictionLog
 from models.project import Project
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
@@ -29,6 +30,14 @@ MAX_TOKENS = 1024
 _READINESS_PATTERNS = re.compile(
     r"\b(ready|readiness|production.ready|deploy|is.*(model|it).*ready|can.*deploy|"
     r"should.*deploy|good enough|production|go.live|ship it|launch)\b",
+    re.IGNORECASE,
+)
+
+# Keywords that trigger an inline drift assessment
+_DRIFT_PATTERNS = re.compile(
+    r"\b(drift|drifting|shifted|predictions.*(off|wrong|different|changed)|"
+    r"still accurate|performance.*(drop|degraded|worse)|data.*(changed|shifted|stale)|"
+    r"retrain|re.train|model.*stale|stale.*model|distribution.*changed)\b",
     re.IGNORECASE,
 )
 
@@ -104,6 +113,71 @@ def _compute_readiness(run: ModelRun, dataset: Dataset | None, feature_set: Feat
         "score": score,
         "verdict": verdict,
         "checks": checks,
+        "problem_type": problem_type,
+    }
+
+
+def _compute_drift(deployment: Deployment, logs: list) -> dict:
+    """Compute prediction drift inline (same logic as GET /api/deploy/{id}/drift)."""
+    WINDOW = 10
+    logs_sorted = sorted(logs, key=lambda l: l.created_at)
+
+    if len(logs_sorted) < WINDOW * 2:
+        return {
+            "deployment_id": deployment.id,
+            "status": "insufficient_data",
+            "drift_score": None,
+            "explanation": (
+                f"Need at least {WINDOW * 2} predictions to detect drift "
+                f"(currently {len(logs_sorted)})."
+            ),
+            "problem_type": deployment.problem_type,
+        }
+
+    baseline = logs_sorted[:WINDOW]
+    recent = logs_sorted[-WINDOW:]
+    problem_type = deployment.problem_type or "regression"
+
+    if problem_type == "regression":
+        b_vals = [l.prediction_numeric for l in baseline if l.prediction_numeric is not None]
+        r_vals = [l.prediction_numeric for l in recent if l.prediction_numeric is not None]
+        if not b_vals or not r_vals:
+            return {"deployment_id": deployment.id, "status": "insufficient_data",
+                    "drift_score": None, "explanation": "No numeric values.", "problem_type": problem_type}
+        b_mean = sum(b_vals) / len(b_vals)
+        r_mean = sum(r_vals) / len(r_vals)
+        b_std = (sum((v - b_mean) ** 2 for v in b_vals) / len(b_vals)) ** 0.5
+        z = abs(r_mean - b_mean) / (b_std + 1e-9)
+        drift_score = min(100, int(z * 33))
+        status = "stable" if z < 1.0 else ("mild_drift" if z < 2.0 else "significant_drift")
+        explanation = (
+            f"Prediction mean shifted from {b_mean:.3f} to {r_mean:.3f} "
+            f"(z={z:.1f}). Status: {status.replace('_', ' ')}."
+        )
+    else:
+        def _dist(ls: list) -> dict[str, float]:
+            counts: dict[str, int] = {}
+            for l in ls:
+                try:
+                    label = str(json.loads(l.prediction))
+                except (json.JSONDecodeError, TypeError):
+                    label = "unknown"
+                counts[label] = counts.get(label, 0) + 1
+            total = sum(counts.values()) or 1
+            return {k: v / total for k, v in counts.items()}
+        b_dist = _dist(baseline)
+        r_dist = _dist(recent)
+        all_classes = set(b_dist) | set(r_dist)
+        tvd = sum(abs(r_dist.get(c, 0) - b_dist.get(c, 0)) for c in all_classes) / 2
+        drift_score = min(100, int(tvd * 200))
+        status = "stable" if tvd < 0.1 else ("mild_drift" if tvd < 0.25 else "significant_drift")
+        explanation = f"Class distribution TVD={tvd:.2f}. Status: {status.replace('_', ' ')}."
+
+    return {
+        "deployment_id": deployment.id,
+        "status": status,
+        "drift_score": drift_score,
+        "explanation": explanation,
         "problem_type": problem_type,
     }
 
@@ -224,6 +298,30 @@ def send_message(
             except Exception:  # noqa: BLE001
                 pass  # Readiness check is nice-to-have; never crash chat
 
+    # Check if this is a drift-related question
+    drift_data: dict | None = None
+    if _DRIFT_PATTERNS.search(body.message) and ctx["deployment"]:
+        try:
+            deployment = ctx["deployment"]
+            logs = list(
+                session.exec(
+                    select(PredictionLog).where(
+                        PredictionLog.deployment_id == deployment.id
+                    )
+                ).all()
+            )
+            drift_data = _compute_drift(deployment, logs)
+            system_prompt += (
+                f"\n\n## Prediction Drift Check (just computed)\n"
+                f"Status: {drift_data['status']} | "
+                f"Drift score: {drift_data['drift_score'] if drift_data['drift_score'] is not None else 'N/A'}/100\n"
+                f"{drift_data['explanation']}\n"
+                "Reference this drift analysis in your response. Help the user understand "
+                "what drift means and whether they need to take action."
+            )
+        except Exception:  # noqa: BLE001
+            pass  # Drift check is nice-to-have; never crash chat
+
     def stream_response():
         full_response = ""
         try:
@@ -260,6 +358,10 @@ def send_message(
         # Emit readiness card if computed
         if readiness_data:
             yield f"data: {json.dumps({'type': 'readiness', 'readiness': readiness_data})}\n\n"
+
+        # Emit drift card if computed
+        if drift_data:
+            yield f"data: {json.dumps({'type': 'drift', 'drift': drift_data})}\n\n"
 
         # After text stream, opportunistically generate a chart if the
         # message is about data and we have a dataset loaded

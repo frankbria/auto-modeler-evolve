@@ -380,5 +380,19 @@ export const api = {
 
     logs: (deploymentId: string, limit?: number, offset?: number): Promise<import("./types").PredictionLogsResponse> =>
       fetch(`${API_URL}/api/deploy/${deploymentId}/logs?limit=${limit ?? 20}&offset=${offset ?? 0}`).then((r) => r.json()),
+
+    drift: (deploymentId: string, window?: number): Promise<import("./types").DriftReport> =>
+      fetch(`${API_URL}/api/deploy/${deploymentId}/drift${window ? `?window=${window}` : ""}`).then((r) => r.json()),
+
+    whatif: (
+      deploymentId: string,
+      base: Record<string, unknown>,
+      overrides: Record<string, unknown>
+    ): Promise<import("./types").WhatIfResult> =>
+      fetch(`${API_URL}/api/predict/${deploymentId}/whatif`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ base, overrides }),
+      }).then((r) => r.json()),
   },
 }

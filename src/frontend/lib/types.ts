@@ -414,3 +414,46 @@ export interface ModelReadiness {
   checks: ReadinessCheck[]
   problem_type: string
 }
+
+// ---------------------------------------------------------------------------
+// Drift Detection (Phase 8)
+// ---------------------------------------------------------------------------
+
+export type DriftStatus = "insufficient_data" | "stable" | "mild_drift" | "significant_drift"
+
+export interface DriftNumericStats {
+  mean: number
+  std: number
+  count: number
+}
+
+export interface DriftReport {
+  deployment_id: string
+  status: DriftStatus
+  drift_score: number | null
+  explanation: string
+  baseline_stats: DriftNumericStats | null
+  recent_stats: DriftNumericStats | null
+  baseline_dist: Record<string, number> | null
+  recent_dist: Record<string, number> | null
+  problem_type: string | null
+}
+
+// ---------------------------------------------------------------------------
+// What-if Analysis (Phase 8)
+// ---------------------------------------------------------------------------
+
+export interface WhatIfResult {
+  deployment_id: string
+  original_prediction: number | string
+  modified_prediction: number | string
+  changed_features: string[]
+  delta: number | null
+  percent_change: number | null
+  direction: "increase" | "decrease" | "no change" | null
+  summary: string
+  problem_type: string | null
+  target_column: string | null
+  original_probabilities?: Record<string, number>
+  modified_probabilities?: Record<string, number>
+}

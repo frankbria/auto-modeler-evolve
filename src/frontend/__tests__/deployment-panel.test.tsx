@@ -19,6 +19,7 @@ jest.mock("../lib/api", () => ({
       deploy: jest.fn(),
       undeploy: jest.fn(),
       analytics: jest.fn(),
+      drift: jest.fn(),
     },
     models: {
       readiness: jest.fn(),
@@ -29,6 +30,7 @@ jest.mock("../lib/api", () => ({
 const mockDeploy = api.deploy.deploy as jest.MockedFunction<typeof api.deploy.deploy>
 const mockUndeploy = api.deploy.undeploy as jest.MockedFunction<typeof api.deploy.undeploy>
 const mockAnalytics = api.deploy.analytics as jest.MockedFunction<typeof api.deploy.analytics>
+const mockDrift = api.deploy.drift as jest.MockedFunction<typeof api.deploy.drift>
 const mockReadiness = api.models.readiness as jest.MockedFunction<typeof api.models.readiness>
 
 const makeDeployment = (overrides: Partial<Deployment> = {}): Deployment => ({
@@ -79,9 +81,10 @@ const makeReadiness = (overrides: Partial<import("../lib/types").ModelReadiness>
 
 beforeEach(() => {
   jest.clearAllMocks()
-  // Default: readiness and analytics reject silently (component handles gracefully)
+  // Default: readiness, analytics, and drift reject silently (component handles gracefully)
   mockReadiness.mockRejectedValue(new Error("not ready"))
   mockAnalytics.mockRejectedValue(new Error("no analytics"))
+  mockDrift.mockRejectedValue(new Error("no drift"))
 })
 
 describe("DeploymentPanel — no model selected", () => {
@@ -525,6 +528,94 @@ describe("DeploymentPanel — analytics card", () => {
     fireEvent.click(screen.getByRole("button", { name: /deploy model/i }))
     await waitFor(() =>
       expect(screen.getByText(/avg prediction/i)).toBeInTheDocument()
+    )
+  })
+})
+
+describe("DeploymentPanel — drift card", () => {
+  it("shows DriftCard with stable status after deployment", async () => {
+    mockDeploy.mockResolvedValueOnce(makeDeployment())
+    mockAnalytics.mockResolvedValueOnce(makeAnalytics())
+    mockDrift.mockResolvedValueOnce({
+      deployment_id: "dep-1",
+      status: "stable",
+      drift_score: 5,
+      explanation: "Prediction values are stable.",
+      baseline_stats: null,
+      recent_stats: null,
+      baseline_dist: null,
+      recent_dist: null,
+      problem_type: "regression",
+    })
+    render(
+      <DeploymentPanel
+        projectId="proj-1"
+        selectedRunId="run-1"
+        algorithmName="Random Forest"
+      />
+    )
+    fireEvent.click(screen.getByRole("button", { name: /deploy model/i }))
+    await waitFor(() =>
+      expect(screen.getByText(/prediction drift/i)).toBeInTheDocument()
+    )
+    await waitFor(() =>
+      expect(screen.getByText("Stable")).toBeInTheDocument()
+    )
+  })
+
+  it("shows significant drift badge when drift is high", async () => {
+    mockDeploy.mockResolvedValueOnce(makeDeployment())
+    mockAnalytics.mockResolvedValueOnce(makeAnalytics())
+    mockDrift.mockResolvedValueOnce({
+      deployment_id: "dep-1",
+      status: "significant_drift",
+      drift_score: 85,
+      explanation: "Significant drift detected. Consider retraining.",
+      baseline_stats: { mean: 1000, std: 50, count: 20 },
+      recent_stats: { mean: 1500, std: 80, count: 20 },
+      baseline_dist: null,
+      recent_dist: null,
+      problem_type: "regression",
+    })
+    render(
+      <DeploymentPanel
+        projectId="proj-1"
+        selectedRunId="run-1"
+        algorithmName="Random Forest"
+      />
+    )
+    fireEvent.click(screen.getByRole("button", { name: /deploy model/i }))
+    await waitFor(() =>
+      expect(screen.getByText("Significant drift")).toBeInTheDocument()
+    )
+    expect(screen.getByText("Baseline")).toBeInTheDocument()
+    expect(screen.getByText("Recent")).toBeInTheDocument()
+  })
+
+  it("shows insufficient data message when not enough predictions", async () => {
+    mockDeploy.mockResolvedValueOnce(makeDeployment())
+    mockAnalytics.mockResolvedValueOnce(makeAnalytics())
+    mockDrift.mockResolvedValueOnce({
+      deployment_id: "dep-1",
+      status: "insufficient_data",
+      drift_score: null,
+      explanation: "Need at least 40 predictions (currently 0).",
+      baseline_stats: null,
+      recent_stats: null,
+      baseline_dist: null,
+      recent_dist: null,
+      problem_type: "regression",
+    })
+    render(
+      <DeploymentPanel
+        projectId="proj-1"
+        selectedRunId="run-1"
+        algorithmName="Random Forest"
+      />
+    )
+    fireEvent.click(screen.getByRole("button", { name: /deploy model/i }))
+    await waitFor(() =>
+      expect(screen.getByText("Insufficient data")).toBeInTheDocument()
     )
   })
 })

@@ -10,6 +10,11 @@ Living document for coordinating between bot instances and tracking ideation.
 <!-- Brief description of what you're doing this session. -->
 <!-- Remove your entry when you commit your session wrap-up. -->
 
+## Day 3 (18:00) — Model Drift Detection + What-if Analysis
+Two new Phase 8 Track B innovations:
+1. `GET /api/deploy/{id}/drift` — compares distribution of recent vs. early predictions to detect when a deployed model's outputs are shifting (stateless: uses PredictionLog only, no schema change)
+2. `POST /api/predict/{id}/whatif` — accepts base features + overrides, returns side-by-side original vs. modified prediction with delta explanation
+Also: drift chat intent detection ("predictions seem off", "still accurate") + DriftCard + WhatIfCard in DeploymentPanel.
 
 
 ## Day 3 (20:02) — Done

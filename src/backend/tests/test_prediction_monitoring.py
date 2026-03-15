@@ -11,6 +11,7 @@ Day 4 (00:08): New Phase 8 capabilities —
 import io
 import json
 import time
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -542,14 +543,24 @@ class TestModelReadiness:
 class TestChatReadinessIntent:
     """Chat endpoint detects readiness questions and emits structured readiness events."""
 
+    def _mock_anthropic(self, text: str = "Looks good!") -> MagicMock:
+        """Return a mock Anthropic client that yields a single SSE token."""
+        mock_client = MagicMock()
+        mock_stream = MagicMock()
+        mock_stream.__enter__ = MagicMock(return_value=mock_stream)
+        mock_stream.__exit__ = MagicMock(return_value=False)
+        mock_stream.text_stream = iter([text])
+        mock_client.messages.stream.return_value = mock_stream
+        return mock_client
+
     def test_readiness_query_emits_readiness_event(self, client, deployed_regression):
         project_id = deployed_regression["project_id"]
-        resp = client.post(
-            f"/api/chat/{project_id}",
-            json={"message": "Is my model ready to deploy?"},
-        )
+        with patch("api.chat.anthropic.Anthropic", return_value=self._mock_anthropic()):
+            resp = client.post(
+                f"/api/chat/{project_id}",
+                json={"message": "Is my model ready to deploy?"},
+            )
         assert resp.status_code == 200
-        # Parse SSE events
         events = []
         for line in resp.text.splitlines():
             if line.startswith("data: "):
@@ -566,10 +577,11 @@ class TestChatReadinessIntent:
 
     def test_non_readiness_query_no_readiness_event(self, client, deployed_regression):
         project_id = deployed_regression["project_id"]
-        resp = client.post(
-            f"/api/chat/{project_id}",
-            json={"message": "What columns does my dataset have?"},
-        )
+        with patch("api.chat.anthropic.Anthropic", return_value=self._mock_anthropic()):
+            resp = client.post(
+                f"/api/chat/{project_id}",
+                json={"message": "What columns does my dataset have?"},
+            )
         assert resp.status_code == 200
         for line in resp.text.splitlines():
             if line.startswith("data: "):
@@ -581,10 +593,11 @@ class TestChatReadinessIntent:
 
     def test_deploy_keyword_triggers_readiness(self, client, deployed_regression):
         project_id = deployed_regression["project_id"]
-        resp = client.post(
-            f"/api/chat/{project_id}",
-            json={"message": "Should I deploy this model?"},
-        )
+        with patch("api.chat.anthropic.Anthropic", return_value=self._mock_anthropic()):
+            resp = client.post(
+                f"/api/chat/{project_id}",
+                json={"message": "Should I deploy this model?"},
+            )
         assert resp.status_code == 200
         events = []
         for line in resp.text.splitlines():
@@ -600,10 +613,11 @@ class TestChatReadinessIntent:
         """If no completed model runs, no readiness event is emitted."""
         proj = client.post("/api/projects", json={"name": "Empty Project"})
         project_id = proj.json()["id"]
-        resp = client.post(
-            f"/api/chat/{project_id}",
-            json={"message": "Is my model ready to deploy?"},
-        )
+        with patch("api.chat.anthropic.Anthropic", return_value=self._mock_anthropic()):
+            resp = client.post(
+                f"/api/chat/{project_id}",
+                json={"message": "Is my model ready to deploy?"},
+            )
         assert resp.status_code == 200
         for line in resp.text.splitlines():
             if line.startswith("data: "):

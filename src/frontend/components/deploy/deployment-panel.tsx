@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { api } from "@/lib/api"
-import type { Deployment, DeploymentAnalytics, ModelReadiness } from "@/lib/types"
+import type { Deployment, DeploymentAnalytics, ModelReadiness, DriftReport, WhatIfResult } from "@/lib/types"
 
 interface DeploymentPanelProps {
   projectId: string
@@ -105,6 +105,164 @@ function AnalyticsCard({ analytics }: { analytics: DeploymentAnalytics }) {
   )
 }
 
+function DriftStatusBadge({ status }: { status: DriftReport["status"] }) {
+  if (status === "stable") return <Badge className="bg-green-100 text-green-800 border-green-200">Stable</Badge>
+  if (status === "mild_drift") return <Badge className="bg-yellow-100 text-yellow-800 border-yellow-200">Mild drift</Badge>
+  if (status === "significant_drift") return <Badge className="bg-red-100 text-red-800 border-red-200">Significant drift</Badge>
+  return <Badge variant="outline" className="text-muted-foreground">Insufficient data</Badge>
+}
+
+function DriftCard({ drift }: { drift: DriftReport }) {
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-sm">Prediction Drift</CardTitle>
+          {drift.drift_score !== null && (
+            <div className="flex items-center gap-1">
+              <span className="text-2xl font-bold">{drift.drift_score}</span>
+              <span className="text-xs text-muted-foreground">/100</span>
+            </div>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        <DriftStatusBadge status={drift.status} />
+        <p className="text-xs text-muted-foreground">{drift.explanation}</p>
+        {drift.baseline_stats && drift.recent_stats && (
+          <div className="grid grid-cols-2 gap-2 text-xs">
+            <div className="rounded bg-muted/50 p-2">
+              <p className="font-medium">Baseline</p>
+              <p className="text-muted-foreground">Mean: {drift.baseline_stats.mean}</p>
+              <p className="text-muted-foreground">Std: {drift.baseline_stats.std}</p>
+            </div>
+            <div className="rounded bg-muted/50 p-2">
+              <p className="font-medium">Recent</p>
+              <p className="text-muted-foreground">Mean: {drift.recent_stats.mean}</p>
+              <p className="text-muted-foreground">Std: {drift.recent_stats.std}</p>
+            </div>
+          </div>
+        )}
+        {drift.baseline_dist && drift.recent_dist && (
+          <div className="space-y-1">
+            {Object.keys({ ...drift.baseline_dist, ...drift.recent_dist }).map((cls) => {
+              const base = (drift.baseline_dist?.[cls] ?? 0) * 100
+              const recent = (drift.recent_dist?.[cls] ?? 0) * 100
+              return (
+                <div key={cls} className="text-xs">
+                  <span className="font-medium">{cls}: </span>
+                  <span className="text-muted-foreground">{base.toFixed(0)}% → {recent.toFixed(0)}%</span>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+function WhatIfCard({ deployment }: { deployment: Deployment }) {
+  const featureNames = deployment.feature_names ?? []
+  const [baseValues, setBaseValues] = useState<Record<string, string>>({})
+  const [overrideKey, setOverrideKey] = useState(featureNames[0] ?? "")
+  const [overrideValue, setOverrideValue] = useState("")
+  const [result, setResult] = useState<WhatIfResult | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  if (featureNames.length === 0) return null
+
+  const handleCompare = async () => {
+    if (!overrideKey || !overrideValue) return
+    setLoading(true)
+    setError(null)
+    try {
+      const base: Record<string, unknown> = {}
+      featureNames.forEach((f) => { base[f] = baseValues[f] ?? "" })
+      const overrides: Record<string, unknown> = { [overrideKey]: overrideValue }
+      const r = await api.deploy.whatif(deployment.id, base, overrides)
+      setResult(r)
+    } catch {
+      setError("What-if analysis failed. Check that base values are filled in.")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm">What-if Analysis</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <p className="text-xs text-muted-foreground">
+          Fill in your base values, then change one feature to see how the prediction shifts.
+        </p>
+        <div className="space-y-1.5">
+          {featureNames.slice(0, 4).map((f) => (
+            <div key={f} className="flex items-center gap-2 text-xs">
+              <label className="w-24 shrink-0 truncate text-muted-foreground">{f}</label>
+              <input
+                className="flex-1 rounded border bg-background px-2 py-0.5 text-xs"
+                placeholder="value"
+                value={baseValues[f] ?? ""}
+                onChange={(e) => setBaseValues((prev) => ({ ...prev, [f]: e.target.value }))}
+              />
+            </div>
+          ))}
+          {featureNames.length > 4 && (
+            <p className="text-[10px] text-muted-foreground">+{featureNames.length - 4} more features use defaults</p>
+          )}
+        </div>
+        <div className="flex items-center gap-2 text-xs">
+          <span className="text-muted-foreground">Change</span>
+          <select
+            className="flex-1 rounded border bg-background px-2 py-0.5 text-xs"
+            value={overrideKey}
+            onChange={(e) => setOverrideKey(e.target.value)}
+          >
+            {featureNames.map((f) => <option key={f} value={f}>{f}</option>)}
+          </select>
+          <span className="text-muted-foreground">to</span>
+          <input
+            className="w-24 rounded border bg-background px-2 py-0.5 text-xs"
+            placeholder="new value"
+            value={overrideValue}
+            onChange={(e) => setOverrideValue(e.target.value)}
+          />
+        </div>
+        <Button size="sm" className="w-full" onClick={handleCompare} disabled={loading || !overrideKey || !overrideValue}>
+          {loading ? "Comparing..." : "Compare Predictions"}
+        </Button>
+        {error && <p className="text-xs text-destructive">{error}</p>}
+        {result && (
+          <div className="rounded border bg-muted/30 p-3 space-y-1 text-xs">
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Original</span>
+              <span className="font-mono font-medium">{String(result.original_prediction)}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Modified</span>
+              <span className="font-mono font-medium">{String(result.modified_prediction)}</span>
+            </div>
+            {result.delta !== null && result.delta !== 0 && (
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Change</span>
+                <span className={`font-mono font-medium ${result.delta > 0 ? "text-green-600" : "text-red-600"}`}>
+                  {result.delta > 0 ? "+" : ""}{result.delta}
+                  {result.percent_change !== null && ` (${result.percent_change > 0 ? "+" : ""}${result.percent_change}%)`}
+                </span>
+              </div>
+            )}
+            <p className="text-muted-foreground pt-1 border-t">{result.summary}</p>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
 export function DeploymentPanel({
   projectId,
   selectedRunId,
@@ -118,6 +276,7 @@ export function DeploymentPanel({
   const [copied, setCopied] = useState(false)
   const [readiness, setReadiness] = useState<ModelReadiness | null>(null)
   const [analytics, setAnalytics] = useState<DeploymentAnalytics | null>(null)
+  const [drift, setDrift] = useState<DriftReport | null>(null)
 
   // Load readiness check when a run is selected
   useEffect(() => {
@@ -130,14 +289,18 @@ export function DeploymentPanel({
       .catch(() => {/* not ready yet — ignore */})
   }, [selectedRunId])
 
-  // Load analytics when deployed
+  // Load analytics + drift when deployed
   useEffect(() => {
     if (!deployment) {
       setAnalytics(null)
+      setDrift(null)
       return
     }
     api.deploy.analytics(deployment.id)
       .then(setAnalytics)
+      .catch(() => {})
+    api.deploy.drift(deployment.id)
+      .then(setDrift)
       .catch(() => {})
   }, [deployment])
 
@@ -253,6 +416,8 @@ export function DeploymentPanel({
         </Card>
 
         {analytics && <AnalyticsCard analytics={analytics} />}
+        {drift && <DriftCard drift={drift} />}
+        {deployment && <WhatIfCard deployment={deployment} />}
 
         <div className="flex justify-end">
           <Button
