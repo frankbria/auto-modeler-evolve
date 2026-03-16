@@ -20,6 +20,13 @@ from chat.narration import (
 )
 from core.analyzer import analyze_dataframe, compute_full_profile, detect_time_columns
 from core.anomaly import detect_anomalies
+from core.cleaner import (
+    cap_outliers,
+    drop_column,
+    fill_missing,
+    filter_rows,
+    remove_duplicates,
+)
 from core.chart_builder import build_boxplot, build_correlation_heatmap, build_timeseries_chart
 from core.merger import merge_datasets, suggest_join_keys
 from core.query_engine import run_nl_query
@@ -1111,3 +1118,130 @@ def run_anomaly_detection(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     return {"dataset_id": dataset_id, **result}
+
+
+# ---------------------------------------------------------------------------
+# Conversational data cleaning
+# ---------------------------------------------------------------------------
+
+
+class CleanRequest(BaseModel):
+    """Body for POST /api/data/{dataset_id}/clean.
+
+    operation: one of remove_duplicates | fill_missing | filter_rows |
+               cap_outliers | drop_column
+    column:    required for fill_missing, filter_rows, cap_outliers, drop_column
+    strategy:  for fill_missing — mean | median | mode | zero | value
+    fill_value: literal value when strategy="value"
+    operator:  for filter_rows — gt | lt | eq | ne | gte | lte | contains | notcontains
+    value:     for filter_rows — comparison value
+    percentile: for cap_outliers — upper percentile (default 99.0)
+    """
+    operation: str
+    column: str | None = None
+    strategy: str | None = None        # fill_missing
+    fill_value: float | str | None = None  # fill_missing strategy=value
+    operator: str | None = None        # filter_rows
+    value: float | str | None = None   # filter_rows
+    percentile: float = 99.0           # cap_outliers
+
+
+@router.post("/{dataset_id}/clean")
+def clean_dataset(
+    dataset_id: str,
+    body: CleanRequest,
+    session: Session = Depends(get_session),
+) -> dict:
+    """Apply a single data cleaning operation to a dataset in-place.
+
+    The cleaned CSV is written back to disk and the Dataset record is updated
+    (row_count, column_count, columns JSON, profile JSON).
+
+    Supported operations
+    --------------------
+    remove_duplicates — no extra params needed
+    fill_missing      — column + strategy (mean/median/mode/zero/value) + optional fill_value
+    filter_rows       — column + operator (gt/lt/eq/ne/gte/lte/contains/notcontains) + value
+    cap_outliers      — column + percentile (default 99.0)
+    drop_column       — column
+
+    Returns
+    -------
+    {
+        dataset_id, operation_result: {...}, preview: [first 10 rows],
+        updated_stats: {row_count, column_count, columns}
+    }
+    """
+    dataset = session.get(Dataset, dataset_id)
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    file_path = Path(dataset.file_path)
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Dataset file not found on disk")
+
+    df = _load_df_from_path(file_path)
+
+    try:
+        op = body.operation
+        if op == "remove_duplicates":
+            cleaned_df, result = remove_duplicates(df)
+        elif op == "fill_missing":
+            if not body.column:
+                raise ValueError("fill_missing requires 'column'.")
+            if not body.strategy:
+                raise ValueError("fill_missing requires 'strategy' (mean/median/mode/zero/value).")
+            cleaned_df, result = fill_missing(
+                df, column=body.column, strategy=body.strategy, fill_value=body.fill_value
+            )
+        elif op == "filter_rows":
+            if not body.column:
+                raise ValueError("filter_rows requires 'column'.")
+            if not body.operator:
+                raise ValueError("filter_rows requires 'operator'.")
+            if body.value is None:
+                raise ValueError("filter_rows requires 'value'.")
+            cleaned_df, result = filter_rows(
+                df, column=body.column, operator=body.operator, value=body.value
+            )
+        elif op == "cap_outliers":
+            if not body.column:
+                raise ValueError("cap_outliers requires 'column'.")
+            cleaned_df, result = cap_outliers(df, column=body.column, percentile=body.percentile)
+        elif op == "drop_column":
+            if not body.column:
+                raise ValueError("drop_column requires 'column'.")
+            cleaned_df, result = drop_column(df, column=body.column)
+        else:
+            raise ValueError(
+                f"Unknown operation '{op}'. Valid: remove_duplicates, fill_missing, "
+                "filter_rows, cap_outliers, drop_column."
+            )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    # Persist cleaned CSV back to the same path
+    cleaned_df.to_csv(file_path, index=False)
+
+    # Recompute profile and update Dataset record
+    profile = compute_full_profile(cleaned_df)
+    dataset.row_count = profile["row_count"]
+    dataset.column_count = profile["column_count"]
+    dataset.columns = json.dumps(profile["columns"])
+    dataset.profile = json.dumps(profile)
+    session.add(dataset)
+    session.commit()
+    session.refresh(dataset)
+
+    preview = _sanitize_rows(cleaned_df.head(10).to_dict(orient="records"))
+
+    return {
+        "dataset_id": dataset_id,
+        "operation_result": result,
+        "preview": preview,
+        "updated_stats": {
+            "row_count": dataset.row_count,
+            "column_count": dataset.column_count,
+            "columns": profile["columns"],
+        },
+    }

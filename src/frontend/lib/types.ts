@@ -681,3 +681,53 @@ export interface AnomalyResult {
   summary: string
   features_used: string[]
 }
+
+// ---------------------------------------------------------------------------
+// Conversational data cleaning
+// ---------------------------------------------------------------------------
+
+export interface CleanOperation {
+  operation: "remove_duplicates" | "fill_missing" | "filter_rows" | "cap_outliers" | "drop_column"
+  column?: string
+  strategy?: "mean" | "median" | "mode" | "zero" | "value"
+  fill_value?: number | string
+  operator?: "gt" | "lt" | "eq" | "ne" | "gte" | "lte" | "contains" | "notcontains"
+  value?: number | string
+  percentile?: number
+}
+
+export interface CleanOperationResult {
+  operation: string
+  column?: string
+  strategy?: string
+  fill_value_used?: string
+  operator?: string
+  value?: number | string
+  before_rows: number
+  after_rows: number
+  before_columns?: number
+  after_columns?: number
+  modified_count: number
+  summary: string
+}
+
+export interface CleanResult {
+  dataset_id: string
+  operation_result: CleanOperationResult
+  preview: Record<string, unknown>[]
+  updated_stats: {
+    row_count: number
+    column_count: number
+    columns: ColumnStat[]
+  }
+}
+
+export interface CleaningSuggestion {
+  dataset_id: string
+  suggested_operation: CleanOperation | null
+  quality_summary: {
+    duplicate_rows: number
+    missing_value_columns: Record<string, number>
+    total_rows: number
+  }
+}

@@ -88,6 +88,102 @@ _ANALYTICS_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# Keywords that suggest a data cleaning operation
+# Note: these suggest the operation; actual application requires user confirmation via button.
+_CLEAN_PATTERNS = re.compile(
+    r"\b(clean|fix.*missing|fill.*missing|fill.*null|fill.*empty|"
+    r"remove.*duplicat|drop.*duplicat|deduplic|dedup|"
+    r"remove.*rows.*where|drop.*rows.*where|filter.*out|exclude.*rows|"
+    r"cap.*outlier|remove.*outlier|handle.*outlier|clip.*outlier|"
+    r"drop.*column|remove.*column|delete.*column|"
+    r"fix.*data|clean.*data|clean.*up|data.*quality|improve.*data|"
+    r"missing.*value|null.*value|handle.*null|handle.*missing)",
+    re.IGNORECASE,
+)
+
+_FILL_COL_PATTERN = re.compile(
+    r"\bfill\s+(?:missing\s+)?(?:values?\s+in\s+)?[\"']?(\w+)[\"']?\s+"
+    r"(?:column\s+)?with\s+(mean|median|mode|zero|[\d.]+)",
+    re.IGNORECASE,
+)
+_FILTER_COL_PATTERN = re.compile(
+    r"\b(?:remove|drop|filter|exclude)\s+rows?\s+where\s+[\"']?(\w+)[\"']?\s*"
+    r"(>|<|>=|<=|==|!=|is|equals?|greater than|less than|not)\s*([\d.]+|\w+)",
+    re.IGNORECASE,
+)
+_CAP_COL_PATTERN = re.compile(
+    r"\bcap\s+(?:outliers?\s+in\s+)?[\"']?(\w+)[\"']?(?:\s+at\s+([\d.]+)\s*%?)?",
+    re.IGNORECASE,
+)
+_DROP_COL_PATTERN = re.compile(
+    r"\b(?:drop|remove|delete)\s+(?:the\s+)?(?:column\s+)?[\"']?(\w+)[\"']?\s+column",
+    re.IGNORECASE,
+)
+
+_OP_MAP = {"is": "eq", "equals": "eq", "equal": "eq", ">": "gt", "<": "lt",
+           ">=": "gte", "<=": "lte", "!=": "ne", "not": "ne",
+           "greater than": "gt", "less than": "lt"}
+
+
+def _detect_clean_op(message: str, columns: list[str]) -> dict | None:
+    """Try to extract a specific cleaning operation from the user's message.
+
+    Returns a dict matching CleanRequest fields, or None if only general intent
+    detected (caller emits a generic suggestion).
+    """
+    col_set = set(c.lower() for c in columns)
+
+    # fill_missing: "fill missing age with median" / "fill age column with 0"
+    m = _FILL_COL_PATTERN.search(message)
+    if m:
+        col_raw, strat = m.group(1), m.group(2).lower()
+        col = next((c for c in columns if c.lower() == col_raw.lower()), col_raw)
+        try:
+            val = float(strat)
+            return {"operation": "fill_missing", "column": col, "strategy": "value", "fill_value": val}
+        except ValueError:
+            pass
+        if strat in ("mean", "median", "mode", "zero"):
+            return {"operation": "fill_missing", "column": col, "strategy": strat}
+
+    # remove_duplicates: "remove duplicates"
+    if re.search(r"\b(duplicate|dedup)\b", message, re.IGNORECASE):
+        return {"operation": "remove_duplicates"}
+
+    # filter_rows: "drop rows where quantity < 0"
+    m = _FILTER_COL_PATTERN.search(message)
+    if m:
+        col_raw, op_raw, val_raw = m.group(1), m.group(2).strip().lower(), m.group(3)
+        col = next((c for c in columns if c.lower() == col_raw.lower()), col_raw)
+        operator = _OP_MAP.get(op_raw, "eq")
+        try:
+            val: float | str = float(val_raw)
+        except ValueError:
+            val = val_raw
+        return {"operation": "filter_rows", "column": col, "operator": operator, "value": val}
+
+    # cap_outliers: "cap outliers in sales" / "cap revenue outliers at 99%"
+    m = _CAP_COL_PATTERN.search(message)
+    if m:
+        col_raw = m.group(1)
+        pct_raw = m.group(2)
+        col = next((c for c in columns if c.lower() == col_raw.lower()), None)
+        if col or col_raw.lower() in col_set:
+            resolved = col or col_raw
+            pct = float(pct_raw) if pct_raw else 99.0
+            return {"operation": "cap_outliers", "column": resolved, "percentile": pct}
+
+    # drop_column: "drop the sales column" / "remove region column"
+    m = _DROP_COL_PATTERN.search(message)
+    if m:
+        col_raw = m.group(1)
+        col = next((c for c in columns if c.lower() == col_raw.lower()), None)
+        if col:
+            return {"operation": "drop_column", "column": col}
+
+    return None  # general cleaning intent — no specific op detected
+
+
 # Keywords that trigger anomaly detection on the current dataset
 _ANOMALY_PATTERNS = re.compile(
     r"\b(anomal|unusual.*record|outlier|strange.*data|weird.*record|"
@@ -626,6 +722,52 @@ def send_message(
             "Reference the prediction count in your response and mention the Analytics card."
         )
 
+    # Check for data cleaning suggestion request
+    # Vision: "Explain before executing" — we suggest the operation, user confirms via button.
+    cleaning_suggestion: dict | None = None
+    if _CLEAN_PATTERNS.search(body.message) and ctx["dataset"]:
+        try:
+            _ds = ctx["dataset"]
+            _file_path = Path(_ds.file_path)
+            if _file_path.exists():
+                _df = pd.read_csv(_file_path)
+                _cols = list(_df.columns)
+                _op = _detect_clean_op(body.message, _cols)
+                # Build a quality summary for context
+                _null_counts = {col: int(_df[col].isna().sum()) for col in _cols if _df[col].isna().any()}
+                _dup_count = int(_df.duplicated().sum())
+                _context_parts = []
+                if _dup_count > 0:
+                    _context_parts.append(f"{_dup_count} duplicate row(s)")
+                if _null_counts:
+                    _top = sorted(_null_counts.items(), key=lambda x: -x[1])[:3]
+                    _context_parts.append(
+                        "missing values in: " + ", ".join(f"'{k}' ({v})" for k, v in _top)
+                    )
+                cleaning_suggestion = {
+                    "dataset_id": _ds.id,
+                    "suggested_operation": _op,
+                    "quality_summary": {
+                        "duplicate_rows": _dup_count,
+                        "missing_value_columns": _null_counts,
+                        "total_rows": len(_df),
+                    },
+                }
+                _ctx_text = "; ".join(_context_parts) if _context_parts else "no obvious issues detected"
+                system_prompt += (
+                    f"\n\n## Data Cleaning Context\n"
+                    f"Dataset quality: {_ctx_text}. "
+                    + (
+                        f"The user seems to want: {_op['operation'].replace('_', ' ')} "
+                        + (f"on column '{_op.get('column')}'" if _op and _op.get('column') else "")
+                        + ". A cleaning suggestion card is shown — explain what it will do and ask the user to confirm before applying."
+                        if _op
+                        else "Describe the available cleaning operations (remove duplicates, fill missing values, filter rows, cap outliers, drop columns) and let the user choose."
+                    )
+                )
+        except Exception:  # noqa: BLE001
+            pass  # Cleaning suggestion is nice-to-have; never crash chat
+
     # Check for anomaly detection request
     anomaly_event: dict | None = None
     if _ANOMALY_PATTERNS.search(body.message) and ctx["dataset"]:
@@ -727,6 +869,10 @@ def send_message(
         # Emit anomaly detection results if computed
         if anomaly_event:
             yield f"data: {json.dumps({'type': 'anomalies', 'anomalies': anomaly_event})}\n\n"
+
+        # Emit cleaning suggestion (user must click to apply — "explain before executing")
+        if cleaning_suggestion:
+            yield f"data: {json.dumps({'type': 'cleaning_suggestion', 'cleaning': cleaning_suggestion})}\n\n"
 
         # Emit follow-up suggestion chips (always, if we have any)
         if suggestions_list:

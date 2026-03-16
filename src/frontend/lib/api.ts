@@ -180,6 +180,16 @@ export const api = {
       return fetch(`${API_URL}/api/data/${datasetId}/boxplot?${params}`).then((r) => r.json())
     },
 
+    clean: (
+      datasetId: string,
+      operation: import("./types").CleanOperation
+    ): Promise<import("./types").CleanResult> =>
+      fetch(`${API_URL}/api/data/${datasetId}/clean`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(operation),
+      }).then((r) => r.json()),
+
     detectAnomalies: (
       datasetId: string,
       features: string[],

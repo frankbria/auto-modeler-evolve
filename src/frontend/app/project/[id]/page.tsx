@@ -19,6 +19,7 @@ import {
 import { ValidationPanel } from "@/components/validation/validation-panel"
 import { DeploymentPanel } from "@/components/deploy/deployment-panel"
 import { AnomalyCard } from "@/components/data/anomaly-card"
+import { CleaningCard } from "@/components/data/cleaning-card"
 import { api } from "@/lib/api"
 import { useAppStore } from "@/lib/store"
 import type {
@@ -29,6 +30,8 @@ import type {
   FeatureSetResult,
   ChatMessage as ChatMsg,
   AnomalyResult,
+  CleaningSuggestion,
+  CleanResult,
 } from "@/lib/types"
 
 const WELCOME_MESSAGE =
@@ -105,6 +108,9 @@ export default function ProjectWorkspace() {
 
   // Anomaly detection result (populated via SSE or manual trigger)
   const [anomalyResult, setAnomalyResult] = useState<AnomalyResult | null>(null)
+
+  // Cleaning suggestion (populated via SSE when user asks about cleaning in chat)
+  const [cleaningSuggestion, setCleaningSuggestion] = useState<CleaningSuggestion | null>(null)
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
@@ -276,6 +282,9 @@ export default function ProjectWorkspace() {
                 setChatSuggestions(json.suggestions)
               } else if (json.type === "anomalies" && json.anomalies) {
                 setAnomalyResult(json.anomalies as AnomalyResult)
+                setActiveTab("data")
+              } else if (json.type === "cleaning_suggestion" && json.cleaning) {
+                setCleaningSuggestion(json.cleaning as CleaningSuggestion)
                 setActiveTab("data")
               } else if (json.type === "done") {
                 setStreaming(false)
@@ -619,6 +628,25 @@ export default function ProjectWorkspace() {
                             ?.filter((c) => c.dtype !== "object")
                             .map((c) => c.name)
                             .slice(0, 10)}
+                        />
+                      </div>
+                    )}
+                    {cleaningSuggestion && (
+                      <div className="border-t px-4 py-3">
+                        <h3 className="mb-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                          Data Cleaning
+                        </h3>
+                        <CleaningCard
+                          suggestion={cleaningSuggestion}
+                          datasetId={currentDataset.id}
+                          onCleaned={(result: CleanResult) => {
+                            setCleaningSuggestion(null)
+                            addMessage({
+                              role: "assistant",
+                              content: `Done! ${result.operation_result.summary} The dataset now has ${result.updated_stats.row_count.toLocaleString()} rows.`,
+                              timestamp: new Date().toISOString(),
+                            })
+                          }}
                         />
                       </div>
                     )}

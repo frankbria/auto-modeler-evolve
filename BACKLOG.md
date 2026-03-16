@@ -10,6 +10,9 @@ Living document for coordinating between bot instances and tracking ideation.
 <!-- Brief description of what you're doing this session. -->
 <!-- Remove your entry when you commit your session wrap-up. -->
 
+## Day 4 (20:00) — Conversational Data Cleaning
+Closing the quality-report → fix loop: POST /api/data/{id}/clean supports remove_duplicates / fill_missing / filter_rows / cap_outliers / drop_column. Chat intent detection for "fill missing X with median", "remove duplicates", "drop rows where X < 0". CleaningCard in Data tab. ~20 backend + ~8 frontend tests.
+
 
 
 
