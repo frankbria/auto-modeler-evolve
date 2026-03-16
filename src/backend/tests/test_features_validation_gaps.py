@@ -432,9 +432,6 @@ class TestValidationApiGaps:
         # Use an actual dataset file path so context loads OK
         from models.dataset import Dataset as DS
 
-        with Session(db_module.engine) as session:
-            ds = session.get(DS, dataset_id)
-            real_path = ds.file_path
         fake_model.write_bytes(b"fake")
         with Session(db_module.engine) as session:
             run = ModelRun(

@@ -1138,8 +1138,6 @@ class TestDataApiTimeseriesException:
         dataset_id = r.json()["dataset_id"]
 
         # Patch pd.to_datetime inside the data module to raise
-        orig = data_mod.pd.to_datetime
-
         def _raise_to_datetime(col, *args, **kwargs):
             raise ValueError("mocked parse error")
 

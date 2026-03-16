@@ -62,13 +62,10 @@ def suggest_features(
     Returns a list of FeatureSuggestion objects, ordered by expected impact.
     """
     suggestions: list[FeatureSuggestion] = []
-    col_lookup = {c["name"]: c for c in column_stats}
-
     for col_stat in column_stats:
         col = col_stat["name"]
         dtype = col_stat.get("dtype", "")
         unique = col_stat.get("unique_count", 0)
-        n_rows = len(df)
 
         # --- Date decomposition ---
         if dtype in ("object", "str", "string") and col_stat.get("sample_values"):
@@ -147,7 +144,6 @@ def suggest_features(
         col = col_stat["name"]
         dtype = col_stat.get("dtype", "")
         unique = col_stat.get("unique_count", 0)
-        n_rows = len(df)
 
         # Skip date-like string columns (already handled above)
         if dtype in ("object", "str", "string") and col_stat.get("sample_values"):

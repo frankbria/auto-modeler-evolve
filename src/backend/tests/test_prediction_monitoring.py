@@ -13,6 +13,7 @@ import json
 import time
 from unittest.mock import MagicMock, patch
 
+import db as db_module
 import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import SQLModel, Session, create_engine, select
@@ -72,8 +73,6 @@ CLASSIFICATION_CSV = b"""feat1,feat2,label
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
-
-import db as db_module
 
 
 @pytest.fixture
@@ -421,8 +420,8 @@ class TestPredictionLogs:
         assert len(resp1.json()["logs"]) == 2
         assert len(resp2.json()["logs"]) == 2
         # Different entries
-        ids1 = {l["id"] for l in resp1.json()["logs"]}
-        ids2 = {l["id"] for l in resp2.json()["logs"]}
+        ids1 = {entry["id"] for entry in resp1.json()["logs"]}
+        ids2 = {entry["id"] for entry in resp2.json()["logs"]}
         assert ids1.isdisjoint(ids2)
 
     def test_logs_sorted_most_recent_first(self, client, deployed_regression):
@@ -436,7 +435,7 @@ class TestPredictionLogs:
 
         resp = client.get(f"/api/deploy/{did}/logs")
         logs = resp.json()["logs"]
-        timestamps = [l["created_at"] for l in logs]
+        timestamps = [entry["created_at"] for entry in logs]
         assert timestamps == sorted(timestamps, reverse=True)
 
     def test_logs_404_for_unknown_deployment(self, client):
@@ -533,7 +532,6 @@ class TestModelReadiness:
 
     def test_readiness_400_for_pending_run(self, client, deployed_regression):
         """Readiness endpoint rejects runs that haven't completed training."""
-        project_id = deployed_regression["project_id"]
         # We can't easily get a 'pending' run after the fixture completes,
         # so test the 400 via a deployed run that we pretend is pending by
         # directly mutating the DB

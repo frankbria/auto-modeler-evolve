@@ -133,8 +133,6 @@ async def _train_model(client: AsyncClient, tmp_path) -> str:
         f"/api/models/{project_id}/train",
         json={"algorithms": ["linear_regression"]},
     )
-    run_ids = r.json()["model_run_ids"]
-
     # Poll until done
     import asyncio
 

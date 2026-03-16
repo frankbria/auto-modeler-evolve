@@ -309,7 +309,6 @@ class TestPoorlyPerformingModel:
         # Detect what problem type was inferred
         recs_resp = client.get(f"/api/models/{project_id}/recommendations")
         assert recs_resp.status_code == 200, recs_resp.text
-        problem_type = recs_resp.json()["problem_type"]
         # Use the first recommended algorithm for whichever problem type was detected
         recommended_algo = recs_resp.json()["recommendations"][0]["algorithm"]
 

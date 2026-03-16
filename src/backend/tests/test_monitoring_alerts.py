@@ -397,7 +397,6 @@ class TestChatHistoryIntent:
     def test_show_history_triggers_event(self, deployed_project, client):
         project_id = deployed_project["project_id"]
         # Train a second run so there are 2+ completed runs
-        dataset_id = deployed_project["dataset_id"]
         train_resp = client.post(
             f"/api/models/{project_id}/train",
             json={"algorithms": ["linear_regression"]},

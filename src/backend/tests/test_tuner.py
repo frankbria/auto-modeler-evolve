@@ -77,7 +77,6 @@ def _setup_trained_model(client, tmp_path, algorithm="random_forest_regressor"):
     # Apply features (empty = creates FeatureSet) — returns 201
     r = client.post(f"/api/features/{dataset_id}/apply", json={"transformations": []})
     assert r.status_code in (200, 201)
-    feature_set_id = r.json()["feature_set_id"]
 
     # Set target
     r = client.post(

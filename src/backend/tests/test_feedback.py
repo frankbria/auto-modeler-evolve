@@ -131,7 +131,7 @@ def _setup_deployed_regression(client) -> tuple[str, str]:
     dep_id = dep["id"]
 
     # Make a prediction so we have a log entry
-    pred_r = client.post(
+    client.post(
         f"/api/predict/{dep_id}",
         json={"product": "Widget A", "region": "North", "units": 12},
     )
