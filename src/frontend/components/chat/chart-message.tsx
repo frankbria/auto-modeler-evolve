@@ -435,7 +435,7 @@ function BoxPlotChart({
   xLabel: string
   yLabel: string
 }) {
-  const rows = data as BoxRow[]
+  const rows = data as unknown as BoxRow[]
   if (rows.length === 0) return <p className="text-xs text-muted-foreground">No data</p>
 
   const SVG_H = 200

@@ -118,13 +118,42 @@ BUILD_CMD=$(echo "$STACK_JSON" | python3 -c "import sys,json; print(json.load(sy
 TEST_CMD=$(echo "$STACK_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['test'])" 2>/dev/null || echo "")
 LINT_CMD=$(echo "$STACK_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['lint'])" 2>/dev/null || echo "")
 FORMAT_CMD=$(echo "$STACK_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['format'])" 2>/dev/null || echo "")
-echo "  Stack: $STACK"
-[ -n "$BUILD_CMD" ] && echo "  Build: $BUILD_CMD"
-[ -n "$TEST_CMD" ] && echo "  Test: $TEST_CMD"
+
+SUBSTACKS_JSON=""
+if [ "$STACK" = "monorepo" ]; then
+    SUBSTACKS_JSON=$(echo "$STACK_JSON" | python3 -c "import sys,json; print(json.dumps(json.load(sys.stdin).get('substacks',[])))" 2>/dev/null || echo "[]")
+    SUBSTACK_COUNT=$(echo "$SUBSTACKS_JSON" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
+    echo "  Stack: monorepo ($SUBSTACK_COUNT substacks)"
+    echo "$SUBSTACKS_JSON" | python3 -c "
+import sys,json
+for s in json.load(sys.stdin):
+    print(f\"    - {s['name']}: {s['stack']} (build: {s['build']})\")
+" 2>/dev/null || true
+else
+    echo "  Stack: $STACK"
+    [ -n "$BUILD_CMD" ] && echo "  Build: $BUILD_CMD"
+    [ -n "$TEST_CMD" ] && echo "  Test: $TEST_CMD"
+fi
 echo ""
 
 # ── Step 1b: Verify starting state (if project exists) ──
-if [ -n "$BUILD_CMD" ] && [ "$STACK" != "unknown" ]; then
+if [ "$STACK" = "monorepo" ]; then
+    echo "-> Checking existing builds (monorepo)..."
+    echo "$SUBSTACKS_JSON" | python3 -c "
+import sys,json
+for s in json.load(sys.stdin):
+    print(s['dir'] + '|' + s.get('build','') + '|' + s.get('test',''))
+" 2>/dev/null | while IFS='|' read -r sdir sbuild stest; do
+        SUBPATH="$PROJECT_DIR/$sdir"
+        if [ -n "$sbuild" ]; then
+            (cd "$SUBPATH" && eval "$sbuild" --quiet 2>/dev/null) && echo "  $sdir build OK." || echo "  $sdir build has issues (agent will address)."
+        fi
+        if [ -n "$stest" ]; then
+            (cd "$SUBPATH" && eval "$stest" --quiet 2>/dev/null) && echo "  $sdir tests OK." || true
+        fi
+    done
+    echo ""
+elif [ -n "$BUILD_CMD" ] && [ "$STACK" != "unknown" ]; then
     echo "-> Checking existing build..."
     cd "$PROJECT_DIR" 2>/dev/null || true
     eval "$BUILD_CMD" --quiet 2>/dev/null && echo "  Build OK." || echo "  Build has issues (agent will address)."
@@ -232,7 +261,25 @@ echo ""
 
 # Build verification instructions based on detected stack
 VERIFY_INSTRUCTIONS=""
-if [ -n "$BUILD_CMD" ] || [ -n "$TEST_CMD" ]; then
+if [ "$STACK" = "monorepo" ]; then
+    VERIFY_INSTRUCTIONS=$(echo "$SUBSTACKS_JSON" | python3 -c "
+import sys, json
+substacks = json.load(sys.stdin)
+lines = ['## Build Verification Commands (MONOREPO)',
+         'This project has multiple substacks. After making changes, verify EACH affected substack:',
+         '']
+pd = '$PROJECT_DIR'
+for s in substacks:
+    d = s['dir']
+    lines.append(f\"### {s['name']} (in {pd}/{d}/)\")
+    if s['build']: lines.append(f\"- Build: \`cd {pd}/{d} && {s['build']}\`\")
+    if s['test']:  lines.append(f\"- Test:  \`cd {pd}/{d} && {s['test']}\`\")
+    if s['lint']:  lines.append(f\"- Lint:  \`cd {pd}/{d} && {s['lint']}\`\")
+    lines.append('')
+lines.append('IMPORTANT: ALL substacks must pass. Do not skip any.')
+print('\n'.join(lines))
+" 2>/dev/null)
+elif [ -n "$BUILD_CMD" ] || [ -n "$TEST_CMD" ]; then
     VERIFY_INSTRUCTIONS="## Build Verification Commands
 After making changes, run these commands to verify:"
     [ -n "$BUILD_CMD" ] && VERIFY_INSTRUCTIONS="$VERIFY_INSTRUCTIONS
@@ -385,32 +432,63 @@ echo "-> Session complete. Checking results..."
 # ── Step 6: Verify build (if stack detected) ──
 # Re-detect stack in case bootstrap session created project files
 STACK_JSON=$(bash scripts/detect_stack.sh "$PROJECT_DIR" 2>/dev/null || echo '{"stack":"unknown","build":"","test":"","lint":"","format":""}')
+STACK=$(echo "$STACK_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['stack'])" 2>/dev/null || echo "unknown")
 BUILD_CMD=$(echo "$STACK_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['build'])" 2>/dev/null || echo "")
 TEST_CMD=$(echo "$STACK_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['test'])" 2>/dev/null || echo "")
 LINT_CMD=$(echo "$STACK_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['lint'])" 2>/dev/null || echo "")
 
-if [ -n "$BUILD_CMD" ]; then
+# Helper: verify a single substack directory, append errors to ERRORS_FILE
+verify_single_stack() {
+    local subpath="$1" sbuild="$2" stest="$3" slint="$4" sformat="$5" label="$6"
+
+    # Auto-fix formatting if possible
+    if [ -n "$sformat" ]; then
+        local sformat_fix
+        sformat_fix=$(echo "$sformat" | sed 's/ --check//')
+        if ! (cd "$subpath" && eval "$sformat") 2>/dev/null; then
+            (cd "$subpath" && eval "$sformat_fix") 2>/dev/null && \
+                git add -A && git commit -m "Day $DAY ($SESSION_TIME): auto-format $label" || true
+        fi
+    fi
+
+    # Collect errors
+    if [ -n "$sbuild" ]; then
+        local bout
+        bout=$( (cd "$subpath" && eval "$sbuild") 2>&1) || echo "[$label build] $bout" >> "$ERRORS_FILE"
+    fi
+    if [ -n "$stest" ]; then
+        local tout
+        tout=$( (cd "$subpath" && eval "$stest") 2>&1) || echo "[$label test] $tout" >> "$ERRORS_FILE"
+    fi
+    if [ -n "$slint" ]; then
+        local lout
+        lout=$( (cd "$subpath" && eval "$slint") 2>&1) || echo "[$label lint] $lout" >> "$ERRORS_FILE"
+    fi
+}
+
+if [ "$STACK" = "monorepo" ] || [ -n "$BUILD_CMD" ]; then
+    SUBSTACKS_JSON=$(echo "$STACK_JSON" | python3 -c "import sys,json; print(json.dumps(json.load(sys.stdin).get('substacks',[])))" 2>/dev/null || echo "[]")
+
     FIX_ATTEMPTS=3
     for FIX_ROUND in $(seq 1 $FIX_ATTEMPTS); do
-        ERRORS=""
+        ERRORS_FILE=$(mktemp)
 
-        # Auto-fix formatting if possible
-        if [ -n "$FORMAT_CMD" ]; then
-            FORMAT_FIX_CMD=$(echo "$FORMAT_CMD" | sed 's/ --check//')
-            if ! (cd "$PROJECT_DIR" && eval "$FORMAT_CMD") 2>/dev/null; then
-                (cd "$PROJECT_DIR" && eval "$FORMAT_FIX_CMD") 2>/dev/null && \
-                    git add -A && git commit -m "Day $DAY ($SESSION_TIME): auto-format" || true
-            fi
+        if [ "$STACK" = "monorepo" ]; then
+            # Verify each substack
+            echo "$SUBSTACKS_JSON" | python3 -c "
+import sys,json
+for s in json.load(sys.stdin):
+    print(s['dir'] + '|' + s.get('build','') + '|' + s.get('test','') + '|' + s.get('lint','') + '|' + s.get('format',''))
+" 2>/dev/null | while IFS='|' read -r sdir sbuild stest slint sformat; do
+                verify_single_stack "$PROJECT_DIR/$sdir" "$sbuild" "$stest" "$slint" "$sformat" "$sdir"
+            done
+        else
+            # Single-stack verification (original behavior)
+            verify_single_stack "$PROJECT_DIR" "$BUILD_CMD" "$TEST_CMD" "$LINT_CMD" "$FORMAT_CMD" "project"
         fi
 
-        # Collect errors
-        BUILD_OUT=$(cd "$PROJECT_DIR" && eval "$BUILD_CMD" 2>&1) || ERRORS="$ERRORS$BUILD_OUT\n"
-        if [ -n "$TEST_CMD" ]; then
-            TEST_OUT=$(cd "$PROJECT_DIR" && eval "$TEST_CMD" 2>&1) || ERRORS="$ERRORS$TEST_OUT\n"
-        fi
-        if [ -n "$LINT_CMD" ]; then
-            LINT_OUT=$(cd "$PROJECT_DIR" && eval "$LINT_CMD" 2>&1) || ERRORS="$ERRORS$LINT_OUT\n"
-        fi
+        ERRORS=$(cat "$ERRORS_FILE" 2>/dev/null)
+        rm -f "$ERRORS_FILE"
 
         if [ -z "$ERRORS" ]; then
             echo "  Build: PASS"
@@ -423,7 +501,7 @@ if [ -n "$BUILD_CMD" ]; then
             cat > "$FIX_PROMPT" <<FIXEOF
 Your code has errors. Fix them NOW. Do not add features — only fix these errors.
 
-$(echo -e "$ERRORS")
+$ERRORS
 
 Steps:
 1. Read the failing files

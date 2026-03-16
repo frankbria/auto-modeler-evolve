@@ -25,9 +25,13 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
       - name: Detect and verify project
         run: |
-          # Run stack detection
           chmod +x scripts/detect_stack.sh
           STACK_JSON=$(bash scripts/detect_stack.sh src/ 2>/dev/null || echo '{"stack":"unknown"}')
           STACK=$(echo "$STACK_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['stack'])")
@@ -38,37 +42,53 @@ jobs:
             exit 0
           fi
 
-          BUILD_CMD=$(echo "$STACK_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['build'])")
-          TEST_CMD=$(echo "$STACK_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['test'])")
-          LINT_CMD=$(echo "$STACK_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['lint'])")
+          if [ "$STACK" = "monorepo" ]; then
+            echo "Monorepo detected — verifying each substack..."
+            echo "$STACK_JSON" | python3 -c "
+          import json, subprocess, sys, os
 
-          cd src/
+          data = json.load(sys.stdin)
+          substacks = data.get('substacks', [])
+          failed = False
 
-          # Install dependencies based on stack
-          case "$STACK" in
-            typescript|javascript|nextjs)
-              npm ci || npm install
-              ;;
-            python)
-              pip install -e . 2>/dev/null || pip install -r requirements.txt 2>/dev/null || true
-              ;;
-            rust)
-              # Rust setup would go here
-              ;;
-          esac
+          for s in substacks:
+              subdir = os.path.join('src', s['dir'])
+              print(f\"\n=== {s['name']} ({s['stack']}) ===\")
 
-          # Run checks
-          if [ -n "$BUILD_CMD" ]; then
-            echo "Running build: $BUILD_CMD"
-            eval "$BUILD_CMD"
-          fi
+              # Install dependencies
+              if s['stack'] in ('typescript', 'javascript', 'nextjs'):
+                  subprocess.run('npm ci || npm install', shell=True, cwd=subdir)
+              elif s['stack'] == 'python':
+                  if os.path.exists(os.path.join(subdir, 'uv.lock')):
+                      subprocess.run('uv sync', shell=True, cwd=subdir)
+                  else:
+                      subprocess.run('pip install -e . 2>/dev/null || pip install -r requirements.txt 2>/dev/null || true', shell=True, cwd=subdir)
 
-          if [ -n "$TEST_CMD" ]; then
-            echo "Running tests: $TEST_CMD"
-            eval "$TEST_CMD"
-          fi
+              for cmd_name in ('build', 'test', 'lint'):
+                  cmd = s.get(cmd_name, '')
+                  if cmd:
+                      print(f'Running {cmd_name}: {cmd}')
+                      result = subprocess.run(cmd, shell=True, cwd=subdir)
+                      if result.returncode != 0 and cmd_name != 'lint':
+                          failed = True
 
-          if [ -n "$LINT_CMD" ]; then
-            echo "Running lint: $LINT_CMD"
-            eval "$LINT_CMD" || true
+          sys.exit(1 if failed else 0)
+          "
+          else
+            # Single-stack path
+            BUILD_CMD=$(echo "$STACK_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['build'])")
+            TEST_CMD=$(echo "$STACK_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['test'])")
+            LINT_CMD=$(echo "$STACK_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['lint'])")
+
+            cd src/
+
+            case "$STACK" in
+              typescript|javascript|nextjs) npm ci || npm install ;;
+              python) pip install -e . 2>/dev/null || pip install -r requirements.txt 2>/dev/null || true ;;
+              rust) ;;
+            esac
+
+            [ -n "$BUILD_CMD" ] && echo "Running build: $BUILD_CMD" && eval "$BUILD_CMD"
+            [ -n "$TEST_CMD" ] && echo "Running tests: $TEST_CMD" && eval "$TEST_CMD"
+            [ -n "$LINT_CMD" ] && echo "Running lint: $LINT_CMD" && eval "$LINT_CMD" || true
           fi
