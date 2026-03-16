@@ -4,21 +4,22 @@ Organises tests by source module. Every test here is designed to exercise
 a specific uncovered branch without duplicating what the existing suites
 already cover.
 """
-
 from __future__ import annotations
 
 import io
 import json
 import os
+import tempfile
 from datetime import datetime
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pandas as pd
 import pytest
 from httpx import ASGITransport, AsyncClient
-from sklearn.linear_model import LogisticRegression
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.linear_model import LinearRegression, LogisticRegression
+from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sqlmodel import Session, SQLModel, create_engine
 
 import db as db_module
@@ -55,26 +56,19 @@ async def ac(tmp_path, monkeypatch):
     import api.data as data_module
     import api.deploy as deploy_module
     import api.models as models_module
+    import api.templates as templates_module
 
     data_module.UPLOAD_DIR = tmp_path / "uploads"
     models_module.MODELS_DIR = tmp_path / "models"
     deploy_module.DEPLOY_DIR = tmp_path / "deployments"
 
     from main import app
-
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         yield client, tmp_path, monkeypatch
 
 
-async def _setup_trained_run(
-    ac_client,
-    csv_bytes=None,
-    algorithm="linear_regression",
-    target="y",
-    problem_type="regression",
-):
+async def _setup_trained_run(ac_client, csv_bytes=None, algorithm="linear_regression",
+                              target="y", problem_type="regression"):
     """Helper: create project → upload → features → train → return (project_id, run_id)."""
     import time
 
@@ -115,9 +109,7 @@ async def _setup_trained_run(
         time.sleep(0.5)
         r2 = await ac_client.get(f"/api/models/{project_id}/runs")
         runs = r2.json()["runs"]
-        if any(
-            run["id"] == run_id and run["status"] in ("done", "failed") for run in runs
-        ):
+        if any(run["id"] == run_id and run["status"] in ("done", "failed") for run in runs):
             break
 
     return project_id, run_id, dataset_id
@@ -127,22 +119,16 @@ async def _setup_trained_run(
 # core/explainer.py
 # ---------------------------------------------------------------------------
 
-
 class TestExplainerCoverage:
+
     def test_extract_importances_multiclass_logistic_regression(self):
         """Line 78: coef_.ndim == 2 path for multiclass LogisticRegression."""
         from core.explainer import compute_feature_importance
 
-        X = np.array(
-            [
-                [1.0, 2.0],
-                [2.0, 1.0],
-                [3.0, 4.0],
-                [4.0, 3.0],
-                [5.0, 1.0],
-                [1.0, 5.0],
-            ]
-        )
+        X = np.array([
+            [1.0, 2.0], [2.0, 1.0], [3.0, 4.0], [4.0, 3.0],
+            [5.0, 1.0], [1.0, 5.0],
+        ])
         y = np.array([0, 1, 2, 0, 1, 2])
         model = LogisticRegression(max_iter=500, random_state=42)
         model.fit(X, y)
@@ -156,19 +142,16 @@ class TestExplainerCoverage:
         """Lines 118-120: classification path with predict_proba."""
         from core.explainer import explain_single_prediction
 
-        X = np.array([[1, 0], [0, 1], [1, 1], [0, 0], [2, 0], [0, 2], [2, 2], [0, 0]])
+        X = np.array([[1, 0], [0, 1], [1, 1], [0, 0],
+                       [2, 0], [0, 2], [2, 2], [0, 0]])
         y = np.array([0, 1, 1, 0, 0, 1, 1, 0])
         model = RandomForestClassifier(n_estimators=5, random_state=42)
         model.fit(X, y)
 
         x_row = np.array([1.0, 0.5])
         result = explain_single_prediction(
-            model,
-            x_row,
-            X,
-            ["feat_a", "feat_b"],
-            problem_type="classification",
-            target_name="label",
+            model, x_row, X, ["feat_a", "feat_b"],
+            problem_type="classification", target_name="label"
         )
         assert isinstance(result["prediction"], int)
         assert "summary" in result
@@ -185,9 +168,7 @@ class TestExplainerCoverage:
         """Lines 176-177: classification path in _prediction_summary."""
         from core.explainer import _prediction_summary
 
-        contrib = [
-            {"feature": "x", "value": 1.0, "contribution": 0.5, "direction": "positive"}
-        ]
+        contrib = [{"feature": "x", "value": 1.0, "contribution": 0.5, "direction": "positive"}]
         result = _prediction_summary(contrib, 0.8, 1, "classification", "churn")
         assert "class 1" in result
         assert "churn" in result
@@ -197,8 +178,8 @@ class TestExplainerCoverage:
 # core/validator.py
 # ---------------------------------------------------------------------------
 
-
 class TestValidatorCoverage:
+
     def test_cv_summary_weak_quality(self):
         """Line 85: 'weak' quality when mean < 0.5."""
         from core.validator import _cv_summary
@@ -286,14 +267,10 @@ class TestValidatorCoverage:
 # chat/orchestrator.py
 # ---------------------------------------------------------------------------
 
-
 class TestOrchestratorCoverage:
-    def _make_run(
-        self,
-        metrics=None,
-        algorithm="linear_regression",
-        created_at="2024-01-01T12:00:00",
-    ):
+
+    def _make_run(self, metrics=None, algorithm="linear_regression",
+                  created_at="2024-01-01T12:00:00"):
         run = MagicMock()
         run.metrics = metrics
         run.algorithm = algorithm
@@ -366,34 +343,24 @@ class TestOrchestratorCoverage:
 # core/deployer.py
 # ---------------------------------------------------------------------------
 
-
 class TestDeployerCoverage:
+
     def test_predict_single_classification_with_probabilities(self, tmp_path):
         """Lines 174-180: predict_single classification path (predict_proba)."""
-        from core.deployer import (
-            build_prediction_pipeline,
-            save_pipeline,
-            predict_single,
-        )
+        from core.deployer import build_prediction_pipeline, save_pipeline, predict_single
         from core.trainer import train_single_model, prepare_features
 
-        df = pd.DataFrame(
-            {
-                "age": [25, 35, 45, 55, 30, 40, 50, 60],
-                "income": [30000, 50000, 70000, 90000, 40000, 60000, 80000, 100000],
-                "churn": ["No", "No", "Yes", "Yes", "No", "Yes", "Yes", "No"],
-            }
-        )
-        pipeline = build_prediction_pipeline(
-            df, ["age", "income"], "churn", "classification"
-        )
+        df = pd.DataFrame({
+            "age": [25, 35, 45, 55, 30, 40, 50, 60],
+            "income": [30000, 50000, 70000, 90000, 40000, 60000, 80000, 100000],
+            "churn": ["No", "No", "Yes", "Yes", "No", "Yes", "Yes", "No"],
+        })
+        pipeline = build_prediction_pipeline(df, ["age", "income"], "churn", "classification")
         pipeline_path = str(tmp_path / "pipeline.pkl")
         save_pipeline(pipeline, pipeline_path)
 
         X, y, _ = prepare_features(df, ["age", "income"], "churn", "classification")
-        train_single_model(
-            X, y, "random_forest_classifier", "classification", tmp_path, "cls-run"
-        )
+        train_single_model(X, y, "random_forest_classifier", "classification", tmp_path, "cls-run")
 
         result = predict_single(
             pipeline_path=pipeline_path,
@@ -405,30 +372,20 @@ class TestDeployerCoverage:
 
     def test_predict_batch_classification_with_confidence(self, tmp_path):
         """Lines 213-214: predict_batch classification path (predict_proba confidence)."""
-        from core.deployer import (
-            build_prediction_pipeline,
-            save_pipeline,
-            predict_batch,
-        )
+        from core.deployer import build_prediction_pipeline, save_pipeline, predict_batch
         from core.trainer import train_single_model, prepare_features
 
-        df = pd.DataFrame(
-            {
-                "age": [25, 35, 45, 55, 30, 40, 50, 60],
-                "income": [30000, 50000, 70000, 90000, 40000, 60000, 80000, 100000],
-                "churn": ["No", "No", "Yes", "Yes", "No", "Yes", "Yes", "No"],
-            }
-        )
-        pipeline = build_prediction_pipeline(
-            df, ["age", "income"], "churn", "classification"
-        )
+        df = pd.DataFrame({
+            "age": [25, 35, 45, 55, 30, 40, 50, 60],
+            "income": [30000, 50000, 70000, 90000, 40000, 60000, 80000, 100000],
+            "churn": ["No", "No", "Yes", "Yes", "No", "Yes", "Yes", "No"],
+        })
+        pipeline = build_prediction_pipeline(df, ["age", "income"], "churn", "classification")
         pipeline_path = str(tmp_path / "pipeline_b.pkl")
         save_pipeline(pipeline, pipeline_path)
 
         X, y, _ = prepare_features(df, ["age", "income"], "churn", "classification")
-        train_single_model(
-            X, y, "random_forest_classifier", "classification", tmp_path, "cls-batch"
-        )
+        train_single_model(X, y, "random_forest_classifier", "classification", tmp_path, "cls-batch")
 
         batch_csv = b"age,income\n28,35000\n45,70000\n"
         result_bytes = predict_batch(
@@ -462,31 +419,19 @@ class TestDeployerCoverage:
 # core/feature_engine.py
 # ---------------------------------------------------------------------------
 
-
 class TestFeatureEngineCoverage:
+
     def test_suggest_skips_all_nan_numeric_column(self):
         """Line 98: continue when numeric series is empty (all NaN)."""
         from core.feature_engine import suggest_features
 
-        df = pd.DataFrame(
-            {
-                "all_nan": [float("nan"), float("nan"), float("nan")],
-                "normal": [1.0, 2.0, 3.0],
-            }
-        )
+        df = pd.DataFrame({
+            "all_nan": [float("nan"), float("nan"), float("nan")],
+            "normal": [1.0, 2.0, 3.0],
+        })
         column_stats = [
-            {
-                "name": "all_nan",
-                "dtype": "float64",
-                "unique_count": 0,
-                "sample_values": [],
-            },
-            {
-                "name": "normal",
-                "dtype": "float64",
-                "unique_count": 3,
-                "sample_values": [1, 2, 3],
-            },
+            {"name": "all_nan", "dtype": "float64", "unique_count": 0, "sample_values": []},
+            {"name": "normal", "dtype": "float64", "unique_count": 3, "sample_values": [1, 2, 3]},
         ]
         result = suggest_features(df, column_stats)
         assert isinstance(result, list)
@@ -497,9 +442,7 @@ class TestFeatureEngineCoverage:
 
         df = pd.DataFrame({"value": [1.0, 2.0, 3.0]})
         # Use an unknown transform type — should be silently skipped
-        transforms = [
-            {"transform_type": "nonexistent_transform_xyz", "column": "value"}
-        ]
+        transforms = [{"transform_type": "nonexistent_transform_xyz", "column": "value"}]
         result_df, mapping = apply_transformations(df, transforms)
         assert "value" in result_df.columns
 
@@ -539,8 +482,8 @@ class TestFeatureEngineCoverage:
 # core/query_engine.py
 # ---------------------------------------------------------------------------
 
-
 class TestQueryEngineCoverage:
+
     def test_parse_question_returns_none_for_null_string(self):
         """Line 168: when Claude returns 'null', return None."""
         from core.query_engine import _parse_question_to_spec
@@ -561,12 +504,10 @@ class TestQueryEngineCoverage:
         """Line 331: safe[k] = v.item() for numpy scalars."""
         from core.query_engine import _safe_rows
 
-        df = pd.DataFrame(
-            {
-                "a": np.array([1, 2], dtype=np.int64),
-                "b": np.array([3.0, 4.0], dtype=np.float32),
-            }
-        )
+        df = pd.DataFrame({
+            "a": np.array([1, 2], dtype=np.int64),
+            "b": np.array([3.0, 4.0], dtype=np.float32),
+        })
         rows = _safe_rows(df)
         assert len(rows) == 2
         assert type(rows[0]["a"]) in (int, float)
@@ -576,8 +517,8 @@ class TestQueryEngineCoverage:
 # chat/narration.py
 # ---------------------------------------------------------------------------
 
-
 class TestNarrationCoverage:
+
     def test_narrate_profile_highlights_str_warning(self):
         """Lines 151-152: string warning (not dict) in narrate_profile_highlights."""
         from chat.narration import narrate_profile_highlights
@@ -611,8 +552,8 @@ class TestNarrationCoverage:
 # chat/prompts.py
 # ---------------------------------------------------------------------------
 
-
 class TestPromptsCoverage:
+
     def test_format_metric_needs_improvement(self):
         """Line 147: metric value < 0.5 → '(needs improvement)'."""
         from chat.prompts import format_metric
@@ -625,8 +566,8 @@ class TestPromptsCoverage:
 # core/analyzer.py
 # ---------------------------------------------------------------------------
 
-
 class TestAnalyzerCoverage:
+
     def test_numeric_distribution_all_inf_values(self):
         """Line 120: finite_series is empty after filtering inf."""
         from core.analyzer import _numeric_distribution
@@ -649,12 +590,12 @@ class TestAnalyzerCoverage:
 # core/report_generator.py
 # ---------------------------------------------------------------------------
 
-
 class TestReportGeneratorCoverage:
+
     def test_generate_model_report_skips_none_metrics(self):
         """Line 248: `if val is None: continue` in metrics table."""
         from core.report_generator import generate_model_report
-        from datetime import timezone
+        from datetime import datetime, timezone
 
         pdf_bytes = generate_model_report(
             project_name="Test Project",
@@ -665,7 +606,7 @@ class TestReportGeneratorCoverage:
             problem_type="regression",
             metrics={
                 "r2": 0.85,
-                "mae": None,  # None value — should be skipped (line 248)
+                "mae": None,   # None value — should be skipped (line 248)
                 "rmse": 0.12,
             },
             summary="Good model",
@@ -681,8 +622,8 @@ class TestReportGeneratorCoverage:
 # api/projects.py — delete nonexistent project → 404
 # ---------------------------------------------------------------------------
 
-
 class TestProjectsApiCoverage:
+
     @pytest.mark.asyncio
     async def test_delete_nonexistent_project(self, ac):
         client, _, _ = ac
@@ -704,8 +645,8 @@ class TestProjectsApiCoverage:
 # api/templates.py — sample file missing → 503
 # ---------------------------------------------------------------------------
 
-
 class TestTemplatesApiCoverage:
+
     @pytest.mark.asyncio
     async def test_apply_template_sample_file_missing(self, ac):
         """Line 162: template sample file not on disk → 503."""
@@ -729,8 +670,8 @@ class TestTemplatesApiCoverage:
 # api/deploy.py — deploy edge cases
 # ---------------------------------------------------------------------------
 
-
 class TestDeployApiCoverage:
+
     @pytest.mark.asyncio
     async def test_deploy_run_not_found(self, ac):
         """api/deploy.py lines 69, 73: deploy with nonexistent run → 404."""
@@ -742,7 +683,6 @@ class TestDeployApiCoverage:
     async def test_deploy_with_transforms_line_110(self, ac):
         """Line 110: deploy endpoint applies transformations (df, _ = apply_transformations)."""
         import time
-
         client, _, _ = ac
 
         cls_csv = (
@@ -763,11 +703,7 @@ class TestDeployApiCoverage:
 
         r = await client.post(
             f"/api/features/{dataset_id}/apply",
-            json={
-                "transformations": [
-                    {"transform_type": "log_transform", "column": "age"}
-                ]
-            },
+            json={"transformations": [{"transform_type": "log_transform", "column": "age"}]},
         )
         assert r.status_code in (200, 201)
 
@@ -788,10 +724,7 @@ class TestDeployApiCoverage:
             time.sleep(0.5)
             r2 = await client.get(f"/api/models/{project_id}/runs")
             runs = r2.json()["runs"]
-            if any(
-                run["id"] == run_id and run["status"] in ("done", "failed")
-                for run in runs
-            ):
+            if any(run["id"] == run_id and run["status"] in ("done", "failed") for run in runs):
                 break
 
         r = await client.post(f"/api/deploy/{run_id}")
@@ -802,19 +735,18 @@ class TestDeployApiCoverage:
 # api/validation.py — transforms applied branch
 # ---------------------------------------------------------------------------
 
-
 class TestValidationApiCoverage:
+
     @pytest.mark.asyncio
     async def test_validate_with_transforms(self, ac):
         """Line 87: _load_data applies transformations when feature_set has them."""
         import time
-
         client, _, _ = ac
 
         # Enough rows for CV
         csv_lines = [b"value,revenue"]
         for i in range(1, 33):
-            csv_lines.append(f"{i},{i * 100}".encode())
+            csv_lines.append(f"{i},{i*100}".encode())
         csv_bytes = b"\n".join(csv_lines) + b"\n"
 
         r = await client.post("/api/projects", json={"name": "val_transform"})
@@ -830,11 +762,7 @@ class TestValidationApiCoverage:
 
         r = await client.post(
             f"/api/features/{dataset_id}/apply",
-            json={
-                "transformations": [
-                    {"transform_type": "log_transform", "column": "value"}
-                ]
-            },
+            json={"transformations": [{"transform_type": "log_transform", "column": "value"}]},
         )
         assert r.status_code in (200, 201)
 
@@ -854,10 +782,8 @@ class TestValidationApiCoverage:
         for _ in range(60):
             time.sleep(0.5)
             r2 = await client.get(f"/api/models/{project_id}/runs")
-            if any(
-                run["id"] == run_id and run["status"] == "done"
-                for run in r2.json()["runs"]
-            ):
+            if any(run["id"] == run_id and run["status"] == "done"
+                   for run in r2.json()["runs"]):
                 break
 
         r = await client.get(f"/api/validate/{run_id}/metrics")
@@ -868,8 +794,8 @@ class TestValidationApiCoverage:
 # api/data.py — _load_df_from_path xlsx path (lines 44-47)
 # ---------------------------------------------------------------------------
 
-
 class TestDataApiLoadPath:
+
     def test_load_df_from_path_xlsx(self, tmp_path):
         """Lines 44-47: _load_df_from_path handles .xlsx files."""
         from api.data import _load_df_from_path
@@ -898,13 +824,12 @@ class TestDataApiLoadPath:
 # api/models.py — various edge cases
 # ---------------------------------------------------------------------------
 
-
 class TestModelsApiCoverage:
+
     @pytest.mark.asyncio
     async def test_comparison_radar_returns_chart_when_two_done(self, ac):
         """Line 490: comparison-radar returns chart when 2+ models trained."""
         import time
-
         client, _, _ = ac
 
         r = await client.post("/api/projects", json={"name": "radar"})
@@ -918,9 +843,7 @@ class TestModelsApiCoverage:
         assert r.status_code == 201
         dataset_id = r.json()["dataset_id"]
 
-        r = await client.post(
-            f"/api/features/{dataset_id}/apply", json={"transformations": []}
-        )
+        r = await client.post(f"/api/features/{dataset_id}/apply", json={"transformations": []})
         r = await client.post(
             f"/api/features/{dataset_id}/target",
             json={"target_column": "y", "problem_type": "regression"},
@@ -947,6 +870,7 @@ class TestModelsApiCoverage:
     @pytest.mark.asyncio
     async def test_download_model_returns_file(self, ac):
         """Lines 600-601: model download returns file."""
+        import time
         client, _, _ = ac
 
         project_id, run_id, _ = await _setup_trained_run(client)
@@ -963,7 +887,6 @@ class TestModelsApiCoverage:
         import db as _db
         from models.model_run import ModelRun
         from sqlmodel import Session
-
         client, tmp_path, _ = ac
 
         r = await client.post("/api/projects", json={"name": "select_test"})
@@ -989,8 +912,8 @@ class TestModelsApiCoverage:
 # api/data.py — narration exception pass blocks
 # ---------------------------------------------------------------------------
 
-
 class TestDataApiNarrationExceptions:
+
     @pytest.mark.asyncio
     async def test_upload_csv_narration_exception_silenced(self, ac):
         """Lines 156-157: narration exception in upload_csv is silenced."""
@@ -1033,7 +956,6 @@ class TestDataApiNarrationExceptions:
     async def test_url_import_narration_exception_silenced(self, ac):
         """Lines 829-830: narration exception in URL import is silenced."""
         import urllib.request as urlreq
-
         client, _, monkeypatch = ac
         import api.data as data_mod
 
@@ -1047,10 +969,8 @@ class TestDataApiNarrationExceptions:
         class MockResponse:
             def read(self):
                 return csv_bytes
-
             def __enter__(self):
                 return self
-
             def __exit__(self, *args):
                 pass
 
@@ -1070,8 +990,8 @@ class TestDataApiNarrationExceptions:
 # api/data.py — profile missing file (line 222)
 # ---------------------------------------------------------------------------
 
-
 class TestDataApiProfileMissingFile:
+
     @pytest.mark.asyncio
     async def test_profile_file_missing_no_cache(self, ac):
         """Line 222: profile endpoint when file is missing and no cache."""
@@ -1110,8 +1030,8 @@ class TestDataApiProfileMissingFile:
 # api/data.py — timeseries exception (lines 481-482)
 # ---------------------------------------------------------------------------
 
-
 class TestDataApiTimeseriesException:
+
     @pytest.mark.asyncio
     async def test_timeseries_date_parse_exception_silenced(self, ac):
         """Lines 481-482: exception in date parsing falls back to raw df."""
@@ -1124,20 +1044,16 @@ class TestDataApiTimeseriesException:
         r = await client.post(
             "/api/data/upload",
             data={"project_id": project_id},
-            files={
-                "file": (
-                    "t.csv",
-                    io.BytesIO(
-                        b"date,value\n2024-01-01,10\n2024-01-02,20\n2024-01-03,30\n"
-                    ),
-                    "text/csv",
-                )
-            },
+            files={"file": ("t.csv",
+                            io.BytesIO(b"date,value\n2024-01-01,10\n2024-01-02,20\n2024-01-03,30\n"),
+                            "text/csv")},
         )
         assert r.status_code == 201
         dataset_id = r.json()["dataset_id"]
 
         # Patch pd.to_datetime inside the data module to raise
+        orig = data_mod.pd.to_datetime
+
         def _raise_to_datetime(col, *args, **kwargs):
             raise ValueError("mocked parse error")
 
@@ -1152,22 +1068,19 @@ class TestDataApiTimeseriesException:
 # api/data.py — URL import bad CSV content (lines 773-774)
 # ---------------------------------------------------------------------------
 
-
 class TestDataApiUrlBadCsv:
+
     @pytest.mark.asyncio
     async def test_url_import_bad_csv_content(self, ac):
         """Lines 773-774: downloaded content cannot be parsed as CSV → 400."""
         import urllib.request as urlreq
-
         client, _, monkeypatch = ac
 
         class MockResponse:
             def read(self):
                 return b"\x00\x01\x02\x03\xff\xfe binary garbage that can't be CSV"
-
             def __enter__(self):
                 return self
-
             def __exit__(self, *args):
                 pass
 

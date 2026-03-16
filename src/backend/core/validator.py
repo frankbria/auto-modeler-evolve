@@ -111,10 +111,10 @@ def compute_confusion_matrix(
     correct = int(np.trace(cm))
 
     if class_labels is not None:
-        labels = [str(lbl) for lbl in class_labels]
+        labels = [str(l) for l in class_labels]
     else:
         unique = sorted(set(y_true.tolist()))
-        labels = [str(lbl) for lbl in unique]
+        labels = [str(l) for l in unique]
 
     return {
         "matrix": cm.tolist(),
@@ -262,7 +262,10 @@ def assess_confidence_limitations(
     return {
         "overall_confidence": confidence,
         "limitations": limitations,
-        "summary": (f"Overall confidence: {confidence.upper()}. " + limitations[0]),
+        "summary": (
+            f"Overall confidence: {confidence.upper()}. "
+            + limitations[0]
+        ),
     }
 
 

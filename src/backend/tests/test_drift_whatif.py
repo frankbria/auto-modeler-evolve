@@ -4,6 +4,7 @@ import io
 import json
 import time
 from unittest.mock import MagicMock, patch
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
@@ -81,30 +82,23 @@ def client(tmp_path):
     import models.model_run  # noqa
     import models.deployment  # noqa
     import models.prediction_log  # noqa
-
     SQLModel.metadata.create_all(db_module.engine)
 
     import api.data as data_module
-
     data_module.UPLOAD_DIR = tmp_path / "uploads"
 
     import api.models as models_api_module
-
     models_api_module.MODELS_DIR = tmp_path / "models"
 
     import api.deploy as deploy_module
-
     deploy_module.DEPLOY_DIR = tmp_path / "deployments"
 
     from main import app
-
     with TestClient(app) as c:
         yield c
 
 
-def _setup_deployed(
-    client, csv_data=SAMPLE_CSV, target="revenue", algorithm="linear_regression"
-):
+def _setup_deployed(client, csv_data=SAMPLE_CSV, target="revenue", algorithm="linear_regression"):
     """Helper: project → upload → features → train → deploy. Returns deployment_id."""
     proj = client.post("/api/projects", json={"name": "Drift Test"})
     project_id = proj.json()["id"]
@@ -119,9 +113,7 @@ def _setup_deployed(
     client.post(f"/api/features/{dataset_id}/apply", json={"transformations": []})
     client.post(f"/api/features/{dataset_id}/target", json={"target_column": target})
 
-    train_resp = client.post(
-        f"/api/models/{project_id}/train", json={"algorithms": [algorithm]}
-    )
+    train_resp = client.post(f"/api/models/{project_id}/train", json={"algorithms": [algorithm]})
     run_id = train_resp.json()["model_run_ids"][0]
 
     for _ in range(30):
@@ -169,12 +161,7 @@ class TestDriftDetection:
         r = client.get(f"/api/deploy/{deployment_id}/drift")
         assert r.status_code == 200
         data = r.json()
-        assert data["status"] in (
-            "stable",
-            "mild_drift",
-            "significant_drift",
-            "insufficient_data",
-        )
+        assert data["status"] in ("stable", "mild_drift", "significant_drift", "insufficient_data")
         assert data["problem_type"] == "regression"
 
     def test_drift_response_shape(self, client):
@@ -196,10 +183,7 @@ class TestDriftDetection:
 
     def test_drift_classification_model(self, client):
         deployment_id, _ = _setup_deployed(
-            client,
-            csv_data=CLASSIFICATION_CSV,
-            target="label",
-            algorithm="random_forest_classifier",
+            client, csv_data=CLASSIFICATION_CSV, target="label", algorithm="random_forest_classifier"
         )
         features = {"f1": 1.0, "f2": 2.0}
         for _ in range(40):
@@ -226,24 +210,18 @@ class TestDriftDetection:
 
 class TestWhatIfAnalysis:
     def test_whatif_404_unknown_deployment(self, client):
-        r = client.post(
-            "/api/predict/doesnotexist/whatif",
-            json={
-                "base": {"units": 10, "product": "Widget A", "region": "North"},
-                "overrides": {"units": 20},
-            },
-        )
+        r = client.post("/api/predict/doesnotexist/whatif", json={
+            "base": {"units": 10, "product": "Widget A", "region": "North"},
+            "overrides": {"units": 20},
+        })
         assert r.status_code == 404
 
     def test_whatif_returns_prediction_comparison(self, client):
         deployment_id, _ = _setup_deployed(client)
-        r = client.post(
-            f"/api/predict/{deployment_id}/whatif",
-            json={
-                "base": {"product": "Widget A", "region": "North", "units": 10},
-                "overrides": {"units": 20},
-            },
-        )
+        r = client.post(f"/api/predict/{deployment_id}/whatif", json={
+            "base": {"product": "Widget A", "region": "North", "units": 10},
+            "overrides": {"units": 20},
+        })
         assert r.status_code == 200
         data = r.json()
         assert "original_prediction" in data
@@ -255,13 +233,10 @@ class TestWhatIfAnalysis:
     def test_whatif_delta_direction_increase(self, client):
         deployment_id, _ = _setup_deployed(client)
         # Increasing units should increase revenue prediction for linear model
-        r_low = client.post(
-            f"/api/predict/{deployment_id}/whatif",
-            json={
-                "base": {"product": "Widget A", "region": "North", "units": 5},
-                "overrides": {"units": 100},
-            },
-        )
+        r_low = client.post(f"/api/predict/{deployment_id}/whatif", json={
+            "base": {"product": "Widget A", "region": "North", "units": 5},
+            "overrides": {"units": 100},
+        })
         assert r_low.status_code == 200
         data = r_low.json()
         # delta and direction should be present
@@ -270,13 +245,10 @@ class TestWhatIfAnalysis:
 
     def test_whatif_no_change_when_same_value(self, client):
         deployment_id, _ = _setup_deployed(client)
-        r = client.post(
-            f"/api/predict/{deployment_id}/whatif",
-            json={
-                "base": {"product": "Widget A", "region": "North", "units": 10},
-                "overrides": {"units": 10},
-            },
-        )
+        r = client.post(f"/api/predict/{deployment_id}/whatif", json={
+            "base": {"product": "Widget A", "region": "North", "units": 10},
+            "overrides": {"units": 10},
+        })
         assert r.status_code == 200
         data = r.json()
         # Prediction should be same
@@ -284,23 +256,15 @@ class TestWhatIfAnalysis:
 
     def test_whatif_response_shape(self, client):
         deployment_id, _ = _setup_deployed(client)
-        r = client.post(
-            f"/api/predict/{deployment_id}/whatif",
-            json={
-                "base": {"product": "Widget A", "region": "North", "units": 10},
-                "overrides": {"region": "West"},
-            },
-        )
+        r = client.post(f"/api/predict/{deployment_id}/whatif", json={
+            "base": {"product": "Widget A", "region": "North", "units": 10},
+            "overrides": {"region": "West"},
+        })
         assert r.status_code == 200
         data = r.json()
         required_keys = [
-            "deployment_id",
-            "original_prediction",
-            "modified_prediction",
-            "changed_features",
-            "summary",
-            "problem_type",
-            "target_column",
+            "deployment_id", "original_prediction", "modified_prediction",
+            "changed_features", "summary", "problem_type", "target_column",
         ]
         for key in required_keys:
             assert key in data, f"Missing key: {key}"
@@ -308,29 +272,20 @@ class TestWhatIfAnalysis:
     def test_whatif_missing_feature_uses_default(self, client):
         deployment_id, _ = _setup_deployed(client)
         # Provide incomplete base — missing features get defaults in the pipeline
-        r = client.post(
-            f"/api/predict/{deployment_id}/whatif",
-            json={
-                "base": {},
-                "overrides": {"units": 15},
-            },
-        )
+        r = client.post(f"/api/predict/{deployment_id}/whatif", json={
+            "base": {},
+            "overrides": {"units": 15},
+        })
         assert r.status_code == 200
 
     def test_whatif_classification_returns_labels(self, client):
         deployment_id, _ = _setup_deployed(
-            client,
-            csv_data=CLASSIFICATION_CSV,
-            target="label",
-            algorithm="random_forest_classifier",
+            client, csv_data=CLASSIFICATION_CSV, target="label", algorithm="random_forest_classifier"
         )
-        r = client.post(
-            f"/api/predict/{deployment_id}/whatif",
-            json={
-                "base": {"f1": 1.0, "f2": 2.0},
-                "overrides": {"f1": 9.0},
-            },
-        )
+        r = client.post(f"/api/predict/{deployment_id}/whatif", json={
+            "base": {"f1": 1.0, "f2": 2.0},
+            "overrides": {"f1": 9.0},
+        })
         assert r.status_code == 200
         data = r.json()
         assert data["problem_type"] == "classification"
@@ -339,13 +294,10 @@ class TestWhatIfAnalysis:
     def test_whatif_inactive_deployment_returns_404(self, client):
         deployment_id, _ = _setup_deployed(client)
         client.delete(f"/api/deploy/{deployment_id}")
-        r = client.post(
-            f"/api/predict/{deployment_id}/whatif",
-            json={
-                "base": {"product": "Widget A", "region": "North", "units": 10},
-                "overrides": {"units": 20},
-            },
-        )
+        r = client.post(f"/api/predict/{deployment_id}/whatif", json={
+            "base": {"product": "Widget A", "region": "North", "units": 10},
+            "overrides": {"units": 20},
+        })
         assert r.status_code == 404
 
 

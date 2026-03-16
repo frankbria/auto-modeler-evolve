@@ -1,5 +1,4 @@
 """Tests for project CRUD API."""
-
 import pytest
 from httpx import AsyncClient, ASGITransport
 from sqlmodel import create_engine, SQLModel
@@ -15,14 +14,10 @@ async def ac(tmp_path):
     import models.project  # noqa
     import models.dataset  # noqa
     import models.conversation  # noqa
-
     SQLModel.metadata.create_all(db_module.engine)
 
     from main import app
-
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         yield client
 
 
@@ -33,9 +28,7 @@ async def test_health_check(ac):
 
 
 async def test_create_project(ac):
-    resp = await ac.post(
-        "/api/projects", json={"name": "Q3 Sales", "description": "Q3 analysis"}
-    )
+    resp = await ac.post("/api/projects", json={"name": "Q3 Sales", "description": "Q3 analysis"})
     assert resp.status_code == 201
     data = resp.json()
     assert data["name"] == "Q3 Sales"

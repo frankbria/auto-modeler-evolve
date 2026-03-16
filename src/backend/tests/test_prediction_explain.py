@@ -3,6 +3,7 @@
 import io
 import time
 
+import numpy as np
 import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
@@ -58,10 +59,17 @@ def client(tmp_path):
     db_module.engine = create_engine(f"sqlite:///{test_db}", echo=False)
     db_module.DATA_DIR = tmp_path
 
+    import models.project
+    import models.dataset
+    import models.feature_set
+    import models.model_run
+    import models.deployment
+    import models.conversation
+    import models.prediction_log
+    import models.feedback_record
     SQLModel.metadata.create_all(db_module.engine)
 
     from main import app
-
     return TestClient(app)
 
 
@@ -95,9 +103,7 @@ def _full_pipeline(client, csv_bytes: bytes, target: str, problem_type: str):
     assert target_resp.status_code in (200, 201), target_resp.text
 
     # Train
-    algo = (
-        "linear_regression" if problem_type == "regression" else "logistic_regression"
-    )
+    algo = "linear_regression" if problem_type == "regression" else "logistic_regression"
     train_resp = client.post(
         f"/api/models/{proj_id}/train",
         json={"algorithms": [algo]},
@@ -219,9 +225,7 @@ def test_explain_returns_top_drivers(client):
 
 def test_explain_classification_model(client):
     """Explain endpoint works for classification models too."""
-    deployment, _ = _full_pipeline(
-        client, CLASSIFICATION_CSV, "label", "classification"
-    )
+    deployment, _ = _full_pipeline(client, CLASSIFICATION_CSV, "label", "classification")
     dep_id = deployment["id"]
 
     resp = client.post(
@@ -275,13 +279,11 @@ def test_explain_deployer_feature_means_stored(tmp_path):
     """PredictionPipeline stores feature_means and feature_stds after build."""
     from core.deployer import build_prediction_pipeline
 
-    df = pd.DataFrame(
-        {
-            "age": [25, 35, 45, 55, 30],
-            "income": [30000, 45000, 60000, 75000, 38000],
-            "score": [60, 72, 85, 91, 65],
-        }
-    )
+    df = pd.DataFrame({
+        "age": [25, 35, 45, 55, 30],
+        "income": [30000, 45000, 60000, 75000, 38000],
+        "score": [60, 72, 85, 91, 65],
+    })
     pipeline = build_prediction_pipeline(df, ["age", "income"], "score", "regression")
 
     assert "age" in pipeline.feature_means
@@ -297,31 +299,14 @@ def test_explain_deployer_feature_means_stored(tmp_path):
 def test_explain_deployer_explain_prediction_function(tmp_path):
     """explain_prediction() function in deployer works end-to-end."""
     import joblib
-    from core.deployer import (
-        build_prediction_pipeline,
-        explain_prediction,
-        save_pipeline,
-    )
+    from core.deployer import build_prediction_pipeline, explain_prediction, save_pipeline
     from sklearn.linear_model import LinearRegression
 
-    df = pd.DataFrame(
-        {
-            "age": [25, 35, 45, 55, 30, 40, 50, 28, 38, 48],
-            "income": [
-                30000,
-                45000,
-                60000,
-                75000,
-                38000,
-                52000,
-                68000,
-                33000,
-                48000,
-                63000,
-            ],
-            "score": [60, 72, 85, 91, 65, 78, 88, 62, 75, 83],
-        }
-    )
+    df = pd.DataFrame({
+        "age": [25, 35, 45, 55, 30, 40, 50, 28, 38, 48],
+        "income": [30000, 45000, 60000, 75000, 38000, 52000, 68000, 33000, 48000, 63000],
+        "score": [60, 72, 85, 91, 65, 78, 88, 62, 75, 83],
+    })
     pipeline = build_prediction_pipeline(df, ["age", "income"], "score", "regression")
     pipeline_path = tmp_path / "pipeline.pkl"
     save_pipeline(pipeline, pipeline_path)
@@ -334,14 +319,9 @@ def test_explain_deployer_explain_prediction_function(tmp_path):
     model_path = tmp_path / "model.pkl"
     joblib.dump(model, model_path)
 
-    result = explain_prediction(
-        str(pipeline_path), str(model_path), {"age": 40, "income": 55000}
-    )
+    result = explain_prediction(str(pipeline_path), str(model_path), {"age": 40, "income": 55000})
     assert "prediction" in result
     assert "contributions" in result
     assert "summary" in result
     assert len(result["contributions"]) == 2  # age and income
-    assert result["top_drivers"] == ["age", "income"] or set(result["top_drivers"]) == {
-        "age",
-        "income",
-    }
+    assert result["top_drivers"] == ["age", "income"] or set(result["top_drivers"]) == {"age", "income"}

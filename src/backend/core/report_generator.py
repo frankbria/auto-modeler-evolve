@@ -31,7 +31,6 @@ from reportlab.platypus import (
 # Public API
 # ---------------------------------------------------------------------------
 
-
 def generate_model_report(
     *,
     project_name: str,
@@ -117,13 +116,9 @@ def generate_model_report(
     # ── Header ──────────────────────────────────────────────────────────────
     elements.append(Paragraph("AutoModeler", caption_style))
     elements.append(Paragraph(f"Model Report — {project_name}", title_style))
-    report_date = (created_at or datetime.now(UTC).replace(tzinfo=None)).strftime(
-        "%B %d, %Y"
-    )
+    report_date = (created_at or datetime.now(UTC).replace(tzinfo=None)).strftime("%B %d, %Y")
     elements.append(Paragraph(f"Generated {report_date}", subtitle_style))
-    elements.append(
-        HRFlowable(width="100%", thickness=1, color=colors.HexColor("#E5E7EB"))
-    )
+    elements.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#E5E7EB")))
     elements.append(Spacer(1, 0.4 * cm))
 
     # ── Overview table ───────────────────────────────────────────────────────
@@ -175,13 +170,11 @@ def generate_model_report(
         elements.append(Spacer(1, 0.2 * cm))
         fi_data = [["Rank", "Feature", "Importance"]]
         for entry in feature_importances[:15]:
-            fi_data.append(
-                [
-                    str(entry.get("rank", "")),
-                    str(entry.get("feature", "")),
-                    f"{float(entry.get('importance', 0)):.4f}",
-                ]
-            )
+            fi_data.append([
+                str(entry.get("rank", "")),
+                str(entry.get("feature", "")),
+                f"{float(entry.get('importance', 0)):.4f}",
+            ])
         elements.append(_make_table(fi_data, header=True))
 
     # ── Confidence Assessment ────────────────────────────────────────────────
@@ -189,7 +182,9 @@ def generate_model_report(
         elements.append(Paragraph("Confidence & Limitations", section_style))
         level = confidence_assessment.get("confidence_level", "")
         if level:
-            elements.append(Paragraph(f"<b>Confidence level:</b> {level}", body_style))
+            elements.append(
+                Paragraph(f"<b>Confidence level:</b> {level}", body_style)
+            )
         strengths = confidence_assessment.get("strengths", [])
         if strengths:
             elements.append(Spacer(1, 0.15 * cm))
@@ -205,9 +200,7 @@ def generate_model_report(
 
     # ── Footer ───────────────────────────────────────────────────────────────
     elements.append(Spacer(1, 0.8 * cm))
-    elements.append(
-        HRFlowable(width="100%", thickness=1, color=colors.HexColor("#E5E7EB"))
-    )
+    elements.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#E5E7EB")))
     elements.append(Spacer(1, 0.2 * cm))
     elements.append(
         Paragraph(
@@ -223,7 +216,6 @@ def generate_model_report(
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
 
 def _format_algorithm(algo: str) -> str:
     names = {
@@ -272,12 +264,7 @@ def _make_table(data: list[list], header: bool = False) -> Table:
         ("TEXTCOLOR", (0, 0), (0, -1), colors.HexColor("#6B7280")),
         ("TEXTCOLOR", (1, 0), (1, -1), colors.HexColor("#111827")),
         ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
-        (
-            "ROWBACKGROUNDS",
-            (0, 0),
-            (-1, -1),
-            [colors.HexColor("#F9FAFB"), colors.white],
-        ),
+        ("ROWBACKGROUNDS", (0, 0), (-1, -1), [colors.HexColor("#F9FAFB"), colors.white]),
         ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#E5E7EB")),
         ("TOPPADDING", (0, 0), (-1, -1), 5),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
@@ -297,28 +284,19 @@ def _make_table(data: list[list], header: bool = False) -> Table:
 def _make_metric_table(data: list[list]) -> Table:
     col_widths = [4 * cm, 3 * cm, None]
     t = Table(data, colWidths=col_widths, hAlign="LEFT")
-    t.setStyle(
-        TableStyle(
-            [
-                ("FONTNAME", (0, 0), (-1, -1), "Helvetica"),
-                ("FONTSIZE", (0, 0), (-1, -1), 9),
-                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#EFF6FF")),
-                ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#1D4ED8")),
-                (
-                    "ROWBACKGROUNDS",
-                    (0, 1),
-                    (-1, -1),
-                    [colors.HexColor("#F9FAFB"), colors.white],
-                ),
-                ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#E5E7EB")),
-                ("TOPPADDING", (0, 0), (-1, -1), 5),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-                ("LEFTPADDING", (0, 0), (-1, -1), 8),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 8),
-                ("ALIGN", (1, 1), (1, -1), "RIGHT"),
-                ("TEXTCOLOR", (2, 1), (2, -1), colors.HexColor("#6B7280")),
-            ]
-        )
-    )
+    t.setStyle(TableStyle([
+        ("FONTNAME", (0, 0), (-1, -1), "Helvetica"),
+        ("FONTSIZE", (0, 0), (-1, -1), 9),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#EFF6FF")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#1D4ED8")),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.HexColor("#F9FAFB"), colors.white]),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#E5E7EB")),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("LEFTPADDING", (0, 0), (-1, -1), 8),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+        ("ALIGN", (1, 1), (1, -1), "RIGHT"),
+        ("TEXTCOLOR", (2, 1), (2, -1), colors.HexColor("#6B7280")),
+    ]))
     return t

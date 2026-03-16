@@ -1,5 +1,4 @@
 """Tests for CSV upload and data preview."""
-
 import pytest
 import io
 from httpx import AsyncClient, ASGITransport
@@ -26,19 +25,14 @@ async def ac(tmp_path, monkeypatch):
     import models.project  # noqa
     import models.dataset  # noqa
     import models.conversation  # noqa
-
     SQLModel.metadata.create_all(db_module.engine)
 
     # Point upload dir to tmp_path
     import api.data as data_module
-
     data_module.UPLOAD_DIR = tmp_path / "uploads"
 
     from main import app
-
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         yield client
 
 

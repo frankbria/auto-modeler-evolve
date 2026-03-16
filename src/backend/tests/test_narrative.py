@@ -12,6 +12,7 @@ Covers:
 from __future__ import annotations
 
 import io
+import json
 import time
 
 import pytest
@@ -59,23 +60,18 @@ def client(tmp_path, monkeypatch):
     import models.model_run  # noqa
     import models.deployment  # noqa
     import models.prediction_log  # noqa
-
     SQLModel.metadata.create_all(db_module.engine)
 
     import api.data as data_module
-
     data_module.UPLOAD_DIR = tmp_path / "uploads"
 
     import api.models as models_api_module
-
     models_api_module.MODELS_DIR = tmp_path / "models"
 
     import api.deploy as deploy_module
-
     deploy_module.DEPLOY_DIR = tmp_path / "deployments"
 
     from main import app
-
     with TestClient(app) as c:
         yield c
 
@@ -84,8 +80,8 @@ def client(tmp_path, monkeypatch):
 # Tests
 # ──────────────────────────────────────────────────────────────────────────────
 
-
 class TestProjectNarrativeBasic:
+
     def test_404_for_unknown_project(self, client):
         r = client.post("/api/projects/nonexistent-id/narrative")
         assert r.status_code == 404
@@ -102,9 +98,7 @@ class TestProjectNarrativeBasic:
         assert len(body["narrative"]) > 20
 
     def test_narrative_includes_project_name(self, client):
-        proj = client.post(
-            "/api/projects", json={"name": "Revenue Analysis 2024"}
-        ).json()
+        proj = client.post("/api/projects", json={"name": "Revenue Analysis 2024"}).json()
         r = client.post(f"/api/projects/{proj['id']}/narrative")
         body = r.json()
         assert "Revenue Analysis 2024" in body["narrative"]
@@ -132,6 +126,7 @@ class TestProjectNarrativeBasic:
 
 
 class TestProjectNarrativeWithData:
+
     def _upload(self, client, project_id):
         r = client.post(
             "/api/data/upload",
@@ -159,27 +154,18 @@ class TestProjectNarrativeWithData:
     def test_narrative_mentions_rows_in_text(self, client):
         proj = client.post("/api/projects", json={"name": "Row Test"}).json()
         self._upload(client, proj["id"])
-        narrative = client.post(f"/api/projects/{proj['id']}/narrative").json()[
-            "narrative"
-        ]
+        narrative = client.post(f"/api/projects/{proj['id']}/narrative").json()["narrative"]
         # Static narrative includes row count
-        assert (
-            "15" in narrative or "rows" in narrative.lower() or "data.csv" in narrative
-        )
+        assert "15" in narrative or "rows" in narrative.lower() or "data.csv" in narrative
 
     def test_narrative_with_feature_set_and_target(self, client):
         proj = client.post("/api/projects", json={"name": "With Features"}).json()
         did = self._upload(client, proj["id"])
-        fs = client.post(
-            f"/api/features/{did}/apply", json={"transformations": []}
-        ).json()
-        client.post(
-            f"/api/features/{did}/target",
-            json={
-                "target_column": "revenue",
-                "feature_set_id": fs["feature_set_id"],
-            },
-        )
+        fs = client.post(f"/api/features/{did}/apply", json={"transformations": []}).json()
+        client.post(f"/api/features/{did}/target", json={
+            "target_column": "revenue",
+            "feature_set_id": fs["feature_set_id"],
+        })
         r = client.post(f"/api/projects/{proj['id']}/narrative")
         assert r.status_code == 200
         ctx = r.json()["context"]
@@ -189,21 +175,17 @@ class TestProjectNarrativeWithData:
     def test_narrative_features_context_has_problem_type(self, client):
         proj = client.post("/api/projects", json={"name": "Problem Type Test"}).json()
         did = self._upload(client, proj["id"])
-        fs = client.post(
-            f"/api/features/{did}/apply", json={"transformations": []}
-        ).json()
-        client.post(
-            f"/api/features/{did}/target",
-            json={
-                "target_column": "revenue",
-                "feature_set_id": fs["feature_set_id"],
-            },
-        )
+        fs = client.post(f"/api/features/{did}/apply", json={"transformations": []}).json()
+        client.post(f"/api/features/{did}/target", json={
+            "target_column": "revenue",
+            "feature_set_id": fs["feature_set_id"],
+        })
         ctx = client.post(f"/api/projects/{proj['id']}/narrative").json()["context"]
         assert ctx["features"]["problem_type"] in ("regression", "classification", None)
 
 
 class TestProjectNarrativeWithModel:
+
     def _full_setup(self, client):
         proj = client.post("/api/projects", json={"name": "Full Pipeline"}).json()
         pid = proj["id"]
@@ -214,19 +196,12 @@ class TestProjectNarrativeWithModel:
             data={"project_id": pid},
         )
         did = r.json()["dataset_id"]
-        fs = client.post(
-            f"/api/features/{did}/apply", json={"transformations": []}
-        ).json()
-        client.post(
-            f"/api/features/{did}/target",
-            json={
-                "target_column": "revenue",
-                "feature_set_id": fs["feature_set_id"],
-            },
-        )
-        client.post(
-            f"/api/models/{pid}/train", json={"algorithms": ["linear_regression"]}
-        )
+        fs = client.post(f"/api/features/{did}/apply", json={"transformations": []}).json()
+        client.post(f"/api/features/{did}/target", json={
+            "target_column": "revenue",
+            "feature_set_id": fs["feature_set_id"],
+        })
+        client.post(f"/api/models/{pid}/train", json={"algorithms": ["linear_regression"]})
         for _ in range(60):
             runs = client.get(f"/api/models/{pid}/runs").json()["runs"]
             if all(r["status"] in ("done", "failed") for r in runs):
@@ -266,7 +241,6 @@ class TestStaticNarrativeFunction:
 
     def test_static_narrative_empty_context(self):
         from api.projects import _static_narrative
-
         ctx = {"project_name": "Test", "created_at": "January 01, 2024"}
         result = _static_narrative(ctx)
         assert "Test" in result
@@ -274,17 +248,10 @@ class TestStaticNarrativeFunction:
 
     def test_static_narrative_with_dataset(self):
         from api.projects import _static_narrative
-
         ctx = {
             "project_name": "Sales",
             "created_at": "March 15, 2026",
-            "dataset": {
-                "filename": "sales.csv",
-                "rows": 1500,
-                "columns": 8,
-                "missing_pct": 2.5,
-                "has_outliers": False,
-            },
+            "dataset": {"filename": "sales.csv", "rows": 1500, "columns": 8, "missing_pct": 2.5, "has_outliers": False},
         }
         result = _static_narrative(ctx)
         assert "sales.csv" in result
@@ -292,73 +259,41 @@ class TestStaticNarrativeFunction:
 
     def test_static_narrative_with_regression_model(self):
         from api.projects import _static_narrative
-
         ctx = {
             "project_name": "Revenue Forecast",
             "created_at": "March 15, 2026",
-            "dataset": {
-                "filename": "d.csv",
-                "rows": 200,
-                "columns": 5,
-                "missing_pct": 0,
-                "has_outliers": False,
-            },
-            "model": {
-                "algorithm": "random_forest_regressor",
-                "metrics": {"r2": 0.87, "mae": 120.5},
-                "summary": "Good fit.",
-                "is_selected": True,
-                "n_models_compared": 2,
-            },
+            "dataset": {"filename": "d.csv", "rows": 200, "columns": 5, "missing_pct": 0, "has_outliers": False},
+            "model": {"algorithm": "random_forest_regressor", "metrics": {"r2": 0.87, "mae": 120.5}, "summary": "Good fit.", "is_selected": True, "n_models_compared": 2},
         }
         result = _static_narrative(ctx)
         assert "0.87" in result or "87" in result
 
     def test_static_narrative_with_classification_model(self):
         from api.projects import _static_narrative
-
         ctx = {
             "project_name": "Churn Prediction",
             "created_at": "March 15, 2026",
-            "model": {
-                "algorithm": "random_forest_classifier",
-                "metrics": {"accuracy": 0.92, "f1": 0.91},
-                "summary": "Great.",
-                "is_selected": True,
-                "n_models_compared": 1,
-            },
+            "model": {"algorithm": "random_forest_classifier", "metrics": {"accuracy": 0.92, "f1": 0.91}, "summary": "Great.", "is_selected": True, "n_models_compared": 1},
         }
         result = _static_narrative(ctx)
         assert "92" in result or "92.0" in result
 
     def test_static_narrative_with_deployment(self):
         from api.projects import _static_narrative
-
         ctx = {
             "project_name": "Live Model",
             "created_at": "March 01, 2026",
-            "deployment": {
-                "is_live": True,
-                "endpoint": "/api/predict/abc",
-                "dashboard_url": "/predict/abc",
-                "prediction_count": 42,
-                "created_at": "March 10, 2026",
-            },
+            "deployment": {"is_live": True, "endpoint": "/api/predict/abc", "dashboard_url": "/predict/abc", "prediction_count": 42, "created_at": "March 10, 2026"},
         }
         result = _static_narrative(ctx)
         assert "live" in result.lower() or "42" in result
 
     def test_static_narrative_not_deployed(self):
         from api.projects import _static_narrative
-
         ctx = {
             "project_name": "Pending",
             "created_at": "March 15, 2026",
             "deployment": {"is_live": False},
         }
         result = _static_narrative(ctx)
-        assert (
-            "not yet" in result.lower()
-            or "deployed" in result.lower()
-            or "deploy" in result.lower()
-        )
+        assert "not yet" in result.lower() or "deployed" in result.lower() or "deploy" in result.lower()

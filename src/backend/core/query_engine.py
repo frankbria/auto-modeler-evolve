@@ -29,20 +29,17 @@ from core.chart_builder import chart_from_query_result
 # Data structures
 # ---------------------------------------------------------------------------
 
-
 @dataclass
 class QueryResult:
     """Outcome of running a natural-language query against a dataframe."""
-
-    text: str  # Human-readable answer
-    chart_spec: dict[str, Any] | None  # Recharts config, or None
+    text: str                           # Human-readable answer
+    chart_spec: dict[str, Any] | None   # Recharts config, or None
     result_rows: list[dict] = field(default_factory=list)  # Raw data rows
 
 
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
-
 
 def run_nl_query(
     question: str,
@@ -58,8 +55,8 @@ def run_nl_query(
     if spec is None:
         return QueryResult(
             text="I couldn't understand that question well enough to query the data. "
-            "Try asking something like 'which region has the highest revenue?' "
-            "or 'show me the distribution of sales'.",
+                 "Try asking something like 'which region has the highest revenue?' "
+                 "or 'show me the distribution of sales'.",
             chart_spec=None,
         )
 
@@ -69,14 +66,12 @@ def run_nl_query(
     except Exception as exc:  # noqa: BLE001
         return QueryResult(
             text=f"I understood the question but hit an error running it: {exc}. "
-            "Try rephrasing or asking about a specific column.",
+                 "Try rephrasing or asking about a specific column.",
             chart_spec=None,
         )
 
     if result_df is None or result_df.empty:
-        return QueryResult(
-            text=answer_text or "No data matched that query.", chart_spec=None
-        )
+        return QueryResult(text=answer_text or "No data matched that query.", chart_spec=None)
 
     # Step 3: Build chart spec
     x_col = spec.get("x_col")
@@ -102,26 +97,9 @@ def generate_chart_for_message(
     """
     # Only bother if the assistant response contains numbers/comparisons
     data_keywords = [
-        "highest",
-        "lowest",
-        "most",
-        "least",
-        "average",
-        "mean",
-        "total",
-        "distribution",
-        "trend",
-        "pattern",
-        "correlation",
-        "compare",
-        "comparison",
-        "percent",
-        "percentage",
-        "top",
-        "bottom",
-        "increase",
-        "decrease",
-        "over time",
+        "highest", "lowest", "most", "least", "average", "mean", "total",
+        "distribution", "trend", "pattern", "correlation", "compare", "comparison",
+        "percent", "percentage", "top", "bottom", "increase", "decrease", "over time",
     ]
     response_lower = assistant_response.lower()
     question_lower = message.lower()
@@ -197,7 +175,6 @@ def _parse_question_to_spec(
 # Internal: Query execution
 # ---------------------------------------------------------------------------
 
-
 def _execute_spec(spec: dict, df: pd.DataFrame) -> tuple[pd.DataFrame | None, str]:
     """Execute a QuerySpec against a dataframe. Returns (result_df, text_summary)."""
     op = spec.get("operation", "")
@@ -267,26 +244,21 @@ def _execute_spec(spec: dict, df: pd.DataFrame) -> tuple[pd.DataFrame | None, st
 
         ts_df = df[[x_col, y_col]].dropna().sort_values(x_col)
         text = (
-            f"Trend of **{y_col}** over **{x_col}** — showing {len(ts_df)} data points."
+            f"Trend of **{y_col}** over **{x_col}** — "
+            f"showing {len(ts_df)} data points."
         )
         return ts_df, text
 
     elif op == "correlation":
         columns = spec.get("columns", [])
-        valid = [
-            c
-            for c in columns
-            if c in df.columns and pd.api.types.is_numeric_dtype(df[c])
-        ]
+        valid = [c for c in columns if c in df.columns and pd.api.types.is_numeric_dtype(df[c])]
         if len(valid) < 2:
             return None, "Need two numeric columns to show correlation."
         c1, c2 = valid[0], valid[1]
         corr_val = df[c1].corr(df[c2])
         strength = (
-            "strong"
-            if abs(corr_val) >= 0.7
-            else "moderate"
-            if abs(corr_val) >= 0.4
+            "strong" if abs(corr_val) >= 0.7
+            else "moderate" if abs(corr_val) >= 0.4
             else "weak"
         )
         direction = "positive" if corr_val >= 0 else "negative"
@@ -320,9 +292,7 @@ def _find_col(columns: list[str], df: pd.DataFrame) -> str | None:
     return None
 
 
-def _apply_filter(
-    df: pd.DataFrame, col: str, operator: str, value: Any
-) -> pd.DataFrame:
+def _apply_filter(df: pd.DataFrame, col: str, operator: str, value: Any) -> pd.DataFrame:
     series = df[col]
     if operator == ">":
         return df[series > value]
@@ -351,7 +321,6 @@ def _df_to_text(df: pd.DataFrame) -> str:
 def _safe_rows(df: pd.DataFrame) -> list[dict]:
     """Convert dataframe rows to JSON-safe dicts."""
     import numpy as np
-
     rows = []
     for record in df.to_dict(orient="records"):
         safe = {}

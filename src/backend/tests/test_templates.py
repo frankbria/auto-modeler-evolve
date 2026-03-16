@@ -8,6 +8,8 @@ Covers:
 
 from __future__ import annotations
 
+import pytest
+
 
 class TestListTemplates:
     async def test_returns_template_list(self, client):

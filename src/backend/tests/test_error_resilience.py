@@ -17,12 +17,14 @@ Scenarios covered:
 - Profile/preview when file has been deleted from disk
 """
 
+import io
+import json
 import os
 
 import pandas as pd
 import pytest
 from httpx import AsyncClient, ASGITransport
-from sqlmodel import SQLModel, create_engine
+from sqlmodel import Session, SQLModel, create_engine
 
 TEST_DATABASE_URL = "sqlite:///./test_resilience.db"
 
@@ -36,9 +38,7 @@ async def client(tmp_path, monkeypatch):
     db.engine = create_engine(TEST_DATABASE_URL, echo=False)
     SQLModel.metadata.create_all(db.engine)
 
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as ac:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         yield ac
 
     if os.path.exists("test_resilience.db"):
@@ -49,16 +49,13 @@ async def client(tmp_path, monkeypatch):
 # Helpers
 # ---------------------------------------------------------------------------
 
-
 async def _create_project(client: AsyncClient, name: str = "resilience-test") -> str:
     resp = await client.post("/api/projects", json={"name": name})
     assert resp.status_code == 201
     return resp.json()["id"]
 
 
-async def _upload_csv(
-    client: AsyncClient, project_id: str, csv_bytes: bytes, filename: str = "test.csv"
-):
+async def _upload_csv(client: AsyncClient, project_id: str, csv_bytes: bytes, filename: str = "test.csv"):
     return await client.post(
         "/api/data/upload",
         data={"project_id": project_id},
@@ -70,8 +67,8 @@ async def _upload_csv(
 # File upload error cases
 # ---------------------------------------------------------------------------
 
-
 class TestUploadErrorHandling:
+
     async def test_upload_non_accepted_extension_rejected(self, client):
         """A .json file (not csv/xlsx/xls) is rejected with 400."""
         pid = await _create_project(client, "reject-non-csv")
@@ -115,17 +112,13 @@ class TestUploadErrorHandling:
     async def test_upload_all_null_column(self, client):
         """CSV where one column is entirely null — should not crash profiling."""
         pid = await _create_project(client, "null-column")
-        csv_bytes = (
-            b"product,revenue,empty\nWidget A,100,\nWidget B,200,\nWidget C,300,\n"
-        )
+        csv_bytes = b"product,revenue,empty\nWidget A,100,\nWidget B,200,\nWidget C,300,\n"
         resp = await _upload_csv(client, pid, csv_bytes)
         assert resp.status_code == 201
         data = resp.json()
         assert data["row_count"] == 3
         # Find the null column stats
-        empty_col = next(
-            (c for c in data["column_stats"] if c["name"] == "empty"), None
-        )
+        empty_col = next((c for c in data["column_stats"] if c["name"] == "empty"), None)
         assert empty_col is not None
         assert empty_col["null_count"] == 3
 
@@ -148,17 +141,15 @@ class TestUploadErrorHandling:
         # Insights should flag duplicates
         insights = resp.json().get("insights", [])
         dup_insight = next((i for i in insights if i["type"] == "duplicates"), None)
-        assert dup_insight is not None, (
-            f"Expected duplicate insight but got: {insights}"
-        )
+        assert dup_insight is not None, f"Expected duplicate insight but got: {insights}"
 
 
 # ---------------------------------------------------------------------------
 # Profile / preview error cases
 # ---------------------------------------------------------------------------
 
-
 class TestProfileErrorHandling:
+
     async def test_preview_nonexistent_dataset(self, client):
         resp = await client.get("/api/data/nonexistent-id-12345/preview")
         assert resp.status_code == 404
@@ -172,29 +163,24 @@ class TestProfileErrorHandling:
 # Analyzer robustness (unit tests, no API)
 # ---------------------------------------------------------------------------
 
-
 class TestAnalyzerEdgeCases:
+
     def test_profile_empty_dataframe(self):
         """compute_full_profile must not crash on a zero-row DataFrame."""
         from core.analyzer import compute_full_profile
-
-        df = pd.DataFrame(
-            {"a": pd.Series([], dtype=float), "b": pd.Series([], dtype=str)}
-        )
+        df = pd.DataFrame({"a": pd.Series([], dtype=float), "b": pd.Series([], dtype=str)})
         profile = compute_full_profile(df)
         assert profile["row_count"] == 0
         assert profile["column_count"] == 2
 
     def test_profile_single_row(self):
         from core.analyzer import compute_full_profile
-
         df = pd.DataFrame({"x": [1.0], "y": ["hello"]})
         profile = compute_full_profile(df)
         assert profile["row_count"] == 1
 
     def test_profile_all_null_column(self):
         from core.analyzer import compute_full_profile
-
         df = pd.DataFrame({"good": [1, 2, 3], "all_null": [None, None, None]})
         profile = compute_full_profile(df)
         null_col = next(c for c in profile["columns"] if c["name"] == "all_null")
@@ -204,7 +190,6 @@ class TestAnalyzerEdgeCases:
     def test_profile_single_unique_value(self):
         """Column with all identical values — std should be 0, not crash."""
         from core.analyzer import compute_full_profile
-
         df = pd.DataFrame({"constant": [5, 5, 5, 5, 5]})
         profile = compute_full_profile(df)
         const_col = next(c for c in profile["columns"] if c["name"] == "constant")
@@ -212,11 +197,9 @@ class TestAnalyzerEdgeCases:
 
     def test_profile_with_special_float_values(self):
         """NaN and inf in numeric columns should not break profiling."""
+        import numpy as np
         from core.analyzer import compute_full_profile
-
-        df = pd.DataFrame(
-            {"val": [1.0, float("nan"), 3.0, float("inf"), -float("inf")]}
-        )
+        df = pd.DataFrame({"val": [1.0, float("nan"), 3.0, float("inf"), -float("inf")]})
         # Should not raise
         profile = compute_full_profile(df)
         assert profile["row_count"] == 5
@@ -224,13 +207,10 @@ class TestAnalyzerEdgeCases:
     def test_profile_high_cardinality_column(self):
         """Unique ID column should be flagged as high cardinality."""
         from core.analyzer import compute_full_profile
-
-        df = pd.DataFrame(
-            {
-                "id": [f"ID{i:04d}" for i in range(50)],
-                "value": range(50),
-            }
-        )
+        df = pd.DataFrame({
+            "id": [f"ID{i:04d}" for i in range(50)],
+            "value": range(50),
+        })
         profile = compute_full_profile(df)
         insights = profile["insights"]
         hc = next((i for i in insights if i["type"] == "high_cardinality"), None)
@@ -239,7 +219,6 @@ class TestAnalyzerEdgeCases:
     def test_profile_missing_values_insight(self):
         """Columns with >30% null should generate a warning insight."""
         from core.analyzer import compute_full_profile
-
         data = {"val": [None] * 35 + [1.0] * 65}
         df = pd.DataFrame(data)
         profile = compute_full_profile(df)
@@ -251,8 +230,8 @@ class TestAnalyzerEdgeCases:
 # Training error cases
 # ---------------------------------------------------------------------------
 
-
 class TestTrainingEdgeCases:
+
     async def test_train_without_feature_set(self, client):
         """Training without a feature set should return 4xx."""
         pid = await _create_project(client, "train-no-features")
@@ -281,11 +260,7 @@ class TestTrainingEdgeCases:
 
         train_resp = await client.post(
             f"/api/models/{pid}/train",
-            json={
-                "algorithms": ["linear_regression"],
-                "target_column": "revenue",
-                "feature_set_id": feature_set_id,
-            },
+            json={"algorithms": ["linear_regression"], "target_column": "revenue", "feature_set_id": feature_set_id},
         )
         # Should not 500 — either 4xx with helpful message or 202 accepted
         assert train_resp.status_code != 500, f"Got 500: {train_resp.text}"
@@ -304,8 +279,8 @@ class TestTrainingEdgeCases:
 # Deployer robustness
 # ---------------------------------------------------------------------------
 
-
 class TestDeployerEdgeCases:
+
     async def test_deploy_nonexistent_run(self, client):
         resp = await client.post("/api/deploy/nonexistent-run-id-99999")
         assert resp.status_code in (400, 404, 422)

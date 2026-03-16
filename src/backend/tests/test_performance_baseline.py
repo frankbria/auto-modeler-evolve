@@ -18,6 +18,7 @@ Thresholds are intentionally generous (CI machines vary) but catch real regressi
 
 from __future__ import annotations
 
+import io
 import json
 import time
 from pathlib import Path
@@ -30,14 +31,11 @@ import pytest
 # Timing helper
 # ---------------------------------------------------------------------------
 
-
 class Timer:
     """Context manager that records elapsed wall-clock time in ms."""
-
     def __enter__(self):
         self._start = time.perf_counter()
         return self
-
     def __exit__(self, *_):
         self.elapsed_ms = (time.perf_counter() - self._start) * 1000
 
@@ -50,23 +48,18 @@ class Timer:
 # Fixtures
 # ---------------------------------------------------------------------------
 
-
 @pytest.fixture
 def perf_csv() -> bytes:
     """200-row CSV for performance tests — matches the real sample dataset size."""
     rng = np.random.default_rng(42)
     n = 200
-    df = pd.DataFrame(
-        {
-            "date": pd.date_range("2023-01-01", periods=n, freq="D").strftime(
-                "%Y-%m-%d"
-            ),
-            "region": rng.choice(["North", "South", "East", "West"], n),
-            "product": rng.choice(["Widget A", "Widget B", "Widget C"], n),
-            "units": rng.integers(1, 50, n),
-            "revenue": (rng.integers(1, 50, n) * rng.uniform(10, 100, n)).round(2),
-        }
-    )
+    df = pd.DataFrame({
+        "date": pd.date_range("2023-01-01", periods=n, freq="D").strftime("%Y-%m-%d"),
+        "region": rng.choice(["North", "South", "East", "West"], n),
+        "product": rng.choice(["Widget A", "Widget B", "Widget C"], n),
+        "units": rng.integers(1, 50, n),
+        "revenue": (rng.integers(1, 50, n) * rng.uniform(10, 100, n)).round(2),
+    })
     return df.to_csv(index=False).encode()
 
 
@@ -75,25 +68,20 @@ def large_csv() -> bytes:
     """1000-row CSV to stress-test profile performance."""
     rng = np.random.default_rng(7)
     n = 1000
-    df = pd.DataFrame(
-        {
-            "date": pd.date_range("2020-01-01", periods=n, freq="h").strftime(
-                "%Y-%m-%d %H:%M"
-            ),
-            "category": rng.choice([f"cat_{i}" for i in range(20)], n),
-            "value_a": rng.standard_normal(n) * 100,
-            "value_b": rng.exponential(50, n),
-            "value_c": rng.integers(0, 1000, n),
-            "label": rng.choice(["yes", "no"], n),
-        }
-    )
+    df = pd.DataFrame({
+        "date": pd.date_range("2020-01-01", periods=n, freq="h").strftime("%Y-%m-%d %H:%M"),
+        "category": rng.choice([f"cat_{i}" for i in range(20)], n),
+        "value_a": rng.standard_normal(n) * 100,
+        "value_b": rng.exponential(50, n),
+        "value_c": rng.integers(0, 1000, n),
+        "label": rng.choice(["yes", "no"], n),
+    })
     return df.to_csv(index=False).encode()
 
 
 # ---------------------------------------------------------------------------
 # Helper: create project + upload CSV
 # ---------------------------------------------------------------------------
-
 
 async def _upload(client, csv_bytes: bytes, project_name: str = "perf-test"):
     proj = await client.post("/api/projects", json={"name": project_name})
@@ -113,7 +101,6 @@ async def _upload(client, csv_bytes: bytes, project_name: str = "perf-test"):
 # ---------------------------------------------------------------------------
 # Benchmark tests
 # ---------------------------------------------------------------------------
-
 
 class TestUploadPerformance:
     async def test_upload_200_rows_under_3s(self, client, perf_csv):
@@ -143,9 +130,7 @@ class TestUploadPerformance:
                 files={"file": ("large.csv", large_csv, "text/csv")},
             )
         assert resp.status_code == 201
-        assert t.elapsed_ms < 10000, (
-            f"Upload took {t.elapsed_ms:.0f}ms (limit: 10000ms)"
-        )
+        assert t.elapsed_ms < 10000, f"Upload took {t.elapsed_ms:.0f}ms (limit: 10000ms)"
         _record("upload_1000_rows_ms", t.elapsed_ms)
 
 
@@ -161,9 +146,7 @@ class TestProfilePerformance:
         with Timer() as t:
             resp = await client.get(f"/api/data/{dataset_id}/profile")
         assert resp.status_code == 200
-        assert t.elapsed_ms < 500, (
-            f"Cached profile took {t.elapsed_ms:.0f}ms (limit: 500ms)"
-        )
+        assert t.elapsed_ms < 500, f"Cached profile took {t.elapsed_ms:.0f}ms (limit: 500ms)"
         _record("profile_cached_ms", t.elapsed_ms)
 
     async def test_correlations_under_1s(self, client, perf_csv):
@@ -173,9 +156,7 @@ class TestProfilePerformance:
         with Timer() as t:
             resp = await client.get(f"/api/data/{dataset_id}/correlations")
         assert resp.status_code == 200
-        assert t.elapsed_ms < 1000, (
-            f"Correlations took {t.elapsed_ms:.0f}ms (limit: 1000ms)"
-        )
+        assert t.elapsed_ms < 1000, f"Correlations took {t.elapsed_ms:.0f}ms (limit: 1000ms)"
         _record("correlations_ms", t.elapsed_ms)
 
 
@@ -187,9 +168,7 @@ class TestFeaturePerformance:
         with Timer() as t:
             resp = await client.get(f"/api/features/{dataset_id}/suggestions")
         assert resp.status_code == 200
-        assert t.elapsed_ms < 2000, (
-            f"Suggestions took {t.elapsed_ms:.0f}ms (limit: 2000ms)"
-        )
+        assert t.elapsed_ms < 2000, f"Suggestions took {t.elapsed_ms:.0f}ms (limit: 2000ms)"
         _record("feature_suggestions_ms", t.elapsed_ms)
 
 
@@ -234,9 +213,7 @@ class TestTrainingPerformance:
 
         total_ms = (time.perf_counter() - poll_start) * 1000 + t.elapsed_ms
         assert done, "Training did not complete within 15 seconds"
-        assert total_ms < 10000, (
-            f"Training pipeline took {total_ms:.0f}ms (limit: 10000ms)"
-        )
+        assert total_ms < 10000, f"Training pipeline took {total_ms:.0f}ms (limit: 10000ms)"
         _record("train_linear_regression_ms", total_ms)
 
     async def test_recommendation_endpoint_under_500ms(self, client, perf_csv):
@@ -256,9 +233,7 @@ class TestTrainingPerformance:
         with Timer() as t:
             resp = await client.get(f"/api/models/{pid}/recommendations")
         assert resp.status_code == 200
-        assert t.elapsed_ms < 500, (
-            f"Recommendations took {t.elapsed_ms:.0f}ms (limit: 500ms)"
-        )
+        assert t.elapsed_ms < 500, f"Recommendations took {t.elapsed_ms:.0f}ms (limit: 500ms)"
         _record("recommendations_ms", t.elapsed_ms)
 
 
@@ -316,13 +291,9 @@ class TestPredictionPerformance:
 
         # Measure second call
         with Timer() as t:
-            resp = await client.post(
-                f"/api/predict/{dep_id}", json={"features": payload}
-            )
+            resp = await client.post(f"/api/predict/{dep_id}", json={"features": payload})
         assert resp.status_code == 200
-        assert t.elapsed_ms < 200, (
-            f"Prediction took {t.elapsed_ms:.0f}ms (limit: 200ms)"
-        )
+        assert t.elapsed_ms < 200, f"Prediction took {t.elapsed_ms:.0f}ms (limit: 200ms)"
         _record("single_prediction_ms", t.elapsed_ms)
 
 
@@ -359,8 +330,6 @@ def write_baseline_on_exit():
 # Async sleep helper (avoids importing asyncio at module level)
 # ---------------------------------------------------------------------------
 
-
 async def _async_sleep(seconds: float) -> None:
     import asyncio
-
     await asyncio.sleep(seconds)

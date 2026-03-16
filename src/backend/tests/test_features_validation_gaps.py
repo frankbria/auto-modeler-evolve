@@ -1,16 +1,16 @@
 """Targeted tests to close remaining coverage gaps in:
-- api/features.py (lines 44, 47, 106-107, 142, 249, 255, 258, 307, 310)
-- api/validation.py (lines 54, 60, 64, 70, 74, 87, 104, 139-140)
-- other remaining gaps: chat/orchestrator.py, core/explainer.py, api/chat.py
+  - api/features.py (lines 44, 47, 106-107, 142, 249, 255, 258, 307, 310)
+  - api/validation.py (lines 54, 60, 64, 70, 74, 87, 104, 139-140)
+  - other remaining gaps: chat/orchestrator.py, core/explainer.py, api/chat.py
 """
-
 import io
 import json
 import asyncio
+from pathlib import Path
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-from sqlmodel import Session, SQLModel, create_engine
+from sqlmodel import Session, SQLModel, create_engine, select
 
 import db as db_module
 
@@ -52,10 +52,7 @@ async def ac(tmp_path, monkeypatch):
     deploy_module.DEPLOY_DIR = tmp_path / "deployments"
 
     from main import app
-
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         yield client
 
 
@@ -114,6 +111,7 @@ async def model_run_id(ac, project_id, feature_set_id):
 
 
 class TestFeaturesApiGaps:
+
     # Lines 44, 47: _load_dataset error paths
     @pytest.mark.asyncio
     async def test_suggestions_dataset_not_found(self, ac):
@@ -125,7 +123,6 @@ class TestFeaturesApiGaps:
     async def test_suggestions_file_missing_from_disk(self, ac, dataset_id, tmp_path):
         """Suggestions returns 404 when file deleted from disk."""
         from models.dataset import Dataset as DS
-
         with Session(db_module.engine) as session:
             ds = session.get(DS, dataset_id)
             ds.file_path = str(tmp_path / "gone.csv")
@@ -140,18 +137,13 @@ class TestFeaturesApiGaps:
     @pytest.mark.asyncio
     async def test_apply_deactivates_previous_feature_set(self, ac, dataset_id):
         """Applying transforms twice deactivates the first FeatureSet."""
-        r1 = await ac.post(
-            f"/api/features/{dataset_id}/apply", json={"transformations": []}
-        )
+        r1 = await ac.post(f"/api/features/{dataset_id}/apply", json={"transformations": []})
         fs1_id = r1.json()["feature_set_id"]
 
-        r2 = await ac.post(
-            f"/api/features/{dataset_id}/apply", json={"transformations": []}
-        )
+        r2 = await ac.post(f"/api/features/{dataset_id}/apply", json={"transformations": []})
         fs2_id = r2.json()["feature_set_id"]
 
         from models.feature_set import FeatureSet
-
         with Session(db_module.engine) as session:
             fs1 = session.get(FeatureSet, fs1_id)
             fs2 = session.get(FeatureSet, fs2_id)
@@ -171,11 +163,7 @@ class TestFeaturesApiGaps:
         """Adding a step with params should include params in pipeline."""
         r = await ac.post(
             f"/api/features/{feature_set_id}/steps",
-            json={
-                "column": "units",
-                "transform_type": "log_transform",
-                "params": {"base": 10},
-            },
+            json={"column": "units", "transform_type": "log_transform", "params": {"base": 10}},
         )
         assert r.status_code == 201
         # Verify the step was stored with params
@@ -188,7 +176,6 @@ class TestFeaturesApiGaps:
     async def test_add_step_dataset_not_found(self, ac):
         """add_pipeline_step returns 404 when FeatureSet's dataset is missing."""
         from models.feature_set import FeatureSet
-
         # Create a FeatureSet with an invalid dataset_id
         with Session(db_module.engine) as session:
             fs = FeatureSet(
@@ -211,12 +198,9 @@ class TestFeaturesApiGaps:
 
     # Line 258: add_pipeline_step — dataset file missing
     @pytest.mark.asyncio
-    async def test_add_step_dataset_file_missing(
-        self, ac, feature_set_id, dataset_id, tmp_path
-    ):
+    async def test_add_step_dataset_file_missing(self, ac, feature_set_id, dataset_id, tmp_path):
         """add_pipeline_step returns 404 when file is deleted from disk."""
         from models.dataset import Dataset as DS
-
         with Session(db_module.engine) as session:
             ds = session.get(DS, dataset_id)
             ds.file_path = str(tmp_path / "gone.csv")
@@ -235,13 +219,10 @@ class TestFeaturesApiGaps:
     async def test_remove_step_dataset_not_found(self, ac):
         """remove_pipeline_step returns 404 when FeatureSet's dataset is missing."""
         from models.feature_set import FeatureSet
-
         with Session(db_module.engine) as session:
             fs = FeatureSet(
                 dataset_id="nonexistent-dataset",
-                transformations=json.dumps(
-                    [{"column": "x", "transform_type": "log_transform"}]
-                ),
+                transformations=json.dumps([{"column": "x", "transform_type": "log_transform"}]),
                 column_mapping=json.dumps({}),
                 is_active=True,
             )
@@ -256,9 +237,7 @@ class TestFeaturesApiGaps:
 
     # Line 310: remove_pipeline_step — file missing
     @pytest.mark.asyncio
-    async def test_remove_step_file_missing(
-        self, ac, feature_set_id, dataset_id, tmp_path
-    ):
+    async def test_remove_step_file_missing(self, ac, feature_set_id, dataset_id, tmp_path):
         """remove_pipeline_step returns 404 when file is deleted from disk."""
         # Add a step first so there's something to remove
         await ac.post(
@@ -267,7 +246,6 @@ class TestFeaturesApiGaps:
         )
 
         from models.dataset import Dataset as DS
-
         with Session(db_module.engine) as session:
             ds = session.get(DS, dataset_id)
             ds.file_path = str(tmp_path / "gone.csv")
@@ -285,11 +263,11 @@ class TestFeaturesApiGaps:
 
 
 class TestValidationApiGaps:
+
     # Line 54: _load_run_context — run not done
     @pytest.mark.asyncio
     async def test_validate_metrics_run_not_done(self, ac, project_id, feature_set_id):
         from models.model_run import ModelRun
-
         with Session(db_module.engine) as session:
             run = ModelRun(
                 project_id=project_id,
@@ -309,11 +287,8 @@ class TestValidationApiGaps:
 
     # Line 60: _load_run_context — model file not found
     @pytest.mark.asyncio
-    async def test_validate_metrics_model_file_missing(
-        self, ac, project_id, feature_set_id
-    ):
+    async def test_validate_metrics_model_file_missing(self, ac, project_id, feature_set_id):
         from models.model_run import ModelRun
-
         with Session(db_module.engine) as session:
             run = ModelRun(
                 project_id=project_id,
@@ -337,7 +312,6 @@ class TestValidationApiGaps:
     @pytest.mark.asyncio
     async def test_validate_metrics_feature_set_missing(self, ac, project_id, tmp_path):
         from models.model_run import ModelRun
-
         # Create a fake joblib file so the path check passes
         fake_model = tmp_path / "model.joblib"
         fake_model.write_bytes(b"fake")
@@ -358,17 +332,13 @@ class TestValidationApiGaps:
 
         r = await ac.get(f"/api/validate/{run_id}/metrics")
         assert r.status_code == 404
-        assert (
-            "Feature set" in r.json()["detail"]
-            or "feature" in r.json()["detail"].lower()
-        )
+        assert "Feature set" in r.json()["detail"] or "feature" in r.json()["detail"].lower()
 
     # Line 70: _load_run_context — dataset not found
     @pytest.mark.asyncio
     async def test_validate_metrics_dataset_not_found(self, ac, project_id, tmp_path):
         from models.model_run import ModelRun
         from models.feature_set import FeatureSet
-
         fake_model = tmp_path / "model.joblib"
         fake_model.write_bytes(b"fake")
         with Session(db_module.engine) as session:
@@ -400,17 +370,12 @@ class TestValidationApiGaps:
 
         r = await ac.get(f"/api/validate/{run_id}/metrics")
         assert r.status_code == 404
-        assert (
-            "Dataset" in r.json()["detail"] or "dataset" in r.json()["detail"].lower()
-        )
+        assert "Dataset" in r.json()["detail"] or "dataset" in r.json()["detail"].lower()
 
     # Line 74: _load_run_context — dataset file not found
     @pytest.mark.asyncio
-    async def test_validate_metrics_dataset_file_missing(
-        self, ac, model_run_id, dataset_id, tmp_path
-    ):
+    async def test_validate_metrics_dataset_file_missing(self, ac, model_run_id, dataset_id, tmp_path):
         from models.dataset import Dataset as DS
-
         with Session(db_module.engine) as session:
             ds = session.get(DS, dataset_id)
             ds.file_path = str(tmp_path / "gone.csv")
@@ -423,15 +388,14 @@ class TestValidationApiGaps:
 
     # Line 87: _get_unfitted_model — unknown algorithm
     @pytest.mark.asyncio
-    async def test_validate_metrics_unknown_algorithm(
-        self, ac, project_id, feature_set_id, dataset_id, tmp_path
-    ):
+    async def test_validate_metrics_unknown_algorithm(self, ac, project_id, feature_set_id, dataset_id, tmp_path):
         from models.model_run import ModelRun
-
         fake_model = tmp_path / "model.joblib"
         # Use an actual dataset file path so context loads OK
         from models.dataset import Dataset as DS
-
+        with Session(db_module.engine) as session:
+            ds = session.get(DS, dataset_id)
+            real_path = ds.file_path
         fake_model.write_bytes(b"fake")
         with Session(db_module.engine) as session:
             run = ModelRun(
@@ -483,8 +447,8 @@ class TestValidationApiGaps:
 # api/chat.py remaining gap (lines 172-174: project not found in get_history)
 # ===========================================================================
 
-
 class TestChatApiGaps:
+
     @pytest.mark.asyncio
     async def test_get_history_nonexistent_project_returns_empty(self, ac):
         """History for a project with no conversation returns empty list (not 404)."""
@@ -498,8 +462,4 @@ class TestChatApiGaps:
             "/api/chat/nonexistent-project",
             json={"message": "hello"},
         )
-        assert r.status_code in (
-            404,
-            422,
-            200,
-        )  # may return 200 SSE stream with error message
+        assert r.status_code in (404, 422, 200)  # may return 200 SSE stream with error message

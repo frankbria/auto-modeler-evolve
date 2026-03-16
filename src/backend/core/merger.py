@@ -3,7 +3,6 @@
 Provides join-key suggestions and merge execution for combining two CSVs
 within the same project.
 """
-
 from __future__ import annotations
 
 from typing import Any
@@ -14,7 +13,6 @@ import pandas as pd
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
-
 
 def suggest_join_keys(df1: pd.DataFrame, df2: pd.DataFrame) -> list[dict[str, Any]]:
     """Return candidate join columns that appear in both DataFrames.
@@ -49,9 +47,7 @@ def suggest_join_keys(df1: pd.DataFrame, df2: pd.DataFrame) -> list[dict[str, An
         )
 
     # Best candidates first
-    suggestions.sort(
-        key=lambda s: s["uniqueness_left"] + s["uniqueness_right"], reverse=True
-    )
+    suggestions.sort(key=lambda s: s["uniqueness_left"] + s["uniqueness_right"], reverse=True)
     return suggestions
 
 
@@ -117,7 +113,6 @@ def merge_datasets(
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
-
 
 def _sanitize_rows(rows: list[dict]) -> list[dict[str, Any]]:
     """Replace NaN/inf floats with None for safe JSON serialization."""

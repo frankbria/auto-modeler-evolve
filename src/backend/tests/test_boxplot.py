@@ -6,11 +6,10 @@ Tests cover:
                400 (groupby not found)
 - Chart spec shape validation
 """
-
 import io
 import pytest
 from httpx import ASGITransport, AsyncClient
-from sqlmodel import SQLModel, create_engine
+from sqlmodel import Session, SQLModel, create_engine
 
 import db as db_module
 
@@ -44,14 +43,10 @@ async def ac(tmp_path):
     SQLModel.metadata.create_all(db_module.engine)
 
     import api.data as data_module
-
     data_module.UPLOAD_DIR = tmp_path / "uploads"
 
     from main import app
-
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         yield client
 
 
@@ -77,7 +72,6 @@ async def dataset_id(ac, project_id):
 # Happy path
 # ---------------------------------------------------------------------------
 
-
 class TestBoxplotEndpointHappy:
     async def test_single_column_returns_boxplot_spec(self, ac, dataset_id):
         resp = await ac.get(f"/api/data/{dataset_id}/boxplot?column=revenue")
@@ -88,9 +82,7 @@ class TestBoxplotEndpointHappy:
         assert body["data"][0]["group"] == "revenue"
 
     async def test_grouped_returns_one_box_per_region(self, ac, dataset_id):
-        resp = await ac.get(
-            f"/api/data/{dataset_id}/boxplot?column=revenue&groupby=region"
-        )
+        resp = await ac.get(f"/api/data/{dataset_id}/boxplot?column=revenue&groupby=region")
         assert resp.status_code == 200
         body = resp.json()
         assert body["chart_type"] == "boxplot"
@@ -98,9 +90,7 @@ class TestBoxplotEndpointHappy:
         assert groups == {"North", "South", "East", "West"}
 
     async def test_grouped_sorted_by_median_desc(self, ac, dataset_id):
-        resp = await ac.get(
-            f"/api/data/{dataset_id}/boxplot?column=revenue&groupby=region"
-        )
+        resp = await ac.get(f"/api/data/{dataset_id}/boxplot?column=revenue&groupby=region")
         body = resp.json()
         medians = [r["median"] for r in body["data"]]
         assert medians == sorted(medians, reverse=True)
@@ -118,9 +108,7 @@ class TestBoxplotEndpointHappy:
         assert body["y_label"] == "revenue"
 
     async def test_x_label_is_group_column_when_grouped(self, ac, dataset_id):
-        resp = await ac.get(
-            f"/api/data/{dataset_id}/boxplot?column=revenue&groupby=region"
-        )
+        resp = await ac.get(f"/api/data/{dataset_id}/boxplot?column=revenue&groupby=region")
         body = resp.json()
         assert body["x_label"] == "region"
 
@@ -133,7 +121,6 @@ class TestBoxplotEndpointHappy:
 # ---------------------------------------------------------------------------
 # Error paths
 # ---------------------------------------------------------------------------
-
 
 class TestBoxplotEndpointErrors:
     async def test_dataset_not_found_returns_404(self, ac):
@@ -151,8 +138,6 @@ class TestBoxplotEndpointErrors:
         assert "not numeric" in resp.json()["detail"].lower()
 
     async def test_groupby_not_found_returns_400(self, ac, dataset_id):
-        resp = await ac.get(
-            f"/api/data/{dataset_id}/boxplot?column=revenue&groupby=missing_col"
-        )
+        resp = await ac.get(f"/api/data/{dataset_id}/boxplot?column=revenue&groupby=missing_col")
         assert resp.status_code == 400
         assert "missing_col" in resp.json()["detail"]

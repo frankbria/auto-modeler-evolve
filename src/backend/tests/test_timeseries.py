@@ -5,9 +5,10 @@ Tests for time-series decomposition:
   - build_timeseries_chart (chart_builder.py)
   - GET /api/data/{dataset_id}/timeseries endpoint (api/data.py)
 """
-
 from __future__ import annotations
 
+import io
+import os
 
 import pandas as pd
 import pytest
@@ -21,92 +22,56 @@ import db as db_module
 # detect_time_columns (unit tests)
 # ===========================================================================
 
-
 class TestDetectTimeColumns:
+
     def test_detects_iso_date_column(self):
         from core.analyzer import detect_time_columns
-
-        df = pd.DataFrame(
-            {
-                "date": [
-                    "2024-01-01",
-                    "2024-01-02",
-                    "2024-01-03",
-                    "2024-01-04",
-                    "2024-01-05",
-                    "2024-01-06",
-                    "2024-01-07",
-                    "2024-01-08",
-                    "2024-01-09",
-                    "2024-01-10",
-                ],
-                "value": range(10),
-            }
-        )
+        df = pd.DataFrame({"date": ["2024-01-01", "2024-01-02", "2024-01-03", "2024-01-04",
+                                     "2024-01-05", "2024-01-06", "2024-01-07", "2024-01-08",
+                                     "2024-01-09", "2024-01-10"], "value": range(10)})
         result = detect_time_columns(df)
         assert "date" in result
 
     def test_does_not_detect_pure_numeric_column(self):
         from core.analyzer import detect_time_columns
-
         df = pd.DataFrame({"revenue": [100, 200, 300, 400, 500]})
         result = detect_time_columns(df)
         assert "revenue" not in result
 
     def test_does_not_detect_random_string_column(self):
         from core.analyzer import detect_time_columns
-
-        df = pd.DataFrame(
-            {"product": ["Widget A", "Widget B", "Widget C", "Widget D", "Widget E"]}
-        )
+        df = pd.DataFrame({"product": ["Widget A", "Widget B", "Widget C", "Widget D", "Widget E"]})
         result = detect_time_columns(df)
         assert "product" not in result
 
     def test_returns_empty_for_no_date_columns(self):
         from core.analyzer import detect_time_columns
-
         df = pd.DataFrame({"revenue": [100, 200], "units": [10, 20]})
         result = detect_time_columns(df)
         assert result == []
 
     def test_detects_slash_format_date(self):
         from core.analyzer import detect_time_columns
-
-        df = pd.DataFrame(
-            {
-                "date": [
-                    "01/01/2024",
-                    "01/02/2024",
-                    "01/03/2024",
-                    "01/04/2024",
-                    "01/05/2024",
-                    "01/06/2024",
-                    "01/07/2024",
-                    "01/08/2024",
-                    "01/09/2024",
-                    "01/10/2024",
-                ],
-                "value": range(10),
-            }
-        )
+        df = pd.DataFrame({
+            "date": ["01/01/2024", "01/02/2024", "01/03/2024", "01/04/2024",
+                     "01/05/2024", "01/06/2024", "01/07/2024", "01/08/2024",
+                     "01/09/2024", "01/10/2024"],
+            "value": range(10),
+        })
         result = detect_time_columns(df)
         assert "date" in result
 
     def test_detects_pandas_datetime_dtype(self):
         from core.analyzer import detect_time_columns
-
-        df = pd.DataFrame(
-            {
-                "ts": pd.date_range("2024-01-01", periods=5),
-                "value": range(5),
-            }
-        )
+        df = pd.DataFrame({
+            "ts": pd.date_range("2024-01-01", periods=5),
+            "value": range(5),
+        })
         result = detect_time_columns(df)
         assert "ts" in result
 
     def test_all_null_column_not_detected(self):
         from core.analyzer import detect_time_columns
-
         df = pd.DataFrame({"date": [None, None, None], "value": [1, 2, 3]})
         result = detect_time_columns(df)
         assert "date" not in result
@@ -116,23 +81,12 @@ class TestDetectTimeColumns:
 # build_timeseries_chart (unit tests)
 # ===========================================================================
 
-
 class TestBuildTimeseriesChart:
+
     def test_returns_line_chart(self):
         from core.chart_builder import build_timeseries_chart
-
-        dates = [
-            "2024-01",
-            "2024-02",
-            "2024-03",
-            "2024-04",
-            "2024-05",
-            "2024-06",
-            "2024-07",
-            "2024-08",
-            "2024-09",
-            "2024-10",
-        ]
+        dates = ["2024-01", "2024-02", "2024-03", "2024-04", "2024-05",
+                 "2024-06", "2024-07", "2024-08", "2024-09", "2024-10"]
         values = [100.0, 120.0, 110.0, 130.0, 140.0, 125.0, 135.0, 150.0, 145.0, 160.0]
         result = build_timeseries_chart(dates, values, "revenue")
         assert result["chart_type"] == "line"
@@ -142,7 +96,6 @@ class TestBuildTimeseriesChart:
 
     def test_includes_rolling_average_series(self):
         from core.chart_builder import build_timeseries_chart
-
         dates = [f"2024-{i:02d}" for i in range(1, 13)]
         values = [100.0 + i * 5 for i in range(12)]
         result = build_timeseries_chart(dates, values, "sales", window=3)
@@ -151,7 +104,6 @@ class TestBuildTimeseriesChart:
 
     def test_includes_trend_series(self):
         from core.chart_builder import build_timeseries_chart
-
         dates = [f"2024-{i:02d}" for i in range(1, 13)]
         values = [100.0 + i * 10 for i in range(12)]
         result = build_timeseries_chart(dates, values, "revenue", window=3)
@@ -159,7 +111,6 @@ class TestBuildTimeseriesChart:
 
     def test_empty_values_returns_empty_chart(self):
         from core.chart_builder import build_timeseries_chart
-
         result = build_timeseries_chart([], [], "revenue")
         assert result["chart_type"] == "line"
         assert result["data"] == []
@@ -167,7 +118,6 @@ class TestBuildTimeseriesChart:
     def test_short_series_adjusts_window(self):
         """Window auto-adjusts for very short series."""
         from core.chart_builder import build_timeseries_chart
-
         # 4 points is less than 6 → effective_window=1
         dates = ["2024-01", "2024-02", "2024-03", "2024-04"]
         values = [100.0, 110.0, 105.0, 115.0]
@@ -178,7 +128,6 @@ class TestBuildTimeseriesChart:
     def test_with_none_values(self):
         """None (missing) values in the series should not crash."""
         from core.chart_builder import build_timeseries_chart
-
         dates = ["2024-01", "2024-02", "2024-03", "2024-04", "2024-05"]
         values = [100.0, None, 110.0, None, 120.0]
         result = build_timeseries_chart(dates, values, "revenue")
@@ -188,13 +137,10 @@ class TestBuildTimeseriesChart:
     def test_trend_line_increases_for_monotonic_data(self):
         """Trend should be increasing for monotonically increasing data."""
         from core.chart_builder import build_timeseries_chart
-
         dates = [f"2024-{i:02d}" for i in range(1, 13)]
         values = [float(i * 10) for i in range(12)]
         result = build_timeseries_chart(dates, values, "revenue", window=3)
-        trend_values = [
-            pt["Trend"] for pt in result["data"] if pt.get("Trend") is not None
-        ]
+        trend_values = [pt["Trend"] for pt in result["data"] if pt.get("Trend") is not None]
         assert len(trend_values) >= 2
         # Trend should be non-decreasing
         assert trend_values[-1] > trend_values[0]
@@ -203,7 +149,6 @@ class TestBuildTimeseriesChart:
 # ===========================================================================
 # GET /api/data/{dataset_id}/timeseries endpoint
 # ===========================================================================
-
 
 @pytest.fixture
 async def client(tmp_path):
@@ -217,20 +162,15 @@ async def client(tmp_path):
     import models.feature_set  # noqa
     import models.model_run  # noqa
     import models.deployment  # noqa
-
     SQLModel.metadata.create_all(db_module.engine)
 
     import api.data as data_module
-
     upload_dir = tmp_path / "uploads"
     upload_dir.mkdir()
     data_module.UPLOAD_DIR = upload_dir
 
     from main import app
-
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as ac:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         yield ac
 
 
@@ -261,6 +201,7 @@ Widget C,450,4
 
 
 class TestTimeseriesEndpoint:
+
     async def _upload(self, client, project_id, csv_bytes, filename="data.csv"):
         resp = await client.post(
             "/api/data/upload",

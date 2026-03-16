@@ -13,7 +13,6 @@ import json
 import time
 from unittest.mock import MagicMock, patch
 
-import db as db_module
 import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import SQLModel, Session, create_engine, select
@@ -74,6 +73,8 @@ CLASSIFICATION_CSV = b"""feat1,feat2,label
 # Fixtures
 # ---------------------------------------------------------------------------
 
+import db as db_module
+
 
 @pytest.fixture
 def client(tmp_path):
@@ -88,23 +89,18 @@ def client(tmp_path):
     import models.model_run  # noqa
     import models.deployment  # noqa
     import models.prediction_log  # noqa
-
     SQLModel.metadata.create_all(db_module.engine)
 
     import api.data as data_module
-
     data_module.UPLOAD_DIR = tmp_path / "uploads"
 
     import api.models as models_api_module
-
     models_api_module.MODELS_DIR = tmp_path / "models"
 
     import api.deploy as deploy_module
-
     deploy_module.DEPLOY_DIR = tmp_path / "deployments"
 
     from main import app
-
     with TestClient(app) as c:
         yield c
 
@@ -203,7 +199,6 @@ def deployed_classification(client):
 # Prediction logging tests
 # ---------------------------------------------------------------------------
 
-
 class TestPredictionLogging:
     """Predictions are stored in PredictionLog on every /api/predict call."""
 
@@ -219,7 +214,6 @@ class TestPredictionLogging:
         # Verify log entry was created
         with Session(db_module.engine) as session:
             from models.prediction_log import PredictionLog
-
             logs = session.exec(
                 select(PredictionLog).where(PredictionLog.deployment_id == did)
             ).all()
@@ -230,13 +224,10 @@ class TestPredictionLogging:
 
     def test_prediction_log_stores_numeric_value(self, client, deployed_regression):
         did = deployed_regression["deployment_id"]
-        client.post(
-            f"/api/predict/{did}", json={"age": 35, "income": 70000, "score": 90}
-        )
+        client.post(f"/api/predict/{did}", json={"age": 35, "income": 70000, "score": 90})
 
         with Session(db_module.engine) as session:
             from models.prediction_log import PredictionLog
-
             log = session.exec(
                 select(PredictionLog).where(PredictionLog.deployment_id == did)
             ).first()
@@ -253,7 +244,6 @@ class TestPredictionLogging:
 
         with Session(db_module.engine) as session:
             from models.prediction_log import PredictionLog
-
             logs = session.exec(
                 select(PredictionLog).where(PredictionLog.deployment_id == did)
             ).all()
@@ -268,7 +258,6 @@ class TestPredictionLogging:
 
         with Session(db_module.engine) as session:
             from models.prediction_log import PredictionLog
-
             log = session.exec(
                 select(PredictionLog).where(PredictionLog.deployment_id == did)
             ).first()
@@ -281,7 +270,6 @@ class TestPredictionLogging:
 # ---------------------------------------------------------------------------
 # Analytics endpoint tests
 # ---------------------------------------------------------------------------
-
 
 class TestDeploymentAnalytics:
     """GET /api/deploy/{id}/analytics returns aggregated prediction stats."""
@@ -316,9 +304,7 @@ class TestDeploymentAnalytics:
 
     def test_analytics_by_day_structure(self, client, deployed_regression):
         did = deployed_regression["deployment_id"]
-        client.post(
-            f"/api/predict/{did}", json={"age": 28, "income": 55000, "score": 82}
-        )
+        client.post(f"/api/predict/{did}", json={"age": 28, "income": 55000, "score": 82})
 
         resp = client.get(f"/api/deploy/{did}/analytics")
         data = resp.json()
@@ -338,11 +324,7 @@ class TestDeploymentAnalytics:
         for i in range(10):
             client.post(
                 f"/api/predict/{did}",
-                json={
-                    "age": 25 + i * 3,
-                    "income": 50000 + i * 10000,
-                    "score": 70 + i * 3,
-                },
+                json={"age": 25 + i * 3, "income": 50000 + i * 10000, "score": 70 + i * 3},
             )
 
         resp = client.get(f"/api/deploy/{did}/analytics")
@@ -368,7 +350,6 @@ class TestDeploymentAnalytics:
 # ---------------------------------------------------------------------------
 # Prediction logs endpoint tests
 # ---------------------------------------------------------------------------
-
 
 class TestPredictionLogs:
     """GET /api/deploy/{id}/logs returns paginated prediction log entries."""
@@ -396,9 +377,7 @@ class TestPredictionLogs:
 
     def test_logs_structure(self, client, deployed_regression):
         did = deployed_regression["deployment_id"]
-        client.post(
-            f"/api/predict/{did}", json={"age": 35, "income": 70000, "score": 90}
-        )
+        client.post(f"/api/predict/{did}", json={"age": 35, "income": 70000, "score": 90})
 
         resp = client.get(f"/api/deploy/{did}/logs")
         log = resp.json()["logs"][0]
@@ -410,32 +389,26 @@ class TestPredictionLogs:
     def test_logs_pagination(self, client, deployed_regression):
         did = deployed_regression["deployment_id"]
         for i in range(5):
-            client.post(
-                f"/api/predict/{did}",
-                json={"age": 30 + i, "income": 60000, "score": 85},
-            )
+            client.post(f"/api/predict/{did}", json={"age": 30 + i, "income": 60000, "score": 85})
 
         resp1 = client.get(f"/api/deploy/{did}/logs?limit=2&offset=0")
         resp2 = client.get(f"/api/deploy/{did}/logs?limit=2&offset=2")
         assert len(resp1.json()["logs"]) == 2
         assert len(resp2.json()["logs"]) == 2
         # Different entries
-        ids1 = {entry["id"] for entry in resp1.json()["logs"]}
-        ids2 = {entry["id"] for entry in resp2.json()["logs"]}
+        ids1 = {l["id"] for l in resp1.json()["logs"]}
+        ids2 = {l["id"] for l in resp2.json()["logs"]}
         assert ids1.isdisjoint(ids2)
 
     def test_logs_sorted_most_recent_first(self, client, deployed_regression):
         did = deployed_regression["deployment_id"]
         for i in range(3):
-            client.post(
-                f"/api/predict/{did}",
-                json={"age": 30 + i, "income": 60000, "score": 85},
-            )
+            client.post(f"/api/predict/{did}", json={"age": 30 + i, "income": 60000, "score": 85})
             time.sleep(0.01)  # Ensure distinct timestamps
 
         resp = client.get(f"/api/deploy/{did}/logs")
         logs = resp.json()["logs"]
-        timestamps = [entry["created_at"] for entry in logs]
+        timestamps = [l["created_at"] for l in logs]
         assert timestamps == sorted(timestamps, reverse=True)
 
     def test_logs_404_for_unknown_deployment(self, client):
@@ -446,7 +419,6 @@ class TestPredictionLogs:
 # ---------------------------------------------------------------------------
 # Model readiness tests
 # ---------------------------------------------------------------------------
-
 
 class TestModelReadiness:
     """GET /api/models/{id}/readiness — production-readiness checklist."""
@@ -490,23 +462,18 @@ class TestModelReadiness:
         resp = client.get(f"/api/models/{run_id}/readiness")
         assert resp.json()["algorithm"] == "linear_regression"
 
-    def test_readiness_selected_model_passes_selection_check(
-        self, client, deployed_regression
-    ):
+    def test_readiness_selected_model_passes_selection_check(self, client, deployed_regression):
         run_id = deployed_regression["run_id"]  # Already selected in fixture
         resp = client.get(f"/api/models/{run_id}/readiness")
         checks = {c["id"]: c for c in resp.json()["checks"]}
         assert checks["model_selected"]["passed"] is True
 
-    def test_readiness_unselected_model_fails_selection_check(
-        self, client, deployed_regression
-    ):
+    def test_readiness_unselected_model_fails_selection_check(self, client, deployed_regression):
         """An unselected model should fail the model_selected readiness check."""
         run_id = deployed_regression["run_id"]
         # Deselect the run by updating via DB directly
         with Session(db_module.engine) as session:
             from models.model_run import ModelRun
-
             run = session.get(ModelRun, run_id)
             if run:
                 run.is_selected = False
@@ -518,9 +485,7 @@ class TestModelReadiness:
         checks = {c["id"]: c for c in resp.json()["checks"]}
         assert checks["model_selected"]["passed"] is False
 
-    def test_readiness_training_complete_check_passes(
-        self, client, deployed_regression
-    ):
+    def test_readiness_training_complete_check_passes(self, client, deployed_regression):
         run_id = deployed_regression["run_id"]
         resp = client.get(f"/api/models/{run_id}/readiness")
         checks = {c["id"]: c for c in resp.json()["checks"]}
@@ -532,13 +497,13 @@ class TestModelReadiness:
 
     def test_readiness_400_for_pending_run(self, client, deployed_regression):
         """Readiness endpoint rejects runs that haven't completed training."""
+        project_id = deployed_regression["project_id"]
         # We can't easily get a 'pending' run after the fixture completes,
         # so test the 400 via a deployed run that we pretend is pending by
         # directly mutating the DB
         run_id = deployed_regression["run_id"]
         with Session(db_module.engine) as session:
             from models.model_run import ModelRun
-
             run = session.get(ModelRun, run_id)
             if run:
                 run.status = "training"
@@ -547,9 +512,7 @@ class TestModelReadiness:
         resp = client.get(f"/api/models/{run_id}/readiness")
         assert resp.status_code == 400
 
-    def test_readiness_score_higher_for_selected_model(
-        self, client, deployed_regression
-    ):
+    def test_readiness_score_higher_for_selected_model(self, client, deployed_regression):
         """Selected model with decent metrics should score higher than unselected."""
         run_id = deployed_regression["run_id"]
         resp = client.get(f"/api/models/{run_id}/readiness")
@@ -576,7 +539,6 @@ class TestModelReadiness:
 # ---------------------------------------------------------------------------
 # Chat readiness integration tests
 # ---------------------------------------------------------------------------
-
 
 class TestChatReadinessIntent:
     """Chat endpoint detects readiness questions and emits structured readiness events."""

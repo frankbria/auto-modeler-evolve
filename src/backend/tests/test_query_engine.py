@@ -16,7 +16,8 @@ Coverage targets:
 - generate_chart_for_message (data intent / no data intent)
 """
 
-from unittest.mock import patch
+import math
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pandas as pd
@@ -38,45 +39,28 @@ from core.query_engine import (
 # Fixtures
 # ---------------------------------------------------------------------------
 
-
 @pytest.fixture
 def sales_df():
-    return pd.DataFrame(
-        {
-            "region": ["North", "South", "East", "West", "North", "South"],
-            "product": [
-                "Widget A",
-                "Widget B",
-                "Widget A",
-                "Widget C",
-                "Widget B",
-                "Widget A",
-            ],
-            "revenue": [1200.0, 850.0, 2100.0, 450.0, 1650.0, 975.0],
-            "units": [10, 8, 18, 4, 15, 9],
-            "date": [
-                "2024-01-01",
-                "2024-01-01",
-                "2024-01-02",
-                "2024-01-02",
-                "2024-01-03",
-                "2024-01-03",
-            ],
-        }
-    )
+    return pd.DataFrame({
+        "region": ["North", "South", "East", "West", "North", "South"],
+        "product": ["Widget A", "Widget B", "Widget A", "Widget C", "Widget B", "Widget A"],
+        "revenue": [1200.0, 850.0, 2100.0, 450.0, 1650.0, 975.0],
+        "units": [10, 8, 18, 4, 15, 9],
+        "date": ["2024-01-01", "2024-01-01", "2024-01-02", "2024-01-02", "2024-01-03", "2024-01-03"],
+    })
 
 
 @pytest.fixture
 def column_info(sales_df):
     return [
-        {"name": col, "dtype": str(sales_df[col].dtype)} for col in sales_df.columns
+        {"name": col, "dtype": str(sales_df[col].dtype)}
+        for col in sales_df.columns
     ]
 
 
 # ---------------------------------------------------------------------------
 # _find_col
 # ---------------------------------------------------------------------------
-
 
 class TestFindCol:
     def test_finds_first_valid(self, sales_df):
@@ -92,7 +76,6 @@ class TestFindCol:
 # ---------------------------------------------------------------------------
 # _apply_filter
 # ---------------------------------------------------------------------------
-
 
 class TestApplyFilter:
     def test_greater_than(self, sales_df):
@@ -138,7 +121,6 @@ class TestApplyFilter:
 # _df_to_text
 # ---------------------------------------------------------------------------
 
-
 class TestDfToText:
     def test_basic(self):
         df = pd.DataFrame({"a": [1, 2], "b": ["x", "y"]})
@@ -156,7 +138,6 @@ class TestDfToText:
 # ---------------------------------------------------------------------------
 # _safe_rows
 # ---------------------------------------------------------------------------
-
 
 class TestSafeRows:
     def test_nan_becomes_none(self):
@@ -180,7 +161,6 @@ class TestSafeRows:
 # ---------------------------------------------------------------------------
 # _execute_spec
 # ---------------------------------------------------------------------------
-
 
 class TestExecuteSpecDistribution:
     def test_numeric_column(self, sales_df):
@@ -343,13 +323,10 @@ class TestExecuteSpecUnknown:
 # run_nl_query (monkeypatching _parse_question_to_spec)
 # ---------------------------------------------------------------------------
 
-
 class TestRunNlQuery:
     def test_returns_helpful_message_when_parse_fails(self, sales_df, column_info):
         with patch("core.query_engine._parse_question_to_spec", return_value=None):
-            result = run_nl_query(
-                "what is the airspeed of an unladen swallow?", sales_df, column_info
-            )
+            result = run_nl_query("what is the airspeed of an unladen swallow?", sales_df, column_info)
         assert isinstance(result, QueryResult)
         assert result.chart_spec is None
         assert len(result.text) > 10
@@ -372,9 +349,7 @@ class TestRunNlQuery:
         """If _execute_spec raises, run_nl_query should return a friendly error."""
         spec = {"operation": "distribution", "columns": ["revenue"]}
         with patch("core.query_engine._parse_question_to_spec", return_value=spec):
-            with patch(
-                "core.query_engine._execute_spec", side_effect=RuntimeError("boom")
-            ):
+            with patch("core.query_engine._execute_spec", side_effect=RuntimeError("boom")):
                 result = run_nl_query("some question", sales_df, column_info)
         assert result.chart_spec is None
         assert "error" in result.text.lower() or "hit" in result.text.lower()
@@ -387,17 +362,12 @@ class TestRunNlQuery:
         with patch("core.query_engine._parse_question_to_spec", return_value=spec):
             result = run_nl_query("revenue > 999999", sales_df, column_info)
         assert result.chart_spec is None
-        assert (
-            "no data" in result.text.lower()
-            or "0 rows" in result.text.lower()
-            or result.text
-        )
+        assert "no data" in result.text.lower() or "0 rows" in result.text.lower() or result.text
 
 
 # ---------------------------------------------------------------------------
 # generate_chart_for_message
 # ---------------------------------------------------------------------------
-
 
 class TestGenerateChartForMessage:
     def test_no_data_keywords_returns_none(self, sales_df, column_info):

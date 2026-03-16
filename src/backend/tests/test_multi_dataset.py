@@ -6,7 +6,6 @@ Covers:
 - POST /api/data/join-keys
 - POST /api/data/{project_id}/merge
 """
-
 from __future__ import annotations
 
 import io
@@ -21,7 +20,6 @@ from core.merger import merge_datasets, suggest_join_keys
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
 # ---------------------------------------------------------------------------
-
 
 def _df(data: dict) -> pd.DataFrame:
     return pd.DataFrame(data)
@@ -53,7 +51,6 @@ async def _upload_csv(client, project_id: str, filename: str, csv_bytes: bytes) 
 # ---------------------------------------------------------------------------
 # Unit tests: core/merger.py — suggest_join_keys
 # ---------------------------------------------------------------------------
-
 
 class TestSuggestJoinKeys:
     def test_common_columns_returned(self):
@@ -102,15 +99,10 @@ class TestSuggestJoinKeys:
 # Unit tests: core/merger.py — merge_datasets
 # ---------------------------------------------------------------------------
 
-
 class TestMergeDatasets:
     def setup_method(self):
-        self.left = _df(
-            {"id": [1, 2, 3], "name": ["A", "B", "C"], "revenue": [100, 200, 300]}
-        )
-        self.right = _df(
-            {"id": [1, 2, 4], "score": [0.9, 0.8, 0.7], "revenue": [110, 210, 410]}
-        )
+        self.left = _df({"id": [1, 2, 3], "name": ["A", "B", "C"], "revenue": [100, 200, 300]})
+        self.right = _df({"id": [1, 2, 4], "score": [0.9, 0.8, 0.7], "revenue": [110, 210, 410]})
 
     def test_inner_join_row_count(self):
         result = merge_datasets(self.left, self.right, join_key="id", how="inner")
@@ -140,12 +132,8 @@ class TestMergeDatasets:
 
     def test_custom_suffix(self):
         result = merge_datasets(
-            self.left,
-            self.right,
-            join_key="id",
-            how="inner",
-            suffix_left="_A",
-            suffix_right="_B",
+            self.left, self.right, join_key="id", how="inner",
+            suffix_left="_A", suffix_right="_B"
         )
         assert "revenue_A" in result["columns"]
         assert "revenue_B" in result["columns"]
@@ -172,7 +160,6 @@ class TestMergeDatasets:
 # ---------------------------------------------------------------------------
 # API integration tests
 # ---------------------------------------------------------------------------
-
 
 class TestListProjectDatasets:
     async def test_empty_project_returns_empty_list(self, client):
@@ -243,9 +230,7 @@ class TestJoinKeySuggestions:
 class TestMergeEndpoint:
     async def _setup(self, client):
         pid = await _create_project(client)
-        csv1 = _make_csv_bytes(
-            {"id": [1, 2, 3], "name": ["A", "B", "C"], "revenue": [100, 200, 300]}
-        )
+        csv1 = _make_csv_bytes({"id": [1, 2, 3], "name": ["A", "B", "C"], "revenue": [100, 200, 300]})
         csv2 = _make_csv_bytes({"id": [1, 2, 4], "region": ["North", "South", "East"]})
         did1 = await _upload_csv(client, pid, "left.csv", csv1)
         did2 = await _upload_csv(client, pid, "right.csv", csv2)
@@ -255,12 +240,7 @@ class TestMergeEndpoint:
         pid, did1, did2 = await self._setup(client)
         r = await client.post(
             f"/api/data/{pid}/merge",
-            json={
-                "dataset_id_1": did1,
-                "dataset_id_2": did2,
-                "join_key": "id",
-                "how": "inner",
-            },
+            json={"dataset_id_1": did1, "dataset_id_2": did2, "join_key": "id", "how": "inner"},
         )
         assert r.status_code == 201
         body = r.json()
@@ -271,12 +251,7 @@ class TestMergeEndpoint:
         pid, did1, did2 = await self._setup(client)
         await client.post(
             f"/api/data/{pid}/merge",
-            json={
-                "dataset_id_1": did1,
-                "dataset_id_2": did2,
-                "join_key": "id",
-                "how": "inner",
-            },
+            json={"dataset_id_1": did1, "dataset_id_2": did2, "join_key": "id", "how": "inner"},
         )
         r = await client.get(f"/api/data/project/{pid}/datasets")
         assert len(r.json()) == 3  # original 2 + merged 1
@@ -285,12 +260,7 @@ class TestMergeEndpoint:
         pid, did1, did2 = await self._setup(client)
         r = await client.post(
             f"/api/data/{pid}/merge",
-            json={
-                "dataset_id_1": did1,
-                "dataset_id_2": did2,
-                "join_key": "id",
-                "how": "inner",
-            },
+            json={"dataset_id_1": did1, "dataset_id_2": did2, "join_key": "id", "how": "inner"},
         )
         body = r.json()
         assert "preview" in body
@@ -300,12 +270,7 @@ class TestMergeEndpoint:
         pid, did1, did2 = await self._setup(client)
         r = await client.post(
             f"/api/data/{pid}/merge",
-            json={
-                "dataset_id_1": did1,
-                "dataset_id_2": did2,
-                "join_key": "nonexistent",
-                "how": "inner",
-            },
+            json={"dataset_id_1": did1, "dataset_id_2": did2, "join_key": "nonexistent", "how": "inner"},
         )
         assert r.status_code == 400
 
@@ -313,24 +278,14 @@ class TestMergeEndpoint:
         pid, did1, did2 = await self._setup(client)
         r = await client.post(
             f"/api/data/{pid}/merge",
-            json={
-                "dataset_id_1": did1,
-                "dataset_id_2": did2,
-                "join_key": "id",
-                "how": "cross",
-            },
+            json={"dataset_id_1": did1, "dataset_id_2": did2, "join_key": "id", "how": "cross"},
         )
         assert r.status_code == 400
 
     async def test_merge_404_for_missing_project(self, client):
         r = await client.post(
             "/api/data/nonexistent/merge",
-            json={
-                "dataset_id_1": "a",
-                "dataset_id_2": "b",
-                "join_key": "id",
-                "how": "inner",
-            },
+            json={"dataset_id_1": "a", "dataset_id_2": "b", "join_key": "id", "how": "inner"},
         )
         assert r.status_code == 404
 
@@ -353,12 +308,7 @@ class TestMergeEndpoint:
         pid, did1, did2 = await self._setup(client)
         r = await client.post(
             f"/api/data/{pid}/merge",
-            json={
-                "dataset_id_1": did1,
-                "dataset_id_2": did2,
-                "join_key": "id",
-                "how": "left",
-            },
+            json={"dataset_id_1": did1, "dataset_id_2": did2, "join_key": "id", "how": "left"},
         )
         assert r.status_code == 201
         assert r.json()["row_count"] == 3  # all 3 left rows

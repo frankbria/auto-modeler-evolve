@@ -19,32 +19,22 @@ from core.feature_engine import (
 # Fixtures
 # ---------------------------------------------------------------------------
 
-
 @pytest.fixture
 def sales_df():
     """Small sales DataFrame representative of realistic business data."""
-    return pd.DataFrame(
-        {
-            "date": [
-                "2024-01-01",
-                "2024-01-08",
-                "2024-01-15",
-                "2024-01-22",
-                "2024-01-29",
-            ],
-            "product": ["Widget A", "Widget B", "Widget A", "Widget C", "Widget B"],
-            "region": ["North", "South", "East", "West", "North"],
-            "revenue": [1200.50, 850.00, 2100.75, 450.25, 1650.00],
-            "units": [10, 8, 18, 4, 15],
-        }
-    )
+    return pd.DataFrame({
+        "date": ["2024-01-01", "2024-01-08", "2024-01-15", "2024-01-22", "2024-01-29"],
+        "product": ["Widget A", "Widget B", "Widget A", "Widget C", "Widget B"],
+        "region": ["North", "South", "East", "West", "North"],
+        "revenue": [1200.50, 850.00, 2100.75, 450.25, 1650.00],
+        "units": [10, 8, 18, 4, 15],
+    })
 
 
 @pytest.fixture
 def sales_column_stats(sales_df):
     """Column stats dict matching what analyzer.py produces."""
     from core.analyzer import analyze_dataframe
-
     result = analyze_dataframe(sales_df)
     return result["columns"]
 
@@ -62,19 +52,16 @@ def categorical_df():
     """DataFrame with both low- and high-cardinality categoricals."""
     low = ["red", "green", "blue", "red", "green"] * 4
     high = [f"item_{i}" for i in range(20)]
-    return pd.DataFrame(
-        {
-            "color": low,
-            "sku": high,
-            "price": np.random.default_rng(0).uniform(10, 100, 20),
-        }
-    )
+    return pd.DataFrame({
+        "color": low,
+        "sku": high,
+        "price": np.random.default_rng(0).uniform(10, 100, 20),
+    })
 
 
 # ---------------------------------------------------------------------------
 # suggest_features
 # ---------------------------------------------------------------------------
-
 
 class TestSuggestFeatures:
     def test_date_column_yields_decompose(self, sales_df, sales_column_stats):
@@ -87,7 +74,6 @@ class TestSuggestFeatures:
 
     def test_skewed_column_yields_log(self, skewed_df):
         from core.analyzer import analyze_dataframe
-
         stats = analyze_dataframe(skewed_df)["columns"]
         suggestions = suggest_features(skewed_df, stats)
         log_sugg = [s for s in suggestions if s.transform_type == "log_transform"]
@@ -97,7 +83,6 @@ class TestSuggestFeatures:
 
     def test_low_cardinality_categorical_yields_one_hot(self, categorical_df):
         from core.analyzer import analyze_dataframe
-
         stats = analyze_dataframe(categorical_df)["columns"]
         suggestions = suggest_features(categorical_df, stats)
         oh_sugg = [s for s in suggestions if s.transform_type == "one_hot"]
@@ -105,7 +90,6 @@ class TestSuggestFeatures:
 
     def test_high_cardinality_categorical_yields_label_encode(self, categorical_df):
         from core.analyzer import analyze_dataframe
-
         stats = analyze_dataframe(categorical_df)["columns"]
         suggestions = suggest_features(categorical_df, stats)
         le_sugg = [s for s in suggestions if s.transform_type == "label_encode"]
@@ -116,7 +100,6 @@ class TestSuggestFeatures:
         x = rng.normal(100, 20, 50)
         df = pd.DataFrame({"price": x, "cost": x * 0.6 + rng.normal(0, 2, 50)})
         from core.analyzer import analyze_dataframe
-
         stats = analyze_dataframe(df)["columns"]
         suggestions = suggest_features(df, stats)
         inter_sugg = [s for s in suggestions if s.transform_type == "interaction"]
@@ -144,7 +127,6 @@ class TestSuggestFeatures:
 # ---------------------------------------------------------------------------
 # apply_transformations
 # ---------------------------------------------------------------------------
-
 
 class TestApplyTransformations:
     def test_date_decompose(self, sales_df):
@@ -226,7 +208,6 @@ class TestApplyTransformations:
 # detect_problem_type
 # ---------------------------------------------------------------------------
 
-
 class TestDetectProblemType:
     def test_numeric_high_cardinality_is_regression(self, sales_df):
         result = detect_problem_type(sales_df, "revenue")
@@ -260,7 +241,6 @@ class TestDetectProblemType:
 # ---------------------------------------------------------------------------
 # compute_feature_importance
 # ---------------------------------------------------------------------------
-
 
 class TestComputeFeatureImportance:
     def test_returns_ranked_list(self, sales_df, sales_column_stats):
@@ -309,7 +289,6 @@ class TestComputeFeatureImportance:
 # API endpoint tests
 # ---------------------------------------------------------------------------
 
-
 class TestFeatureAPI:
     def test_suggestions_endpoint(self, client, sample_csv_content):
         import asyncio
@@ -349,12 +328,10 @@ class TestFeatureAPI:
 
             apply_resp = await client.post(
                 f"/api/features/{dataset_id}/apply",
-                json={
-                    "transformations": [
-                        {"column": "date", "transform_type": "date_decompose"},
-                        {"column": "region", "transform_type": "one_hot"},
-                    ]
-                },
+                json={"transformations": [
+                    {"column": "date", "transform_type": "date_decompose"},
+                    {"column": "region", "transform_type": "one_hot"},
+                ]},
             )
             assert apply_resp.status_code == 201
             body = apply_resp.json()

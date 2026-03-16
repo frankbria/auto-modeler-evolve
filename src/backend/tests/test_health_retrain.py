@@ -15,7 +15,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlmodel import SQLModel, create_engine
+from sqlmodel import SQLModel, Session, create_engine
 
 import db as db_module
 
@@ -70,7 +70,6 @@ CLASSIFICATION_CSV = b"""feature_a,feature_b,label
 # Fixtures
 # ---------------------------------------------------------------------------
 
-
 @pytest.fixture
 def client(tmp_path):
     test_db = str(tmp_path / "test.db")
@@ -85,23 +84,18 @@ def client(tmp_path):
     import models.deployment  # noqa: F401
     import models.prediction_log  # noqa: F401
     import models.feedback_record  # noqa: F401
-
     SQLModel.metadata.create_all(db_module.engine)
 
     import api.data as data_mod
-
     data_mod.UPLOAD_DIR = tmp_path / "uploads"
 
     import api.models as models_mod
-
     models_mod.MODELS_DIR = tmp_path / "models"
 
     import api.deploy as deploy_mod
-
     deploy_mod.DEPLOY_DIR = tmp_path / "deployments"
 
     from main import app
-
     with TestClient(app) as c:
         yield c
 
@@ -151,16 +145,10 @@ def _deploy_classification(client) -> tuple[str, str, str]:
     fs = client.post(f"/api/features/{did}/apply", json={"transformations": []}).json()
     client.post(
         f"/api/features/{did}/target",
-        json={
-            "target_column": "label",
-            "problem_type": "classification",
-            "feature_set_id": fs["feature_set_id"],
-        },
+        json={"target_column": "label", "problem_type": "classification", "feature_set_id": fs["feature_set_id"]},
     )
 
-    client.post(
-        f"/api/models/{pid}/train", json={"algorithms": ["logistic_regression"]}
-    )
+    client.post(f"/api/models/{pid}/train", json={"algorithms": ["logistic_regression"]})
     for _ in range(60):
         runs = client.get(f"/api/models/{pid}/runs").json()["runs"]
         if all(r["status"] in ("done", "failed") for r in runs):
@@ -177,7 +165,6 @@ def _deploy_classification(client) -> tuple[str, str, str]:
 # ---------------------------------------------------------------------------
 # Health endpoint tests
 # ---------------------------------------------------------------------------
-
 
 class TestModelHealth:
     def test_health_404_unknown_deployment(self, client):
@@ -278,7 +265,6 @@ class TestModelHealth:
 # Retrain endpoint tests
 # ---------------------------------------------------------------------------
 
-
 class TestRetrainEndpoint:
     def test_retrain_404_unknown_project(self, client):
         r = client.post("/api/models/nonexistent/retrain")
@@ -299,9 +285,7 @@ class TestRetrainEndpoint:
             data={"project_id": pid},
         )
         did = r.json()["dataset_id"]
-        fs = client.post(
-            f"/api/features/{did}/apply", json={"transformations": []}
-        ).json()
+        fs = client.post(f"/api/features/{did}/apply", json={"transformations": []}).json()
         client.post(
             f"/api/features/{did}/target",
             json={"target_column": "revenue", "feature_set_id": fs["feature_set_id"]},
@@ -369,7 +353,6 @@ class TestRetrainEndpoint:
 # ---------------------------------------------------------------------------
 # Chat intent tests (health pattern)
 # ---------------------------------------------------------------------------
-
 
 def _mock_anthropic():
     mock_message = MagicMock()

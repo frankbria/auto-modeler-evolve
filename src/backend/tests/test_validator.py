@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import json
 import time
 
 import numpy as np
@@ -51,15 +52,12 @@ def client(tmp_path):
     SQLModel.metadata.create_all(db_module.engine)
 
     import api.data as data_module
-
     data_module.UPLOAD_DIR = tmp_path / "uploads"
 
     import api.models as models_api_module
-
     models_api_module.MODELS_DIR = tmp_path / "models"
 
     from main import app
-
     with TestClient(app) as c:
         yield c
 
@@ -133,19 +131,14 @@ class TestRunCrossValidation:
 
         X, y = self._make_xy()
         result = run_cross_validation(LinearRegression(), X, y, "regression")
-        assert all(
-            k in result
-            for k in ("mean", "std", "scores", "ci_low", "ci_high", "summary")
-        )
+        assert all(k in result for k in ("mean", "std", "scores", "ci_low", "ci_high", "summary"))
 
     def test_scores_list_length_matches_n_splits(self):
         from core.validator import run_cross_validation
         from sklearn.linear_model import LinearRegression
 
         X, y = self._make_xy()
-        result = run_cross_validation(
-            LinearRegression(), X, y, "regression", n_splits=3
-        )
+        result = run_cross_validation(LinearRegression(), X, y, "regression", n_splits=3)
         assert len(result["scores"]) == 3
 
     def test_r2_positive_on_linear_data(self):
@@ -163,9 +156,7 @@ class TestRunCrossValidation:
         rng = np.random.default_rng(7)
         X = rng.normal(0, 1, (60, 3))
         y = (X[:, 0] > 0).astype(int)
-        result = run_cross_validation(
-            RandomForestClassifier(random_state=42), X, y, "classification"
-        )
+        result = run_cross_validation(RandomForestClassifier(random_state=42), X, y, "classification")
         assert result["metric"] == "f1_weighted"
         assert 0.0 <= result["mean"] <= 1.0
 
@@ -256,7 +247,7 @@ class TestAssessConfidenceLimitations:
             n_features=3,
             cv_std=0.04,
         )
-        assert any("30 rows" in lim for lim in result["limitations"])
+        assert any("30 rows" in l for l in result["limitations"])
 
     def test_warns_on_high_cv_variance(self):
         from core.validator import assess_confidence_limitations
@@ -268,7 +259,7 @@ class TestAssessConfidenceLimitations:
             n_features=5,
             cv_std=0.15,
         )
-        assert any("variance" in lim.lower() for lim in result["limitations"])
+        assert any("variance" in l.lower() for l in result["limitations"])
 
     def test_no_limitations_message_on_clean_model(self):
         from core.validator import assess_confidence_limitations
@@ -280,7 +271,7 @@ class TestAssessConfidenceLimitations:
             n_features=5,
             cv_std=0.02,
         )
-        assert any("no major" in lim.lower() for lim in result["limitations"])
+        assert any("no major" in l.lower() for l in result["limitations"])
 
 
 # ---------------------------------------------------------------------------
@@ -361,9 +352,7 @@ class TestExplainSinglePrediction:
         from core.explainer import explain_single_prediction
 
         model, X, _ = self._setup()
-        result = explain_single_prediction(
-            model, X[0], X, ["a", "b", "c"], "regression"
-        )
+        result = explain_single_prediction(model, X[0], X, ["a", "b", "c"], "regression")
         assert "prediction" in result
         assert "contributions" in result
         assert "summary" in result
@@ -372,18 +361,14 @@ class TestExplainSinglePrediction:
         from core.explainer import explain_single_prediction
 
         model, X, _ = self._setup()
-        result = explain_single_prediction(
-            model, X[0], X, ["a", "b", "c"], "regression"
-        )
+        result = explain_single_prediction(model, X[0], X, ["a", "b", "c"], "regression")
         assert len(result["contributions"]) == 3
 
     def test_contribution_has_direction(self):
         from core.explainer import explain_single_prediction
 
         model, X, _ = self._setup()
-        result = explain_single_prediction(
-            model, X[0], X, ["a", "b", "c"], "regression"
-        )
+        result = explain_single_prediction(model, X[0], X, ["a", "b", "c"], "regression")
         for c in result["contributions"]:
             assert c["direction"] in ("positive", "negative")
 

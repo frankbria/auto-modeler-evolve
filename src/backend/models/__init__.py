@@ -9,13 +9,4 @@ from models.deployment import Deployment
 from models.prediction_log import PredictionLog
 from models.feedback_record import FeedbackRecord
 
-__all__ = [
-    "Project",
-    "Dataset",
-    "FeatureSet",
-    "Conversation",
-    "ModelRun",
-    "Deployment",
-    "PredictionLog",
-    "FeedbackRecord",
-]
+__all__ = ["Project", "Dataset", "FeatureSet", "Conversation", "ModelRun", "Deployment", "PredictionLog", "FeedbackRecord"]

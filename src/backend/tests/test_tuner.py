@@ -2,10 +2,12 @@
 
 import io
 import json
+import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import numpy as np
+import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import SQLModel, create_engine
@@ -17,7 +19,6 @@ import db as db_module
 # ---------------------------------------------------------------------------
 # Shared CSV fixture — enough rows for RandomizedSearchCV with cv=3
 # ---------------------------------------------------------------------------
-
 
 def _make_csv(n_rows: int = 60) -> bytes:
     rng = np.random.default_rng(42)
@@ -49,13 +50,11 @@ def client(tmp_path):
     import models.conversation  # noqa
     import models.deployment  # noqa
     import models.prediction_log  # noqa
-
     SQLModel.metadata.create_all(db_module.engine)
 
     models_module.MODELS_DIR = tmp_path / "models"
 
     from main import app
-
     return TestClient(app)
 
 
@@ -77,6 +76,7 @@ def _setup_trained_model(client, tmp_path, algorithm="random_forest_regressor"):
     # Apply features (empty = creates FeatureSet) — returns 201
     r = client.post(f"/api/features/{dataset_id}/apply", json={"transformations": []})
     assert r.status_code in (200, 201)
+    feature_set_id = r.json()["feature_set_id"]
 
     # Set target
     r = client.post(
@@ -95,7 +95,6 @@ def _setup_trained_model(client, tmp_path, algorithm="random_forest_regressor"):
 
     # Poll until done (max 60s for RandomForest on 60 rows)
     import time
-
     for _ in range(120):
         runs = client.get(f"/api/models/{project_id}/runs").json()["runs"]
         run = next((r for r in runs if r["id"] == model_run_id), None)
@@ -110,40 +109,33 @@ def _setup_trained_model(client, tmp_path, algorithm="random_forest_regressor"):
 # Unit tests: core/tuner.py
 # ---------------------------------------------------------------------------
 
-
 class TestTunerUnit:
     def test_is_tunable_random_forest(self):
         from core.tuner import is_tunable
-
         assert is_tunable("random_forest_regressor") is True
         assert is_tunable("random_forest_classifier") is True
 
     def test_is_tunable_gradient_boosting(self):
         from core.tuner import is_tunable
-
         assert is_tunable("gradient_boosting_regressor") is True
         assert is_tunable("gradient_boosting_classifier") is True
 
     def test_is_tunable_linear_regression_false(self):
         from core.tuner import is_tunable
-
         # Linear regression has no meaningful hyperparameters
         assert is_tunable("linear_regression") is False
 
     def test_is_tunable_neural_network_false(self):
         from core.tuner import is_tunable
-
         assert is_tunable("neural_network_regressor") is False
         assert is_tunable("neural_network_classifier") is False
 
     def test_is_tunable_unknown_algorithm_false(self):
         from core.tuner import is_tunable
-
         assert is_tunable("nonexistent_algo") is False
 
     def test_tune_model_regression(self, tmp_path):
         from core.tuner import tune_model
-
         rng = np.random.default_rng(0)
         X = rng.standard_normal((80, 3))
         y = X[:, 0] * 2 + rng.standard_normal(80) * 0.1
@@ -171,7 +163,6 @@ class TestTunerUnit:
 
     def test_tune_model_classification(self, tmp_path):
         from core.tuner import tune_model
-
         rng = np.random.default_rng(1)
         X = rng.standard_normal((80, 3))
         y = (X[:, 0] > 0).astype(int)
@@ -192,7 +183,6 @@ class TestTunerUnit:
 
     def test_tune_model_unknown_algorithm_raises(self, tmp_path):
         from core.tuner import tune_model
-
         with pytest.raises(ValueError, match="Unknown algorithm"):
             tune_model(
                 algorithm="bad_algo",
@@ -205,7 +195,6 @@ class TestTunerUnit:
 
     def test_tune_model_untuneable_raises(self, tmp_path):
         from core.tuner import tune_model
-
         with pytest.raises(ValueError, match="no tunable hyperparameters"):
             tune_model(
                 algorithm="linear_regression",
@@ -218,7 +207,6 @@ class TestTunerUnit:
 
     def test_tune_model_best_params_keys(self, tmp_path):
         from core.tuner import tune_model, _REGRESSION_PARAM_GRIDS
-
         rng = np.random.default_rng(2)
         X = rng.standard_normal((60, 2))
         y = X[:, 0] + rng.standard_normal(60) * 0.5
@@ -239,7 +227,6 @@ class TestTunerUnit:
 
     def test_tune_model_gradient_boosting(self, tmp_path):
         from core.tuner import tune_model
-
         rng = np.random.default_rng(3)
         X = rng.standard_normal((60, 2))
         y = X[:, 0] * 3 + rng.standard_normal(60) * 0.5
@@ -260,7 +247,6 @@ class TestTunerUnit:
 
     def test_tune_summary_regression_content(self, tmp_path):
         from core.tuner import tune_model
-
         rng = np.random.default_rng(4)
         X = rng.standard_normal((60, 2))
         y = X[:, 0] * 2
@@ -284,7 +270,6 @@ class TestTunerUnit:
 # ---------------------------------------------------------------------------
 # API integration tests: POST /api/models/{model_run_id}/tune
 # ---------------------------------------------------------------------------
-
 
 class TestTuneEndpoint:
     def test_tune_not_found(self, client, tmp_path):
@@ -329,9 +314,7 @@ class TestTuneEndpoint:
         )
         dataset_id = r.json()["dataset_id"]
 
-        r = client.post(
-            f"/api/features/{dataset_id}/apply", json={"transformations": []}
-        )
+        r = client.post(f"/api/features/{dataset_id}/apply", json={"transformations": []})
         assert r.status_code in (200, 201)
 
         client.post(
@@ -349,7 +332,6 @@ class TestTuneEndpoint:
 
         # Poll until done
         import time
-
         for _ in range(60):
             runs = client.get(f"/api/models/{project_id}/runs").json()["runs"]
             run = next((r for r in runs if r["id"] == run_id), None)
@@ -412,7 +394,6 @@ class TestTuneEndpoint:
 # Chat intent detection tests
 # ---------------------------------------------------------------------------
 
-
 class TestChatTuneIntent:
     def _mock_anthropic(self):
         mock_stream = MagicMock()
@@ -426,6 +407,7 @@ class TestChatTuneIntent:
     def _setup_trained_project(self, client, tmp_path):
         from sqlmodel import Session
         from models.model_run import ModelRun
+        from models.feature_set import FeatureSet
 
         r = client.post("/api/projects", json={"name": "Chat Tune Test"})
         project_id = r.json()["id"]
@@ -437,9 +419,7 @@ class TestChatTuneIntent:
         )
         dataset_id = r.json()["dataset_id"]
 
-        r = client.post(
-            f"/api/features/{dataset_id}/apply", json={"transformations": []}
-        )
+        r = client.post(f"/api/features/{dataset_id}/apply", json={"transformations": []})
         feature_set_id = r.json()["feature_set_id"]
 
         client.post(

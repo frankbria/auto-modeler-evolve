@@ -6,7 +6,6 @@ Provides:
 - Stage-specific conversation starters for proactive guidance
 - Helper functions to format metrics and build focused Claude prompts
 """
-
 from __future__ import annotations
 
 
@@ -132,11 +131,7 @@ def format_metric(name: str, value: float | None) -> str:
     display_name = info.get("name", name.upper())
     plain = info.get("plain", "")
 
-    formatted_value = (
-        f"{value:.1%}"
-        if name.lower() in ("accuracy", "f1", "precision", "recall")
-        else f"{value:.3f}"
-    )
+    formatted_value = f"{value:.1%}" if name.lower() in ("accuracy", "f1", "precision", "recall") else f"{value:.3f}"
 
     result = f"{display_name} = {formatted_value}"
     if plain:
@@ -171,7 +166,6 @@ def summarise_metrics(metrics: dict, problem_type: str) -> str:
 # ---------------------------------------------------------------------------
 # Proactive insight prompt builder
 # ---------------------------------------------------------------------------
-
 
 def build_proactive_insight_prompt(
     dataset_summary: str,

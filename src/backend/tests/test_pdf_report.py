@@ -7,7 +7,11 @@ Covers:
 - 400 for non-done run
 """
 
+import json
 import os
+import shutil
+import tempfile
+from pathlib import Path
 
 import pytest
 from httpx import AsyncClient, ASGITransport
@@ -33,14 +37,11 @@ async def client(setup_env, tmp_path):
     db.DATA_DIR = str(tmp_path)
     SQLModel.metadata.create_all(db.engine)
 
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as ac:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         yield ac
 
 
 # ─── Unit test for the generator ──────────────────────────────────────────────
-
 
 def test_generate_model_report_returns_pdf_bytes():
     """generate_model_report() should return non-empty bytes starting with %PDF."""
@@ -133,9 +134,10 @@ async def _train_model(client: AsyncClient, tmp_path) -> str:
         f"/api/models/{project_id}/train",
         json={"algorithms": ["linear_regression"]},
     )
+    run_ids = r.json()["model_run_ids"]
+
     # Poll until done
     import asyncio
-
     for _ in range(30):
         r = await client.get(f"/api/models/{project_id}/runs")
         runs = r.json()["runs"]
@@ -166,6 +168,7 @@ async def test_report_endpoint_404_unknown_run(client):
 @pytest.mark.asyncio
 async def test_report_endpoint_400_pending_run(client, tmp_path):
     """A run that hasn't finished training should return 400."""
+    from sqlmodel import Session
     import db
     from models.model_run import ModelRun
 
@@ -174,9 +177,7 @@ async def test_report_endpoint_400_pending_run(client, tmp_path):
     project_id = r.json()["id"]
 
     with Session(db.engine) as session:
-        run = ModelRun(
-            project_id=project_id, algorithm="linear_regression", status="pending"
-        )
+        run = ModelRun(project_id=project_id, algorithm="linear_regression", status="pending")
         session.add(run)
         session.commit()
         session.refresh(run)

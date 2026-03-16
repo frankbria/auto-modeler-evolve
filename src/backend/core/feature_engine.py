@@ -13,7 +13,7 @@ Design principles:
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 from uuid import uuid4
 
@@ -25,16 +25,15 @@ import pandas as pd
 # Data classes
 # ---------------------------------------------------------------------------
 
-
 @dataclass
 class FeatureSuggestion:
     id: str
-    column: str  # source column (or "col_a__col_b" for interactions)
-    transform_type: str  # see TRANSFORM_TYPES below
+    column: str                   # source column (or "col_a__col_b" for interactions)
+    transform_type: str           # see TRANSFORM_TYPES below
     title: str
     description: str
-    preview_columns: list[str]  # names of columns that will be added
-    example_values: list[Any]  # sample values from the source column
+    preview_columns: list[str]    # names of columns that will be added
+    example_values: list[Any]     # sample values from the source column
 
 
 # Valid transform types
@@ -52,7 +51,6 @@ TRANSFORM_TYPES = {
 # Suggest features
 # ---------------------------------------------------------------------------
 
-
 def suggest_features(
     df: pd.DataFrame,
     column_stats: list[dict],
@@ -62,36 +60,35 @@ def suggest_features(
     Returns a list of FeatureSuggestion objects, ordered by expected impact.
     """
     suggestions: list[FeatureSuggestion] = []
+    col_lookup = {c["name"]: c for c in column_stats}
+
     for col_stat in column_stats:
         col = col_stat["name"]
         dtype = col_stat.get("dtype", "")
         unique = col_stat.get("unique_count", 0)
+        n_rows = len(df)
 
         # --- Date decomposition ---
         if dtype in ("object", "str", "string") and col_stat.get("sample_values"):
             sample = str(col_stat["sample_values"][0])
             if _looks_like_date(sample):
-                suggestions.append(
-                    FeatureSuggestion(
-                        id=str(uuid4()),
-                        column=col,
-                        transform_type="date_decompose",
-                        title=f"Extract date parts from '{col}'",
-                        description=(
-                            f"Convert '{col}' into numeric features: year, month, "
-                            "day-of-week (0=Mon…6=Sun), and is_weekend (0/1). "
-                            "Time-based patterns like seasonality or weekday effects "
-                            "become visible to the model."
-                        ),
-                        preview_columns=[
-                            f"{col}_year",
-                            f"{col}_month",
-                            f"{col}_dayofweek",
-                            f"{col}_is_weekend",
-                        ],
-                        example_values=col_stat["sample_values"][:3],
-                    )
-                )
+                suggestions.append(FeatureSuggestion(
+                    id=str(uuid4()),
+                    column=col,
+                    transform_type="date_decompose",
+                    title=f"Extract date parts from '{col}'",
+                    description=(
+                        f"Convert '{col}' into numeric features: year, month, "
+                        "day-of-week (0=Mon…6=Sun), and is_weekend (0/1). "
+                        "Time-based patterns like seasonality or weekday effects "
+                        "become visible to the model."
+                    ),
+                    preview_columns=[
+                        f"{col}_year", f"{col}_month",
+                        f"{col}_dayofweek", f"{col}_is_weekend",
+                    ],
+                    example_values=col_stat["sample_values"][:3],
+                ))
             continue  # string columns: only date_decompose, skip numeric checks
 
         # --- Numeric column suggestions ---
@@ -103,47 +100,44 @@ def suggest_features(
             # Log transform for right-skewed distributions
             skew = float(series.skew()) if len(series) >= 3 else 0.0
             if skew > 1.5 and series.min() >= 0:
-                suggestions.append(
-                    FeatureSuggestion(
-                        id=str(uuid4()),
-                        column=col,
-                        transform_type="log_transform",
-                        title=f"Log-transform '{col}' (skewness {skew:.1f})",
-                        description=(
-                            f"'{col}' is heavily right-skewed (skewness={skew:.1f}). "
-                            "A log transform compresses the long tail and helps linear "
-                            "models treat large and small values more evenly. "
-                            "Uses log(1 + x) so zero values are handled safely."
-                        ),
-                        preview_columns=[f"{col}_log"],
-                        example_values=col_stat["sample_values"][:3],
-                    )
-                )
+                suggestions.append(FeatureSuggestion(
+                    id=str(uuid4()),
+                    column=col,
+                    transform_type="log_transform",
+                    title=f"Log-transform '{col}' (skewness {skew:.1f})",
+                    description=(
+                        f"'{col}' is heavily right-skewed (skewness={skew:.1f}). "
+                        "A log transform compresses the long tail and helps linear "
+                        "models treat large and small values more evenly. "
+                        "Uses log(1 + x) so zero values are handled safely."
+                    ),
+                    preview_columns=[f"{col}_log"],
+                    example_values=col_stat["sample_values"][:3],
+                ))
 
             # Binning for continuous numeric columns with many unique values
             if unique > 20 and pd.api.types.is_float_dtype(series):
-                suggestions.append(
-                    FeatureSuggestion(
-                        id=str(uuid4()),
-                        column=col,
-                        transform_type="bin_quartile",
-                        title=f"Bin '{col}' into quartiles",
-                        description=(
-                            f"Group '{col}' into four equal-sized buckets: "
-                            "Q1 (bottom 25%), Q2, Q3, Q4 (top 25%). "
-                            "Useful when the exact numeric value matters less than "
-                            "which tier a record falls into (e.g. low/mid/high revenue)."
-                        ),
-                        preview_columns=[f"{col}_quartile"],
-                        example_values=col_stat["sample_values"][:3],
-                    )
-                )
+                suggestions.append(FeatureSuggestion(
+                    id=str(uuid4()),
+                    column=col,
+                    transform_type="bin_quartile",
+                    title=f"Bin '{col}' into quartiles",
+                    description=(
+                        f"Group '{col}' into four equal-sized buckets: "
+                        "Q1 (bottom 25%), Q2, Q3, Q4 (top 25%). "
+                        "Useful when the exact numeric value matters less than "
+                        "which tier a record falls into (e.g. low/mid/high revenue)."
+                    ),
+                    preview_columns=[f"{col}_quartile"],
+                    example_values=col_stat["sample_values"][:3],
+                ))
 
     # --- Categorical encoding suggestions ---
     for col_stat in column_stats:
         col = col_stat["name"]
         dtype = col_stat.get("dtype", "")
         unique = col_stat.get("unique_count", 0)
+        n_rows = len(df)
 
         # Skip date-like string columns (already handled above)
         if dtype in ("object", "str", "string") and col_stat.get("sample_values"):
@@ -151,55 +145,48 @@ def suggest_features(
             if _looks_like_date(sample):
                 continue
 
-        is_categorical = dtype in ("object", "str", "string", "category") or (
-            pd.api.types.is_integer_dtype(df[col]) and unique <= 20
+        is_categorical = (
+            dtype in ("object", "str", "string", "category")
+            or (pd.api.types.is_integer_dtype(df[col]) and unique <= 20)
         )
         if not is_categorical or unique < 2:
             continue
 
         if unique <= 15:
-            suggestions.append(
-                FeatureSuggestion(
-                    id=str(uuid4()),
-                    column=col,
-                    transform_type="one_hot",
-                    title=f"One-hot encode '{col}' ({unique} categories)",
-                    description=(
-                        f"Create {unique} binary (0/1) columns — one for each "
-                        f"value of '{col}'. Most ML algorithms can't directly use "
-                        "text categories, so this converts them into numbers the "
-                        "model can understand. Works best for columns with fewer "
-                        "than 15 distinct values."
-                    ),
-                    preview_columns=[
-                        f"{col}_{v}"
-                        for v in df[col]
-                        .dropna()
-                        .value_counts()
-                        .head(5)
-                        .index.astype(str)
-                    ],
-                    example_values=col_stat["sample_values"][:3],
-                )
-            )
+            suggestions.append(FeatureSuggestion(
+                id=str(uuid4()),
+                column=col,
+                transform_type="one_hot",
+                title=f"One-hot encode '{col}' ({unique} categories)",
+                description=(
+                    f"Create {unique} binary (0/1) columns — one for each "
+                    f"value of '{col}'. Most ML algorithms can't directly use "
+                    "text categories, so this converts them into numbers the "
+                    "model can understand. Works best for columns with fewer "
+                    "than 15 distinct values."
+                ),
+                preview_columns=[
+                    f"{col}_{v}" for v in
+                    df[col].dropna().value_counts().head(5).index.astype(str)
+                ],
+                example_values=col_stat["sample_values"][:3],
+            ))
         elif unique <= 50:
-            suggestions.append(
-                FeatureSuggestion(
-                    id=str(uuid4()),
-                    column=col,
-                    transform_type="label_encode",
-                    title=f"Label-encode '{col}' ({unique} categories)",
-                    description=(
-                        f"Assign each of the {unique} values in '{col}' a unique "
-                        "integer (0, 1, 2…). Faster than one-hot for high-cardinality "
-                        "columns, but the order of numbers is arbitrary — works best "
-                        "with tree-based models (Random Forest, XGBoost) that can "
-                        "ignore spurious ordering."
-                    ),
-                    preview_columns=[f"{col}_encoded"],
-                    example_values=col_stat["sample_values"][:3],
-                )
-            )
+            suggestions.append(FeatureSuggestion(
+                id=str(uuid4()),
+                column=col,
+                transform_type="label_encode",
+                title=f"Label-encode '{col}' ({unique} categories)",
+                description=(
+                    f"Assign each of the {unique} values in '{col}' a unique "
+                    "integer (0, 1, 2…). Faster than one-hot for high-cardinality "
+                    "columns, but the order of numbers is arbitrary — works best "
+                    "with tree-based models (Random Forest, XGBoost) that can "
+                    "ignore spurious ordering."
+                ),
+                preview_columns=[f"{col}_encoded"],
+                example_values=col_stat["sample_values"][:3],
+            ))
 
     # --- Interaction features for top correlated numeric pairs ---
     numeric_cols = df.select_dtypes(include="number").columns.tolist()
@@ -218,25 +205,23 @@ def suggest_features(
                 if pd.isna(r) or r < 0.5:
                     continue
                 if len(suggestions) < 12:  # cap total suggestions
-                    suggestions.append(
-                        FeatureSuggestion(
-                            id=str(uuid4()),
-                            column=f"{c1}__{c2}",
-                            transform_type="interaction",
-                            title=f"Multiply '{c1}' × '{c2}' (r={r:.2f})",
-                            description=(
-                                f"'{c1}' and '{c2}' are correlated (r={r:.2f}). "
-                                "Their product captures joint effects — for example, "
-                                "price × quantity = revenue. "
-                                "Useful when the combination matters more than each "
-                                "column individually."
-                            ),
-                            preview_columns=[f"{c1}_x_{c2}"],
-                            example_values=(
-                                (df[c1] * df[c2]).dropna().head(3).tolist()
-                            ),
-                        )
-                    )
+                    suggestions.append(FeatureSuggestion(
+                        id=str(uuid4()),
+                        column=f"{c1}__{c2}",
+                        transform_type="interaction",
+                        title=f"Multiply '{c1}' × '{c2}' (r={r:.2f})",
+                        description=(
+                            f"'{c1}' and '{c2}' are correlated (r={r:.2f}). "
+                            "Their product captures joint effects — for example, "
+                            "price × quantity = revenue. "
+                            "Useful when the combination matters more than each "
+                            "column individually."
+                        ),
+                        preview_columns=[f"{c1}_x_{c2}"],
+                        example_values=(
+                            (df[c1] * df[c2]).dropna().head(3).tolist()
+                        ),
+                    ))
 
     return suggestions
 
@@ -244,7 +229,6 @@ def suggest_features(
 # ---------------------------------------------------------------------------
 # Apply transformations
 # ---------------------------------------------------------------------------
-
 
 def apply_transformations(
     df: pd.DataFrame,
@@ -325,7 +309,6 @@ def apply_transformations(
 # Target variable detection
 # ---------------------------------------------------------------------------
 
-
 def detect_problem_type(df: pd.DataFrame, target_col: str) -> dict:
     """Determine whether a target column implies classification or regression.
 
@@ -397,7 +380,6 @@ def detect_problem_type(df: pd.DataFrame, target_col: str) -> dict:
 # Feature importance preview
 # ---------------------------------------------------------------------------
 
-
 def compute_feature_importance(
     df: pd.DataFrame,
     target_col: str,
@@ -444,8 +426,7 @@ def compute_feature_importance(
 
     # Prepare target
     y_series = df[target_col].fillna(
-        df[target_col].mode()[0]
-        if problem_type == "classification"
+        df[target_col].mode()[0] if problem_type == "classification"
         else df[target_col].median()
     )
     if problem_type == "classification" and not pd.api.types.is_numeric_dtype(y_series):
@@ -455,8 +436,7 @@ def compute_feature_importance(
         y = y_series.values
 
     mi_fn = (
-        mutual_info_classif
-        if problem_type == "classification"
+        mutual_info_classif if problem_type == "classification"
         else mutual_info_regression
     )
     try:
@@ -468,14 +448,12 @@ def compute_feature_importance(
     results = []
     for col, score in zip(used_cols, scores):
         pct = round(float(score / total * 100), 1) if total > 0 else 0.0
-        results.append(
-            {
-                "column": col,
-                "importance": round(float(score), 4),
-                "importance_pct": pct,
-                "description": _importance_description(col, pct),
-            }
-        )
+        results.append({
+            "column": col,
+            "importance": round(float(score), 4),
+            "importance_pct": pct,
+            "description": _importance_description(col, pct),
+        })
 
     results.sort(key=lambda r: r["importance"], reverse=True)
     for i, r in enumerate(results):
@@ -487,7 +465,6 @@ def compute_feature_importance(
 # ---------------------------------------------------------------------------
 # Private helpers
 # ---------------------------------------------------------------------------
-
 
 def _apply_date_decompose(df: pd.DataFrame, col: str) -> list[str]:
     """Parse a string/object column as datetime and extract date parts in-place."""
@@ -515,9 +492,7 @@ def _looks_like_date(value: str) -> bool:
 
 def _importance_description(col: str, pct: float) -> str:
     if pct >= 20:
-        return (
-            f"Very strong predictor — explains ~{pct:.0f}% of the target's variation."
-        )
+        return f"Very strong predictor — explains ~{pct:.0f}% of the target's variation."
     if pct >= 10:
         return f"Strong predictor — responsible for ~{pct:.0f}% of predictive signal."
     if pct >= 5:

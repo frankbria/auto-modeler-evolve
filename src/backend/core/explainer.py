@@ -88,8 +88,8 @@ def _extract_importances(model, n_features: int) -> np.ndarray | None:
 
 def explain_single_prediction(
     model,  # fitted sklearn estimator
-    x_row: np.ndarray,  # shape (n_features,)
-    X_train: np.ndarray,  # full training set, shape (n_samples, n_features)
+    x_row: np.ndarray,              # shape (n_features,)
+    X_train: np.ndarray,            # full training set, shape (n_samples, n_features)
     feature_names: list[str],
     problem_type: str,
     target_name: str = "target",
@@ -152,9 +152,7 @@ def explain_single_prediction(
     )
 
     return {
-        "prediction": predicted_class
-        if predicted_class is not None
-        else round(prediction_val, 4),
+        "prediction": predicted_class if predicted_class is not None else round(prediction_val, 4),
         "prediction_value": round(prediction_val, 4),
         "contributions": contributions,
         "summary": summary,
@@ -175,11 +173,7 @@ def _prediction_summary(
     direction = "increased" if top["direction"] == "positive" else "decreased"
 
     if problem_type == "classification":
-        pred_str = (
-            f"class {predicted_class}"
-            if predicted_class is not None
-            else str(round(prediction_val, 2))
-        )
+        pred_str = f"class {predicted_class}" if predicted_class is not None else str(round(prediction_val, 2))
         return (
             f"Predicted {target_name} = {pred_str}. "
             f"The strongest driver was '{top['feature']}' (value = {top['value']:.2f}), "

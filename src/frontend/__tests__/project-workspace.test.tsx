@@ -332,11 +332,9 @@ describe("ProjectWorkspace — project with existing dataset", () => {
     render(<ProjectWorkspace />)
     // "Data" appears twice (mobile toggle + tab), use getAllByText
     await waitFor(() => expect(screen.getAllByText("Data").length).toBeGreaterThanOrEqual(1))
-    for (const tab of ["Features", "Importance", "Models"]) {
+    for (const tab of ["Features", "Importance", "Models", "Validate", "Deploy"]) {
       expect(screen.getByText(tab)).toBeInTheDocument()
     }
-    expect(screen.getByTestId("tab-validate")).toBeInTheDocument()
-    expect(screen.getByTestId("tab-deploy")).toBeInTheDocument()
   })
 
   it("shows insights in Data tab", async () => {
@@ -357,9 +355,9 @@ describe("ProjectWorkspace — project with existing dataset", () => {
     fetchMock.mockResponseOnce(JSON.stringify(mockPreview))
     fetchMock.mockResponseOnce(JSON.stringify(mockRuns))
     render(<ProjectWorkspace />)
-    await waitFor(() => expect(screen.getByTestId("tab-validate")).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText("Validate")).toBeInTheDocument())
 
-    fireEvent.click(screen.getByTestId("tab-validate"))
+    fireEvent.click(screen.getByText("Validate"))
     await waitFor(() => {
       expect(screen.getByTestId("validation-panel").getAttribute("data-run")).toBe("run-1")
     })
@@ -399,8 +397,8 @@ describe("ProjectWorkspace — tab switching", () => {
 
   it("switches to Validate tab showing ValidationPanel", async () => {
     render(<ProjectWorkspace />)
-    await waitFor(() => expect(screen.getByTestId("tab-validate")).toBeInTheDocument())
-    fireEvent.click(screen.getByTestId("tab-validate"))
+    await waitFor(() => expect(screen.getByText("Validate")).toBeInTheDocument())
+    fireEvent.click(screen.getByText("Validate"))
     await waitFor(() => {
       expect(screen.getByTestId("validation-panel")).toBeInTheDocument()
     })
@@ -408,8 +406,8 @@ describe("ProjectWorkspace — tab switching", () => {
 
   it("switches to Deploy tab showing DeploymentPanel", async () => {
     render(<ProjectWorkspace />)
-    await waitFor(() => expect(screen.getByTestId("tab-deploy")).toBeInTheDocument())
-    fireEvent.click(screen.getByTestId("tab-deploy"))
+    await waitFor(() => expect(screen.getByText("Deploy")).toBeInTheDocument())
+    fireEvent.click(screen.getByText("Deploy"))
     await waitFor(() => {
       expect(screen.getByTestId("deployment-panel")).toBeInTheDocument()
     })
@@ -763,7 +761,7 @@ describe("ProjectWorkspace — child panel callbacks", () => {
       expect(screen.getByText(/selected this model/i)).toBeInTheDocument()
     })
     // Validate tab should show the run ID
-    fireEvent.click(screen.getByTestId("tab-validate"))
+    fireEvent.click(screen.getByText("Validate"))
     await waitFor(() => {
       expect(screen.getByTestId("validation-panel").getAttribute("data-run")).toBe("run-1")
     })
@@ -771,9 +769,9 @@ describe("ProjectWorkspace — child panel callbacks", () => {
 
   it("onDeployed adds deployment live message to chat", async () => {
     render(<ProjectWorkspace />)
-    await waitFor(() => expect(screen.getByTestId("tab-deploy")).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText("Deploy")).toBeInTheDocument())
 
-    fireEvent.click(screen.getByTestId("tab-deploy"))
+    fireEvent.click(screen.getByText("Deploy"))
     await waitFor(() => expect(screen.getByTestId("deployment-panel")).toBeInTheDocument())
 
     fireEvent.click(screen.getByText("Trigger Deploy"))

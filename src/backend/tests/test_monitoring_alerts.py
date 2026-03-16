@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlmodel import Session, SQLModel, create_engine
+from sqlmodel import Session, SQLModel, create_engine, select
 
 import db as db_module
 
@@ -68,19 +68,15 @@ def client(tmp_path):
     SQLModel.metadata.create_all(db_module.engine)
 
     import api.data as data_module
-
     data_module.UPLOAD_DIR = tmp_path / "uploads"
 
     import api.models as models_api_module
-
     models_api_module.MODELS_DIR = tmp_path / "models"
 
     import api.deploy as deploy_module
-
     deploy_module.DEPLOY_DIR = tmp_path / "deployments"
 
     from main import app
-
     with TestClient(app) as c:
         yield c
 
@@ -306,6 +302,7 @@ class TestAlertsEndpointBasic:
 
     def test_inactive_deployments_excluded(self, deployed_project, client):
         """Inactive (undeployed) deployments should not appear in alerts."""
+        from models.deployment import Deployment
 
         project_id = deployed_project["project_id"]
         deployment_id = deployed_project["deployment_id"]
@@ -397,6 +394,7 @@ class TestChatHistoryIntent:
     def test_show_history_triggers_event(self, deployed_project, client):
         project_id = deployed_project["project_id"]
         # Train a second run so there are 2+ completed runs
+        dataset_id = deployed_project["dataset_id"]
         train_resp = client.post(
             f"/api/models/{project_id}/train",
             json={"algorithms": ["linear_regression"]},

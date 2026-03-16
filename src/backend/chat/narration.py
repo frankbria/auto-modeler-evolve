@@ -9,7 +9,6 @@ Usage:
     msg = narrate_upload("sales_q1.csv", 1200, 8, insights=[...])
     _append_bot_message(project_id, msg, session)
 """
-
 from __future__ import annotations
 
 import json
@@ -33,9 +32,7 @@ def _call_claude(prompt: str, fallback: str) -> str:
 
     This ensures narration never blocks or crashes event flows.
     """
-    if not (
-        os.environ.get("ANTHROPIC_AUTH_TOKEN") or os.environ.get("ANTHROPIC_API_KEY")
-    ):
+    if not (os.environ.get("ANTHROPIC_AUTH_TOKEN") or os.environ.get("ANTHROPIC_API_KEY")):
         return fallback
     try:
         import anthropic
@@ -54,7 +51,6 @@ def _call_claude(prompt: str, fallback: str) -> str:
 # ---------------------------------------------------------------------------
 # Upload narration
 # ---------------------------------------------------------------------------
-
 
 def narrate_upload(
     filename: str,
@@ -89,7 +85,7 @@ def narrate_upload(
 
     lines.append(
         "\nFeel free to ask me anything about the data — "
-        '"what\'s the distribution of X?", "are there any outliers?", '
+        "\"what's the distribution of X?\", \"are there any outliers?\", "
         "\"which columns have missing values?\" — or just say **'explore'** "
         "and I'll highlight the most interesting patterns."
     )
@@ -100,7 +96,6 @@ def narrate_upload(
 # ---------------------------------------------------------------------------
 # AI-powered proactive data insight (second message after upload)
 # ---------------------------------------------------------------------------
-
 
 def narrate_data_insights_ai(
     dataset_summary: str,
@@ -132,7 +127,6 @@ def narrate_data_insights_ai(
 # ---------------------------------------------------------------------------
 # Profile insight narration
 # ---------------------------------------------------------------------------
-
 
 def narrate_profile_highlights(profile: dict) -> str | None:
     """Generate a short proactive message from data profile results.
@@ -172,11 +166,7 @@ def narrate_profile_highlights(profile: dict) -> str | None:
             except (TypeError, ValueError):
                 continue
         if strongest_pair and strongest_val >= 0.7:
-            direction = (
-                "positively"
-                if float(correlations[strongest_pair]) > 0
-                else "negatively"
-            )
+            direction = "positively" if float(correlations[strongest_pair]) > 0 else "negatively"
             insights.append(
                 f"Strong correlation: {strongest_pair} columns are {direction} correlated "
                 f"(r = {strongest_val:.2f})"
@@ -190,7 +180,7 @@ def narrate_profile_highlights(profile: dict) -> str | None:
         lines.append(f"  • {insight}")
     lines.append(
         "\nWant me to dive into any of these? Or ask me a question like "
-        '"show me the distribution of [column name]".'
+        "\"show me the distribution of [column name]\"."
     )
     return "\n".join(lines)
 
@@ -198,7 +188,6 @@ def narrate_profile_highlights(profile: dict) -> str | None:
 # ---------------------------------------------------------------------------
 # Training completion narration
 # ---------------------------------------------------------------------------
-
 
 def narrate_training_complete(
     runs: list[dict],
@@ -242,9 +231,7 @@ def narrate_training_complete(
                 val_str = f"{val:.1%}" if primary == "accuracy" else f"{val:.3f}"
                 lines.append(f"Performance: {label} = {val_str}")
     else:
-        lines.append(
-            f"All {len(completed)} models finished training! Here's a quick summary:"
-        )
+        lines.append(f"All {len(completed)} models finished training! Here's a quick summary:")
         primary = "r2" if problem_type == "regression" else "accuracy"
         label = "R²" if problem_type == "regression" else "accuracy"
 
@@ -258,11 +245,7 @@ def narrate_training_complete(
             algo = run.get("algorithm", "?")
             metrics = run.get("metrics") or {}
             val = metrics.get(primary)
-            val_str = (
-                f"{val:.1%}"
-                if primary == "accuracy" and val is not None
-                else (f"{val:.3f}" if val is not None else "N/A")
-            )
+            val_str = f"{val:.1%}" if primary == "accuracy" and val is not None else (f"{val:.3f}" if val is not None else "N/A")
             marker = " 🏆" if i == 0 else ""
             lines.append(f"  • **{algo}**: {label} = {val_str}{marker}")
 
@@ -282,7 +265,6 @@ def narrate_training_complete(
 # ---------------------------------------------------------------------------
 # AI-powered training completion narration (multi-turn model trade-off reasoning)
 # ---------------------------------------------------------------------------
-
 
 def narrate_training_with_ai(
     runs: list[dict],
@@ -330,7 +312,6 @@ def narrate_training_with_ai(
 # Model selection narration
 # ---------------------------------------------------------------------------
 
-
 def narrate_model_selected(algorithm: str, metrics: dict, problem_type: str) -> str:
     """Generate a confirmation message when the user selects a model."""
     from chat.prompts import ALGORITHM_INTROS, summarise_metrics
@@ -354,7 +335,6 @@ def narrate_model_selected(algorithm: str, metrics: dict, problem_type: str) -> 
 # Deployment narration
 # ---------------------------------------------------------------------------
 
-
 def narrate_deployment(
     algorithm: str,
     dashboard_url: str,
@@ -375,7 +355,6 @@ def narrate_deployment(
 # ---------------------------------------------------------------------------
 # Shared utility: append a bot message to a project conversation
 # ---------------------------------------------------------------------------
-
 
 def append_bot_message_to_conversation(
     project_id: str,

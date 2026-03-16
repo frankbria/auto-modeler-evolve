@@ -1,5 +1,4 @@
 """Tests for Phase 7 project management features: rename, duplicate, quick stats."""
-
 import pytest
 from httpx import AsyncClient, ASGITransport
 from sqlmodel import create_engine, SQLModel
@@ -18,14 +17,10 @@ async def ac(tmp_path):
     import models.model_run  # noqa
     import models.feature_set  # noqa
     import models.deployment  # noqa
-
     SQLModel.metadata.create_all(db_module.engine)
 
     from main import app
-
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         yield client
 
 

@@ -1,13 +1,15 @@
 """Tests for the SQLite database connector endpoints.
 
-POST /api/data/upload-db   — upload a .db file, list tables
-POST /api/data/extract-db  — extract table/query as Dataset
+  POST /api/data/upload-db   — upload a .db file, list tables
+  POST /api/data/extract-db  — extract table/query as Dataset
 """
-
 import io
+import json
 import sqlite3
+import tempfile
 from pathlib import Path
 
+import pandas as pd
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlmodel import SQLModel, create_engine
@@ -31,7 +33,9 @@ def _make_sqlite_db(tmp_path: Path) -> bytes:
             ("2024-01-02", "Widget C", "West", 450.25, 4),
         ],
     )
-    conn.execute("CREATE TABLE inventory (sku TEXT, quantity INTEGER, location TEXT)")
+    conn.execute(
+        "CREATE TABLE inventory (sku TEXT, quantity INTEGER, location TEXT)"
+    )
     conn.executemany(
         "INSERT INTO inventory VALUES (?, ?, ?)",
         [("SKU-001", 100, "Warehouse A"), ("SKU-002", 50, "Warehouse B")],
@@ -54,15 +58,11 @@ async def ac(tmp_path, monkeypatch):
     SQLModel.metadata.create_all(db_module.engine)
 
     import api.data as data_module
-
     data_module.UPLOAD_DIR = tmp_path / "uploads"
     data_module._DB_UPLOADS_DIR = tmp_path / "db_uploads"
 
     from main import app
-
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         yield client
 
 
@@ -84,15 +84,14 @@ async def db_bytes(tmp_path):
 
 
 class TestUploadDb:
+
     @pytest.mark.asyncio
     async def test_upload_valid_sqlite_lists_tables(self, ac, project_id, db_bytes):
         """Uploading a valid SQLite file returns the list of tables."""
         r = await ac.post(
             "/api/data/upload-db",
             data={"project_id": project_id},
-            files={
-                "file": ("data.db", io.BytesIO(db_bytes), "application/octet-stream")
-            },
+            files={"file": ("data.db", io.BytesIO(db_bytes), "application/octet-stream")},
         )
         assert r.status_code == 201
         data = r.json()
@@ -106,9 +105,7 @@ class TestUploadDb:
         r = await ac.post(
             "/api/data/upload-db",
             data={"project_id": "nonexistent"},
-            files={
-                "file": ("data.db", io.BytesIO(db_bytes), "application/octet-stream")
-            },
+            files={"file": ("data.db", io.BytesIO(db_bytes), "application/octet-stream")},
         )
         assert r.status_code == 404
         assert "Project not found" in r.json()["detail"]
@@ -128,13 +125,7 @@ class TestUploadDb:
         r = await ac.post(
             "/api/data/upload-db",
             data={"project_id": project_id},
-            files={
-                "file": (
-                    "corrupt.db",
-                    io.BytesIO(b"not a sqlite database"),
-                    "application/octet-stream",
-                )
-            },
+            files={"file": ("corrupt.db", io.BytesIO(b"not a sqlite database"), "application/octet-stream")},
         )
         assert r.status_code == 400
         assert "valid SQLite database" in r.json()["detail"]
@@ -148,32 +139,18 @@ class TestUploadDb:
         r = await ac.post(
             "/api/data/upload-db",
             data={"project_id": project_id},
-            files={
-                "file": (
-                    "empty.db",
-                    io.BytesIO(db_path.read_bytes()),
-                    "application/octet-stream",
-                )
-            },
+            files={"file": ("empty.db", io.BytesIO(db_path.read_bytes()), "application/octet-stream")},
         )
         assert r.status_code == 400
         assert "no tables" in r.json()["detail"]
 
     @pytest.mark.asyncio
-    async def test_upload_sqlite3_extension_accepted(
-        self, ac, project_id, db_bytes, tmp_path
-    ):
+    async def test_upload_sqlite3_extension_accepted(self, ac, project_id, db_bytes, tmp_path):
         """Files with .sqlite3 extension are accepted."""
         r = await ac.post(
             "/api/data/upload-db",
             data={"project_id": project_id},
-            files={
-                "file": (
-                    "data.sqlite3",
-                    io.BytesIO(db_bytes),
-                    "application/octet-stream",
-                )
-            },
+            files={"file": ("data.sqlite3", io.BytesIO(db_bytes), "application/octet-stream")},
         )
         assert r.status_code == 201
         assert len(r.json()["tables"]) > 0
@@ -185,6 +162,7 @@ class TestUploadDb:
 
 
 class TestExtractDb:
+
     @pytest.mark.asyncio
     async def test_extract_table_creates_dataset(self, ac, project_id, db_bytes):
         """Extracting a table creates a Dataset and returns preview."""
@@ -192,9 +170,7 @@ class TestExtractDb:
         upload_r = await ac.post(
             "/api/data/upload-db",
             data={"project_id": project_id},
-            files={
-                "file": ("data.db", io.BytesIO(db_bytes), "application/octet-stream")
-            },
+            files={"file": ("data.db", io.BytesIO(db_bytes), "application/octet-stream")},
         )
         db_path = upload_r.json()["db_path"]
 
@@ -217,9 +193,7 @@ class TestExtractDb:
         upload_r = await ac.post(
             "/api/data/upload-db",
             data={"project_id": project_id},
-            files={
-                "file": ("data.db", io.BytesIO(db_bytes), "application/octet-stream")
-            },
+            files={"file": ("data.db", io.BytesIO(db_bytes), "application/octet-stream")},
         )
         db_path = upload_r.json()["db_path"]
 
@@ -242,11 +216,7 @@ class TestExtractDb:
     async def test_extract_project_not_found(self, ac, db_bytes):
         r = await ac.post(
             "/api/data/extract-db",
-            json={
-                "project_id": "bad-id",
-                "db_path": "/some/path.db",
-                "table_name": "sales",
-            },
+            json={"project_id": "bad-id", "db_path": "/some/path.db", "table_name": "sales"},
         )
         assert r.status_code == 404
         assert "Project not found" in r.json()["detail"]
@@ -270,9 +240,7 @@ class TestExtractDb:
         upload_r = await ac.post(
             "/api/data/upload-db",
             data={"project_id": project_id},
-            files={
-                "file": ("data.db", io.BytesIO(db_bytes), "application/octet-stream")
-            },
+            files={"file": ("data.db", io.BytesIO(db_bytes), "application/octet-stream")},
         )
         db_path = upload_r.json()["db_path"]
 
@@ -294,9 +262,7 @@ class TestExtractDb:
         upload_r = await ac.post(
             "/api/data/upload-db",
             data={"project_id": project_id},
-            files={
-                "file": ("data.db", io.BytesIO(db_bytes), "application/octet-stream")
-            },
+            files={"file": ("data.db", io.BytesIO(db_bytes), "application/octet-stream")},
         )
         db_path = upload_r.json()["db_path"]
 
@@ -318,9 +284,7 @@ class TestExtractDb:
         upload_r = await ac.post(
             "/api/data/upload-db",
             data={"project_id": project_id},
-            files={
-                "file": ("data.db", io.BytesIO(db_bytes), "application/octet-stream")
-            },
+            files={"file": ("data.db", io.BytesIO(db_bytes), "application/octet-stream")},
         )
         db_path = upload_r.json()["db_path"]
 
@@ -342,9 +306,7 @@ class TestExtractDb:
         upload_r = await ac.post(
             "/api/data/upload-db",
             data={"project_id": project_id},
-            files={
-                "file": ("data.db", io.BytesIO(db_bytes), "application/octet-stream")
-            },
+            files={"file": ("data.db", io.BytesIO(db_bytes), "application/octet-stream")},
         )
         db_path = upload_r.json()["db_path"]
 

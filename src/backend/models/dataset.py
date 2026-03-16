@@ -16,7 +16,7 @@ class Dataset(SQLModel, table=True):
     file_path: str
     row_count: int = 0
     column_count: int = 0
-    columns: Optional[str] = None  # JSON list of column stat dicts
-    profile: Optional[str] = None  # JSON full profiling results
+    columns: Optional[str] = None   # JSON list of column stat dicts
+    profile: Optional[str] = None   # JSON full profiling results
     uploaded_at: datetime = Field(default_factory=_utcnow)
     size_bytes: int = 0

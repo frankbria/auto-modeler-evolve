@@ -12,6 +12,7 @@ Covers:
 from __future__ import annotations
 
 import io
+import json
 import time
 
 import numpy as np
@@ -80,26 +81,20 @@ def client(tmp_path):
     import models.model_run  # noqa
     import models.deployment  # noqa
     import models.prediction_log  # noqa
-
     SQLModel.metadata.create_all(db_module.engine)
 
     import api.data as data_module
-
     data_module.UPLOAD_DIR = tmp_path / "uploads"
 
     import api.models as models_api_module
-
     models_api_module.MODELS_DIR = tmp_path / "models"
 
     from main import app
-
     with TestClient(app) as c:
         yield c
 
 
-def _setup_trained_model(
-    client, csv_bytes=SAMPLE_CSV, algorithm="random_forest_regressor", target="revenue"
-):
+def _setup_trained_model(client, csv_bytes=SAMPLE_CSV, algorithm="random_forest_regressor", target="revenue"):
     """Create project → upload → apply features → set target → train → poll done."""
     # Create project
     proj = client.post("/api/projects", json={"name": "Tune Test"}).json()
@@ -119,10 +114,7 @@ def _setup_trained_model(
     fsid = fs_r.json()["feature_set_id"]
 
     # Set target
-    client.post(
-        f"/api/features/{did}/target",
-        json={"target_column": target, "feature_set_id": fsid},
-    )
+    client.post(f"/api/features/{did}/target", json={"target_column": target, "feature_set_id": fsid})
 
     # Train
     client.post(f"/api/models/{pid}/train", json={"algorithms": [algorithm]})
@@ -142,58 +134,49 @@ def _setup_trained_model(
 # Unit tests: core/trainer.py tune helpers
 # ──────────────────────────────────────────────────────────────────────────────
 
-
 class TestGetTuningGrid:
     def test_random_forest_regressor_has_grid(self):
         from core.trainer import get_tuning_grid
-
         grid = get_tuning_grid("random_forest_regressor")
         assert grid is not None
         assert "n_estimators" in grid
 
     def test_random_forest_classifier_has_grid(self):
         from core.trainer import get_tuning_grid
-
         grid = get_tuning_grid("random_forest_classifier")
         assert grid is not None
         assert "max_depth" in grid
 
     def test_gradient_boosting_regressor_has_grid(self):
         from core.trainer import get_tuning_grid
-
         grid = get_tuning_grid("gradient_boosting_regressor")
         assert grid is not None
         assert "learning_rate" in grid
 
     def test_gradient_boosting_classifier_has_grid(self):
         from core.trainer import get_tuning_grid
-
         grid = get_tuning_grid("gradient_boosting_classifier")
         assert grid is not None
 
     def test_logistic_regression_has_grid(self):
         from core.trainer import get_tuning_grid
-
         grid = get_tuning_grid("logistic_regression")
         assert grid is not None
         assert "C" in grid
 
     def test_linear_regression_not_tunable(self):
         from core.trainer import get_tuning_grid
-
         grid = get_tuning_grid("linear_regression")
         assert grid is None
 
     def test_neural_network_not_in_grid(self):
         from core.trainer import get_tuning_grid
-
         # No grid for neural network (too slow to tune)
         grid = get_tuning_grid("neural_network_regressor")
         assert grid is None
 
     def test_unknown_algorithm_returns_none(self):
         from core.trainer import get_tuning_grid
-
         assert get_tuning_grid("nonexistent_algo") is None
 
 
@@ -203,46 +186,24 @@ class TestTuneModelUnit:
     def _get_data(self):
         import pandas as pd
         import io as _io
-
         df = pd.read_csv(_io.BytesIO(SAMPLE_CSV))
         from core.trainer import prepare_features
-
         feature_cols = [c for c in df.columns if c != "revenue"]
         X, y, _ = prepare_features(df, feature_cols, "revenue", "regression")
         return X, y
 
     def test_tune_random_forest_returns_best_params(self, tmp_path):
         from core.trainer import tune_model
-
         X, y = self._get_data()
-        result = tune_model(
-            X,
-            y,
-            "random_forest_regressor",
-            "regression",
-            tmp_path,
-            "run1",
-            n_iter=3,
-            cv=2,
-        )
+        result = tune_model(X, y, "random_forest_regressor", "regression", tmp_path, "run1", n_iter=3, cv=2)
         assert result["tunable"] is True
         assert result["best_params"] is not None
         assert isinstance(result["best_params"], dict)
 
     def test_tune_returns_valid_metrics(self, tmp_path):
         from core.trainer import tune_model
-
         X, y = self._get_data()
-        result = tune_model(
-            X,
-            y,
-            "random_forest_regressor",
-            "regression",
-            tmp_path,
-            "run2",
-            n_iter=3,
-            cv=2,
-        )
+        result = tune_model(X, y, "random_forest_regressor", "regression", tmp_path, "run2", n_iter=3, cv=2)
         metrics = result["metrics"]
         assert metrics is not None
         assert "r2" in metrics
@@ -252,68 +213,34 @@ class TestTuneModelUnit:
     def test_tune_saves_model_file(self, tmp_path):
         from core.trainer import tune_model
         import os
-
         X, y = self._get_data()
-        result = tune_model(
-            X,
-            y,
-            "random_forest_regressor",
-            "regression",
-            tmp_path,
-            "run3",
-            n_iter=3,
-            cv=2,
-        )
+        result = tune_model(X, y, "random_forest_regressor", "regression", tmp_path, "run3", n_iter=3, cv=2)
         assert result["model_path"] is not None
         assert os.path.exists(result["model_path"])
 
     def test_tune_non_tunable_algorithm(self, tmp_path):
         from core.trainer import tune_model
-
         X, y = self._get_data()
-        result = tune_model(
-            X, y, "linear_regression", "regression", tmp_path, "run4", n_iter=3, cv=2
-        )
+        result = tune_model(X, y, "linear_regression", "regression", tmp_path, "run4", n_iter=3, cv=2)
         assert result["tunable"] is False
         assert result["model_path"] is None
         assert "no hyperparameters" in result["summary"].lower()
 
     def test_tune_gradient_boosting(self, tmp_path):
         from core.trainer import tune_model
-
         X, y = self._get_data()
-        result = tune_model(
-            X,
-            y,
-            "gradient_boosting_regressor",
-            "regression",
-            tmp_path,
-            "run5",
-            n_iter=3,
-            cv=2,
-        )
+        result = tune_model(X, y, "gradient_boosting_regressor", "regression", tmp_path, "run5", n_iter=3, cv=2)
         assert result["tunable"] is True
         assert result["tuned_cv_score"] is not None
 
     def test_tune_returns_duration(self, tmp_path):
         from core.trainer import tune_model
-
         X, y = self._get_data()
-        result = tune_model(
-            X,
-            y,
-            "random_forest_regressor",
-            "regression",
-            tmp_path,
-            "run6",
-            n_iter=3,
-            cv=2,
-        )
+        result = tune_model(X, y, "random_forest_regressor", "regression", tmp_path, "run6", n_iter=3, cv=2)
         assert result["training_duration_ms"] >= 0
 
     def test_tune_invalid_algorithm_raises(self, tmp_path):
         from core.trainer import tune_model
-
         X, y = self._get_data()
         with pytest.raises(ValueError, match="Unknown algorithm"):
             tune_model(X, y, "bad_algo", "regression", tmp_path, "run7")
@@ -323,8 +250,8 @@ class TestTuneModelUnit:
 # API integration tests
 # ──────────────────────────────────────────────────────────────────────────────
 
-
 class TestTuneModelAPI:
+
     def test_tune_404_for_unknown_run(self, client):
         r = client.post("/api/models/nonexistent-run-id/tune")
         assert r.status_code == 404
@@ -339,18 +266,11 @@ class TestTuneModelAPI:
             data={"project_id": pid},
         )
         did = r.json()["dataset_id"]
-        fs = client.post(
-            f"/api/features/{did}/apply", json={"transformations": []}
-        ).json()
-        client.post(
-            f"/api/features/{did}/target",
-            json={"target_column": "revenue", "feature_set_id": fs["feature_set_id"]},
-        )
+        fs = client.post(f"/api/features/{did}/apply", json={"transformations": []}).json()
+        client.post(f"/api/features/{did}/target", json={"target_column": "revenue", "feature_set_id": fs["feature_set_id"]})
 
         # Kick off training — use the run ID before it finishes
-        t_r = client.post(
-            f"/api/models/{pid}/train", json={"algorithms": ["linear_regression"]}
-        )
+        t_r = client.post(f"/api/models/{pid}/train", json={"algorithms": ["linear_regression"]})
         run_ids = t_r.json()["model_run_ids"]
         assert len(run_ids) > 0
         # Immediately try to tune the pending run
@@ -361,9 +281,7 @@ class TestTuneModelAPI:
             assert "status" in result.json()["detail"].lower()
 
     def test_tune_regression_random_forest(self, client):
-        _, _, run_id = _setup_trained_model(
-            client, algorithm="random_forest_regressor", target="revenue"
-        )
+        _, _, run_id = _setup_trained_model(client, algorithm="random_forest_regressor", target="revenue")
         assert run_id is not None, "Training must have completed"
         r = client.post(f"/api/models/{run_id}/tune")
         assert r.status_code == 201
@@ -378,9 +296,7 @@ class TestTuneModelAPI:
         assert "r2" in body["tuned_metrics"]
 
     def test_tune_non_tunable_algorithm(self, client):
-        _, _, run_id = _setup_trained_model(
-            client, algorithm="linear_regression", target="revenue"
-        )
+        _, _, run_id = _setup_trained_model(client, algorithm="linear_regression", target="revenue")
         assert run_id is not None
         r = client.post(f"/api/models/{run_id}/tune")
         assert r.status_code == 201
@@ -429,10 +345,9 @@ class TestTuneModelAPI:
 
     def test_tune_classifier(self, client):
         _, _, run_id = _setup_trained_model(
-            client,
-            csv_bytes=CLASSIFY_CSV,
+            client, csv_bytes=CLASSIFY_CSV,
             algorithm="random_forest_classifier",
-            target="label",
+            target="label"
         )
         assert run_id is not None
         r = client.post(f"/api/models/{run_id}/tune")

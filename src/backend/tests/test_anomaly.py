@@ -1,7 +1,9 @@
 """Tests for anomaly detection: core logic + API endpoint + chat pattern."""
-
 from __future__ import annotations
 
+import json
+import re
+from pathlib import Path
 from unittest.mock import patch
 
 import numpy as np
@@ -16,7 +18,6 @@ from core.anomaly import detect_anomalies
 # Helpers
 # ---------------------------------------------------------------------------
 
-
 def _make_numeric_df(n: int = 100) -> pd.DataFrame:
     rng = np.random.default_rng(42)
     df = pd.DataFrame(
@@ -28,14 +29,13 @@ def _make_numeric_df(n: int = 100) -> pd.DataFrame:
     )
     # Inject obvious anomalies at the end
     df.loc[n - 1, "revenue"] = 50000  # extreme value
-    df.loc[n - 2, "quantity"] = -999  # impossible
+    df.loc[n - 2, "quantity"] = -999   # impossible
     return df
 
 
 # ---------------------------------------------------------------------------
 # Core: detect_anomalies
 # ---------------------------------------------------------------------------
-
 
 class TestDetectAnomaliesCore:
     def test_returns_expected_keys(self):
@@ -136,7 +136,6 @@ class TestDetectAnomaliesCore:
 # API endpoint
 # ---------------------------------------------------------------------------
 
-
 @pytest.fixture()
 def client_with_dataset(tmp_path):
     """Create a TestClient with a project + dataset pre-loaded."""
@@ -193,10 +192,10 @@ class TestAnomalyEndpoint:
     def test_400_no_numeric_features(self, client_with_dataset):
         c, pid, _ = client_with_dataset
         # Upload a text-only CSV
-        df_text = pd.DataFrame(
-            {"name": ["Alice", "Bob", "Carol"] * 20, "city": ["NY", "LA", "SF"] * 20}
-        )
+        df_text = pd.DataFrame({"name": ["Alice", "Bob", "Carol"] * 20, "city": ["NY", "LA", "SF"] * 20})
         csv_b = df_text.to_csv(index=False).encode()
+        import api.data as data_module
+        from pathlib import Path as P
         r2 = c.post(
             "/api/data/upload",
             data={"project_id": pid},
@@ -219,7 +218,6 @@ class TestAnomalyEndpoint:
 # ---------------------------------------------------------------------------
 # Chat pattern detection
 # ---------------------------------------------------------------------------
-
 
 class TestAnomalyPatternDetection:
     def test_anomaly_keyword_matches(self):
@@ -247,6 +245,4 @@ class TestAnomalyPatternDetection:
             "deploy the model",
         ]
         for phrase in phrases:
-            assert not _ANOMALY_PATTERNS.search(phrase), (
-                f"Unexpected match for: {phrase!r}"
-            )
+            assert not _ANOMALY_PATTERNS.search(phrase), f"Unexpected match for: {phrase!r}"
