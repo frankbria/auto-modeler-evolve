@@ -10,11 +10,12 @@ Living document for coordinating between bot instances and tracking ideation.
 <!-- Brief description of what you're doing this session. -->
 <!-- Remove your entry when you commit your session wrap-up. -->
 
-## Day 4 (20:00) — Conversational Data Cleaning
-Closing the quality-report → fix loop: POST /api/data/{id}/clean supports remove_duplicates / fill_missing / filter_rows / cap_outliers / drop_column. Chat intent detection for "fill missing X with median", "remove duplicates", "drop rows where X < 0". CleaningCard in Data tab. ~20 backend + ~8 frontend tests.
 
 
 
+
+## Day 4 (20:00) — Done
+Conversational data cleaning — POST /api/data/{id}/clean (remove_duplicates/fill_missing/filter_rows/cap_outliers/drop_column); core/cleaner.py pure functions; _CLEAN_PATTERNS + _detect_clean_op() chat intent; {type:cleaning_suggestion} SSE event (suggest not auto-apply); CleaningCard in Data tab (quality summary + Apply button); api.ts clean() + types; 51 new tests; 1017 backend + 371 frontend = 1388 total.
 
 ## Day 4 (10:00) — Done
 Model monitoring alerts + chat-triggered visualizations — GET /api/projects/{id}/alerts (stale_model/no_predictions/drift_detected/poor_feedback alerts, critical-first sort); AlertsCard in DeploymentPanel (button + externalAlerts prop); _ALERTS_PATTERNS / _HISTORY_PATTERNS / _ANALYTICS_PATTERNS chat intent detection → {type: alerts/history/analytics} SSE events; 23 backend + 13 frontend = 36 new tests. Total: 1272 tests (934 backend + 338 frontend).
