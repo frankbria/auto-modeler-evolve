@@ -428,6 +428,16 @@ guides them forward through the natural flow.
       features, and guided conversation flows.
       *Day 3 (04:31): 3 templates (sales_forecast/customer_churn/demand_forecast) with GET /api/templates, GET /api/templates/{id}, POST /api/templates/{id}/apply. Each template ships with sample CSV (200/300/250 rows), pre-configured target column + problem type, suggested algorithms, and a conversation starter message. 20 tests, all pass.*
 
+- [x] **Workflow progress stepper** — Visual 4-step indicator (Upload → Train → Validate → Deploy)
+      showing completion status derived from existing React state. Rendered above the right-panel
+      tab bar once data is uploaded; each step is clickable to jump to the relevant tab; active
+      step highlighted in primary color, completed steps show checkmark. `hasDeployment` state
+      tracks deployment dynamically (seeded from project.has_deployment, updated via onDeployed).
+      Tab buttons given `data-testid="tab-{name}"` for reliable test targeting.
+      *Day 5 (04:00): 10 new frontend tests. Total: 381 frontend + 1017 backend = 1398.*
+      Also: auto-fixed 149 ruff lint errors (F401/F841/E401/F541) across backend test files and
+      API modules; fixed jest.config.js ESLint error.
+
 #### Track C — Coordination
 
 - [x] **Update BACKLOG.md** — Before starting work, check BACKLOG.md for what the other

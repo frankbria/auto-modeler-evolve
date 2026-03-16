@@ -1,5 +1,13 @@
 # Journal
 
+## Day 5 — 04:00 — Workflow Progress Stepper + Lint Hardening (1017 backend + 381 frontend = 1398 tests)
+
+Day 5 began with a full state check: 14/15 demo steps pass (NL query fails without an API key — expected), the frontend builds cleanly, and all 371 existing frontend tests passed. Two pre-existing issues were identified and fixed: (1) `jest.config.js` had a hard lint error (`@typescript-eslint/no-require-imports`) because `nextJest = require(...)` triggered the rule — resolved with a targeted ESLint disable comment; (2) the backend had 154 ruff lint violations (F401/F841/E401/F541/E701 — all pre-existing, from sessions that ran ruff without `--extra dev`) — `ruff --fix` resolved 149 automatically, leaving 45 non-fixable E741 ambiguous variable names and F841 assignments in test files.
+
+The main feature this session: **WorkflowProgress stepper** — a 4-step horizontal indicator (Upload → Train → Validate → Deploy) at the top of the right panel showing exactly where the user is in the modeling workflow. Each step computes its status (`done/active/pending`) from already-available React state: `!!currentDataset` for Upload, `!!selectedModelRunId` for Train, `!!selectedModelRunId && !hasDeployment` for Validate, and a new `hasDeployment` state (seeded from `project.has_deployment` on load, set to `true` in the `onDeployed` callback) for Deploy. Completed steps show a checkmark and are clickable; the active step is highlighted in the primary color; pending steps are dimmed and disabled. This directly implements the "Progressive disclosure" vision principle — a non-technical analyst can now see at a glance that they've uploaded data and trained a model, and that their next action is to validate it, without having to ask the AI.
+
+The stepper also exposed a test fragility: the workspace tests used `getByText("Validate")` and `getByText("Deploy")` which became ambiguous once those labels appeared in both the tab bar and the stepper. Fixed by adding `data-testid="tab-{name}"` to all tab bar buttons and updating 6 test assertions to use testid selectors — a better practice regardless. **10 new frontend tests for WorkflowProgress. Total: 381 frontend + 1017 backend = 1398 tests, all passing.**
+
 ## Day 4 — 20:00 — Conversational Data Cleaning (1017 backend + 371 frontend = 1388 tests)
 
 The platform could detect data quality issues (missing values, duplicates, outliers) via the data profile and quality report, but had no way for users to fix them through chat — breaking the "Explore → Shape" loop and forcing analysts to leave the conversation to clean their data. This session closes that gap with **conversational data cleaning**: five cleaning operations fully accessible through natural language.
