@@ -361,6 +361,16 @@ guides them forward through the natural flow.
       generate_suggestions() in orchestrator.py independently testable. Directly implements the "smart colleague"
       vision principle for non-technical users who don't know what to ask.
       *Day 4 (20:03): included in 22 tests above.*
+- [x] **Conversational data cleaning** — Users can say "fill missing revenue with median", "remove duplicate rows",
+      "drop rows where quantity < 0", "cap outliers in sales at 99%", or "drop column X" and the dataset is
+      updated in-place (CSV rewritten, profile recomputed, Dataset record updated). core/cleaner.py provides five
+      pure-function operations: remove_duplicates, fill_missing (mean/median/mode/zero/value), filter_rows
+      (gt/lt/eq/ne/gte/lte/contains/notcontains), cap_outliers (percentile clip), drop_column. Chat detects
+      cleaning intent via _CLEAN_PATTERNS regex + _detect_clean_op() param extractor → emits {type: cleaning_suggestion}
+      SSE event (suggested_operation + quality_summary). Upholds "explain before executing" vision principle:
+      operation is SUGGESTED not auto-applied; CleaningCard in Data tab shows quality summary, suggested op
+      description, and a one-click Apply button. api.ts clean() + CleaningSuggestion/CleanResult types.
+      *Day 4 (20:00): 39 backend + 12 frontend = 51 new tests. Total: 1017 backend + 371 frontend = 1388.*
 - [x] **Model monitoring alerts + chat-triggered visualizations** — Proactive system-wide health alerts:
       GET /api/projects/{id}/alerts scans all active deployments for four alert types: stale_model
       (>60 days=warning, >90=critical), no_predictions (deployed >1 day with 0 requests), drift_detected
