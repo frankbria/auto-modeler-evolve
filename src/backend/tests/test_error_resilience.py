@@ -17,14 +17,12 @@ Scenarios covered:
 - Profile/preview when file has been deleted from disk
 """
 
-import io
-import json
 import os
 
 import pandas as pd
 import pytest
 from httpx import AsyncClient, ASGITransport
-from sqlmodel import Session, SQLModel, create_engine
+from sqlmodel import SQLModel, create_engine
 
 TEST_DATABASE_URL = "sqlite:///./test_resilience.db"
 
@@ -197,7 +195,6 @@ class TestAnalyzerEdgeCases:
 
     def test_profile_with_special_float_values(self):
         """NaN and inf in numeric columns should not break profiling."""
-        import numpy as np
         from core.analyzer import compute_full_profile
         df = pd.DataFrame({"val": [1.0, float("nan"), 3.0, float("inf"), -float("inf")]})
         # Should not raise

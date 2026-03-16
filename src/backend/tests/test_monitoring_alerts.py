@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlmodel import Session, SQLModel, create_engine, select
+from sqlmodel import Session, SQLModel, create_engine
 
 import db as db_module
 
@@ -302,7 +302,6 @@ class TestAlertsEndpointBasic:
 
     def test_inactive_deployments_excluded(self, deployed_project, client):
         """Inactive (undeployed) deployments should not appear in alerts."""
-        from models.deployment import Deployment
 
         project_id = deployed_project["project_id"]
         deployment_id = deployed_project["deployment_id"]

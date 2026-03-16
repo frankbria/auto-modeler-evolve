@@ -15,7 +15,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlmodel import SQLModel, Session, create_engine
+from sqlmodel import SQLModel, create_engine
 
 import db as db_module
 

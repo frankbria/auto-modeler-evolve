@@ -635,7 +635,6 @@ def send_message(
     alerts_data: dict | None = None
     if _ALERTS_PATTERNS.search(body.message):
         try:
-            from datetime import UTC as _UTC
 
             active_deployments = list(
                 session.exec(
@@ -773,7 +772,6 @@ def send_message(
     if _ANOMALY_PATTERNS.search(body.message) and ctx["dataset"]:
         try:
             from core.anomaly import detect_anomalies as _detect
-            import json as _json
             _ds = ctx["dataset"]
             _file_path = Path(_ds.file_path)
             if _file_path.exists():

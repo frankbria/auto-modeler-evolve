@@ -20,6 +20,7 @@ import { ValidationPanel } from "@/components/validation/validation-panel"
 import { DeploymentPanel } from "@/components/deploy/deployment-panel"
 import { AnomalyCard } from "@/components/data/anomaly-card"
 import { CleaningCard } from "@/components/data/cleaning-card"
+import { WorkflowProgress } from "@/components/ui/workflow-progress"
 import { api } from "@/lib/api"
 import { useAppStore } from "@/lib/store"
 import type {
@@ -112,6 +113,9 @@ export default function ProjectWorkspace() {
   // Cleaning suggestion (populated via SSE when user asks about cleaning in chat)
   const [cleaningSuggestion, setCleaningSuggestion] = useState<CleaningSuggestion | null>(null)
 
+  // Workflow progress state — updated dynamically as user completes each stage
+  const [hasDeployment, setHasDeployment] = useState(false)
+
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -122,6 +126,7 @@ export default function ProjectWorkspace() {
           api.chat.history(projectId),
         ])
         setCurrentProject(project)
+        setHasDeployment(project.has_deployment ?? false)
 
         // Restore dataset state when navigating back to an existing project
         if (project.dataset_id) {
@@ -564,6 +569,14 @@ export default function ProjectWorkspace() {
             w-full md:w-3/5`}>
             {currentDataset ? (
               <>
+                {/* Workflow Progress Stepper */}
+                <WorkflowProgress
+                  hasDataset={!!currentDataset}
+                  hasSelectedModel={!!selectedModelRunId}
+                  hasDeployment={hasDeployment}
+                  onStepClick={(tab) => setActiveTab(tab as RightTab)}
+                />
+
                 {/* Tab Bar */}
                 <div className="flex border-b overflow-x-auto">
                   {(["data", "features", "importance", "models", "validate", "deploy"] as RightTab[]).map((tab) => {
@@ -579,6 +592,7 @@ export default function ProjectWorkspace() {
                       <button
                         key={tab}
                         onClick={() => setActiveTab(tab)}
+                        data-testid={`tab-${tab}`}
                         className={`shrink-0 px-4 py-2.5 text-xs font-medium capitalize transition-colors ${
                           activeTab === tab
                             ? "border-b-2 border-primary text-foreground"
@@ -737,6 +751,7 @@ export default function ProjectWorkspace() {
                         selectedRunId={selectedModelRunId}
                         algorithmName={selectedModelAlgorithm}
                         onDeployed={(dep) => {
+                          setHasDeployment(true)
                           addMessage({
                             role: "assistant",
                             content: `Your model is live! Share this link with anyone: ${dep.dashboard_url}\n\nThey can fill in values and get instant predictions — no code required. Developers can also use the API endpoint directly: POST ${dep.endpoint_path}`,

@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import io
 import time
-from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient

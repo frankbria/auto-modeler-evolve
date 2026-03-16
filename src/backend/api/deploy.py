@@ -25,7 +25,6 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
-import db as _db
 from core.deployer import (
     build_prediction_pipeline,
     explain_prediction,
@@ -132,8 +131,8 @@ def deploy_model(
     deployment = Deployment(
         model_run_id=model_run_id,
         project_id=run.project_id,
-        endpoint_path=f"/api/predict/{{id}}",  # filled at serve time
-        dashboard_url=f"/predict/{{id}}",
+        endpoint_path="/api/predict/{id}",  # filled at serve time
+        dashboard_url="/predict/{id}",
         pipeline_path=str(pipeline_path),
         algorithm=run.algorithm,
         problem_type=problem_type,

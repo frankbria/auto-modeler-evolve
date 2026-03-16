@@ -1,5 +1,4 @@
 """Tests for chat/prompts.py — algorithm intros, metric glossary, and prompt builders."""
-import pytest
 
 
 class TestAlgorithmIntros:

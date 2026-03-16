@@ -1,6 +1,5 @@
 """Tests for the enhanced data profiling and analysis features."""
 
-import io
 import json
 import pytest
 import pandas as pd
@@ -12,14 +11,12 @@ from core.analyzer import (
     _detect_outliers,
     _numeric_distribution,
     _categorical_distribution,
-    _detect_patterns,
     _looks_like_date,
 )
 from core.chart_builder import (
     build_bar_chart,
     build_line_chart,
     build_histogram,
-    build_scatter_chart,
     build_pie_chart,
     chart_from_query_result,
 )

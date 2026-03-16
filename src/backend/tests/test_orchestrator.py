@@ -1,6 +1,5 @@
 """Tests for chat orchestrator — state detection and system prompt generation."""
 
-import pytest
 from unittest.mock import MagicMock
 
 

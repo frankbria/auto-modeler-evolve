@@ -7,11 +7,7 @@ Covers:
 - 400 for non-done run
 """
 
-import json
 import os
-import shutil
-import tempfile
-from pathlib import Path
 
 import pytest
 from httpx import AsyncClient, ASGITransport
@@ -168,7 +164,6 @@ async def test_report_endpoint_404_unknown_run(client):
 @pytest.mark.asyncio
 async def test_report_endpoint_400_pending_run(client, tmp_path):
     """A run that hasn't finished training should return 400."""
-    from sqlmodel import Session
     import db
     from models.model_run import ModelRun
 

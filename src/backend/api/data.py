@@ -18,7 +18,7 @@ from chat.narration import (
     narrate_data_insights_ai,
     narrate_upload,
 )
-from core.analyzer import analyze_dataframe, compute_full_profile, detect_time_columns
+from core.analyzer import compute_full_profile, detect_time_columns
 from core.anomaly import detect_anomalies
 from core.cleaner import (
     cap_outliers,

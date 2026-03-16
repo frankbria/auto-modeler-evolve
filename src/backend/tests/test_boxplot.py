@@ -9,7 +9,7 @@ Tests cover:
 import io
 import pytest
 from httpx import ASGITransport, AsyncClient
-from sqlmodel import Session, SQLModel, create_engine
+from sqlmodel import SQLModel, create_engine
 
 import db as db_module
 

@@ -2,12 +2,10 @@
 
 import io
 import json
-import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import numpy as np
-import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import SQLModel, create_engine
@@ -407,7 +405,6 @@ class TestChatTuneIntent:
     def _setup_trained_project(self, client, tmp_path):
         from sqlmodel import Session
         from models.model_run import ModelRun
-        from models.feature_set import FeatureSet
 
         r = client.post("/api/projects", json={"name": "Chat Tune Test"})
         project_id = r.json()["id"]

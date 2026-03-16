@@ -11,7 +11,6 @@ Each template ships with sample data and a guided conversation starter.
 from __future__ import annotations
 
 import shutil
-import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 

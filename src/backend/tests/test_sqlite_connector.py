@@ -4,12 +4,9 @@
   POST /api/data/extract-db  — extract table/query as Dataset
 """
 import io
-import json
 import sqlite3
-import tempfile
 from pathlib import Path
 
-import pandas as pd
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlmodel import SQLModel, create_engine

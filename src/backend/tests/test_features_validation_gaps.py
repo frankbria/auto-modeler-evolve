@@ -6,11 +6,10 @@
 import io
 import json
 import asyncio
-from pathlib import Path
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-from sqlmodel import Session, SQLModel, create_engine, select
+from sqlmodel import Session, SQLModel, create_engine
 
 import db as db_module
 

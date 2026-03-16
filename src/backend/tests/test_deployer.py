@@ -1,7 +1,6 @@
 """Tests for core/deployer.py and /api/deploy/* + /api/predict/* endpoints — Phase 6."""
 
 import io
-import json
 import time
 
 import numpy as np

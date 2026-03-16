@@ -317,7 +317,6 @@ class TestChatAPI:
 
     @pytest.fixture
     async def client(self, tmp_path, monkeypatch):
-        import os
         import db as db_module
         from sqlmodel import create_engine, SQLModel
 
@@ -458,7 +457,6 @@ class TestTrainerEdgePaths:
 
     def test_train_single_model_unknown_algorithm_raises(self, tmp_path):
         from core.trainer import train_single_model
-        import numpy as np
         X = np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
         y = np.array([10.0, 20.0, 30.0])
         with pytest.raises(ValueError, match="Unknown algorithm"):
@@ -485,7 +483,6 @@ class TestTrainerEdgePaths:
     def test_train_few_rows_uses_same_data_for_train_eval(self, tmp_path):
         """With fewer than 10 rows, train/eval on same data (no split)."""
         from core.trainer import train_single_model
-        import numpy as np
         X = np.array([[1.0], [2.0], [3.0], [4.0], [5.0]])
         y = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
         result = train_single_model(X, y, "linear_regression", "regression", tmp_path, "run_small")

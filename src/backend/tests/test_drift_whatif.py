@@ -4,7 +4,6 @@ import io
 import json
 import time
 from unittest.mock import MagicMock, patch
-from datetime import UTC, datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient

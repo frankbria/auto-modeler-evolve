@@ -10,13 +10,11 @@ Both regression and classification paths are exercised.
 from __future__ import annotations
 
 import io
-import json
 import time
 
-import numpy as np
 import pytest
 from fastapi.testclient import TestClient
-from sqlmodel import SQLModel, Session, create_engine, select
+from sqlmodel import SQLModel, create_engine
 
 import db as db_module
 
