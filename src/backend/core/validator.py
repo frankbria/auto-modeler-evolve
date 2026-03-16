@@ -262,10 +262,7 @@ def assess_confidence_limitations(
     return {
         "overall_confidence": confidence,
         "limitations": limitations,
-        "summary": (
-            f"Overall confidence: {confidence.upper()}. "
-            + limitations[0]
-        ),
+        "summary": (f"Overall confidence: {confidence.upper()}. " + limitations[0]),
     }
 
 

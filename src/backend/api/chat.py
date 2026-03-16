@@ -120,9 +120,19 @@ _DROP_COL_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
-_OP_MAP = {"is": "eq", "equals": "eq", "equal": "eq", ">": "gt", "<": "lt",
-           ">=": "gte", "<=": "lte", "!=": "ne", "not": "ne",
-           "greater than": "gt", "less than": "lt"}
+_OP_MAP = {
+    "is": "eq",
+    "equals": "eq",
+    "equal": "eq",
+    ">": "gt",
+    "<": "lt",
+    ">=": "gte",
+    "<=": "lte",
+    "!=": "ne",
+    "not": "ne",
+    "greater than": "gt",
+    "less than": "lt",
+}
 
 
 def _detect_clean_op(message: str, columns: list[str]) -> dict | None:
@@ -140,7 +150,12 @@ def _detect_clean_op(message: str, columns: list[str]) -> dict | None:
         col = next((c for c in columns if c.lower() == col_raw.lower()), col_raw)
         try:
             val = float(strat)
-            return {"operation": "fill_missing", "column": col, "strategy": "value", "fill_value": val}
+            return {
+                "operation": "fill_missing",
+                "column": col,
+                "strategy": "value",
+                "fill_value": val,
+            }
         except ValueError:
             pass
         if strat in ("mean", "median", "mode", "zero"):
@@ -160,7 +175,12 @@ def _detect_clean_op(message: str, columns: list[str]) -> dict | None:
             val: float | str = float(val_raw)
         except ValueError:
             val = val_raw
-        return {"operation": "filter_rows", "column": col, "operator": operator, "value": val}
+        return {
+            "operation": "filter_rows",
+            "column": col,
+            "operator": operator,
+            "value": val,
+        }
 
     # cap_outliers: "cap outliers in sales" / "cap revenue outliers at 99%"
     m = _CAP_COL_PATTERN.search(message)
@@ -202,12 +222,16 @@ def _utcnow() -> datetime:
     return datetime.now(UTC).replace(tzinfo=None)
 
 
-def _compute_readiness(run: ModelRun, dataset: Dataset | None, feature_set: FeatureSet | None) -> dict:
+def _compute_readiness(
+    run: ModelRun, dataset: Dataset | None, feature_set: FeatureSet | None
+) -> dict:
     """Inline model readiness calculation (same logic as /api/models/{id}/readiness)."""
     metrics = json.loads(run.metrics) if run.metrics else {}
     problem_type = (feature_set.problem_type if feature_set else None) or "regression"
     row_count = dataset.row_count if dataset else 0
-    feature_count = len(json.loads(feature_set.column_mapping or "{}")) if feature_set else 0
+    feature_count = (
+        len(json.loads(feature_set.column_mapping or "{}")) if feature_set else 0
+    )
 
     checks: list[dict] = []
     total_points = 0
@@ -216,13 +240,27 @@ def _compute_readiness(run: ModelRun, dataset: Dataset | None, feature_set: Feat
     # Training complete
     total_points += 10
     earned_points += 10
-    checks.append({"id": "training_complete", "label": "Training completed", "passed": True, "weight": 10})
+    checks.append(
+        {
+            "id": "training_complete",
+            "label": "Training completed",
+            "passed": True,
+            "weight": 10,
+        }
+    )
 
     # Sufficient data
     total_points += 20
     data_ok = row_count >= 100
     earned_points += 20 if data_ok else (10 if row_count >= 50 else 0)
-    checks.append({"id": "sufficient_data", "label": f"Sufficient data ({row_count} rows)", "passed": data_ok, "weight": 20})
+    checks.append(
+        {
+            "id": "sufficient_data",
+            "label": f"Sufficient data ({row_count} rows)",
+            "passed": data_ok,
+            "weight": 20,
+        }
+    )
 
     # Accuracy
     total_points += 30
@@ -230,18 +268,39 @@ def _compute_readiness(run: ModelRun, dataset: Dataset | None, feature_set: Feat
         r2 = metrics.get("r2", 0.0)
         perf_ok = r2 >= 0.7
         earned_points += 30 if perf_ok else (15 if r2 >= 0.5 else 0)
-        checks.append({"id": "accuracy", "label": f"R² = {r2:.3f} (threshold: 0.70)", "passed": perf_ok, "weight": 30})
+        checks.append(
+            {
+                "id": "accuracy",
+                "label": f"R² = {r2:.3f} (threshold: 0.70)",
+                "passed": perf_ok,
+                "weight": 30,
+            }
+        )
     else:
         acc = metrics.get("accuracy", 0.0)
         perf_ok = acc >= 0.8
         earned_points += 30 if perf_ok else (15 if acc >= 0.65 else 0)
-        checks.append({"id": "accuracy", "label": f"Accuracy = {acc:.1%} (threshold: 80%)", "passed": perf_ok, "weight": 30})
+        checks.append(
+            {
+                "id": "accuracy",
+                "label": f"Accuracy = {acc:.1%} (threshold: 80%)",
+                "passed": perf_ok,
+                "weight": 30,
+            }
+        )
 
     # Features
     total_points += 15
     has_features = feature_count > 1
     earned_points += 15 if has_features else 5
-    checks.append({"id": "features", "label": f"{feature_count} features used", "passed": has_features, "weight": 15})
+    checks.append(
+        {
+            "id": "features",
+            "label": f"{feature_count} features used",
+            "passed": has_features,
+            "weight": 15,
+        }
+    )
 
     # Data quality
     total_points += 15
@@ -249,15 +308,31 @@ def _compute_readiness(run: ModelRun, dataset: Dataset | None, feature_set: Feat
     missing_pct = profile.get("missing_percentage", 0.0)
     dq_ok = missing_pct < 10.0
     earned_points += 15 if dq_ok else (8 if missing_pct < 30.0 else 0)
-    checks.append({"id": "data_quality", "label": f"Data quality ({missing_pct:.1f}% missing)", "passed": dq_ok, "weight": 15})
+    checks.append(
+        {
+            "id": "data_quality",
+            "label": f"Data quality ({missing_pct:.1f}% missing)",
+            "passed": dq_ok,
+            "weight": 15,
+        }
+    )
 
     # Selected
     total_points += 10
     earned_points += 10 if run.is_selected else 0
-    checks.append({"id": "selected", "label": "Marked as preferred model", "passed": run.is_selected, "weight": 10})
+    checks.append(
+        {
+            "id": "selected",
+            "label": "Marked as preferred model",
+            "passed": run.is_selected,
+            "weight": 10,
+        }
+    )
 
     score = round((earned_points / total_points) * 100) if total_points > 0 else 0
-    verdict = "ready" if score >= 85 else ("needs_attention" if score >= 60 else "not_ready")
+    verdict = (
+        "ready" if score >= 85 else ("needs_attention" if score >= 60 else "not_ready")
+    )
 
     return {
         "model_run_id": run.id,
@@ -291,22 +366,34 @@ def _compute_drift(deployment: Deployment, logs: list) -> dict:
     problem_type = deployment.problem_type or "regression"
 
     if problem_type == "regression":
-        b_vals = [l.prediction_numeric for l in baseline if l.prediction_numeric is not None]
-        r_vals = [l.prediction_numeric for l in recent if l.prediction_numeric is not None]
+        b_vals = [
+            l.prediction_numeric for l in baseline if l.prediction_numeric is not None
+        ]
+        r_vals = [
+            l.prediction_numeric for l in recent if l.prediction_numeric is not None
+        ]
         if not b_vals or not r_vals:
-            return {"deployment_id": deployment.id, "status": "insufficient_data",
-                    "drift_score": None, "explanation": "No numeric values.", "problem_type": problem_type}
+            return {
+                "deployment_id": deployment.id,
+                "status": "insufficient_data",
+                "drift_score": None,
+                "explanation": "No numeric values.",
+                "problem_type": problem_type,
+            }
         b_mean = sum(b_vals) / len(b_vals)
         r_mean = sum(r_vals) / len(r_vals)
         b_std = (sum((v - b_mean) ** 2 for v in b_vals) / len(b_vals)) ** 0.5
         z = abs(r_mean - b_mean) / (b_std + 1e-9)
         drift_score = min(100, int(z * 33))
-        status = "stable" if z < 1.0 else ("mild_drift" if z < 2.0 else "significant_drift")
+        status = (
+            "stable" if z < 1.0 else ("mild_drift" if z < 2.0 else "significant_drift")
+        )
         explanation = (
             f"Prediction mean shifted from {b_mean:.3f} to {r_mean:.3f} "
             f"(z={z:.1f}). Status: {status.replace('_', ' ')}."
         )
     else:
+
         def _dist(ls: list) -> dict[str, float]:
             counts: dict[str, int] = {}
             for l in ls:
@@ -317,13 +404,20 @@ def _compute_drift(deployment: Deployment, logs: list) -> dict:
                 counts[label] = counts.get(label, 0) + 1
             total = sum(counts.values()) or 1
             return {k: v / total for k, v in counts.items()}
+
         b_dist = _dist(baseline)
         r_dist = _dist(recent)
         all_classes = set(b_dist) | set(r_dist)
         tvd = sum(abs(r_dist.get(c, 0) - b_dist.get(c, 0)) for c in all_classes) / 2
         drift_score = min(100, int(tvd * 200))
-        status = "stable" if tvd < 0.1 else ("mild_drift" if tvd < 0.25 else "significant_drift")
-        explanation = f"Class distribution TVD={tvd:.2f}. Status: {status.replace('_', ' ')}."
+        status = (
+            "stable"
+            if tvd < 0.1
+            else ("mild_drift" if tvd < 0.25 else "significant_drift")
+        )
+        explanation = (
+            f"Class distribution TVD={tvd:.2f}. Status: {status.replace('_', ' ')}."
+        )
 
     return {
         "deployment_id": deployment.id,
@@ -334,7 +428,9 @@ def _compute_drift(deployment: Deployment, logs: list) -> dict:
     }
 
 
-def _compute_health(deployment: Deployment, run: ModelRun, feedback_records: list, all_logs: list) -> dict:
+def _compute_health(
+    deployment: Deployment, run: ModelRun, feedback_records: list, all_logs: list
+) -> dict:
     """Compute model health inline (same logic as GET /api/deploy/{id}/health).
 
     Returns health_score 0-100, status, and a human-readable summary suitable
@@ -348,7 +444,11 @@ def _compute_health(deployment: Deployment, run: ModelRun, feedback_records: lis
     if run and run.created_at:
         now = datetime.now(UTC).replace(tzinfo=None)
         age_days = max(0, (now - run.created_at).days)
-        age_score = 100 if age_days <= 30 else (75 if age_days <= 60 else (50 if age_days <= 90 else 25))
+        age_score = (
+            100
+            if age_days <= 30
+            else (75 if age_days <= 60 else (50 if age_days <= 90 else 25))
+        )
 
     # Feedback
     feedback_score = 100
@@ -371,7 +471,11 @@ def _compute_health(deployment: Deployment, run: ModelRun, feedback_records: lis
             rated = [fb for fb in feedback_records if fb.is_correct is not None]
             if rated:
                 accuracy = sum(1 for fb in rated if fb.is_correct) / len(rated)
-                feedback_score = 100 if accuracy >= 0.9 else (75 if accuracy >= 0.75 else (50 if accuracy >= 0.6 else 20))
+                feedback_score = (
+                    100
+                    if accuracy >= 0.9
+                    else (75 if accuracy >= 0.75 else (50 if accuracy >= 0.6 else 20))
+                )
                 feedback_note = f"{accuracy:.1%} real-world accuracy from {len(rated)} feedback records"
 
     # Drift
@@ -384,8 +488,16 @@ def _compute_health(deployment: Deployment, run: ModelRun, feedback_records: lis
         recent_logs = logs_sorted[-window:]
         problem_type = deployment.problem_type or "regression"
         if problem_type == "regression":
-            b_vals = [l.prediction_numeric for l in baseline_logs if l.prediction_numeric is not None]
-            r_vals = [l.prediction_numeric for l in recent_logs if l.prediction_numeric is not None]
+            b_vals = [
+                l.prediction_numeric
+                for l in baseline_logs
+                if l.prediction_numeric is not None
+            ]
+            r_vals = [
+                l.prediction_numeric
+                for l in recent_logs
+                if l.prediction_numeric is not None
+            ]
             if b_vals and r_vals:
                 b_mean = sum(b_vals) / len(b_vals)
                 r_mean = sum(r_vals) / len(r_vals)
@@ -393,17 +505,26 @@ def _compute_health(deployment: Deployment, run: ModelRun, feedback_records: lis
                 z = abs(r_mean - b_mean) / (b_std + 1e-9)
                 drift_health_score = 100 if z < 1.0 else (60 if z < 2.0 else 25)
         else:
-            b_preds = [str(json.loads(l.prediction)) for l in baseline_logs if l.prediction]
-            r_preds = [str(json.loads(l.prediction)) for l in recent_logs if l.prediction]
+            b_preds = [
+                str(json.loads(l.prediction)) for l in baseline_logs if l.prediction
+            ]
+            r_preds = [
+                str(json.loads(l.prediction)) for l in recent_logs if l.prediction
+            ]
             all_classes = set(b_preds + r_preds)
             if all_classes:
                 b_n, r_n = len(b_preds) or 1, len(r_preds) or 1
-                tvd = 0.5 * sum(abs(b_preds.count(c) / b_n - r_preds.count(c) / r_n) for c in all_classes)
+                tvd = 0.5 * sum(
+                    abs(b_preds.count(c) / b_n - r_preds.count(c) / r_n)
+                    for c in all_classes
+                )
                 drift_health_score = 100 if tvd < 0.1 else (60 if tvd < 0.25 else 25)
 
     # Composite
     if has_feedback and has_drift_data:
-        health_score = int(feedback_score * 0.4 + drift_health_score * 0.35 + age_score * 0.25)
+        health_score = int(
+            feedback_score * 0.4 + drift_health_score * 0.35 + age_score * 0.25
+        )
     elif has_feedback:
         health_score = int(feedback_score * 0.55 + age_score * 0.45)
     elif has_drift_data:
@@ -411,7 +532,11 @@ def _compute_health(deployment: Deployment, run: ModelRun, feedback_records: lis
     else:
         health_score = age_score
 
-    status = "healthy" if health_score >= 75 else ("warning" if health_score >= 50 else "critical")
+    status = (
+        "healthy"
+        if health_score >= 75
+        else ("warning" if health_score >= 50 else "critical")
+    )
 
     return {
         "deployment_id": deployment.id,
@@ -441,9 +566,7 @@ def _load_project_context(project_id: str, session: Session) -> dict:
         ).first()
 
     model_runs = list(
-        session.exec(
-            select(ModelRun).where(ModelRun.project_id == project_id)
-        ).all()
+        session.exec(select(ModelRun).where(ModelRun.project_id == project_id)).all()
     )
 
     # Latest active deployment
@@ -506,16 +629,16 @@ def send_message(
         recent_messages=recent_for_context if recent_for_context else None,
     )
 
-    api_messages = [
-        {"role": m["role"], "content": m["content"]} for m in messages
-    ]
+    api_messages = [{"role": m["role"], "content": m["content"]} for m in messages]
 
     client = anthropic.Anthropic()
 
     # Capture dataset info for post-stream chart generation
     dataset = ctx["dataset"]
     dataset_file_path: str | None = dataset.file_path if dataset else None
-    column_info: list = json.loads(dataset.columns) if (dataset and dataset.columns) else []
+    column_info: list = (
+        json.loads(dataset.columns) if (dataset and dataset.columns) else []
+    )
 
     # Check if this is a readiness-related question
     readiness_data: dict | None = None
@@ -525,7 +648,9 @@ def send_message(
         target_run = selected_run or (completed_runs[-1] if completed_runs else None)
         if target_run:
             try:
-                readiness_data = _compute_readiness(target_run, ctx["dataset"], ctx["feature_set"])
+                readiness_data = _compute_readiness(
+                    target_run, ctx["dataset"], ctx["feature_set"]
+                )
                 # Inject readiness summary into system prompt so Claude can incorporate it
                 score = readiness_data["score"]
                 verdict = readiness_data["verdict"]
@@ -549,11 +674,14 @@ def send_message(
         target_run = selected_run or (completed_runs[-1] if completed_runs else None)
         if target_run:
             from core.tuner import is_tunable as _is_tunable
+
             if _is_tunable(target_run.algorithm):
                 tune_data = {
                     "model_run_id": target_run.id,
                     "algorithm": target_run.algorithm,
-                    "metrics": json.loads(target_run.metrics) if target_run.metrics else {},
+                    "metrics": json.loads(target_run.metrics)
+                    if target_run.metrics
+                    else {},
                 }
                 system_prompt += (
                     f"\n\n## Hyperparameter Tuning Available\n"
@@ -572,10 +700,12 @@ def send_message(
         try:
             deployment = ctx["deployment"]
             run_for_health = next(
-                (mr for mr in ctx["model_runs"] if mr.id == deployment.model_run_id), None
+                (mr for mr in ctx["model_runs"] if mr.id == deployment.model_run_id),
+                None,
             )
             if run_for_health:
                 from models.feedback_record import FeedbackRecord
+
                 fb_records = list(
                     session.exec(
                         select(FeedbackRecord).where(
@@ -590,7 +720,9 @@ def send_message(
                         )
                     ).all()
                 )
-                health_data = _compute_health(deployment, run_for_health, fb_records, logs_for_health)
+                health_data = _compute_health(
+                    deployment, run_for_health, fb_records, logs_for_health
+                )
                 score = health_data["health_score"]
                 health_status = health_data["status"]
                 system_prompt += (
@@ -635,7 +767,6 @@ def send_message(
     alerts_data: dict | None = None
     if _ALERTS_PATTERNS.search(body.message):
         try:
-
             active_deployments = list(
                 session.exec(
                     select(Deployment).where(
@@ -654,34 +785,46 @@ def send_message(
                 if run_a and run_a.created_at:
                     age_d = max(0, (now_ts - run_a.created_at).days)
                 if age_d > 60:
-                    alert_list.append({
-                        "deployment_id": dep.id, "algorithm": alg,
-                        "severity": "critical" if age_d > 90 else "warning",
-                        "type": "stale_model",
-                        "message": f"'{alg}' is {age_d} days old.",
-                        "recommendation": "Consider retraining with more recent data.",
-                    })
+                    alert_list.append(
+                        {
+                            "deployment_id": dep.id,
+                            "algorithm": alg,
+                            "severity": "critical" if age_d > 90 else "warning",
+                            "type": "stale_model",
+                            "message": f"'{alg}' is {age_d} days old.",
+                            "recommendation": "Consider retraining with more recent data.",
+                        }
+                    )
                 if dep.request_count == 0 and dep.created_at:
                     dep_age = max(0, (now_ts - dep.created_at).days)
                     if dep_age >= 1:
-                        alert_list.append({
-                            "deployment_id": dep.id, "algorithm": alg,
-                            "severity": "warning", "type": "no_predictions",
-                            "message": f"'{alg}' has been deployed {dep_age} day(s) with no predictions.",
-                            "recommendation": "Share the dashboard link to start receiving predictions.",
-                        })
+                        alert_list.append(
+                            {
+                                "deployment_id": dep.id,
+                                "algorithm": alg,
+                                "severity": "warning",
+                                "type": "no_predictions",
+                                "message": f"'{alg}' has been deployed {dep_age} day(s) with no predictions.",
+                                "recommendation": "Share the dashboard link to start receiving predictions.",
+                            }
+                        )
 
             alerts_data = {
                 "project_id": project_id,
                 "alert_count": len(alert_list),
-                "critical_count": sum(1 for a in alert_list if a["severity"] == "critical"),
-                "warning_count": sum(1 for a in alert_list if a["severity"] == "warning"),
+                "critical_count": sum(
+                    1 for a in alert_list if a["severity"] == "critical"
+                ),
+                "warning_count": sum(
+                    1 for a in alert_list if a["severity"] == "warning"
+                ),
                 "alerts": alert_list,
             }
             alert_summary = (
                 f"{len(alert_list)} alert(s) found: "
                 f"{alerts_data['critical_count']} critical, {alerts_data['warning_count']} warning."
-                if alert_list else "No active alerts — all deployments look healthy."
+                if alert_list
+                else "No active alerts — all deployments look healthy."
             )
             system_prompt += (
                 f"\n\n## Deployment Alerts (just scanned)\n{alert_summary}\n"
@@ -733,7 +876,11 @@ def send_message(
                 _cols = list(_df.columns)
                 _op = _detect_clean_op(body.message, _cols)
                 # Build a quality summary for context
-                _null_counts = {col: int(_df[col].isna().sum()) for col in _cols if _df[col].isna().any()}
+                _null_counts = {
+                    col: int(_df[col].isna().sum())
+                    for col in _cols
+                    if _df[col].isna().any()
+                }
                 _dup_count = int(_df.duplicated().sum())
                 _context_parts = []
                 if _dup_count > 0:
@@ -741,7 +888,8 @@ def send_message(
                 if _null_counts:
                     _top = sorted(_null_counts.items(), key=lambda x: -x[1])[:3]
                     _context_parts.append(
-                        "missing values in: " + ", ".join(f"'{k}' ({v})" for k, v in _top)
+                        "missing values in: "
+                        + ", ".join(f"'{k}' ({v})" for k, v in _top)
                     )
                 cleaning_suggestion = {
                     "dataset_id": _ds.id,
@@ -752,13 +900,21 @@ def send_message(
                         "total_rows": len(_df),
                     },
                 }
-                _ctx_text = "; ".join(_context_parts) if _context_parts else "no obvious issues detected"
+                _ctx_text = (
+                    "; ".join(_context_parts)
+                    if _context_parts
+                    else "no obvious issues detected"
+                )
                 system_prompt += (
                     f"\n\n## Data Cleaning Context\n"
                     f"Dataset quality: {_ctx_text}. "
                     + (
                         f"The user seems to want: {_op['operation'].replace('_', ' ')} "
-                        + (f"on column '{_op.get('column')}'" if _op and _op.get('column') else "")
+                        + (
+                            f"on column '{_op.get('column')}'"
+                            if _op and _op.get("column")
+                            else ""
+                        )
                         + ". A cleaning suggestion card is shown — explain what it will do and ask the user to confirm before applying."
                         if _op
                         else "Describe the available cleaning operations (remove duplicates, fill missing values, filter rows, cap outliers, drop columns) and let the user choose."
@@ -772,13 +928,18 @@ def send_message(
     if _ANOMALY_PATTERNS.search(body.message) and ctx["dataset"]:
         try:
             from core.anomaly import detect_anomalies as _detect
+
             _ds = ctx["dataset"]
             _file_path = Path(_ds.file_path)
             if _file_path.exists():
                 _df = pd.read_csv(_file_path)
-                _numeric_cols = _df.select_dtypes(include="number").columns.tolist()[:10]
+                _numeric_cols = _df.select_dtypes(include="number").columns.tolist()[
+                    :10
+                ]
                 if _numeric_cols:
-                    _result = _detect(_df, features=_numeric_cols, contamination=0.05, n_top=10)
+                    _result = _detect(
+                        _df, features=_numeric_cols, contamination=0.05, n_top=10
+                    )
                     anomaly_event = {"dataset_id": _ds.id, **_result}
                     system_prompt += (
                         f"\n\n## Anomaly Detection Results\n"

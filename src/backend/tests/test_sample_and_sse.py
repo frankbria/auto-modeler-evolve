@@ -19,9 +19,11 @@ async def ac(tmp_path, monkeypatch):
     import models.feature_set  # noqa
     import models.model_run  # noqa
     import models.deployment  # noqa
+
     SQLModel.metadata.create_all(db_module.engine)
 
     import api.data as data_module
+
     upload_dir = tmp_path / "uploads"
     upload_dir.mkdir()
     data_module.UPLOAD_DIR = upload_dir
@@ -41,7 +43,10 @@ async def ac(tmp_path, monkeypatch):
     data_module.SAMPLE_CSV = sample_csv
 
     from main import app
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
         yield client
 
 
@@ -55,6 +60,7 @@ async def project_id(ac):
 # ---------------------------------------------------------------------------
 # Sample dataset info
 # ---------------------------------------------------------------------------
+
 
 class TestSampleInfo:
     async def test_sample_info_returns_metadata(self, ac, tmp_path):
@@ -76,6 +82,7 @@ class TestSampleInfo:
 # ---------------------------------------------------------------------------
 # Sample dataset load
 # ---------------------------------------------------------------------------
+
 
 class TestSampleLoad:
     async def test_load_sample_creates_dataset(self, ac, project_id):
@@ -118,10 +125,12 @@ class TestSampleLoad:
 # SSE training stream
 # ---------------------------------------------------------------------------
 
+
 class TestTrainingStream:
     async def test_stream_returns_all_done_if_no_queue(self, ac, project_id):
         """When no training is in progress, stream immediately emits all_done."""
         import api.models as models_module
+
         models_module._training_queues.pop(project_id, None)
 
         resp = await ac.get(f"/api/models/{project_id}/training-stream")
@@ -134,7 +143,14 @@ class TestTrainingStream:
         import api.models as models_module
 
         test_queue = q_module.Queue()
-        test_queue.put({"type": "status", "run_id": "r1", "status": "training", "algorithm": "linear_regression"})
+        test_queue.put(
+            {
+                "type": "status",
+                "run_id": "r1",
+                "status": "training",
+                "algorithm": "linear_regression",
+            }
+        )
         test_queue.put(None)  # sentinel
 
         models_module._training_queues[project_id] = test_queue

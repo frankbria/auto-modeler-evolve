@@ -60,18 +60,23 @@ def client(tmp_path):
     import models.conversation  # noqa
     import models.model_run  # noqa
     import models.deployment  # noqa
+
     SQLModel.metadata.create_all(db_module.engine)
 
     import api.data as data_module
+
     data_module.UPLOAD_DIR = tmp_path / "uploads"
 
     import api.models as models_api_module
+
     models_api_module.MODELS_DIR = tmp_path / "models"
 
     import api.deploy as deploy_module
+
     deploy_module.DEPLOY_DIR = tmp_path / "deployments"
 
     from main import app
+
     with TestClient(app) as c:
         yield c
 
@@ -128,15 +133,18 @@ def trained_run(client):
 class TestPredictionPipeline:
     @pytest.fixture
     def sample_df(self):
-        return pd.DataFrame({
-            "product": ["A", "B", "A", "C", "B", "A"],
-            "region":  ["N", "S", "E", "W", "N", "S"],
-            "units":   [10, 8, 18, 4, 15, 9],
-            "revenue": [1200.0, 850.0, 2100.0, 450.0, 1650.0, 980.0],
-        })
+        return pd.DataFrame(
+            {
+                "product": ["A", "B", "A", "C", "B", "A"],
+                "region": ["N", "S", "E", "W", "N", "S"],
+                "units": [10, 8, 18, 4, 15, 9],
+                "revenue": [1200.0, 850.0, 2100.0, 450.0, 1650.0, 980.0],
+            }
+        )
 
     def test_build_pipeline_numeric(self, sample_df):
         from core.deployer import build_prediction_pipeline
+
         pipeline = build_prediction_pipeline(
             sample_df, ["units"], "revenue", "regression"
         )
@@ -145,6 +153,7 @@ class TestPredictionPipeline:
 
     def test_build_pipeline_categorical(self, sample_df):
         from core.deployer import build_prediction_pipeline
+
         pipeline = build_prediction_pipeline(
             sample_df, ["product"], "revenue", "regression"
         )
@@ -153,6 +162,7 @@ class TestPredictionPipeline:
 
     def test_transform_returns_correct_shape(self, sample_df):
         from core.deployer import build_prediction_pipeline
+
         pipeline = build_prediction_pipeline(
             sample_df, ["units", "product"], "revenue", "regression"
         )
@@ -161,6 +171,7 @@ class TestPredictionPipeline:
 
     def test_transform_handles_missing_feature(self, sample_df):
         from core.deployer import build_prediction_pipeline
+
         pipeline = build_prediction_pipeline(
             sample_df, ["units"], "revenue", "regression"
         )
@@ -171,6 +182,7 @@ class TestPredictionPipeline:
 
     def test_transform_handles_unseen_category(self, sample_df):
         from core.deployer import build_prediction_pipeline
+
         pipeline = build_prediction_pipeline(
             sample_df, ["product"], "revenue", "regression"
         )
@@ -181,6 +193,7 @@ class TestPredictionPipeline:
 
     def test_decode_regression_prediction(self, sample_df):
         from core.deployer import build_prediction_pipeline
+
         pipeline = build_prediction_pipeline(
             sample_df, ["units"], "revenue", "regression"
         )
@@ -188,17 +201,25 @@ class TestPredictionPipeline:
 
     def test_classification_with_string_target(self):
         from core.deployer import build_prediction_pipeline
-        df = pd.DataFrame({
-            "x": [1.0, 2.0, 3.0, 4.0],
-            "label": ["cat", "dog", "cat", "dog"],
-        })
+
+        df = pd.DataFrame(
+            {
+                "x": [1.0, 2.0, 3.0, 4.0],
+                "label": ["cat", "dog", "cat", "dog"],
+            }
+        )
         pipeline = build_prediction_pipeline(df, ["x"], "label", "classification")
         assert pipeline.target_encoder is not None
         decoded = pipeline.decode_prediction(0)
         assert decoded in ("cat", "dog")
 
     def test_save_and_load_pipeline(self, tmp_path, sample_df):
-        from core.deployer import build_prediction_pipeline, save_pipeline, load_pipeline
+        from core.deployer import (
+            build_prediction_pipeline,
+            save_pipeline,
+            load_pipeline,
+        )
+
         pipeline = build_prediction_pipeline(
             sample_df, ["units", "product"], "revenue", "regression"
         )
@@ -211,6 +232,7 @@ class TestPredictionPipeline:
 
     def test_transform_df(self, sample_df):
         from core.deployer import build_prediction_pipeline
+
         pipeline = build_prediction_pipeline(
             sample_df, ["units", "product"], "revenue", "regression"
         )
@@ -230,21 +252,26 @@ class TestPredictFunctions:
         from core.deployer import build_prediction_pipeline, save_pipeline
         from core.trainer import prepare_features, train_single_model
 
-        df = pd.DataFrame({
-            "x1": list(range(20)),
-            "x2": [float(i) * 0.5 for i in range(20)],
-            "y":  [float(i) * 2 + 1 for i in range(20)],
-        })
+        df = pd.DataFrame(
+            {
+                "x1": list(range(20)),
+                "x2": [float(i) * 0.5 for i in range(20)],
+                "y": [float(i) * 2 + 1 for i in range(20)],
+            }
+        )
         pipeline = build_prediction_pipeline(df, ["x1", "x2"], "y", "regression")
         pipeline_path = tmp_path / "pl.joblib"
         save_pipeline(pipeline, pipeline_path)
 
         X, y, _ = prepare_features(df, ["x1", "x2"], "y", "regression")
-        result = train_single_model(X, y, "linear_regression", "regression", tmp_path, "test_run")
+        result = train_single_model(
+            X, y, "linear_regression", "regression", tmp_path, "test_run"
+        )
         return str(pipeline_path), result["model_path"]
 
     def test_predict_single_returns_numeric(self, trained_pipeline_and_model):
         from core.deployer import predict_single
+
         pl_path, m_path = trained_pipeline_and_model
         result = predict_single(pl_path, m_path, {"x1": 5, "x2": 2.5})
         assert "prediction" in result
@@ -252,6 +279,7 @@ class TestPredictFunctions:
 
     def test_predict_single_reasonable_value(self, trained_pipeline_and_model):
         from core.deployer import predict_single
+
         pl_path, m_path = trained_pipeline_and_model
         result = predict_single(pl_path, m_path, {"x1": 10, "x2": 5.0})
         # y = 2*x1 + 1, so x1=10 → ~21
@@ -259,6 +287,7 @@ class TestPredictFunctions:
 
     def test_predict_batch_returns_csv(self, trained_pipeline_and_model):
         from core.deployer import predict_batch
+
         pl_path, m_path = trained_pipeline_and_model
         csv_bytes = b"x1,x2\n1,0.5\n2,1.0\n3,1.5\n"
         result = predict_batch(pl_path, m_path, csv_bytes)
@@ -268,6 +297,7 @@ class TestPredictFunctions:
 
     def test_predict_batch_preserves_input_columns(self, trained_pipeline_and_model):
         from core.deployer import predict_batch
+
         pl_path, m_path = trained_pipeline_and_model
         csv_bytes = b"x1,x2\n1,0.5\n"
         result = predict_batch(pl_path, m_path, csv_bytes)
@@ -278,6 +308,7 @@ class TestPredictFunctions:
 
     def test_get_feature_schema(self, trained_pipeline_and_model):
         from core.deployer import get_feature_schema
+
         pl_path, _ = trained_pipeline_and_model
         schema = get_feature_schema(pl_path)
         assert isinstance(schema, list)
@@ -357,7 +388,12 @@ class TestDeployAPI:
 
         resp = client.post(
             f"/api/predict/{dep_id}",
-            json={"product": "Widget A", "region": "North", "units": 10, "date": "2024-01-01"},
+            json={
+                "product": "Widget A",
+                "region": "North",
+                "units": 10,
+                "date": "2024-01-01",
+            },
         )
         assert resp.status_code == 200, resp.text
         body = resp.json()

@@ -14,9 +14,9 @@ class ModelRun(SQLModel, table=True):
     project_id: str = Field(index=True)
     feature_set_id: Optional[str] = None
     algorithm: str
-    hyperparameters: Optional[str] = None   # JSON
-    metrics: Optional[str] = None           # JSON {r2/accuracy, mae/f1, ...}
-    summary: Optional[str] = None           # Plain-English metric summary
+    hyperparameters: Optional[str] = None  # JSON
+    metrics: Optional[str] = None  # JSON {r2/accuracy, mae/f1, ...}
+    summary: Optional[str] = None  # Plain-English metric summary
     training_duration_ms: Optional[int] = None
     model_path: Optional[str] = None
     is_selected: bool = False

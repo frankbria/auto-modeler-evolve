@@ -1,4 +1,5 @@
 """Tests for Excel (.xlsx/.xls) file upload support."""
+
 import io
 import pytest
 import pandas as pd
@@ -34,13 +35,18 @@ async def ac(tmp_path, monkeypatch):
     import models.project  # noqa
     import models.dataset  # noqa
     import models.conversation  # noqa
+
     SQLModel.metadata.create_all(db_module.engine)
 
     import api.data as data_module
+
     data_module.UPLOAD_DIR = tmp_path / "uploads"
 
     from main import app
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
         yield client
 
 
@@ -54,14 +60,20 @@ async def project_id(ac):
 # xlsx upload tests
 # ---------------------------------------------------------------------------
 
+
 async def test_upload_xlsx_returns_201(ac, project_id):
     """xlsx file is accepted and returns the same shape as CSV upload."""
     xlsx_bytes = _make_xlsx_bytes(SAMPLE_DATA)
     resp = await ac.post(
         "/api/data/upload",
         data={"project_id": project_id},
-        files={"file": ("sales_data.xlsx", io.BytesIO(xlsx_bytes),
-                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+        files={
+            "file": (
+                "sales_data.xlsx",
+                io.BytesIO(xlsx_bytes),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        },
     )
     assert resp.status_code == 201, resp.text
     data = resp.json()
@@ -77,13 +89,20 @@ async def test_upload_xlsx_stored_as_csv(ac, project_id, tmp_path):
     resp = await ac.post(
         "/api/data/upload",
         data={"project_id": project_id},
-        files={"file": ("report.xlsx", io.BytesIO(xlsx_bytes),
-                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+        files={
+            "file": (
+                "report.xlsx",
+                io.BytesIO(xlsx_bytes),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        },
     )
     assert resp.status_code == 201
     data = resp.json()
     # stored filename should be the .csv version
-    assert data["filename"].endswith(".csv"), f"Expected .csv filename, got {data['filename']}"
+    assert data["filename"].endswith(".csv"), (
+        f"Expected .csv filename, got {data['filename']}"
+    )
 
 
 async def test_upload_xlsx_columns_preserved(ac, project_id):
@@ -92,8 +111,13 @@ async def test_upload_xlsx_columns_preserved(ac, project_id):
     resp = await ac.post(
         "/api/data/upload",
         data={"project_id": project_id},
-        files={"file": ("data.xlsx", io.BytesIO(xlsx_bytes),
-                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+        files={
+            "file": (
+                "data.xlsx",
+                io.BytesIO(xlsx_bytes),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        },
     )
     assert resp.status_code == 201
     data = resp.json()
@@ -109,8 +133,13 @@ async def test_upload_xlsx_preview_readable_after_upload(ac, project_id):
     upload_resp = await ac.post(
         "/api/data/upload",
         data={"project_id": project_id},
-        files={"file": ("sales.xlsx", io.BytesIO(xlsx_bytes),
-                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+        files={
+            "file": (
+                "sales.xlsx",
+                io.BytesIO(xlsx_bytes),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        },
     )
     assert upload_resp.status_code == 201
     dataset_id = upload_resp.json()["dataset_id"]
@@ -128,8 +157,13 @@ async def test_upload_xlsx_profile_endpoint_works(ac, project_id):
     upload_resp = await ac.post(
         "/api/data/upload",
         data={"project_id": project_id},
-        files={"file": ("data.xlsx", io.BytesIO(xlsx_bytes),
-                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+        files={
+            "file": (
+                "data.xlsx",
+                io.BytesIO(xlsx_bytes),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        },
     )
     dataset_id = upload_resp.json()["dataset_id"]
 
@@ -174,8 +208,13 @@ async def test_upload_xlsx_with_numeric_and_string_columns(ac, project_id):
     resp = await ac.post(
         "/api/data/upload",
         data={"project_id": project_id},
-        files={"file": ("mixed.xlsx", io.BytesIO(xlsx_bytes),
-                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+        files={
+            "file": (
+                "mixed.xlsx",
+                io.BytesIO(xlsx_bytes),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        },
     )
     assert resp.status_code == 201
     data = resp.json()

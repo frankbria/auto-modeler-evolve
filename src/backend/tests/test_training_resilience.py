@@ -6,6 +6,7 @@ Completes the error resilience audit for training edge cases:
 - Training on constant-target column (all values identical)
 - Training succeeds then narration runs without crash
 """
+
 from __future__ import annotations
 
 import io
@@ -58,7 +59,7 @@ Widget J,1000
 RANDOM_TARGET_CSV = (
     "product,region,revenue\n"
     + "\n".join(
-        f"Widget {chr(65 + i % 5)},{['North','South','East','West'][i % 4]},{(i * 137 % 1000) + 100}"
+        f"Widget {chr(65 + i % 5)},{['North', 'South', 'East', 'West'][i % 4]},{(i * 137 % 1000) + 100}"
         for i in range(30)
     )
 ).encode()
@@ -76,6 +77,7 @@ def client(tmp_path, monkeypatch):
     import models.conversation  # noqa
     import models.model_run  # noqa
     import models.deployment  # noqa
+
     SQLModel.metadata.create_all(db_module.engine)
 
     import api.data as data_module
@@ -87,28 +89,43 @@ def client(tmp_path, monkeypatch):
     deploy_module.DEPLOY_DIR = tmp_path / "deployments"
 
     # Stub Anthropic
-    monkeypatch.setattr("api.chat.anthropic.Anthropic", lambda *a, **kw: _FakeAnthropic())
+    monkeypatch.setattr(
+        "api.chat.anthropic.Anthropic", lambda *a, **kw: _FakeAnthropic()
+    )
 
     from main import app
+
     with TestClient(app) as c:
         yield c
 
 
 class _FakeStream:
-    def __enter__(self): return self
-    def __exit__(self, *args): pass
-    def text_stream(self): yield "Analysis complete."
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        pass
+
+    def text_stream(self):
+        yield "Analysis complete."
+
     def get_final_message(self):
-        class _Msg: content = [type("B", (), {"text": "."})()]
+        class _Msg:
+            content = [type("B", (), {"text": "."})()]
+
         return _Msg()
+
 
 class _FakeAnthropic:
     class messages:
         @staticmethod
-        def stream(*args, **kwargs): return _FakeStream()
+        def stream(*args, **kwargs):
+            return _FakeStream()
 
 
-def _setup_project_with_csv(client: TestClient, csv_bytes: bytes, name: str) -> tuple[str, str, str]:
+def _setup_project_with_csv(
+    client: TestClient, csv_bytes: bytes, name: str
+) -> tuple[str, str, str]:
     """Creates project, uploads CSV, applies features, sets target. Returns (project_id, dataset_id, feature_set_id)."""
     project_id = client.post("/api/projects", json={"name": name}).json()["id"]
     upload = client.post(
@@ -137,7 +154,9 @@ def _setup_project_with_csv(client: TestClient, csv_bytes: bytes, name: str) -> 
     return project_id, dataset_id, feature_set_id
 
 
-def _wait_for_training(client: TestClient, project_id: str, timeout: int = 30) -> list[dict]:
+def _wait_for_training(
+    client: TestClient, project_id: str, timeout: int = 30
+) -> list[dict]:
     """Poll until all runs complete or timeout."""
     deadline = time.time() + timeout
     while time.time() < deadline:
@@ -155,10 +174,13 @@ class TestModelTrainingFailure:
 
     def test_training_failure_sets_run_status_to_failed(self, client, tmp_path):
         """If train_single_model raises, the run should be marked as 'failed'."""
-        project_id, _, feature_set_id = _setup_project_with_csv(client, SAMPLE_CSV, "fail-test")
+        project_id, _, feature_set_id = _setup_project_with_csv(
+            client, SAMPLE_CSV, "fail-test"
+        )
 
         # Monkeypatch train_single_model to raise after start
         import api.models as models_api_module
+
         original_train = models_api_module.train_single_model
 
         def exploding_train(*args, **kwargs):
@@ -179,11 +201,16 @@ class TestModelTrainingFailure:
         run = runs[0]
         assert run["status"] == "failed", f"Expected failed but got: {run['status']}"
         assert run["error_message"] is not None
-        assert "singular matrix" in run["error_message"] or "Simulated" in run["error_message"]
+        assert (
+            "singular matrix" in run["error_message"]
+            or "Simulated" in run["error_message"]
+        )
 
     def test_failed_run_has_no_metrics(self, client, tmp_path):
         """Failed runs should not have metrics (null)."""
-        project_id, _, feature_set_id = _setup_project_with_csv(client, SAMPLE_CSV, "fail-metrics")
+        project_id, _, feature_set_id = _setup_project_with_csv(
+            client, SAMPLE_CSV, "fail-metrics"
+        )
 
         import api.models as models_api_module
         from core.trainer import train_single_model as original_train2
@@ -208,9 +235,12 @@ class TestModelTrainingFailure:
 
     def test_partial_failure_does_not_block_other_runs(self, client, tmp_path):
         """If one algorithm fails, others should still complete successfully."""
-        project_id, _, feature_set_id = _setup_project_with_csv(client, SAMPLE_CSV, "partial-fail")
+        project_id, _, feature_set_id = _setup_project_with_csv(
+            client, SAMPLE_CSV, "partial-fail"
+        )
 
         import api.models as models_api_module
+
         original_train = models_api_module.train_single_model
 
         call_count = {"n": 0}
@@ -242,7 +272,9 @@ class TestPoorlyPerformingModel:
 
     def test_poor_model_still_deployable(self, client, tmp_path):
         """Even a model with low R² should be deployable — user decides."""
-        project_id, _, feature_set_id = _setup_project_with_csv(client, RANDOM_TARGET_CSV, "poor-model")
+        project_id, _, feature_set_id = _setup_project_with_csv(
+            client, RANDOM_TARGET_CSV, "poor-model"
+        )
 
         train_resp = client.post(
             f"/api/models/{project_id}/train",

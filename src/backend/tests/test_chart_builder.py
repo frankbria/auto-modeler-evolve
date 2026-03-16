@@ -20,6 +20,7 @@ from core.chart_builder import (
 # build_scatter_chart — with labels (lines 118-125)
 # ---------------------------------------------------------------------------
 
+
 class TestBuildScatterChart:
     def test_without_labels(self):
         result = build_scatter_chart([1, 2, 3], [4, 5, 6], "Test")
@@ -41,6 +42,7 @@ class TestBuildScatterChart:
 # ---------------------------------------------------------------------------
 # build_pie_chart — Series input (line 143)
 # ---------------------------------------------------------------------------
+
 
 class TestBuildPieChart:
     def test_with_series(self):
@@ -70,6 +72,7 @@ class TestBuildPieChart:
 # chart_from_query_result — Series and various DataFrame shapes
 # ---------------------------------------------------------------------------
 
+
 class TestChartFromQueryResult:
     def test_series_input_becomes_bar(self):
         s = pd.Series({"North": 100, "South": 200})
@@ -94,11 +97,13 @@ class TestChartFromQueryResult:
         assert result is None
 
     def test_multi_column_line_chart_with_x_col(self):
-        df = pd.DataFrame({
-            "month": ["Jan", "Feb", "Mar"],
-            "revenue": [100, 200, 150],
-            "cost": [50, 80, 60],
-        })
+        df = pd.DataFrame(
+            {
+                "month": ["Jan", "Feb", "Mar"],
+                "revenue": [100, 200, 150],
+                "cost": [50, 80, 60],
+            }
+        )
         result = chart_from_query_result(df, "Monthly trends", x_col="month")
         assert result is not None
         assert result["chart_type"] == "line"
@@ -114,6 +119,7 @@ class TestChartFromQueryResult:
 # ---------------------------------------------------------------------------
 # _jsonify — NaN and numpy scalars (lines 232, 234)
 # ---------------------------------------------------------------------------
+
 
 class TestJsonify:
     """Test via build_bar_chart which calls _jsonify on values."""
@@ -140,6 +146,7 @@ class TestJsonify:
 # build_histogram edge cases
 # ---------------------------------------------------------------------------
 
+
 class TestBuildHistogram:
     def test_rounds_bins(self):
         result = build_histogram([1.12345, 2.23456], [5, 10], "Hist")
@@ -150,6 +157,7 @@ class TestBuildHistogram:
 # ---------------------------------------------------------------------------
 # build_line_chart edge cases
 # ---------------------------------------------------------------------------
+
 
 class TestBuildLineChart:
     def test_short_series_skips_missing(self):
@@ -167,14 +175,17 @@ class TestBuildLineChart:
 # chart_from_query_result — final fallback None path (line 226)
 # ---------------------------------------------------------------------------
 
+
 class TestChartFromQueryResultFallback:
     def test_multi_column_no_numeric_returns_none(self):
         # Multi-column with x_col but remaining columns are non-numeric → final None
-        df = pd.DataFrame({
-            "month": ["Jan", "Feb"],
-            "label1": ["x", "y"],
-            "label2": ["a", "b"],
-        })
+        df = pd.DataFrame(
+            {
+                "month": ["Jan", "Feb"],
+                "label1": ["x", "y"],
+                "label2": ["a", "b"],
+            }
+        )
         result = chart_from_query_result(df, "All strings", x_col="month")
         assert result is None
 
@@ -183,10 +194,12 @@ class TestChartFromQueryResultFallback:
 # build_correlation_heatmap
 # ---------------------------------------------------------------------------
 
+
 class TestBuildCorrelationHeatmap:
     def _make_matrix(self, columns):
         """Create a synthetic corr matrix dict (same shape as _corr_matrix_dict output)."""
         import numpy as np
+
         n = len(columns)
         data = np.eye(n)
         rows = []
@@ -234,13 +247,16 @@ class TestBuildCorrelationHeatmap:
 # build_boxplot — new chart type
 # ---------------------------------------------------------------------------
 
+
 class TestBuildBoxplot:
     def _make_df(self) -> pd.DataFrame:
         """Synthetic sales DataFrame: numeric 'sales', categorical 'region'."""
-        return pd.DataFrame({
-            "sales": [10, 20, 30, 40, 50, 15, 25, 35, 45, 55],
-            "region": ["North"] * 5 + ["South"] * 5,
-        })
+        return pd.DataFrame(
+            {
+                "sales": [10, 20, 30, 40, 50, 15, 25, 35, 45, 55],
+                "region": ["North"] * 5 + ["South"] * 5,
+            }
+        )
 
     # --- chart_type and structure ---
     def test_chart_type_is_boxplot(self):
@@ -304,10 +320,12 @@ class TestBuildBoxplot:
 
     # --- limit ---
     def test_limit_caps_groups(self):
-        df = pd.DataFrame({
-            "v": range(100),
-            "g": [str(i) for i in range(100)],  # 100 distinct groups
-        })
+        df = pd.DataFrame(
+            {
+                "v": range(100),
+                "g": [str(i) for i in range(100)],  # 100 distinct groups
+            }
+        )
         spec = build_boxplot(df, value_col="v", group_col="g", limit=5)
         assert len(spec["data"]) <= 5
 

@@ -79,18 +79,23 @@ def client(tmp_path):
     import models.deployment  # noqa
     import models.prediction_log  # noqa
     import models.feedback_record  # noqa
+
     SQLModel.metadata.create_all(db_module.engine)
 
     import api.data as data_mod
+
     data_mod.UPLOAD_DIR = tmp_path / "uploads"
 
     import api.models as models_mod
+
     models_mod.MODELS_DIR = tmp_path / "models"
 
     import api.deploy as deploy_mod
+
     deploy_mod.DEPLOY_DIR = tmp_path / "deployments"
 
     from main import app
+
     with TestClient(app) as c:
         yield c
 
@@ -107,7 +112,10 @@ def _setup_deployed_regression(client) -> tuple[str, str]:
     did = r.json()["dataset_id"]
 
     fs = client.post(f"/api/features/{did}/apply", json={"transformations": []}).json()
-    client.post(f"/api/features/{did}/target", json={"target_column": "revenue", "feature_set_id": fs["feature_set_id"]})
+    client.post(
+        f"/api/features/{did}/target",
+        json={"target_column": "revenue", "feature_set_id": fs["feature_set_id"]},
+    )
 
     client.post(f"/api/models/{pid}/train", json={"algorithms": ["linear_regression"]})
     for _ in range(60):
@@ -148,13 +156,18 @@ def _setup_deployed_classification(client) -> tuple[str, str]:
     did = r.json()["dataset_id"]
 
     fs = client.post(f"/api/features/{did}/apply", json={"transformations": []}).json()
-    client.post(f"/api/features/{did}/target", json={
-        "target_column": "label",
-        "problem_type": "classification",
-        "feature_set_id": fs["feature_set_id"],
-    })
+    client.post(
+        f"/api/features/{did}/target",
+        json={
+            "target_column": "label",
+            "problem_type": "classification",
+            "feature_set_id": fs["feature_set_id"],
+        },
+    )
 
-    client.post(f"/api/models/{pid}/train", json={"algorithms": ["logistic_regression"]})
+    client.post(
+        f"/api/models/{pid}/train", json={"algorithms": ["logistic_regression"]}
+    )
     for _ in range(60):
         runs = client.get(f"/api/models/{pid}/runs").json()["runs"]
         if all(r["status"] in ("done", "failed") for r in runs):
@@ -179,8 +192,8 @@ def _setup_deployed_classification(client) -> tuple[str, str]:
 # submit_feedback — happy paths
 # ---------------------------------------------------------------------------
 
-class TestSubmitFeedback:
 
+class TestSubmitFeedback:
     def test_submit_regression_feedback_returns_201(self, client):
         dep_id, _ = _setup_deployed_regression(client)
         r = client.post(
@@ -273,8 +286,8 @@ class TestSubmitFeedback:
 # submit_feedback — error paths
 # ---------------------------------------------------------------------------
 
-class TestSubmitFeedbackErrors:
 
+class TestSubmitFeedbackErrors:
     def test_unknown_deployment_returns_404(self, client):
         r = client.post(
             "/api/predict/nonexistent-dep/feedback",
@@ -289,7 +302,9 @@ class TestSubmitFeedbackErrors:
             json={"comment": "Just a note, no actual value"},
         )
         assert r.status_code == 400
-        assert "actual_value" in r.json()["detail"] or "actual_label" in r.json()["detail"]
+        assert (
+            "actual_value" in r.json()["detail"] or "actual_label" in r.json()["detail"]
+        )
 
     def test_multiple_feedback_records_accumulate(self, client):
         dep_id, _ = _setup_deployed_regression(client)
@@ -304,8 +319,8 @@ class TestSubmitFeedbackErrors:
 # feedback-accuracy — regression
 # ---------------------------------------------------------------------------
 
-class TestFeedbackAccuracyRegression:
 
+class TestFeedbackAccuracyRegression:
     def test_no_feedback_returns_no_feedback_status(self, client):
         dep_id, _ = _setup_deployed_regression(client)
         r = client.get(f"/api/deploy/{dep_id}/feedback-accuracy")
@@ -363,8 +378,8 @@ class TestFeedbackAccuracyRegression:
 # feedback-accuracy — classification
 # ---------------------------------------------------------------------------
 
-class TestFeedbackAccuracyClassification:
 
+class TestFeedbackAccuracyClassification:
     def test_no_feedback_returns_no_feedback_status(self, client):
         dep_id, _ = _setup_deployed_classification(client)
         r = client.get(f"/api/deploy/{dep_id}/feedback-accuracy").json()
@@ -387,7 +402,7 @@ class TestFeedbackAccuracyClassification:
         if r["status"] == "computed":
             assert r["correct_count"] == 2
             assert r["incorrect_count"] == 1
-            assert abs(r["accuracy_from_feedback"] - 2/3) < 0.01
+            assert abs(r["accuracy_from_feedback"] - 2 / 3) < 0.01
 
     def test_feedback_without_is_correct_returns_feedback_only(self, client):
         dep_id, _ = _setup_deployed_classification(client)
@@ -402,8 +417,8 @@ class TestFeedbackAccuracyClassification:
 # FeedbackRecord model
 # ---------------------------------------------------------------------------
 
-class TestFeedbackRecordModel:
 
+class TestFeedbackRecordModel:
     def test_feedback_record_is_persisted(self, client):
         dep_id, _ = _setup_deployed_regression(client)
         r = client.post(

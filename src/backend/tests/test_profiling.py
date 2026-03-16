@@ -26,23 +26,34 @@ from core.chart_builder import (
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def sales_df():
-    return pd.DataFrame({
-        "date": ["2024-01-01", "2024-01-02", "2024-01-03", "2024-01-04", "2024-01-05"],
-        "product": ["Widget A", "Widget B", "Widget A", "Widget C", "Widget B"],
-        "region": ["North", "South", "East", "West", "North"],
-        "revenue": [1200.50, 850.00, 2100.75, 450.25, 1650.00],
-        "units": [10, 8, 18, 4, 15],
-    })
+    return pd.DataFrame(
+        {
+            "date": [
+                "2024-01-01",
+                "2024-01-02",
+                "2024-01-03",
+                "2024-01-04",
+                "2024-01-05",
+            ],
+            "product": ["Widget A", "Widget B", "Widget A", "Widget C", "Widget B"],
+            "region": ["North", "South", "East", "West", "North"],
+            "revenue": [1200.50, 850.00, 2100.75, 450.25, 1650.00],
+            "units": [10, 8, 18, 4, 15],
+        }
+    )
 
 
 @pytest.fixture
 def df_with_nulls():
-    return pd.DataFrame({
-        "a": [1.0, None, 3.0, None, 5.0],
-        "b": ["x", "y", None, "w", "v"],
-    })
+    return pd.DataFrame(
+        {
+            "a": [1.0, None, 3.0, None, 5.0],
+            "b": ["x", "y", None, "w", "v"],
+        }
+    )
 
 
 @pytest.fixture
@@ -54,6 +65,7 @@ def df_with_outliers():
 # ---------------------------------------------------------------------------
 # analyze_dataframe
 # ---------------------------------------------------------------------------
+
 
 class TestAnalyzeDataframe:
     def test_row_and_column_counts(self, sales_df):
@@ -79,12 +91,15 @@ class TestAnalyzeDataframe:
         result = analyze_dataframe(sales_df)
         for col in result["columns"]:
             for v in col["sample_values"]:
-                assert not isinstance(v, np.generic), f"numpy type in sample_values: {type(v)}"
+                assert not isinstance(v, np.generic), (
+                    f"numpy type in sample_values: {type(v)}"
+                )
 
 
 # ---------------------------------------------------------------------------
 # Outlier detection
 # ---------------------------------------------------------------------------
+
 
 class TestOutlierDetection:
     def test_detects_obvious_outlier(self, df_with_outliers):
@@ -107,6 +122,7 @@ class TestOutlierDetection:
 # Distribution computation
 # ---------------------------------------------------------------------------
 
+
 class TestDistributions:
     def test_numeric_distribution_has_bins_and_counts(self, sales_df):
         dist = _numeric_distribution(sales_df["revenue"])
@@ -123,6 +139,7 @@ class TestDistributions:
 # ---------------------------------------------------------------------------
 # Pattern detection
 # ---------------------------------------------------------------------------
+
 
 class TestPatternDetection:
     def test_detects_high_missing(self):
@@ -147,7 +164,8 @@ class TestPatternDetection:
         profile = compute_full_profile(sales_df)
         # Should not detect missing values (there are none)
         missing_warnings = [
-            i for i in profile["insights"]
+            i
+            for i in profile["insights"]
             if i["type"] == "missing_values" and i["severity"] == "warning"
         ]
         assert len(missing_warnings) == 0
@@ -156,6 +174,7 @@ class TestPatternDetection:
 # ---------------------------------------------------------------------------
 # Full profile
 # ---------------------------------------------------------------------------
+
 
 class TestComputeFullProfile:
     def test_contains_all_keys(self, sales_df):
@@ -193,9 +212,12 @@ class TestComputeFullProfile:
 # Chart builder
 # ---------------------------------------------------------------------------
 
+
 class TestChartBuilder:
     def test_bar_chart_structure(self):
-        chart = build_bar_chart({"North": 1200, "South": 850, "East": 2100}, "Revenue by Region")
+        chart = build_bar_chart(
+            {"North": 1200, "South": 850, "East": 2100}, "Revenue by Region"
+        )
         assert chart["chart_type"] == "bar"
         assert chart["x_key"] == "label"
         assert "value" in chart["y_keys"]
@@ -254,6 +276,7 @@ class TestChartBuilder:
 # API endpoint tests (upload with full profile)
 # ---------------------------------------------------------------------------
 
+
 class TestUploadWithProfile:
     def test_upload_returns_insights(self, client, sample_csv_content):
         import asyncio
@@ -310,6 +333,7 @@ class TestUploadWithProfile:
 # ---------------------------------------------------------------------------
 # GET /api/data/{dataset_id}/correlations
 # ---------------------------------------------------------------------------
+
 
 class TestCorrelationsEndpoint:
     async def test_returns_heatmap_spec(self, client, sample_csv_content):

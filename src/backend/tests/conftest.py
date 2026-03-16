@@ -1,4 +1,5 @@
 """Test configuration and shared fixtures."""
+
 import pytest
 from httpx import AsyncClient, ASGITransport
 from sqlmodel import create_engine, SQLModel
@@ -29,7 +30,9 @@ async def client(tmp_path, set_test_env):
     db.DATA_DIR = tmp_path
     SQLModel.metadata.create_all(db.engine)
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
         yield ac
 
 

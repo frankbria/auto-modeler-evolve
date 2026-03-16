@@ -5,6 +5,7 @@ assistant's guidance to their current stage:
 
   upload → explore → shape → model → validate → deploy
 """
+
 import json
 from typing import Optional
 
@@ -18,6 +19,7 @@ from models.project import Project
 # ---------------------------------------------------------------------------
 # State detection
 # ---------------------------------------------------------------------------
+
 
 def detect_state(
     dataset: Optional[Dataset],
@@ -93,6 +95,7 @@ _STATE_GUIDANCE: dict[str, str] = {
 # ---------------------------------------------------------------------------
 # System prompt builder
 # ---------------------------------------------------------------------------
+
 
 def _detect_model_regression(model_runs: list[ModelRun]) -> str | None:
     """Return a proactive insight if the most recently trained model performs worse.
@@ -272,8 +275,7 @@ def build_system_prompt(
                         metrics_str = f"R²={m['r2']:.3f}, MAE={m.get('mae', '?'):.3f}"
                     elif "accuracy" in m:
                         metrics_str = (
-                            f"accuracy={m['accuracy']:.1%}, "
-                            f"F1={m.get('f1', '?'):.3f}"
+                            f"accuracy={m['accuracy']:.1%}, F1={m.get('f1', '?'):.3f}"
                         )
                 except (json.JSONDecodeError, TypeError, ValueError):
                     pass
@@ -429,13 +431,14 @@ def generate_suggestions(
     if state == "deploy" and deployment:
         pool.insert(0, "How do I use the prediction API?")
         if deployment.request_count > 0:
-            pool.insert(1, f"Show me the last {min(5, deployment.request_count)} predictions")
+            pool.insert(
+                1, f"Show me the last {min(5, deployment.request_count)} predictions"
+            )
 
     # Filter out any suggestion that's too similar to what the user just asked
     lower_msg = last_user_message.lower()
     filtered = [
-        s for s in pool
-        if not any(word in lower_msg for word in s.lower().split()[:3])
+        s for s in pool if not any(word in lower_msg for word in s.lower().split()[:3])
     ]
     # Fall back to unfiltered pool if we over-filtered
     candidate_pool = filtered if len(filtered) >= 3 else pool

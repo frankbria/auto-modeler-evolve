@@ -3,6 +3,7 @@
 Uses FastAPI's synchronous TestClient since pytest-bdd does not natively
 support async step functions.
 """
+
 import io
 import pytest
 from pytest_bdd import scenarios, given, when, then
@@ -30,12 +31,15 @@ def client(tmp_path):
     import models.project  # noqa
     import models.dataset  # noqa
     import models.conversation  # noqa
+
     SQLModel.metadata.create_all(db_module.engine)
 
     import api.data as data_module
+
     data_module.UPLOAD_DIR = tmp_path / "uploads"
 
     from main import app
+
     with TestClient(app) as c:
         yield c
 

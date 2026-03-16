@@ -31,6 +31,7 @@ import tempfile
 # Registry presence
 # ---------------------------------------------------------------------------
 
+
 def test_xgboost_in_regression_registry():
     if not _XGBOOST_AVAILABLE:
         pytest.skip("xgboost not installed")
@@ -68,6 +69,7 @@ def test_lightgbm_in_classification_registry():
 # ---------------------------------------------------------------------------
 # recommend_models includes new algorithms
 # ---------------------------------------------------------------------------
+
 
 def test_recommend_models_regression_includes_xgboost():
     if not _XGBOOST_AVAILABLE:
@@ -108,12 +110,16 @@ def test_recommend_models_small_dataset_xgboost_explanation():
     recs = recommend_models("regression", n_rows=50, n_features=3)
     xgb_rec = next(r for r in recs if r["algorithm"] == "xgboost_regressor")
     # Should warn about small dataset
-    assert "50" in xgb_rec["recommended_because"] or "small" in xgb_rec["recommended_because"].lower()
+    assert (
+        "50" in xgb_rec["recommended_because"]
+        or "small" in xgb_rec["recommended_because"].lower()
+    )
 
 
 # ---------------------------------------------------------------------------
 # Actual training
 # ---------------------------------------------------------------------------
+
 
 def _make_regression_data(n=200):
     rng = np.random.default_rng(42)
@@ -139,7 +145,9 @@ def test_train_xgboost_regressor():
     df = _make_regression_data()
     X, y, _ = prepare_features(df, ["a", "b", "c", "d"], "target", "regression")
     with tempfile.TemporaryDirectory() as tmpdir:
-        result = train_single_model(X, y, "xgboost_regressor", "regression", Path(tmpdir), "run_xgb_reg")
+        result = train_single_model(
+            X, y, "xgboost_regressor", "regression", Path(tmpdir), "run_xgb_reg"
+        )
         assert "metrics" in result
         assert result["metrics"]["r2"] > 0.8  # should fit well on synthetic linear data
         assert result["training_duration_ms"] >= 0
@@ -152,7 +160,9 @@ def test_train_xgboost_classifier():
     df = _make_classification_data()
     X, y, _ = prepare_features(df, ["a", "b", "c", "d"], "target", "classification")
     with tempfile.TemporaryDirectory() as tmpdir:
-        result = train_single_model(X, y, "xgboost_classifier", "classification", Path(tmpdir), "run_xgb_cls")
+        result = train_single_model(
+            X, y, "xgboost_classifier", "classification", Path(tmpdir), "run_xgb_cls"
+        )
         assert "metrics" in result
         assert result["metrics"]["accuracy"] > 0.8
         assert Path(result["model_path"]).exists()
@@ -164,7 +174,9 @@ def test_train_lightgbm_regressor():
     df = _make_regression_data()
     X, y, _ = prepare_features(df, ["a", "b", "c", "d"], "target", "regression")
     with tempfile.TemporaryDirectory() as tmpdir:
-        result = train_single_model(X, y, "lightgbm_regressor", "regression", Path(tmpdir), "run_lgbm_reg")
+        result = train_single_model(
+            X, y, "lightgbm_regressor", "regression", Path(tmpdir), "run_lgbm_reg"
+        )
         assert "metrics" in result
         assert result["metrics"]["r2"] > 0.8
         assert Path(result["model_path"]).exists()
@@ -176,7 +188,9 @@ def test_train_lightgbm_classifier():
     df = _make_classification_data()
     X, y, _ = prepare_features(df, ["a", "b", "c", "d"], "target", "classification")
     with tempfile.TemporaryDirectory() as tmpdir:
-        result = train_single_model(X, y, "lightgbm_classifier", "classification", Path(tmpdir), "run_lgbm_cls")
+        result = train_single_model(
+            X, y, "lightgbm_classifier", "classification", Path(tmpdir), "run_lgbm_cls"
+        )
         assert "metrics" in result
         assert result["metrics"]["accuracy"] > 0.8
         assert Path(result["model_path"]).exists()
@@ -186,11 +200,13 @@ def test_train_lightgbm_classifier():
 # Feature importances accessible (needed by explainer.py)
 # ---------------------------------------------------------------------------
 
+
 def test_xgboost_feature_importances_accessible():
     """XGBoost models expose feature_importances_ — compatible with explainer.py."""
     if not _XGBOOST_AVAILABLE:
         pytest.skip("xgboost not installed")
     from xgboost import XGBRegressor
+
     rng = np.random.default_rng(0)
     X = rng.standard_normal((100, 3))
     y = X[:, 0] + rng.standard_normal(100) * 0.1
@@ -207,6 +223,7 @@ def test_lightgbm_feature_importances_accessible():
     if not _LIGHTGBM_AVAILABLE:
         pytest.skip("lightgbm not installed")
     from lightgbm import LGBMRegressor
+
     rng = np.random.default_rng(0)
     X = rng.standard_normal((100, 3))
     y = X[:, 0] + rng.standard_normal(100) * 0.1
@@ -221,10 +238,13 @@ def test_lightgbm_feature_importances_accessible():
 # Invalid algorithm key still raises ValueError
 # ---------------------------------------------------------------------------
 
+
 def test_unknown_algorithm_raises():
     rng = np.random.default_rng(42)
     X = rng.standard_normal((50, 2))
     y = rng.standard_normal(50)
     with tempfile.TemporaryDirectory() as tmpdir:
         with pytest.raises(ValueError, match="Unknown algorithm"):
-            train_single_model(X, y, "unknown_algo_xyz", "regression", Path(tmpdir), "run_bad")
+            train_single_model(
+                X, y, "unknown_algo_xyz", "regression", Path(tmpdir), "run_bad"
+            )

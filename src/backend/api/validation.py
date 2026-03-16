@@ -56,7 +56,9 @@ def _load_run_context(model_run_id: str, session: Session):
         )
 
     if not run.model_path or not Path(run.model_path).exists():
-        raise HTTPException(status_code=404, detail="Serialized model file not found on disk")
+        raise HTTPException(
+            status_code=404, detail="Serialized model file not found on disk"
+        )
 
     feature_set = session.get(FeatureSet, run.feature_set_id)
     if not feature_set:
@@ -96,7 +98,8 @@ def _build_Xy(
 def _get_unfitted_model(algorithm: str, problem_type: str):
     """Return a fresh unfitted estimator for cross-validation."""
     registry = (
-        REGRESSION_ALGORITHMS if problem_type == "regression"
+        REGRESSION_ALGORITHMS
+        if problem_type == "regression"
         else CLASSIFICATION_ALGORITHMS
     )
     if algorithm not in registry:

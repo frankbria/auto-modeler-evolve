@@ -28,12 +28,14 @@ from sklearn.neural_network import MLPClassifier, MLPRegressor
 
 try:
     from xgboost import XGBClassifier, XGBRegressor
+
     _XGBOOST_AVAILABLE = True
 except ImportError:
     _XGBOOST_AVAILABLE = False
 
 try:
     from lightgbm import LGBMClassifier, LGBMRegressor
+
     _LIGHTGBM_AVAILABLE = True
 except ImportError:
     _LIGHTGBM_AVAILABLE = False
@@ -53,6 +55,7 @@ from sklearn.preprocessing import LabelEncoder
 # ---------------------------------------------------------------------------
 # Algorithm registry
 # ---------------------------------------------------------------------------
+
 
 def _build_regression_algorithms() -> dict[str, dict]:
     algos: dict[str, dict] = {
@@ -101,8 +104,10 @@ def _build_regression_algorithms() -> dict[str, dict]:
             "best_for": "Structured tabular data where you need the best possible accuracy",
             "class": XGBRegressor,
             "params": {
-                "n_estimators": 100, "random_state": 42,
-                "verbosity": 0, "n_jobs": -1,
+                "n_estimators": 100,
+                "random_state": 42,
+                "verbosity": 0,
+                "n_jobs": -1,
             },
         }
     if _LIGHTGBM_AVAILABLE:
@@ -116,8 +121,10 @@ def _build_regression_algorithms() -> dict[str, dict]:
             "best_for": "Large datasets where training speed matters as much as accuracy",
             "class": LGBMRegressor,
             "params": {
-                "n_estimators": 100, "random_state": 42,
-                "n_jobs": -1, "verbose": -1,
+                "n_estimators": 100,
+                "random_state": 42,
+                "n_jobs": -1,
+                "verbose": -1,
             },
         }
     algos["neural_network_regressor"] = {
@@ -188,8 +195,10 @@ def _build_classification_algorithms() -> dict[str, dict]:
             "best_for": "Structured tabular data — typically outperforms sklearn's GradientBoosting",
             "class": XGBClassifier,
             "params": {
-                "n_estimators": 100, "random_state": 42,
-                "verbosity": 0, "n_jobs": -1,
+                "n_estimators": 100,
+                "random_state": 42,
+                "verbosity": 0,
+                "n_jobs": -1,
                 "eval_metric": "logloss",
             },
         }
@@ -204,8 +213,10 @@ def _build_classification_algorithms() -> dict[str, dict]:
             "best_for": "Large datasets, categorical features with many levels",
             "class": LGBMClassifier,
             "params": {
-                "n_estimators": 100, "random_state": 42,
-                "n_jobs": -1, "verbose": -1,
+                "n_estimators": 100,
+                "random_state": 42,
+                "n_jobs": -1,
+                "verbose": -1,
             },
         }
     algos["neural_network_classifier"] = {
@@ -237,6 +248,7 @@ CLASSIFICATION_ALGORITHMS: dict[str, dict] = _build_classification_algorithms()
 # Model recommendations
 # ---------------------------------------------------------------------------
 
+
 def recommend_models(
     problem_type: str,
     n_rows: int,
@@ -248,7 +260,8 @@ def recommend_models(
     and a dataset-specific 'recommended_because' explanation.
     """
     algorithms = (
-        REGRESSION_ALGORITHMS if problem_type == "regression"
+        REGRESSION_ALGORITHMS
+        if problem_type == "regression"
         else CLASSIFICATION_ALGORITHMS
     )
 
@@ -338,6 +351,7 @@ def _why_recommended(algorithm: str, n_rows: int, n_features: int) -> str:
 # Feature preparation
 # ---------------------------------------------------------------------------
 
+
 def prepare_features(
     df: pd.DataFrame,
     feature_cols: list[str],
@@ -361,7 +375,11 @@ def prepare_features(
         raise ValueError("No valid feature columns found in DataFrame.")
 
     # Drop rows with missing target
-    df_clean = df[valid_features + [target_col]].dropna(subset=[target_col]).reset_index(drop=True)
+    df_clean = (
+        df[valid_features + [target_col]]
+        .dropna(subset=[target_col])
+        .reset_index(drop=True)
+    )
 
     if len(df_clean) < 2:
         raise ValueError("Not enough non-null rows to train a model.")
@@ -387,7 +405,11 @@ def prepare_features(
         le_target = LabelEncoder()
         y = le_target.fit_transform(y_series.astype(str))
     else:
-        y = y_series.values.astype(float) if problem_type == "regression" else y_series.values
+        y = (
+            y_series.values.astype(float)
+            if problem_type == "regression"
+            else y_series.values
+        )
 
     return X, y, le_target
 
@@ -395,6 +417,7 @@ def prepare_features(
 # ---------------------------------------------------------------------------
 # Train a single model
 # ---------------------------------------------------------------------------
+
 
 def train_single_model(
     X: np.ndarray,
@@ -410,13 +433,13 @@ def train_single_model(
         {metrics, model_path, training_duration_ms, summary}
     """
     algorithms = (
-        REGRESSION_ALGORITHMS if problem_type == "regression"
+        REGRESSION_ALGORITHMS
+        if problem_type == "regression"
         else CLASSIFICATION_ALGORITHMS
     )
     if algorithm not in algorithms:
         raise ValueError(
-            f"Unknown algorithm '{algorithm}'. "
-            f"Valid choices: {sorted(algorithms)}"
+            f"Unknown algorithm '{algorithm}'. Valid choices: {sorted(algorithms)}"
         )
 
     info = algorithms[algorithm]
@@ -467,6 +490,7 @@ def train_single_model(
 # ---------------------------------------------------------------------------
 # Metrics helpers
 # ---------------------------------------------------------------------------
+
 
 def _regression_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> dict:
     return {
@@ -612,13 +636,13 @@ def tune_model(
         }
     """
     algorithms = (
-        REGRESSION_ALGORITHMS if problem_type == "regression"
+        REGRESSION_ALGORITHMS
+        if problem_type == "regression"
         else CLASSIFICATION_ALGORITHMS
     )
     if algorithm not in algorithms:
         raise ValueError(
-            f"Unknown algorithm '{algorithm}'. "
-            f"Valid choices: {sorted(algorithms)}"
+            f"Unknown algorithm '{algorithm}'. Valid choices: {sorted(algorithms)}"
         )
 
     param_grid = _TUNING_GRIDS.get(algorithm)
@@ -656,10 +680,7 @@ def tune_model(
     scoring = "r2" if problem_type == "regression" else "f1_weighted"
 
     # Base model with fixed defaults that we don't want to tune (e.g. random_state, verbosity)
-    fixed_params = {
-        k: v for k, v in default_params.items()
-        if k not in param_grid
-    }
+    fixed_params = {k: v for k, v in default_params.items() if k not in param_grid}
     base_model = model_class(**fixed_params)
 
     start = time.time()
@@ -697,6 +718,7 @@ def tune_model(
     model_dir.mkdir(parents=True, exist_ok=True)
     model_path = str(model_dir / f"{new_model_run_id}.joblib")
     import joblib as _jl
+
     _jl.dump(best_model, model_path)
 
     return {
@@ -714,6 +736,7 @@ def tune_model(
 # Best model selection
 # ---------------------------------------------------------------------------
 
+
 def pick_best_model(models: list[dict], problem_type: str) -> dict | None:
     """Return the model dict with the highest primary metric."""
     if not models:
@@ -730,8 +753,5 @@ def pick_best_model(models: list[dict], problem_type: str) -> dict | None:
     return {
         "model_run_id": best["id"],
         "algorithm": best["algorithm"],
-        "reason": (
-            f"Highest {metric_name} among trained models "
-            f"({score(best):.3f})."
-        ),
+        "reason": (f"Highest {metric_name} among trained models ({score(best):.3f})."),
     }

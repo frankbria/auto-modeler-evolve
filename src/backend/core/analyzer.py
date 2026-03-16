@@ -8,6 +8,7 @@ import pandas as pd
 # Basic column statistics (called on every upload)
 # ---------------------------------------------------------------------------
 
+
 def analyze_dataframe(df: pd.DataFrame) -> dict:
     """Return column statistics for a dataframe.
 
@@ -60,6 +61,7 @@ def analyze_dataframe(df: pd.DataFrame) -> dict:
 # Full profile (called on upload, cached in DB)
 # ---------------------------------------------------------------------------
 
+
 def compute_full_profile(df: pd.DataFrame) -> dict:
     """Generate a comprehensive data profile including distributions, correlations,
     outliers, and actionable pattern insights.
@@ -94,7 +96,11 @@ def compute_full_profile(df: pd.DataFrame) -> dict:
                         {"col_a": c1, "col_b": c2, "correlation": round(float(val), 3)}
                     )
         pairs.sort(key=lambda p: abs(p["correlation"]), reverse=True)
-        correlations = {"pairs": pairs, "columns": cols, "matrix": _corr_matrix_dict(corr_matrix)}
+        correlations = {
+            "pairs": pairs,
+            "columns": cols,
+            "matrix": _corr_matrix_dict(corr_matrix),
+        }
 
     # Auto-generated pattern insights
     insights = _detect_patterns(df, base["columns"], correlations.get("pairs", []))
@@ -110,6 +116,7 @@ def compute_full_profile(df: pd.DataFrame) -> dict:
 # Private helpers
 # ---------------------------------------------------------------------------
 
+
 def _numeric_distribution(series: pd.Series) -> dict:
     """Histogram bins for a numeric column (up to 20 bins)."""
     if series.empty:
@@ -118,7 +125,9 @@ def _numeric_distribution(series: pd.Series) -> dict:
     finite_series = series[np.isfinite(series)]
     if finite_series.empty:
         return {"bins": [], "counts": []}
-    counts, bin_edges = np.histogram(finite_series, bins=min(20, finite_series.nunique()))
+    counts, bin_edges = np.histogram(
+        finite_series, bins=min(20, finite_series.nunique())
+    )
     bins = [round(float(e), 4) for e in bin_edges[:-1]]
     return {"bins": bins, "counts": [int(c) for c in counts]}
 
@@ -174,74 +183,94 @@ def _detect_patterns(
     # High missing values
     for col in column_stats:
         if col["null_pct"] >= 30:
-            insights.append({
-                "type": "missing_values",
-                "severity": "warning",
-                "title": f"High missing rate in '{col['name']}'",
-                "detail": (
-                    f"{col['null_pct']:.1f}% of values are missing. "
-                    "Consider filling with median/mode or dropping the column."
-                ),
-            })
+            insights.append(
+                {
+                    "type": "missing_values",
+                    "severity": "warning",
+                    "title": f"High missing rate in '{col['name']}'",
+                    "detail": (
+                        f"{col['null_pct']:.1f}% of values are missing. "
+                        "Consider filling with median/mode or dropping the column."
+                    ),
+                }
+            )
         elif col["null_pct"] >= 5:
-            insights.append({
-                "type": "missing_values",
-                "severity": "info",
-                "title": f"Some missing values in '{col['name']}'",
-                "detail": f"{col['null_pct']:.1f}% of values are missing.",
-            })
+            insights.append(
+                {
+                    "type": "missing_values",
+                    "severity": "info",
+                    "title": f"Some missing values in '{col['name']}'",
+                    "detail": f"{col['null_pct']:.1f}% of values are missing.",
+                }
+            )
 
     # High cardinality (likely ID columns)
-    _numeric_dtypes = {"float64", "int64", "float32", "int32", "float16", "int16", "int8"}
+    _numeric_dtypes = {
+        "float64",
+        "int64",
+        "float32",
+        "int32",
+        "float16",
+        "int16",
+        "int8",
+    }
     total_rows = len(df)
     for col in column_stats:
         if col["unique_count"] == total_rows and col["dtype"] not in _numeric_dtypes:
-            insights.append({
-                "type": "high_cardinality",
-                "severity": "info",
-                "title": f"'{col['name']}' looks like a unique identifier",
-                "detail": "Every value is unique — this column probably won't help prediction.",
-            })
+            insights.append(
+                {
+                    "type": "high_cardinality",
+                    "severity": "info",
+                    "title": f"'{col['name']}' looks like a unique identifier",
+                    "detail": "Every value is unique — this column probably won't help prediction.",
+                }
+            )
 
     # Strong correlations
     for pair in corr_pairs[:3]:
         if abs(pair["correlation"]) >= 0.8:
             direction = "positively" if pair["correlation"] > 0 else "negatively"
-            insights.append({
-                "type": "correlation",
-                "severity": "info",
-                "title": f"Strong relationship: '{pair['col_a']}' and '{pair['col_b']}'",
-                "detail": (
-                    f"These columns are strongly {direction} correlated "
-                    f"(r={pair['correlation']}). They carry similar information."
-                ),
-            })
+            insights.append(
+                {
+                    "type": "correlation",
+                    "severity": "info",
+                    "title": f"Strong relationship: '{pair['col_a']}' and '{pair['col_b']}'",
+                    "detail": (
+                        f"These columns are strongly {direction} correlated "
+                        f"(r={pair['correlation']}). They carry similar information."
+                    ),
+                }
+            )
 
     # Outliers
     for col in column_stats:
         if "outliers" in col and col["outliers"]["count"] > 0:
             pct = col["outliers"]["pct"]
             if pct >= 5:
-                insights.append({
-                    "type": "outliers",
-                    "severity": "warning",
-                    "title": f"Outliers detected in '{col['name']}'",
-                    "detail": (
-                        f"{col['outliers']['count']} values ({pct:.1f}%) fall outside "
-                        f"the expected range "
-                        f"[{col['outliers']['lower_fence']} – {col['outliers']['upper_fence']}]."
-                    ),
-                })
+                insights.append(
+                    {
+                        "type": "outliers",
+                        "severity": "warning",
+                        "title": f"Outliers detected in '{col['name']}'",
+                        "detail": (
+                            f"{col['outliers']['count']} values ({pct:.1f}%) fall outside "
+                            f"the expected range "
+                            f"[{col['outliers']['lower_fence']} – {col['outliers']['upper_fence']}]."
+                        ),
+                    }
+                )
 
     # Duplicate rows
     dup_count = int(df.duplicated().sum())
     if dup_count > 0:
-        insights.append({
-            "type": "duplicates",
-            "severity": "warning",
-            "title": f"{dup_count} duplicate row{'s' if dup_count > 1 else ''} found",
-            "detail": "Duplicate rows can inflate model performance. Consider removing them.",
-        })
+        insights.append(
+            {
+                "type": "duplicates",
+                "severity": "warning",
+                "title": f"{dup_count} duplicate row{'s' if dup_count > 1 else ''} found",
+                "detail": "Duplicate rows can inflate model performance. Consider removing them.",
+            }
+        )
 
     # Possible date columns (string dtype with date-like values)
     # dtype may be "object" (pandas < 3) or "str" (pandas >= 3 with StringDtype)
@@ -249,15 +278,17 @@ def _detect_patterns(
         if col["dtype"] in ("object", "str", "string") and col["sample_values"]:
             sample = str(col["sample_values"][0])
             if _looks_like_date(sample):
-                insights.append({
-                    "type": "date_column",
-                    "severity": "info",
-                    "title": f"'{col['name']}' looks like a date column",
-                    "detail": (
-                        "Converting it to datetime could unlock time-based features "
-                        "like month, day-of-week, or trend analysis."
-                    ),
-                })
+                insights.append(
+                    {
+                        "type": "date_column",
+                        "severity": "info",
+                        "title": f"'{col['name']}' looks like a date column",
+                        "detail": (
+                            "Converting it to datetime could unlock time-based features "
+                            "like month, day-of-week, or trend analysis."
+                        ),
+                    }
+                )
 
     return insights
 
@@ -294,6 +325,7 @@ def detect_time_columns(df: pd.DataFrame) -> list[str]:
 def _looks_like_date(value: str) -> bool:
     """Quick heuristic: does the value look like a date string?"""
     import re
+
     date_pattern = re.compile(
         r"\d{4}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}[-/]\d{1,2}[-/]\d{4}"
     )

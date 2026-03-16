@@ -45,16 +45,20 @@ TEMPLATES: dict[str, dict] = {
         "target_column": "revenue",
         "problem_type": "regression",
         "sample_file": "sample_sales.csv",
-        "suggested_algorithms": ["random_forest_regressor", "gradient_boosting_regressor", "xgboost_regressor"],
+        "suggested_algorithms": [
+            "random_forest_regressor",
+            "gradient_boosting_regressor",
+            "xgboost_regressor",
+        ],
         "conversation_starter": (
             "I've loaded your sales forecast template with 200 rows of sales data "
             "covering dates, products, regions, and revenue. "
             "I can see patterns across 3 product lines and 4 regions.\n\n"
             "**Your goal:** Predict revenue based on product, region, and timing.\n\n"
             "Try asking:\n"
-            "- \"Which region has the highest revenue?\"\n"
-            "- \"Are there any seasonal patterns?\"\n"
-            "- \"What's driving revenue most?\""
+            '- "Which region has the highest revenue?"\n'
+            '- "Are there any seasonal patterns?"\n'
+            '- "What\'s driving revenue most?"'
         ),
         "tags": ["regression", "sales", "time-series"],
         "difficulty": "beginner",
@@ -70,16 +74,20 @@ TEMPLATES: dict[str, dict] = {
         "target_column": "churn",
         "problem_type": "classification",
         "sample_file": "customer_churn.csv",
-        "suggested_algorithms": ["random_forest_classifier", "xgboost_classifier", "logistic_regression"],
+        "suggested_algorithms": [
+            "random_forest_classifier",
+            "xgboost_classifier",
+            "logistic_regression",
+        ],
         "conversation_starter": (
             "I've loaded the customer churn template with 300 customer records. "
             "About 29% of customers have churned — this is a binary classification problem.\n\n"
             "**Your goal:** Predict whether a customer will churn ('Yes'/'No') "
             "based on their tenure, charges, usage, and support history.\n\n"
             "Try asking:\n"
-            "- \"What does a typical churning customer look like?\"\n"
-            "- \"Does monthly charge affect churn rate?\"\n"
-            "- \"Which contract type has the lowest churn?\""
+            '- "What does a typical churning customer look like?"\n'
+            '- "Does monthly charge affect churn rate?"\n'
+            '- "Which contract type has the lowest churn?"'
         ),
         "tags": ["classification", "churn", "customer"],
         "difficulty": "intermediate",
@@ -95,15 +103,19 @@ TEMPLATES: dict[str, dict] = {
         "target_column": "units_sold",
         "problem_type": "regression",
         "sample_file": "demand_forecast.csv",
-        "suggested_algorithms": ["gradient_boosting_regressor", "random_forest_regressor", "linear_regression"],
+        "suggested_algorithms": [
+            "gradient_boosting_regressor",
+            "random_forest_regressor",
+            "linear_regression",
+        ],
         "conversation_starter": (
             "I've loaded the demand forecasting template with 250 weeks of data "
             "across 4 products. Key drivers include price, promotions, and temperature.\n\n"
             "**Your goal:** Predict units sold based on pricing and market conditions.\n\n"
             "Try asking:\n"
-            "- \"How much does a promotion boost sales?\"\n"
-            "- \"What's the price elasticity?\"\n"
-            "- \"Which product has the most stable demand?\""
+            '- "How much does a promotion boost sales?"\n'
+            '- "What\'s the price elasticity?"\n'
+            '- "Which product has the most stable demand?"'
         ),
         "tags": ["regression", "demand", "retail"],
         "difficulty": "intermediate",
@@ -114,6 +126,7 @@ TEMPLATES: dict[str, dict] = {
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
+
 
 @router.get("")
 def list_templates():
@@ -140,7 +153,9 @@ def get_template(template_id: str):
     """Return full template metadata including the conversation starter."""
     tpl = TEMPLATES.get(template_id)
     if not tpl:
-        raise HTTPException(status_code=404, detail=f"Template '{template_id}' not found")
+        raise HTTPException(
+            status_code=404, detail=f"Template '{template_id}' not found"
+        )
     return tpl
 
 
@@ -153,7 +168,9 @@ def apply_template(template_id: str, session: Session = Depends(get_session)):
     """
     tpl = TEMPLATES.get(template_id)
     if not tpl:
-        raise HTTPException(status_code=404, detail=f"Template '{template_id}' not found")
+        raise HTTPException(
+            status_code=404, detail=f"Template '{template_id}' not found"
+        )
 
     # Locate the sample file
     sample_path = SAMPLE_DIR / tpl["sample_file"]

@@ -3,6 +3,7 @@
 Each test is named after the specific code path it exercises to make future
 coverage debugging easy.
 """
+
 import io
 import json
 from pathlib import Path
@@ -29,7 +30,8 @@ SAMPLE_CSV_BYTES = (
 )
 
 LARGE_CSV_BYTES = b"date,value\n" + b"".join(
-    f"2024-{(i // 30) % 12 + 1:02d}-{i % 28 + 1:02d},{i * 10}\n".encode() for i in range(600)
+    f"2024-{(i // 30) % 12 + 1:02d}-{i % 28 + 1:02d},{i * 10}\n".encode()
+    for i in range(600)
 )
 
 
@@ -58,7 +60,9 @@ async def ac(tmp_path, monkeypatch):
 
     from main import app
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
         yield client
 
 
@@ -111,6 +115,7 @@ async def model_run_id(ac, project_id, feature_set_id):
 
     # Poll until done
     import asyncio
+
     for _ in range(30):
         status_resp = await ac.get(f"/api/models/{project_id}/runs")
         runs = status_resp.json()["runs"]
@@ -140,10 +145,17 @@ class TestDataApiCoverageGaps:
 
     # Lines 154-156: narration exception path (silent exception in upload narration)
     @pytest.mark.asyncio
-    async def test_upload_narration_exception_is_silenced(self, ac, project_id, monkeypatch):
+    async def test_upload_narration_exception_is_silenced(
+        self, ac, project_id, monkeypatch
+    ):
         """Exception in narration after upload must not fail the upload response."""
         import chat.narration as narration_module
-        monkeypatch.setattr(narration_module, "narrate_upload", lambda **kw: (_ for _ in ()).throw(RuntimeError("boom")))
+
+        monkeypatch.setattr(
+            narration_module,
+            "narrate_upload",
+            lambda **kw: (_ for _ in ()).throw(RuntimeError("boom")),
+        )
         resp = await ac.post(
             "/api/data/upload",
             data={"project_id": project_id},
@@ -158,6 +170,7 @@ class TestDataApiCoverageGaps:
         """If the CSV file is deleted from disk, preview returns 404."""
         from sqlmodel import Session as S
         from models.dataset import Dataset as DS
+
         with S(db_module.engine) as session:
             ds = session.get(DS, dataset_id)
             # Point to a nonexistent path
@@ -175,6 +188,7 @@ class TestDataApiCoverageGaps:
         """Corrupt profile JSON in DB should be silently ignored — insights=[].."""
         from sqlmodel import Session as S
         from models.dataset import Dataset as DS
+
         with S(db_module.engine) as session:
             ds = session.get(DS, dataset_id)
             ds.profile = "{{invalid json}}"
@@ -191,6 +205,7 @@ class TestDataApiCoverageGaps:
         """When profile is None in DB, endpoint recomputes and returns it."""
         from sqlmodel import Session as S
         from models.dataset import Dataset as DS
+
         with S(db_module.engine) as session:
             ds = session.get(DS, dataset_id)
             ds.profile = None
@@ -207,6 +222,7 @@ class TestDataApiCoverageGaps:
         """NL query with missing file returns 404."""
         from sqlmodel import Session as S
         from models.dataset import Dataset as DS
+
         with S(db_module.engine) as session:
             ds = session.get(DS, dataset_id)
             ds.file_path = str(tmp_path / "gone.csv")
@@ -225,6 +241,7 @@ class TestDataApiCoverageGaps:
     async def test_sample_load_missing_sample_csv(self, ac, project_id, monkeypatch):
         """If bundled sample CSV is missing, return 500."""
         import api.data as data_module
+
         monkeypatch.setattr(data_module, "SAMPLE_CSV", Path("/nonexistent/sample.csv"))
         resp = await ac.post("/api/data/sample", json={"project_id": project_id})
         assert resp.status_code == 500
@@ -232,10 +249,17 @@ class TestDataApiCoverageGaps:
 
     # Lines 355-357: AI narration exception silenced in sample load
     @pytest.mark.asyncio
-    async def test_sample_load_narration_exception_silenced(self, ac, project_id, monkeypatch):
+    async def test_sample_load_narration_exception_silenced(
+        self, ac, project_id, monkeypatch
+    ):
         """AI narration failure after sample load must not fail the response."""
         import chat.narration as narration_module
-        monkeypatch.setattr(narration_module, "narrate_upload", lambda **kw: (_ for _ in ()).throw(RuntimeError("ai down")))
+
+        monkeypatch.setattr(
+            narration_module,
+            "narrate_upload",
+            lambda **kw: (_ for _ in ()).throw(RuntimeError("ai down")),
+        )
         resp = await ac.post("/api/data/sample", json={"project_id": project_id})
         # 201 = new; 200 = already existed — either is acceptable
         assert resp.status_code in (200, 201)
@@ -247,6 +271,7 @@ class TestDataApiCoverageGaps:
         """Corrupt profile triggers recompute — result is still returned."""
         from sqlmodel import Session as S
         from models.dataset import Dataset as DS
+
         with S(db_module.engine) as session:
             ds = session.get(DS, dataset_id)
             ds.profile = "not json"
@@ -263,6 +288,7 @@ class TestDataApiCoverageGaps:
         """If file is gone and no cached correlations, return 404."""
         from sqlmodel import Session as S
         from models.dataset import Dataset as DS
+
         with S(db_module.engine) as session:
             ds = session.get(DS, dataset_id)
             ds.profile = None  # force recompute
@@ -279,13 +305,9 @@ class TestDataApiCoverageGaps:
     async def test_timeseries_no_numeric_columns(self, ac, project_id, tmp_path):
         """Dataset with only date + text columns has no numeric for timeseries."""
         import api.data as data_module
+
         data_module.UPLOAD_DIR = tmp_path / "uploads"
-        csv_bytes = (
-            b"date,category\n"
-            b"2024-01-01,A\n"
-            b"2024-01-02,B\n"
-            b"2024-01-03,C\n"
-        )
+        csv_bytes = b"date,category\n2024-01-01,A\n2024-01-02,B\n2024-01-03,C\n"
         resp = await ac.post(
             "/api/data/upload",
             data={"project_id": project_id},
@@ -304,6 +326,7 @@ class TestDataApiCoverageGaps:
         """Timeseries returns 404 when file is gone."""
         from sqlmodel import Session as S
         from models.dataset import Dataset as DS
+
         with S(db_module.engine) as session:
             ds = session.get(DS, dataset_id)
             ds.file_path = str(tmp_path / "gone.csv")
@@ -319,6 +342,7 @@ class TestDataApiCoverageGaps:
     async def test_timeseries_downsamples_large_dataset(self, ac, project_id, tmp_path):
         """Datasets with > 500 rows are downsampled to 500 points."""
         import api.data as data_module
+
         data_module.UPLOAD_DIR = tmp_path / "uploads"
         resp = await ac.post(
             "/api/data/upload",
@@ -340,7 +364,10 @@ class TestDataApiCoverageGaps:
     async def test_sample_info_missing_file(self, ac, monkeypatch):
         """GET /api/data/sample/info returns 404 when bundled file is missing."""
         import api.data as data_module
-        monkeypatch.setattr(data_module, "SAMPLE_CSV", Path("/nonexistent/path/sample.csv"))
+
+        monkeypatch.setattr(
+            data_module, "SAMPLE_CSV", Path("/nonexistent/path/sample.csv")
+        )
         resp = await ac.get("/api/data/sample/info")
         assert resp.status_code == 404
         assert "not available" in resp.json()["detail"]
@@ -357,7 +384,9 @@ class TestDataApiCoverageGaps:
         assert "nonexistent-id" in resp.json()["detail"]
 
     @pytest.mark.asyncio
-    async def test_join_keys_first_dataset_file_missing(self, ac, dataset_id, project_id, tmp_path):
+    async def test_join_keys_first_dataset_file_missing(
+        self, ac, dataset_id, project_id, tmp_path
+    ):
         """If first dataset's file is missing, return 404."""
         # Upload a second dataset
         resp2 = await ac.post(
@@ -370,6 +399,7 @@ class TestDataApiCoverageGaps:
         # Corrupt first dataset's file path
         from sqlmodel import Session as S
         from models.dataset import Dataset as DS
+
         with S(db_module.engine) as session:
             ds = session.get(DS, dataset_id)
             ds.file_path = str(tmp_path / "gone.csv")
@@ -384,7 +414,9 @@ class TestDataApiCoverageGaps:
         assert "Left dataset file not found" in resp.json()["detail"]
 
     @pytest.mark.asyncio
-    async def test_join_keys_second_dataset_file_missing(self, ac, dataset_id, project_id, tmp_path):
+    async def test_join_keys_second_dataset_file_missing(
+        self, ac, dataset_id, project_id, tmp_path
+    ):
         """If second dataset's file is missing, return 404."""
         resp2 = await ac.post(
             "/api/data/upload",
@@ -395,6 +427,7 @@ class TestDataApiCoverageGaps:
 
         from sqlmodel import Session as S
         from models.dataset import Dataset as DS
+
         with S(db_module.engine) as session:
             ds = session.get(DS, ds2_id)
             ds.file_path = str(tmp_path / "gone.csv")
@@ -437,7 +470,9 @@ class TestDataApiCoverageGaps:
         assert resp.status_code == 404
 
     @pytest.mark.asyncio
-    async def test_merge_first_dataset_file_missing(self, ac, project_id, dataset_id, tmp_path):
+    async def test_merge_first_dataset_file_missing(
+        self, ac, project_id, dataset_id, tmp_path
+    ):
         """Merge with missing first file returns 404."""
         resp2 = await ac.post(
             "/api/data/upload",
@@ -448,6 +483,7 @@ class TestDataApiCoverageGaps:
 
         from sqlmodel import Session as S
         from models.dataset import Dataset as DS
+
         with S(db_module.engine) as session:
             ds = session.get(DS, dataset_id)
             ds.file_path = str(tmp_path / "gone.csv")
@@ -456,13 +492,19 @@ class TestDataApiCoverageGaps:
 
         resp = await ac.post(
             f"/api/data/{project_id}/merge",
-            json={"dataset_id_1": dataset_id, "dataset_id_2": ds2_id, "join_key": "product"},
+            json={
+                "dataset_id_1": dataset_id,
+                "dataset_id_2": ds2_id,
+                "join_key": "product",
+            },
         )
         assert resp.status_code == 404
         assert "Left dataset" in resp.json()["detail"]
 
     @pytest.mark.asyncio
-    async def test_merge_second_dataset_file_missing(self, ac, project_id, dataset_id, tmp_path):
+    async def test_merge_second_dataset_file_missing(
+        self, ac, project_id, dataset_id, tmp_path
+    ):
         """Merge with missing second file returns 404."""
         resp2 = await ac.post(
             "/api/data/upload",
@@ -473,6 +515,7 @@ class TestDataApiCoverageGaps:
 
         from sqlmodel import Session as S
         from models.dataset import Dataset as DS
+
         with S(db_module.engine) as session:
             ds = session.get(DS, ds2_id)
             ds.file_path = str(tmp_path / "gone.csv")
@@ -481,21 +524,31 @@ class TestDataApiCoverageGaps:
 
         resp = await ac.post(
             f"/api/data/{project_id}/merge",
-            json={"dataset_id_1": dataset_id, "dataset_id_2": ds2_id, "join_key": "product"},
+            json={
+                "dataset_id_1": dataset_id,
+                "dataset_id_2": ds2_id,
+                "join_key": "product",
+            },
         )
         assert resp.status_code == 404
         assert "Right dataset" in resp.json()["detail"]
 
     # Lines 741-742: Google Sheets ValueError (malformed URL matching the pattern)
     @pytest.mark.asyncio
-    async def test_upload_url_invalid_google_sheets_url(self, ac, project_id, monkeypatch):
+    async def test_upload_url_invalid_google_sheets_url(
+        self, ac, project_id, monkeypatch
+    ):
         """Google Sheets URL that fails conversion raises 400."""
         import api.data as data_module
+
         # Force _is_google_sheets_url to return True, but _sheets_to_csv_url to raise
         monkeypatch.setattr(data_module, "_is_google_sheets_url", lambda url: True)
         monkeypatch.setattr(
-            data_module, "_sheets_to_csv_url",
-            lambda url: (_ for _ in ()).throw(ValueError("not look like a Google Sheets")),
+            data_module,
+            "_sheets_to_csv_url",
+            lambda url: (_ for _ in ()).throw(
+                ValueError("not look like a Google Sheets")
+            ),
         )
         resp = await ac.post(
             "/api/data/upload-url",
@@ -525,10 +578,17 @@ class TestDataApiCoverageGaps:
 
     # Lines 827-829: AI narration exception silenced in upload-url
     @pytest.mark.asyncio
-    async def test_upload_url_narration_exception_silenced(self, ac, project_id, monkeypatch):
+    async def test_upload_url_narration_exception_silenced(
+        self, ac, project_id, monkeypatch
+    ):
         """AI narration failure after URL import must not fail the response."""
         import chat.narration as narration_module
-        monkeypatch.setattr(narration_module, "narrate_upload", lambda **kw: (_ for _ in ()).throw(RuntimeError("ai down")))
+
+        monkeypatch.setattr(
+            narration_module,
+            "narrate_upload",
+            lambda **kw: (_ for _ in ()).throw(RuntimeError("ai down")),
+        )
 
         mock_resp = MagicMock()
         mock_resp.read.return_value = SAMPLE_CSV_BYTES
@@ -566,7 +626,9 @@ class TestModelsApiCoverageGaps:
     # Lines 146-147: training background thread — run not found in DB (race condition)
     # This is tested indirectly via the training flow; we verify the queue cleanup
     @pytest.mark.asyncio
-    async def test_train_invalid_algorithms_rejected(self, ac, project_id, feature_set_id):
+    async def test_train_invalid_algorithms_rejected(
+        self, ac, project_id, feature_set_id
+    ):
         """Unknown algorithm names return 400."""
         resp = await ac.post(
             f"/api/models/{project_id}/train",
@@ -577,10 +639,13 @@ class TestModelsApiCoverageGaps:
 
     # Lines 208-209: train — dataset file missing from disk
     @pytest.mark.asyncio
-    async def test_train_dataset_file_missing(self, ac, project_id, feature_set_id, dataset_id, tmp_path):
+    async def test_train_dataset_file_missing(
+        self, ac, project_id, feature_set_id, dataset_id, tmp_path
+    ):
         """If the dataset CSV is missing, training returns 404."""
         from sqlmodel import Session as S
         from models.dataset import Dataset as DS
+
         with S(db_module.engine) as session:
             ds = session.get(DS, dataset_id)
             ds.file_path = str(tmp_path / "gone.csv")
@@ -635,7 +700,9 @@ class TestModelsApiCoverageGaps:
 
     # Line 414: compare_models — no completed runs returns empty list
     @pytest.mark.asyncio
-    async def test_compare_models_no_completed_runs(self, ac, project_id, feature_set_id):
+    async def test_compare_models_no_completed_runs(
+        self, ac, project_id, feature_set_id
+    ):
         resp = await ac.get(f"/api/models/{project_id}/compare")
         assert resp.status_code == 200
         data = resp.json()
@@ -649,7 +716,9 @@ class TestModelsApiCoverageGaps:
         assert resp.status_code == 404
 
     @pytest.mark.asyncio
-    async def test_comparison_radar_one_model_returns_204(self, ac, project_id, feature_set_id, model_run_id):
+    async def test_comparison_radar_one_model_returns_204(
+        self, ac, project_id, feature_set_id, model_run_id
+    ):
         """Only 1 completed run → radar returns 204."""
         resp = await ac.get(f"/api/models/{project_id}/comparison-radar")
         assert resp.status_code in (200, 204)  # 204 if chart is None
@@ -665,6 +734,7 @@ class TestModelsApiCoverageGaps:
     async def test_select_model_not_done(self, ac, project_id, feature_set_id):
         """Selecting a pending run returns 400."""
         from models.model_run import ModelRun
+
         with Session(db_module.engine) as session:
             run = ModelRun(
                 project_id=project_id,
@@ -700,6 +770,7 @@ class TestModelsApiCoverageGaps:
     async def test_download_model_not_done(self, ac, project_id, feature_set_id):
         """Download a pending run returns 400."""
         from models.model_run import ModelRun
+
         with Session(db_module.engine) as session:
             run = ModelRun(
                 project_id=project_id,
@@ -721,6 +792,7 @@ class TestModelsApiCoverageGaps:
     async def test_download_model_no_model_path(self, ac, project_id, feature_set_id):
         """Done run without model_path returns 404."""
         from models.model_run import ModelRun
+
         with Session(db_module.engine) as session:
             run = ModelRun(
                 project_id=project_id,
@@ -740,9 +812,12 @@ class TestModelsApiCoverageGaps:
         assert "not found" in resp.json()["detail"]
 
     @pytest.mark.asyncio
-    async def test_download_model_file_missing_from_disk(self, ac, project_id, feature_set_id):
+    async def test_download_model_file_missing_from_disk(
+        self, ac, project_id, feature_set_id
+    ):
         """Done run pointing to missing file returns 404."""
         from models.model_run import ModelRun
+
         with Session(db_module.engine) as session:
             run = ModelRun(
                 project_id=project_id,
@@ -771,6 +846,7 @@ class TestModelsApiCoverageGaps:
     @pytest.mark.asyncio
     async def test_report_run_not_done(self, ac, project_id, feature_set_id):
         from models.model_run import ModelRun
+
         with Session(db_module.engine) as session:
             run = ModelRun(
                 project_id=project_id,
@@ -802,6 +878,7 @@ class TestDeployApiCoverageGaps:
     async def test_deploy_run_not_done(self, ac, project_id, feature_set_id):
         """Deploying a pending run returns 400."""
         from models.model_run import ModelRun
+
         with Session(db_module.engine) as session:
             run = ModelRun(
                 project_id=project_id,
@@ -823,6 +900,7 @@ class TestDeployApiCoverageGaps:
     async def test_deploy_no_model_path(self, ac, project_id, feature_set_id):
         """Deploying a done run with no model_path returns 404."""
         from models.model_run import ModelRun
+
         with Session(db_module.engine) as session:
             run = ModelRun(
                 project_id=project_id,
@@ -847,6 +925,7 @@ class TestDeployApiCoverageGaps:
     async def test_deploy_feature_set_not_found(self, ac, project_id):
         """Deploying a run whose feature_set was deleted returns 404."""
         from models.model_run import ModelRun
+
         with Session(db_module.engine) as session:
             run = ModelRun(
                 project_id=project_id,
@@ -894,37 +973,55 @@ class TestDeployApiCoverageGaps:
         assert resp.status_code == 404
 
     @pytest.mark.asyncio
-    async def test_predict_pipeline_missing_from_disk(self, ac, model_run_id, deployment_id, tmp_path):
+    async def test_predict_pipeline_missing_from_disk(
+        self, ac, model_run_id, deployment_id, tmp_path
+    ):
         """Prediction returns 500 if pipeline file is missing."""
         from models.deployment import Deployment
+
         with Session(db_module.engine) as session:
             dep = session.get(Deployment, deployment_id)
             dep.pipeline_path = str(tmp_path / "missing_pipeline.joblib")
             session.add(dep)
             session.commit()
 
-        resp = await ac.post(f"/api/predict/{deployment_id}", json={"product": "Widget A", "region": "North", "units": 10})
+        resp = await ac.post(
+            f"/api/predict/{deployment_id}",
+            json={"product": "Widget A", "region": "North", "units": 10},
+        )
         assert resp.status_code == 500
         assert "pipeline" in resp.json()["detail"].lower()
 
     @pytest.mark.asyncio
-    async def test_predict_model_file_missing_from_disk(self, ac, model_run_id, deployment_id, tmp_path):
+    async def test_predict_model_file_missing_from_disk(
+        self, ac, model_run_id, deployment_id, tmp_path
+    ):
         """Prediction returns 500 if model file is missing."""
         from models.model_run import ModelRun
+
         with Session(db_module.engine) as session:
             run = session.get(ModelRun, model_run_id)
             run.model_path = str(tmp_path / "missing_model.joblib")
             session.add(run)
             session.commit()
 
-        resp = await ac.post(f"/api/predict/{deployment_id}", json={"product": "Widget A", "region": "North", "units": 10})
-        assert resp.status_code in (500, 422)  # 500 = missing model, 422 = pipeline/model mismatch
+        resp = await ac.post(
+            f"/api/predict/{deployment_id}",
+            json={"product": "Widget A", "region": "North", "units": 10},
+        )
+        assert resp.status_code in (
+            500,
+            422,
+        )  # 500 = missing model, 422 = pipeline/model mismatch
 
     # Lines 280, 284: batch predict — pipeline missing / model missing
     @pytest.mark.asyncio
-    async def test_batch_predict_pipeline_missing(self, ac, model_run_id, deployment_id, tmp_path):
+    async def test_batch_predict_pipeline_missing(
+        self, ac, model_run_id, deployment_id, tmp_path
+    ):
         """Batch prediction returns 500 if pipeline file is missing."""
         from models.deployment import Deployment
+
         with Session(db_module.engine) as session:
             dep = session.get(Deployment, deployment_id)
             dep.pipeline_path = str(tmp_path / "missing_pipeline.joblib")
@@ -939,9 +1036,12 @@ class TestDeployApiCoverageGaps:
         assert "pipeline" in resp.json()["detail"].lower()
 
     @pytest.mark.asyncio
-    async def test_batch_predict_model_missing(self, ac, model_run_id, deployment_id, tmp_path):
+    async def test_batch_predict_model_missing(
+        self, ac, model_run_id, deployment_id, tmp_path
+    ):
         """Batch prediction returns 500 if model file is missing."""
         from models.model_run import ModelRun
+
         with Session(db_module.engine) as session:
             run = session.get(ModelRun, model_run_id)
             run.model_path = str(tmp_path / "missing_model.joblib")

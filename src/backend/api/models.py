@@ -62,6 +62,7 @@ MODELS_DIR = Path(__file__).parent.parent / "data" / "models"
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _get_project_context(
     project_id: str, session: Session
 ) -> tuple[Project, Dataset, FeatureSet]:
@@ -125,6 +126,7 @@ def _run_to_dict(run: ModelRun) -> dict:
 # Background training worker
 # ---------------------------------------------------------------------------
 
+
 def _push_event(project_id: str, event: dict) -> None:
     """Thread-safe: post an event to the project's SSE queue if one exists."""
     with _lock:
@@ -151,12 +153,14 @@ def _finish_training_thread(project_id: str) -> None:
 def _narrate_training_done(project_id: str) -> None:
     """Load completed runs and append a training-complete bot message."""
     with Session(_db.engine) as session:
-        runs = list(session.exec(
-            select(ModelRun).where(
-                ModelRun.project_id == project_id,
-                ModelRun.status.in_(["done", "failed"]),  # type: ignore[attr-defined]
-            )
-        ).all())
+        runs = list(
+            session.exec(
+                select(ModelRun).where(
+                    ModelRun.project_id == project_id,
+                    ModelRun.status.in_(["done", "failed"]),  # type: ignore[attr-defined]
+                )
+            ).all()
+        )
         if not runs:
             return
 
@@ -173,7 +177,9 @@ def _narrate_training_done(project_id: str) -> None:
                 )
             ).first()
 
-        problem_type = (feature_set.problem_type if feature_set else None) or "regression"
+        problem_type = (
+            feature_set.problem_type if feature_set else None
+        ) or "regression"
         target_col = (feature_set.target_column if feature_set else None) or "target"
 
         runs_dicts = [
@@ -212,11 +218,21 @@ def _train_in_background(
         session.add(run)
         session.commit()
 
-    _push_event(project_id, {"type": "status", "run_id": model_run_id, "status": "training", "algorithm": algorithm})
+    _push_event(
+        project_id,
+        {
+            "type": "status",
+            "run_id": model_run_id,
+            "status": "training",
+            "algorithm": algorithm,
+        },
+    )
 
     try:
         X, y, _ = prepare_features(df, feature_cols, target_col, problem_type)
-        result = train_single_model(X, y, algorithm, problem_type, model_dir, model_run_id)
+        result = train_single_model(
+            X, y, algorithm, problem_type, model_dir, model_run_id
+        )
 
         with Session(_db.engine) as session:
             run = session.get(ModelRun, model_run_id)
@@ -229,15 +245,18 @@ def _train_in_background(
                 session.add(run)
                 session.commit()
 
-        _push_event(project_id, {
-            "type": "done",
-            "run_id": model_run_id,
-            "status": "done",
-            "algorithm": algorithm,
-            "metrics": result["metrics"],
-            "summary": result["summary"],
-            "training_duration_ms": result["training_duration_ms"],
-        })
+        _push_event(
+            project_id,
+            {
+                "type": "done",
+                "run_id": model_run_id,
+                "status": "done",
+                "algorithm": algorithm,
+                "metrics": result["metrics"],
+                "summary": result["summary"],
+                "training_duration_ms": result["training_duration_ms"],
+            },
+        )
 
     except Exception as exc:  # noqa: BLE001
         with Session(_db.engine) as session:
@@ -248,7 +267,16 @@ def _train_in_background(
                 session.add(run)
                 session.commit()
 
-        _push_event(project_id, {"type": "failed", "run_id": model_run_id, "status": "failed", "algorithm": algorithm, "error": str(exc)[:200]})
+        _push_event(
+            project_id,
+            {
+                "type": "failed",
+                "run_id": model_run_id,
+                "status": "failed",
+                "algorithm": algorithm,
+                "error": str(exc)[:200],
+            },
+        )
 
     finally:
         _finish_training_thread(project_id)
@@ -257,6 +285,7 @@ def _train_in_background(
 # ---------------------------------------------------------------------------
 # 1. Recommendations
 # ---------------------------------------------------------------------------
+
 
 @router.get("/api/models/{project_id}/recommendations")
 def get_recommendations(project_id: str, session: Session = Depends(get_session)):
@@ -279,6 +308,7 @@ def get_recommendations(project_id: str, session: Session = Depends(get_session)
 # ---------------------------------------------------------------------------
 # 2. Start training
 # ---------------------------------------------------------------------------
+
 
 class TrainRequest(BaseModel):
     algorithms: list[str]
@@ -376,6 +406,7 @@ def start_training(
 # 3. List runs / poll status
 # ---------------------------------------------------------------------------
 
+
 @router.get("/api/models/{project_id}/runs")
 def list_runs(project_id: str, session: Session = Depends(get_session)):
     """List all model runs for a project with current status."""
@@ -383,9 +414,7 @@ def list_runs(project_id: str, session: Session = Depends(get_session)):
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
-    runs = session.exec(
-        select(ModelRun).where(ModelRun.project_id == project_id)
-    ).all()
+    runs = session.exec(select(ModelRun).where(ModelRun.project_id == project_id)).all()
 
     return {
         "project_id": project_id,
@@ -396,6 +425,7 @@ def list_runs(project_id: str, session: Session = Depends(get_session)):
 # ---------------------------------------------------------------------------
 # 3b. Model version history (timeline of all training runs)
 # ---------------------------------------------------------------------------
+
 
 @router.get("/api/models/{project_id}/history")
 def model_history(project_id: str, session: Session = Depends(get_session)):
@@ -535,6 +565,7 @@ def _compute_trend(
 # 4. Compare
 # ---------------------------------------------------------------------------
 
+
 @router.get("/api/models/{project_id}/compare")
 def compare_models(project_id: str, session: Session = Depends(get_session)):
     """Return side-by-side metric comparison for all completed model runs."""
@@ -581,6 +612,7 @@ def compare_models(project_id: str, session: Session = Depends(get_session)):
 # ---------------------------------------------------------------------------
 # 4b. Model comparison radar chart
 # ---------------------------------------------------------------------------
+
 
 @router.get("/api/models/{project_id}/comparison-radar")
 def comparison_radar(project_id: str, session: Session = Depends(get_session)):
@@ -633,6 +665,7 @@ def comparison_radar(project_id: str, session: Session = Depends(get_session)):
 # 5. Select a model
 # ---------------------------------------------------------------------------
 
+
 @router.post("/api/models/{model_run_id}/select")
 def select_model(model_run_id: str, session: Session = Depends(get_session)):
     """Mark a completed model run as the selected model for this project."""
@@ -668,6 +701,7 @@ def select_model(model_run_id: str, session: Session = Depends(get_session)):
 # ---------------------------------------------------------------------------
 # 6. Training progress SSE stream
 # ---------------------------------------------------------------------------
+
 
 @router.get("/api/models/{project_id}/training-stream")
 def training_stream(project_id: str):
@@ -718,6 +752,7 @@ def training_stream(project_id: str):
 # 7. Download model pickle
 # ---------------------------------------------------------------------------
 
+
 @router.get("/api/models/{model_run_id}/download")
 def download_model(model_run_id: str, session: Session = Depends(get_session)):
     """Download the serialized model pipeline as a joblib pickle file."""
@@ -747,6 +782,7 @@ def download_model(model_run_id: str, session: Session = Depends(get_session)):
 # ---------------------------------------------------------------------------
 # 8. PDF Report
 # ---------------------------------------------------------------------------
+
 
 @router.get("/api/models/{model_run_id}/report")
 def download_report(model_run_id: str, session: Session = Depends(get_session)):
@@ -880,7 +916,9 @@ def get_model_readiness(
 
     problem_type = (feature_set.problem_type if feature_set else None) or "regression"
     row_count = dataset.row_count if dataset else 0
-    feature_count = len(json.loads(feature_set.column_mapping or "{}")) if feature_set else 0
+    feature_count = (
+        len(json.loads(feature_set.column_mapping or "{}")) if feature_set else 0
+    )
 
     # --- Checklist evaluation ---
     checks: list[dict] = []
@@ -890,30 +928,37 @@ def get_model_readiness(
     # 1. Training completed successfully
     total_points += 10
     earned_points += 10
-    checks.append({
-        "id": "training_complete",
-        "label": "Training completed successfully",
-        "passed": True,
-        "detail": f"Model trained in {run.training_duration_ms or 0}ms using {run.algorithm}.",
-        "weight": 10,
-    })
+    checks.append(
+        {
+            "id": "training_complete",
+            "label": "Training completed successfully",
+            "passed": True,
+            "detail": f"Model trained in {run.training_duration_ms or 0}ms using {run.algorithm}.",
+            "weight": 10,
+        }
+    )
 
     # 2. Sufficient training data
     total_points += 20
     min_rows = 100
     data_ok = row_count >= min_rows
     earned_points += 20 if data_ok else (10 if row_count >= 50 else 0)
-    checks.append({
-        "id": "sufficient_data",
-        "label": "Sufficient training data",
-        "passed": data_ok,
-        "detail": (
-            f"{row_count} rows used for training. "
-            + ("Great — models generally improve with more data." if data_ok
-               else f"Consider collecting more data (recommended: {min_rows}+ rows).")
-        ),
-        "weight": 20,
-    })
+    checks.append(
+        {
+            "id": "sufficient_data",
+            "label": "Sufficient training data",
+            "passed": data_ok,
+            "detail": (
+                f"{row_count} rows used for training. "
+                + (
+                    "Great — models generally improve with more data."
+                    if data_ok
+                    else f"Consider collecting more data (recommended: {min_rows}+ rows)."
+                )
+            ),
+            "weight": 20,
+        }
+    )
 
     # 3. Accuracy / performance threshold
     total_points += 30
@@ -922,51 +967,68 @@ def get_model_readiness(
         perf_ok = r2 >= 0.7
         perf_partial = r2 >= 0.5
         earned_points += 30 if perf_ok else (15 if perf_partial else 0)
-        checks.append({
-            "id": "model_accuracy",
-            "label": "Meets accuracy threshold",
-            "passed": perf_ok,
-            "detail": (
-                f"R² = {r2:.3f} "
-                + ("— excellent fit. Model explains most of the variance in your data." if perf_ok
-                   else "— moderate fit. Consider more features or a different algorithm." if perf_partial
-                   else "— poor fit. The model may not be reliable for production use.")
-            ),
-            "weight": 30,
-        })
+        checks.append(
+            {
+                "id": "model_accuracy",
+                "label": "Meets accuracy threshold",
+                "passed": perf_ok,
+                "detail": (
+                    f"R² = {r2:.3f} "
+                    + (
+                        "— excellent fit. Model explains most of the variance in your data."
+                        if perf_ok
+                        else "— moderate fit. Consider more features or a different algorithm."
+                        if perf_partial
+                        else "— poor fit. The model may not be reliable for production use."
+                    )
+                ),
+                "weight": 30,
+            }
+        )
     else:
         acc = metrics.get("accuracy", 0.0)
         perf_ok = acc >= 0.8
         perf_partial = acc >= 0.65
         earned_points += 30 if perf_ok else (15 if perf_partial else 0)
-        checks.append({
-            "id": "model_accuracy",
-            "label": "Meets accuracy threshold",
-            "passed": perf_ok,
-            "detail": (
-                f"Accuracy = {acc:.1%} "
-                + ("— strong performance. Model is predicting reliably." if perf_ok
-                   else "— moderate performance. Consider feature improvements." if perf_partial
-                   else "— below threshold. Review your features and target column.")
-            ),
-            "weight": 30,
-        })
+        checks.append(
+            {
+                "id": "model_accuracy",
+                "label": "Meets accuracy threshold",
+                "passed": perf_ok,
+                "detail": (
+                    f"Accuracy = {acc:.1%} "
+                    + (
+                        "— strong performance. Model is predicting reliably."
+                        if perf_ok
+                        else "— moderate performance. Consider feature improvements."
+                        if perf_partial
+                        else "— below threshold. Review your features and target column."
+                    )
+                ),
+                "weight": 30,
+            }
+        )
 
     # 4. Features are meaningful (more than 1 feature)
     total_points += 15
     has_features = feature_count > 1
     earned_points += 15 if has_features else 5
-    checks.append({
-        "id": "feature_quality",
-        "label": "Multiple features used",
-        "passed": has_features,
-        "detail": (
-            f"{feature_count} features in the model. "
-            + ("Good diversity of input signals." if has_features
-               else "Only 1 feature — consider adding more input columns to improve predictions.")
-        ),
-        "weight": 15,
-    })
+    checks.append(
+        {
+            "id": "feature_quality",
+            "label": "Multiple features used",
+            "passed": has_features,
+            "detail": (
+                f"{feature_count} features in the model. "
+                + (
+                    "Good diversity of input signals."
+                    if has_features
+                    else "Only 1 feature — consider adding more input columns to improve predictions."
+                )
+            ),
+            "weight": 15,
+        }
+    )
 
     # 5. No data quality warnings (missing values handled)
     total_points += 15
@@ -974,33 +1036,40 @@ def get_model_readiness(
     missing_pct = profile.get("missing_percentage", 0.0)
     data_quality_ok = missing_pct < 10.0
     earned_points += 15 if data_quality_ok else (8 if missing_pct < 30.0 else 0)
-    checks.append({
-        "id": "data_quality",
-        "label": "Data quality is acceptable",
-        "passed": data_quality_ok,
-        "detail": (
-            f"{missing_pct:.1f}% missing values across all columns. "
-            + ("Data looks clean." if data_quality_ok
-               else "High missing data rate — review your dataset for completeness.")
-        ),
-        "weight": 15,
-    })
+    checks.append(
+        {
+            "id": "data_quality",
+            "label": "Data quality is acceptable",
+            "passed": data_quality_ok,
+            "detail": (
+                f"{missing_pct:.1f}% missing values across all columns. "
+                + (
+                    "Data looks clean."
+                    if data_quality_ok
+                    else "High missing data rate — review your dataset for completeness."
+                )
+            ),
+            "weight": 15,
+        }
+    )
 
     # 6. Model is selected for deployment
     total_points += 10
     is_selected = run.is_selected
     earned_points += 10 if is_selected else 0
-    checks.append({
-        "id": "model_selected",
-        "label": "Marked as the preferred model",
-        "passed": is_selected,
-        "detail": (
-            "This model is selected as the best for this project."
-            if is_selected
-            else "Mark this model as selected in the Models tab to confirm it's your preferred choice."
-        ),
-        "weight": 10,
-    })
+    checks.append(
+        {
+            "id": "model_selected",
+            "label": "Marked as the preferred model",
+            "passed": is_selected,
+            "detail": (
+                "This model is selected as the best for this project."
+                if is_selected
+                else "Mark this model as selected in the Models tab to confirm it's your preferred choice."
+            ),
+            "weight": 10,
+        }
+    )
 
     score = round((earned_points / total_points) * 100) if total_points > 0 else 0
 
@@ -1017,7 +1086,8 @@ def get_model_readiness(
         failing = [c["label"] for c in checks if not c["passed"]]
         summary = (
             f"Your model scores {score}/100. It could go live, but a few things could be improved: "
-            + ", ".join(failing) + ". See details below."
+            + ", ".join(failing)
+            + ". See details below."
         )
     else:
         verdict = "not_ready"
@@ -1068,9 +1138,13 @@ def tune_model_endpoint(
         )
 
     # Gather feature set + dataset
-    feature_set = session.get(FeatureSet, run.feature_set_id) if run.feature_set_id else None
+    feature_set = (
+        session.get(FeatureSet, run.feature_set_id) if run.feature_set_id else None
+    )
     if not feature_set:
-        raise HTTPException(status_code=400, detail="Feature set not found for this run.")
+        raise HTTPException(
+            status_code=400, detail="Feature set not found for this run."
+        )
 
     dataset = session.exec(
         select(Dataset).where(Dataset.id == feature_set.dataset_id)
@@ -1110,6 +1184,7 @@ def tune_model_endpoint(
     transforms = json.loads(feature_set.transformations or "[]")
     if transforms:
         from core.feature_engine import apply_transformations
+
         df, _ = apply_transformations(df, transforms)
 
     feature_cols = [c for c in df.columns if c != target_col]
@@ -1149,7 +1224,9 @@ def tune_model_endpoint(
         orig_score = original_metrics.get(primary, 0.0)
         tuned_score = tuned_metrics.get(primary, 0.0)
         if orig_score and orig_score != 0:
-            improvement_pct = round(((tuned_score - orig_score) / abs(orig_score)) * 100, 2)
+            improvement_pct = round(
+                ((tuned_score - orig_score) / abs(orig_score)) * 100, 2
+            )
         improved = bool(tuned_score > orig_score)
 
     # Save tuned run
@@ -1158,11 +1235,13 @@ def tune_model_endpoint(
     tuned_run.model_path = result["model_path"]
     tuned_run.training_duration_ms = result["training_duration_ms"]
     tuned_run.summary = result["summary"]
-    tuned_run.hyperparameters = json.dumps({
-        "tuned": True,
-        "original_run_id": model_run_id,
-        "best_params": result["best_params"],
-    })
+    tuned_run.hyperparameters = json.dumps(
+        {
+            "tuned": True,
+            "original_run_id": model_run_id,
+            "best_params": result["best_params"],
+        }
+    )
     session.add(tuned_run)
     session.commit()
     session.refresh(tuned_run)
@@ -1170,8 +1249,12 @@ def tune_model_endpoint(
     # Build human-readable comparison summary
     if improved and improvement_pct is not None:
         primary = "R²" if problem_type == "regression" else "accuracy"
-        orig_val = original_metrics.get("r2" if problem_type == "regression" else "accuracy", 0)
-        tuned_val = tuned_metrics.get("r2" if problem_type == "regression" else "accuracy", 0)
+        orig_val = original_metrics.get(
+            "r2" if problem_type == "regression" else "accuracy", 0
+        )
+        tuned_val = tuned_metrics.get(
+            "r2" if problem_type == "regression" else "accuracy", 0
+        )
         comparison_summary = (
             f"Tuning improved {primary} from {orig_val:.3f} to {tuned_val:.3f} "
             f"(+{improvement_pct:.1f}%). Best settings: "

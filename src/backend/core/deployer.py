@@ -31,7 +31,7 @@ class PredictionPipeline:
     """Encapsulates all preprocessing logic learned from training data."""
 
     feature_names: list[str]
-    column_types: dict[str, str]         # 'numeric' | 'categorical'
+    column_types: dict[str, str]  # 'numeric' | 'categorical'
     label_encoders: dict[str, LabelEncoder] = field(default_factory=dict)
     medians: dict[str, float] = field(default_factory=dict)
     target_column: str = ""
@@ -105,7 +105,11 @@ def build_prediction_pipeline(
     )
 
     # Drop rows with missing target to match training
-    df_clean = df[feature_names + [target_col]].dropna(subset=[target_col]).reset_index(drop=True)
+    df_clean = (
+        df[feature_names + [target_col]]
+        .dropna(subset=[target_col])
+        .reset_index(drop=True)
+    )
 
     for col in feature_names:
         series = df_clean[col]
@@ -181,7 +185,9 @@ def predict_single(
             if pipeline.target_encoder is not None
             else [str(i) for i in range(len(proba))]
         )
-        result["probabilities"] = {cls: round(float(p), 4) for cls, p in zip(classes, proba)}
+        result["probabilities"] = {
+            cls: round(float(p), 4) for cls, p in zip(classes, proba)
+        }
 
     return result
 
@@ -293,13 +299,15 @@ def explain_prediction(
         deviation = (float(x_vec[i]) - mean_val) / std_val
         contrib = imp * deviation
 
-        contributions.append({
-            "feature": col,
-            "value": round(float(x_vec[i]), 4),
-            "mean_value": round(mean_val, 4),
-            "contribution": round(float(contrib), 6),
-            "direction": "positive" if contrib >= 0 else "negative",
-        })
+        contributions.append(
+            {
+                "feature": col,
+                "value": round(float(x_vec[i]), 4),
+                "mean_value": round(mean_val, 4),
+                "contribution": round(float(contrib), 6),
+                "direction": "positive" if contrib >= 0 else "negative",
+            }
+        )
 
     # Sort by absolute contribution (highest first)
     contributions.sort(key=lambda c: abs(c["contribution"]), reverse=True)
@@ -311,7 +319,9 @@ def explain_prediction(
     # Build plain-English summary
     top = contributions[:3] if contributions else []
     drivers = [c["feature"] for c in top if abs(c["contribution"]) > 1e-8]
-    top_names = " and ".join(f"'{d}'" for d in drivers[:2]) if drivers else "the input features"
+    top_names = (
+        " and ".join(f"'{d}'" for d in drivers[:2]) if drivers else "the input features"
+    )
 
     if pipeline.problem_type == "classification":
         summary = (
