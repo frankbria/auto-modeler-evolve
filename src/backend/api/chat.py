@@ -184,6 +184,16 @@ def _detect_clean_op(message: str, columns: list[str]) -> dict | None:
     return None  # general cleaning intent — no specific op detected
 
 
+# Keywords that suggest the user has new data to upload (guided refresh flow)
+_REFRESH_PATTERNS = re.compile(
+    r"\b(new data|new.*csv|updated.*data|updated.*csv|fresh.*data|"
+    r"refresh.*data|refresh.*dataset|replace.*data|replace.*dataset|"
+    r"upload.*new|new.*upload|latest.*data|have.*new.*file|"
+    r"data.*changed|data.*updated|new.*version.*data|"
+    r"re.?upload|update.*my.*data|new.*spreadsheet|new.*file)\b",
+    re.IGNORECASE,
+)
+
 # Keywords that trigger anomaly detection on the current dataset
 _ANOMALY_PATTERNS = re.compile(
     r"\b(anomal|unusual.*record|outlier|strange.*data|weird.*record|"
@@ -635,7 +645,6 @@ def send_message(
     alerts_data: dict | None = None
     if _ALERTS_PATTERNS.search(body.message):
         try:
-            from datetime import UTC as _UTC
 
             active_deployments = list(
                 session.exec(
@@ -773,7 +782,6 @@ def send_message(
     if _ANOMALY_PATTERNS.search(body.message) and ctx["dataset"]:
         try:
             from core.anomaly import detect_anomalies as _detect
-            import json as _json
             _ds = ctx["dataset"]
             _file_path = Path(_ds.file_path)
             if _file_path.exists():
@@ -791,6 +799,35 @@ def send_message(
                     )
         except Exception:  # noqa: BLE001
             pass  # Anomaly detection is nice-to-have; never crash chat
+
+    # Check if user has new data to upload — guide them through the refresh workflow
+    refresh_prompt_event: dict | None = None
+    if _REFRESH_PATTERNS.search(body.message) and ctx["dataset"]:
+        _ds = ctx["dataset"]
+        _fs = ctx["feature_set"]
+        _old_cols = [c["name"] for c in json.loads(_ds.columns)] if _ds.columns else []
+        refresh_prompt_event = {
+            "dataset_id": _ds.id,
+            "current_filename": _ds.filename,
+            "current_row_count": _ds.row_count,
+            "required_columns": _old_cols,
+        }
+        _feature_note = ""
+        if _fs and _fs.column_mapping:
+            _req = list(json.loads(_fs.column_mapping).keys())
+            _feature_note = (
+                f" Your model uses these columns: {', '.join(_req[:5])}"
+                + (" and more" if len(_req) > 5 else "") + "."
+            )
+        system_prompt += (
+            f"\n\n## Data Refresh\n"
+            f"The user wants to replace their current dataset ('{_ds.filename}', "
+            f"{_ds.row_count} rows).{_feature_note} "
+            "Tell them to drag their new file into the upload area (Data tab) or click the "
+            "'Replace Data' button — the platform will check column compatibility and update "
+            "the dataset in-place, preserving their model configuration. "
+            "Reassure them that their feature engineering and model history will be kept."
+        )
 
     # Pre-compute follow-up suggestions (based on state + current message)
     current_state = detect_state(
@@ -873,6 +910,10 @@ def send_message(
         # Emit cleaning suggestion (user must click to apply — "explain before executing")
         if cleaning_suggestion:
             yield f"data: {json.dumps({'type': 'cleaning_suggestion', 'cleaning': cleaning_suggestion})}\n\n"
+
+        # Emit refresh prompt — guides user to upload new data
+        if refresh_prompt_event:
+            yield f"data: {json.dumps({'type': 'refresh_prompt', 'refresh': refresh_prompt_event})}\n\n"
 
         # Emit follow-up suggestion chips (always, if we have any)
         if suggestions_list:

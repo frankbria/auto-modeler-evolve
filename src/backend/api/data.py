@@ -18,7 +18,7 @@ from chat.narration import (
     narrate_data_insights_ai,
     narrate_upload,
 )
-from core.analyzer import analyze_dataframe, compute_full_profile, detect_time_columns
+from core.analyzer import compute_full_profile, detect_time_columns
 from core.anomaly import detect_anomalies
 from core.cleaner import (
     cap_outliers,
@@ -32,6 +32,7 @@ from core.merger import merge_datasets, suggest_join_keys
 from core.query_engine import run_nl_query
 from db import get_session
 from models.dataset import Dataset
+from models.feature_set import FeatureSet
 from models.project import Project
 
 router = APIRouter(prefix="/api/data", tags=["data"])
@@ -1244,4 +1245,128 @@ def clean_dataset(
             "column_count": dataset.column_count,
             "columns": profile["columns"],
         },
+    }
+
+
+# ---------------------------------------------------------------------------
+# Dataset refresh — replace data in-place, keep dataset ID + model history
+# ---------------------------------------------------------------------------
+
+
+@router.post("/{dataset_id}/refresh")
+def refresh_dataset(
+    dataset_id: str,
+    file: UploadFile,
+    session: Session = Depends(get_session),
+):
+    """Replace an existing dataset's CSV with a new file, preserving the dataset ID.
+
+    This keeps all foreign-key relationships intact (FeatureSets, ModelRuns,
+    Deployments all still reference the same dataset_id).
+
+    Column compatibility check:
+    - new_columns: columns in new file that weren't in the old file
+    - removed_columns: columns in old file missing from new file
+    - feature_columns_missing: columns required by the active FeatureSet that
+      are now absent — these must be present to retrain using the existing config
+    - compatible: True when no required feature columns are missing
+
+    Returns
+    -------
+    {
+        dataset_id, filename, row_count, column_count,
+        new_columns, removed_columns, feature_columns_missing, compatible,
+        preview, column_stats
+    }
+    """
+    dataset = session.get(Dataset, dataset_id)
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    if not file.filename or not _is_accepted_file(file.filename):
+        raise HTTPException(
+            status_code=400,
+            detail="Only CSV and Excel files (.csv, .xlsx, .xls) are accepted",
+        )
+
+    # Load the new file into a DataFrame
+    contents = file.file.read()
+    try:
+        ext = Path(file.filename).suffix.lower()
+        if ext in (".xlsx", ".xls"):
+            new_df = pd.read_excel(io.BytesIO(contents), engine="openpyxl")
+        else:
+            new_df = pd.read_csv(io.BytesIO(contents))
+    except Exception as exc:
+        raise HTTPException(
+            status_code=400, detail=f"Failed to parse file: {exc}"
+        ) from exc
+
+    if new_df.empty:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty")
+
+    # Identify column changes
+    old_columns = set(
+        c["name"] for c in json.loads(dataset.columns)
+    ) if dataset.columns else set()
+    new_columns_set = set(new_df.columns)
+    added_columns = sorted(new_columns_set - old_columns)
+    removed_columns = sorted(old_columns - new_columns_set)
+
+    # Check against active FeatureSet (if one exists)
+    feature_set = session.exec(
+        select(FeatureSet)
+        .where(FeatureSet.dataset_id == dataset_id, FeatureSet.is_active == True)  # noqa: E712
+        .order_by(FeatureSet.created_at.desc())  # type: ignore[arg-type]
+    ).first()
+
+    feature_columns_missing: list[str] = []
+    if feature_set and feature_set.column_mapping:
+        required_cols = set(json.loads(feature_set.column_mapping).keys())
+        if feature_set.target_column:
+            required_cols.add(feature_set.target_column)
+        feature_columns_missing = sorted(required_cols - new_columns_set)
+
+    compatible = len(feature_columns_missing) == 0
+
+    # Write new CSV to the existing path (preserves all downstream references)
+    file_path = Path(dataset.file_path)
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Store as CSV regardless of input format (same as upload endpoint)
+    new_df.to_csv(file_path, index=False)
+
+    # Update filename if a CSV was provided with a new name
+    stored_filename = dataset.filename  # keep old name by default
+    if ext in (".xlsx", ".xls"):
+        # Excel converted to CSV; keep existing CSV filename
+        pass
+    elif file.filename != dataset.filename:
+        stored_filename = file.filename
+
+    # Re-run profiling and update Dataset record
+    profile = compute_full_profile(new_df)
+    dataset.filename = stored_filename
+    dataset.row_count = profile["row_count"]
+    dataset.column_count = profile["column_count"]
+    dataset.columns = json.dumps(profile["columns"])
+    dataset.profile = json.dumps(profile)
+    dataset.size_bytes = len(contents)
+    session.add(dataset)
+    session.commit()
+    session.refresh(dataset)
+
+    preview = _sanitize_rows(new_df.head(10).to_dict(orient="records"))
+
+    return {
+        "dataset_id": dataset_id,
+        "filename": dataset.filename,
+        "row_count": dataset.row_count,
+        "column_count": dataset.column_count,
+        "new_columns": added_columns,
+        "removed_columns": removed_columns,
+        "feature_columns_missing": feature_columns_missing,
+        "compatible": compatible,
+        "preview": preview,
+        "column_stats": profile["columns"],
     }

@@ -731,3 +731,23 @@ export interface CleaningSuggestion {
     total_rows: number
   }
 }
+
+export interface DatasetRefreshResult {
+  dataset_id: string
+  filename: string
+  row_count: number
+  column_count: number
+  new_columns: string[]
+  removed_columns: string[]
+  feature_columns_missing: string[]
+  compatible: boolean
+  preview: Record<string, unknown>[]
+  column_stats: ColumnStat[]
+}
+
+export interface RefreshPrompt {
+  dataset_id: string
+  current_filename: string
+  current_row_count: number
+  required_columns: string[]
+}

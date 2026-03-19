@@ -24,6 +24,7 @@ import type {
   ModelVersionHistory,
   ProjectAlerts,
   AnomalyResult,
+  DatasetRefreshResult,
 } from "./types"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
@@ -241,6 +242,15 @@ export const api = {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       }).then((r) => r.json()),
+
+    refresh: (datasetId: string, file: File): Promise<DatasetRefreshResult> => {
+      const form = new FormData()
+      form.append("file", file)
+      return fetch(`${API_URL}/api/data/${datasetId}/refresh`, {
+        method: "POST",
+        body: form,
+      }).then((r) => r.json())
+    },
   },
 
   chat: {

@@ -20,6 +20,7 @@ import { ValidationPanel } from "@/components/validation/validation-panel"
 import { DeploymentPanel } from "@/components/deploy/deployment-panel"
 import { AnomalyCard } from "@/components/data/anomaly-card"
 import { CleaningCard } from "@/components/data/cleaning-card"
+import { RefreshCard } from "@/components/data/refresh-card"
 import { api } from "@/lib/api"
 import { useAppStore } from "@/lib/store"
 import type {
@@ -32,6 +33,8 @@ import type {
   AnomalyResult,
   CleaningSuggestion,
   CleanResult,
+  RefreshPrompt,
+  DatasetRefreshResult,
 } from "@/lib/types"
 
 const WELCOME_MESSAGE =
@@ -111,6 +114,9 @@ export default function ProjectWorkspace() {
 
   // Cleaning suggestion (populated via SSE when user asks about cleaning in chat)
   const [cleaningSuggestion, setCleaningSuggestion] = useState<CleaningSuggestion | null>(null)
+
+  // Refresh prompt (populated via SSE when user mentions having new data)
+  const [refreshPrompt, setRefreshPrompt] = useState<RefreshPrompt | null>(null)
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
@@ -285,6 +291,9 @@ export default function ProjectWorkspace() {
                 setActiveTab("data")
               } else if (json.type === "cleaning_suggestion" && json.cleaning) {
                 setCleaningSuggestion(json.cleaning as CleaningSuggestion)
+                setActiveTab("data")
+              } else if (json.type === "refresh_prompt" && json.refresh) {
+                setRefreshPrompt(json.refresh as RefreshPrompt)
                 setActiveTab("data")
               } else if (json.type === "done") {
                 setStreaming(false)
@@ -644,6 +653,25 @@ export default function ProjectWorkspace() {
                             addMessage({
                               role: "assistant",
                               content: `Done! ${result.operation_result.summary} The dataset now has ${result.updated_stats.row_count.toLocaleString()} rows.`,
+                              timestamp: new Date().toISOString(),
+                            })
+                          }}
+                        />
+                      </div>
+                    )}
+                    {refreshPrompt && (
+                      <div className="border-t px-4 py-3">
+                        <h3 className="mb-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                          Update Data
+                        </h3>
+                        <RefreshCard
+                          datasetId={currentDataset.id}
+                          prompt={refreshPrompt}
+                          onRefreshed={(result: DatasetRefreshResult) => {
+                            setRefreshPrompt(null)
+                            addMessage({
+                              role: "assistant",
+                              content: `Dataset updated! Your new file has ${result.row_count.toLocaleString()} rows and ${result.column_count} columns.${result.compatible ? " Your model configuration is compatible — you can retrain now." : " Warning: some feature columns are missing. You may need to re-configure features before retraining."}`,
                               timestamp: new Date().toISOString(),
                             })
                           }}
