@@ -54,7 +54,7 @@ interface CleaningCardProps {
 // ---------------------------------------------------------------------------
 
 export function CleaningCard({ suggestion: initialSuggestion, datasetId, onCleaned }: CleaningCardProps) {
-  const [suggestion, setSuggestion] = useState<CleaningSuggestion | null>(initialSuggestion ?? null)
+  const [suggestion] = useState<CleaningSuggestion | null>(initialSuggestion ?? null)
   const [result, setResult] = useState<CleanResult | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)

@@ -1,11 +1,6 @@
 import { test, expect } from "@playwright/test";
-import path from "path";
 
 const BACKEND = "http://localhost:8000";
-const SAMPLE_CSV = path.join(
-  __dirname,
-  "../../backend/data/sample/sample_sales.csv"
-);
 
 // Helper: delete all projects via API before each test so state is clean
 async function cleanProjects(request: import("@playwright/test").APIRequestContext) {

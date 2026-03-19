@@ -153,7 +153,7 @@ export default function PredictionDashboard() {
   const [showExplanation, setShowExplanation] = useState(false)
   const [fetchingExplanation, setFetchingExplanation] = useState(false)
   const [history, setHistory] = useState<PredictionHistoryRecord[]>([])
-  const [historyCounter, setHistoryCounter] = useState(0)
+  const [, setHistoryCounter] = useState(0)
 
   useEffect(() => {
     api.deploy

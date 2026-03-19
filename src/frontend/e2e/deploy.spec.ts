@@ -99,11 +99,10 @@ async function setupDeployReady(
 
 test.describe("Deployment — Deploy tab UI", () => {
   let projectId: string
-  let selectedRunId: string
 
   test.beforeEach(async ({ request }) => {
     await cleanProjects(request)
-    ;({ projectId, selectedRunId } = await setupDeployReady(request))
+    ;({ projectId } = await setupDeployReady(request))
   })
 
   test("Deploy tab shows Deploy Model button when model is selected", async ({

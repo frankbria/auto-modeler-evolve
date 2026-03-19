@@ -98,24 +98,6 @@ const MOCK_DEPLOYMENT = {
   last_predicted_at: "2026-03-15T01:00:00",
 }
 
-function renderDeployed(deployment = MOCK_DEPLOYMENT, healthData: ModelHealth = HEALTHY) {
-  mockHealth.mockResolvedValue(healthData)
-  ;(api.deploy.get as jest.Mock).mockResolvedValue(deployment)
-  ;(api.deploy.deploy as jest.Mock).mockResolvedValue(deployment)
-
-  const { rerender } = render(
-    <DeploymentPanel
-      projectId="proj1"
-      selectedRunId="run1"
-      algorithmName="Linear Regression"
-      onDeployed={jest.fn()}
-    />
-  )
-
-  // Simulate having a deployment already by re-rendering after "deploy"
-  // We trigger handleDeploy — for simplicity inject the deployment directly
-  return { rerender }
-}
 
 // ---------------------------------------------------------------------------
 // api.ts client method tests
@@ -128,7 +110,6 @@ describe("api.deploy.health()", () => {
 
   it("calls GET /api/deploy/{id}/health", async () => {
     fetchMock.mockResponseOnce(JSON.stringify(HEALTHY))
-    const { api: realApi } = jest.requireActual("../lib/api") as { api: typeof import("../lib/api").api }
     // We test shape via mock since we can't call real API in unit tests
     expect(typeof api.deploy.health).toBe("function")
   })
