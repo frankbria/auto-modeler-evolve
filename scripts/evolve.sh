@@ -251,7 +251,7 @@ if [ -d "$PROJECT_DIR" ] && [ "$(ls -A "$PROJECT_DIR" 2>/dev/null)" ]; then
         -not -path '*/.next/*' \
         -not -path '*/dist/*' \
         -not -path '*/.venv/*' \
-        | sort | head -100)
+        | sort | head -100) || true
     FILE_COUNT=$(echo "$PROJECT_TREE" | wc -l)
     echo "  $FILE_COUNT files in $PROJECT_DIR"
 else
