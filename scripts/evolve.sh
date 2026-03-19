@@ -12,8 +12,8 @@
 #   ./scripts/evolve.sh   # uses OAuth token from claude login or CLAUDE_CODE_OAUTH_TOKEN
 #
 # Environment:
-#   CLAUDE_CODE_OAUTH_TOKEN — OAuth token for claude CLI (or use `claude auth login`)
-#   ANTHROPIC_AUTH_TOKEN    — OAuth token for Python SDK calls (set automatically in CI)
+#   (local)  — uses stored OAuth credentials from `claude auth login` (ANTHROPIC_API_KEY is unset)
+#   ANTHROPIC_API_KEY — API key for CI/non-interactive runs (set in GitHub Actions secrets)
 #   REPO               — GitHub repo (default: auto-detected from git remote)
 #   MODEL              — LLM model (default: claude-sonnet-4-6)
 #   TIMEOUT            — Max session time in seconds (default: 3600)
@@ -21,6 +21,11 @@
 #   PROJECT_DIR        — Subdirectory containing the actual project (default: src/)
 
 set -euo pipefail
+
+# ── Auth: prefer stored OAuth credentials locally; CI injects ANTHROPIC_API_KEY ──
+if [ "${CI:-false}" != "true" ]; then
+    unset ANTHROPIC_API_KEY 2>/dev/null || true
+fi
 
 # ── Configuration ──
 REPO="${REPO:-$(git remote get-url origin 2>/dev/null | sed 's|.*github.com[:/]||;s|\.git$||' || echo "owner/code-evolve")}"
