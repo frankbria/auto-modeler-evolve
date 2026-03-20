@@ -10,6 +10,9 @@ Living document for coordinating between bot instances and tracking ideation.
 <!-- Brief description of what you're doing this session. -->
 <!-- Remove your entry when you commit your session wrap-up. -->
 
+## Day 9 (04:00) — In Progress
+Pivot table / cross-tabulation analysis — build_crosstab() in core/chart_builder.py; GET /api/data/{id}/crosstab endpoint; _CROSSTAB_PATTERNS chat intent detection → {type: "crosstab"} SSE event; CrosstabTable component in chat (inline rendering like ChartMessage); CrosstabResult type; api.data.getCrosstab() method. Target: ~15 backend + ~8 frontend tests.
+
 ## Day 9 (08:07) — Done
 AI-powered data dictionary — core/dictionary.py (classify_column_type: id/metric/dimension/date/flag/text heuristics; generate_dictionary: Claude batch + static fallback); GET/POST /api/data/{id}/dictionary; DictionaryCard in Data tab (type badges, Quick summary/AI descriptions buttons, show-more collapse, Regenerate); DataDictionary + ColumnDescription + ColumnSemanticType types; api.data.getDictionary/generateDictionary; patched Claude in tests for deterministic assertions. 32 backend + 15 frontend = 47 new tests. Total: 1096 backend + 426 frontend = 1522.
 

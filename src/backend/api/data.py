@@ -30,6 +30,7 @@ from core.cleaner import (
 from core.chart_builder import (
     build_boxplot,
     build_correlation_heatmap,
+    build_crosstab,
     build_timeseries_chart,
 )
 from core.dictionary import generate_dictionary
@@ -1590,3 +1591,45 @@ def generate_dataset_dictionary(
         "generated": True,
         "columns": enriched,
     }
+
+
+# ---------------------------------------------------------------------------
+# Cross-tabulation / pivot table
+# ---------------------------------------------------------------------------
+
+
+@router.get("/{dataset_id}/crosstab")
+def get_crosstab(
+    dataset_id: str,
+    rows: str,
+    cols: str,
+    values: str | None = None,
+    agg: str = "sum",
+    session: Session = Depends(get_session),
+) -> dict:
+    """Return a pivot-table (cross-tabulation) for two categorical columns.
+
+    GET /api/data/{dataset_id}/crosstab?rows=region&cols=product&values=revenue&agg=sum
+
+    Parameters
+    ----------
+    rows:   Column name for the row dimension (e.g. "region")
+    cols:   Column name for the column dimension (e.g. "product_category")
+    values: Column to aggregate (e.g. "revenue"). If omitted, counts rows.
+    agg:    Aggregation function — sum | mean | count | min | max (default: sum)
+    """
+    dataset = session.get(Dataset, dataset_id)
+    if dataset is None:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    try:
+        df = pd.read_csv(dataset.file_path)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"Could not read dataset: {exc}") from exc
+
+    try:
+        result = build_crosstab(df, row_col=rows, col_col=cols, value_col=values, agg_func=agg)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return result

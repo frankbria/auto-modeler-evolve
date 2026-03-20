@@ -5,6 +5,7 @@ import type {
   ChatMessage,
   ColumnStat,
   ChartSpec,
+  CrosstabResult,
   DataInsight,
 } from "./types"
 
@@ -31,6 +32,7 @@ interface AppState {
   setStreaming: (streaming: boolean) => void
   appendToLastMessage: (content: string) => void
   attachChartToLastMessage: (chart: ChartSpec) => void
+  attachCrosstabToLastMessage: (crosstab: CrosstabResult) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -78,6 +80,16 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, chart }
+      }
+      return { messages }
+    }),
+
+  attachCrosstabToLastMessage: (crosstab) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, crosstab }
       }
       return { messages }
     }),

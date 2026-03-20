@@ -119,6 +119,7 @@ export interface ChatMessage {
   content: string
   timestamp: string
   chart?: ChartSpec
+  crosstab?: CrosstabResult
 }
 
 export interface QueryResponse {
@@ -808,4 +809,26 @@ export interface DataDictionary {
   filename: string
   generated: boolean
   columns: ColumnDescription[]
+}
+
+// ---------------------------------------------------------------------------
+// Cross-tabulation / pivot table
+// ---------------------------------------------------------------------------
+
+export interface CrosstabRow {
+  row_label: string
+  cells: (number | null)[]
+  row_total: number | null
+}
+
+export interface CrosstabResult {
+  row_col: string
+  col_col: string
+  value_col: string | null
+  agg_func: string
+  col_headers: string[]
+  rows: CrosstabRow[]
+  col_totals: (number | null)[]
+  grand_total: number | null
+  summary: string
 }

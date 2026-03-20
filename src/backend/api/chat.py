@@ -223,6 +223,58 @@ _ANOMALY_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# Keywords that trigger cross-tabulation / pivot table analysis
+_CROSSTAB_PATTERNS = re.compile(
+    r"\b(break.*down|breakdown|cross.*tab|crosstab|pivot|"
+    r"show.*by.*and|split.*by|across.*and|"
+    r"by.*and.*by|group.*by.*and|"
+    r"matrix.*of|comparison.*table|compare.*across|"
+    r"revenue.*by.*region|sales.*by.*region|"
+    r"(\w+)\s+by\s+(\w+)\s+and\s+(\w+))\b",
+    re.IGNORECASE,
+)
+
+# Regex to extract "VALUE by ROW and COL" or "break down VALUE by ROW and COL"
+_CROSSTAB_EXTRACT = re.compile(
+    r"\b(?:break.*?down\s+)?(?:show\s+(?:me\s+)?)?(\w+)\s+by\s+(\w+)"
+    r"(?:\s+and\s+(\w+))?",
+    re.IGNORECASE,
+)
+
+
+def _detect_crosstab_request(message: str, columns: list[str]) -> dict | None:
+    """Extract row_col, col_col, value_col from a crosstab message.
+
+    Matches patterns like:
+      "break down revenue by region and product"
+      "show sales across channel and quarter"
+      "pivot revenue by region"
+
+    Returns dict with row_col, col_col, value_col, or None if not enough columns found.
+    """
+    col_lower = {c.lower(): c for c in columns}
+
+    m = _CROSSTAB_EXTRACT.search(message)
+    if not m:
+        return None
+
+    # Try to match each captured group against real column names
+    groups = [g for g in m.groups() if g]
+    matched_cols = [col_lower[g.lower()] for g in groups if g.lower() in col_lower]
+
+    if len(matched_cols) < 2:
+        return None
+
+    # Heuristic: if we have 3 matches and first is numeric-sounding, it's the value
+    if len(matched_cols) >= 3:
+        value_col, row_col, col_col = matched_cols[0], matched_cols[1], matched_cols[2]
+    else:
+        # 2 matched: treat first as row, second as col; use count aggregation
+        row_col, col_col = matched_cols[0], matched_cols[1]
+        value_col = None
+
+    return {"row_col": row_col, "col_col": col_col, "value_col": value_col}
+
 
 class ChatMessage(BaseModel):
     message: str
@@ -939,6 +991,35 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Cleaning suggestion is nice-to-have; never crash chat
 
+    # Check for cross-tabulation / pivot table request
+    crosstab_event: dict | None = None
+    if _CROSSTAB_PATTERNS.search(body.message) and ctx["dataset"]:
+        try:
+            _ds = ctx["dataset"]
+            _file_path = Path(_ds.file_path)
+            if _file_path.exists():
+                _df = pd.read_csv(_file_path)
+                _cols = [c["name"] for c in json.loads(_ds.columns)] if _ds.columns else list(_df.columns)
+                _crosstab_req = _detect_crosstab_request(body.message, _cols)
+                if _crosstab_req:
+                    from core.chart_builder import build_crosstab as _build_crosstab
+                    _ct_result = _build_crosstab(
+                        _df,
+                        row_col=_crosstab_req["row_col"],
+                        col_col=_crosstab_req["col_col"],
+                        value_col=_crosstab_req.get("value_col"),
+                    )
+                    crosstab_event = _ct_result
+                    system_prompt += (
+                        f"\n\n## Pivot Table\n"
+                        f"{_ct_result['summary']}\n"
+                        "A pivot table has been generated and is shown inline in the chat. "
+                        "Tell the user what you see — highlight the highest and lowest values, "
+                        "and suggest what patterns are worth investigating further."
+                    )
+        except Exception:  # noqa: BLE001
+            pass  # Crosstab is nice-to-have; never crash chat
+
     # Check for anomaly detection request
     anomaly_event: dict | None = None
     if _ANOMALY_PATTERNS.search(body.message) and ctx["dataset"]:
@@ -1070,6 +1151,10 @@ def send_message(
         # Emit analytics trigger if detected
         if analytics_event:
             yield f"data: {json.dumps({'type': 'analytics', 'analytics': analytics_event})}\n\n"
+
+        # Emit cross-tabulation / pivot table if computed
+        if crosstab_event:
+            yield f"data: {json.dumps({'type': 'crosstab', 'crosstab': crosstab_event})}\n\n"
 
         # Emit anomaly detection results if computed
         if anomaly_event:

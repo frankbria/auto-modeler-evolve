@@ -22,6 +22,7 @@ import { AnomalyCard } from "@/components/data/anomaly-card"
 import { CleaningCard } from "@/components/data/cleaning-card"
 import { RefreshCard } from "@/components/data/refresh-card"
 import { DictionaryCard } from "@/components/data/dictionary-card"
+import { CrosstabTable } from "@/components/data/crosstab-table"
 import { api } from "@/lib/api"
 import { useAppStore } from "@/lib/store"
 import type {
@@ -36,6 +37,7 @@ import type {
   CleanResult,
   RefreshPrompt,
   DatasetRefreshResult,
+  CrosstabResult,
 } from "@/lib/types"
 
 const WELCOME_MESSAGE =
@@ -85,6 +87,7 @@ export default function ProjectWorkspace() {
     setStreaming,
     appendToLastMessage,
     attachChartToLastMessage,
+    attachCrosstabToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -285,6 +288,8 @@ export default function ProjectWorkspace() {
                 appendToLastMessage(json.content)
               } else if (json.type === "chart" && json.chart) {
                 attachChartToLastMessage(json.chart)
+              } else if (json.type === "crosstab" && json.crosstab) {
+                attachCrosstabToLastMessage(json.crosstab as CrosstabResult)
               } else if (json.type === "suggestions" && Array.isArray(json.suggestions)) {
                 setChatSuggestions(json.suggestions)
               } else if (json.type === "anomalies" && json.anomalies) {
@@ -318,6 +323,7 @@ export default function ProjectWorkspace() {
     setStreaming,
     appendToLastMessage,
     attachChartToLastMessage,
+    attachCrosstabToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -518,6 +524,7 @@ export default function ProjectWorkspace() {
                         </span>
                       )}
                     {msg.chart && <ChartMessage spec={msg.chart} />}
+                    {msg.crosstab && <CrosstabTable result={msg.crosstab} />}
                   </div>
                 </div>
               ))}

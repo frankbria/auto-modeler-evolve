@@ -520,6 +520,92 @@ def build_boxplot(
     }
 
 
+def build_crosstab(
+    df: pd.DataFrame,
+    row_col: str,
+    col_col: str,
+    value_col: str | None = None,
+    agg_func: str = "sum",
+    max_cols: int = 10,
+    max_rows: int = 15,
+) -> dict[str, Any]:
+    """Build a pivot-table (cross-tabulation) from a dataframe.
+
+    Returns a dict with:
+      - row_col, col_col, value_col, agg_func: the original parameters
+      - col_headers: list of column values (strings)
+      - rows: list of {row_label: str, cells: [value, ...], row_total: value}
+      - col_totals: list of column totals
+      - grand_total: overall total
+      - summary: plain-English description
+
+    Raises ValueError if referenced columns are missing or the result is empty.
+    """
+    missing = [c for c in [row_col, col_col] if c not in df.columns]
+    if missing:
+        raise ValueError(f"Column(s) not found in dataset: {', '.join(missing)}")
+    if value_col and value_col not in df.columns:
+        raise ValueError(f"Value column '{value_col}' not found in dataset.")
+
+    valid_agg = {"sum", "mean", "count", "min", "max"}
+    if agg_func not in valid_agg:
+        raise ValueError(f"Unsupported aggregation '{agg_func}'. Use: {sorted(valid_agg)}")
+
+    # Build the pivot table
+    if value_col and agg_func != "count":
+        pivot = pd.pivot_table(
+            df,
+            values=value_col,
+            index=row_col,
+            columns=col_col,
+            aggfunc=agg_func,
+            fill_value=0,
+        )
+    else:
+        # Count mode: count rows per (row_col, col_col) pair
+        pivot = pd.crosstab(df[row_col], df[col_col])
+
+    if pivot.empty:
+        raise ValueError("No data after grouping — check that the selected columns have overlapping values.")
+
+    # Cap rows/cols to avoid huge tables
+    pivot = pivot.iloc[:max_rows, :max_cols]
+
+    col_headers = [str(c) for c in pivot.columns.tolist()]
+    row_labels = [str(r) for r in pivot.index.tolist()]
+
+    rows = []
+    for row_label, row_data in zip(row_labels, pivot.values):
+        cells = [_jsonify(v) for v in row_data]
+        row_total = _jsonify(sum(v for v in row_data if v is not None and not (isinstance(v, float) and np.isnan(v))))
+        rows.append({"row_label": row_label, "cells": cells, "row_total": row_total})
+
+    # Column totals
+    col_totals = [_jsonify(v) for v in pivot.sum(axis=0).values]
+    grand_total = _jsonify(pivot.values.sum())
+
+    # Plain-English summary
+    metric_desc = f"{agg_func} of {value_col}" if value_col and agg_func != "count" else "count"
+    summary = (
+        f"{metric_desc.title()} broken down by {row_col} (rows) × {col_col} (columns). "
+        f"Showing {len(rows)} {row_col} values across {len(col_headers)} {col_col} categories."
+    )
+    if len(pivot.index) > max_rows or len(pivot.columns) > max_cols:
+        summary += f" (Capped at {max_rows} rows and {max_cols} columns.)"
+
+    return {
+        "row_col": row_col,
+        "col_col": col_col,
+        "value_col": value_col,
+        "agg_func": agg_func,
+        "col_headers": col_headers,
+        "rows": rows,
+        "col_totals": col_totals,
+        "grand_total": grand_total,
+        "summary": summary,
+    }
+
+
 def _jsonify(value: Any) -> Any:
     """Convert numpy scalars and NaN to JSON-safe Python types."""
     if isinstance(value, float) and np.isnan(value):

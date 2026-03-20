@@ -442,3 +442,26 @@ describe("api.models — additional endpoints", () => {
     expect(result?.chart.chart_type).toBe("radar")
   })
 })
+
+// ---------------------------------------------------------------------------
+// api.data.getCrosstab
+// ---------------------------------------------------------------------------
+
+describe("api.data.getCrosstab", () => {
+  it("calls GET /api/data/{id}/crosstab with rows, cols, agg params", async () => {
+    fetchMock.mockResponseOnce(JSON.stringify({ row_col: "product", col_col: "region", rows: [] }))
+    const result = await api.data.getCrosstab("ds-1", "product", "region")
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${BASE}/api/data/ds-1/crosstab?rows=product&cols=region&agg=sum`
+    )
+    expect(result.row_col).toBe("product")
+  })
+
+  it("includes values param when provided", async () => {
+    fetchMock.mockResponseOnce(JSON.stringify({ row_col: "product", col_col: "region", rows: [] }))
+    await api.data.getCrosstab("ds-1", "product", "region", "revenue", "sum")
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("values=revenue")
+    )
+  })
+})

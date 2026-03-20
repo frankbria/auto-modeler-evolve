@@ -26,6 +26,7 @@ import type {
   AnomalyResult,
   DatasetRefreshResult,
   DataDictionary,
+  CrosstabResult,
 } from "./types"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
@@ -260,6 +261,18 @@ export const api = {
       fetch(`${API_URL}/api/data/${datasetId}/dictionary`, { method: "POST" }).then((r) =>
         r.json()
       ),
+
+    getCrosstab: (
+      datasetId: string,
+      rows: string,
+      cols: string,
+      values?: string,
+      agg: string = "sum"
+    ): Promise<CrosstabResult> => {
+      const params = new URLSearchParams({ rows, cols, agg })
+      if (values) params.set("values", values)
+      return fetch(`${API_URL}/api/data/${datasetId}/crosstab?${params}`).then((r) => r.json())
+    },
   },
 
   chat: {
