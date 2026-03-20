@@ -475,6 +475,18 @@ guides them forward through the natural flow.
       (row sums) and "Total" row (column sums + grand total). `CrosstabResult` type; `api.data.getCrosstab()`.
       *Day 9 (04:00): 19 backend + 12 frontend = 31 new tests. Total: 1115 backend + 438 frontend = 1553.*
 
+- [x] **Computed columns through conversation** — Business analysts can say "add a column called margin = revenue / cost"
+      and receive an interactive `ComputeCard` in the Data tab (not just a text response) that shows the formula, sample
+      preview values, and dtype before they confirm. `core/computed.py` uses `pd.DataFrame.eval()` for safe expression
+      evaluation — only arithmetic/comparison on column names, no arbitrary Python execution. `POST /api/data/{id}/compute`
+      writes the new column back to the CSV in-place and refreshes the Dataset profile. Chat intent detected via
+      `_COMPUTE_PATTERNS` + `_detect_compute_request()` (extracts column name and expression, verifies ≥1 existing column
+      appears in the expression). `{type: "compute_suggestion"}` SSE event pushes the suggestion to the frontend;
+      `attachComputeToLastMessage()` in the Zustand store links it to the chat turn. `ComputedColumnSuggestion` +
+      `ComputeResult` types; `api.data.computeColumn()` client method. Follows the "explain before executing" pattern —
+      the column is never auto-added; user must click Apply.
+      *Day 9 (12:00): 26 backend + 11 frontend = 37 new tests. Total: 1141 backend + 449 frontend = 1590.*
+
 - [x] **Cross-deployment model comparison** — POST /api/predict/compare accepts 2-4 deployment IDs and
       a feature dict, returns predictions from each model version so analysts can verify whether a retrained
       model improved on their specific inputs. GET /api/deployments now accepts optional `?project_id=` filter
