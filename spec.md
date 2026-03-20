@@ -462,6 +462,19 @@ guides them forward through the natural flow.
       would explain what each column means to an analyst inheriting unfamiliar data.
       *Day 9 (08:07): 32 backend + 15 frontend = 47 new tests. Total: 1096 backend + 426 frontend = 1522.*
 
+- [x] **Pivot table / cross-tabulation analysis** — Business analysts can ask "break down revenue by region
+      and product" in chat and receive an interactive pivot table inline in the conversation (not in a side
+      panel). `build_crosstab()` in `core/chart_builder.py` uses `pd.pivot_table` (sum/mean/count/min/max),
+      caps rows/cols at configurable limits, and returns a JSON structure with col_headers, rows (with cells +
+      row_total), col_totals, grand_total, and a plain-English summary. `GET /api/data/{id}/crosstab?rows=&cols=&values=&agg=`
+      endpoint for direct API access. Chat intent detection via `_CROSSTAB_PATTERNS` + `_detect_crosstab_request()`
+      helper that extracts row_col/col_col/value_col from natural language; the inferred crosstab is computed
+      inline and injected into the system prompt so Claude can narrate the findings. `{type: "crosstab"}` SSE
+      event attaches the table to the last chat message via `attachCrosstabToLastMessage()` in the Zustand store.
+      `CrosstabTable` component renders a zebra-striped HTML table with truncated labels, a "Total" column
+      (row sums) and "Total" row (column sums + grand total). `CrosstabResult` type; `api.data.getCrosstab()`.
+      *Day 9 (04:00): 19 backend + 12 frontend = 31 new tests. Total: 1115 backend + 438 frontend = 1553.*
+
 - [x] **Cross-deployment model comparison** — POST /api/predict/compare accepts 2-4 deployment IDs and
       a feature dict, returns predictions from each model version so analysts can verify whether a retrained
       model improved on their specific inputs. GET /api/deployments now accepts optional `?project_id=` filter
