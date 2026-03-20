@@ -54,20 +54,26 @@ def client(tmp_path):
     SQLModel.metadata.create_all(db_module.engine)
 
     import api.data as data_module
+
     data_module.UPLOAD_DIR = tmp_path / "uploads"
 
     import api.models as models_api_module
+
     models_api_module.MODELS_DIR = tmp_path / "models"
 
     import api.deploy as deploy_module
+
     deploy_module.DEPLOY_DIR = tmp_path / "deployments"
 
     from main import app
+
     with TestClient(app) as c:
         yield c
 
 
-def _setup_and_deploy(client, csv_bytes=SAMPLE_CSV, target="revenue", algo="linear_regression"):
+def _setup_and_deploy(
+    client, csv_bytes=SAMPLE_CSV, target="revenue", algo="linear_regression"
+):
     """Helper: upload → feature apply → set target → train → deploy → return deployment_id."""
     proj = client.post("/api/projects", json={"name": "Snippet Test"})
     assert proj.status_code == 201
@@ -111,7 +117,17 @@ class TestIntegrationSnippets:
     def test_integration_has_required_fields(self, client):
         dep_id = _setup_and_deploy(client)
         data = client.get(f"/api/deploy/{dep_id}/integration").json()
-        required = ["deployment_id", "endpoint_url", "example_input", "curl", "python", "javascript", "openapi_url", "batch_url", "batch_note"]
+        required = [
+            "deployment_id",
+            "endpoint_url",
+            "example_input",
+            "curl",
+            "python",
+            "javascript",
+            "openapi_url",
+            "batch_url",
+            "batch_note",
+        ]
         for field in required:
             assert field in data, f"Missing field: {field}"
 

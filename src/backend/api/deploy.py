@@ -1594,7 +1594,9 @@ def get_model_health(
 @router.get("/api/deploy/{deployment_id}/integration")
 def get_integration_snippets(
     deployment_id: str,
-    base_url: str = Query("http://localhost:8000", description="Base URL of the API server"),
+    base_url: str = Query(
+        "http://localhost:8000", description="Base URL of the API server"
+    ),
     session: Session = Depends(get_session),
 ):
     """Return copy-pasteable code snippets for calling the prediction API.
@@ -1611,7 +1613,9 @@ def get_integration_snippets(
     if not deployment:
         raise HTTPException(status_code=404, detail="Deployment not found")
 
-    feature_names = json.loads(deployment.feature_names) if deployment.feature_names else []
+    feature_names = (
+        json.loads(deployment.feature_names) if deployment.feature_names else []
+    )
 
     # Build a realistic example input using feature schema when available
     example_input: dict = {}
@@ -1644,16 +1648,14 @@ def get_integration_snippets(
     # --- Python ---
     python_snippet = (
         f"import requests\n\n"
-        f"url = \"{endpoint_url}\"\n"
+        f'url = "{endpoint_url}"\n'
         f"data = {example_json}\n\n"
         f"response = requests.post(url, json=data)\n"
         f"result = response.json()\n\n"
         f"print(f\"Prediction: {{result['prediction']}}\")\n"
     )
     if deployment.problem_type == "classification":
-        python_snippet += (
-            "print(f\"Confidence: {result.get('confidence', 'N/A')}\")\n"
-        )
+        python_snippet += "print(f\"Confidence: {result.get('confidence', 'N/A')}\")\n"
     else:
         python_snippet += (
             "if 'confidence_interval' in result:\n"
