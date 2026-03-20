@@ -1,5 +1,11 @@
 # Journal
 
+## Day 9 — 00:05 — Prediction Confidence Intervals (1053 backend + 401 frontend = 1454 tests)
+
+The platform's prediction dashboard showed analysts a single point estimate ("Revenue: $1,200") with no indication of how trustworthy that number was — breaking the "not a black box" vision promise at the most critical touchpoint, the shareable VP-facing predict/[id] dashboard. This session closes that gap with **95% prediction intervals for regression** and **top-class confidence scores for classification**.
+
+The implementation is clean and requires no new models or endpoints. At deploy time, `api/deploy.py` now loads the trained model and the prepared training features, runs `predict(X_train)` to get training predictions, computes `std(y_true - y_pred)` (residual std), and stores it in the `PredictionPipeline.residual_std` field before saving the pipeline file. Then `predict_single()` checks this field: if `residual_std > 0`, it appends `confidence_interval = {lower: pred - 1.96*σ, upper: pred + 1.96*σ, level: 0.95, label: "95% prediction interval"}` to the prediction response. For classification, `max(predict_proba)` is added as a `confidence` top-level field (complementing the existing `probabilities` dict). Old pipeline files without `residual_std` degrade gracefully via `getattr(pipeline, 'residual_std', 0.0)`. The frontend `predict/[id]/page.tsx` renders a blue `ConfidenceIntervalBadge` ("Between $900 and $1,800") below the main prediction value for regression, and a green confidence badge for classification. `ConfidenceInterval` type added to `types.ts`; `jest.config.js` ESLint disable comment also re-applied (was lost between sessions). **14 backend + 6 frontend = 20 new tests. Total: 1053 backend + 401 frontend = 1454, all passing.**
+
 ## Day 8 — 14:56 — Dataset Refresh: Guided "New Data" Workflow (1039 backend + 395 frontend = 1434 tests)
 
 The platform had a production workflow gap: when an analyst received new quarterly data, there was no way to update the dataset without creating an entirely new project and losing all feature engineering and model history. This session closes that loop with a **dataset refresh** capability — replace the CSV in-place while keeping all foreign-key relationships intact.
