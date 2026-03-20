@@ -549,7 +549,9 @@ def build_crosstab(
 
     valid_agg = {"sum", "mean", "count", "min", "max"}
     if agg_func not in valid_agg:
-        raise ValueError(f"Unsupported aggregation '{agg_func}'. Use: {sorted(valid_agg)}")
+        raise ValueError(
+            f"Unsupported aggregation '{agg_func}'. Use: {sorted(valid_agg)}"
+        )
 
     # Build the pivot table
     if value_col and agg_func != "count":
@@ -566,7 +568,9 @@ def build_crosstab(
         pivot = pd.crosstab(df[row_col], df[col_col])
 
     if pivot.empty:
-        raise ValueError("No data after grouping — check that the selected columns have overlapping values.")
+        raise ValueError(
+            "No data after grouping — check that the selected columns have overlapping values."
+        )
 
     # Cap rows/cols to avoid huge tables
     pivot = pivot.iloc[:max_rows, :max_cols]
@@ -577,7 +581,13 @@ def build_crosstab(
     rows = []
     for row_label, row_data in zip(row_labels, pivot.values):
         cells = [_jsonify(v) for v in row_data]
-        row_total = _jsonify(sum(v for v in row_data if v is not None and not (isinstance(v, float) and np.isnan(v))))
+        row_total = _jsonify(
+            sum(
+                v
+                for v in row_data
+                if v is not None and not (isinstance(v, float) and np.isnan(v))
+            )
+        )
         rows.append({"row_label": row_label, "cells": cells, "row_total": row_total})
 
     # Column totals
@@ -585,7 +595,9 @@ def build_crosstab(
     grand_total = _jsonify(pivot.values.sum())
 
     # Plain-English summary
-    metric_desc = f"{agg_func} of {value_col}" if value_col and agg_func != "count" else "count"
+    metric_desc = (
+        f"{agg_func} of {value_col}" if value_col and agg_func != "count" else "count"
+    )
     summary = (
         f"{metric_desc.title()} broken down by {row_col} (rows) × {col_col} (columns). "
         f"Showing {len(rows)} {row_col} values across {len(col_headers)} {col_col} categories."

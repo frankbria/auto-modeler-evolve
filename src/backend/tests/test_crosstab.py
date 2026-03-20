@@ -47,7 +47,9 @@ def make_df():
 class TestBuildCrosstab:
     def test_basic_sum(self):
         df = make_df()
-        result = build_crosstab(df, row_col="product", col_col="region", value_col="revenue", agg_func="sum")
+        result = build_crosstab(
+            df, row_col="product", col_col="region", value_col="revenue", agg_func="sum"
+        )
         assert result["row_col"] == "product"
         assert result["col_col"] == "region"
         assert result["value_col"] == "revenue"
@@ -61,7 +63,9 @@ class TestBuildCrosstab:
 
     def test_row_totals_correct(self):
         df = make_df()
-        result = build_crosstab(df, row_col="product", col_col="region", value_col="revenue", agg_func="sum")
+        result = build_crosstab(
+            df, row_col="product", col_col="region", value_col="revenue", agg_func="sum"
+        )
         # Each row_total should equal sum of its cells (ignoring None)
         for row in result["rows"]:
             cell_sum = sum(c for c in row["cells"] if c is not None)
@@ -69,13 +73,21 @@ class TestBuildCrosstab:
 
     def test_count_mode(self):
         df = make_df()
-        result = build_crosstab(df, row_col="product", col_col="region", value_col=None, agg_func="sum")
+        result = build_crosstab(
+            df, row_col="product", col_col="region", value_col=None, agg_func="sum"
+        )
         # In count mode (value_col=None) grand_total = total row count
         assert result["grand_total"] == len(df)
 
     def test_mean_aggregation(self):
         df = make_df()
-        result = build_crosstab(df, row_col="product", col_col="region", value_col="revenue", agg_func="mean")
+        result = build_crosstab(
+            df,
+            row_col="product",
+            col_col="region",
+            value_col="revenue",
+            agg_func="mean",
+        )
         assert result["agg_func"] == "mean"
         # Widget A appears in North twice (1200 and 500 → mean 850)
         widget_a_row = next(r for r in result["rows"] if r["row_label"] == "Widget A")
@@ -85,39 +97,57 @@ class TestBuildCrosstab:
     def test_invalid_agg_raises(self):
         df = make_df()
         with pytest.raises(ValueError, match="Unsupported aggregation"):
-            build_crosstab(df, row_col="product", col_col="region", value_col="revenue", agg_func="invalid")
+            build_crosstab(
+                df,
+                row_col="product",
+                col_col="region",
+                value_col="revenue",
+                agg_func="invalid",
+            )
 
     def test_missing_row_col_raises(self):
         df = make_df()
         with pytest.raises(ValueError, match="Column\\(s\\) not found"):
-            build_crosstab(df, row_col="nonexistent", col_col="region", value_col="revenue")
+            build_crosstab(
+                df, row_col="nonexistent", col_col="region", value_col="revenue"
+            )
 
     def test_missing_value_col_raises(self):
         df = make_df()
         with pytest.raises(ValueError, match="Value column"):
-            build_crosstab(df, row_col="product", col_col="region", value_col="nonexistent")
+            build_crosstab(
+                df, row_col="product", col_col="region", value_col="nonexistent"
+            )
 
     def test_summary_text(self):
         df = make_df()
-        result = build_crosstab(df, row_col="product", col_col="region", value_col="revenue")
+        result = build_crosstab(
+            df, row_col="product", col_col="region", value_col="revenue"
+        )
         assert "product" in result["summary"]
         assert "region" in result["summary"]
 
     def test_col_totals_length_matches_headers(self):
         df = make_df()
-        result = build_crosstab(df, row_col="product", col_col="region", value_col="revenue")
+        result = build_crosstab(
+            df, row_col="product", col_col="region", value_col="revenue"
+        )
         assert len(result["col_totals"]) == len(result["col_headers"])
 
     def test_cells_length_matches_headers(self):
         df = make_df()
-        result = build_crosstab(df, row_col="product", col_col="region", value_col="revenue")
+        result = build_crosstab(
+            df, row_col="product", col_col="region", value_col="revenue"
+        )
         for row in result["rows"]:
             assert len(row["cells"]) == len(result["col_headers"])
 
     def test_max_rows_cap(self):
         # Create a dataset with more than 3 unique row values
         df = make_df()
-        result = build_crosstab(df, row_col="product", col_col="region", value_col="revenue", max_rows=2)
+        result = build_crosstab(
+            df, row_col="product", col_col="region", value_col="revenue", max_rows=2
+        )
         assert len(result["rows"]) <= 2
 
 
@@ -169,7 +199,12 @@ class TestCrosstabEndpoint:
     async def test_basic_sum(self, dataset_id, ac):
         resp = await ac.get(
             f"/api/data/{dataset_id}/crosstab",
-            params={"rows": "product", "cols": "region", "values": "revenue", "agg": "sum"},
+            params={
+                "rows": "product",
+                "cols": "region",
+                "values": "revenue",
+                "agg": "sum",
+            },
         )
         assert resp.status_code == 200
         data = resp.json()

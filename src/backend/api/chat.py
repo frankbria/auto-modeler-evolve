@@ -1049,10 +1049,15 @@ def send_message(
             _file_path = Path(_ds.file_path)
             if _file_path.exists():
                 _df = pd.read_csv(_file_path)
-                _cols = [c["name"] for c in json.loads(_ds.columns)] if _ds.columns else list(_df.columns)
+                _cols = (
+                    [c["name"] for c in json.loads(_ds.columns)]
+                    if _ds.columns
+                    else list(_df.columns)
+                )
                 _crosstab_req = _detect_crosstab_request(body.message, _cols)
                 if _crosstab_req:
                     from core.chart_builder import build_crosstab as _build_crosstab
+
                     _ct_result = _build_crosstab(
                         _df,
                         row_col=_crosstab_req["row_col"],
@@ -1110,7 +1115,10 @@ def send_message(
                 _compute_req = _detect_compute_request(body.message, _cols)
                 if _compute_req:
                     from core.computed import preview_computed_column as _preview_col
-                    _preview = _preview_col(_df, _compute_req["name"], _compute_req["expression"])
+
+                    _preview = _preview_col(
+                        _df, _compute_req["name"], _compute_req["expression"]
+                    )
                     compute_suggestion = {
                         "dataset_id": _ds.id,
                         "name": _compute_req["name"],

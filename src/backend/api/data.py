@@ -1626,10 +1626,14 @@ def get_crosstab(
     try:
         df = pd.read_csv(dataset.file_path)
     except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=500, detail=f"Could not read dataset: {exc}") from exc
+        raise HTTPException(
+            status_code=500, detail=f"Could not read dataset: {exc}"
+        ) from exc
 
     try:
-        result = build_crosstab(df, row_col=rows, col_col=cols, value_col=values, agg_func=agg)
+        result = build_crosstab(
+            df, row_col=rows, col_col=cols, value_col=values, agg_func=agg
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -1672,7 +1676,9 @@ def compute_column(
     try:
         df = pd.read_csv(file_path)
     except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=500, detail=f"Could not read dataset: {exc}") from exc
+        raise HTTPException(
+            status_code=500, detail=f"Could not read dataset: {exc}"
+        ) from exc
 
     try:
         updated_df, result = add_computed_column(df, body.name, body.expression)

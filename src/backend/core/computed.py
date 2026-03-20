@@ -63,10 +63,7 @@ def add_computed_column(
     result_df[name] = computed_series
 
     # Build sample preview (first 5 non-null values)
-    sample = [
-        v if pd.notna(v) else None
-        for v in computed_series.head(5).tolist()
-    ]
+    sample = [v if pd.notna(v) else None for v in computed_series.head(5).tolist()]
 
     action = "added" if is_new else "updated"
     return result_df, {
@@ -110,10 +107,7 @@ def preview_computed_column(
     if not isinstance(computed_series, pd.Series):
         computed_series = pd.Series([computed_series] * len(df), index=df.index)
 
-    sample = [
-        v if pd.notna(v) else None
-        for v in computed_series.head(n).tolist()
-    ]
+    sample = [v if pd.notna(v) else None for v in computed_series.head(n).tolist()]
 
     return {
         "column_name": name,
