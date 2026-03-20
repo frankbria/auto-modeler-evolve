@@ -166,8 +166,12 @@ class TestCompareWithRealModels:
         proj_resp = client.post("/api/projects", json={"name": "Compare Test"})
         proj_id = proj_resp.json()["id"]
 
-        dep1 = _deploy_model(client, proj_id, REGRESSION_CSV, "revenue", "linear_regression")
-        dep2 = _deploy_model(client, proj_id, REGRESSION_CSV, "revenue", "random_forest_regressor")
+        dep1 = _deploy_model(
+            client, proj_id, REGRESSION_CSV, "revenue", "linear_regression"
+        )
+        dep2 = _deploy_model(
+            client, proj_id, REGRESSION_CSV, "revenue", "random_forest_regressor"
+        )
 
         features = {"age": 35, "income": 50000}
         r = client.post(
@@ -191,7 +195,9 @@ class TestCompareWithRealModels:
         proj_resp = client.post("/api/projects", json={"name": "CI Compare Test"})
         proj_id = proj_resp.json()["id"]
 
-        dep = _deploy_model(client, proj_id, REGRESSION_CSV, "revenue", "linear_regression")
+        dep = _deploy_model(
+            client, proj_id, REGRESSION_CSV, "revenue", "linear_regression"
+        )
         features = {"age": 35, "income": 50000}
 
         r = client.post(
@@ -235,12 +241,17 @@ class TestCompareWithRealModels:
         proj_resp = client.post("/api/projects", json={"name": "Mixed Compare"})
         proj_id = proj_resp.json()["id"]
 
-        dep = _deploy_model(client, proj_id, REGRESSION_CSV, "revenue", "linear_regression")
+        dep = _deploy_model(
+            client, proj_id, REGRESSION_CSV, "revenue", "linear_regression"
+        )
         features = {"age": 30, "income": 40000}
 
         r = client.post(
             "/api/predict/compare",
-            json={"deployment_ids": [dep["id"], "nonexistent-id"], "features": features},
+            json={
+                "deployment_ids": [dep["id"], "nonexistent-id"],
+                "features": features,
+            },
         )
         assert r.status_code == 200
         results = r.json()["results"]
@@ -258,7 +269,9 @@ class TestCompareWithRealModels:
         proj_resp = client.post("/api/projects", json={"name": "Four Models"})
         proj_id = proj_resp.json()["id"]
 
-        dep = _deploy_model(client, proj_id, REGRESSION_CSV, "revenue", "linear_regression")
+        dep = _deploy_model(
+            client, proj_id, REGRESSION_CSV, "revenue", "linear_regression"
+        )
         features = {"age": 30, "income": 40000}
 
         # Reuse the same deployment 4 times (for testing the limit)
@@ -286,8 +299,12 @@ class TestDeploymentListProjectFilter:
         proj2_resp = client.post("/api/projects", json={"name": "Project Beta"})
         proj2_id = proj2_resp.json()["id"]
 
-        dep1 = _deploy_model(client, proj1_id, REGRESSION_CSV, "revenue", "linear_regression")
-        dep2 = _deploy_model(client, proj2_id, REGRESSION_CSV, "revenue", "linear_regression")
+        dep1 = _deploy_model(
+            client, proj1_id, REGRESSION_CSV, "revenue", "linear_regression"
+        )
+        dep2 = _deploy_model(
+            client, proj2_id, REGRESSION_CSV, "revenue", "linear_regression"
+        )
 
         r = client.get(f"/api/deployments?project_id={proj1_id}")
         assert r.status_code == 200
@@ -308,8 +325,12 @@ class TestDeploymentListProjectFilter:
         proj2_resp = client.post("/api/projects", json={"name": "All Proj 2"})
         proj2_id = proj2_resp.json()["id"]
 
-        dep1 = _deploy_model(client, proj1_id, REGRESSION_CSV, "revenue", "linear_regression")
-        dep2 = _deploy_model(client, proj2_id, REGRESSION_CSV, "revenue", "linear_regression")
+        dep1 = _deploy_model(
+            client, proj1_id, REGRESSION_CSV, "revenue", "linear_regression"
+        )
+        dep2 = _deploy_model(
+            client, proj2_id, REGRESSION_CSV, "revenue", "linear_regression"
+        )
 
         r = client.get("/api/deployments")
         assert r.status_code == 200

@@ -280,7 +280,9 @@ def compare_deployments(
     for dep_id in body.deployment_ids:
         dep = session.get(Deployment, dep_id)
         if not dep or not dep.is_active:
-            results.append({"deployment_id": dep_id, "error": "Deployment not found or inactive"})
+            results.append(
+                {"deployment_id": dep_id, "error": "Deployment not found or inactive"}
+            )
             continue
 
         run = session.get(ModelRun, dep.model_run_id)
@@ -296,7 +298,9 @@ def compare_deployments(
                 {
                     "deployment_id": dep_id,
                     "algorithm": dep.algorithm,
-                    "trained_at": dep.created_at.isoformat() if dep.created_at else None,
+                    "trained_at": dep.created_at.isoformat()
+                    if dep.created_at
+                    else None,
                     "error": "Model file not found",
                 }
             )
@@ -325,7 +329,9 @@ def compare_deployments(
                 {
                     "deployment_id": dep_id,
                     "algorithm": dep.algorithm,
-                    "trained_at": dep.created_at.isoformat() if dep.created_at else None,
+                    "trained_at": dep.created_at.isoformat()
+                    if dep.created_at
+                    else None,
                     "error": str(exc),
                 }
             )
