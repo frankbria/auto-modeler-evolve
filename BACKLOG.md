@@ -10,6 +10,12 @@ Living document for coordinating between bot instances and tracking ideation.
 <!-- Brief description of what you're doing this session. -->
 <!-- Remove your entry when you commit your session wrap-up. -->
 
+## Day 9 (12:00 session 2) — Segment Comparison Analysis
+Implementing side-by-side statistical comparison of two data segments through conversation.
+"Compare enterprise vs SMB customers" → SegmentComparisonCard with mean/std per numeric column, effect sizes, notable differences highlighted.
+Backend: compare_segments() in analyzer.py + GET /api/data/{id}/compare-segments + _COMPARE_PATTERNS chat intent + {type:segment_comparison} SSE.
+Frontend: SegmentComparisonCard + store action + types + api client.
+
 
 
 ## Day 9 (16:10) — Done

@@ -24,6 +24,7 @@ import { RefreshCard } from "@/components/data/refresh-card"
 import { DictionaryCard } from "@/components/data/dictionary-card"
 import { CrosstabTable } from "@/components/data/crosstab-table"
 import { ComputeCard } from "@/components/data/compute-card"
+import { SegmentComparisonCard } from "@/components/data/segment-comparison-card"
 import { api } from "@/lib/api"
 import { useAppStore } from "@/lib/store"
 import type {
@@ -41,6 +42,7 @@ import type {
   CrosstabResult,
   ComputedColumnSuggestion,
   ComputeResult,
+  SegmentComparisonResult,
 } from "@/lib/types"
 
 const WELCOME_MESSAGE =
@@ -92,6 +94,7 @@ export default function ProjectWorkspace() {
     attachChartToLastMessage,
     attachCrosstabToLastMessage,
     attachComputeToLastMessage,
+    attachSegmentToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -312,6 +315,8 @@ export default function ProjectWorkspace() {
                 setComputeSuggestion(json.compute as ComputedColumnSuggestion)
                 attachComputeToLastMessage(json.compute as ComputedColumnSuggestion)
                 setActiveTab("data")
+              } else if (json.type === "segment_comparison" && json.segment_comparison) {
+                attachSegmentToLastMessage(json.segment_comparison as SegmentComparisonResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -336,6 +341,7 @@ export default function ProjectWorkspace() {
     attachChartToLastMessage,
     attachCrosstabToLastMessage,
     attachComputeToLastMessage,
+    attachSegmentToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -537,6 +543,9 @@ export default function ProjectWorkspace() {
                       )}
                     {msg.chart && <ChartMessage spec={msg.chart} />}
                     {msg.crosstab && <CrosstabTable result={msg.crosstab} />}
+                    {msg.segment_comparison && (
+                      <SegmentComparisonCard result={msg.segment_comparison} />
+                    )}
                   </div>
                 </div>
               ))}

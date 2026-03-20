@@ -465,3 +465,30 @@ describe("api.data.getCrosstab", () => {
     )
   })
 })
+
+// ---------------------------------------------------------------------------
+// api.data.compareSegments
+// ---------------------------------------------------------------------------
+
+describe("api.data.compareSegments", () => {
+  it("calls GET /api/data/{id}/compare-segments with col/val1/val2 params", async () => {
+    fetchMock.mockResponseOnce(
+      JSON.stringify({ group_col: "region", val1: "East", val2: "West", columns: [] })
+    )
+    const result = await api.data.compareSegments("ds-1", "region", "East", "West")
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${BASE}/api/data/ds-1/compare-segments?col=region&val1=East&val2=West`
+    )
+    expect(result.group_col).toBe("region")
+  })
+
+  it("URL-encodes special characters in values", async () => {
+    fetchMock.mockResponseOnce(
+      JSON.stringify({ group_col: "segment", val1: "Small & Medium", val2: "Large", columns: [] })
+    )
+    await api.data.compareSegments("ds-1", "segment", "Small & Medium", "Large")
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("val1=Small%20%26%20Medium")
+    )
+  })
+})

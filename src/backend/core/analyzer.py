@@ -332,6 +332,110 @@ def _looks_like_date(value: str) -> bool:
     return bool(date_pattern.match(value.strip()))
 
 
+def compare_segments(
+    df: pd.DataFrame, group_col: str, val1: str, val2: str
+) -> dict:
+    """Compare two segments of a dataframe on all numeric columns.
+
+    For each numeric column, computes mean/std/count/median for each group and
+    a Cohen's-d-style effect size: (mean1 - mean2) / pooled_std.
+
+    Returns a dict with:
+    - group_col, val1, val2, count1, count2
+    - columns: list of per-numeric-column stats dicts
+    - notable_diffs: columns where abs(effect_size) > 0.5, sorted by magnitude
+    - summary: plain-English description of the key differences
+    """
+    g1 = df[df[group_col].astype(str).str.strip().str.lower() == val1.strip().lower()]
+    g2 = df[df[group_col].astype(str).str.strip().str.lower() == val2.strip().lower()]
+
+    numeric_cols = [
+        c for c in df.columns if pd.api.types.is_numeric_dtype(df[c]) and c != group_col
+    ]
+
+    col_stats = []
+    notable = []
+
+    for col in numeric_cols:
+        s1 = g1[col].dropna()
+        s2 = g2[col].dropna()
+        mean1 = _safe_scalar(s1.mean()) if len(s1) > 0 else None
+        mean2 = _safe_scalar(s2.mean()) if len(s2) > 0 else None
+        std1 = _safe_scalar(s1.std()) if len(s1) > 1 else None
+        std2 = _safe_scalar(s2.std()) if len(s2) > 1 else None
+        med1 = _safe_scalar(s1.median()) if len(s1) > 0 else None
+        med2 = _safe_scalar(s2.median()) if len(s2) > 0 else None
+
+        effect_size = None
+        direction = None
+        if mean1 is not None and mean2 is not None:
+            pooled_std = None
+            n1, n2 = len(s1), len(s2)
+            if std1 is not None and std2 is not None and (n1 + n2 > 2):
+                pooled_var = ((n1 - 1) * (std1 ** 2) + (n2 - 1) * (std2 ** 2)) / (n1 + n2 - 2)
+                pooled_std = pooled_var ** 0.5 if pooled_var > 0 else None
+            if pooled_std and pooled_std > 0:
+                effect_size = round((mean1 - mean2) / pooled_std, 3)
+            elif mean2 != 0:
+                effect_size = round((mean1 - mean2) / abs(mean2), 3) if mean2 != 0 else None
+
+            if effect_size is not None:
+                direction = "higher_in_val1" if effect_size > 0 else "higher_in_val2"
+
+        stat = {
+            "name": col,
+            "mean1": mean1,
+            "std1": std1,
+            "median1": med1,
+            "count1": int(len(s1)),
+            "mean2": mean2,
+            "std2": std2,
+            "median2": med2,
+            "count2": int(len(s2)),
+            "effect_size": effect_size,
+            "direction": direction,
+        }
+        col_stats.append(stat)
+
+        if effect_size is not None and abs(effect_size) > 0.5:
+            notable.append({"name": col, "effect_size": effect_size, "direction": direction})
+
+    notable.sort(key=lambda x: abs(x["effect_size"]), reverse=True)
+
+    # Build plain-English summary
+    summary_parts = []
+    label1 = val1.title()
+    label2 = val2.title()
+    summary_parts.append(
+        f"Comparing {label1} ({len(g1)} rows) vs {label2} ({len(g2)} rows)."
+    )
+    if notable:
+        top = notable[:3]
+        diff_descs = []
+        for n in top:
+            col_name = n["name"].replace("_", " ")
+            if n["direction"] == "higher_in_val1":
+                diff_descs.append(f"{col_name} is higher in {label1}")
+            else:
+                diff_descs.append(f"{col_name} is higher in {label2}")
+        summary_parts.append(
+            f"Notable differences: {'; '.join(diff_descs)}."
+        )
+    else:
+        summary_parts.append("No strong differences found between the two groups.")
+
+    return {
+        "group_col": group_col,
+        "val1": val1,
+        "val2": val2,
+        "count1": int(len(g1)),
+        "count2": int(len(g2)),
+        "columns": col_stats,
+        "notable_diffs": notable,
+        "summary": " ".join(summary_parts),
+    }
+
+
 def _safe_scalar(value):
     """Convert numpy scalars to native Python types for JSON serialization."""
     if value is None or (isinstance(value, float) and np.isnan(value)):

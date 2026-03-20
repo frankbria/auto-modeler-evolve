@@ -326,6 +326,63 @@ def _detect_compute_request(message: str, columns: list[str]) -> dict | None:
     return {"name": name, "expression": expression}
 
 
+_COMPARE_PATTERNS = re.compile(
+    r"\b("
+    r"compare\s+\w[\w\s]*\s+(?:vs\.?|versus|and|with)\s+\w|"
+    r"\w[\w\s]*\s+vs\.?\s+\w[\w\s]*|"
+    r"\w[\w\s]*\s+versus\s+\w[\w\s]*|"
+    r"difference\s+between\s+\w[\w\s]*\s+and\s+\w|"
+    r"how\s+(?:does|do|is|are)\s+\w[\w\s]*\s+(?:compare|differ)\s+(?:to|from|with)\s+\w|"
+    r"contrast\s+\w[\w\s]*\s+(?:and|with)\s+\w"
+    r")\b",
+    re.IGNORECASE,
+)
+
+# Extract two group terms: "compare X vs Y" / "X versus Y" / "difference between X and Y"
+_COMPARE_EXTRACT = re.compile(
+    r"(?:"
+    r"compare\s+(.+?)\s+(?:vs\.?|versus|and|with)\s+(.+?)"
+    r"|(.+?)\s+vs\.?\s+(.+?)"
+    r"|(.+?)\s+versus\s+(.+?)"
+    r"|difference\s+between\s+(.+?)\s+and\s+(.+?)"
+    r"|how\s+(?:does|do|is|are)\s+(.+?)\s+(?:compare|differ)\s+(?:to|from|with)\s+(.+?)"
+    r")\s*(?:\?|$)",
+    re.IGNORECASE,
+)
+
+
+def _detect_compare_request(message: str, df) -> dict | None:
+    """Extract two group values and the column they come from.
+
+    Searches the DataFrame for a categorical column whose unique values
+    contain both extracted terms. Returns {group_col, val1, val2} or None.
+    """
+    m = _COMPARE_EXTRACT.search(message.strip())
+    if not m:
+        return None
+
+    # Pick the first two non-None groups (comes from alternation in pattern)
+    groups = [g for g in m.groups() if g is not None]
+    if len(groups) < 2:
+        return None
+
+    raw1 = groups[0].strip().rstrip("?").strip()
+    raw2 = groups[1].strip().rstrip("?").strip()
+
+    # For each categorical column, check if both terms exist in actual values
+    for col in df.columns:
+        if not (
+            str(df[col].dtype) in ("object", "string", "str", "category")
+            or df[col].nunique() <= 30
+        ):
+            continue
+        vals_lower = {str(v).strip().lower() for v in df[col].dropna().unique()}
+        if raw1.lower() in vals_lower and raw2.lower() in vals_lower:
+            return {"group_col": col, "val1": raw1, "val2": raw2}
+
+    return None
+
+
 class ChatMessage(BaseModel):
     message: str
 
@@ -1137,6 +1194,51 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Compute suggestion is nice-to-have; never crash chat
 
+    # Check for segment comparison request ("compare enterprise vs SMB")
+    segment_comparison_event: dict | None = None
+    if _COMPARE_PATTERNS.search(body.message) and ctx["dataset"]:
+        try:
+            _ds = ctx["dataset"]
+            _file_path = Path(_ds.file_path)
+            if _file_path.exists():
+                _df = pd.read_csv(_file_path)
+                _compare_req = _detect_compare_request(body.message, _df)
+                if _compare_req:
+                    from core.analyzer import compare_segments as _compare_segs
+
+                    _seg_result = _compare_segs(
+                        _df,
+                        _compare_req["group_col"],
+                        _compare_req["val1"],
+                        _compare_req["val2"],
+                    )
+                    segment_comparison_event = _seg_result
+                    system_prompt += (
+                        f"\n\n## Segment Comparison\n"
+                        f"{_seg_result['summary']}\n"
+                        f"Groups: '{_compare_req['val1']}' ({_seg_result['count1']} rows) "
+                        f"vs '{_compare_req['val2']}' ({_seg_result['count2']} rows) "
+                        f"in column '{_compare_req['group_col']}'.\n"
+                    )
+                    if _seg_result["notable_diffs"]:
+                        _top = _seg_result["notable_diffs"][:3]
+                        _diff_lines = []
+                        for _nd in _top:
+                            _es = round(abs(_nd["effect_size"]), 2)
+                            _dir = (
+                                f"higher in '{_compare_req['val1']}'"
+                                if _nd["direction"] == "higher_in_val1"
+                                else f"higher in '{_compare_req['val2']}'"
+                            )
+                            _diff_lines.append(f"- {_nd['name']}: {_dir} (effect={_es})")
+                        system_prompt += "Notable differences:\n" + "\n".join(_diff_lines) + "\n"
+                    system_prompt += (
+                        "A Segment Comparison table is shown in the chat. "
+                        "Narrate the key business insights from these differences."
+                    )
+        except Exception:  # noqa: BLE001
+            pass  # Comparison is nice-to-have; never crash chat
+
     # Check if user has new data to upload — guide them through the refresh workflow
     refresh_prompt_event: dict | None = None
     if _REFRESH_PATTERNS.search(body.message) and ctx["dataset"]:
@@ -1256,6 +1358,10 @@ def send_message(
         # Emit computed column suggestion (user must click Apply — "explain before executing")
         if compute_suggestion:
             yield f"data: {json.dumps({'type': 'compute_suggestion', 'compute': compute_suggestion})}\n\n"
+
+        # Emit segment comparison table if computed
+        if segment_comparison_event:
+            yield f"data: {json.dumps({'type': 'segment_comparison', 'segment_comparison': segment_comparison_event})}\n\n"
 
         # Emit refresh prompt — guides user to upload new data
         if refresh_prompt_event:

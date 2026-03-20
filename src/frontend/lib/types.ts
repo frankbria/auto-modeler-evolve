@@ -152,6 +152,7 @@ export interface ChatMessage {
   chart?: ChartSpec
   crosstab?: CrosstabResult
   compute?: ComputedColumnSuggestion
+  segment_comparison?: SegmentComparisonResult
 }
 
 export interface QueryResponse {
@@ -882,4 +883,39 @@ export interface IntegrationSnippets {
   openapi_url: string
   batch_url: string
   batch_note: string
+}
+
+// ---------------------------------------------------------------------------
+// Segment comparison
+// ---------------------------------------------------------------------------
+
+export interface SegmentColumnStats {
+  name: string
+  mean1: number | null
+  std1: number | null
+  median1: number | null
+  count1: number
+  mean2: number | null
+  std2: number | null
+  median2: number | null
+  count2: number
+  effect_size: number | null
+  direction: 'higher_in_val1' | 'higher_in_val2' | null
+}
+
+export interface SegmentNotableDiff {
+  name: string
+  effect_size: number
+  direction: 'higher_in_val1' | 'higher_in_val2'
+}
+
+export interface SegmentComparisonResult {
+  group_col: string
+  val1: string
+  val2: string
+  count1: number
+  count2: number
+  columns: SegmentColumnStats[]
+  notable_diffs: SegmentNotableDiff[]
+  summary: string
 }

@@ -18,7 +18,7 @@ from chat.narration import (
     narrate_data_insights_ai,
     narrate_upload,
 )
-from core.analyzer import compute_full_profile, detect_time_columns
+from core.analyzer import compare_segments, compute_full_profile, detect_time_columns
 from core.anomaly import detect_anomalies
 from core.cleaner import (
     cap_outliers,
@@ -1715,3 +1715,49 @@ def compute_column(
             "column_count": len(updated_df.columns),
         },
     }
+
+
+@router.get("/{dataset_id}/compare-segments")
+def compare_dataset_segments(
+    dataset_id: str,
+    col: str,
+    val1: str,
+    val2: str,
+    session: Session = Depends(get_session),
+) -> dict:
+    """Compare two segments of a dataset on all numeric columns.
+
+    GET /api/data/{dataset_id}/compare-segments?col=region&val1=East&val2=West
+    Returns per-column stats (mean/std/median/count) for each segment plus
+    effect sizes and a plain-English summary.
+    """
+    dataset = session.get(Dataset, dataset_id)
+    if dataset is None:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    file_path = Path(dataset.file_path)
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Dataset file not found")
+
+    try:
+        df = pd.read_csv(file_path)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(
+            status_code=500, detail=f"Could not read dataset: {exc}"
+        ) from exc
+
+    if col not in df.columns:
+        raise HTTPException(status_code=400, detail=f"Column '{col}' not found in dataset")
+
+    col_values_lower = df[col].astype(str).str.strip().str.lower().unique().tolist()
+    if val1.strip().lower() not in col_values_lower:
+        raise HTTPException(
+            status_code=400, detail=f"Value '{val1}' not found in column '{col}'"
+        )
+    if val2.strip().lower() not in col_values_lower:
+        raise HTTPException(
+            status_code=400, detail=f"Value '{val2}' not found in column '{col}'"
+        )
+
+    result = compare_segments(df, col, val1, val2)
+    return result

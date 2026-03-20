@@ -28,6 +28,7 @@ import type {
   DataDictionary,
   CrosstabResult,
   ComputeResult,
+  SegmentComparisonResult,
 } from "./types"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
@@ -285,6 +286,16 @@ export const api = {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, expression }),
       }).then((r) => r.json()),
+
+    compareSegments: (
+      datasetId: string,
+      col: string,
+      val1: string,
+      val2: string
+    ): Promise<SegmentComparisonResult> =>
+      fetch(
+        `${API_URL}/api/data/${datasetId}/compare-segments?col=${encodeURIComponent(col)}&val1=${encodeURIComponent(val1)}&val2=${encodeURIComponent(val2)}`
+      ).then((r) => r.json()),
   },
 
   chat: {
