@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { api } from "@/lib/api"
-import type { Deployment, FeatureSchemaEntry, PredictionResult, PredictionExplanation, FeatureContribution } from "@/lib/types"
+import type { Deployment, FeatureSchemaEntry, PredictionResult, PredictionExplanation, FeatureContribution, ConfidenceInterval } from "@/lib/types"
 
 // ---------------------------------------------------------------------------
 // Feature contribution waterfall (horizontal bar chart)
@@ -96,6 +96,33 @@ function ExplanationCard({ explanation }: { explanation: PredictionExplanation }
         </p>
       </CardContent>
     </Card>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Confidence interval display
+// ---------------------------------------------------------------------------
+
+function ConfidenceIntervalBadge({ interval }: { interval: ConfidenceInterval }) {
+  const pct = Math.round(interval.level * 100)
+  const fmt = (v: number) =>
+    v.toLocaleString(undefined, { maximumFractionDigits: 4 })
+
+  return (
+    <div
+      className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-center dark:border-blue-800 dark:bg-blue-950/30"
+      data-testid="confidence-interval"
+    >
+      <p className="text-xs text-muted-foreground">
+        {pct}% prediction interval
+      </p>
+      <p className="mt-0.5 text-sm font-medium tabular-nums">
+        {fmt(interval.lower)} – {fmt(interval.upper)}
+      </p>
+      <p className="mt-1 text-[10px] text-muted-foreground">
+        The actual value is likely to fall within this range based on past prediction accuracy.
+      </p>
+    </div>
   )
 }
 
@@ -343,6 +370,22 @@ export default function PredictionDashboard() {
                   Predicted {result.target_column}
                 </p>
               </div>
+
+              {result.confidence_interval && (
+                <ConfidenceIntervalBadge interval={result.confidence_interval} />
+              )}
+
+              {result.confidence !== undefined && result.problem_type === "classification" && (
+                <div
+                  className="flex items-center justify-between rounded-md border border-green-200 bg-green-50 px-3 py-2 dark:border-green-800 dark:bg-green-950/30"
+                  data-testid="classification-confidence"
+                >
+                  <span className="text-xs text-muted-foreground">Model confidence</span>
+                  <span className="text-sm font-semibold tabular-nums text-green-700 dark:text-green-400">
+                    {Math.round(result.confidence * 100)}%
+                  </span>
+                </div>
+              )}
 
               {result.probabilities && (
                 <div>

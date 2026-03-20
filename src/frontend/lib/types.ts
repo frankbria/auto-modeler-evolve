@@ -354,6 +354,13 @@ export interface Deployment {
   feature_schema?: FeatureSchemaEntry[]
 }
 
+export interface ConfidenceInterval {
+  lower: number
+  upper: number
+  level: number
+  label: string
+}
+
 export interface PredictionResult {
   deployment_id: string
   prediction: number | string
@@ -361,6 +368,8 @@ export interface PredictionResult {
   target_column: string
   feature_names: string[]
   probabilities?: Record<string, number>
+  confidence?: number
+  confidence_interval?: ConfidenceInterval
 }
 
 // ---------------------------------------------------------------------------

@@ -42,6 +42,8 @@ class PredictionPipeline:
     # Statistics for explanation (stored at build time)
     feature_means: dict[str, float] = field(default_factory=dict)
     feature_stds: dict[str, float] = field(default_factory=dict)
+    # Residual std for regression prediction intervals (stored at deploy time)
+    residual_std: float = 0.0
 
     def transform(self, input_dict: dict) -> np.ndarray:
         """Transform a single row dict into a feature vector for prediction."""
@@ -183,6 +185,20 @@ def predict_single(
             else [str(i) for i in range(len(proba))]
         )
         result["probabilities"] = {cls: round(float(p), 4) for cls, p in zip(classes, proba)}
+        result["confidence"] = round(float(proba.max()), 4)
+
+    # For regression, return a 95% prediction interval using stored residual std
+    if pipeline.problem_type == "regression":
+        residual_std = getattr(pipeline, "residual_std", 0.0)
+        if residual_std > 0:
+            z = 1.96  # 95% prediction interval
+            pred_value = float(decoded)
+            result["confidence_interval"] = {
+                "lower": round(pred_value - z * residual_std, 4),
+                "upper": round(pred_value + z * residual_std, 4),
+                "level": 0.95,
+                "label": "95% prediction interval",
+            }
 
     return result
 

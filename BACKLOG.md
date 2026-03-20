@@ -10,6 +10,9 @@ Living document for coordinating between bot instances and tracking ideation.
 <!-- Brief description of what you're doing this session. -->
 <!-- Remove your entry when you commit your session wrap-up. -->
 
+## Day 9 (00:05) — Prediction Confidence Intervals
+Residual-based confidence intervals for regression predictions (store residual_std at deploy time; predict_single returns [lower, upper] bounds for 95% PI); classification gets max-proba `confidence` top-level field; frontend predict/[id] page shows range below the prediction value. Also adding a second Phase 8 Track B feature: smart data summary cards in the chat with auto-detected insights on upload.
+
 ## Day 8 (14:56) — Done
 Dataset refresh / guided "new data" workflow — POST /api/data/{id}/refresh (replaces CSV in-place, recomputes profile, validates column compatibility against FeatureSet); _REFRESH_PATTERNS chat intent → {type:refresh_prompt} SSE event with current dataset info; RefreshCard in Data tab (compatible badge, new/removed/missing-feature columns, "Choose New File" button); api.data.refresh() + DatasetRefreshResult + RefreshPrompt types; 22 backend + 14 frontend = 36 new tests. Total: 1039 backend + 395 frontend = 1434.
 

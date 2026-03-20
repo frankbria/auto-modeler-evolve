@@ -124,6 +124,20 @@ def deploy_model(
     DEPLOY_DIR.mkdir(parents=True, exist_ok=True)
     pipeline = build_prediction_pipeline(df, feature_names, target_col, problem_type)
 
+    # Compute residual std for regression prediction intervals
+    if problem_type == "regression" and target_col in df.columns:
+        try:
+            import joblib as _joblib
+            import numpy as _np
+            model = _joblib.load(run.model_path)
+            df_clean = df[feature_names + [target_col]].dropna(subset=[target_col])
+            X_train = pipeline.transform_df(df_clean[feature_names])
+            y_true = df_clean[target_col].values.astype(float)
+            y_pred = model.predict(X_train)
+            pipeline.residual_std = float(_np.std(y_true - y_pred))
+        except Exception:
+            pipeline.residual_std = 0.0
+
     # Persist pipeline
     pipeline_path = DEPLOY_DIR / f"{model_run_id}_pipeline.joblib"
     save_pipeline(pipeline, pipeline_path)
