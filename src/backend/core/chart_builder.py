@@ -47,7 +47,9 @@ def build_bar_chart(
         items = [(str(k), v) for k, v in data.items()]
 
     # Sort descending, cap at limit
-    items.sort(key=lambda x: x[1] if isinstance(x[1], (int, float)) else 0, reverse=True)
+    items.sort(
+        key=lambda x: x[1] if isinstance(x[1], (int, float)) else 0, reverse=True
+    )
     items = items[:limit]
 
     chart_data = [{"label": k, "value": _jsonify(v)} for k, v in items]
@@ -102,9 +104,7 @@ def build_histogram(
     y_label: str = "Count",
 ) -> dict[str, Any]:
     """Histogram from pre-computed bins and counts (matches numpy.histogram output)."""
-    chart_data = [
-        {"bin": round(b, 4), "count": c} for b, c in zip(bins, counts)
-    ]
+    chart_data = [{"bin": round(b, 4), "count": c} for b, c in zip(bins, counts)]
     return {
         "chart_type": "histogram",
         "title": title,
@@ -154,7 +154,9 @@ def build_pie_chart(
     else:
         items = [(str(k), v) for k, v in data.items()]
 
-    items.sort(key=lambda x: x[1] if isinstance(x[1], (int, float)) else 0, reverse=True)
+    items.sort(
+        key=lambda x: x[1] if isinstance(x[1], (int, float)) else 0, reverse=True
+    )
 
     # Roll up tail into "Other"
     if len(items) > limit:
@@ -200,7 +202,9 @@ def chart_from_query_result(
         # Single numeric column — histogram
         col = result_df.columns[0]
         if pd.api.types.is_numeric_dtype(result_df[col]):
-            counts, bins = np.histogram(result_df[col].dropna(), bins=min(15, result_df[col].nunique()))
+            counts, bins = np.histogram(
+                result_df[col].dropna(), bins=min(15, result_df[col].nunique())
+            )
             return build_histogram(
                 bins=[round(float(b), 4) for b in bins[:-1]],
                 counts=[int(c) for c in counts],
@@ -213,17 +217,25 @@ def chart_from_query_result(
         col_a, col_b = result_df.columns[0], result_df.columns[1]
         # Determine which is categorical, which is numeric
         if x_col is None:
-            x_col = col_a if not pd.api.types.is_numeric_dtype(result_df[col_a]) else col_b
+            x_col = (
+                col_a if not pd.api.types.is_numeric_dtype(result_df[col_a]) else col_b
+            )
         if y_col is None:
             y_col = col_b if x_col == col_a else col_a
 
         if pd.api.types.is_numeric_dtype(result_df[y_col]):
             data = dict(zip(result_df[x_col].astype(str), result_df[y_col]))
-            return build_bar_chart(data, title=question[:60], x_label=str(x_col), y_label=str(y_col))
+            return build_bar_chart(
+                data, title=question[:60], x_label=str(x_col), y_label=str(y_col)
+            )
 
     # Multi-column with a clear x-axis
     if x_col and len(result_df.columns) > 2:
-        numeric_cols = [c for c in result_df.columns if c != x_col and pd.api.types.is_numeric_dtype(result_df[c])]
+        numeric_cols = [
+            c
+            for c in result_df.columns
+            if c != x_col and pd.api.types.is_numeric_dtype(result_df[c])
+        ]
         if numeric_cols:
             y_series = {c: result_df[c].tolist() for c in numeric_cols[:3]}
             return build_line_chart(
@@ -374,7 +386,9 @@ def build_timeseries_chart(
     """
     n = len(values)
     if n == 0:
-        return build_line_chart([], {}, f"{column_name} over time", x_label="Date", y_label=column_name)
+        return build_line_chart(
+            [], {}, f"{column_name} over time", x_label="Date", y_label=column_name
+        )
 
     # Adjust window to dataset length
     effective_window = max(2, min(window, n // 3)) if n >= 6 else 1
@@ -383,11 +397,19 @@ def build_timeseries_chart(
     rolling_avg: list[Any] = []
     for i in range(n):
         start = max(0, i - effective_window + 1)
-        chunk = [v for v in values[start:i + 1] if v is not None and not (isinstance(v, float) and np.isnan(v))]
+        chunk = [
+            v
+            for v in values[start : i + 1]
+            if v is not None and not (isinstance(v, float) and np.isnan(v))
+        ]
         rolling_avg.append(round(sum(chunk) / len(chunk), 4) if chunk else None)
 
     # Linear trend (OLS via numpy)
-    finite_indices = [i for i, v in enumerate(values) if v is not None and not (isinstance(v, float) and np.isnan(v))]
+    finite_indices = [
+        i
+        for i, v in enumerate(values)
+        if v is not None and not (isinstance(v, float) and np.isnan(v))
+    ]
     finite_values = [values[i] for i in finite_indices]
     trend: list[Any] = [None] * n
     if len(finite_indices) >= 2:
@@ -453,11 +475,15 @@ def build_boxplot(
         fence_hi = q3 + 1.5 * iqr
         non_outliers = series[(series >= fence_lo) & (series <= fence_hi)]
         return {
-            "min": round(float(non_outliers.min()) if not non_outliers.empty else series.min(), 4),
+            "min": round(
+                float(non_outliers.min()) if not non_outliers.empty else series.min(), 4
+            ),
             "q1": round(q1, 4),
             "median": round(float(series.median()), 4),
             "q3": round(q3, 4),
-            "max": round(float(non_outliers.max()) if not non_outliers.empty else series.max(), 4),
+            "max": round(
+                float(non_outliers.max()) if not non_outliers.empty else series.max(), 4
+            ),
             "mean": round(float(series.mean()), 4),
             "count": int(series.count()),
         }
@@ -480,7 +506,8 @@ def build_boxplot(
 
     return {
         "chart_type": "boxplot",
-        "title": title or (
+        "title": title
+        or (
             f"Distribution of {value_col} by {group_col}"
             if group_col
             else f"Distribution of {value_col}"

@@ -6,6 +6,7 @@ Coverage:
   - chat._CLEAN_PATTERNS regex + _detect_clean_op() helper
   - chat SSE emits cleaning_suggestion event on match
 """
+
 from __future__ import annotations
 
 import io
@@ -27,6 +28,7 @@ from core.cleaner import (
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_df() -> pd.DataFrame:
     return pd.DataFrame(
@@ -82,6 +84,7 @@ CSV_NUMERIC = b"""revenue,quantity
 # Unit: remove_duplicates
 # ---------------------------------------------------------------------------
 
+
 class TestRemoveDuplicates:
     def test_removes_duplicates(self):
         df = pd.DataFrame({"a": [1, 1, 2], "b": ["x", "x", "y"]})
@@ -99,12 +102,22 @@ class TestRemoveDuplicates:
     def test_result_has_correct_keys(self):
         df = pd.DataFrame({"a": [1, 1]})
         _, result = remove_duplicates(df)
-        assert all(k in result for k in ("operation", "before_rows", "after_rows", "modified_count", "summary"))
+        assert all(
+            k in result
+            for k in (
+                "operation",
+                "before_rows",
+                "after_rows",
+                "modified_count",
+                "summary",
+            )
+        )
 
 
 # ---------------------------------------------------------------------------
 # Unit: fill_missing
 # ---------------------------------------------------------------------------
+
 
 class TestFillMissing:
     def test_fill_mean(self):
@@ -161,6 +174,7 @@ class TestFillMissing:
 # Unit: filter_rows
 # ---------------------------------------------------------------------------
 
+
 class TestFilterRows:
     def test_filter_gt(self):
         df = pd.DataFrame({"quantity": [10, 0, -5, 20]})
@@ -200,6 +214,7 @@ class TestFilterRows:
 # Unit: cap_outliers
 # ---------------------------------------------------------------------------
 
+
 class TestCapOutliers:
     def test_caps_extreme_values(self):
         df = pd.DataFrame({"revenue": [100.0, 200.0, 300.0, 50000.0]})
@@ -229,6 +244,7 @@ class TestCapOutliers:
 # Unit: drop_column
 # ---------------------------------------------------------------------------
 
+
 class TestDropColumn:
     def test_drops_column(self):
         df = pd.DataFrame({"a": [1, 2], "b": [3, 4], "c": [5, 6]})
@@ -247,14 +263,17 @@ class TestDropColumn:
 # API: POST /api/data/{id}/clean
 # ---------------------------------------------------------------------------
 
+
 class TestCleanEndpoint:
     def test_remove_duplicates_endpoint(self):
         from main import app
+
         client = TestClient(app)
         from sqlmodel import create_engine, SQLModel
         import db
 
         import tempfile
+
         with tempfile.TemporaryDirectory() as tmp:
             db.engine = create_engine(f"sqlite:///{tmp}/test.db", echo=False)
             SQLModel.metadata.create_all(db.engine)
@@ -265,7 +284,9 @@ class TestCleanEndpoint:
 
             ds_id = _upload_csv(client, CSV_WITH_DUPS, project_id)
 
-            r = client.post(f"/api/data/{ds_id}/clean", json={"operation": "remove_duplicates"})
+            r = client.post(
+                f"/api/data/{ds_id}/clean", json={"operation": "remove_duplicates"}
+            )
             assert r.status_code == 200
             body = r.json()
             assert body["operation_result"]["modified_count"] == 1
@@ -273,11 +294,13 @@ class TestCleanEndpoint:
 
     def test_fill_missing_endpoint(self):
         from main import app
+
         client = TestClient(app)
         from sqlmodel import create_engine, SQLModel
         import db
 
         import tempfile
+
         with tempfile.TemporaryDirectory() as tmp:
             db.engine = create_engine(f"sqlite:///{tmp}/test.db", echo=False)
             SQLModel.metadata.create_all(db.engine)
@@ -289,18 +312,24 @@ class TestCleanEndpoint:
 
             r = client.post(
                 f"/api/data/{ds_id}/clean",
-                json={"operation": "fill_missing", "column": "quantity", "strategy": "median"},
+                json={
+                    "operation": "fill_missing",
+                    "column": "quantity",
+                    "strategy": "median",
+                },
             )
             assert r.status_code == 200
             assert r.json()["operation_result"]["modified_count"] >= 1
 
     def test_cap_outliers_endpoint(self):
         from main import app
+
         client = TestClient(app)
         from sqlmodel import create_engine, SQLModel
         import db
 
         import tempfile
+
         with tempfile.TemporaryDirectory() as tmp:
             db.engine = create_engine(f"sqlite:///{tmp}/test.db", echo=False)
             SQLModel.metadata.create_all(db.engine)
@@ -312,17 +341,23 @@ class TestCleanEndpoint:
 
             r = client.post(
                 f"/api/data/{ds_id}/clean",
-                json={"operation": "cap_outliers", "column": "revenue", "percentile": 80.0},
+                json={
+                    "operation": "cap_outliers",
+                    "column": "revenue",
+                    "percentile": 80.0,
+                },
             )
             assert r.status_code == 200
 
     def test_unknown_operation_returns_400(self):
         from main import app
+
         client = TestClient(app)
         from sqlmodel import create_engine, SQLModel
         import db
 
         import tempfile
+
         with tempfile.TemporaryDirectory() as tmp:
             db.engine = create_engine(f"sqlite:///{tmp}/test.db", echo=False)
             SQLModel.metadata.create_all(db.engine)
@@ -337,11 +372,13 @@ class TestCleanEndpoint:
 
     def test_missing_column_param_returns_400(self):
         from main import app
+
         client = TestClient(app)
         from sqlmodel import create_engine, SQLModel
         import db
 
         import tempfile
+
         with tempfile.TemporaryDirectory() as tmp:
             db.engine = create_engine(f"sqlite:///{tmp}/test.db", echo=False)
             SQLModel.metadata.create_all(db.engine)
@@ -351,22 +388,29 @@ class TestCleanEndpoint:
             project_id = r.json()["id"]
             ds_id = _upload_csv(client, CSV_WITH_MISSING, project_id)
 
-            r = client.post(f"/api/data/{ds_id}/clean", json={"operation": "fill_missing"})
+            r = client.post(
+                f"/api/data/{ds_id}/clean", json={"operation": "fill_missing"}
+            )
             assert r.status_code == 400
 
     def test_dataset_not_found_returns_404(self):
         from main import app
+
         client = TestClient(app)
         from sqlmodel import create_engine, SQLModel
         import db
 
         import tempfile
+
         with tempfile.TemporaryDirectory() as tmp:
             db.engine = create_engine(f"sqlite:///{tmp}/test.db", echo=False)
             SQLModel.metadata.create_all(db.engine)
             db.DATA_DIR = Path(tmp)
 
-            r = client.post("/api/data/nonexistent-id/clean", json={"operation": "remove_duplicates"})
+            r = client.post(
+                "/api/data/nonexistent-id/clean",
+                json={"operation": "remove_duplicates"},
+            )
             assert r.status_code == 404
 
 
@@ -374,39 +418,48 @@ class TestCleanEndpoint:
 # Chat: _CLEAN_PATTERNS regex + _detect_clean_op helper
 # ---------------------------------------------------------------------------
 
+
 class TestCleanChatPatterns:
     def test_fill_missing_matches(self):
         from api.chat import _CLEAN_PATTERNS
+
         assert _CLEAN_PATTERNS.search("fill missing values with median")
         assert _CLEAN_PATTERNS.search("fix missing data")
         assert _CLEAN_PATTERNS.search("Fill the null values")
 
     def test_remove_duplicates_matches(self):
         from api.chat import _CLEAN_PATTERNS
+
         assert _CLEAN_PATTERNS.search("remove duplicate rows")
         assert _CLEAN_PATTERNS.search("deduplicate the dataset")
         assert _CLEAN_PATTERNS.search("drop duplicates")
 
     def test_filter_rows_matches(self):
         from api.chat import _CLEAN_PATTERNS
+
         assert _CLEAN_PATTERNS.search("remove rows where quantity < 0")
         assert _CLEAN_PATTERNS.search("drop rows where revenue is 0")
         assert _CLEAN_PATTERNS.search("filter out negative values")
 
     def test_cap_outliers_matches(self):
         from api.chat import _CLEAN_PATTERNS
+
         assert _CLEAN_PATTERNS.search("cap outliers in revenue")
         assert _CLEAN_PATTERNS.search("handle outliers in the data")
         assert _CLEAN_PATTERNS.search("remove outliers")
 
     def test_irrelevant_message_does_not_match(self):
         from api.chat import _CLEAN_PATTERNS
+
         assert not _CLEAN_PATTERNS.search("what is the average revenue?")
         assert not _CLEAN_PATTERNS.search("train a model to predict sales")
 
     def test_detect_clean_op_fill_median(self):
         from api.chat import _detect_clean_op
-        op = _detect_clean_op("fill missing revenue with median", ["revenue", "region", "quantity"])
+
+        op = _detect_clean_op(
+            "fill missing revenue with median", ["revenue", "region", "quantity"]
+        )
         assert op is not None
         assert op["operation"] == "fill_missing"
         assert op["column"] == "revenue"
@@ -414,13 +467,17 @@ class TestCleanChatPatterns:
 
     def test_detect_clean_op_remove_duplicates(self):
         from api.chat import _detect_clean_op
+
         op = _detect_clean_op("remove duplicate rows", ["a", "b"])
         assert op is not None
         assert op["operation"] == "remove_duplicates"
 
     def test_detect_clean_op_filter_rows(self):
         from api.chat import _detect_clean_op
-        op = _detect_clean_op("drop rows where quantity < 0", ["revenue", "quantity", "region"])
+
+        op = _detect_clean_op(
+            "drop rows where quantity < 0", ["revenue", "quantity", "region"]
+        )
         assert op is not None
         assert op["operation"] == "filter_rows"
         assert op["column"] == "quantity"
@@ -429,5 +486,6 @@ class TestCleanChatPatterns:
 
     def test_detect_clean_op_unrecognised_returns_none(self):
         from api.chat import _detect_clean_op
+
         op = _detect_clean_op("what is the average revenue?", ["revenue"])
         assert op is None

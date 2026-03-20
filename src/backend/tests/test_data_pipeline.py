@@ -13,10 +13,10 @@ from __future__ import annotations
 import pathlib
 
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 async def _create_project(client) -> str:
     r = await client.post("/api/projects", json={"name": "Pipeline Test"})
@@ -50,6 +50,7 @@ async def _create_empty_feature_set(client, dataset_id: str) -> str:
 # Tests: list steps
 # ---------------------------------------------------------------------------
 
+
 class TestListSteps:
     async def test_empty_pipeline(self, client):
         pid = await _create_project(client)
@@ -69,10 +70,12 @@ class TestListSteps:
         # Apply 2 transformations at once
         r = await client.post(
             f"/api/features/{did}/apply",
-            json={"transformations": [
-                {"column": "revenue", "transform_type": "log_transform"},
-                {"column": "units", "transform_type": "log_transform"},
-            ]},
+            json={
+                "transformations": [
+                    {"column": "revenue", "transform_type": "log_transform"},
+                    {"column": "units", "transform_type": "log_transform"},
+                ]
+            },
         )
         assert r.status_code == 201
         fsid = r.json()["feature_set_id"]
@@ -94,6 +97,7 @@ class TestListSteps:
 # ---------------------------------------------------------------------------
 # Tests: add step
 # ---------------------------------------------------------------------------
+
 
 class TestAddStep:
     async def test_add_single_step_to_empty_pipeline(self, client):
@@ -164,6 +168,7 @@ class TestAddStep:
 # ---------------------------------------------------------------------------
 # Tests: remove step (undo)
 # ---------------------------------------------------------------------------
+
 
 class TestRemoveStep:
     async def test_undo_last_step(self, client):

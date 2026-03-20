@@ -40,15 +40,19 @@ def client(tmp_path):
     import models.feature_set  # noqa
     import models.conversation  # noqa
     import models.model_run  # noqa
+
     SQLModel.metadata.create_all(db_module.engine)
 
     import api.data as data_module
+
     data_module.UPLOAD_DIR = tmp_path / "uploads"
 
     import api.models as models_api_module
+
     models_api_module.MODELS_DIR = tmp_path / "models"
 
     from main import app
+
     with TestClient(app) as c:
         yield c
 
@@ -92,9 +96,11 @@ def project_and_dataset(client):
 # Unit tests: recommend_models
 # ---------------------------------------------------------------------------
 
+
 class TestRecommendModels:
     def test_returns_recommendations_for_regression(self):
         from core.trainer import recommend_models
+
         recs = recommend_models("regression", 500, 10)
         assert isinstance(recs, list)
         assert len(recs) >= 2
@@ -103,12 +109,14 @@ class TestRecommendModels:
 
     def test_returns_recommendations_for_classification(self):
         from core.trainer import recommend_models
+
         recs = recommend_models("classification", 500, 10)
         algos = [r["algorithm"] for r in recs]
         assert "random_forest_classifier" in algos
 
     def test_each_has_required_fields(self):
         from core.trainer import recommend_models
+
         recs = recommend_models("regression", 1000, 8)
         for r in recs:
             assert "algorithm" in r
@@ -118,6 +126,7 @@ class TestRecommendModels:
 
     def test_small_dataset_mentions_size(self):
         from core.trainer import recommend_models
+
         recs = recommend_models("regression", 50, 5)
         reasons = " ".join(r["recommended_because"] for r in recs)
         assert "50" in reasons
@@ -127,18 +136,33 @@ class TestRecommendModels:
 # Unit tests: prepare_features
 # ---------------------------------------------------------------------------
 
+
 class TestPrepareFeatures:
     @pytest.fixture
     def sales_df(self):
-        return pd.DataFrame({
-            "product": ["A", "B", "A", "C", "B", "A", "C", "B", "A", "C"],
-            "region": ["N", "S", "E", "W", "N", "S", "E", "W", "N", "S"],
-            "revenue": [1200., 850., 2100., 450., 1650., 980., 1100., 1750., 2300., 620.],
-            "units": [10, 8, 18, 4, 15, 9, 11, 16, 20, 6],
-        })
+        return pd.DataFrame(
+            {
+                "product": ["A", "B", "A", "C", "B", "A", "C", "B", "A", "C"],
+                "region": ["N", "S", "E", "W", "N", "S", "E", "W", "N", "S"],
+                "revenue": [
+                    1200.0,
+                    850.0,
+                    2100.0,
+                    450.0,
+                    1650.0,
+                    980.0,
+                    1100.0,
+                    1750.0,
+                    2300.0,
+                    620.0,
+                ],
+                "units": [10, 8, 18, 4, 15, 9, 11, 16, 20, 6],
+            }
+        )
 
     def test_basic_regression(self, sales_df):
         from core.trainer import prepare_features
+
         X, y, le = prepare_features(
             sales_df, ["product", "region", "units"], "revenue", "regression"
         )
@@ -148,14 +172,14 @@ class TestPrepareFeatures:
 
     def test_categorical_encoded_automatically(self, sales_df):
         from core.trainer import prepare_features
-        X, y, le = prepare_features(
-            sales_df, ["product"], "revenue", "regression"
-        )
+
+        X, y, le = prepare_features(sales_df, ["product"], "revenue", "regression")
         assert X.shape[1] == 1
         assert np.issubdtype(X.dtype, np.floating)
 
     def test_classification_string_target_encoded(self, sales_df):
         from core.trainer import prepare_features
+
         X, y, le = prepare_features(
             sales_df, ["revenue", "units"], "region", "classification"
         )
@@ -164,11 +188,13 @@ class TestPrepareFeatures:
 
     def test_missing_target_column_raises(self, sales_df):
         from core.trainer import prepare_features
+
         with pytest.raises(ValueError, match="not found"):
             prepare_features(sales_df, ["units"], "nonexistent", "regression")
 
     def test_no_valid_features_raises(self, sales_df):
         from core.trainer import prepare_features
+
         with pytest.raises(ValueError, match="No valid feature columns"):
             prepare_features(sales_df, ["nonexistent"], "revenue", "regression")
 
@@ -176,6 +202,7 @@ class TestPrepareFeatures:
 # ---------------------------------------------------------------------------
 # Unit tests: train_single_model
 # ---------------------------------------------------------------------------
+
 
 class TestTrainSingleModel:
     @pytest.fixture
@@ -194,8 +221,11 @@ class TestTrainSingleModel:
 
     def test_trains_linear_regression(self, tmp_path, xy_regression):
         from core.trainer import train_single_model
+
         X, y = xy_regression
-        result = train_single_model(X, y, "linear_regression", "regression", tmp_path, "test_run_1")
+        result = train_single_model(
+            X, y, "linear_regression", "regression", tmp_path, "test_run_1"
+        )
         assert "metrics" in result
         assert "r2" in result["metrics"]
         assert result["metrics"]["r2"] > 0.5  # should fit well on synthetic data
@@ -204,6 +234,7 @@ class TestTrainSingleModel:
 
     def test_trains_random_forest_regression(self, tmp_path, xy_regression):
         from core.trainer import train_single_model
+
         X, y = xy_regression
         result = train_single_model(
             X, y, "random_forest_regressor", "regression", tmp_path, "test_run_2"
@@ -212,6 +243,7 @@ class TestTrainSingleModel:
 
     def test_trains_random_forest_classification(self, tmp_path, xy_classification):
         from core.trainer import train_single_model
+
         X, y = xy_classification
         result = train_single_model(
             X, y, "random_forest_classifier", "classification", tmp_path, "test_run_3"
@@ -222,34 +254,54 @@ class TestTrainSingleModel:
     def test_model_file_saved(self, tmp_path, xy_regression):
         from core.trainer import train_single_model
         import os
+
         X, y = xy_regression
-        result = train_single_model(X, y, "linear_regression", "regression", tmp_path, "test_run_4")
+        result = train_single_model(
+            X, y, "linear_regression", "regression", tmp_path, "test_run_4"
+        )
         assert os.path.exists(result["model_path"])
 
     def test_unknown_algorithm_raises(self, tmp_path, xy_regression):
         from core.trainer import train_single_model
+
         X, y = xy_regression
         with pytest.raises(ValueError, match="Unknown algorithm"):
-            train_single_model(X, y, "definitely_not_real", "regression", tmp_path, "test_run_5")
+            train_single_model(
+                X, y, "definitely_not_real", "regression", tmp_path, "test_run_5"
+            )
 
     def test_metrics_have_required_fields_regression(self, tmp_path, xy_regression):
         from core.trainer import train_single_model
-        X, y = xy_regression
-        result = train_single_model(X, y, "linear_regression", "regression", tmp_path, "test_run_6")
-        assert all(k in result["metrics"] for k in ("r2", "mae", "rmse", "train_size", "test_size"))
 
-    def test_metrics_have_required_fields_classification(self, tmp_path, xy_classification):
+        X, y = xy_regression
+        result = train_single_model(
+            X, y, "linear_regression", "regression", tmp_path, "test_run_6"
+        )
+        assert all(
+            k in result["metrics"]
+            for k in ("r2", "mae", "rmse", "train_size", "test_size")
+        )
+
+    def test_metrics_have_required_fields_classification(
+        self, tmp_path, xy_classification
+    ):
         from core.trainer import train_single_model
+
         X, y = xy_classification
         result = train_single_model(
             X, y, "logistic_regression", "classification", tmp_path, "test_run_7"
         )
-        assert all(k in result["metrics"] for k in ("accuracy", "f1", "precision", "recall"))
+        assert all(
+            k in result["metrics"] for k in ("accuracy", "f1", "precision", "recall")
+        )
 
     def test_summary_is_plain_english(self, tmp_path, xy_regression):
         from core.trainer import train_single_model
+
         X, y = xy_regression
-        result = train_single_model(X, y, "linear_regression", "regression", tmp_path, "test_run_8")
+        result = train_single_model(
+            X, y, "linear_regression", "regression", tmp_path, "test_run_8"
+        )
         assert "R²" in result["summary"]
         assert len(result["summary"]) > 20
 
@@ -257,6 +309,7 @@ class TestTrainSingleModel:
 # ---------------------------------------------------------------------------
 # API endpoint tests
 # ---------------------------------------------------------------------------
+
 
 class TestModelAPI:
     def test_recommendations_endpoint(self, client, project_and_dataset):

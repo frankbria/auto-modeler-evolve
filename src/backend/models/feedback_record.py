@@ -26,11 +26,11 @@ class FeedbackRecord(SQLModel, table=True):
     prediction_log_id: Optional[str] = Field(default=None, index=True)
 
     # Ground-truth value(s) — at least one should be populated
-    actual_value: Optional[float] = None   # For regression: the true numeric outcome
-    actual_label: Optional[str] = None     # For classification: the true class label
+    actual_value: Optional[float] = None  # For regression: the true numeric outcome
+    actual_label: Optional[str] = None  # For classification: the true class label
 
     # Convenience flag — can be set directly by the user or computed at record time
-    is_correct: Optional[bool] = None      # For classification: True if prediction matched
+    is_correct: Optional[bool] = None  # For classification: True if prediction matched
 
     # Free-text note from the user ("Customer actually churned in Q3")
     comment: Optional[str] = None

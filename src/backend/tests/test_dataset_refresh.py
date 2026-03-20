@@ -11,6 +11,7 @@ Coverage:
   - chat._REFRESH_PATTERNS regex matches expected phrases
   - Chat SSE emits {type: refresh_prompt} event when dataset present
 """
+
 from __future__ import annotations
 
 import io
@@ -84,7 +85,9 @@ def _upload(client: TestClient, content: bytes, project_id: str) -> str:
     return r.json()["dataset_id"]
 
 
-def _refresh(client: TestClient, dataset_id: str, content: bytes, filename: str = "data.csv"):
+def _refresh(
+    client: TestClient, dataset_id: str, content: bytes, filename: str = "data.csv"
+):
     return client.post(
         f"/api/data/{dataset_id}/refresh",
         files={"file": (filename, io.BytesIO(content), "text/csv")},
@@ -108,7 +111,7 @@ class TestRefreshEndpoint:
             body = r.json()
 
             assert body["dataset_id"] == ds_id
-            assert body["row_count"] == 4   # CSV_COMPATIBLE has 4 data rows
+            assert body["row_count"] == 4  # CSV_COMPATIBLE has 4 data rows
             assert body["compatible"] is True
             assert body["new_columns"] == []
             assert body["removed_columns"] == []
@@ -125,7 +128,7 @@ class TestRefreshEndpoint:
             body = r.json()
 
             assert "discount" in body["new_columns"]
-            assert body["compatible"] is True    # no feature set → not blocking
+            assert body["compatible"] is True  # no feature set → not blocking
 
     def test_refresh_detects_removed_columns_no_feature_set(self):
         """Without a FeatureSet, removed columns are reported but compatible=True."""
@@ -158,7 +161,9 @@ class TestRefreshEndpoint:
             with Session(_db.engine) as sess:
                 fs = FeatureSet(
                     dataset_id=ds_id,
-                    column_mapping=json.dumps({"units": ["units"], "revenue": ["revenue"]}),
+                    column_mapping=json.dumps(
+                        {"units": ["units"], "revenue": ["revenue"]}
+                    ),
                     target_column="revenue",
                     is_active=True,
                 )
@@ -253,6 +258,7 @@ class TestRefreshChatPatterns:
     @pytest.fixture
     def pattern(self):
         from api.chat import _REFRESH_PATTERNS
+
         return _REFRESH_PATTERNS
 
     def test_matches_new_data(self, pattern):
@@ -290,6 +296,7 @@ class TestRefreshChatPatterns:
 
 def _mock_anthropic():
     """Return a context manager that replaces anthropic.Anthropic with a stub."""
+
     class _FakeStream:
         @property
         def text_stream(self):

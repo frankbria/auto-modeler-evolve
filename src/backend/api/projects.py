@@ -251,7 +251,9 @@ def generate_project_narrative(
     ctx: dict = {
         "project_name": project.name,
         "project_description": project.description or "",
-        "created_at": project.created_at.strftime("%B %d, %Y") if project.created_at else "recently",
+        "created_at": project.created_at.strftime("%B %d, %Y")
+        if project.created_at
+        else "recently",
     }
 
     if dataset:
@@ -272,7 +274,9 @@ def generate_project_narrative(
             "problem_type": feature_set.problem_type,
             "n_transforms": len(transforms),
             "n_engineered_features": len(column_mapping),
-            "transform_types": list({t.get("type", "") for t in transforms if isinstance(t, dict)}),
+            "transform_types": list(
+                {t.get("type", "") for t in transforms if isinstance(t, dict)}
+            ),
         }
 
     if best_run:
@@ -291,7 +295,9 @@ def generate_project_narrative(
             "endpoint": deployment.endpoint_path,
             "dashboard_url": deployment.dashboard_url,
             "prediction_count": prediction_count,
-            "created_at": deployment.created_at.strftime("%B %d, %Y") if deployment.created_at else "recently",
+            "created_at": deployment.created_at.strftime("%B %d, %Y")
+            if deployment.created_at
+            else "recently",
         }
     else:
         ctx["deployment"] = {"is_live": False}
@@ -311,7 +317,9 @@ def generate_project_narrative(
 
 def _generate_narrative(ctx: dict) -> str:
     """Generate narrative via Claude API or static fallback."""
-    auth_token = os.environ.get("ANTHROPIC_AUTH_TOKEN", "") or os.environ.get("ANTHROPIC_API_KEY", "")
+    auth_token = os.environ.get("ANTHROPIC_AUTH_TOKEN", "") or os.environ.get(
+        "ANTHROPIC_API_KEY", ""
+    )
     if auth_token and not auth_token.startswith("sk-placeholder"):
         try:
             return _call_claude_narrative(ctx)
@@ -346,7 +354,11 @@ def _call_claude_narrative(ctx: dict) -> str:
     model_section = ""
     if "model" in ctx:
         m = ctx["model"]
-        metrics_str = ", ".join(f"{k}={v}" for k, v in m["metrics"].items() if k not in ("train_size", "test_size"))
+        metrics_str = ", ".join(
+            f"{k}={v}"
+            for k, v in m["metrics"].items()
+            if k not in ("train_size", "test_size")
+        )
         model_section = (
             f"Best model: {m['algorithm']} ({metrics_str}), "
             f"compared against {m['n_models_compared']} total model(s)"
@@ -361,7 +373,7 @@ def _call_claude_narrative(ctx: dict) -> str:
         )
 
     prompt = f"""You are summarising an AutoModeler project for a business stakeholder.
-Write a concise, plain-English executive summary (3-5 paragraphs) for the project named "{ctx['project_name']}".
+Write a concise, plain-English executive summary (3-5 paragraphs) for the project named "{ctx["project_name"]}".
 Focus on: what was analysed, what was discovered, the model performance in simple terms, and the business value.
 Avoid technical jargon. Do not use bullet points. Write in a warm, confident tone as if written by a data analyst colleague.
 
@@ -392,7 +404,13 @@ def _static_narrative(ctx: dict) -> str:
 
     if "dataset" in ctx:
         d = ctx["dataset"]
-        quality = "clean" if d["missing_pct"] < 5 else "mostly complete" if d["missing_pct"] < 20 else "with some gaps"
+        quality = (
+            "clean"
+            if d["missing_pct"] < 5
+            else "mostly complete"
+            if d["missing_pct"] < 20
+            else "with some gaps"
+        )
         parts.append(
             f"The analysis is based on **{d['filename']}** — "
             f"{d['rows']:,} rows and {d['columns']} columns of data, {quality} "
@@ -402,8 +420,7 @@ def _static_narrative(ctx: dict) -> str:
     if "features" in ctx:
         f = ctx["features"]
         parts.append(
-            f"The goal is to predict **{f['target_column']}** "
-            f"({f['problem_type']}). "
+            f"The goal is to predict **{f['target_column']}** ({f['problem_type']}). "
         )
         if f["n_transforms"] > 0:
             parts.append(
@@ -432,7 +449,9 @@ def _static_narrative(ctx: dict) -> str:
                 f"F1 score: {metrics.get('f1', 0):.2f}. "
             )
         if m["n_models_compared"] > 1:
-            parts.append(f"{m['n_models_compared']} algorithms were trained and compared. ")
+            parts.append(
+                f"{m['n_models_compared']} algorithms were trained and compared. "
+            )
 
     parts.append("\n")
 
@@ -495,23 +514,27 @@ def get_project_alerts(
         if run and run.created_at:
             age_days = max(0, (now - run.created_at).days)
         if age_days > 90:
-            alerts.append({
-                "deployment_id": dep.id,
-                "algorithm": algorithm_label,
-                "severity": "critical",
-                "type": "stale_model",
-                "message": f"Model '{algorithm_label}' is {age_days} days old — predictions may be unreliable.",
-                "recommendation": "Retrain the model with current data using the Retrain button.",
-            })
+            alerts.append(
+                {
+                    "deployment_id": dep.id,
+                    "algorithm": algorithm_label,
+                    "severity": "critical",
+                    "type": "stale_model",
+                    "message": f"Model '{algorithm_label}' is {age_days} days old — predictions may be unreliable.",
+                    "recommendation": "Retrain the model with current data using the Retrain button.",
+                }
+            )
         elif age_days > 60:
-            alerts.append({
-                "deployment_id": dep.id,
-                "algorithm": algorithm_label,
-                "severity": "warning",
-                "type": "stale_model",
-                "message": f"Model '{algorithm_label}' is {age_days} days old — consider refreshing.",
-                "recommendation": "Review recent predictions and consider retraining if accuracy has changed.",
-            })
+            alerts.append(
+                {
+                    "deployment_id": dep.id,
+                    "algorithm": algorithm_label,
+                    "severity": "warning",
+                    "type": "stale_model",
+                    "message": f"Model '{algorithm_label}' is {age_days} days old — consider refreshing.",
+                    "recommendation": "Review recent predictions and consider retraining if accuracy has changed.",
+                }
+            )
 
         # --- Alert: no predictions (deployed > 1 day with zero usage) ---
         if dep.request_count == 0:
@@ -519,14 +542,16 @@ def get_project_alerts(
             if dep.created_at:
                 deployed_days = max(0, (now - dep.created_at).days)
             if deployed_days >= 1:
-                alerts.append({
-                    "deployment_id": dep.id,
-                    "algorithm": algorithm_label,
-                    "severity": "warning",
-                    "type": "no_predictions",
-                    "message": f"'{algorithm_label}' has been deployed for {deployed_days} day(s) but received no predictions.",
-                    "recommendation": "Share the prediction dashboard link, or use the API to make predictions.",
-                })
+                alerts.append(
+                    {
+                        "deployment_id": dep.id,
+                        "algorithm": algorithm_label,
+                        "severity": "warning",
+                        "type": "no_predictions",
+                        "message": f"'{algorithm_label}' has been deployed for {deployed_days} day(s) but received no predictions.",
+                        "recommendation": "Share the prediction dashboard link, or use the API to make predictions.",
+                    }
+                )
 
         # --- Alert: drift detection (requires 40+ prediction logs) ---
         logs = session.exec(
@@ -541,12 +566,22 @@ def get_project_alerts(
 
             drift_score: int | None = None
             if problem_type == "regression":
-                b_vals = [log.prediction_numeric for log in baseline if log.prediction_numeric is not None]
-                r_vals = [log.prediction_numeric for log in recent if log.prediction_numeric is not None]
+                b_vals = [
+                    log.prediction_numeric
+                    for log in baseline
+                    if log.prediction_numeric is not None
+                ]
+                r_vals = [
+                    log.prediction_numeric
+                    for log in recent
+                    if log.prediction_numeric is not None
+                ]
                 if b_vals and r_vals:
                     b_mean = sum(b_vals) / len(b_vals)
                     r_mean = sum(r_vals) / len(r_vals)
-                    b_std = (sum((v - b_mean) ** 2 for v in b_vals) / len(b_vals)) ** 0.5
+                    b_std = (
+                        sum((v - b_mean) ** 2 for v in b_vals) / len(b_vals)
+                    ) ** 0.5
                     z = abs(r_mean - b_mean) / (b_std + 1e-9)
                     drift_score = min(100, int(z * 33))
             else:
@@ -563,14 +598,16 @@ def get_project_alerts(
 
             if drift_score is not None and drift_score >= 60:
                 severity = "critical" if drift_score >= 80 else "warning"
-                alerts.append({
-                    "deployment_id": dep.id,
-                    "algorithm": algorithm_label,
-                    "severity": severity,
-                    "type": "drift_detected",
-                    "message": f"Prediction drift detected for '{algorithm_label}' (drift score: {drift_score}/100).",
-                    "recommendation": "Review your input data for changes and consider retraining with more recent examples.",
-                })
+                alerts.append(
+                    {
+                        "deployment_id": dep.id,
+                        "algorithm": algorithm_label,
+                        "severity": severity,
+                        "type": "drift_detected",
+                        "message": f"Prediction drift detected for '{algorithm_label}' (drift score: {drift_score}/100).",
+                        "recommendation": "Review your input data for changes and consider retraining with more recent examples.",
+                    }
+                )
 
         # --- Alert: poor real-world accuracy (feedback accuracy < 70%) ---
         feedback_records = session.exec(
@@ -583,17 +620,19 @@ def get_project_alerts(
                 accuracy = sum(1 for fb in rated if fb.is_correct) / len(rated)
                 if accuracy < 0.7:
                     severity = "critical" if accuracy < 0.5 else "warning"
-                    alerts.append({
-                        "deployment_id": dep.id,
-                        "algorithm": algorithm_label,
-                        "severity": severity,
-                        "type": "poor_feedback",
-                        "message": (
-                            f"Real-world accuracy for '{algorithm_label}' is {accuracy:.0%} "
-                            f"(based on {len(rated)} feedback records)."
-                        ),
-                        "recommendation": "Retrain with updated labelled examples or add more features.",
-                    })
+                    alerts.append(
+                        {
+                            "deployment_id": dep.id,
+                            "algorithm": algorithm_label,
+                            "severity": severity,
+                            "type": "poor_feedback",
+                            "message": (
+                                f"Real-world accuracy for '{algorithm_label}' is {accuracy:.0%} "
+                                f"(based on {len(rated)} feedback records)."
+                            ),
+                            "recommendation": "Retrain with updated labelled examples or add more features.",
+                        }
+                    )
         else:
             paired = [fb for fb in feedback_records if fb.actual_value is not None]
             if len(paired) >= 3:
@@ -609,21 +648,25 @@ def get_project_alerts(
                     pct_err = abs(mae / (avg_actual + 1e-9))
                     if pct_err > 0.30:
                         severity = "critical" if pct_err > 0.50 else "warning"
-                        alerts.append({
-                            "deployment_id": dep.id,
-                            "algorithm": algorithm_label,
-                            "severity": severity,
-                            "type": "poor_feedback",
-                            "message": (
-                                f"Real-world predictions for '{algorithm_label}' are off by "
-                                f"{pct_err:.0%} on average (MAE: {mae:.3f})."
-                            ),
-                            "recommendation": "Gather more training data that reflects current patterns and retrain.",
-                        })
+                        alerts.append(
+                            {
+                                "deployment_id": dep.id,
+                                "algorithm": algorithm_label,
+                                "severity": severity,
+                                "type": "poor_feedback",
+                                "message": (
+                                    f"Real-world predictions for '{algorithm_label}' are off by "
+                                    f"{pct_err:.0%} on average (MAE: {mae:.3f})."
+                                ),
+                                "recommendation": "Gather more training data that reflects current patterns and retrain.",
+                            }
+                        )
 
     # Sort: critical first, then warning; then by deployment_id for stability
     severity_order = {"critical": 0, "warning": 1}
-    alerts.sort(key=lambda a: (severity_order.get(a["severity"], 2), a["deployment_id"]))
+    alerts.sort(
+        key=lambda a: (severity_order.get(a["severity"], 2), a["deployment_id"])
+    )
 
     return {
         "project_id": project_id,

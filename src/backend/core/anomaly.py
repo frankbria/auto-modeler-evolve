@@ -14,6 +14,7 @@ Design:
 - Returns top-N anomalous rows with per-feature values for display
 - Pure function — no DB, no file I/O, no LLM calls
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -52,8 +53,11 @@ def detect_anomalies(
 
     # Keep only numeric, non-all-NaN columns that exist in df
     numeric_features = [
-        f for f in features
-        if f in df.columns and pd.api.types.is_numeric_dtype(df[f]) and not df[f].isna().all()
+        f
+        for f in features
+        if f in df.columns
+        and pd.api.types.is_numeric_dtype(df[f])
+        and not df[f].isna().all()
     ]
     if not numeric_features:
         raise ValueError(
@@ -72,15 +76,15 @@ def detect_anomalies(
         random_state=42,
         n_jobs=-1,
     )
-    labels = model.fit_predict(X)          # -1 = anomaly, 1 = normal
-    raw_scores = model.score_samples(X)    # More negative = more anomalous
+    labels = model.fit_predict(X)  # -1 = anomaly, 1 = normal
+    raw_scores = model.score_samples(X)  # More negative = more anomalous
 
     # Normalise to 0-100: 100 = most anomalous
     score_range = raw_scores.max() - raw_scores.min()
     if score_range < 1e-10:
         anomaly_scores = np.zeros(len(raw_scores))
     else:
-        anomaly_scores = ((raw_scores.max() - raw_scores) / score_range * 100)
+        anomaly_scores = (raw_scores.max() - raw_scores) / score_range * 100
 
     anomaly_mask = labels == -1
     anomaly_count = int(anomaly_mask.sum())
@@ -91,15 +95,19 @@ def detect_anomalies(
     top_anomalies = []
     for idx in top_indices:
         row = X.iloc[idx]
-        top_anomalies.append({
-            "row_index": int(df.index[idx] if hasattr(df.index, "__getitem__") else idx),
-            "anomaly_score": round(float(anomaly_scores[idx]), 1),
-            "is_anomaly": bool(anomaly_mask[idx]),
-            "values": {
-                col: (None if np.isnan(row[col]) else round(float(row[col]), 4))
-                for col in numeric_features
-            },
-        })
+        top_anomalies.append(
+            {
+                "row_index": int(
+                    df.index[idx] if hasattr(df.index, "__getitem__") else idx
+                ),
+                "anomaly_score": round(float(anomaly_scores[idx]), 1),
+                "is_anomaly": bool(anomaly_mask[idx]),
+                "values": {
+                    col: (None if np.isnan(row[col]) else round(float(row[col]), 4))
+                    for col in numeric_features
+                },
+            }
+        )
 
     # Plain-English summary
     pct = anomaly_count / total * 100 if total > 0 else 0

@@ -122,8 +122,12 @@ def _compute_metrics(y_true: Any, y_pred: Any, problem_type: str) -> dict:
     return {
         "accuracy": round(float(accuracy_score(y_true, y_pred)), 4),
         "f1": round(float(f1_score(y_true, y_pred, average=avg, zero_division=0)), 4),
-        "precision": round(float(precision_score(y_true, y_pred, average=avg, zero_division=0)), 4),
-        "recall": round(float(recall_score(y_true, y_pred, average=avg, zero_division=0)), 4),
+        "precision": round(
+            float(precision_score(y_true, y_pred, average=avg, zero_division=0)), 4
+        ),
+        "recall": round(
+            float(recall_score(y_true, y_pred, average=avg, zero_division=0)), 4
+        ),
     }
 
 
@@ -155,14 +159,16 @@ def tune_model(
       - cv_best_score: best cross-validated score from the search
     """
     algorithms = (
-        REGRESSION_ALGORITHMS if problem_type == "regression"
+        REGRESSION_ALGORITHMS
+        if problem_type == "regression"
         else CLASSIFICATION_ALGORITHMS
     )
     if algorithm not in algorithms:
         raise ValueError(f"Unknown algorithm: {algorithm!r}")
 
     param_grids = (
-        _REGRESSION_PARAM_GRIDS if problem_type == "regression"
+        _REGRESSION_PARAM_GRIDS
+        if problem_type == "regression"
         else _CLASSIFICATION_PARAM_GRIDS
     )
     param_grid = param_grids.get(algorithm, {})
@@ -256,12 +262,12 @@ def _build_tune_summary(
 
     # Highlight the most meaningful tuned parameters
     highlight_params = {
-        k: v for k, v in best_params.items()
+        k: v
+        for k, v in best_params.items()
         if k in {"n_estimators", "max_depth", "learning_rate", "C", "num_leaves"}
     }
     param_str = ", ".join(f"{k}={v}" for k, v in list(highlight_params.items())[:3])
 
     return (
-        f"Tuned {algo_name}: {score_str} ({cv_str}). "
-        f"Best settings found: {param_str}."
+        f"Tuned {algo_name}: {score_str} ({cv_str}). Best settings found: {param_str}."
     )

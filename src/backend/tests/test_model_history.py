@@ -54,20 +54,26 @@ def client(tmp_path):
     import models.deployment  # noqa
     import models.prediction_log  # noqa
     import models.feedback_record  # noqa
+
     SQLModel.metadata.create_all(db_module.engine)
 
     import api.data as data_module
+
     data_module.UPLOAD_DIR = tmp_path / "uploads"
 
     import api.models as models_api_module
+
     models_api_module.MODELS_DIR = tmp_path / "models"
 
     from main import app
+
     with TestClient(app) as c:
         yield c
 
 
-def _setup_trained_project(client, csv_bytes=SAMPLE_CSV, target="revenue", algorithm="linear_regression"):
+def _setup_trained_project(
+    client, csv_bytes=SAMPLE_CSV, target="revenue", algorithm="linear_regression"
+):
     """Helper: create project → upload → apply → set target → train one model."""
     proj = client.post("/api/projects", json={"name": "History Test"})
     assert proj.status_code == 201
@@ -105,9 +111,11 @@ def _setup_trained_project(client, csv_bytes=SAMPLE_CSV, target="revenue", algor
 # Unit tests for _compute_trend
 # ---------------------------------------------------------------------------
 
+
 class TestComputeTrend:
     def test_improving_trend(self):
         from api.models import _compute_trend
+
         metrics = [0.5, 0.6, 0.7, 0.8, 0.85]
         trend, summary = _compute_trend(metrics, "R²")
         assert trend == "improving"
@@ -115,6 +123,7 @@ class TestComputeTrend:
 
     def test_declining_trend(self):
         from api.models import _compute_trend
+
         metrics = [0.85, 0.75, 0.65, 0.55, 0.45]
         trend, summary = _compute_trend(metrics, "R²")
         assert trend == "declining"
@@ -122,6 +131,7 @@ class TestComputeTrend:
 
     def test_stable_trend(self):
         from api.models import _compute_trend
+
         metrics = [0.80, 0.81, 0.80, 0.79, 0.80]
         trend, summary = _compute_trend(metrics, "R²")
         assert trend == "stable"
@@ -129,6 +139,7 @@ class TestComputeTrend:
 
     def test_insufficient_data_single_value(self):
         from api.models import _compute_trend
+
         metrics = [0.75]
         trend, summary = _compute_trend(metrics, "Accuracy")
         assert trend == "insufficient_data"
@@ -136,24 +147,28 @@ class TestComputeTrend:
 
     def test_insufficient_data_empty(self):
         from api.models import _compute_trend
+
         metrics = []
         trend, summary = _compute_trend(metrics, "Accuracy")
         assert trend == "insufficient_data"
 
     def test_exactly_two_points(self):
         from api.models import _compute_trend
+
         metrics = [0.60, 0.75]
         trend, summary = _compute_trend(metrics, "R²")
         assert trend in ("improving", "declining", "stable")
 
     def test_summary_contains_metric_label(self):
         from api.models import _compute_trend
+
         metrics = [0.5, 0.7, 0.9]
         _, summary = _compute_trend(metrics, "Accuracy")
         assert "Accuracy" in summary
 
     def test_summary_contains_run_count(self):
         from api.models import _compute_trend
+
         metrics = [0.5, 0.6, 0.7]
         _, summary = _compute_trend(metrics, "R²")
         assert "3" in summary
@@ -162,6 +177,7 @@ class TestComputeTrend:
 # ---------------------------------------------------------------------------
 # API endpoint tests
 # ---------------------------------------------------------------------------
+
 
 class TestModelHistoryEndpoint:
     def test_404_for_missing_project(self, client):
@@ -181,7 +197,9 @@ class TestModelHistoryEndpoint:
         )
         dataset_id = upload.json()["dataset_id"]
         client.post(f"/api/features/{dataset_id}/apply", json={"transformations": []})
-        client.post(f"/api/features/{dataset_id}/target", json={"target_column": "revenue"})
+        client.post(
+            f"/api/features/{dataset_id}/target", json={"target_column": "revenue"}
+        )
 
         resp = client.get(f"/api/models/{project_id}/history")
         assert resp.status_code == 200
@@ -217,8 +235,10 @@ class TestModelHistoryEndpoint:
 
     def test_history_classification_primary_metric(self, client):
         project_id, _ = _setup_trained_project(
-            client, csv_bytes=CHURN_CSV, target="churned",
-            algorithm="logistic_regression"
+            client,
+            csv_bytes=CHURN_CSV,
+            target="churned",
+            algorithm="logistic_regression",
         )
         resp = client.get(f"/api/models/{project_id}/history")
         data = resp.json()

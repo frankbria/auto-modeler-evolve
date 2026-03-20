@@ -68,23 +68,30 @@ def client(tmp_path):
     import models.deployment  # noqa
     import models.prediction_log  # noqa
     import models.feedback_record  # noqa
+
     SQLModel.metadata.create_all(db_module.engine)
 
     import api.data as data_module
+
     data_module.UPLOAD_DIR = tmp_path / "uploads"
 
     import api.models as models_api_module
+
     models_api_module.MODELS_DIR = tmp_path / "models"
 
     import api.deploy as deploy_module
+
     deploy_module.DEPLOY_DIR = tmp_path / "deployments"
 
     from main import app
+
     with TestClient(app) as c:
         yield c
 
 
-def _setup_and_deploy(client, csv_data: bytes, target: str, problem_type: str, algorithms: list[str]):
+def _setup_and_deploy(
+    client, csv_data: bytes, target: str, problem_type: str, algorithms: list[str]
+):
     """Helper: create project → upload → features → train → deploy."""
     proj = client.post("/api/projects", json={"name": "CI Test"})
     assert proj.status_code == 201
@@ -131,6 +138,7 @@ class TestPipelineResidualStd:
     def test_pipeline_has_residual_std_field(self):
         """PredictionPipeline should have a residual_std field defaulting to 0."""
         from core.deployer import PredictionPipeline
+
         p = PredictionPipeline(feature_names=[], column_types={})
         assert hasattr(p, "residual_std")
         assert p.residual_std == 0.0
@@ -138,10 +146,13 @@ class TestPipelineResidualStd:
     def test_build_pipeline_does_not_set_residual_std(self):
         """build_prediction_pipeline does not compute residuals (no model available)."""
         from core.deployer import build_prediction_pipeline
-        df = pd.DataFrame({
-            "units": [10.0, 8.0, 18.0, 4.0, 15.0],
-            "revenue": [1200.0, 850.0, 2100.0, 450.0, 1650.0],
-        })
+
+        df = pd.DataFrame(
+            {
+                "units": [10.0, 8.0, 18.0, 4.0, 15.0],
+                "revenue": [1200.0, 850.0, 2100.0, 450.0, 1650.0],
+            }
+        )
         pipeline = build_prediction_pipeline(df, ["units"], "revenue", "regression")
         # residual_std is 0 because no model is available during pipeline build
         assert pipeline.residual_std == 0.0
@@ -149,6 +160,7 @@ class TestPipelineResidualStd:
     def test_pipeline_residual_std_can_be_set(self):
         """residual_std can be assigned manually (as done at deploy time)."""
         from core.deployer import PredictionPipeline
+
         p = PredictionPipeline(feature_names=[], column_types={})
         p.residual_std = 123.45
         assert p.residual_std == 123.45
@@ -167,10 +179,23 @@ class TestPredictSingleConfidenceInterval:
         import joblib
         from core.deployer import build_prediction_pipeline, save_pipeline
 
-        df = pd.DataFrame({
-            "units": [10.0, 8.0, 18.0, 4.0, 15.0, 9.0, 11.0, 16.0, 20.0, 6.0],
-            "revenue": [1200.0, 850.0, 2100.0, 450.0, 1650.0, 980.0, 1100.0, 1750.0, 2300.0, 620.0],
-        })
+        df = pd.DataFrame(
+            {
+                "units": [10.0, 8.0, 18.0, 4.0, 15.0, 9.0, 11.0, 16.0, 20.0, 6.0],
+                "revenue": [
+                    1200.0,
+                    850.0,
+                    2100.0,
+                    450.0,
+                    1650.0,
+                    980.0,
+                    1100.0,
+                    1750.0,
+                    2300.0,
+                    620.0,
+                ],
+            }
+        )
 
         pipeline = build_prediction_pipeline(df, ["units"], "revenue", "regression")
 
@@ -197,10 +222,12 @@ class TestPredictSingleConfidenceInterval:
         import joblib
         from core.deployer import build_prediction_pipeline, save_pipeline
 
-        df = pd.DataFrame({
-            "units": [10.0, 8.0, 18.0, 4.0, 15.0],
-            "revenue": [1200.0, 850.0, 2100.0, 450.0, 1650.0],
-        })
+        df = pd.DataFrame(
+            {
+                "units": [10.0, 8.0, 18.0, 4.0, 15.0],
+                "revenue": [1200.0, 850.0, 2100.0, 450.0, 1650.0],
+            }
+        )
 
         pipeline = build_prediction_pipeline(df, ["units"], "revenue", "regression")
         pipeline.residual_std = 0.0  # explicitly no interval
@@ -222,16 +249,21 @@ class TestPredictSingleConfidenceInterval:
         import joblib
         from core.deployer import build_prediction_pipeline, save_pipeline
 
-        df = pd.DataFrame({
-            "f1": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
-            "f2": [2.0, 3.0, 4.0, 5.0, 6.0, 7.0],
-            "label": ["cat", "dog", "cat", "dog", "cat", "dog"],
-        })
+        df = pd.DataFrame(
+            {
+                "f1": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+                "f2": [2.0, 3.0, 4.0, 5.0, 6.0, 7.0],
+                "label": ["cat", "dog", "cat", "dog", "cat", "dog"],
+            }
+        )
 
-        pipeline = build_prediction_pipeline(df, ["f1", "f2"], "label", "classification")
+        pipeline = build_prediction_pipeline(
+            df, ["f1", "f2"], "label", "classification"
+        )
 
         model = LogisticRegression(random_state=42, max_iter=1000)
         from sklearn.preprocessing import LabelEncoder
+
         le = LabelEncoder()
         y = le.fit_transform(df["label"])
         model.fit(df[["f1", "f2"]].values, y)
@@ -245,6 +277,7 @@ class TestPredictSingleConfidenceInterval:
 
     def test_confidence_interval_present_when_residual_std_set(self, deployed_pipeline):
         from core.deployer import predict_single
+
         pipeline_path, model_path = deployed_pipeline
         result = predict_single(pipeline_path, model_path, {"units": 12.0})
         assert "confidence_interval" in result
@@ -253,6 +286,7 @@ class TestPredictSingleConfidenceInterval:
 
     def test_confidence_interval_level_is_95(self, deployed_pipeline):
         from core.deployer import predict_single
+
         pipeline_path, model_path = deployed_pipeline
         result = predict_single(pipeline_path, model_path, {"units": 12.0})
         assert result["confidence_interval"]["level"] == 0.95
@@ -260,6 +294,7 @@ class TestPredictSingleConfidenceInterval:
     def test_confidence_interval_width(self, deployed_pipeline):
         """Interval width should be ~2 × 1.96 × residual_std."""
         from core.deployer import predict_single, load_pipeline
+
         pipeline_path, model_path = deployed_pipeline
         pipeline = load_pipeline(pipeline_path)
         result = predict_single(pipeline_path, model_path, {"units": 12.0})
@@ -268,8 +303,11 @@ class TestPredictSingleConfidenceInterval:
         actual_half_width = (ci["upper"] - ci["lower"]) / 2
         assert abs(actual_half_width - expected_half_width) < 0.01
 
-    def test_no_confidence_interval_when_residual_std_zero(self, deployed_pipeline_no_std):
+    def test_no_confidence_interval_when_residual_std_zero(
+        self, deployed_pipeline_no_std
+    ):
         from core.deployer import predict_single
+
         pipeline_path, model_path = deployed_pipeline_no_std
         result = predict_single(pipeline_path, model_path, {"units": 12.0})
         assert "confidence_interval" not in result
@@ -277,6 +315,7 @@ class TestPredictSingleConfidenceInterval:
     def test_classification_returns_confidence(self, deployed_cls_pipeline):
         """Classification prediction includes 'confidence' = max proba."""
         from core.deployer import predict_single
+
         pipeline_path, model_path = deployed_cls_pipeline
         result = predict_single(pipeline_path, model_path, {"f1": 3.0, "f2": 4.0})
         assert "confidence" in result
@@ -285,12 +324,14 @@ class TestPredictSingleConfidenceInterval:
     def test_classification_no_confidence_interval(self, deployed_cls_pipeline):
         """Classification predictions do not include a regression-style CI."""
         from core.deployer import predict_single
+
         pipeline_path, model_path = deployed_cls_pipeline
         result = predict_single(pipeline_path, model_path, {"f1": 3.0, "f2": 4.0})
         assert "confidence_interval" not in result
 
     def test_confidence_label_text(self, deployed_pipeline):
         from core.deployer import predict_single
+
         pipeline_path, model_path = deployed_pipeline
         result = predict_single(pipeline_path, model_path, {"units": 10.0})
         assert "label" in result["confidence_interval"]
@@ -322,7 +363,11 @@ class TestConfidenceIntervalIntegration:
     def test_classification_predict_returns_confidence(self, client):
         """End-to-end: deploy classification model → predict → confidence in response."""
         deployment_id, *_ = _setup_and_deploy(
-            client, CLASSIFICATION_CSV, "label", "classification", ["logistic_regression"]
+            client,
+            CLASSIFICATION_CSV,
+            "label",
+            "classification",
+            ["logistic_regression"],
         )
         resp = client.post(
             f"/api/predict/{deployment_id}",

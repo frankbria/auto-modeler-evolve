@@ -68,15 +68,19 @@ def client(tmp_path):
     SQLModel.metadata.create_all(db_module.engine)
 
     import api.data as data_module
+
     data_module.UPLOAD_DIR = tmp_path / "uploads"
 
     import api.models as models_api_module
+
     models_api_module.MODELS_DIR = tmp_path / "models"
 
     import api.deploy as deploy_module
+
     deploy_module.DEPLOY_DIR = tmp_path / "deployments"
 
     from main import app
+
     with TestClient(app) as c:
         yield c
 

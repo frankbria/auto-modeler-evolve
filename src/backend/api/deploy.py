@@ -128,6 +128,7 @@ def deploy_model(
         try:
             import joblib as _joblib
             import numpy as _np
+
             model = _joblib.load(run.model_path)
             df_clean = df[feature_names + [target_col]].dropna(subset=[target_col])
             X_train = pipeline.transform_df(df_clean[feature_names])
@@ -258,7 +259,9 @@ def make_prediction(
         raise HTTPException(status_code=404, detail="Deployment not found or inactive")
 
     if not deployment.pipeline_path or not Path(deployment.pipeline_path).exists():
-        raise HTTPException(status_code=500, detail="Prediction pipeline not found on disk")
+        raise HTTPException(
+            status_code=500, detail="Prediction pipeline not found on disk"
+        )
 
     run = session.get(ModelRun, deployment.model_run_id)
     if not run or not run.model_path or not Path(run.model_path).exists():
@@ -315,7 +318,9 @@ def batch_prediction(
         raise HTTPException(status_code=404, detail="Deployment not found or inactive")
 
     if not deployment.pipeline_path or not Path(deployment.pipeline_path).exists():
-        raise HTTPException(status_code=500, detail="Prediction pipeline not found on disk")
+        raise HTTPException(
+            status_code=500, detail="Prediction pipeline not found on disk"
+        )
 
     run = session.get(ModelRun, deployment.model_run_id)
     if not run or not run.model_path or not Path(run.model_path).exists():
@@ -362,7 +367,9 @@ def explain_single_prediction(
         raise HTTPException(status_code=404, detail="Deployment not found or inactive")
 
     if not deployment.pipeline_path or not Path(deployment.pipeline_path).exists():
-        raise HTTPException(status_code=500, detail="Prediction pipeline not found on disk")
+        raise HTTPException(
+            status_code=500, detail="Prediction pipeline not found on disk"
+        )
 
     run = session.get(ModelRun, deployment.model_run_id)
     if not run or not run.model_path or not Path(run.model_path).exists():
@@ -407,12 +414,13 @@ def get_deployment_analytics(
         day_counts[day_key] += 1
 
     predictions_by_day = [
-        {"date": date, "count": count}
-        for date, count in sorted(day_counts.items())
+        {"date": date, "count": count} for date, count in sorted(day_counts.items())
     ]
 
     # --- Prediction distribution ---
-    numeric_vals = [log.prediction_numeric for log in logs if log.prediction_numeric is not None]
+    numeric_vals = [
+        log.prediction_numeric for log in logs if log.prediction_numeric is not None
+    ]
     prediction_distribution: list[dict] = []
     recent_avg: float | None = None
 
@@ -421,7 +429,9 @@ def get_deployment_analytics(
         # Build histogram with up to 10 buckets
         min_val, max_val = min(numeric_vals), max(numeric_vals)
         if min_val == max_val:
-            prediction_distribution = [{"bucket": str(round(min_val, 3)), "count": len(numeric_vals)}]
+            prediction_distribution = [
+                {"bucket": str(round(min_val, 3)), "count": len(numeric_vals)}
+            ]
         else:
             bucket_size = (max_val - min_val) / 10
             buckets: dict[int, int] = defaultdict(int)
@@ -430,7 +440,7 @@ def get_deployment_analytics(
                 buckets[idx] += 1
             prediction_distribution = [
                 {
-                    "bucket": f"{round(min_val + i * bucket_size, 2)}–{round(min_val + (i+1) * bucket_size, 2)}",
+                    "bucket": f"{round(min_val + i * bucket_size, 2)}–{round(min_val + (i + 1) * bucket_size, 2)}",
                     "count": buckets[i],
                 }
                 for i in range(10)
@@ -509,7 +519,9 @@ def get_prediction_logs(
 @router.get("/api/deploy/{deployment_id}/drift")
 def get_prediction_drift(
     deployment_id: str,
-    window: int = Query(20, ge=5, le=200, description="Predictions per comparison window"),
+    window: int = Query(
+        20, ge=5, le=200, description="Predictions per comparison window"
+    ),
     session: Session = Depends(get_session),
 ):
     """Detect if the model's prediction distribution has shifted over time.
@@ -530,8 +542,7 @@ def get_prediction_drift(
         raise HTTPException(status_code=404, detail="Deployment not found")
 
     all_logs = session.exec(
-        select(PredictionLog)
-        .where(PredictionLog.deployment_id == deployment_id)
+        select(PredictionLog).where(PredictionLog.deployment_id == deployment_id)
     ).all()
     logs_sorted = sorted(all_logs, key=lambda log: log.created_at)
 
@@ -558,8 +569,16 @@ def get_prediction_drift(
     problem_type = deployment.problem_type or "regression"
 
     if problem_type == "regression":
-        baseline_vals = [log.prediction_numeric for log in baseline_logs if log.prediction_numeric is not None]
-        recent_vals = [log.prediction_numeric for log in recent_logs if log.prediction_numeric is not None]
+        baseline_vals = [
+            log.prediction_numeric
+            for log in baseline_logs
+            if log.prediction_numeric is not None
+        ]
+        recent_vals = [
+            log.prediction_numeric
+            for log in recent_logs
+            if log.prediction_numeric is not None
+        ]
 
         if not baseline_vals or not recent_vals:
             return {
@@ -576,7 +595,9 @@ def get_prediction_drift(
 
         b_mean = sum(baseline_vals) / len(baseline_vals)
         r_mean = sum(recent_vals) / len(recent_vals)
-        b_std = (sum((v - b_mean) ** 2 for v in baseline_vals) / len(baseline_vals)) ** 0.5
+        b_std = (
+            sum((v - b_mean) ** 2 for v in baseline_vals) / len(baseline_vals)
+        ) ** 0.5
 
         # Z-score of recent mean vs baseline distribution
         z = abs(r_mean - b_mean) / (b_std + 1e-9)
@@ -604,8 +625,16 @@ def get_prediction_drift(
             )
 
         r_std = (sum((v - r_mean) ** 2 for v in recent_vals) / len(recent_vals)) ** 0.5
-        baseline_stats = {"mean": round(b_mean, 4), "std": round(b_std, 4), "count": len(baseline_vals)}
-        recent_stats = {"mean": round(r_mean, 4), "std": round(r_std, 4), "count": len(recent_vals)}
+        baseline_stats = {
+            "mean": round(b_mean, 4),
+            "std": round(b_std, 4),
+            "count": len(baseline_vals),
+        }
+        recent_stats = {
+            "mean": round(r_mean, 4),
+            "std": round(r_std, 4),
+            "count": len(recent_vals),
+        }
 
         return {
             "deployment_id": deployment_id,
@@ -637,10 +666,13 @@ def get_prediction_drift(
         all_classes = set(baseline_dist) | set(recent_dist)
 
         # Total variation distance (max class-proportion difference)
-        tvd = sum(
-            abs(recent_dist.get(c, 0) - baseline_dist.get(c, 0))
-            for c in all_classes
-        ) / 2
+        tvd = (
+            sum(
+                abs(recent_dist.get(c, 0) - baseline_dist.get(c, 0))
+                for c in all_classes
+            )
+            / 2
+        )
 
         drift_score = min(100, int(tvd * 200))  # TVD 0.5 → 100
 
@@ -703,18 +735,24 @@ def whatif_prediction(
         raise HTTPException(status_code=404, detail="Deployment not found or inactive")
 
     if not deployment.pipeline_path or not Path(deployment.pipeline_path).exists():
-        raise HTTPException(status_code=500, detail="Prediction pipeline not found on disk")
+        raise HTTPException(
+            status_code=500, detail="Prediction pipeline not found on disk"
+        )
 
     run = session.get(ModelRun, deployment.model_run_id)
     if not run or not run.model_path or not Path(run.model_path).exists():
         raise HTTPException(status_code=500, detail="Model file not found on disk")
 
     # Original prediction
-    original_result = predict_single(deployment.pipeline_path, run.model_path, body.base)
+    original_result = predict_single(
+        deployment.pipeline_path, run.model_path, body.base
+    )
 
     # Modified prediction (base + overrides)
     modified_input = {**body.base, **body.overrides}
-    modified_result = predict_single(deployment.pipeline_path, run.model_path, modified_input)
+    modified_result = predict_single(
+        deployment.pipeline_path, run.model_path, modified_input
+    )
 
     original_pred = original_result["prediction"]
     modified_pred = modified_result["prediction"]
@@ -727,8 +765,12 @@ def whatif_prediction(
         orig_num = float(original_pred)  # type: ignore[arg-type]
         mod_num = float(modified_pred)  # type: ignore[arg-type]
         delta = round(mod_num - orig_num, 4)
-        percent_change = round((delta / (orig_num + 1e-9)) * 100, 2) if orig_num != 0 else None
-        direction = "increase" if delta > 0 else ("decrease" if delta < 0 else "no change")
+        percent_change = (
+            round((delta / (orig_num + 1e-9)) * 100, 2) if orig_num != 0 else None
+        )
+        direction = (
+            "increase" if delta > 0 else ("decrease" if delta < 0 else "no change")
+        )
     except (TypeError, ValueError):
         pass
 
@@ -778,12 +820,14 @@ def whatif_prediction(
 
 
 class ScenarioItem(BaseModel):
-    label: str           # Human-readable label for this scenario (e.g. "High Marketing")
-    overrides: dict      # Feature overrides on top of base (same as WhatIfRequest.overrides)
+    label: str  # Human-readable label for this scenario (e.g. "High Marketing")
+    overrides: (
+        dict  # Feature overrides on top of base (same as WhatIfRequest.overrides)
+    )
 
 
 class ScenarioRequest(BaseModel):
-    base: dict           # Base feature values (used as the baseline prediction)
+    base: dict  # Base feature values (used as the baseline prediction)
     scenarios: list[ScenarioItem]  # Up to 10 scenarios to compare
 
 
@@ -834,14 +878,18 @@ def compare_scenarios(
         raise HTTPException(status_code=404, detail="Deployment not found or inactive")
 
     if not deployment.pipeline_path or not Path(deployment.pipeline_path).exists():
-        raise HTTPException(status_code=500, detail="Prediction pipeline not found on disk")
+        raise HTTPException(
+            status_code=500, detail="Prediction pipeline not found on disk"
+        )
 
     run = session.get(ModelRun, deployment.model_run_id)
     if not run or not run.model_path or not Path(run.model_path).exists():
         raise HTTPException(status_code=500, detail="Model file not found on disk")
 
     if len(body.scenarios) > 10:
-        raise HTTPException(status_code=400, detail="Maximum 10 scenarios allowed per request")
+        raise HTTPException(
+            status_code=400, detail="Maximum 10 scenarios allowed per request"
+        )
 
     if not body.scenarios:
         raise HTTPException(status_code=400, detail="At least one scenario is required")
@@ -861,7 +909,9 @@ def compare_scenarios(
     scenario_results = []
     for scenario in body.scenarios:
         modified_input = {**body.base, **scenario.overrides}
-        result = predict_single(deployment.pipeline_path, run.model_path, modified_input)
+        result = predict_single(
+            deployment.pipeline_path, run.model_path, modified_input
+        )
         pred = result["prediction"]
 
         delta: float | None = None
@@ -874,22 +924,28 @@ def compare_scenarios(
                 delta = round(mod_num - base_numeric, 4)
                 if base_numeric != 0:
                     percent_change = round((delta / abs(base_numeric)) * 100, 2)
-                direction = "increase" if delta > 0 else ("decrease" if delta < 0 else "no change")
+                direction = (
+                    "increase"
+                    if delta > 0
+                    else ("decrease" if delta < 0 else "no change")
+                )
             except (TypeError, ValueError):
                 pass
         else:
             # Classification: direction based on class change
             direction = "same" if pred == base_pred else "changed"
 
-        scenario_results.append({
-            "label": scenario.label,
-            "overrides": scenario.overrides,
-            "prediction": pred,
-            "delta": delta,
-            "percent_change": percent_change,
-            "direction": direction,
-            "probabilities": result.get("probabilities"),
-        })
+        scenario_results.append(
+            {
+                "label": scenario.label,
+                "overrides": scenario.overrides,
+                "prediction": pred,
+                "delta": delta,
+                "percent_change": percent_change,
+                "direction": direction,
+                "probabilities": result.get("probabilities"),
+            }
+        )
 
     # Build a plain-English summary
     target_col = deployment.target_column or "the target"
@@ -916,7 +972,10 @@ def compare_scenarios(
                     f"({best['percent_change']:+.1f}%). "
                     f"Worst outcome: '{worst['label']}' → {worst['prediction']} "
                     f"({worst['percent_change']:+.1f}%)."
-                    if (best["percent_change"] is not None and worst["percent_change"] is not None)
+                    if (
+                        best["percent_change"] is not None
+                        and worst["percent_change"] is not None
+                    )
                     else f"Base = {base_pred}. Range: {worst['prediction']} to {best['prediction']}."
                 )
         else:
@@ -947,10 +1006,10 @@ def compare_scenarios(
 
 class FeedbackRequest(BaseModel):
     prediction_log_id: str | None = None
-    actual_value: float | None = None    # For regression: true numeric outcome
-    actual_label: str | None = None      # For classification: true class label
-    is_correct: bool | None = None       # For classification: optional override
-    comment: str | None = None           # Free-text note from the user
+    actual_value: float | None = None  # For regression: true numeric outcome
+    actual_label: str | None = None  # For classification: true class label
+    is_correct: bool | None = None  # For classification: optional override
+    comment: str | None = None  # Free-text note from the user
 
 
 @router.post("/api/predict/{deployment_id}/feedback", status_code=201)
@@ -988,7 +1047,7 @@ def submit_feedback(
         if log_entry:
             try:
                 stored_pred = str(json.loads(log_entry.prediction))
-                is_correct = (stored_pred == body.actual_label)
+                is_correct = stored_pred == body.actual_label
             except (json.JSONDecodeError, TypeError):
                 pass
 
@@ -1073,7 +1132,11 @@ def get_feedback_accuracy(
 
         if not pairs:
             # We have feedback but no paired prediction logs — just report count
-            actual_values = [fb.actual_value for fb in feedback_records if fb.actual_value is not None]
+            actual_values = [
+                fb.actual_value
+                for fb in feedback_records
+                if fb.actual_value is not None
+            ]
             return {
                 "deployment_id": deployment_id,
                 "status": "feedback_only",
@@ -1096,13 +1159,17 @@ def get_feedback_accuracy(
             verdict_msg = "Excellent — predictions are very close to actual outcomes."
         elif pct_error < 15:
             verdict = "good"
-            verdict_msg = "Good accuracy — predictions are reasonably close to actual outcomes."
+            verdict_msg = (
+                "Good accuracy — predictions are reasonably close to actual outcomes."
+            )
         elif pct_error < 30:
             verdict = "moderate"
             verdict_msg = "Moderate accuracy — consider adding more features or retraining with newer data."
         else:
             verdict = "poor"
-            verdict_msg = "Predictions are significantly off. Retraining is recommended."
+            verdict_msg = (
+                "Predictions are significantly off. Retraining is recommended."
+            )
 
         return {
             "deployment_id": deployment_id,
@@ -1147,16 +1214,22 @@ def get_feedback_accuracy(
 
         if accuracy >= 0.9:
             verdict = "excellent"
-            verdict_msg = "Excellent real-world accuracy — the model is performing as expected."
+            verdict_msg = (
+                "Excellent real-world accuracy — the model is performing as expected."
+            )
         elif accuracy >= 0.75:
             verdict = "good"
             verdict_msg = "Good real-world accuracy — the model is mostly reliable."
         elif accuracy >= 0.6:
             verdict = "moderate"
-            verdict_msg = "Moderate accuracy. Consider reviewing feature inputs or retraining."
+            verdict_msg = (
+                "Moderate accuracy. Consider reviewing feature inputs or retraining."
+            )
         else:
             verdict = "poor"
-            verdict_msg = "Below-expected accuracy in practice. Retraining is recommended."
+            verdict_msg = (
+                "Below-expected accuracy in practice. Retraining is recommended."
+            )
 
         return {
             "deployment_id": deployment_id,
@@ -1171,8 +1244,7 @@ def get_feedback_accuracy(
             "message": (
                 f"Based on {rated_count} rated prediction(s): "
                 f"the model was correct {correct_count} time(s) — "
-                f"{accuracy:.1%} real-world accuracy. "
-                + verdict_msg
+                f"{accuracy:.1%} real-world accuracy. " + verdict_msg
             ),
             "problem_type": problem_type,
         }
@@ -1290,12 +1362,22 @@ def get_model_health(
         problem_type = deployment.problem_type or "regression"
 
         if problem_type == "regression":
-            baseline_vals = [log.prediction_numeric for log in baseline_logs if log.prediction_numeric is not None]
-            recent_vals = [log.prediction_numeric for log in recent_logs if log.prediction_numeric is not None]
+            baseline_vals = [
+                log.prediction_numeric
+                for log in baseline_logs
+                if log.prediction_numeric is not None
+            ]
+            recent_vals = [
+                log.prediction_numeric
+                for log in recent_logs
+                if log.prediction_numeric is not None
+            ]
             if baseline_vals and recent_vals:
                 b_mean = sum(baseline_vals) / len(baseline_vals)
                 r_mean = sum(recent_vals) / len(recent_vals)
-                b_std = (sum((v - b_mean) ** 2 for v in baseline_vals) / len(baseline_vals)) ** 0.5
+                b_std = (
+                    sum((v - b_mean) ** 2 for v in baseline_vals) / len(baseline_vals)
+                ) ** 0.5
                 z = abs(r_mean - b_mean) / (b_std + 1e-9)
                 if z < 1.0:
                     drift_health_score = 100
@@ -1308,8 +1390,14 @@ def get_model_health(
                     drift_note = "Significant drift detected — retraining is strongly recommended."
         else:
             # Classification: total variation distance
-            baseline_preds = [str(json.loads(log.prediction)) for log in baseline_logs if log.prediction]
-            recent_preds = [str(json.loads(log.prediction)) for log in recent_logs if log.prediction]
+            baseline_preds = [
+                str(json.loads(log.prediction))
+                for log in baseline_logs
+                if log.prediction
+            ]
+            recent_preds = [
+                str(json.loads(log.prediction)) for log in recent_logs if log.prediction
+            ]
             all_classes = set(baseline_preds + recent_preds)
             if all_classes and baseline_preds and recent_preds:
                 b_n, r_n = len(baseline_preds), len(recent_preds)
@@ -1333,7 +1421,9 @@ def get_model_health(
     has_drift_data = len(all_logs) >= 40
 
     if has_feedback and has_drift_data:
-        health_score = int(feedback_score * 0.4 + drift_health_score * 0.35 + age_score * 0.25)
+        health_score = int(
+            feedback_score * 0.4 + drift_health_score * 0.35 + age_score * 0.25
+        )
     elif has_feedback:
         health_score = int(feedback_score * 0.55 + age_score * 0.45)
     elif has_drift_data:
@@ -1352,15 +1442,25 @@ def get_model_health(
     # ----- Recommendations -----
     recommendations = []
     if age_score < 75:
-        recommendations.append("Retrain the model with more recent data to improve freshness.")
+        recommendations.append(
+            "Retrain the model with more recent data to improve freshness."
+        )
     if feedback_score < 75 and has_feedback:
-        recommendations.append("Real-world accuracy is declining — consider retraining or adding features.")
+        recommendations.append(
+            "Real-world accuracy is declining — consider retraining or adding features."
+        )
     if drift_health_score < 75 and has_drift_data:
-        recommendations.append("Prediction drift detected — the input data may have changed; retraining is advised.")
+        recommendations.append(
+            "Prediction drift detected — the input data may have changed; retraining is advised."
+        )
     if not has_feedback:
-        recommendations.append("Record actual outcomes using the feedback form to enable real-world accuracy tracking.")
+        recommendations.append(
+            "Record actual outcomes using the feedback form to enable real-world accuracy tracking."
+        )
     if not recommendations:
-        recommendations.append("Model health is good. Continue monitoring for drift and feedback accuracy.")
+        recommendations.append(
+            "Model health is good. Continue monitoring for drift and feedback accuracy."
+        )
 
     return {
         "deployment_id": deployment_id,

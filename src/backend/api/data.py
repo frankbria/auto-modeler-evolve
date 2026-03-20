@@ -27,7 +27,11 @@ from core.cleaner import (
     filter_rows,
     remove_duplicates,
 )
-from core.chart_builder import build_boxplot, build_correlation_heatmap, build_timeseries_chart
+from core.chart_builder import (
+    build_boxplot,
+    build_correlation_heatmap,
+    build_timeseries_chart,
+)
 from core.merger import merge_datasets, suggest_join_keys
 from core.query_engine import run_nl_query
 from db import get_session
@@ -77,6 +81,7 @@ def _sanitize_rows(rows: list[dict]) -> list[dict[str, Any]]:
 # ---------------------------------------------------------------------------
 # Upload
 # ---------------------------------------------------------------------------
+
 
 @router.post("/upload", status_code=201)
 def upload_csv(
@@ -138,7 +143,11 @@ def upload_csv(
 
     # Inject a proactive bot message into the project conversation
     try:
-        col_names = [c["name"] for c in profile["columns"]] if profile.get("columns") else list(df.columns)
+        col_names = (
+            [c["name"] for c in profile["columns"]]
+            if profile.get("columns")
+            else list(df.columns)
+        )
         narration = narrate_upload(
             filename=dataset.filename,
             row_count=dataset.row_count,
@@ -151,7 +160,11 @@ def upload_csv(
         # Follow up with a Claude-generated AI insight (best-effort, async-safe)
         dataset_summary = ", ".join(col_names[:8])
         profile_highlights = json.dumps(
-            {k: profile[k] for k in ("patterns", "warnings", "correlations") if k in profile},
+            {
+                k: profile[k]
+                for k in ("patterns", "warnings", "correlations")
+                if k in profile
+            },
             default=str,
         )
         ai_insight = narrate_data_insights_ai(
@@ -179,6 +192,7 @@ def upload_csv(
 # ---------------------------------------------------------------------------
 # Preview
 # ---------------------------------------------------------------------------
+
 
 @router.get("/{dataset_id}/preview")
 def get_preview(dataset_id: str, session: Session = Depends(get_session)):
@@ -216,6 +230,7 @@ def get_preview(dataset_id: str, session: Session = Depends(get_session)):
 # Full profile (cached)
 # ---------------------------------------------------------------------------
 
+
 @router.get("/{dataset_id}/profile")
 def get_profile(dataset_id: str, session: Session = Depends(get_session)):
     dataset = session.get(Dataset, dataset_id)
@@ -242,6 +257,7 @@ def get_profile(dataset_id: str, session: Session = Depends(get_session)):
 # ---------------------------------------------------------------------------
 # Natural language query
 # ---------------------------------------------------------------------------
+
 
 class NLQueryRequest(BaseModel):
     question: str
@@ -278,12 +294,15 @@ def query_dataset(
 # Sample dataset loader (onboarding)
 # ---------------------------------------------------------------------------
 
+
 class SampleLoadRequest(BaseModel):
     project_id: str
 
 
 @router.post("/sample", status_code=201)
-def load_sample_dataset(body: SampleLoadRequest, session: Session = Depends(get_session)):
+def load_sample_dataset(
+    body: SampleLoadRequest, session: Session = Depends(get_session)
+):
     """Copy the bundled sample sales CSV into the given project as its dataset.
 
     Idempotent: if the project already has a dataset, returns the existing one.
@@ -312,7 +331,9 @@ def load_sample_dataset(body: SampleLoadRequest, session: Session = Depends(get_
         }
 
     if not SAMPLE_CSV.exists():
-        raise HTTPException(status_code=500, detail="Sample dataset not found on server")
+        raise HTTPException(
+            status_code=500, detail="Sample dataset not found on server"
+        )
 
     project_upload_dir = UPLOAD_DIR / body.project_id
     project_upload_dir.mkdir(parents=True, exist_ok=True)
@@ -340,7 +361,11 @@ def load_sample_dataset(body: SampleLoadRequest, session: Session = Depends(get_
 
     # Inject a proactive bot message into the project conversation
     try:
-        col_names = [c["name"] for c in profile["columns"]] if profile.get("columns") else list(df.columns)
+        col_names = (
+            [c["name"] for c in profile["columns"]]
+            if profile.get("columns")
+            else list(df.columns)
+        )
         narration = narrate_upload(
             filename=dataset.filename,
             row_count=dataset.row_count,
@@ -352,7 +377,11 @@ def load_sample_dataset(body: SampleLoadRequest, session: Session = Depends(get_
 
         dataset_summary = ", ".join(col_names[:8])
         profile_highlights = json.dumps(
-            {k: profile[k] for k in ("patterns", "warnings", "correlations") if k in profile},
+            {
+                k: profile[k]
+                for k in ("patterns", "warnings", "correlations")
+                if k in profile
+            },
             default=str,
         )
         ai_insight = narrate_data_insights_ai(
@@ -402,7 +431,9 @@ def get_correlations(dataset_id: str, session: Session = Depends(get_session)):
     if not correlations:
         file_path = Path(dataset.file_path)
         if not file_path.exists():
-            raise HTTPException(status_code=404, detail="Dataset file not found on disk")
+            raise HTTPException(
+                status_code=404, detail="Dataset file not found on disk"
+            )
         df = pd.read_csv(file_path)
         profile = compute_full_profile(df)
         correlations = profile.get("correlations", {})
@@ -457,7 +488,8 @@ def get_timeseries(
 
     # Get numeric columns (excluding the date column)
     numeric_cols = [
-        c for c in df.select_dtypes(include="number").columns.tolist()
+        c
+        for c in df.select_dtypes(include="number").columns.tolist()
         if c not in date_cols
     ]
 
@@ -533,6 +565,7 @@ def sample_info():
 # Multi-dataset support
 # ---------------------------------------------------------------------------
 
+
 @router.get("/project/{project_id}/datasets")
 def list_project_datasets(project_id: str, session: Session = Depends(get_session)):
     """List all datasets uploaded to a project."""
@@ -563,7 +596,9 @@ class JoinKeysRequest(BaseModel):
 
 
 @router.post("/join-keys")
-def get_join_key_suggestions(body: JoinKeysRequest, session: Session = Depends(get_session)):
+def get_join_key_suggestions(
+    body: JoinKeysRequest, session: Session = Depends(get_session)
+):
     """Suggest candidate join keys for merging two datasets.
 
     Returns common columns ranked by uniqueness — the best join key candidates first.
@@ -571,15 +606,23 @@ def get_join_key_suggestions(body: JoinKeysRequest, session: Session = Depends(g
     ds1 = session.get(Dataset, body.dataset_id_1)
     ds2 = session.get(Dataset, body.dataset_id_2)
     if not ds1:
-        raise HTTPException(status_code=404, detail=f"Dataset {body.dataset_id_1} not found")
+        raise HTTPException(
+            status_code=404, detail=f"Dataset {body.dataset_id_1} not found"
+        )
     if not ds2:
-        raise HTTPException(status_code=404, detail=f"Dataset {body.dataset_id_2} not found")
+        raise HTTPException(
+            status_code=404, detail=f"Dataset {body.dataset_id_2} not found"
+        )
 
     path1, path2 = Path(ds1.file_path), Path(ds2.file_path)
     if not path1.exists():
-        raise HTTPException(status_code=404, detail="Left dataset file not found on disk")
+        raise HTTPException(
+            status_code=404, detail="Left dataset file not found on disk"
+        )
     if not path2.exists():
-        raise HTTPException(status_code=404, detail="Right dataset file not found on disk")
+        raise HTTPException(
+            status_code=404, detail="Right dataset file not found on disk"
+        )
 
     df1 = pd.read_csv(path1)
     df2 = pd.read_csv(path2)
@@ -621,15 +664,23 @@ def merge_project_datasets(
     ds1 = session.get(Dataset, body.dataset_id_1)
     ds2 = session.get(Dataset, body.dataset_id_2)
     if not ds1:
-        raise HTTPException(status_code=404, detail=f"Dataset {body.dataset_id_1} not found")
+        raise HTTPException(
+            status_code=404, detail=f"Dataset {body.dataset_id_1} not found"
+        )
     if not ds2:
-        raise HTTPException(status_code=404, detail=f"Dataset {body.dataset_id_2} not found")
+        raise HTTPException(
+            status_code=404, detail=f"Dataset {body.dataset_id_2} not found"
+        )
 
     path1, path2 = Path(ds1.file_path), Path(ds2.file_path)
     if not path1.exists():
-        raise HTTPException(status_code=404, detail="Left dataset file not found on disk")
+        raise HTTPException(
+            status_code=404, detail="Left dataset file not found on disk"
+        )
     if not path2.exists():
-        raise HTTPException(status_code=404, detail="Right dataset file not found on disk")
+        raise HTTPException(
+            status_code=404, detail="Right dataset file not found on disk"
+        )
 
     df1 = pd.read_csv(path1)
     df2 = pd.read_csv(path2)
@@ -707,9 +758,7 @@ def _sheets_to_csv_url(url: str) -> str:
         raise ValueError("URL does not look like a Google Sheets link")
     sheet_id = match.group(1)
     gid_match = _GSHEETS_GID_PATTERN.search(url)
-    export_url = (
-        f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv"
-    )
+    export_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv"
     if gid_match:
         export_url += f"&gid={gid_match.group(1)}"
     return export_url
@@ -739,7 +788,9 @@ def upload_from_url(body: UrlImportRequest, session: Session = Depends(get_sessi
 
     url = body.url.strip()
     if not url.startswith(("http://", "https://")):
-        raise HTTPException(status_code=400, detail="URL must start with http:// or https://")
+        raise HTTPException(
+            status_code=400, detail="URL must start with http:// or https://"
+        )
 
     # Resolve the actual download URL
     download_url = url
@@ -767,7 +818,9 @@ def upload_from_url(body: UrlImportRequest, session: Session = Depends(get_sessi
 
     # Derive a filename
     if body.filename:
-        stored_filename = body.filename if body.filename.endswith(".csv") else body.filename + ".csv"
+        stored_filename = (
+            body.filename if body.filename.endswith(".csv") else body.filename + ".csv"
+        )
     elif _is_google_sheets_url(url):
         m = _GSHEETS_PATTERN.search(url)
         stored_filename = f"sheets_{m.group(1)[:12]}.csv" if m else "sheets_import.csv"
@@ -781,7 +834,8 @@ def upload_from_url(body: UrlImportRequest, session: Session = Depends(get_sessi
         df = pd.read_csv(io.BytesIO(raw_bytes))
     except Exception as exc:
         raise HTTPException(
-            status_code=400, detail=f"Downloaded content could not be parsed as CSV: {exc}"
+            status_code=400,
+            detail=f"Downloaded content could not be parsed as CSV: {exc}",
         ) from exc
 
     if df.empty:
@@ -813,7 +867,11 @@ def upload_from_url(body: UrlImportRequest, session: Session = Depends(get_sessi
 
     # Proactive narration (best-effort)
     try:
-        col_names = [c["name"] for c in profile["columns"]] if profile.get("columns") else list(df.columns)
+        col_names = (
+            [c["name"] for c in profile["columns"]]
+            if profile.get("columns")
+            else list(df.columns)
+        )
         narration = narrate_upload(
             filename=dataset.filename,
             row_count=dataset.row_count,
@@ -824,7 +882,11 @@ def upload_from_url(body: UrlImportRequest, session: Session = Depends(get_sessi
         append_bot_message_to_conversation(body.project_id, narration, session)
         dataset_summary = ", ".join(col_names[:8])
         profile_highlights = json.dumps(
-            {k: profile[k] for k in ("patterns", "warnings", "correlations") if k in profile},
+            {
+                k: profile[k]
+                for k in ("patterns", "warnings", "correlations")
+                if k in profile
+            },
             default=str,
         )
         ai_insight = narrate_data_insights_ai(
@@ -891,7 +953,9 @@ async def upload_sqlite_db(
     try:
         conn = sqlite3.connect(str(db_path))
         cursor = conn.cursor()
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
+        )
         tables = [row[0] for row in cursor.fetchall()]
         conn.close()
     except sqlite3.DatabaseError as exc:
@@ -915,7 +979,7 @@ async def upload_sqlite_db(
 
 class DbExtractRequest(BaseModel):
     project_id: str
-    db_path: str   # path returned by upload-db
+    db_path: str  # path returned by upload-db
     table_name: str
     query: str | None = None  # optional SQL override (must be SELECT)
     save_as_filename: str | None = None
@@ -934,7 +998,9 @@ def extract_db_table(body: DbExtractRequest, session: Session = Depends(get_sess
 
     db_path = Path(body.db_path)
     if not db_path.exists():
-        raise HTTPException(status_code=404, detail="Database file not found. Upload it first.")
+        raise HTTPException(
+            status_code=404, detail="Database file not found. Upload it first."
+        )
 
     # Validate query is read-only
     query = body.query or f"SELECT * FROM [{body.table_name}]"
@@ -949,9 +1015,7 @@ def extract_db_table(body: DbExtractRequest, session: Session = Depends(get_sess
         df = pd.read_sql_query(query, conn)
         conn.close()
     except Exception as exc:  # noqa: BLE001
-        raise HTTPException(
-            status_code=400, detail=f"Query failed: {exc}"
-        ) from exc
+        raise HTTPException(status_code=400, detail=f"Query failed: {exc}") from exc
 
     if df.empty:
         raise HTTPException(status_code=400, detail="Query returned no rows")
@@ -985,7 +1049,11 @@ def extract_db_table(body: DbExtractRequest, session: Session = Depends(get_sess
 
     # Proactive narration (best-effort)
     try:
-        col_names = [c["name"] for c in profile["columns"]] if profile.get("columns") else list(df.columns)
+        col_names = (
+            [c["name"] for c in profile["columns"]]
+            if profile.get("columns")
+            else list(df.columns)
+        )
         narration = narrate_upload(
             filename=out_filename,
             row_count=dataset.row_count,
@@ -1015,6 +1083,7 @@ def extract_db_table(body: DbExtractRequest, session: Session = Depends(get_sess
 # Box plot — grouped distribution comparison
 # ---------------------------------------------------------------------------
 
+
 @router.get("/{dataset_id}/boxplot")
 def get_boxplot(
     dataset_id: str,
@@ -1036,7 +1105,9 @@ def get_boxplot(
     try:
         df = pd.read_csv(dataset.file_path)
     except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=500, detail=f"Could not read dataset: {exc}") from exc
+        raise HTTPException(
+            status_code=500, detail=f"Could not read dataset: {exc}"
+        ) from exc
 
     if column not in df.columns:
         raise HTTPException(
@@ -1104,7 +1175,9 @@ def run_anomaly_detection(
         raise HTTPException(status_code=404, detail="Dataset file not found on disk")
 
     if not body.features:
-        raise HTTPException(status_code=400, detail="At least one feature must be specified")
+        raise HTTPException(
+            status_code=400, detail="At least one feature must be specified"
+        )
 
     df = _load_df_from_path(file_path)
 
@@ -1138,13 +1211,14 @@ class CleanRequest(BaseModel):
     value:     for filter_rows — comparison value
     percentile: for cap_outliers — upper percentile (default 99.0)
     """
+
     operation: str
     column: str | None = None
-    strategy: str | None = None        # fill_missing
+    strategy: str | None = None  # fill_missing
     fill_value: float | str | None = None  # fill_missing strategy=value
-    operator: str | None = None        # filter_rows
-    value: float | str | None = None   # filter_rows
-    percentile: float = 99.0           # cap_outliers
+    operator: str | None = None  # filter_rows
+    value: float | str | None = None  # filter_rows
+    percentile: float = 99.0  # cap_outliers
 
 
 @router.post("/{dataset_id}/clean")
@@ -1191,9 +1265,14 @@ def clean_dataset(
             if not body.column:
                 raise ValueError("fill_missing requires 'column'.")
             if not body.strategy:
-                raise ValueError("fill_missing requires 'strategy' (mean/median/mode/zero/value).")
+                raise ValueError(
+                    "fill_missing requires 'strategy' (mean/median/mode/zero/value)."
+                )
             cleaned_df, result = fill_missing(
-                df, column=body.column, strategy=body.strategy, fill_value=body.fill_value
+                df,
+                column=body.column,
+                strategy=body.strategy,
+                fill_value=body.fill_value,
             )
         elif op == "filter_rows":
             if not body.column:
@@ -1208,7 +1287,9 @@ def clean_dataset(
         elif op == "cap_outliers":
             if not body.column:
                 raise ValueError("cap_outliers requires 'column'.")
-            cleaned_df, result = cap_outliers(df, column=body.column, percentile=body.percentile)
+            cleaned_df, result = cap_outliers(
+                df, column=body.column, percentile=body.percentile
+            )
         elif op == "drop_column":
             if not body.column:
                 raise ValueError("drop_column requires 'column'.")
@@ -1306,9 +1387,11 @@ def refresh_dataset(
         raise HTTPException(status_code=400, detail="Uploaded file is empty")
 
     # Identify column changes
-    old_columns = set(
-        c["name"] for c in json.loads(dataset.columns)
-    ) if dataset.columns else set()
+    old_columns = (
+        set(c["name"] for c in json.loads(dataset.columns))
+        if dataset.columns
+        else set()
+    )
     new_columns_set = set(new_df.columns)
     added_columns = sorted(new_columns_set - old_columns)
     removed_columns = sorted(old_columns - new_columns_set)

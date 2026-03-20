@@ -1,4 +1,5 @@
 """Tests for Neural Network (MLP) algorithm integration."""
+
 import numpy as np
 import pytest
 from pathlib import Path
@@ -15,6 +16,7 @@ import pandas as pd
 # ---------------------------------------------------------------------------
 # Registry presence
 # ---------------------------------------------------------------------------
+
 
 def test_mlp_regressor_in_registry():
     assert "neural_network_regressor" in REGRESSION_ALGORITHMS
@@ -44,6 +46,7 @@ def test_mlp_classifier_has_required_keys():
 # ---------------------------------------------------------------------------
 # Recommendations include MLP
 # ---------------------------------------------------------------------------
+
 
 def test_mlp_in_regression_recommendations():
     recs = recommend_models("regression", n_rows=500, n_features=8)
@@ -79,6 +82,7 @@ def test_mlp_recommendation_large_dataset_positive():
 # ---------------------------------------------------------------------------
 # Actual training works
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def regression_df():
@@ -126,7 +130,9 @@ def test_mlp_regressor_trains(regression_df, tmp_path):
 
 def test_mlp_classifier_trains(classification_df, tmp_path):
     feature_cols = ["feat_a", "feat_b", "feat_c", "feat_d"]
-    X, y, le = prepare_features(classification_df, feature_cols, "target", "classification")
+    X, y, le = prepare_features(
+        classification_df, feature_cols, "target", "classification"
+    )
 
     result = train_single_model(
         X=X,
@@ -191,7 +197,8 @@ def test_mlp_unknown_algorithm_raises():
     y = rng.standard_normal(50)
     with pytest.raises(ValueError, match="Unknown algorithm"):
         train_single_model(
-            X=X, y=y,
+            X=X,
+            y=y,
             algorithm="neural_network_regressor_typo",
             problem_type="regression",
             model_dir=Path("/tmp"),

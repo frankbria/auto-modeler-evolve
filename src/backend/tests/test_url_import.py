@@ -1,4 +1,5 @@
 """Tests for POST /api/data/upload-url — Google Sheets and CSV URL import."""
+
 import pytest
 from unittest.mock import MagicMock, patch
 from httpx import AsyncClient, ASGITransport
@@ -23,13 +24,18 @@ async def ac(tmp_path, monkeypatch):
     import models.project  # noqa
     import models.dataset  # noqa
     import models.conversation  # noqa
+
     SQLModel.metadata.create_all(db_module.engine)
 
     import api.data as data_module
+
     data_module.UPLOAD_DIR = tmp_path / "uploads"
 
     from main import app
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
         yield client
 
 
@@ -53,8 +59,10 @@ def _mock_urlopen(csv_bytes: bytes):
 # Helper / unit tests for the URL parsing logic
 # ---------------------------------------------------------------------------
 
+
 def test_sheets_to_csv_url_basic():
     from api.data import _sheets_to_csv_url
+
     url = "https://docs.google.com/spreadsheets/d/ABC123/edit"
     result = _sheets_to_csv_url(url)
     assert "export?format=csv" in result
@@ -63,6 +71,7 @@ def test_sheets_to_csv_url_basic():
 
 def test_sheets_to_csv_url_preserves_gid():
     from api.data import _sheets_to_csv_url
+
     url = "https://docs.google.com/spreadsheets/d/ABC123/edit#gid=456789"
     result = _sheets_to_csv_url(url)
     assert "gid=456789" in result
@@ -70,23 +79,27 @@ def test_sheets_to_csv_url_preserves_gid():
 
 def test_sheets_to_csv_url_invalid():
     from api.data import _sheets_to_csv_url
+
     with pytest.raises(ValueError, match="not look like a Google Sheets"):
         _sheets_to_csv_url("https://example.com/notgooglesheets")
 
 
 def test_is_google_sheets_url_true():
     from api.data import _is_google_sheets_url
+
     assert _is_google_sheets_url("https://docs.google.com/spreadsheets/d/ID123/edit")
 
 
 def test_is_google_sheets_url_false():
     from api.data import _is_google_sheets_url
+
     assert not _is_google_sheets_url("https://example.com/data.csv")
 
 
 # ---------------------------------------------------------------------------
 # Integration tests
 # ---------------------------------------------------------------------------
+
 
 async def test_upload_from_direct_csv_url(ac, project_id):
     """Importing a plain CSV URL creates a dataset and returns preview."""
@@ -106,7 +119,9 @@ async def test_upload_from_direct_csv_url(ac, project_id):
 async def test_upload_from_google_sheets_url(ac, project_id):
     """Google Sheets URL is converted to export URL and imported."""
     sheets_url = "https://docs.google.com/spreadsheets/d/SHEET_ID_123/edit"
-    with patch("urllib.request.urlopen", return_value=_mock_urlopen(SAMPLE_CSV_BYTES)) as mock_open:
+    with patch(
+        "urllib.request.urlopen", return_value=_mock_urlopen(SAMPLE_CSV_BYTES)
+    ) as mock_open:
         resp = await ac.post(
             "/api/data/upload-url",
             json={"project_id": project_id, "url": sheets_url},
@@ -182,7 +197,9 @@ async def test_upload_url_not_csv_content(ac, project_id):
 async def test_upload_url_google_sheets_with_gid(ac, project_id):
     """gid query param is preserved in the export URL for multi-tab sheets."""
     sheets_url = "https://docs.google.com/spreadsheets/d/SHEET_ID/edit#gid=999"
-    with patch("urllib.request.urlopen", return_value=_mock_urlopen(SAMPLE_CSV_BYTES)) as mock_open:
+    with patch(
+        "urllib.request.urlopen", return_value=_mock_urlopen(SAMPLE_CSV_BYTES)
+    ) as mock_open:
         resp = await ac.post(
             "/api/data/upload-url",
             json={"project_id": project_id, "url": sheets_url},
@@ -197,7 +214,10 @@ async def test_upload_url_filename_from_url_path(ac, project_id):
     with patch("urllib.request.urlopen", return_value=_mock_urlopen(SAMPLE_CSV_BYTES)):
         resp = await ac.post(
             "/api/data/upload-url",
-            json={"project_id": project_id, "url": "https://example.com/quarterly_sales.csv"},
+            json={
+                "project_id": project_id,
+                "url": "https://example.com/quarterly_sales.csv",
+            },
         )
     assert resp.status_code == 201
     assert resp.json()["filename"] == "quarterly_sales.csv"

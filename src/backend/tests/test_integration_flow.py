@@ -7,6 +7,7 @@ be readable by deployer).
 
 No browser, no LLM calls (Anthropic is monkeypatched), real SQLite + real sklearn.
 """
+
 from __future__ import annotations
 
 import io
@@ -50,6 +51,7 @@ Widget A,East,130.0,22,2860.0
 # Fixtures
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 @pytest.fixture
 def client(tmp_path, monkeypatch):
     """TestClient wired to a fresh temp SQLite DB and file dirs."""
@@ -64,6 +66,7 @@ def client(tmp_path, monkeypatch):
     import models.conversation  # noqa
     import models.model_run  # noqa
     import models.deployment  # noqa
+
     SQLModel.metadata.create_all(db_module.engine)
 
     import api.data as data_module
@@ -75,15 +78,19 @@ def client(tmp_path, monkeypatch):
     deploy_module.DEPLOY_DIR = tmp_path / "deployments"
 
     # Stub the Anthropic client so no real LLM calls are made during chat
-    monkeypatch.setattr("api.chat.anthropic.Anthropic", lambda *a, **kw: _FakeAnthropic())
+    monkeypatch.setattr(
+        "api.chat.anthropic.Anthropic", lambda *a, **kw: _FakeAnthropic()
+    )
 
     from main import app
+
     with TestClient(app) as c:
         yield c
 
 
 class _FakeStream:
     """Mimics the Anthropic streaming context manager."""
+
     def __enter__(self):
         return self
 
@@ -96,6 +103,7 @@ class _FakeStream:
     def get_final_message(self):
         class _Msg:
             content = [type("B", (), {"text": "Analysis complete."})()]
+
         return _Msg()
 
 
@@ -106,7 +114,9 @@ class _FakeAnthropic:
             return _FakeStream()
 
 
-def _wait_for_training(client: TestClient, project_id: str, timeout: int = 30) -> list[dict]:
+def _wait_for_training(
+    client: TestClient, project_id: str, timeout: int = 30
+) -> list[dict]:
     """Poll GET /api/models/{project_id}/runs until all runs finish."""
     deadline = time.time() + timeout
     while time.time() < deadline:
@@ -122,6 +132,7 @@ def _wait_for_training(client: TestClient, project_id: str, timeout: int = 30) -
 # ─────────────────────────────────────────────────────────────────────────────
 # Full pipeline integration test
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class TestFullPipeline:
     """Exercises the complete backend pipeline as one connected flow."""
@@ -146,7 +157,9 @@ class TestFullPipeline:
 
     def test_profile_is_generated_on_upload(self, client):
         """Phase 2: profile endpoint returns distributions and insights."""
-        project_id = client.post("/api/projects", json={"name": "Profile Test"}).json()["id"]
+        project_id = client.post("/api/projects", json={"name": "Profile Test"}).json()[
+            "id"
+        ]
         upload = client.post(
             "/api/data/upload",
             data={"project_id": project_id},
@@ -164,7 +177,9 @@ class TestFullPipeline:
 
     def test_feature_suggestions_and_apply(self, client):
         """Phase 3: feature suggestions returned and can be applied."""
-        project_id = client.post("/api/projects", json={"name": "Feature Test"}).json()["id"]
+        project_id = client.post("/api/projects", json={"name": "Feature Test"}).json()[
+            "id"
+        ]
         upload = client.post(
             "/api/data/upload",
             data={"project_id": project_id},
@@ -187,7 +202,9 @@ class TestFullPipeline:
 
     def test_train_and_compare(self, client):
         """Phase 4: training completes and compare returns a recommendation."""
-        project_id = client.post("/api/projects", json={"name": "Train Test"}).json()["id"]
+        project_id = client.post("/api/projects", json={"name": "Train Test"}).json()[
+            "id"
+        ]
         dataset_id = client.post(
             "/api/data/upload",
             data={"project_id": project_id},
@@ -195,7 +212,9 @@ class TestFullPipeline:
         ).json()["dataset_id"]
 
         client.post(f"/api/features/{dataset_id}/apply", json={"transformations": []})
-        client.post(f"/api/features/{dataset_id}/target", json={"target_column": "revenue"})
+        client.post(
+            f"/api/features/{dataset_id}/target", json={"target_column": "revenue"}
+        )
 
         train = client.post(
             f"/api/models/{project_id}/train",
@@ -216,7 +235,9 @@ class TestFullPipeline:
 
     def test_deploy_and_single_predict(self, client):
         """Phase 6: deployed model accepts JSON input and returns a prediction."""
-        project_id = client.post("/api/projects", json={"name": "Deploy Test"}).json()["id"]
+        project_id = client.post("/api/projects", json={"name": "Deploy Test"}).json()[
+            "id"
+        ]
         dataset_id = client.post(
             "/api/data/upload",
             data={"project_id": project_id},
@@ -224,7 +245,9 @@ class TestFullPipeline:
         ).json()["dataset_id"]
 
         client.post(f"/api/features/{dataset_id}/apply", json={"transformations": []})
-        client.post(f"/api/features/{dataset_id}/target", json={"target_column": "revenue"})
+        client.post(
+            f"/api/features/{dataset_id}/target", json={"target_column": "revenue"}
+        )
 
         run_id = client.post(
             f"/api/models/{project_id}/train",
@@ -242,7 +265,12 @@ class TestFullPipeline:
         # Single prediction
         predict = client.post(
             f"/api/predict/{deployment_id}",
-            json={"product": "Widget A", "region": "North", "price": 120.0, "units": 10},
+            json={
+                "product": "Widget A",
+                "region": "North",
+                "price": 120.0,
+                "units": 10,
+            },
         )
         assert predict.status_code == 200, predict.text
         pred = predict.json()
@@ -251,7 +279,9 @@ class TestFullPipeline:
 
     def test_batch_predict(self, client):
         """Phase 6: batch prediction returns a CSV with a prediction column."""
-        project_id = client.post("/api/projects", json={"name": "Batch Test"}).json()["id"]
+        project_id = client.post("/api/projects", json={"name": "Batch Test"}).json()[
+            "id"
+        ]
         dataset_id = client.post(
             "/api/data/upload",
             data={"project_id": project_id},
@@ -259,7 +289,9 @@ class TestFullPipeline:
         ).json()["dataset_id"]
 
         client.post(f"/api/features/{dataset_id}/apply", json={"transformations": []})
-        client.post(f"/api/features/{dataset_id}/target", json={"target_column": "revenue"})
+        client.post(
+            f"/api/features/{dataset_id}/target", json={"target_column": "revenue"}
+        )
 
         run_id = client.post(
             f"/api/models/{project_id}/train",
@@ -289,7 +321,9 @@ Widget C,East,45.0,4
 
     def test_deploy_then_undeploy(self, client):
         """Deploying and then undeploying a model updates is_active."""
-        project_id = client.post("/api/projects", json={"name": "Undeploy Test"}).json()["id"]
+        project_id = client.post(
+            "/api/projects", json={"name": "Undeploy Test"}
+        ).json()["id"]
         dataset_id = client.post(
             "/api/data/upload",
             data={"project_id": project_id},
@@ -297,7 +331,9 @@ Widget C,East,45.0,4
         ).json()["dataset_id"]
 
         client.post(f"/api/features/{dataset_id}/apply", json={"transformations": []})
-        client.post(f"/api/features/{dataset_id}/target", json={"target_column": "revenue"})
+        client.post(
+            f"/api/features/{dataset_id}/target", json={"target_column": "revenue"}
+        )
 
         run_id = client.post(
             f"/api/models/{project_id}/train",
@@ -315,7 +351,9 @@ Widget C,East,45.0,4
 
     def test_multiple_models_comparison(self, client):
         """Training two models produces a comparison with a recommended winner."""
-        project_id = client.post("/api/projects", json={"name": "Multi Test"}).json()["id"]
+        project_id = client.post("/api/projects", json={"name": "Multi Test"}).json()[
+            "id"
+        ]
         dataset_id = client.post(
             "/api/data/upload",
             data={"project_id": project_id},
@@ -323,7 +361,9 @@ Widget C,East,45.0,4
         ).json()["dataset_id"]
 
         client.post(f"/api/features/{dataset_id}/apply", json={"transformations": []})
-        client.post(f"/api/features/{dataset_id}/target", json={"target_column": "revenue"})
+        client.post(
+            f"/api/features/{dataset_id}/target", json={"target_column": "revenue"}
+        )
 
         client.post(
             f"/api/models/{project_id}/train",
@@ -342,7 +382,9 @@ Widget C,East,45.0,4
 
     def test_upload_narration_appears_in_chat(self, client):
         """Upload triggers an auto-narration message in the conversation."""
-        project_id = client.post("/api/projects", json={"name": "Narrate Test"}).json()["id"]
+        project_id = client.post("/api/projects", json={"name": "Narrate Test"}).json()[
+            "id"
+        ]
         client.post(
             "/api/data/upload",
             data={"project_id": project_id},
@@ -355,12 +397,16 @@ Widget C,East,45.0,4
         # The narration module injects an assistant message after upload
         assert any(m["role"] == "assistant" for m in messages)
         # The message should mention the dataset dimensions
-        assistant_texts = " ".join(m["content"] for m in messages if m["role"] == "assistant")
+        assistant_texts = " ".join(
+            m["content"] for m in messages if m["role"] == "assistant"
+        )
         assert "20" in assistant_texts or "column" in assistant_texts.lower()
 
     def test_validation_metrics_after_training(self, client):
         """Phase 5: validation metrics endpoint returns CV results for a trained model."""
-        project_id = client.post("/api/projects", json={"name": "Validate Test"}).json()["id"]
+        project_id = client.post(
+            "/api/projects", json={"name": "Validate Test"}
+        ).json()["id"]
         dataset_id = client.post(
             "/api/data/upload",
             data={"project_id": project_id},
@@ -368,7 +414,9 @@ Widget C,East,45.0,4
         ).json()["dataset_id"]
 
         client.post(f"/api/features/{dataset_id}/apply", json={"transformations": []})
-        client.post(f"/api/features/{dataset_id}/target", json={"target_column": "revenue"})
+        client.post(
+            f"/api/features/{dataset_id}/target", json={"target_column": "revenue"}
+        )
 
         run_id = client.post(
             f"/api/models/{project_id}/train",
@@ -385,7 +433,9 @@ Widget C,East,45.0,4
 
     def test_feature_importance_after_training(self, client):
         """Phase 5: explainer returns global feature importance for a trained model."""
-        project_id = client.post("/api/projects", json={"name": "Explain Test"}).json()["id"]
+        project_id = client.post("/api/projects", json={"name": "Explain Test"}).json()[
+            "id"
+        ]
         dataset_id = client.post(
             "/api/data/upload",
             data={"project_id": project_id},
@@ -393,7 +443,9 @@ Widget C,East,45.0,4
         ).json()["dataset_id"]
 
         client.post(f"/api/features/{dataset_id}/apply", json={"transformations": []})
-        client.post(f"/api/features/{dataset_id}/target", json={"target_column": "revenue"})
+        client.post(
+            f"/api/features/{dataset_id}/target", json={"target_column": "revenue"}
+        )
 
         run_id = client.post(
             f"/api/models/{project_id}/train",

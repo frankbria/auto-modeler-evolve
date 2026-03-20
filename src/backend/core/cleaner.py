@@ -14,6 +14,7 @@ filter_rows           Remove rows where column op value is True
 cap_outliers          Clip a numeric column at the given percentile/100-pct.
 drop_column           Remove a column entirely.
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -23,6 +24,7 @@ import pandas as pd
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _summary_line(op: str, before: int, after: int, col: str | None = None) -> str:
     removed = before - after
@@ -39,6 +41,7 @@ def _summary_line(op: str, before: int, after: int, col: str | None = None) -> s
 # ---------------------------------------------------------------------------
 # Operations
 # ---------------------------------------------------------------------------
+
 
 def remove_duplicates(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
     """Remove exact duplicate rows (all columns must match).
@@ -93,13 +96,17 @@ def fill_missing(
 
     if strategy == "mean":
         if not pd.api.types.is_numeric_dtype(cleaned[column]):
-            raise ValueError(f"Strategy 'mean' requires a numeric column; '{column}' is not numeric.")
+            raise ValueError(
+                f"Strategy 'mean' requires a numeric column; '{column}' is not numeric."
+            )
         val = cleaned[column].mean()
         cleaned[column] = cleaned[column].fillna(val)
         strategy_desc = f"mean ({val:.4g})"
     elif strategy == "median":
         if not pd.api.types.is_numeric_dtype(cleaned[column]):
-            raise ValueError(f"Strategy 'median' requires a numeric column; '{column}' is not numeric.")
+            raise ValueError(
+                f"Strategy 'median' requires a numeric column; '{column}' is not numeric."
+            )
         val = cleaned[column].median()
         cleaned[column] = cleaned[column].fillna(val)
         strategy_desc = f"median ({val:.4g})"
@@ -140,8 +147,14 @@ def fill_missing(
 
 _VALID_OPERATORS = {"gt", "lt", "eq", "ne", "gte", "lte", "contains", "notcontains"}
 _OPERATOR_LABELS = {
-    "gt": ">", "lt": "<", "eq": "==", "ne": "!=", "gte": ">=", "lte": "<=",
-    "contains": "contains", "notcontains": "not contains",
+    "gt": ">",
+    "lt": "<",
+    "eq": "==",
+    "ne": "!=",
+    "gte": ">=",
+    "lte": "<=",
+    "contains": "contains",
+    "notcontains": "not contains",
 }
 
 
@@ -161,7 +174,9 @@ def filter_rows(
     if column not in df.columns:
         raise ValueError(f"Column '{column}' not found in dataset.")
     if operator not in _VALID_OPERATORS:
-        raise ValueError(f"Unknown operator '{operator}'. Valid: {sorted(_VALID_OPERATORS)}")
+        raise ValueError(
+            f"Unknown operator '{operator}'. Valid: {sorted(_VALID_OPERATORS)}"
+        )
 
     before = len(df)
     col = df[column]
@@ -221,7 +236,9 @@ def cap_outliers(
     if column not in df.columns:
         raise ValueError(f"Column '{column}' not found in dataset.")
     if not pd.api.types.is_numeric_dtype(df[column]):
-        raise ValueError(f"cap_outliers requires a numeric column; '{column}' is not numeric.")
+        raise ValueError(
+            f"cap_outliers requires a numeric column; '{column}' is not numeric."
+        )
 
     percentile = float(max(50.0, min(99.9, percentile)))
     lower_pct = 100.0 - percentile

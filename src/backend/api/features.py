@@ -38,6 +38,7 @@ router = APIRouter(prefix="/api/features", tags=["features"])
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _load_dataset(dataset_id: str, session: Session) -> tuple[Dataset, pd.DataFrame]:
     dataset = session.get(Dataset, dataset_id)
     if not dataset:
@@ -52,6 +53,7 @@ def _load_dataset(dataset_id: str, session: Session) -> tuple[Dataset, pd.DataFr
 # ---------------------------------------------------------------------------
 # 1. Suggestions
 # ---------------------------------------------------------------------------
+
 
 @router.get("/{dataset_id}/suggestions")
 def get_suggestions(dataset_id: str, session: Session = Depends(get_session)):
@@ -79,6 +81,7 @@ def get_suggestions(dataset_id: str, session: Session = Depends(get_session)):
 # ---------------------------------------------------------------------------
 # 2. Apply transformations
 # ---------------------------------------------------------------------------
+
 
 class ApplyRequest(BaseModel):
     transformations: list[dict]  # list of {column, transform_type, params?}
@@ -117,9 +120,7 @@ def apply_feature_transforms(
     session.refresh(feature_set)
 
     preview = transformed_df.head(5).to_dict(orient="records")
-    new_columns = sorted(
-        set(transformed_df.columns) - set(df.columns)
-    )
+    new_columns = sorted(set(transformed_df.columns) - set(df.columns))
 
     return {
         "feature_set_id": feature_set.id,
@@ -133,6 +134,7 @@ def apply_feature_transforms(
 # ---------------------------------------------------------------------------
 # 3. Preview a feature set
 # ---------------------------------------------------------------------------
+
 
 @router.get("/{feature_set_id}/preview")
 def preview_feature_set(feature_set_id: str, session: Session = Depends(get_session)):
@@ -159,6 +161,7 @@ def preview_feature_set(feature_set_id: str, session: Session = Depends(get_sess
 # ---------------------------------------------------------------------------
 # 4. Set target variable
 # ---------------------------------------------------------------------------
+
 
 class TargetRequest(BaseModel):
     target_column: str
@@ -208,6 +211,7 @@ def set_target(
 # 6. List pipeline steps for a FeatureSet
 # ---------------------------------------------------------------------------
 
+
 @router.get("/{feature_set_id}/steps")
 def list_pipeline_steps(feature_set_id: str, session: Session = Depends(get_session)):
     """Return the ordered list of transformation steps in the pipeline."""
@@ -225,6 +229,7 @@ def list_pipeline_steps(feature_set_id: str, session: Session = Depends(get_sess
 # ---------------------------------------------------------------------------
 # 7. Append a single step to the pipeline
 # ---------------------------------------------------------------------------
+
 
 class AddStepRequest(BaseModel):
     column: str
@@ -259,6 +264,7 @@ def add_pipeline_step(
     df = pd.read_csv(file_path)
 
     from core.feature_engine import apply_transformations
+
     transformed_df, column_mapping = apply_transformations(df, steps)
 
     feature_set.transformations = json.dumps(steps)
@@ -280,6 +286,7 @@ def add_pipeline_step(
 # ---------------------------------------------------------------------------
 # 8. Remove (undo) a step by index
 # ---------------------------------------------------------------------------
+
 
 @router.delete("/{feature_set_id}/steps/{step_index}", status_code=200)
 def remove_pipeline_step(
@@ -311,6 +318,7 @@ def remove_pipeline_step(
     df = pd.read_csv(file_path)
 
     from core.feature_engine import apply_transformations
+
     transformed_df, column_mapping = apply_transformations(df, steps)
 
     feature_set.transformations = json.dumps(steps)
@@ -333,6 +341,7 @@ def remove_pipeline_step(
 # 9. Feature importance
 # ---------------------------------------------------------------------------
 
+
 @router.get("/{dataset_id}/importance")
 def get_feature_importance(
     dataset_id: str,
@@ -346,7 +355,9 @@ def get_feature_importance(
     type_result = detect_problem_type(df, target_column)
     problem_type = type_result.get("problem_type", "regression")
 
-    importance = compute_feature_importance(df, target_column, problem_type, column_stats)
+    importance = compute_feature_importance(
+        df, target_column, problem_type, column_stats
+    )
 
     return {
         "dataset_id": dataset_id,

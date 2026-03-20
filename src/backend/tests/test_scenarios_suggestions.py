@@ -93,20 +93,26 @@ def client(tmp_path):
     SQLModel.metadata.create_all(db_module.engine)
 
     import api.data as data_module
+
     data_module.UPLOAD_DIR = tmp_path / "uploads"
 
     import api.models as models_api_module
+
     models_api_module.MODELS_DIR = tmp_path / "models"
 
     import api.deploy as deploy_module
+
     deploy_module.DEPLOY_DIR = tmp_path / "deployments"
 
     from main import app
+
     with TestClient(app) as c:
         yield c
 
 
-def _setup_deployed(client, csv_data=SAMPLE_CSV, target="revenue", algorithm="linear_regression"):
+def _setup_deployed(
+    client, csv_data=SAMPLE_CSV, target="revenue", algorithm="linear_regression"
+):
     """Create project → upload → apply features → train → deploy. Returns deployment_id."""
     proj = client.post("/api/projects", json={"name": "Scenario Test"})
     project_id = proj.json()["id"]
@@ -331,7 +337,10 @@ class TestScenarioComparison:
         single = client.post(f"/api/predict/{deployment_id}", json=base).json()
         scenarios_resp = client.post(
             f"/api/predict/{deployment_id}/scenarios",
-            json={"base": base, "scenarios": [{"label": "S1", "overrides": {"units": 20}}]},
+            json={
+                "base": base,
+                "scenarios": [{"label": "S1", "overrides": {"units": 20}}],
+            },
         ).json()
 
         assert scenarios_resp["base_prediction"] == single["prediction"]
@@ -348,6 +357,7 @@ class TestGenerateSuggestions:
     @pytest.fixture(autouse=True)
     def import_fn(self):
         from chat.orchestrator import generate_suggestions
+
         self.generate_suggestions = generate_suggestions
 
     def test_suggestions_upload_state_no_dataset(self):
@@ -361,30 +371,45 @@ class TestGenerateSuggestions:
     def test_suggestions_explore_state(self):
         """Explore state returns explore-relevant suggestions."""
         from models.dataset import Dataset
+
         ds = Dataset(
-            id="ds1", project_id="p1", filename="sales.csv",
-            row_count=200, column_count=8, file_path="/tmp/f.csv",
+            id="ds1",
+            project_id="p1",
+            filename="sales.csv",
+            row_count=200,
+            column_count=8,
+            file_path="/tmp/f.csv",
         )
         result = self.generate_suggestions(state="explore", dataset=ds)
         assert 1 <= len(result) <= 3
         # Should mention something about data
         combined = " ".join(result).lower()
-        assert any(word in combined for word in ["data", "column", "pattern", "correlation", "model"])
+        assert any(
+            word in combined
+            for word in ["data", "column", "pattern", "correlation", "model"]
+        )
 
     def test_suggestions_deploy_state(self):
         """Deploy state returns share/monitor suggestions."""
         result = self.generate_suggestions(state="deploy")
         assert 1 <= len(result) <= 3
         combined = " ".join(result).lower()
-        assert any(word in combined for word in ["share", "accurate", "prediction", "alert", "retrain"])
+        assert any(
+            word in combined
+            for word in ["share", "accurate", "prediction", "alert", "retrain"]
+        )
 
     def test_suggestions_model_state_with_runs(self):
         """Model state with completed runs mentions algorithm by name."""
         from models.model_run import ModelRun
         import json
+
         run = ModelRun(
-            id="r1", project_id="p1", feature_set_id="fs1",
-            algorithm="random_forest", status="done",
+            id="r1",
+            project_id="p1",
+            feature_set_id="fs1",
+            algorithm="random_forest",
+            status="done",
             metrics=json.dumps({"r2": 0.85, "mae": 50.0}),
         )
         result = self.generate_suggestions(
@@ -427,8 +452,11 @@ class TestGenerateSuggestions:
     def test_suggestions_with_deployment(self):
         """Deploy state with active deployment adds API/history suggestions."""
         from models.deployment import Deployment
+
         dep = Deployment(
-            id="dep1", model_run_id="r1", project_id="p1",
+            id="dep1",
+            model_run_id="r1",
+            project_id="p1",
             endpoint_path="/api/predict/dep1",
             dashboard_url="/predict/dep1",
             is_active=True,
@@ -444,9 +472,14 @@ class TestGenerateSuggestions:
         """Validate state customises R² or accuracy suggestion from metrics."""
         from models.model_run import ModelRun
         import json
+
         run = ModelRun(
-            id="r1", project_id="p1", feature_set_id="fs1",
-            algorithm="linear_regression", status="done", is_selected=True,
+            id="r1",
+            project_id="p1",
+            feature_set_id="fs1",
+            algorithm="linear_regression",
+            status="done",
+            is_selected=True,
             metrics=json.dumps({"r2": 0.78, "mae": 40.0}),
         )
         result = self.generate_suggestions(

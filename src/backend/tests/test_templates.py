@@ -9,7 +9,6 @@ Covers:
 from __future__ import annotations
 
 
-
 class TestListTemplates:
     async def test_returns_template_list(self, client):
         resp = await client.get("/api/templates")
