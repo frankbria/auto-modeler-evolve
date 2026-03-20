@@ -449,6 +449,16 @@ guides them forward through the natural flow.
       the "not a black box" vision promise for the shareable analyst dashboard.
       *Day 9 (00:05): 14 backend + 6 frontend = 20 new tests. Total: 1053 backend + 401 frontend = 1454.*
 
+- [x] **Cross-deployment model comparison** — POST /api/predict/compare accepts 2-4 deployment IDs and
+      a feature dict, returns predictions from each model version so analysts can verify whether a retrained
+      model improved on their specific inputs. GET /api/deployments now accepts optional `?project_id=` filter
+      for project-scoped listing. `CompareModelsCard` on the public predict/[id] page auto-detects other
+      deployed versions of the same project and shows a side-by-side comparison table (algorithm, trained date,
+      prediction, uncertainty) when expanded. The `/api/predict/compare` route is registered BEFORE
+      `/api/predict/{deployment_id}` so FastAPI doesn't try to match "compare" as a UUID.
+      `ModelComparisonResult` + `ComparisonResponse` types; `api.deploy.compareModels()` + `api.deploy.listByProject()`.
+      *Day 9 (20:00): 11 backend + 10 frontend = 21 new tests. Total: 1064 backend + 411 frontend = 1475.*
+
 #### Track C — Coordination
 
 - [x] **Update BACKLOG.md** — Before starting work, check BACKLOG.md for what the other

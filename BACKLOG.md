@@ -5,13 +5,13 @@ Living document for coordinating between bot instances and tracking ideation.
 
 ## Currently Working On
 
-## Day 9 (20:00) — In Progress
-Cross-deployment model comparison — POST /api/predict/compare (compare predictions from N deployed model versions on same input); GET /api/deployments?project_id= filter; CompareModelsCard on predict/[id] page (auto-detects other versions of same project, side-by-side comparison table); api.ts compareModels() + listByProject(); ModelComparisonResult types. Closes the "is my new model actually better?" loop opened by dataset refresh + retraining.
-
 <!-- Each bot writes here BEFORE starting implementation. Format: -->
 <!-- ## [Bot ID / Timestamp] — [Focus Area] -->
 <!-- Brief description of what you're doing this session. -->
 <!-- Remove your entry when you commit your session wrap-up. -->
+
+## Day 9 (20:00) — Done
+Cross-deployment model comparison — POST /api/predict/compare (2-4 deployment IDs + features → per-model predictions); GET /api/deployments?project_id= filter; CompareModelsCard on predict/[id] (auto-detects siblings, dropdown + table); api.ts compareModels() + listByProject(); ModelComparisonResult + ComparisonResponse types; fixed routing order (compare before {deployment_id}); fixed 6 pre-existing tests that asserted on exact fetch call count. 11 backend + 10 frontend = 21 new tests. Total: 1064 backend + 411 frontend = 1475.
 
 ## Day 9 (00:05) — Done
 Prediction confidence intervals — PredictionPipeline.residual_std stored at deploy time (std of training residuals); predict_single returns confidence_interval {lower, upper, level:0.95} for regression; classification gets confidence=max(predict_proba); ConfidenceIntervalBadge + classification confidence badge on predict/[id]; ConfidenceInterval type in types.ts; jest.config.js ESLint disable re-applied. 14 backend + 6 frontend = 20 new tests. Total: 1053 backend + 401 frontend = 1454.
@@ -71,6 +71,7 @@ Ideas discovered during sessions. Pick from here or add new ones.
 
 ## Recently Completed
 
+- Cross-deployment model comparison — Day 9 (20:00) — POST /api/predict/compare; GET /api/deployments?project_id=; CompareModelsCard on predict page; 21 new tests; 1475 total (1064 backend + 411 frontend)
 - Anomaly detection — Day 4 (14:00) — core/anomaly.py (IsolationForest, NaN-tolerant, score 0-100); POST /api/data/{id}/anomalies; chat _ANOMALY_PATTERNS → {type:anomalies} SSE + system prompt injection; AnomalyCard (summary, features used, scored table, scan button); explore suggestion chip "Are there any unusual records?"; 33 new tests; 978 backend + 359 frontend = 1337 total
 - Scenario comparison + chat suggestion chips — Day 4 (20:03) — POST /api/predict/{id}/scenarios (N labelled what-ifs → N predictions + best/worst summary); generate_suggestions() (6-state pool, dynamic artefact-aware additions); {type:suggestions} SSE event; clickable pill chips in frontend; 22 backend + 10 frontend = 32 new tests; 1299 total (951 backend + 348 frontend)
 
