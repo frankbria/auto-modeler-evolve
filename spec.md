@@ -449,6 +449,19 @@ guides them forward through the natural flow.
       the "not a black box" vision promise for the shareable analyst dashboard.
       *Day 9 (00:05): 14 backend + 6 frontend = 20 new tests. Total: 1053 backend + 401 frontend = 1454.*
 
+- [x] **AI-powered data dictionary** — When a dataset is uploaded (or on demand via POST), auto-generate
+      plain-English descriptions for every column. `core/dictionary.py` classifies each column as
+      id/metric/dimension/date/flag/text via heuristics (name hints + dtype + cardinality), then uses
+      Claude (with static fallback) to generate descriptions in one batch call. Stored back into
+      `Dataset.columns` JSON. GET /api/data/{id}/dictionary (fast, on-demand) + POST /api/data/{id}/dictionary
+      (generates/regenerates). `DictionaryCard` in the Data tab: "Quick summary" uses static descriptions,
+      "AI descriptions" calls Claude; type badges colour-coded (Metric=blue, Dimension=purple, Date=green,
+      ID=gray, Flag=yellow, Text=orange); show/hide for datasets with >8 columns; Regenerate button.
+      `DataDictionary` + `ColumnDescription` + `ColumnSemanticType` types; `api.data.getDictionary()` +
+      `api.data.generateDictionary()` client methods. Closes the "smart colleague" promise — a colleague
+      would explain what each column means to an analyst inheriting unfamiliar data.
+      *Day 9 (08:07): 32 backend + 15 frontend = 47 new tests. Total: 1096 backend + 426 frontend = 1522.*
+
 - [x] **Cross-deployment model comparison** — POST /api/predict/compare accepts 2-4 deployment IDs and
       a feature dict, returns predictions from each model version so analysts can verify whether a retrained
       model improved on their specific inputs. GET /api/deployments now accepts optional `?project_id=` filter
