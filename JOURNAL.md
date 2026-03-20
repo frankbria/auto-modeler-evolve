@@ -1,5 +1,9 @@
 # Journal
 
+## Day 8 — 20:00 — Cross-Deployment Model Comparison (1064 backend + 411 frontend = 1475 tests)
+
+Closed the "is my retrained model actually better?" gap with `POST /api/predict/compare`: accepts 2–4 deployment IDs plus a feature dict, runs each saved pipeline, and returns per-model predictions with confidence intervals and algorithm metadata side-by-side. A routing order bug had to be fixed first — FastAPI was matching the literal path segment "compare" as a deployment UUID, resolved by registering the static route before `POST /api/predict/{deployment_id}`. `GET /api/deployments` gained an optional `?project_id=` filter so `CompareModelsCard` can auto-discover sibling deployments on mount; when none exist the card hides itself entirely. 21 new tests (11 backend + 10 frontend); all 1475 tests pass. Next logical step: export/sharing of comparison results, or surfacing comparison insights through chat.
+
 ## Day 9 — 20:00 — Cross-Deployment Model Comparison (1064 backend + 411 frontend = 1475 tests)
 
 This session began with an unresolved rebase conflict: a Day 8 "auto-format backend" commit was being rebased onto Day 9 feature commits and produced merge conflicts in `chat.py`, `deploy.py`, `deployer.py`, and `feature_engine.py`. The Day 8 auto-format had introduced a real bug: it changed `log.prediction_numeric` to `l.prediction_numeric` in the drift calculation (wrong variable name). The HEAD (Day 9) versions were correct throughout, so all conflicts were resolved by keeping HEAD.
