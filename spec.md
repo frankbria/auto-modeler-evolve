@@ -438,6 +438,17 @@ guides them forward through the natural flow.
       Also: auto-fixed 149 ruff lint errors (F401/F841/E401/F541) across backend test files and
       API modules; fixed jest.config.js ESLint error.
 
+- [x] **Prediction confidence intervals** — Regression predictions now return a 95% prediction
+      interval (lower, upper) computed from residual std on training data. Classification
+      predictions return a `confidence` field = max(predict_proba). `PredictionPipeline` stores
+      `residual_std`; at deploy time `api/deploy.py` loads the model and computes std(y_true - y_pred)
+      on training data, storing it in the pipeline file. `predict_single()` returns `confidence_interval`
+      dict when residual_std > 0. Frontend: `ConfidenceIntervalBadge` on predict/[id] page shows
+      "95% prediction interval: X – Y" below the main prediction value; classification shows a green
+      "Model confidence: N%" badge. `ConfidenceInterval` type added to types.ts. Directly implements
+      the "not a black box" vision promise for the shareable analyst dashboard.
+      *Day 9 (00:05): 14 backend + 6 frontend = 20 new tests. Total: 1053 backend + 401 frontend = 1454.*
+
 #### Track C — Coordination
 
 - [x] **Update BACKLOG.md** — Before starting work, check BACKLOG.md for what the other
