@@ -21,6 +21,7 @@ import { DeploymentPanel } from "@/components/deploy/deployment-panel"
 import { AnomalyCard } from "@/components/data/anomaly-card"
 import { CleaningCard } from "@/components/data/cleaning-card"
 import { RefreshCard } from "@/components/data/refresh-card"
+import { DictionaryCard } from "@/components/data/dictionary-card"
 import { api } from "@/lib/api"
 import { useAppStore } from "@/lib/store"
 import type {
@@ -678,6 +679,12 @@ export default function ProjectWorkspace() {
                         />
                       </div>
                     )}
+                    <div className="border-t px-4 py-3">
+                      <h3 className="mb-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                        Data Dictionary
+                      </h3>
+                      <DictionaryCard datasetId={currentDataset.id} />
+                    </div>
                   </div>
                 )}
 

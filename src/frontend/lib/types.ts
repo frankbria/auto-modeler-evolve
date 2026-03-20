@@ -781,3 +781,31 @@ export interface ModelComparisonResult {
 export interface ComparisonResponse {
   results: ModelComparisonResult[]
 }
+
+// ---------------------------------------------------------------------------
+// Data Dictionary (Phase 8)
+// ---------------------------------------------------------------------------
+
+export type ColumnSemanticType = "id" | "metric" | "dimension" | "date" | "flag" | "text" | "unknown"
+
+export interface ColumnDescription {
+  name: string
+  dtype: string
+  col_type: ColumnSemanticType
+  description: string
+  non_null_count?: number
+  null_count?: number
+  null_pct?: number
+  unique_count?: number
+  min?: number | null
+  max?: number | null
+  mean?: number | null
+  sample_values?: (string | number | null)[]
+}
+
+export interface DataDictionary {
+  dataset_id: string
+  filename: string
+  generated: boolean
+  columns: ColumnDescription[]
+}

@@ -25,6 +25,7 @@ import type {
   ProjectAlerts,
   AnomalyResult,
   DatasetRefreshResult,
+  DataDictionary,
 } from "./types"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
@@ -251,6 +252,14 @@ export const api = {
         body: form,
       }).then((r) => r.json())
     },
+
+    getDictionary: (datasetId: string): Promise<DataDictionary> =>
+      fetch(`${API_URL}/api/data/${datasetId}/dictionary`).then((r) => r.json()),
+
+    generateDictionary: (datasetId: string): Promise<DataDictionary> =>
+      fetch(`${API_URL}/api/data/${datasetId}/dictionary`, { method: "POST" }).then((r) =>
+        r.json()
+      ),
   },
 
   chat: {
