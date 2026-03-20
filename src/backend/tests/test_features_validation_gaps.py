@@ -6,11 +6,10 @@
 import io
 import json
 import asyncio
-from pathlib import Path
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-from sqlmodel import Session, SQLModel, create_engine, select
+from sqlmodel import Session, SQLModel, create_engine
 
 import db as db_module
 
@@ -391,11 +390,6 @@ class TestValidationApiGaps:
     async def test_validate_metrics_unknown_algorithm(self, ac, project_id, feature_set_id, dataset_id, tmp_path):
         from models.model_run import ModelRun
         fake_model = tmp_path / "model.joblib"
-        # Use an actual dataset file path so context loads OK
-        from models.dataset import Dataset as DS
-        with Session(db_module.engine) as session:
-            ds = session.get(DS, dataset_id)
-            real_path = ds.file_path
         fake_model.write_bytes(b"fake")
         with Session(db_module.engine) as session:
             run = ModelRun(

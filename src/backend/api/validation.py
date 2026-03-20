@@ -17,7 +17,6 @@ import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
 
-import db as _db
 from core.explainer import compute_feature_importance, explain_single_prediction
 from core.feature_engine import apply_transformations
 from core.trainer import (

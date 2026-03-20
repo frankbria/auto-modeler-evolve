@@ -111,10 +111,10 @@ def compute_confusion_matrix(
     correct = int(np.trace(cm))
 
     if class_labels is not None:
-        labels = [str(l) for l in class_labels]
+        labels = [str(lbl) for lbl in class_labels]
     else:
         unique = sorted(set(y_true.tolist()))
-        labels = [str(l) for l in unique]
+        labels = [str(lbl) for lbl in unique]
 
     return {
         "matrix": cm.tolist(),

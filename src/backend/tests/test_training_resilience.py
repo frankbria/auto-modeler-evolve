@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import io
 import time
-from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -100,7 +99,8 @@ class _FakeStream:
     def __exit__(self, *args): pass
     def text_stream(self): yield "Analysis complete."
     def get_final_message(self):
-        class _Msg: content = [type("B", (), {"text": "."})()]
+        class _Msg:
+            content = [type("B", (), {"text": "."})()]
         return _Msg()
 
 class _FakeAnthropic:
@@ -278,7 +278,6 @@ class TestPoorlyPerformingModel:
         # Detect what problem type was inferred
         recs_resp = client.get(f"/api/models/{project_id}/recommendations")
         assert recs_resp.status_code == 200, recs_resp.text
-        problem_type = recs_resp.json()["problem_type"]
         # Use the first recommended algorithm for whichever problem type was detected
         recommended_algo = recs_resp.json()["recommendations"][0]["algorithm"]
 

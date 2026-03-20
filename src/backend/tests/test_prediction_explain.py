@@ -3,7 +3,6 @@
 import io
 import time
 
-import numpy as np
 import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
@@ -59,14 +58,6 @@ def client(tmp_path):
     db_module.engine = create_engine(f"sqlite:///{test_db}", echo=False)
     db_module.DATA_DIR = tmp_path
 
-    import models.project
-    import models.dataset
-    import models.feature_set
-    import models.model_run
-    import models.deployment
-    import models.conversation
-    import models.prediction_log
-    import models.feedback_record
     SQLModel.metadata.create_all(db_module.engine)
 
     from main import app

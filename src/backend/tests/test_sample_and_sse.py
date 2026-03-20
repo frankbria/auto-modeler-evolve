@@ -1,12 +1,8 @@
 """Tests for sample dataset loading and SSE training stream."""
-import json
-import time
-import threading
-from pathlib import Path
 
 import pytest
 from httpx import AsyncClient, ASGITransport
-from sqlmodel import Session, create_engine, SQLModel
+from sqlmodel import create_engine, SQLModel
 
 import db as db_module
 

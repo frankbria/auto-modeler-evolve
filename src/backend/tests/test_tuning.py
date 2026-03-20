@@ -12,7 +12,6 @@ Covers:
 from __future__ import annotations
 
 import io
-import json
 import time
 
 import numpy as np

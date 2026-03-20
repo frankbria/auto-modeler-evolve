@@ -1,5 +1,4 @@
 """Tests for chat/narration.py — plain-English event narrators."""
-import pytest
 import json
 
 
@@ -160,7 +159,6 @@ class TestNarrateDeployment:
 class TestAppendBotMessage:
     def test_creates_conversation_and_appends(self, tmp_path):
         """append_bot_message_to_conversation should create a Conversation if none exists."""
-        import os
         from sqlmodel import Session, SQLModel, create_engine
         from models.conversation import Conversation
         from chat.narration import append_bot_message_to_conversation

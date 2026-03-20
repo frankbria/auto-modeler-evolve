@@ -295,11 +295,9 @@ def build_model_comparison_radar(
         return None
 
     if problem_type == "regression":
-        higher_is_better = ["r2"]
         lower_is_better = ["mae", "rmse"]
         metric_labels = {"r2": "R²", "mae": "MAE Score", "rmse": "RMSE Score"}
     else:
-        higher_is_better = ["accuracy", "f1", "precision", "recall"]
         lower_is_better = []
         metric_labels = {
             "accuracy": "Accuracy",

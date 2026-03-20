@@ -18,7 +18,6 @@ Thresholds are intentionally generous (CI machines vary) but catch real regressi
 
 from __future__ import annotations
 
-import io
 import json
 import time
 from pathlib import Path

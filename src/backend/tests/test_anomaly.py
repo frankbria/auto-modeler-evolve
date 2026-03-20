@@ -1,9 +1,6 @@
 """Tests for anomaly detection: core logic + API endpoint + chat pattern."""
 from __future__ import annotations
 
-import json
-import re
-from pathlib import Path
 from unittest.mock import patch
 
 import numpy as np
@@ -194,8 +191,6 @@ class TestAnomalyEndpoint:
         # Upload a text-only CSV
         df_text = pd.DataFrame({"name": ["Alice", "Bob", "Carol"] * 20, "city": ["NY", "LA", "SF"] * 20})
         csv_b = df_text.to_csv(index=False).encode()
-        import api.data as data_module
-        from pathlib import Path as P
         r2 = c.post(
             "/api/data/upload",
             data={"project_id": pid},

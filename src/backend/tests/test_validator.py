@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import io
-import json
 import time
 
 import numpy as np
@@ -247,7 +246,7 @@ class TestAssessConfidenceLimitations:
             n_features=3,
             cv_std=0.04,
         )
-        assert any("30 rows" in l for l in result["limitations"])
+        assert any("30 rows" in lim for lim in result["limitations"])
 
     def test_warns_on_high_cv_variance(self):
         from core.validator import assess_confidence_limitations
@@ -259,7 +258,7 @@ class TestAssessConfidenceLimitations:
             n_features=5,
             cv_std=0.15,
         )
-        assert any("variance" in l.lower() for l in result["limitations"])
+        assert any("variance" in lim.lower() for lim in result["limitations"])
 
     def test_no_limitations_message_on_clean_model(self):
         from core.validator import assess_confidence_limitations
@@ -271,7 +270,7 @@ class TestAssessConfidenceLimitations:
             n_features=5,
             cv_std=0.02,
         )
-        assert any("no major" in l.lower() for l in result["limitations"])
+        assert any("no major" in lim.lower() for lim in result["limitations"])
 
 
 # ---------------------------------------------------------------------------

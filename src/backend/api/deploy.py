@@ -25,7 +25,6 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
-import db as _db
 from core.deployer import (
     build_prediction_pipeline,
     explain_prediction,
@@ -146,8 +145,8 @@ def deploy_model(
     deployment = Deployment(
         model_run_id=model_run_id,
         project_id=run.project_id,
-        endpoint_path=f"/api/predict/{{id}}",  # filled at serve time
-        dashboard_url=f"/predict/{{id}}",
+        endpoint_path="/api/predict/{id}",  # filled at serve time
+        dashboard_url="/predict/{id}",
         pipeline_path=str(pipeline_path),
         algorithm=run.algorithm,
         problem_type=problem_type,
@@ -481,7 +480,7 @@ def get_prediction_logs(
     ).all()
 
     # Sort by most recent first
-    sorted_logs = sorted(all_logs, key=lambda l: l.created_at, reverse=True)
+    sorted_logs = sorted(all_logs, key=lambda log: log.created_at, reverse=True)
     page = sorted_logs[offset : offset + limit]
 
     return {
@@ -534,7 +533,7 @@ def get_prediction_drift(
         select(PredictionLog)
         .where(PredictionLog.deployment_id == deployment_id)
     ).all()
-    logs_sorted = sorted(all_logs, key=lambda l: l.created_at)
+    logs_sorted = sorted(all_logs, key=lambda log: log.created_at)
 
     min_required = window * 2
     if len(logs_sorted) < min_required:
@@ -559,8 +558,8 @@ def get_prediction_drift(
     problem_type = deployment.problem_type or "regression"
 
     if problem_type == "regression":
-        baseline_vals = [l.prediction_numeric for l in baseline_logs if l.prediction_numeric is not None]
-        recent_vals = [l.prediction_numeric for l in recent_logs if l.prediction_numeric is not None]
+        baseline_vals = [log.prediction_numeric for log in baseline_logs if log.prediction_numeric is not None]
+        recent_vals = [log.prediction_numeric for log in recent_logs if log.prediction_numeric is not None]
 
         if not baseline_vals or not recent_vals:
             return {
@@ -624,9 +623,9 @@ def get_prediction_drift(
         # Classification: compare class distribution proportions
         def _class_dist(logs: list) -> dict[str, float]:
             counts: dict[str, int] = {}
-            for l in logs:
+            for log in logs:
                 try:
-                    label = str(json.loads(l.prediction))
+                    label = str(json.loads(log.prediction))
                 except (json.JSONDecodeError, TypeError):
                     label = "unknown"
                 counts[label] = counts.get(label, 0) + 1
@@ -1284,15 +1283,15 @@ def get_model_health(
         select(PredictionLog).where(PredictionLog.deployment_id == deployment_id)
     ).all()
     if len(all_logs) >= 40:  # minimum for drift comparison
-        logs_sorted = sorted(all_logs, key=lambda l: l.created_at)
+        logs_sorted = sorted(all_logs, key=lambda log: log.created_at)
         window = 20
         baseline_logs = logs_sorted[:window]
         recent_logs = logs_sorted[-window:]
         problem_type = deployment.problem_type or "regression"
 
         if problem_type == "regression":
-            baseline_vals = [l.prediction_numeric for l in baseline_logs if l.prediction_numeric is not None]
-            recent_vals = [l.prediction_numeric for l in recent_logs if l.prediction_numeric is not None]
+            baseline_vals = [log.prediction_numeric for log in baseline_logs if log.prediction_numeric is not None]
+            recent_vals = [log.prediction_numeric for log in recent_logs if log.prediction_numeric is not None]
             if baseline_vals and recent_vals:
                 b_mean = sum(baseline_vals) / len(baseline_vals)
                 r_mean = sum(recent_vals) / len(recent_vals)
@@ -1309,8 +1308,8 @@ def get_model_health(
                     drift_note = "Significant drift detected — retraining is strongly recommended."
         else:
             # Classification: total variation distance
-            baseline_preds = [str(json.loads(l.prediction)) for l in baseline_logs if l.prediction]
-            recent_preds = [str(json.loads(l.prediction)) for l in recent_logs if l.prediction]
+            baseline_preds = [str(json.loads(log.prediction)) for log in baseline_logs if log.prediction]
+            recent_preds = [str(json.loads(log.prediction)) for log in recent_logs if log.prediction]
             all_classes = set(baseline_preds + recent_preds)
             if all_classes and baseline_preds and recent_preds:
                 b_n, r_n = len(baseline_preds), len(recent_preds)

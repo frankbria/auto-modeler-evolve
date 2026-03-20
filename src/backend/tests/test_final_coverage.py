@@ -9,17 +9,15 @@ from __future__ import annotations
 import io
 import json
 import os
-import tempfile
 from datetime import datetime
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pandas as pd
 import pytest
 from httpx import ASGITransport, AsyncClient
-from sklearn.linear_model import LinearRegression, LogisticRegression
-from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier
 from sqlmodel import Session, SQLModel, create_engine
 
 import db as db_module
@@ -56,7 +54,6 @@ async def ac(tmp_path, monkeypatch):
     import api.data as data_module
     import api.deploy as deploy_module
     import api.models as models_module
-    import api.templates as templates_module
 
     data_module.UPLOAD_DIR = tmp_path / "uploads"
     models_module.MODELS_DIR = tmp_path / "models"
@@ -595,7 +592,7 @@ class TestReportGeneratorCoverage:
     def test_generate_model_report_skips_none_metrics(self):
         """Line 248: `if val is None: continue` in metrics table."""
         from core.report_generator import generate_model_report
-        from datetime import datetime, timezone
+        from datetime import timezone
 
         pdf_bytes = generate_model_report(
             project_name="Test Project",
@@ -870,7 +867,6 @@ class TestModelsApiCoverage:
     @pytest.mark.asyncio
     async def test_download_model_returns_file(self, ac):
         """Lines 600-601: model download returns file."""
-        import time
         client, _, _ = ac
 
         project_id, run_id, _ = await _setup_trained_run(client)
@@ -1052,8 +1048,6 @@ class TestDataApiTimeseriesException:
         dataset_id = r.json()["dataset_id"]
 
         # Patch pd.to_datetime inside the data module to raise
-        orig = data_mod.pd.to_datetime
-
         def _raise_to_datetime(col, *args, **kwargs):
             raise ValueError("mocked parse error")
 

@@ -1,7 +1,6 @@
 """Tests for core/trainer.py and the /api/models/* endpoints — Phase 4."""
 
 import io
-import json
 import time
 
 import numpy as np

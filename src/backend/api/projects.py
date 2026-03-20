@@ -533,7 +533,7 @@ def get_project_alerts(
             select(PredictionLog).where(PredictionLog.deployment_id == dep.id)
         ).all()
         if len(logs) >= 40:
-            logs_sorted = sorted(logs, key=lambda l: l.created_at)
+            logs_sorted = sorted(logs, key=lambda log: log.created_at)
             window = 20
             baseline = logs_sorted[:window]
             recent = logs_sorted[-window:]
@@ -541,8 +541,8 @@ def get_project_alerts(
 
             drift_score: int | None = None
             if problem_type == "regression":
-                b_vals = [l.prediction_numeric for l in baseline if l.prediction_numeric is not None]
-                r_vals = [l.prediction_numeric for l in recent if l.prediction_numeric is not None]
+                b_vals = [log.prediction_numeric for log in baseline if log.prediction_numeric is not None]
+                r_vals = [log.prediction_numeric for log in recent if log.prediction_numeric is not None]
                 if b_vals and r_vals:
                     b_mean = sum(b_vals) / len(b_vals)
                     r_mean = sum(r_vals) / len(r_vals)
@@ -550,8 +550,8 @@ def get_project_alerts(
                     z = abs(r_mean - b_mean) / (b_std + 1e-9)
                     drift_score = min(100, int(z * 33))
             else:
-                b_preds = [l.prediction for l in baseline if l.prediction]
-                r_preds = [l.prediction for l in recent if l.prediction]
+                b_preds = [log.prediction for log in baseline if log.prediction]
+                r_preds = [log.prediction for log in recent if log.prediction]
                 all_labels = set(b_preds + r_preds)
                 if all_labels:
                     bn, rn = len(b_preds) or 1, len(r_preds) or 1

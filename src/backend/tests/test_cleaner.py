@@ -9,12 +9,8 @@ Coverage:
 from __future__ import annotations
 
 import io
-import json
-import re
 from pathlib import Path
-from unittest.mock import patch
 
-import numpy as np
 import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
@@ -258,10 +254,9 @@ class TestCleanEndpoint:
         from sqlmodel import create_engine, SQLModel
         import db
 
-        import tempfile, os
+        import tempfile
         with tempfile.TemporaryDirectory() as tmp:
             db.engine = create_engine(f"sqlite:///{tmp}/test.db", echo=False)
-            import models.project, models.dataset, models.feature_set, models.conversation, models.model_run, models.deployment, models.prediction_log
             SQLModel.metadata.create_all(db.engine)
             db.DATA_DIR = Path(tmp)
 
@@ -285,7 +280,6 @@ class TestCleanEndpoint:
         import tempfile
         with tempfile.TemporaryDirectory() as tmp:
             db.engine = create_engine(f"sqlite:///{tmp}/test.db", echo=False)
-            import models.project, models.dataset, models.feature_set, models.conversation, models.model_run, models.deployment, models.prediction_log
             SQLModel.metadata.create_all(db.engine)
             db.DATA_DIR = Path(tmp)
 
@@ -309,7 +303,6 @@ class TestCleanEndpoint:
         import tempfile
         with tempfile.TemporaryDirectory() as tmp:
             db.engine = create_engine(f"sqlite:///{tmp}/test.db", echo=False)
-            import models.project, models.dataset, models.feature_set, models.conversation, models.model_run, models.deployment, models.prediction_log
             SQLModel.metadata.create_all(db.engine)
             db.DATA_DIR = Path(tmp)
 
@@ -332,7 +325,6 @@ class TestCleanEndpoint:
         import tempfile
         with tempfile.TemporaryDirectory() as tmp:
             db.engine = create_engine(f"sqlite:///{tmp}/test.db", echo=False)
-            import models.project, models.dataset, models.feature_set, models.conversation, models.model_run, models.deployment, models.prediction_log
             SQLModel.metadata.create_all(db.engine)
             db.DATA_DIR = Path(tmp)
 
@@ -352,7 +344,6 @@ class TestCleanEndpoint:
         import tempfile
         with tempfile.TemporaryDirectory() as tmp:
             db.engine = create_engine(f"sqlite:///{tmp}/test.db", echo=False)
-            import models.project, models.dataset, models.feature_set, models.conversation, models.model_run, models.deployment, models.prediction_log
             SQLModel.metadata.create_all(db.engine)
             db.DATA_DIR = Path(tmp)
 
@@ -372,11 +363,10 @@ class TestCleanEndpoint:
         import tempfile
         with tempfile.TemporaryDirectory() as tmp:
             db.engine = create_engine(f"sqlite:///{tmp}/test.db", echo=False)
-            import models.project, models.dataset, models.feature_set, models.conversation, models.model_run, models.deployment, models.prediction_log
             SQLModel.metadata.create_all(db.engine)
             db.DATA_DIR = Path(tmp)
 
-            r = client.post(f"/api/data/nonexistent-id/clean", json={"operation": "remove_duplicates"})
+            r = client.post("/api/data/nonexistent-id/clean", json={"operation": "remove_duplicates"})
             assert r.status_code == 404
 
 

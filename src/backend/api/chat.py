@@ -282,7 +282,7 @@ def _compute_readiness(run: ModelRun, dataset: Dataset | None, feature_set: Feat
 def _compute_drift(deployment: Deployment, logs: list) -> dict:
     """Compute prediction drift inline (same logic as GET /api/deploy/{id}/drift)."""
     WINDOW = 10
-    logs_sorted = sorted(logs, key=lambda l: l.created_at)
+    logs_sorted = sorted(logs, key=lambda log: log.created_at)
 
     if len(logs_sorted) < WINDOW * 2:
         return {
@@ -301,8 +301,8 @@ def _compute_drift(deployment: Deployment, logs: list) -> dict:
     problem_type = deployment.problem_type or "regression"
 
     if problem_type == "regression":
-        b_vals = [l.prediction_numeric for l in baseline if l.prediction_numeric is not None]
-        r_vals = [l.prediction_numeric for l in recent if l.prediction_numeric is not None]
+        b_vals = [log.prediction_numeric for log in baseline if log.prediction_numeric is not None]
+        r_vals = [log.prediction_numeric for log in recent if log.prediction_numeric is not None]
         if not b_vals or not r_vals:
             return {"deployment_id": deployment.id, "status": "insufficient_data",
                     "drift_score": None, "explanation": "No numeric values.", "problem_type": problem_type}
@@ -319,9 +319,9 @@ def _compute_drift(deployment: Deployment, logs: list) -> dict:
     else:
         def _dist(ls: list) -> dict[str, float]:
             counts: dict[str, int] = {}
-            for l in ls:
+            for log in ls:
                 try:
-                    label = str(json.loads(l.prediction))
+                    label = str(json.loads(log.prediction))
                 except (json.JSONDecodeError, TypeError):
                     label = "unknown"
                 counts[label] = counts.get(label, 0) + 1
@@ -388,14 +388,14 @@ def _compute_health(deployment: Deployment, run: ModelRun, feedback_records: lis
     drift_health_score = 100
     has_drift_data = len(all_logs) >= 40
     if has_drift_data:
-        logs_sorted = sorted(all_logs, key=lambda l: l.created_at)
+        logs_sorted = sorted(all_logs, key=lambda log: log.created_at)
         window = 20
         baseline_logs = logs_sorted[:window]
         recent_logs = logs_sorted[-window:]
         problem_type = deployment.problem_type or "regression"
         if problem_type == "regression":
-            b_vals = [l.prediction_numeric for l in baseline_logs if l.prediction_numeric is not None]
-            r_vals = [l.prediction_numeric for l in recent_logs if l.prediction_numeric is not None]
+            b_vals = [log.prediction_numeric for log in baseline_logs if log.prediction_numeric is not None]
+            r_vals = [log.prediction_numeric for log in recent_logs if log.prediction_numeric is not None]
             if b_vals and r_vals:
                 b_mean = sum(b_vals) / len(b_vals)
                 r_mean = sum(r_vals) / len(r_vals)
@@ -403,8 +403,8 @@ def _compute_health(deployment: Deployment, run: ModelRun, feedback_records: lis
                 z = abs(r_mean - b_mean) / (b_std + 1e-9)
                 drift_health_score = 100 if z < 1.0 else (60 if z < 2.0 else 25)
         else:
-            b_preds = [str(json.loads(l.prediction)) for l in baseline_logs if l.prediction]
-            r_preds = [str(json.loads(l.prediction)) for l in recent_logs if l.prediction]
+            b_preds = [str(json.loads(log.prediction)) for log in baseline_logs if log.prediction]
+            r_preds = [str(json.loads(log.prediction)) for log in recent_logs if log.prediction]
             all_classes = set(b_preds + r_preds)
             if all_classes:
                 b_n, r_n = len(b_preds) or 1, len(r_preds) or 1

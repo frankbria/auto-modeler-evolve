@@ -5,15 +5,12 @@ coverage debugging easy.
 """
 import io
 import json
-import shutil
-import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pandas as pd
 import pytest
 from httpx import ASGITransport, AsyncClient
-from sqlmodel import Session, SQLModel, create_engine, select
+from sqlmodel import Session, SQLModel, create_engine
 
 import db as db_module
 

@@ -7,8 +7,6 @@ Tests for time-series decomposition:
 """
 from __future__ import annotations
 
-import io
-import os
 
 import pandas as pd
 import pytest

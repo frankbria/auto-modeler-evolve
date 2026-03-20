@@ -10,13 +10,11 @@ Both regression and classification paths are exercised.
 from __future__ import annotations
 
 import io
-import json
 import time
 
-import numpy as np
 import pytest
 from fastapi.testclient import TestClient
-from sqlmodel import SQLModel, Session, create_engine, select
+from sqlmodel import SQLModel, create_engine
 
 import db as db_module
 
@@ -125,7 +123,7 @@ def _setup_deployed_regression(client) -> tuple[str, str]:
     dep_id = dep["id"]
 
     # Make a prediction so we have a log entry
-    pred_r = client.post(
+    client.post(
         f"/api/predict/{dep_id}",
         json={"product": "Widget A", "region": "North", "units": 12},
     )

@@ -1,5 +1,4 @@
 """Tests for POST /api/data/upload-url — Google Sheets and CSV URL import."""
-import io
 import pytest
 from unittest.mock import MagicMock, patch
 from httpx import AsyncClient, ASGITransport

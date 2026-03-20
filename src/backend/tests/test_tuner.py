@@ -2,12 +2,10 @@
 
 import io
 import json
-import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import numpy as np
-import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import SQLModel, create_engine
@@ -76,8 +74,6 @@ def _setup_trained_model(client, tmp_path, algorithm="random_forest_regressor"):
     # Apply features (empty = creates FeatureSet) — returns 201
     r = client.post(f"/api/features/{dataset_id}/apply", json={"transformations": []})
     assert r.status_code in (200, 201)
-    feature_set_id = r.json()["feature_set_id"]
-
     # Set target
     r = client.post(
         f"/api/features/{dataset_id}/target",
@@ -407,7 +403,6 @@ class TestChatTuneIntent:
     def _setup_trained_project(self, client, tmp_path):
         from sqlmodel import Session
         from models.model_run import ModelRun
-        from models.feature_set import FeatureSet
 
         r = client.post("/api/projects", json={"name": "Chat Tune Test"})
         project_id = r.json()["id"]

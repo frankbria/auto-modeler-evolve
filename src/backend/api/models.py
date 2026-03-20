@@ -23,7 +23,6 @@ from sqlmodel import Session, select
 import db as _db
 from chat.narration import (
     append_bot_message_to_conversation,
-    narrate_training_complete,
     narrate_training_with_ai,
 )
 from core.feature_engine import apply_transformations

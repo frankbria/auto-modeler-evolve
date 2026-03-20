@@ -1,7 +1,6 @@
 """Tests for GET /api/models/{project_id}/history and _compute_trend."""
 
 import io
-import json
 import time
 
 import pytest
