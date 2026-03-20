@@ -562,5 +562,13 @@ export const api = {
         if (!r.ok) throw new Error(`HTTP ${r.status}`)
         return r.json()
       }),
+
+    getIntegration: (
+      deploymentId: string,
+      baseUrl?: string
+    ): Promise<import("./types").IntegrationSnippets> =>
+      fetch(
+        `${API_URL}/api/deploy/${deploymentId}/integration${baseUrl ? `?base_url=${encodeURIComponent(baseUrl)}` : ""}`
+      ).then((r) => r.json()),
   },
 }

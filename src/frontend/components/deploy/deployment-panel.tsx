@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { api } from "@/lib/api"
 import type { Deployment, DeploymentAnalytics, ModelReadiness, DriftReport, WhatIfResult, FeedbackAccuracy, ModelHealth, ProjectAlerts, ProjectAlert } from "@/lib/types"
+import { IntegrationCard } from "./integration-card"
 
 interface DeploymentPanelProps {
   projectId: string
@@ -760,6 +761,7 @@ export function DeploymentPanel({
         {deployment && <FeedbackCard deploymentId={deployment.id} problemType={deployment.problem_type} />}
         {deployment && <ModelHealthCard deploymentId={deployment.id} projectId={projectId} />}
         <AlertsCard projectId={projectId} />
+        {deployment && <IntegrationCard deploymentId={deployment.id} />}
 
         <div className="flex justify-end">
           <Button

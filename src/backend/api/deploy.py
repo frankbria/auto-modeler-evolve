@@ -1587,6 +1587,121 @@ def get_model_health(
 
 
 # ---------------------------------------------------------------------------
+# 14. Developer integration snippets
+# ---------------------------------------------------------------------------
+
+
+@router.get("/api/deploy/{deployment_id}/integration")
+def get_integration_snippets(
+    deployment_id: str,
+    base_url: str = Query("http://localhost:8000", description="Base URL of the API server"),
+    session: Session = Depends(get_session),
+):
+    """Return copy-pasteable code snippets for calling the prediction API.
+
+    Generates curl, Python (requests), and JavaScript (fetch) examples
+    automatically from the deployment's feature schema. Designed for the
+    developer handoff use case: an analyst deploys a model and sends the
+    generated code to their developer to integrate into reporting tools.
+
+    Returns:
+        {endpoint_url, example_input, curl, python, javascript, openapi_url}
+    """
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment:
+        raise HTTPException(status_code=404, detail="Deployment not found")
+
+    feature_names = json.loads(deployment.feature_names) if deployment.feature_names else []
+
+    # Build a realistic example input using feature schema when available
+    example_input: dict = {}
+    if deployment.pipeline_path and Path(deployment.pipeline_path).exists():
+        schema = get_feature_schema(deployment.pipeline_path)
+        for field_info in schema:
+            fname = field_info.get("name", "")
+            ftype = field_info.get("type", "numeric")
+            if ftype == "numeric":
+                example_input[fname] = 1.0
+            else:
+                example_input[fname] = "value"
+    else:
+        # Fallback: use feature names with generic defaults
+        for fname in feature_names:
+            example_input[fname] = 1.0
+
+    endpoint_url = f"{base_url}/api/predict/{deployment_id}"
+    example_json = json.dumps(example_input, indent=2)
+    example_json_compact = json.dumps(example_input)
+
+    # --- curl ---
+    curl_snippet = (
+        f"curl -X POST \\\n"
+        f"  '{endpoint_url}' \\\n"
+        f"  -H 'Content-Type: application/json' \\\n"
+        f"  -d '{example_json_compact}'"
+    )
+
+    # --- Python ---
+    python_snippet = (
+        f"import requests\n\n"
+        f"url = \"{endpoint_url}\"\n"
+        f"data = {example_json}\n\n"
+        f"response = requests.post(url, json=data)\n"
+        f"result = response.json()\n\n"
+        f"print(f\"Prediction: {{result['prediction']}}\")\n"
+    )
+    if deployment.problem_type == "classification":
+        python_snippet += (
+            "print(f\"Confidence: {result.get('confidence', 'N/A')}\")\n"
+        )
+    else:
+        python_snippet += (
+            "if 'confidence_interval' in result:\n"
+            "    ci = result['confidence_interval']\n"
+            "    print(f\"95% interval: {ci['lower']:.2f} – {ci['upper']:.2f}\")\n"
+        )
+
+    # --- JavaScript ---
+    js_snippet = (
+        f"const response = await fetch('{endpoint_url}', {{\n"
+        f"  method: 'POST',\n"
+        f"  headers: {{ 'Content-Type': 'application/json' }},\n"
+        f"  body: JSON.stringify({example_json_compact}),\n"
+        f"}});\n\n"
+        f"const result = await response.json();\n"
+        f"console.log('Prediction:', result.prediction);\n"
+    )
+    if deployment.problem_type == "classification":
+        js_snippet += "console.log('Confidence:', result.confidence);\n"
+    else:
+        js_snippet += (
+            "if (result.confidence_interval) {\n"
+            "  const { lower, upper } = result.confidence_interval;\n"
+            "  console.log(`95% interval: ${lower.toFixed(2)} – ${upper.toFixed(2)}`);\n"
+            "}\n"
+        )
+
+    return {
+        "deployment_id": deployment_id,
+        "endpoint_url": endpoint_url,
+        "problem_type": deployment.problem_type,
+        "target_column": deployment.target_column,
+        "algorithm": deployment.algorithm,
+        "example_input": example_input,
+        "curl": curl_snippet,
+        "python": python_snippet,
+        "javascript": js_snippet,
+        "openapi_url": f"{base_url}/docs",
+        "batch_url": f"{base_url}/api/predict/{deployment_id}/batch",
+        "batch_note": (
+            "For bulk predictions, POST a CSV file to the batch endpoint: "
+            f"curl -X POST '{base_url}/api/predict/{deployment_id}/batch' "
+            "-F 'file=@your_data.csv'"
+        ),
+    }
+
+
+# ---------------------------------------------------------------------------
 # Helper: serialize deployment
 # ---------------------------------------------------------------------------
 

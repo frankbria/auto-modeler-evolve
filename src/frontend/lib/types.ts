@@ -864,3 +864,22 @@ export interface CrosstabResult {
   grand_total: number | null
   summary: string
 }
+
+// ---------------------------------------------------------------------------
+// Developer integration snippets
+// ---------------------------------------------------------------------------
+
+export interface IntegrationSnippets {
+  deployment_id: string
+  endpoint_url: string
+  problem_type: string | null
+  target_column: string | null
+  algorithm: string | null
+  example_input: Record<string, unknown>
+  curl: string
+  python: string
+  javascript: string
+  openapi_url: string
+  batch_url: string
+  batch_note: string
+}
