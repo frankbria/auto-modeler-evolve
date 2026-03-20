@@ -8,6 +8,7 @@ Routes:
   POST   /api/predict/{deployment_id}               — single prediction (JSON → JSON)
   POST   /api/predict/{deployment_id}/batch         — batch prediction (CSV → CSV)
   POST   /api/predict/{deployment_id}/scenarios     — bulk scenario comparison (N what-ifs in one call)
+  POST   /api/predict/compare                       — cross-deployment model comparison (same input, N models)
   GET    /api/deploy/{deployment_id}/analytics      — prediction usage analytics
   GET    /api/deploy/{deployment_id}/logs           — paginated prediction log
 """
@@ -177,11 +178,15 @@ def deploy_model(
 
 
 @router.get("/api/deployments")
-def list_deployments(session: Session = Depends(get_session)):
-    """Return all active deployments."""
-    deployments = session.exec(
-        select(Deployment).where(Deployment.is_active == True)  # noqa: E712
-    ).all()
+def list_deployments(
+    project_id: str | None = Query(None),
+    session: Session = Depends(get_session),
+):
+    """Return all active deployments, optionally filtered by project."""
+    q = select(Deployment).where(Deployment.is_active == True)  # noqa: E712
+    if project_id:
+        q = q.where(Deployment.project_id == project_id)
+    deployments = session.exec(q).all()
     return [_deployment_response(d) for d in deployments]
 
 
@@ -239,7 +244,97 @@ def undeploy_model(
 
 
 # ---------------------------------------------------------------------------
-# 5. Single prediction
+# 5a. Cross-deployment model comparison (must appear before parameterised routes)
+# ---------------------------------------------------------------------------
+
+
+class CompareRequest(BaseModel):
+    deployment_ids: list[str]  # 2-4 deployment IDs to compare
+    features: dict  # input feature values (same for all deployments)
+
+
+@router.post("/api/predict/compare")
+def compare_deployments(
+    body: CompareRequest,
+    session: Session = Depends(get_session),
+):
+    """Compare predictions from multiple deployed model versions on the same input.
+
+    Accepts 2-4 deployment IDs and a feature dict. Returns a prediction from each
+    deployment so analysts can verify whether a retrained model actually improved.
+
+    Returns:
+        {"results": [{deployment_id, algorithm, trained_at, prediction,
+                       confidence_interval, confidence, probabilities, error}]}
+    """
+    if len(body.deployment_ids) < 2:
+        raise HTTPException(
+            status_code=400, detail="At least 2 deployment IDs required for comparison"
+        )
+    if len(body.deployment_ids) > 4:
+        raise HTTPException(
+            status_code=400, detail="Maximum 4 deployments can be compared at once"
+        )
+
+    results = []
+    for dep_id in body.deployment_ids:
+        dep = session.get(Deployment, dep_id)
+        if not dep or not dep.is_active:
+            results.append({"deployment_id": dep_id, "error": "Deployment not found or inactive"})
+            continue
+
+        run = session.get(ModelRun, dep.model_run_id)
+        model_path = run.model_path if run else None
+
+        if not (
+            dep.pipeline_path
+            and model_path
+            and Path(dep.pipeline_path).exists()
+            and Path(model_path).exists()
+        ):
+            results.append(
+                {
+                    "deployment_id": dep_id,
+                    "algorithm": dep.algorithm,
+                    "trained_at": dep.created_at.isoformat() if dep.created_at else None,
+                    "error": "Model file not found",
+                }
+            )
+            continue
+
+        try:
+            pred = predict_single(dep.pipeline_path, model_path, body.features)
+            entry: dict = {
+                "deployment_id": dep_id,
+                "algorithm": dep.algorithm,
+                "trained_at": dep.created_at.isoformat() if dep.created_at else None,
+                "prediction": pred["prediction"],
+                "problem_type": pred.get("problem_type"),
+                "target_column": pred.get("target_column"),
+                "error": None,
+            }
+            if "confidence_interval" in pred:
+                entry["confidence_interval"] = pred["confidence_interval"]
+            if "confidence" in pred:
+                entry["confidence"] = pred["confidence"]
+            if "probabilities" in pred:
+                entry["probabilities"] = pred["probabilities"]
+            results.append(entry)
+        except Exception as exc:
+            results.append(
+                {
+                    "deployment_id": dep_id,
+                    "algorithm": dep.algorithm,
+                    "trained_at": dep.created_at.isoformat() if dep.created_at else None,
+                    "error": str(exc),
+                }
+            )
+
+    return {"results": results}
+
+
+# ---------------------------------------------------------------------------
+# 5b. Single prediction
 # ---------------------------------------------------------------------------
 
 

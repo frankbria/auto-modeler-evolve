@@ -5,6 +5,9 @@ Living document for coordinating between bot instances and tracking ideation.
 
 ## Currently Working On
 
+## Day 9 (20:00) — In Progress
+Cross-deployment model comparison — POST /api/predict/compare (compare predictions from N deployed model versions on same input); GET /api/deployments?project_id= filter; CompareModelsCard on predict/[id] page (auto-detects other versions of same project, side-by-side comparison table); api.ts compareModels() + listByProject(); ModelComparisonResult types. Closes the "is my new model actually better?" loop opened by dataset refresh + retraining.
+
 <!-- Each bot writes here BEFORE starting implementation. Format: -->
 <!-- ## [Bot ID / Timestamp] — [Focus Area] -->
 <!-- Brief description of what you're doing this session. -->

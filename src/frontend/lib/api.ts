@@ -431,6 +431,9 @@ export const api = {
     list: (): Promise<Deployment[]> =>
       fetch(`${API_URL}/api/deployments`).then((r) => r.json()),
 
+    listByProject: (projectId: string): Promise<Deployment[]> =>
+      fetch(`${API_URL}/api/deployments?project_id=${projectId}`).then((r) => r.json()),
+
     get: (deploymentId: string): Promise<Deployment> =>
       fetch(`${API_URL}/api/deploy/${deploymentId}`).then((r) => r.json()),
 
@@ -508,6 +511,19 @@ export const api = {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ base, scenarios }),
+      }).then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        return r.json()
+      }),
+
+    compareModels: (
+      deploymentIds: string[],
+      features: Record<string, unknown>
+    ): Promise<import("./types").ComparisonResponse> =>
+      fetch(`${API_URL}/api/predict/compare`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ deployment_ids: deploymentIds, features }),
       }).then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`)
         return r.json()

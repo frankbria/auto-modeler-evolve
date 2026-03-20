@@ -257,6 +257,7 @@ describe("PredictionDashboard", () => {
 
   it("sends prediction request when predict button clicked", async () => {
     fetchMock.mockResponseOnce(JSON.stringify(mockDeployment))
+    fetchMock.mockResponseOnce(JSON.stringify([])) // listByProject for CompareModelsCard
     fetchMock.mockResponseOnce(
       JSON.stringify({ prediction: 1200.5, deployment_id: "deployment-123" })
     )
@@ -270,13 +271,14 @@ describe("PredictionDashboard", () => {
     if (predictButton) {
       await act(async () => { fireEvent.click(predictButton) })
       await waitFor(() => {
-        expect(fetchMock).toHaveBeenCalledTimes(2)
+        expect(fetchMock).toHaveBeenCalledTimes(3)
       })
     }
   })
 
   it("shows prediction result after successful prediction", async () => {
     fetchMock.mockResponseOnce(JSON.stringify(mockDeployment))
+    fetchMock.mockResponseOnce(JSON.stringify([])) // listByProject for CompareModelsCard
     fetchMock.mockResponseOnce(
       JSON.stringify({ prediction: 1200.5, deployment_id: "deployment-123" })
     )
@@ -296,13 +298,14 @@ describe("PredictionDashboard", () => {
         // After prediction, the result value or prediction-related text should appear
         const allText = document.body.textContent ?? ""
         expect(allText.length).toBeGreaterThan(0)
-        expect(fetchMock).toHaveBeenCalledTimes(2)
+        expect(fetchMock).toHaveBeenCalledTimes(3)
       })
     }
   })
 
   it("handles prediction API error", async () => {
     fetchMock.mockResponseOnce(JSON.stringify(mockDeployment))
+    fetchMock.mockResponseOnce(JSON.stringify([])) // listByProject for CompareModelsCard
     fetchMock.mockResponseOnce(
       JSON.stringify({ detail: "Prediction failed" }),
       { status: 500 }
@@ -319,7 +322,7 @@ describe("PredictionDashboard", () => {
       await act(async () => { fireEvent.click(predictButton) })
       await waitFor(() => {
         // Error message or fallback render
-        expect(fetchMock).toHaveBeenCalledTimes(2)
+        expect(fetchMock).toHaveBeenCalledTimes(3)
       })
     }
   })
@@ -330,6 +333,7 @@ describe("PredictionDashboard", () => {
 
   it("shows session history section after first successful prediction", async () => {
     fetchMock.mockResponseOnce(JSON.stringify(mockDeployment))
+    fetchMock.mockResponseOnce(JSON.stringify([])) // listByProject
     fetchMock.mockResponseOnce(
       JSON.stringify({ prediction: 1500.0, deployment_id: "deployment-123" })
     )
@@ -362,6 +366,7 @@ describe("PredictionDashboard", () => {
 
   it("history section shows Download CSV button", async () => {
     fetchMock.mockResponseOnce(JSON.stringify(mockDeployment))
+    fetchMock.mockResponseOnce(JSON.stringify([])) // listByProject
     fetchMock.mockResponseOnce(
       JSON.stringify({ prediction: 900.0, deployment_id: "deployment-123" })
     )
@@ -385,6 +390,7 @@ describe("PredictionDashboard", () => {
 
   it("history counter increments on successive predictions", async () => {
     fetchMock.mockResponseOnce(JSON.stringify(mockDeployment))
+    fetchMock.mockResponseOnce(JSON.stringify([])) // listByProject
     fetchMock.mockResponseOnce(JSON.stringify({ prediction: 100.0 }))
     fetchMock.mockResponseOnce(JSON.stringify({ prediction: 200.0 }))
 

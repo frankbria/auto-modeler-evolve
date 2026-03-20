@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { api } from "@/lib/api"
-import type { Deployment, FeatureSchemaEntry, PredictionResult, PredictionExplanation, FeatureContribution, ConfidenceInterval } from "@/lib/types"
+import type { Deployment, FeatureSchemaEntry, PredictionResult, PredictionExplanation, FeatureContribution, ConfidenceInterval, ModelComparisonResult, ComparisonResponse } from "@/lib/types"
 
 // ---------------------------------------------------------------------------
 // Feature contribution waterfall (horizontal bar chart)
@@ -95,6 +95,158 @@ function ExplanationCard({ explanation }: { explanation: PredictionExplanation }
           Each bar shows how much that feature pushed the prediction relative to the training average.
         </p>
       </CardContent>
+    </Card>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Cross-deployment model comparison card
+// ---------------------------------------------------------------------------
+
+function CompareResultRow({ result }: { result: ModelComparisonResult }) {
+  const algo = result.algorithm ?? "Unknown"
+  const date = result.trained_at
+    ? new Date(result.trained_at).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })
+    : "—"
+
+  if (result.error) {
+    return (
+      <tr className="border-b last:border-0">
+        <td className="px-3 py-2 text-sm font-medium">{algo}</td>
+        <td className="px-3 py-2 text-xs text-muted-foreground">{date}</td>
+        <td className="px-3 py-2 text-sm text-destructive" colSpan={2}>{result.error}</td>
+      </tr>
+    )
+  }
+
+  const pred = typeof result.prediction === "number"
+    ? result.prediction.toLocaleString(undefined, { maximumFractionDigits: 4 })
+    : String(result.prediction ?? "—")
+
+  const ci = result.confidence_interval
+  const conf = result.confidence
+
+  return (
+    <tr className="border-b last:border-0 hover:bg-muted/20">
+      <td className="px-3 py-2 text-sm font-medium">{algo}</td>
+      <td className="px-3 py-2 text-xs text-muted-foreground tabular-nums">{date}</td>
+      <td className="px-3 py-2 text-sm font-bold tabular-nums" data-testid="compare-prediction">{pred}</td>
+      <td className="px-3 py-2 text-xs text-muted-foreground tabular-nums">
+        {ci ? `${ci.lower.toLocaleString()} – ${ci.upper.toLocaleString()}` : conf != null ? `${Math.round(conf * 100)}% confidence` : "—"}
+      </td>
+    </tr>
+  )
+}
+
+interface CompareModelsCardProps {
+  currentDeploymentId: string
+  projectId: string
+  features: Record<string, unknown>
+}
+
+function CompareModelsCard({ currentDeploymentId, projectId, features }: CompareModelsCardProps) {
+  const [otherDeployments, setOtherDeployments] = useState<Deployment[]>([])
+  const [selectedId, setSelectedId] = useState<string>("")
+  const [comparing, setComparing] = useState(false)
+  const [comparisonResult, setComparisonResult] = useState<ComparisonResponse | null>(null)
+  const [compareError, setCompareError] = useState<string | null>(null)
+  const [open, setOpen] = useState(false)
+
+  useEffect(() => {
+    api.deploy.listByProject(projectId).then((deps) => {
+      const others = deps.filter((d) => d.id !== currentDeploymentId)
+      setOtherDeployments(others)
+      if (others.length > 0) setSelectedId(others[0].id)
+    }).catch(() => {})
+  }, [projectId, currentDeploymentId])
+
+  if (otherDeployments.length === 0) return null
+
+  const handleCompare = async () => {
+    if (!selectedId) return
+    setComparing(true)
+    setCompareError(null)
+    setComparisonResult(null)
+    try {
+      const result = await api.deploy.compareModels([currentDeploymentId, selectedId], features)
+      setComparisonResult(result)
+    } catch {
+      setCompareError("Comparison failed. Please try again.")
+    } finally {
+      setComparing(false)
+    }
+  }
+
+  return (
+    <Card data-testid="compare-models-card">
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-sm">Compare Model Versions</CardTitle>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 text-xs"
+            onClick={() => setOpen((v) => !v)}
+            data-testid="compare-toggle"
+          >
+            {open ? "Hide" : `Compare with another version (${otherDeployments.length} available)`}
+          </Button>
+        </div>
+      </CardHeader>
+      {open && (
+        <CardContent className="space-y-3">
+          <div className="flex items-center gap-2">
+            <select
+              className="flex-1 rounded-md border bg-background px-3 py-1.5 text-sm"
+              value={selectedId}
+              onChange={(e) => setSelectedId(e.target.value)}
+              data-testid="compare-select"
+            >
+              {otherDeployments.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.algorithm ?? "Unknown"} — {d.created_at ? new Date(d.created_at).toLocaleDateString() : "Unknown date"}
+                </option>
+              ))}
+            </select>
+            <Button
+              size="sm"
+              onClick={handleCompare}
+              disabled={comparing || !selectedId}
+              data-testid="compare-button"
+            >
+              {comparing ? "Comparing..." : "Compare"}
+            </Button>
+          </div>
+
+          {compareError && (
+            <p className="text-xs text-destructive">{compareError}</p>
+          )}
+
+          {comparisonResult && (
+            <div className="overflow-x-auto rounded-md border">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b bg-muted/40">
+                    <th className="px-3 py-1.5 text-left font-medium text-muted-foreground">Model</th>
+                    <th className="px-3 py-1.5 text-left font-medium text-muted-foreground">Trained</th>
+                    <th className="px-3 py-1.5 text-left font-medium text-muted-foreground">Prediction</th>
+                    <th className="px-3 py-1.5 text-left font-medium text-muted-foreground">Uncertainty</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {comparisonResult.results.map((r) => (
+                    <CompareResultRow key={r.deployment_id} result={r} />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          <p className="text-[10px] text-muted-foreground">
+            Runs the same inputs through each model version to help you verify whether a retrained model improved.
+          </p>
+        </CardContent>
+      )}
     </Card>
   )
 }
@@ -503,6 +655,14 @@ export default function PredictionDashboard() {
               </div>
             </CardContent>
           </Card>
+        )}
+
+        {deployment.project_id && (
+          <CompareModelsCard
+            currentDeploymentId={deploymentId}
+            projectId={deployment.project_id}
+            features={buildPayload()}
+          />
         )}
 
         <p className="text-center text-xs text-muted-foreground">

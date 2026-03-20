@@ -760,3 +760,24 @@ export interface RefreshPrompt {
   current_row_count: number
   required_columns: string[]
 }
+
+// ---------------------------------------------------------------------------
+// Cross-deployment model comparison
+// ---------------------------------------------------------------------------
+
+export interface ModelComparisonResult {
+  deployment_id: string
+  algorithm: string | null
+  trained_at: string | null
+  prediction: number | string | null
+  problem_type?: string
+  target_column?: string
+  confidence_interval?: ConfidenceInterval
+  confidence?: number
+  probabilities?: Record<string, number>
+  error: string | null
+}
+
+export interface ComparisonResponse {
+  results: ModelComparisonResult[]
+}
