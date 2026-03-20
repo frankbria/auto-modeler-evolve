@@ -497,6 +497,10 @@ guides them forward through the natural flow.
       `ModelComparisonResult` + `ComparisonResponse` types; `api.deploy.compareModels()` + `api.deploy.listByProject()`.
       *Day 9 (20:00): 11 backend + 10 frontend = 21 new tests. Total: 1064 backend + 411 frontend = 1475.*
 
+- [x] **Developer API integration snippets** — When a model is deployed, analysts can share it with their developer via auto-generated copy-pasteable code examples.
+      `GET /api/deploy/{id}/integration` returns curl, Python (requests), and JavaScript (fetch) snippets built from the deployment's feature schema. Custom `base_url` query param allows overriding `localhost` for production. `IntegrationCard` in DeploymentPanel: shows endpoint URL + algorithm/target info, tabbed code blocks (curl/Python/JavaScript) with copy-to-clipboard, batch prediction curl note, OpenAPI docs link. Implements the vision's "An API their developer can plug into the company's reporting tool."
+      *Day 9 (16:10): 18 backend + 16 frontend = 34 new tests. Total: 1159 backend + 465 frontend = 1624.*
+
 #### Track C — Coordination
 
 - [x] **Update BACKLOG.md** — Before starting work, check BACKLOG.md for what the other
