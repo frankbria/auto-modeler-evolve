@@ -23,6 +23,7 @@ import { CleaningCard } from "@/components/data/cleaning-card"
 import { RefreshCard } from "@/components/data/refresh-card"
 import { DictionaryCard } from "@/components/data/dictionary-card"
 import { CrosstabTable } from "@/components/data/crosstab-table"
+import { ComputeCard } from "@/components/data/compute-card"
 import { api } from "@/lib/api"
 import { useAppStore } from "@/lib/store"
 import type {
@@ -38,6 +39,8 @@ import type {
   RefreshPrompt,
   DatasetRefreshResult,
   CrosstabResult,
+  ComputedColumnSuggestion,
+  ComputeResult,
 } from "@/lib/types"
 
 const WELCOME_MESSAGE =
@@ -88,6 +91,7 @@ export default function ProjectWorkspace() {
     appendToLastMessage,
     attachChartToLastMessage,
     attachCrosstabToLastMessage,
+    attachComputeToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -121,6 +125,9 @@ export default function ProjectWorkspace() {
 
   // Refresh prompt (populated via SSE when user mentions having new data)
   const [refreshPrompt, setRefreshPrompt] = useState<RefreshPrompt | null>(null)
+
+  // Computed column suggestion (populated via SSE when user asks to add a derived column)
+  const [computeSuggestion, setComputeSuggestion] = useState<ComputedColumnSuggestion | null>(null)
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
@@ -301,6 +308,10 @@ export default function ProjectWorkspace() {
               } else if (json.type === "refresh_prompt" && json.refresh) {
                 setRefreshPrompt(json.refresh as RefreshPrompt)
                 setActiveTab("data")
+              } else if (json.type === "compute_suggestion" && json.compute) {
+                setComputeSuggestion(json.compute as ComputedColumnSuggestion)
+                attachComputeToLastMessage(json.compute as ComputedColumnSuggestion)
+                setActiveTab("data")
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -324,6 +335,7 @@ export default function ProjectWorkspace() {
     appendToLastMessage,
     attachChartToLastMessage,
     attachCrosstabToLastMessage,
+    attachComputeToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -680,6 +692,24 @@ export default function ProjectWorkspace() {
                             addMessage({
                               role: "assistant",
                               content: `Dataset updated! Your new file has ${result.row_count.toLocaleString()} rows and ${result.column_count} columns.${result.compatible ? " Your model configuration is compatible — you can retrain now." : " Warning: some feature columns are missing. You may need to re-configure features before retraining."}`,
+                              timestamp: new Date().toISOString(),
+                            })
+                          }}
+                        />
+                      </div>
+                    )}
+                    {computeSuggestion && (
+                      <div className="border-t px-4 py-3">
+                        <h3 className="mb-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                          Computed Column
+                        </h3>
+                        <ComputeCard
+                          suggestion={computeSuggestion}
+                          onComputed={(result: ComputeResult) => {
+                            setComputeSuggestion(null)
+                            addMessage({
+                              role: "assistant",
+                              content: `Done! ${result.compute_result.summary}`,
                               timestamp: new Date().toISOString(),
                             })
                           }}

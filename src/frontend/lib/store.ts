@@ -6,6 +6,7 @@ import type {
   ColumnStat,
   ChartSpec,
   CrosstabResult,
+  ComputedColumnSuggestion,
   DataInsight,
 } from "./types"
 
@@ -33,6 +34,7 @@ interface AppState {
   appendToLastMessage: (content: string) => void
   attachChartToLastMessage: (chart: ChartSpec) => void
   attachCrosstabToLastMessage: (crosstab: CrosstabResult) => void
+  attachComputeToLastMessage: (compute: ComputedColumnSuggestion) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -90,6 +92,16 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, crosstab }
+      }
+      return { messages }
+    }),
+
+  attachComputeToLastMessage: (compute) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, compute }
       }
       return { messages }
     }),

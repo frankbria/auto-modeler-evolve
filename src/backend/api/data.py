@@ -33,6 +33,7 @@ from core.chart_builder import (
     build_crosstab,
     build_timeseries_chart,
 )
+from core.computed import add_computed_column
 from core.dictionary import generate_dictionary
 from core.merger import merge_datasets, suggest_join_keys
 from core.query_engine import run_nl_query
@@ -1633,3 +1634,78 @@ def get_crosstab(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     return result
+
+
+# ---------------------------------------------------------------------------
+# Computed columns — add derived columns through conversation
+# ---------------------------------------------------------------------------
+
+
+class ComputeRequest(BaseModel):
+    """Body for POST /api/data/{dataset_id}/compute."""
+
+    name: str
+    expression: str
+
+
+@router.post("/{dataset_id}/compute")
+def compute_column(
+    dataset_id: str,
+    body: ComputeRequest,
+    session: Session = Depends(get_session),
+) -> dict:
+    """Evaluate *expression* and add the result as a new column named *name*.
+
+    The updated CSV is written back to disk and the Dataset record is refreshed.
+
+    POST /api/data/{dataset_id}/compute
+    Body: {"name": "margin", "expression": "revenue / cost"}
+    """
+    dataset = session.get(Dataset, dataset_id)
+    if dataset is None:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    file_path = Path(dataset.file_path)
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Dataset file not found")
+
+    try:
+        df = pd.read_csv(file_path)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"Could not read dataset: {exc}") from exc
+
+    try:
+        updated_df, result = add_computed_column(df, body.name, body.expression)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    # Persist updated CSV back to the same path
+    updated_df.to_csv(file_path, index=False)
+
+    # Recompute profile and update Dataset record
+    profile = compute_full_profile(updated_df)
+    cols_meta = [
+        {
+            "name": col,
+            "dtype": str(updated_df[col].dtype),
+        }
+        for col in updated_df.columns
+    ]
+    dataset.row_count = len(updated_df)
+    dataset.column_count = len(updated_df.columns)
+    dataset.columns = json.dumps(cols_meta)
+    dataset.profile = json.dumps(profile)
+    session.add(dataset)
+    session.commit()
+
+    preview = _sanitize_rows(updated_df.head(10).to_dict(orient="records"))
+
+    return {
+        "dataset_id": dataset_id,
+        "compute_result": result,
+        "preview": preview,
+        "updated_stats": {
+            "row_count": len(updated_df),
+            "column_count": len(updated_df.columns),
+        },
+    }

@@ -114,12 +114,44 @@ export interface ChartSpec {
   y_label: string
 }
 
+// ---------------------------------------------------------------------------
+// Computed columns (derived metrics through conversation)
+// ---------------------------------------------------------------------------
+
+export interface ComputedColumnSuggestion {
+  dataset_id: string
+  name: string
+  expression: string
+  sample_values: (number | string | null)[]
+  dtype: string
+}
+
+export interface ComputeResult {
+  dataset_id: string
+  compute_result: {
+    column_name: string
+    expression: string
+    dtype: string
+    sample_values: (number | string | null)[]
+    row_count: number
+    column_count: number
+    action: "added" | "updated"
+    summary: string
+  }
+  preview: Record<string, unknown>[]
+  updated_stats: {
+    row_count: number
+    column_count: number
+  }
+}
+
 export interface ChatMessage {
   role: "user" | "assistant"
   content: string
   timestamp: string
   chart?: ChartSpec
   crosstab?: CrosstabResult
+  compute?: ComputedColumnSuggestion
 }
 
 export interface QueryResponse {

@@ -27,6 +27,7 @@ import type {
   DatasetRefreshResult,
   DataDictionary,
   CrosstabResult,
+  ComputeResult,
 } from "./types"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
@@ -273,6 +274,17 @@ export const api = {
       if (values) params.set("values", values)
       return fetch(`${API_URL}/api/data/${datasetId}/crosstab?${params}`).then((r) => r.json())
     },
+
+    computeColumn: (
+      datasetId: string,
+      name: string,
+      expression: string
+    ): Promise<ComputeResult> =>
+      fetch(`${API_URL}/api/data/${datasetId}/compute`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, expression }),
+      }).then((r) => r.json()),
   },
 
   chat: {

@@ -276,6 +276,56 @@ def _detect_crosstab_request(message: str, columns: list[str]) -> dict | None:
     return {"row_col": row_col, "col_col": col_col, "value_col": value_col}
 
 
+# Keywords that trigger a computed/derived column suggestion
+_COMPUTE_PATTERNS = re.compile(
+    r"\b(add\s+(?:a\s+)?(?:new\s+)?(?:column|field|variable|metric)|"
+    r"create\s+(?:a\s+)?(?:new\s+)?(?:column|field|variable|metric)|"
+    r"calculate\s+(?:a\s+)?(?:new\s+)?(?:column|field)?|"
+    r"compute\s+(?:a\s+)?(?:new\s+)?(?:column|field)?|"
+    r"derive\s+(?:a\s+)?(?:new\s+)?(?:column|field)?|"
+    r"make\s+(?:a\s+)?(?:new\s+)?(?:column|field)|"
+    r"new\s+column\s+(?:called|named)|"
+    r"column\s+called\s+\w+\s*=|"
+    r"\w+\s*=\s*\w+\s*[+\-*/]\s*\w+)\b",
+    re.IGNORECASE,
+)
+
+# Extract: "add column called NAME = EXPRESSION" / "create X as Y / Z"
+_COMPUTE_EXTRACT = re.compile(
+    r"(?:add|create|calculate|compute|derive|make)\s+(?:a\s+)?(?:new\s+)?"
+    r"(?:column|field|variable|metric)?\s*"
+    r"(?:called|named|as)?\s*['\"]?(\w+)['\"]?\s*"
+    r"(?:=|as|equals?|that\s+is|which\s+is|\:)\s*(.+?)(?:\s*$)",
+    re.IGNORECASE,
+)
+
+
+def _detect_compute_request(message: str, columns: list[str]) -> dict | None:
+    """Extract column name and expression from a natural-language compute request.
+
+    Matches patterns like:
+      "add a column called margin = revenue / cost"
+      "create profit_per_unit as profit / units"
+      "calculate growth_rate = (sales - prev_sales) / prev_sales"
+
+    Returns dict with {name, expression} or None if not parseable.
+    """
+    m = _COMPUTE_EXTRACT.search(message)
+    if not m:
+        return None
+
+    name = m.group(1).strip()
+    expression = m.group(2).strip()
+
+    # Expression must reference at least one existing column
+    col_lower = {c.lower() for c in columns}
+    expr_words = set(re.findall(r"[a-zA-Z_]\w*", expression))
+    if not expr_words.intersection(col_lower):
+        return None
+
+    return {"name": name, "expression": expression}
+
+
 class ChatMessage(BaseModel):
     message: str
 
@@ -1048,6 +1098,37 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Anomaly detection is nice-to-have; never crash chat
 
+    # Check for computed column request ("add column margin = revenue / cost")
+    compute_suggestion: dict | None = None
+    if _COMPUTE_PATTERNS.search(body.message) and ctx["dataset"]:
+        try:
+            _ds = ctx["dataset"]
+            _file_path = Path(_ds.file_path)
+            if _file_path.exists():
+                _df = pd.read_csv(_file_path)
+                _cols = list(_df.columns)
+                _compute_req = _detect_compute_request(body.message, _cols)
+                if _compute_req:
+                    from core.computed import preview_computed_column as _preview_col
+                    _preview = _preview_col(_df, _compute_req["name"], _compute_req["expression"])
+                    compute_suggestion = {
+                        "dataset_id": _ds.id,
+                        "name": _compute_req["name"],
+                        "expression": _compute_req["expression"],
+                        "sample_values": _preview["sample_values"],
+                        "dtype": _preview["dtype"],
+                    }
+                    system_prompt += (
+                        f"\n\n## Computed Column Suggestion\n"
+                        f"The user wants to add a new column '{_compute_req['name']}' "
+                        f"= {_compute_req['expression']}. "
+                        f"Sample values: {_preview['sample_values'][:3]}. "
+                        "A Compute Card is shown in the Data tab. "
+                        "Confirm the column looks correct and ask the user to click Apply to add it."
+                    )
+        except Exception:  # noqa: BLE001
+            pass  # Compute suggestion is nice-to-have; never crash chat
+
     # Check if user has new data to upload — guide them through the refresh workflow
     refresh_prompt_event: dict | None = None
     if _REFRESH_PATTERNS.search(body.message) and ctx["dataset"]:
@@ -1163,6 +1244,10 @@ def send_message(
         # Emit cleaning suggestion (user must click to apply — "explain before executing")
         if cleaning_suggestion:
             yield f"data: {json.dumps({'type': 'cleaning_suggestion', 'cleaning': cleaning_suggestion})}\n\n"
+
+        # Emit computed column suggestion (user must click Apply — "explain before executing")
+        if compute_suggestion:
+            yield f"data: {json.dumps({'type': 'compute_suggestion', 'compute': compute_suggestion})}\n\n"
 
         # Emit refresh prompt — guides user to upload new data
         if refresh_prompt_event:
