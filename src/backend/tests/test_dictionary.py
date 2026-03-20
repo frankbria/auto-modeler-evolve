@@ -16,7 +16,10 @@ from fastapi.testclient import TestClient
 class TestClassifyColumnType:
     def _classify(self, name, dtype, unique, row_count, samples=None, null_pct=0.0):
         from core.dictionary import classify_column_type
-        return classify_column_type(name, dtype, unique, row_count, samples or [], null_pct)
+
+        return classify_column_type(
+            name, dtype, unique, row_count, samples or [], null_pct
+        )
 
     def test_date_hint_in_name(self):
         assert self._classify("order_date", "object", 100, 100) == "date"
@@ -55,7 +58,9 @@ class TestClassifyColumnType:
         assert self._classify("product_category", "object", 20, 100) == "dimension"
 
     def test_text_long_strings(self):
-        long_sample = ["This is a very long description that exceeds sixty characters easily for testing"]
+        long_sample = [
+            "This is a very long description that exceeds sixty characters easily for testing"
+        ]
         assert self._classify("notes", "object", 90, 100, long_sample) == "text"
 
     def test_zero_rows_returns_unknown(self):
@@ -140,15 +145,23 @@ class TestGenerateDictionary:
             result = generate_dictionary(self._make_columns(), row_count=100)
 
         region = next(c for c in result if c["name"] == "region")
-        assert "2.5" in region["description"] or "missing" in region["description"].lower()
+        assert (
+            "2.5" in region["description"] or "missing" in region["description"].lower()
+        )
 
     def test_claude_descriptions_override_fallback(self):
         """When Claude returns JSON, use those descriptions."""
         from core.dictionary import generate_dictionary
 
-        mock_claude = {"revenue": "Total sales amount.", "region": "Geographic area.", "order_date": "When ordered."}
+        mock_claude = {
+            "revenue": "Total sales amount.",
+            "region": "Geographic area.",
+            "order_date": "When ordered.",
+        }
 
-        with patch("core.dictionary._call_claude_for_dictionary", return_value=mock_claude):
+        with patch(
+            "core.dictionary._call_claude_for_dictionary", return_value=mock_claude
+        ):
             result = generate_dictionary(self._make_columns(), row_count=100)
 
         revenue = next(c for c in result if c["name"] == "revenue")

@@ -69,12 +69,16 @@ def classify_column_type(
     # String / object columns — check text length first (before ID check)
     if dtype == "object":
         str_samples = [str(v) for v in sample_values if v is not None]
-        avg_len = sum(len(s) for s in str_samples) / len(str_samples) if str_samples else 0
+        avg_len = (
+            sum(len(s) for s in str_samples) / len(str_samples) if str_samples else 0
+        )
         if avg_len > 60:
             return "text"
 
     # ID column — high cardinality + name hints, or object dtype with > 80% unique
-    if _ID_HINTS.search(lower) or (unique_ratio > 0.85 and dtype in ("object", "int64", "int32", "float64")):
+    if _ID_HINTS.search(lower) or (
+        unique_ratio > 0.85 and dtype in ("object", "int64", "int32", "float64")
+    ):
         # Only classify as ID if not clearly a metric
         if not _METRIC_HINTS.search(lower):
             return "id"
@@ -152,7 +156,10 @@ def _static_description(col_name: str, col_type: str, stats: dict[str, Any]) -> 
         mx = stats.get("max")
         mean = stats.get("mean")
         if mn is not None and mx is not None:
-            parts.append(f"Range: {mn:.2g} – {mx:.2g}" + (f" (avg {mean:.2g})." if mean is not None else "."))
+            parts.append(
+                f"Range: {mn:.2g} – {mx:.2g}"
+                + (f" (avg {mean:.2g})." if mean is not None else ".")
+            )
 
     if col_type == "dimension":
         uc = stats.get("unique_count")
@@ -179,7 +186,9 @@ def _call_claude_for_dictionary(
 
     Returns a dict {col_name: description} or None if the call fails / no key.
     """
-    if not (os.environ.get("ANTHROPIC_AUTH_TOKEN") or os.environ.get("ANTHROPIC_API_KEY")):
+    if not (
+        os.environ.get("ANTHROPIC_AUTH_TOKEN") or os.environ.get("ANTHROPIC_API_KEY")
+    ):
         return None
 
     col_lines = []
