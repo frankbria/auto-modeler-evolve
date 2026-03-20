@@ -332,9 +332,7 @@ def _looks_like_date(value: str) -> bool:
     return bool(date_pattern.match(value.strip()))
 
 
-def compare_segments(
-    df: pd.DataFrame, group_col: str, val1: str, val2: str
-) -> dict:
+def compare_segments(df: pd.DataFrame, group_col: str, val1: str, val2: str) -> dict:
     """Compare two segments of a dataframe on all numeric columns.
 
     For each numeric column, computes mean/std/count/median for each group and
@@ -372,12 +370,16 @@ def compare_segments(
             pooled_std = None
             n1, n2 = len(s1), len(s2)
             if std1 is not None and std2 is not None and (n1 + n2 > 2):
-                pooled_var = ((n1 - 1) * (std1 ** 2) + (n2 - 1) * (std2 ** 2)) / (n1 + n2 - 2)
-                pooled_std = pooled_var ** 0.5 if pooled_var > 0 else None
+                pooled_var = ((n1 - 1) * (std1**2) + (n2 - 1) * (std2**2)) / (
+                    n1 + n2 - 2
+                )
+                pooled_std = pooled_var**0.5 if pooled_var > 0 else None
             if pooled_std and pooled_std > 0:
                 effect_size = round((mean1 - mean2) / pooled_std, 3)
             elif mean2 != 0:
-                effect_size = round((mean1 - mean2) / abs(mean2), 3) if mean2 != 0 else None
+                effect_size = (
+                    round((mean1 - mean2) / abs(mean2), 3) if mean2 != 0 else None
+                )
 
             if effect_size is not None:
                 direction = "higher_in_val1" if effect_size > 0 else "higher_in_val2"
@@ -398,7 +400,9 @@ def compare_segments(
         col_stats.append(stat)
 
         if effect_size is not None and abs(effect_size) > 0.5:
-            notable.append({"name": col, "effect_size": effect_size, "direction": direction})
+            notable.append(
+                {"name": col, "effect_size": effect_size, "direction": direction}
+            )
 
     notable.sort(key=lambda x: abs(x["effect_size"]), reverse=True)
 
@@ -418,9 +422,7 @@ def compare_segments(
                 diff_descs.append(f"{col_name} is higher in {label1}")
             else:
                 diff_descs.append(f"{col_name} is higher in {label2}")
-        summary_parts.append(
-            f"Notable differences: {'; '.join(diff_descs)}."
-        )
+        summary_parts.append(f"Notable differences: {'; '.join(diff_descs)}.")
     else:
         summary_parts.append("No strong differences found between the two groups.")
 

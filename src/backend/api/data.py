@@ -1747,7 +1747,9 @@ def compare_dataset_segments(
         ) from exc
 
     if col not in df.columns:
-        raise HTTPException(status_code=400, detail=f"Column '{col}' not found in dataset")
+        raise HTTPException(
+            status_code=400, detail=f"Column '{col}' not found in dataset"
+        )
 
     col_values_lower = df[col].astype(str).str.strip().str.lower().unique().tolist()
     if val1.strip().lower() not in col_values_lower:

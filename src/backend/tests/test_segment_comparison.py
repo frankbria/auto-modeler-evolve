@@ -265,7 +265,9 @@ class TestDetectCompareRequest:
         from api.chat import _detect_compare_request
 
         df = self._df()
-        result = _detect_compare_request("what is the difference between East and West?", df)
+        result = _detect_compare_request(
+            "what is the difference between East and West?", df
+        )
         assert result is not None
         assert result["group_col"] == "region"
 

@@ -1230,8 +1230,12 @@ def send_message(
                                 if _nd["direction"] == "higher_in_val1"
                                 else f"higher in '{_compare_req['val2']}'"
                             )
-                            _diff_lines.append(f"- {_nd['name']}: {_dir} (effect={_es})")
-                        system_prompt += "Notable differences:\n" + "\n".join(_diff_lines) + "\n"
+                            _diff_lines.append(
+                                f"- {_nd['name']}: {_dir} (effect={_es})"
+                            )
+                        system_prompt += (
+                            "Notable differences:\n" + "\n".join(_diff_lines) + "\n"
+                        )
                     system_prompt += (
                         "A Segment Comparison table is shown in the chat. "
                         "Narrate the key business insights from these differences."
