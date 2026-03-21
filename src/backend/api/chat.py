@@ -490,9 +490,7 @@ def _detect_group_request(message: str, df) -> dict | None:
     lower_to_col = {c.lower(): c for c in cols}
     lower_to_col.update({c.lower().replace("_", " "): c for c in cols})
 
-    mentioned: list[str] = [
-        lower_to_col[lc] for lc in lower_to_col if lc in lower
-    ]
+    mentioned: list[str] = [lower_to_col[lc] for lc in lower_to_col if lc in lower]
     # Remove duplicates while preserving order
     seen: set[str] = set()
     mentioned_unique: list[str] = []
@@ -1543,7 +1541,8 @@ def send_message(
                             f"{_grp_result['summary']}\n"
                             f"Top groups by {_grp_result['value_col']} ({_grp_result['agg']}): "
                             + ", ".join(
-                                str(r.get("group", "?")) for r in _grp_result["rows"][:5]
+                                str(r.get("group", "?"))
+                                for r in _grp_result["rows"][:5]
                             )
                             + ".\n"
                             "A grouped bar chart is shown in the chat. "

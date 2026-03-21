@@ -621,7 +621,9 @@ def compute_group_stats(
     # Apply aggregation
     try:
         if agg_fn == "count":
-            grouped = df.groupby(group_col, dropna=False).size().reset_index(name="count")
+            grouped = (
+                df.groupby(group_col, dropna=False).size().reset_index(name="count")
+            )
             value_col_name = "count"
             grouped_sorted = grouped.sort_values("count", ascending=False)
             rows = [
@@ -684,7 +686,11 @@ def compute_group_stats(
     )
     if top_val is not None:
         try:
-            summary += f" ({top_val:,.2f})" if isinstance(top_val, float) else f" ({top_val:,})"
+            summary += (
+                f" ({top_val:,.2f})"
+                if isinstance(top_val, float)
+                else f" ({top_val:,})"
+            )
         except (TypeError, ValueError):
             summary += f" ({top_val})"
     summary += "."

@@ -74,7 +74,9 @@ def test_group_stats_max(sales_df):
 
 
 def test_group_stats_median(sales_df):
-    result = compute_group_stats(sales_df, "region", value_cols=["revenue"], agg="median")
+    result = compute_group_stats(
+        sales_df, "region", value_cols=["revenue"], agg="median"
+    )
     assert result["agg"] == "median"
     # East median: sorted [80, 100, 150] → 100
     rows_by_group = {r["group"]: r["revenue"] for r in result["rows"]}
