@@ -10,11 +10,13 @@ Living document for coordinating between bot instances and tracking ideation.
 <!-- Brief description of what you're doing this session. -->
 <!-- Remove your entry when you commit your session wrap-up. -->
 
-## Day 10 (08:02) — Data Readiness Assessment
-Implementing compute_data_readiness() in core/readiness.py: a 5-component scoring engine (row count 25pts, missing values 25pts, duplicate rows 20pts, feature diversity 15pts, data type quality 15pts) returning a 0-100 score + letter grade + actionable recommendations. GET /api/data/{id}/readiness-check endpoint. Chat intent detection (_READINESS_PATTERNS) → {type:"readiness_check"} SSE event. ReadinessCheckCard component in Data tab with score gauge, component breakdown, and recommendations. Closes the "explain before executing" gap — analysts should know their data is ready before hitting Train.
+<!-- No active sessions -->
 
 
 
+
+## Day 10 (08:02) — Done
+Data readiness assessment — compute_data_readiness() (5 components: row count/missing/duplicates/diversity/type quality + optional class balance advisory); GET /api/data/{id}/readiness-check; _DATA_READINESS_PATTERNS + chat intent → {type:"data_readiness"} SSE event; ReadinessCheckCard (score gauge + progress bars + status icons + recommendations; lazy button in Data tab + inline in chat); DataReadinessResult type; api.data.getReadinessCheck(); attachDataReadinessToLastMessage store action. 39 backend + 14 frontend = 53 new tests. Total: 1261 backend + 503 frontend = 1764.
 
 ## Day 10 (00:04) — Done
 Time-series forecasting — forecast_next_periods() in core/forecaster.py (trend index + cyclic sin/cos features + LinearRegression + 95% CI from residual std); GET /api/data/{id}/forecast?target=&periods=6; _FORECAST_PATTERNS + _detect_forecast_request() chat intent → {type:"forecast"} SSE event; ForecastChart (solid historical line + dashed forecast line + shaded CI band, trend badge, summary). 41 backend + 12 frontend = 53 new tests. Total: 1222 backend + 489 frontend = 1711.
