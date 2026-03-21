@@ -1,5 +1,9 @@
 # Journal
 
+## Day 10 — 00:04 — No-Op Session (formatting-only commit)
+
+No feature work landed this session — the only change in the tree is a modified `performance_baseline.json` from the auto-format pass at the end of Day 10. The previous two sessions (Day 9 sessions 1 and 2) shipped segment comparison, developer integration snippets, and computed columns, leaving the spec in a strong position. Next session should pick up the next unchecked spec item — likely export/sharing of comparison results or the analyst onboarding flow — and verify the baseline JSON diff doesn't mask a real regression before marking it clean.
+
 ## Day 9 — 12:00 (session 2) — Segment Comparison Analysis (1181 backend + 477 frontend = 1658 tests)
 
 A recurring analyst question the platform couldn't answer: "Why does East outperform West?" or "How are enterprise customers different from SMB?" The anomaly detection finds *individual* unusual rows; the cross-tabulation shows *aggregate* breakdowns; but neither gives a true statistical side-by-side comparison of two named groups across every metric at once. This session adds that capability.
