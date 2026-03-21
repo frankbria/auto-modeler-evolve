@@ -248,7 +248,9 @@ def _score_duplicates(df: pd.DataFrame) -> dict[str, Any]:
     if dupe_pct >= 20:
         score = 5
         status = "critical"
-        detail = f"{n_dupes} duplicate rows ({dupe_pct:.1f}%) — may skew model training."
+        detail = (
+            f"{n_dupes} duplicate rows ({dupe_pct:.1f}%) — may skew model training."
+        )
         rec = "Remove duplicate rows to prevent bias in model training."
     elif dupe_pct >= 5:
         score = 12
@@ -313,7 +315,9 @@ def _score_feature_diversity(df: pd.DataFrame) -> dict[str, Any]:
     elif n_numeric >= 3:
         score = 12
         status = "good"
-        detail = f"{n_numeric} numeric columns ({total_cols} total) — solid for regression."
+        detail = (
+            f"{n_numeric} numeric columns ({total_cols} total) — solid for regression."
+        )
         rec = None
     else:
         score = 10
@@ -359,7 +363,9 @@ def _score_data_type_quality(df: pd.DataFrame) -> dict[str, Any]:
 
     issues = []
     if all_null_cols:
-        issues.append(f"{len(all_null_cols)} all-null column(s): {', '.join(all_null_cols[:3])}")
+        issues.append(
+            f"{len(all_null_cols)} all-null column(s): {', '.join(all_null_cols[:3])}"
+        )
     if high_cardinality_text:
         issues.append(
             f"{len(high_cardinality_text)} high-cardinality text column(s) "
@@ -383,7 +389,8 @@ def _score_data_type_quality(df: pd.DataFrame) -> dict[str, Any]:
         score = 11
         status = "warning"
         detail = (
-            "; ".join(issues) if issues
+            "; ".join(issues)
+            if issues
             else f"Possible ID columns detected: {', '.join(id_like_cols[:2])} — unlikely to help prediction."
         )
         rec = None

@@ -222,9 +222,7 @@ def test_feature_diversity_numeric_only_many():
 
 def test_data_type_quality_clean():
     # Use low-cardinality categories so they don't get flagged as ID-like
-    df = pd.DataFrame(
-        {"a": [1.0, 2.0, 3.0, 4.0, 5.0], "b": ["x", "y", "x", "y", "x"]}
-    )
+    df = pd.DataFrame({"a": [1.0, 2.0, 3.0, 4.0, 5.0], "b": ["x", "y", "x", "y", "x"]})
     comp = _score_data_type_quality(df)
     assert comp["score"] == 15
     assert comp["status"] == "good"

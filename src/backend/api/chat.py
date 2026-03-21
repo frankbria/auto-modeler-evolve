@@ -1313,9 +1313,7 @@ def send_message(
                 _grade = _dr_result["grade"]
                 _summary = _dr_result["summary"]
                 _recs = _dr_result["recommendations"]
-                _rec_text = (
-                    " Recommendations: " + "; ".join(_recs[:3]) if _recs else ""
-                )
+                _rec_text = " Recommendations: " + "; ".join(_recs[:3]) if _recs else ""
                 system_prompt += (
                     f"\n\n## Data Readiness Check\n"
                     f"Score: {_score}/100 (Grade {_grade}) — {_dr_result['status'].replace('_', ' ').title()}.\n"
