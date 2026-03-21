@@ -9,7 +9,6 @@ Covers:
 from __future__ import annotations
 
 import io
-import json
 
 import pandas as pd
 import pytest
@@ -101,8 +100,6 @@ def test_missing_values_none():
 
 
 def test_missing_values_critical():
-    import numpy as np
-
     df = pd.DataFrame({"a": [1, None] * 10, "b": range(20)})
     comp = _score_missing_values(df)
     assert comp["status"] == "critical"
@@ -111,8 +108,6 @@ def test_missing_values_critical():
 
 
 def test_missing_values_warning_moderate():
-    import numpy as np
-
     # 30% missing in col a
     a = [1.0] * 7 + [None] * 3
     df = pd.DataFrame({"a": a, "b": range(10)})
