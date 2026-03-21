@@ -34,6 +34,7 @@ from core.chart_builder import (
     build_timeseries_chart,
 )
 from core.forecaster import detect_time_series, forecast_next_periods
+from core.readiness import compute_data_readiness
 from core.computed import add_computed_column
 from core.dictionary import generate_dictionary
 from core.merger import merge_datasets, suggest_join_keys
@@ -616,6 +617,36 @@ def get_forecast(
         "value_columns": value_cols,
         "forecast": result,
     }
+
+
+@router.get("/{dataset_id}/readiness-check")
+def get_readiness_check(
+    dataset_id: str,
+    target: str | None = None,
+    session: Session = Depends(get_session),
+):
+    """Return a data-readiness assessment for the dataset.
+
+    Scores the dataset across 5 components (row count, missing values,
+    duplicate rows, feature diversity, data type quality) and returns an
+    overall 0-100 score, letter grade, status, per-component details, and
+    actionable recommendations.
+
+    Optionally pass `target` (target column name) for an additional class-
+    balance advisory check.
+    """
+    dataset = session.get(Dataset, dataset_id)
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    file_path = Path(dataset.file_path)
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Dataset file not found on disk")
+
+    df = pd.read_csv(file_path)
+
+    result = compute_data_readiness(df, target_col=target)
+    return {"dataset_id": dataset_id, **result}
 
 
 @router.get("/sample/info")

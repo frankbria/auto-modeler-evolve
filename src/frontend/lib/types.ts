@@ -154,6 +154,7 @@ export interface ChatMessage {
   compute?: ComputedColumnSuggestion
   segment_comparison?: SegmentComparisonResult
   forecast?: ForecastResult
+  data_readiness?: DataReadinessResult
 }
 
 export interface QueryResponse {
@@ -948,4 +949,25 @@ export interface ForecastResult {
   growth_pct: number
   summary: string
   ci_level: number
+}
+
+// Data Readiness Assessment
+export interface ReadinessComponent {
+  name: string
+  score: number
+  max_score: number
+  status: 'good' | 'warning' | 'critical'
+  detail: string
+  recommendation?: string
+  advisory?: boolean
+}
+
+export interface DataReadinessResult {
+  dataset_id: string
+  score: number
+  grade: 'A' | 'B' | 'C' | 'D' | 'F'
+  status: 'ready' | 'needs_attention' | 'not_ready'
+  summary: string
+  components: ReadinessComponent[]
+  recommendations: string[]
 }

@@ -420,6 +420,21 @@ def _detect_forecast_request(message: str) -> dict:
     return {"periods": periods, "period_unit": period_unit}
 
 
+# Keywords that trigger a data readiness assessment (distinct from model readiness)
+_DATA_READINESS_PATTERNS = re.compile(
+    r"(?:"
+    r"is\s+(?:my|the|this)\s+data\s+(?:ready|good|ok|clean|prepared|usable)|"
+    r"data\s+(?:ready|readiness|quality\s+score|prepared|good\s+enough)|"
+    r"can\s+(?:I|we)\s+(?:start\s+)?(?:train|model|build|use)|"
+    r"ready\s+to\s+(?:train|model|build)|"
+    r"is\s+(?:my|the|this)\s+data\s+(?:clean\s+enough|good\s+enough)|"
+    r"check\s+(?:my\s+)?data|data\s+check|assess\s+(?:my\s+)?data|"
+    r"data\s+(?:suitable|fit\s+for\s+modeling|fit\s+for\s+training)"
+    r")",
+    re.IGNORECASE,
+)
+
+
 class ChatMessage(BaseModel):
     message: str
 
@@ -1280,6 +1295,37 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Comparison is nice-to-have; never crash chat
 
+    # Check if user is asking about data readiness / quality before training
+    data_readiness_event: dict | None = None
+    if _DATA_READINESS_PATTERNS.search(body.message) and ctx["dataset"]:
+        try:
+            _ds = ctx["dataset"]
+            _file_path = Path(_ds.file_path)
+            if _file_path.exists():
+                _df = pd.read_csv(_file_path)
+                from core.readiness import compute_data_readiness as _compute_dr
+
+                _fs = ctx["feature_set"]
+                _target = _fs.target_column if _fs else None
+                _dr_result = _compute_dr(_df, target_col=_target)
+                data_readiness_event = {"dataset_id": _ds.id, **_dr_result}
+                _score = _dr_result["score"]
+                _grade = _dr_result["grade"]
+                _summary = _dr_result["summary"]
+                _recs = _dr_result["recommendations"]
+                _rec_text = (
+                    " Recommendations: " + "; ".join(_recs[:3]) if _recs else ""
+                )
+                system_prompt += (
+                    f"\n\n## Data Readiness Check\n"
+                    f"Score: {_score}/100 (Grade {_grade}) — {_dr_result['status'].replace('_', ' ').title()}.\n"
+                    f"{_summary}{_rec_text}\n"
+                    "A data readiness card is shown in the chat. "
+                    "Narrate the key findings and recommend what the user should do next."
+                )
+        except Exception:  # noqa: BLE001
+            pass  # Data readiness is nice-to-have; never crash chat
+
     # Check for time-series forecast request ("predict next 3 months", "forecast sales")
     forecast_event: dict | None = None
     if _FORECAST_PATTERNS.search(body.message) and ctx["dataset"]:
@@ -1437,6 +1483,10 @@ def send_message(
         # Emit segment comparison table if computed
         if segment_comparison_event:
             yield f"data: {json.dumps({'type': 'segment_comparison', 'segment_comparison': segment_comparison_event})}\n\n"
+
+        # Emit data readiness assessment
+        if data_readiness_event:
+            yield f"data: {json.dumps({'type': 'data_readiness', 'readiness': data_readiness_event})}\n\n"
 
         # Emit forecast chart if computed
         if forecast_event:

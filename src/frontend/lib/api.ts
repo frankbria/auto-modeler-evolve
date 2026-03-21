@@ -30,6 +30,7 @@ import type {
   ComputeResult,
   SegmentComparisonResult,
   ForecastResult,
+  DataReadinessResult,
 } from "./types"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
@@ -309,6 +310,18 @@ export const api = {
       const qs = params.toString()
       return fetch(
         `${API_URL}/api/data/${datasetId}/forecast${qs ? `?${qs}` : ""}`
+      ).then((r) => r.json())
+    },
+
+    getReadinessCheck: (
+      datasetId: string,
+      target?: string
+    ): Promise<DataReadinessResult> => {
+      const params = new URLSearchParams()
+      if (target) params.set("target", target)
+      const qs = params.toString()
+      return fetch(
+        `${API_URL}/api/data/${datasetId}/readiness-check${qs ? `?${qs}` : ""}`
       ).then((r) => r.json())
     },
   },

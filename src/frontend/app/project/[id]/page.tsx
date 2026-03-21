@@ -26,6 +26,7 @@ import { CrosstabTable } from "@/components/data/crosstab-table"
 import { ComputeCard } from "@/components/data/compute-card"
 import { SegmentComparisonCard } from "@/components/data/segment-comparison-card"
 import { ForecastChart } from "@/components/data/forecast-chart"
+import { ReadinessCheckCard } from "@/components/data/readiness-check-card"
 import { api } from "@/lib/api"
 import { useAppStore } from "@/lib/store"
 import type {
@@ -45,6 +46,7 @@ import type {
   ComputeResult,
   SegmentComparisonResult,
   ForecastResult,
+  DataReadinessResult,
 } from "@/lib/types"
 
 const WELCOME_MESSAGE =
@@ -98,6 +100,7 @@ export default function ProjectWorkspace() {
     attachComputeToLastMessage,
     attachSegmentToLastMessage,
     attachForecastToLastMessage,
+    attachDataReadinessToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -322,6 +325,8 @@ export default function ProjectWorkspace() {
                 attachSegmentToLastMessage(json.segment_comparison as SegmentComparisonResult)
               } else if (json.type === "forecast" && json.forecast) {
                 attachForecastToLastMessage(json.forecast as ForecastResult)
+              } else if (json.type === "data_readiness" && json.readiness) {
+                attachDataReadinessToLastMessage(json.readiness as DataReadinessResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -348,6 +353,7 @@ export default function ProjectWorkspace() {
     attachComputeToLastMessage,
     attachSegmentToLastMessage,
     attachForecastToLastMessage,
+    attachDataReadinessToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -553,6 +559,9 @@ export default function ProjectWorkspace() {
                       <SegmentComparisonCard result={msg.segment_comparison} />
                     )}
                     {msg.forecast && <ForecastChart result={msg.forecast} />}
+                    {msg.data_readiness && (
+                      <ReadinessCheckCard result={msg.data_readiness} />
+                    )}
                   </div>
                 </div>
               ))}
@@ -732,6 +741,12 @@ export default function ProjectWorkspace() {
                         />
                       </div>
                     )}
+                    <div className="border-t px-4 py-3">
+                      <h3 className="mb-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                        Data Readiness
+                      </h3>
+                      <ReadinessCheckCard datasetId={currentDataset.id} />
+                    </div>
                     <div className="border-t px-4 py-3">
                       <h3 className="mb-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
                         Data Dictionary
