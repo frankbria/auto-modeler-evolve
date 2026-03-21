@@ -383,6 +383,43 @@ def _detect_compare_request(message: str, df) -> dict | None:
     return None
 
 
+_FORECAST_PATTERNS = re.compile(
+    r"(?:"
+    r"forecast|predict\s+(?:the\s+)?next|project\s+(?:the\s+)?(?:next|future)|"
+    r"what\s+will\s+\w+\s+be\s+(?:next|in)|"
+    r"next\s+\d+\s+(?:day|week|month|quarter|period)|"
+    r"future\s+(?:trend|value|predict)|extrapolate|"
+    r"how\s+will\s+\w+\s+(?:grow|change|trend)|"
+    r"revenue\s+(?:for\s+)?next|sales\s+(?:for\s+)?next"
+    r")",
+    re.IGNORECASE,
+)
+
+# Extract period count: "next 3 months", "forecast 6 weeks", "predict next 12 quarters"
+_FORECAST_PERIODS_RE = re.compile(
+    r"(?:next\s+|forecast\s+|predict\s+(?:the\s+)?next\s+)?(\d+)\s+"
+    r"(day|week|month|quarter|period)s?",
+    re.IGNORECASE,
+)
+
+
+def _detect_forecast_request(message: str) -> dict:
+    """Extract forecast parameters from a natural-language message.
+
+    Returns a dict with:
+      - periods: int (default 6)
+      - period_unit: str (default 'period')
+    """
+    m = _FORECAST_PERIODS_RE.search(message)
+    if m:
+        periods = min(24, max(1, int(m.group(1))))
+        period_unit = m.group(2).lower()
+    else:
+        periods = 6
+        period_unit = "period"
+    return {"periods": periods, "period_unit": period_unit}
+
+
 class ChatMessage(BaseModel):
     message: str
 
@@ -1243,6 +1280,40 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Comparison is nice-to-have; never crash chat
 
+    # Check for time-series forecast request ("predict next 3 months", "forecast sales")
+    forecast_event: dict | None = None
+    if _FORECAST_PATTERNS.search(body.message) and ctx["dataset"]:
+        try:
+            _ds = ctx["dataset"]
+            _file_path = Path(_ds.file_path)
+            if _file_path.exists():
+                _df = pd.read_csv(_file_path)
+                from core.forecaster import detect_time_series as _detect_ts
+                from core.forecaster import forecast_next_periods as _forecast
+
+                _ts_info = _detect_ts(_df)
+                if _ts_info:
+                    _fc_params = _detect_forecast_request(body.message)
+                    _value_col = _ts_info["value_cols"][0]
+                    _fc_result = _forecast(
+                        _df,
+                        _ts_info["date_col"],
+                        _value_col,
+                        periods=_fc_params["periods"],
+                    )
+                    forecast_event = _fc_result
+                    system_prompt += (
+                        f"\n\n## Time-Series Forecast\n"
+                        f"{_fc_result['summary']}\n"
+                        f"Column forecasted: {_value_col}. "
+                        f"Trend: {_fc_result['trend']} "
+                        f"({_fc_result['growth_pct']:+.1f}% over forecast horizon).\n"
+                        "A forecast chart is shown in the chat. "
+                        "Narrate the key business insights and what the trend means."
+                    )
+        except Exception:  # noqa: BLE001
+            pass  # Forecast is nice-to-have; never crash chat
+
     # Check if user has new data to upload — guide them through the refresh workflow
     refresh_prompt_event: dict | None = None
     if _REFRESH_PATTERNS.search(body.message) and ctx["dataset"]:
@@ -1366,6 +1437,10 @@ def send_message(
         # Emit segment comparison table if computed
         if segment_comparison_event:
             yield f"data: {json.dumps({'type': 'segment_comparison', 'segment_comparison': segment_comparison_event})}\n\n"
+
+        # Emit forecast chart if computed
+        if forecast_event:
+            yield f"data: {json.dumps({'type': 'forecast', 'forecast': forecast_event})}\n\n"
 
         # Emit refresh prompt — guides user to upload new data
         if refresh_prompt_event:

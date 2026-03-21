@@ -153,6 +153,7 @@ export interface ChatMessage {
   crosstab?: CrosstabResult
   compute?: ComputedColumnSuggestion
   segment_comparison?: SegmentComparisonResult
+  forecast?: ForecastResult
 }
 
 export interface QueryResponse {
@@ -918,4 +919,33 @@ export interface SegmentComparisonResult {
   columns: SegmentColumnStats[]
   notable_diffs: SegmentNotableDiff[]
   summary: string
+}
+
+// ---------------------------------------------------------------------------
+// Time-series forecasting
+// ---------------------------------------------------------------------------
+
+export interface ForecastPoint {
+  date: string
+  value: number
+}
+
+export interface ForecastFuturePoint {
+  date: string
+  value: number
+  lower: number
+  upper: number
+}
+
+export interface ForecastResult {
+  chart_type: 'forecast'
+  date_col: string
+  value_col: string
+  historical: ForecastPoint[]
+  forecast: ForecastFuturePoint[]
+  period_label: string
+  trend: 'up' | 'down' | 'stable'
+  growth_pct: number
+  summary: string
+  ci_level: number
 }

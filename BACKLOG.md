@@ -10,6 +10,9 @@ Living document for coordinating between bot instances and tracking ideation.
 <!-- Brief description of what you're doing this session. -->
 <!-- Remove your entry when you commit your session wrap-up. -->
 
+## Day 10 (00:04) — Time-Series Forecasting
+Implementing forecast_next_periods() in core/forecaster.py using time-based feature engineering (trend index, month, quarter, day-of-week) + LinearRegression. GET /api/data/{id}/forecast?target=&periods=6 endpoint. Chat intent detection (_FORECAST_PATTERNS + _detect_forecast_request()) → {type:"forecast"} SSE event. ForecastChart frontend component with historical (solid) + forecasted (dashed) lines and shaded confidence band. Closes the vision scenario: "predict next quarter's revenue by region."
+
 
 
 

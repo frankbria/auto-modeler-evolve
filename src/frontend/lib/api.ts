@@ -29,6 +29,7 @@ import type {
   CrosstabResult,
   ComputeResult,
   SegmentComparisonResult,
+  ForecastResult,
 } from "./types"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
@@ -296,6 +297,20 @@ export const api = {
       fetch(
         `${API_URL}/api/data/${datasetId}/compare-segments?col=${encodeURIComponent(col)}&val1=${encodeURIComponent(val1)}&val2=${encodeURIComponent(val2)}`
       ).then((r) => r.json()),
+
+    getForecast: (
+      datasetId: string,
+      target?: string,
+      periods?: number
+    ): Promise<{ dataset_id: string; date_columns: string[]; value_columns: string[]; forecast: ForecastResult }> => {
+      const params = new URLSearchParams()
+      if (target) params.set("target", target)
+      if (periods !== undefined) params.set("periods", String(periods))
+      const qs = params.toString()
+      return fetch(
+        `${API_URL}/api/data/${datasetId}/forecast${qs ? `?${qs}` : ""}`
+      ).then((r) => r.json())
+    },
   },
 
   chat: {

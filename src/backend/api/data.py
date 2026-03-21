@@ -33,6 +33,7 @@ from core.chart_builder import (
     build_crosstab,
     build_timeseries_chart,
 )
+from core.forecaster import detect_time_series, forecast_next_periods
 from core.computed import add_computed_column
 from core.dictionary import generate_dictionary
 from core.merger import merge_datasets, suggest_join_keys
@@ -543,6 +544,77 @@ def get_timeseries(
         "date_column": date_col,
         "value_column": chosen_value_col,
         "chart_spec": chart_spec,
+    }
+
+
+@router.get("/{dataset_id}/forecast")
+def get_forecast(
+    dataset_id: str,
+    target: str | None = None,
+    periods: int = 6,
+    session: Session = Depends(get_session),
+):
+    """Return a time-series forecast for the next *periods* time steps.
+
+    Automatically detects the date column. If *target* is not provided, uses
+    the first numeric column. Returns a ForecastResult dict including
+    historical points, forecasted points with 95% prediction intervals, trend
+    direction, and a plain-English summary.
+
+    Returns 404 when no time-series structure is detected or the dataset file
+    is missing. Returns 400 when forecast parameters are invalid.
+    """
+    dataset = session.get(Dataset, dataset_id)
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    file_path = Path(dataset.file_path)
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Dataset file not found on disk")
+
+    df = pd.read_csv(file_path)
+
+    ts_info = detect_time_series(df)
+    if not ts_info:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "No time-series structure detected. "
+                "This dataset needs a date column and at least one numeric column."
+            ),
+        )
+
+    date_col = ts_info["date_col"]
+    value_cols = ts_info["value_cols"]
+
+    # Resolve target column
+    if target and target in value_cols:
+        value_col = target
+    elif target and target not in value_cols:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Column '{target}' not found or not numeric. Available: {value_cols}",
+        )
+    else:
+        value_col = value_cols[0]
+
+    # Clamp periods
+    if periods < 1 or periods > 24:
+        raise HTTPException(
+            status_code=400,
+            detail="periods must be between 1 and 24",
+        )
+
+    try:
+        result = forecast_next_periods(df, date_col, value_col, periods=periods)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return {
+        "dataset_id": dataset_id,
+        "date_columns": [date_col],
+        "value_columns": value_cols,
+        "forecast": result,
     }
 
 

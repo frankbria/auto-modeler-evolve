@@ -25,6 +25,7 @@ import { DictionaryCard } from "@/components/data/dictionary-card"
 import { CrosstabTable } from "@/components/data/crosstab-table"
 import { ComputeCard } from "@/components/data/compute-card"
 import { SegmentComparisonCard } from "@/components/data/segment-comparison-card"
+import { ForecastChart } from "@/components/data/forecast-chart"
 import { api } from "@/lib/api"
 import { useAppStore } from "@/lib/store"
 import type {
@@ -43,6 +44,7 @@ import type {
   ComputedColumnSuggestion,
   ComputeResult,
   SegmentComparisonResult,
+  ForecastResult,
 } from "@/lib/types"
 
 const WELCOME_MESSAGE =
@@ -95,6 +97,7 @@ export default function ProjectWorkspace() {
     attachCrosstabToLastMessage,
     attachComputeToLastMessage,
     attachSegmentToLastMessage,
+    attachForecastToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -317,6 +320,8 @@ export default function ProjectWorkspace() {
                 setActiveTab("data")
               } else if (json.type === "segment_comparison" && json.segment_comparison) {
                 attachSegmentToLastMessage(json.segment_comparison as SegmentComparisonResult)
+              } else if (json.type === "forecast" && json.forecast) {
+                attachForecastToLastMessage(json.forecast as ForecastResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -342,6 +347,7 @@ export default function ProjectWorkspace() {
     attachCrosstabToLastMessage,
     attachComputeToLastMessage,
     attachSegmentToLastMessage,
+    attachForecastToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -546,6 +552,7 @@ export default function ProjectWorkspace() {
                     {msg.segment_comparison && (
                       <SegmentComparisonCard result={msg.segment_comparison} />
                     )}
+                    {msg.forecast && <ForecastChart result={msg.forecast} />}
                   </div>
                 </div>
               ))}
