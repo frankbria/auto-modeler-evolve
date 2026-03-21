@@ -1642,7 +1642,9 @@ def send_message(
                 _cols = _correlations.get("columns", [])
                 _matrix = _correlations.get("matrix", [])
                 if len(_cols) >= 2:
-                    from core.chart_builder import build_correlation_heatmap as _build_hm
+                    from core.chart_builder import (
+                        build_correlation_heatmap as _build_hm,
+                    )
 
                     heatmap_chart = _build_hm(_matrix, _cols)
                     system_prompt += (
@@ -1672,10 +1674,7 @@ def send_message(
                     # Validate new name
                     import re as _re_rename
 
-                    if (
-                        _re_rename.match(r"^\w+$", _new)
-                        and _new not in _cols
-                    ):
+                    if _re_rename.match(r"^\w+$", _new) and _new not in _cols:
                         _df = _df.rename(columns={_old: _new})
                         _df.to_csv(_file_path, index=False)
                         from core.analyzer import compute_full_profile as _cfp_rn
@@ -1684,12 +1683,8 @@ def send_message(
                         with Session(session.bind) as _save_s:
                             _ds_rn = _save_s.get(Dataset, _ds.id)
                             if _ds_rn:
-                                _ds_rn.profile = json.dumps(
-                                    _profile_rn, default=str
-                                )
-                                _ds_rn.columns = json.dumps(
-                                    _profile_rn["columns"]
-                                )
+                                _ds_rn.profile = json.dumps(_profile_rn, default=str)
+                                _ds_rn.columns = json.dumps(_profile_rn["columns"])
                                 _ds_rn.column_count = len(_df.columns)
                                 _save_s.add(_ds_rn)
                                 _save_s.commit()
