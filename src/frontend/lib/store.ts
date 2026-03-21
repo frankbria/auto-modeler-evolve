@@ -13,6 +13,7 @@ import type {
   DataReadinessResult,
   TargetCorrelationResult,
   GroupStatsResult,
+  RenameResult,
 } from "./types"
 
 interface AppState {
@@ -45,6 +46,7 @@ interface AppState {
   attachDataReadinessToLastMessage: (data_readiness: DataReadinessResult) => void
   attachCorrelationToLastMessage: (target_correlation: TargetCorrelationResult) => void
   attachGroupStatsToLastMessage: (group_stats: GroupStatsResult) => void
+  attachRenameResultToLastMessage: (rename_result: RenameResult) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -162,6 +164,16 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, group_stats }
+      }
+      return { messages }
+    }),
+
+  attachRenameResultToLastMessage: (rename_result) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, rename_result }
       }
       return { messages }
     }),

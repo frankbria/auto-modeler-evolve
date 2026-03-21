@@ -29,6 +29,7 @@ import { ForecastChart } from "@/components/data/forecast-chart"
 import { ReadinessCheckCard } from "@/components/data/readiness-check-card"
 import { CorrelationBarCard } from "@/components/data/correlation-bar-card"
 import { GroupStatsCard } from "@/components/data/group-stats-card"
+import { RenameResultCard } from "@/components/data/rename-result-card"
 import { api } from "@/lib/api"
 import { useAppStore } from "@/lib/store"
 import type {
@@ -51,6 +52,7 @@ import type {
   DataReadinessResult,
   TargetCorrelationResult,
   GroupStatsResult,
+  RenameResult,
 } from "@/lib/types"
 
 const WELCOME_MESSAGE =
@@ -107,6 +109,7 @@ export default function ProjectWorkspace() {
     attachDataReadinessToLastMessage,
     attachCorrelationToLastMessage,
     attachGroupStatsToLastMessage,
+    attachRenameResultToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -337,6 +340,8 @@ export default function ProjectWorkspace() {
                 attachCorrelationToLastMessage(json.correlation as TargetCorrelationResult)
               } else if (json.type === "group_stats" && json.group_stats) {
                 attachGroupStatsToLastMessage(json.group_stats as GroupStatsResult)
+              } else if (json.type === "rename_result" && json.rename) {
+                attachRenameResultToLastMessage(json.rename as RenameResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -366,6 +371,7 @@ export default function ProjectWorkspace() {
     attachDataReadinessToLastMessage,
     attachCorrelationToLastMessage,
     attachGroupStatsToLastMessage,
+    attachRenameResultToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -579,6 +585,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.group_stats && (
                       <GroupStatsCard result={msg.group_stats} />
+                    )}
+                    {msg.rename_result && (
+                      <RenameResultCard result={msg.rename_result} />
                     )}
                   </div>
                 </div>

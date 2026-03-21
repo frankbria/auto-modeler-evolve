@@ -109,6 +109,12 @@ function textColor(value: number | null | undefined): string {
   return Math.abs(value ?? 0) > 0.5 ? "white" : "hsl(var(--foreground))"
 }
 
+interface SelectedCell {
+  row: string
+  col: string
+  value: number | null
+}
+
 function HeatmapChart({
   data,
   columns,
@@ -116,8 +122,18 @@ function HeatmapChart({
   data: Record<string, unknown>[]
   columns: string[]
 }) {
+  const [selected, setSelected] = useState<SelectedCell | null>(null)
   const cellSize = Math.max(28, Math.min(48, Math.floor(240 / (columns.length + 1))))
   const labelWidth = 64
+
+  function handleCellClick(rowLabel: string, col: string, val: number | null | undefined) {
+    const value = val ?? null
+    if (selected && selected.row === rowLabel && selected.col === col) {
+      setSelected(null)
+    } else {
+      setSelected({ row: rowLabel, col, value })
+    }
+  }
 
   return (
     <div className="overflow-x-auto">
@@ -128,7 +144,7 @@ function HeatmapChart({
             <div
               key={col}
               style={{ width: cellSize, fontSize: 9, textAlign: "center", overflow: "hidden" }}
-              className="text-muted-foreground font-medium px-0.5 truncate"
+              className={`font-medium px-0.5 truncate ${selected?.col === col ? "text-primary font-bold" : "text-muted-foreground"}`}
               title={col}
             >
               {col.length > 6 ? col.slice(0, 6) + "…" : col}
@@ -143,7 +159,7 @@ function HeatmapChart({
               {/* Row label */}
               <div
                 style={{ width: labelWidth, fontSize: 9, textAlign: "right", paddingRight: 4, flexShrink: 0 }}
-                className="text-muted-foreground font-medium truncate"
+                className={`font-medium truncate ${selected?.row === rowLabel ? "text-primary font-bold" : "text-muted-foreground"}`}
                 title={rowLabel}
               >
                 {rowLabel.length > 8 ? rowLabel.slice(0, 8) + "…" : rowLabel}
@@ -151,9 +167,14 @@ function HeatmapChart({
               {/* Cells */}
               {columns.map((col) => {
                 const val = row[col] as number | null | undefined
+                const isSelected = selected?.row === rowLabel && selected?.col === col
                 return (
                   <div
                     key={col}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => handleCellClick(rowLabel, col, val)}
+                    onKeyDown={(e) => e.key === "Enter" && handleCellClick(rowLabel, col, val)}
                     style={{
                       width: cellSize,
                       height: cellSize,
@@ -164,8 +185,11 @@ function HeatmapChart({
                       justifyContent: "center",
                       fontSize: 9,
                       fontWeight: 500,
-                      border: "1px solid hsl(var(--border))",
-                      cursor: "default",
+                      border: isSelected
+                        ? "2px solid hsl(var(--primary))"
+                        : "1px solid hsl(var(--border))",
+                      cursor: "pointer",
+                      outline: "none",
                     }}
                     title={`${rowLabel} × ${col}: ${val != null ? val.toFixed(3) : "N/A"}`}
                   >
@@ -182,6 +206,31 @@ function HeatmapChart({
           <div style={{ background: "linear-gradient(to right, hsl(0 80% 20%), hsl(0 80% 100%), hsl(220 80% 20%))", height: 6, flex: 1, borderRadius: 3 }} />
           <span className="text-[8px] text-muted-foreground">+1</span>
         </div>
+        {/* Selected cell tooltip */}
+        {selected && (
+          <div
+            className="mt-1.5 flex items-center gap-1.5 rounded border bg-card px-2 py-1"
+            style={{ marginLeft: labelWidth }}
+          >
+            <span className="text-[10px] font-medium text-foreground">
+              {selected.row} × {selected.col}
+            </span>
+            <span className="text-[10px] text-muted-foreground">r =</span>
+            <span
+              className={`text-[10px] font-semibold ${
+                selected.value != null && selected.value > 0 ? "text-blue-600" : "text-red-600"
+              }`}
+            >
+              {selected.value != null ? selected.value.toFixed(3) : "N/A"}
+            </span>
+            <button
+              className="ml-auto text-[9px] text-muted-foreground hover:text-foreground"
+              onClick={() => setSelected(null)}
+            >
+              ✕
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )

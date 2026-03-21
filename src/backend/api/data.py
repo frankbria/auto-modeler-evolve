@@ -1955,3 +1955,89 @@ def get_group_stats(
         raise HTTPException(status_code=400, detail=result["error"])
 
     return {"dataset_id": dataset_id, **result}
+
+
+# ---------------------------------------------------------------------------
+# Column rename
+# ---------------------------------------------------------------------------
+
+
+class RenameColumnRequest(BaseModel):
+    old_name: str
+    new_name: str
+
+
+@router.post("/{dataset_id}/rename-column")
+def rename_column(
+    dataset_id: str,
+    body: RenameColumnRequest,
+    session: Session = Depends(get_session),
+):
+    """Rename a column in the dataset CSV and update the stored profile.
+
+    Validates that:
+    - The dataset and file exist.
+    - old_name is a real column.
+    - new_name is non-empty, doesn't already exist, and contains only word
+      characters (letters, digits, underscores).
+
+    Returns the old name, new name, and updated row count.
+    """
+    dataset = session.get(Dataset, dataset_id)
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    file_path = Path(dataset.file_path)
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Dataset file not found")
+
+    try:
+        df = pd.read_csv(file_path)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(
+            status_code=500, detail=f"Could not read dataset: {exc}"
+        ) from exc
+
+    columns = list(df.columns)
+
+    # Validate old name exists
+    if body.old_name not in columns:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Column '{body.old_name}' not found. Available: {', '.join(columns)}",
+        )
+
+    # Validate new name
+    new_name = body.new_name.strip()
+    if not new_name:
+        raise HTTPException(status_code=400, detail="New column name cannot be empty")
+    if not re.match(r"^\w+$", new_name):
+        raise HTTPException(
+            status_code=400,
+            detail="New column name may only contain letters, digits, and underscores",
+        )
+    if new_name in columns and new_name != body.old_name:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Column '{new_name}' already exists",
+        )
+
+    # Apply rename and write back
+    df = df.rename(columns={body.old_name: new_name})
+    df.to_csv(file_path, index=False)
+
+    # Recompute profile and update Dataset record
+    profile = compute_full_profile(df)
+    dataset.profile = json.dumps(profile, default=str)
+    dataset.columns = json.dumps(profile["columns"])
+    dataset.column_count = len(df.columns)
+    session.add(dataset)
+    session.commit()
+
+    return {
+        "dataset_id": dataset_id,
+        "old_name": body.old_name,
+        "new_name": new_name,
+        "row_count": len(df),
+        "column_count": len(df.columns),
+    }

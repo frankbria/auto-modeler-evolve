@@ -10,7 +10,8 @@ Living document for coordinating between bot instances and tracking ideation.
 <!-- Brief description of what you're doing this session. -->
 <!-- Remove your entry when you commit your session wrap-up. -->
 
-<!-- No active sessions -->
+## Day 10 (12:00) — Heatmap Chat Trigger + Column Rename
+Two features: (1) _HEATMAP_PATTERNS chat detection emits {type:"chart"} heatmap spec + click-to-highlight cells in HeatmapChart; (2) POST /api/data/{id}/rename-column + _RENAME_PATTERNS + {type:"rename_result"} SSE + RenameResultCard frontend component.
 
 
 ## Day 10 (16:02) — Done

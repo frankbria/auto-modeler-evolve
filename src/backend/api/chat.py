@@ -546,6 +546,72 @@ def _detect_group_request(message: str, df) -> dict | None:
     }
 
 
+# Keywords that trigger showing the full correlation matrix heatmap
+_HEATMAP_PATTERNS = re.compile(
+    r"(?:"
+    r"show\s+(?:me\s+)?(?:the\s+)?correlation\s+(?:matrix|heatmap|map)|"
+    r"correlation\s+(?:matrix|heatmap|map)|"
+    r"heatmap|"
+    r"how\s+are\s+(?:my\s+)?(?:columns?|variables?|features?)\s+(?:correlated|related)|"
+    r"show\s+(?:me\s+)?(?:the\s+)?correlations?\s+(?:between|among|across)\s+(?:all|my|the)|"
+    r"all.?vs.?all\s+correlations?|"
+    r"pairwise\s+correlations?|"
+    r"full\s+correlation"
+    r")",
+    re.IGNORECASE,
+)
+
+# Keywords that trigger a column rename suggestion
+_RENAME_PATTERNS = re.compile(
+    r"(?:"
+    r"rename\s+(?:column\s+)?['\"]?\w+['\"]?\s+(?:to|as)\s+['\"]?\w+|"
+    r"call\s+(?:the\s+)?(?:column\s+)?['\"]?\w+['\"]?\s+['\"]?\w+|"
+    r"change\s+(?:the\s+)?(?:column\s+)?name\s+(?:of\s+)?['\"]?\w+['\"]?\s+to\s+['\"]?\w+|"
+    r"rename\s+['\"]?\w+['\"]?\s+column"
+    r")",
+    re.IGNORECASE,
+)
+
+# Extract: "rename X to Y" / "rename X as Y" / "change name of X to Y"
+_RENAME_EXTRACT = re.compile(
+    r"(?:"
+    r"rename\s+(?:column\s+|the\s+)?['\"]?(\w+)['\"]?\s+(?:to|as)\s+['\"]?(\w+)['\"]?|"
+    r"change\s+(?:the\s+)?(?:column\s+)?name\s+(?:of\s+)?['\"]?(\w+)['\"]?\s+to\s+['\"]?(\w+)['\"]?"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def _detect_rename_request(message: str, columns: list[str]) -> dict | None:
+    """Extract old_name and new_name from a rename request.
+
+    Matches patterns like:
+      "rename revenue_usd to Revenue"
+      "rename the column rev_q1 to Q1 Revenue"
+      "change the name of sales to total_sales"
+
+    Returns dict with {old_name, new_name} where old_name matches an actual
+    column (case-insensitive), or None if not parseable.
+    """
+    m = _RENAME_EXTRACT.search(message.strip())
+    if not m:
+        return None
+
+    groups = [g for g in m.groups() if g is not None]
+    if len(groups) < 2:
+        return None
+
+    raw_old, raw_new = groups[0].strip(), groups[1].strip()
+
+    # Case-insensitive match against actual columns
+    col_lower = {c.lower(): c for c in columns}
+    old_name = col_lower.get(raw_old.lower())
+    if not old_name:
+        return None
+
+    return {"old_name": old_name, "new_name": raw_new}
+
+
 class ChatMessage(BaseModel):
     message: str
 
@@ -1551,6 +1617,98 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Group stats are nice-to-have; never crash chat
 
+    # Check for full correlation matrix / heatmap request
+    heatmap_chart: dict | None = None
+    if _HEATMAP_PATTERNS.search(body.message) and ctx["dataset"]:
+        try:
+            _ds = ctx["dataset"]
+            _file_path = Path(_ds.file_path)
+            if _file_path.exists():
+                import json as _json_hm
+
+                # Try cached profile first
+                _correlations: dict = {}
+                if _ds.profile:
+                    try:
+                        _prof = _json_hm.loads(_ds.profile)
+                        _correlations = _prof.get("correlations", {})
+                    except Exception:  # noqa: BLE001
+                        pass
+                if not _correlations:
+                    _df = pd.read_csv(_file_path)
+                    from core.analyzer import compute_full_profile as _cfp
+
+                    _correlations = _cfp(_df).get("correlations", {})
+                _cols = _correlations.get("columns", [])
+                _matrix = _correlations.get("matrix", [])
+                if len(_cols) >= 2:
+                    from core.chart_builder import build_correlation_heatmap as _build_hm
+
+                    heatmap_chart = _build_hm(_matrix, _cols)
+                    system_prompt += (
+                        f"\n\n## Correlation Matrix\n"
+                        f"Full pairwise Pearson correlation matrix for {len(_cols)} numeric columns: "
+                        f"{', '.join(_cols[:6])}{'...' if len(_cols) > 6 else ''}.\n"
+                        "A heatmap is shown in the chat. Narrate the strongest and most surprising "
+                        "correlations, positive and negative. Help the user understand what these "
+                        "relationships mean for their data."
+                    )
+        except Exception:  # noqa: BLE001
+            pass  # Heatmap is nice-to-have; never crash chat
+
+    # Check for column rename request ("rename revenue_usd to Revenue")
+    rename_result: dict | None = None
+    if _RENAME_PATTERNS.search(body.message) and ctx["dataset"]:
+        try:
+            _ds = ctx["dataset"]
+            _file_path = Path(_ds.file_path)
+            if _file_path.exists():
+                _df = pd.read_csv(_file_path)
+                _cols = list(_df.columns)
+                _rename_req = _detect_rename_request(body.message, _cols)
+                if _rename_req:
+                    _old = _rename_req["old_name"]
+                    _new = _rename_req["new_name"]
+                    # Validate new name
+                    import re as _re_rename
+
+                    if (
+                        _re_rename.match(r"^\w+$", _new)
+                        and _new not in _cols
+                    ):
+                        _df = _df.rename(columns={_old: _new})
+                        _df.to_csv(_file_path, index=False)
+                        from core.analyzer import compute_full_profile as _cfp_rn
+
+                        _profile_rn = _cfp_rn(_df)
+                        with Session(session.bind) as _save_s:
+                            _ds_rn = _save_s.get(Dataset, _ds.id)
+                            if _ds_rn:
+                                _ds_rn.profile = json.dumps(
+                                    _profile_rn, default=str
+                                )
+                                _ds_rn.columns = json.dumps(
+                                    _profile_rn["columns"]
+                                )
+                                _ds_rn.column_count = len(_df.columns)
+                                _save_s.add(_ds_rn)
+                                _save_s.commit()
+                        rename_result = {
+                            "dataset_id": _ds.id,
+                            "old_name": _old,
+                            "new_name": _new,
+                            "column_count": len(_df.columns),
+                        }
+                        system_prompt += (
+                            f"\n\n## Column Renamed\n"
+                            f"Column '{_old}' has been renamed to '{_new}'. "
+                            "Confirm this to the user in a friendly way and note that the dataset "
+                            "profile has been updated. If they had feature engineering or a model "
+                            "trained on the old column name, remind them to check the Features tab."
+                        )
+        except Exception:  # noqa: BLE001
+            pass  # Rename is nice-to-have; never crash chat
+
     # Check if user has new data to upload — guide them through the refresh workflow
     refresh_prompt_event: dict | None = None
     if _REFRESH_PATTERNS.search(body.message) and ctx["dataset"]:
@@ -1698,6 +1856,14 @@ def send_message(
         # Emit follow-up suggestion chips (always, if we have any)
         if suggestions_list:
             yield f"data: {json.dumps({'type': 'suggestions', 'suggestions': suggestions_list})}\n\n"
+
+        # Emit correlation heatmap if triggered (reuses existing {type:"chart"} path)
+        if heatmap_chart:
+            yield f"data: {json.dumps({'type': 'chart', 'chart': heatmap_chart})}\n\n"
+
+        # Emit column rename result if executed
+        if rename_result:
+            yield f"data: {json.dumps({'type': 'rename_result', 'rename': rename_result})}\n\n"
 
         # After text stream, opportunistically generate a chart if the
         # message is about data and we have a dataset loaded

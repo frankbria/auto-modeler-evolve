@@ -337,6 +337,17 @@ export const api = {
         `${API_URL}/api/data/${datasetId}/target-correlations?${params.toString()}`
       ).then((r) => r.json())
     },
+
+    renameColumn: (
+      datasetId: string,
+      oldName: string,
+      newName: string
+    ): Promise<{ dataset_id: string; old_name: string; new_name: string; row_count: number; column_count: number }> =>
+      fetch(`${API_URL}/api/data/${datasetId}/rename-column`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ old_name: oldName, new_name: newName }),
+      }).then((r) => r.json()),
   },
 
   chat: {

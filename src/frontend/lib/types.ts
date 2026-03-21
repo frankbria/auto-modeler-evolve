@@ -145,6 +145,13 @@ export interface ComputeResult {
   }
 }
 
+export interface RenameResult {
+  dataset_id: string
+  old_name: string
+  new_name: string
+  column_count: number
+}
+
 export interface ChatMessage {
   role: "user" | "assistant"
   content: string
@@ -157,6 +164,7 @@ export interface ChatMessage {
   data_readiness?: DataReadinessResult
   target_correlation?: TargetCorrelationResult
   group_stats?: GroupStatsResult
+  rename_result?: RenameResult
 }
 
 export interface QueryResponse {
