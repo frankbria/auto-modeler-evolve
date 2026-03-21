@@ -464,6 +464,89 @@ _DATA_READINESS_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+_GROUP_PATTERNS = re.compile(
+    r"(?:"
+    r"(?:by|per|for\s+each|group\s+(?:by|on))\s+\w+|"
+    r"break(?:down|s)?\s+(?:by|per|on)|"
+    r"breakdown\s+(?:of\s+)?\w+\s+by|"
+    r"(?:group|bucket|split|segment)\s+(?:by|on|into)|"
+    r"(?:show|give)\s+me\s+\w+\s+by\s+\w+|"
+    r"total\s+\w+\s+(?:by|per)\s+\w+|"
+    r"(?:sum|average|count|mean)\s+(?:\w+\s+)?(?:by|per|for\s+each)\s+\w+"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def _detect_group_request(message: str, df) -> dict | None:
+    """Extract group_by column, optional value columns, and agg from message.
+
+    Scans actual DataFrame column names for mentions in the message (case-insensitive).
+    Returns a dict with 'group_col', 'value_cols', 'agg', or None if not enough
+    columns can be identified.
+    """
+    lower = message.lower()
+    cols = [c for c in df.columns]
+    lower_to_col = {c.lower(): c for c in cols}
+    lower_to_col.update({c.lower().replace("_", " "): c for c in cols})
+
+    mentioned: list[str] = [
+        lower_to_col[lc] for lc in lower_to_col if lc in lower
+    ]
+    # Remove duplicates while preserving order
+    seen: set[str] = set()
+    mentioned_unique: list[str] = []
+    for c in mentioned:
+        if c not in seen:
+            seen.add(c)
+            mentioned_unique.append(c)
+
+    if not mentioned_unique:
+        return None
+
+    numeric_cols = df.select_dtypes(include="number").columns.tolist()
+    cat_cols = df.select_dtypes(exclude="number").columns.tolist()
+
+    # Try to identify the group-by column (categorical) and value columns (numeric)
+    group_col: str | None = None
+    value_cols: list[str] = []
+
+    for c in mentioned_unique:
+        if c in cat_cols and group_col is None:
+            group_col = c
+        elif c in numeric_cols:
+            value_cols.append(c)
+
+    # If only numeric columns mentioned and no categorical, try to find a
+    # categorical column referenced by name in the message
+    if group_col is None:
+        for c in cat_cols:
+            if c.lower() in lower or c.lower().replace("_", " ") in lower:
+                group_col = c
+                break
+
+    if group_col is None:
+        return None
+
+    # Detect aggregation keyword
+    agg = "sum"
+    if re.search(r"\b(?:average|mean|avg)\b", lower):
+        agg = "mean"
+    elif re.search(r"\b(?:count|how\s+many|number\s+of)\b", lower):
+        agg = "count"
+    elif re.search(r"\bmin(?:imum)?\b", lower):
+        agg = "min"
+    elif re.search(r"\bmax(?:imum)?\b", lower):
+        agg = "max"
+    elif re.search(r"\bmedian\b", lower):
+        agg = "median"
+
+    return {
+        "group_col": group_col,
+        "value_cols": value_cols or None,
+        "agg": agg,
+    }
+
 
 class ChatMessage(BaseModel):
     message: str
@@ -1432,6 +1515,43 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Forecast is nice-to-have; never crash chat
 
+    # Check for group-by analysis ("revenue by region", "breakdown by product", etc.)
+    group_stats_event: dict | None = None
+    if _GROUP_PATTERNS.search(body.message) and ctx["dataset"]:
+        try:
+            _ds = ctx["dataset"]
+            _file_path = Path(_ds.file_path)
+            if _file_path.exists():
+                _df = pd.read_csv(_file_path)
+                _grp_req = _detect_group_request(body.message, _df)
+                if _grp_req:
+                    from core.analyzer import compute_group_stats as _cgs
+
+                    _grp_result = _cgs(
+                        _df,
+                        _grp_req["group_col"],
+                        value_cols=_grp_req.get("value_cols"),
+                        agg=_grp_req.get("agg", "sum"),
+                    )
+                    if not _grp_result.get("error"):
+                        group_stats_event = {
+                            "dataset_id": _ds.id,
+                            **_grp_result,
+                        }
+                        system_prompt += (
+                            f"\n\n## Group-By Analysis\n"
+                            f"{_grp_result['summary']}\n"
+                            f"Top groups by {_grp_result['value_col']} ({_grp_result['agg']}): "
+                            + ", ".join(
+                                str(r.get("group", "?")) for r in _grp_result["rows"][:5]
+                            )
+                            + ".\n"
+                            "A grouped bar chart is shown in the chat. "
+                            "Narrate the key business insights: which group leads, gaps, surprises."
+                        )
+        except Exception:  # noqa: BLE001
+            pass  # Group stats are nice-to-have; never crash chat
+
     # Check if user has new data to upload — guide them through the refresh workflow
     refresh_prompt_event: dict | None = None
     if _REFRESH_PATTERNS.search(body.message) and ctx["dataset"]:
@@ -1563,6 +1683,10 @@ def send_message(
         # Emit target correlation analysis
         if target_correlation_event:
             yield f"data: {json.dumps({'type': 'target_correlation', 'correlation': target_correlation_event})}\n\n"
+
+        # Emit group-by analysis
+        if group_stats_event:
+            yield f"data: {json.dumps({'type': 'group_stats', 'group_stats': group_stats_event})}\n\n"
 
         # Emit forecast chart if computed
         if forecast_event:

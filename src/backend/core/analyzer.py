@@ -563,3 +563,146 @@ def analyze_target_correlations(
         "correlations": top_entries,
         "summary": summary,
     }
+
+
+# ---------------------------------------------------------------------------
+# Group-by statistics (aggregate metrics grouped by a categorical column)
+# ---------------------------------------------------------------------------
+
+_VALID_AGGS = {"sum", "mean", "count", "min", "max", "median"}
+_MAX_GROUPS = 30  # cap to prevent giant tables
+
+
+def compute_group_stats(
+    df: pd.DataFrame,
+    group_col: str,
+    value_cols: list[str] | None = None,
+    agg: str = "sum",
+) -> dict:
+    """Aggregate *value_cols* of *df* grouped by *group_col*.
+
+    Parameters
+    ----------
+    df        : The source DataFrame.
+    group_col : The categorical column to group by.
+    value_cols: Which numeric columns to aggregate.  ``None`` → all numeric
+                columns except *group_col*.
+    agg       : Aggregation function — one of sum / mean / count / min / max /
+                median.  Defaults to "sum".
+
+    Returns a dict with keys:
+      group_col, value_col, agg, rows (sorted descending by value),
+      total, summary, error (if something went wrong).
+    """
+    if group_col not in df.columns:
+        return {"error": f"Column '{group_col}' not found in dataset."}
+
+    agg_fn = agg.lower()
+    if agg_fn not in _VALID_AGGS:
+        agg_fn = "sum"
+
+    # Pick numeric columns to aggregate
+    numeric_cols = df.select_dtypes(include="number").columns.tolist()
+
+    if value_cols:
+        # Validate supplied columns
+        missing = [c for c in value_cols if c not in df.columns]
+        if missing:
+            return {"error": f"Columns not found: {', '.join(missing)}"}
+        # Only keep numeric ones
+        value_cols = [c for c in value_cols if c in numeric_cols]
+    else:
+        value_cols = [c for c in numeric_cols if c != group_col]
+
+    if not value_cols:
+        # Fall back to row count if no numeric columns available
+        agg_fn = "count"
+
+    # Apply aggregation
+    try:
+        if agg_fn == "count":
+            grouped = df.groupby(group_col, dropna=False).size().reset_index(name="count")
+            value_col_name = "count"
+            grouped_sorted = grouped.sort_values("count", ascending=False)
+            rows = [
+                {
+                    "group": str(r[group_col]),
+                    "count": _safe_scalar(r["count"]),
+                }
+                for _, r in grouped_sorted.iterrows()
+            ][:_MAX_GROUPS]
+            total = int(grouped["count"].sum())
+        else:
+            # Multi-column aggregation — produce one entry per value column
+            # Use the first value column as the primary sort key
+            primary = value_cols[0]
+            agg_dict = {c: agg_fn for c in value_cols}
+            grouped = df.groupby(group_col, dropna=False).agg(agg_dict).reset_index()
+            grouped_sorted = grouped.sort_values(primary, ascending=False)
+            value_col_name = primary  # used for summary/label
+
+            rows = []
+            for _, r in grouped_sorted.iterrows():
+                row: dict[str, Any] = {"group": str(r[group_col])}
+                for vc in value_cols:
+                    row[vc] = _safe_scalar(r[vc])
+                rows.append(row)
+            rows = rows[:_MAX_GROUPS]
+
+            total_series = df[primary].dropna()
+            if agg_fn == "sum":
+                total = _safe_scalar(total_series.sum())
+            elif agg_fn == "mean":
+                total = _safe_scalar(total_series.mean())
+            elif agg_fn == "min":
+                total = _safe_scalar(total_series.min())
+            elif agg_fn == "max":
+                total = _safe_scalar(total_series.max())
+            elif agg_fn == "median":
+                total = _safe_scalar(total_series.median())
+            else:
+                total = len(total_series)
+
+    except Exception as exc:  # noqa: BLE001
+        return {"error": str(exc)}
+
+    if not rows:
+        return {"error": "No groups found after aggregation."}
+
+    # Build plain-English summary
+    group_label = group_col.replace("_", " ")
+    value_label = value_col_name.replace("_", " ")
+    top = rows[0]
+    top_group = top["group"]
+    top_val = top.get(value_col_name, top.get("value"))
+
+    n_groups = len(rows)
+    summary = (
+        f"Grouped {value_label} by {group_label} ({agg_fn}) — "
+        f"{n_groups} group{'s' if n_groups != 1 else ''}. "
+        f"Highest: {top_group}"
+    )
+    if top_val is not None:
+        try:
+            summary += f" ({top_val:,.2f})" if isinstance(top_val, float) else f" ({top_val:,})"
+        except (TypeError, ValueError):
+            summary += f" ({top_val})"
+    summary += "."
+
+    # Add share-of-total if total makes sense (sum only)
+    if agg_fn == "sum" and total and total != 0:
+        try:
+            pct = (top_val / total) * 100
+            summary += f" Top group is {pct:.1f}% of the total."
+        except (TypeError, ZeroDivisionError):
+            pass
+
+    return {
+        "group_col": group_col,
+        "value_col": value_col_name,
+        "value_cols": value_cols if agg_fn != "count" else ["count"],
+        "agg": agg_fn,
+        "rows": rows,
+        "total": total,
+        "summary": summary,
+    }

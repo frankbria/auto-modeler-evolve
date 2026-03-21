@@ -28,6 +28,7 @@ import { SegmentComparisonCard } from "@/components/data/segment-comparison-card
 import { ForecastChart } from "@/components/data/forecast-chart"
 import { ReadinessCheckCard } from "@/components/data/readiness-check-card"
 import { CorrelationBarCard } from "@/components/data/correlation-bar-card"
+import { GroupStatsCard } from "@/components/data/group-stats-card"
 import { api } from "@/lib/api"
 import { useAppStore } from "@/lib/store"
 import type {
@@ -49,6 +50,7 @@ import type {
   ForecastResult,
   DataReadinessResult,
   TargetCorrelationResult,
+  GroupStatsResult,
 } from "@/lib/types"
 
 const WELCOME_MESSAGE =
@@ -104,6 +106,7 @@ export default function ProjectWorkspace() {
     attachForecastToLastMessage,
     attachDataReadinessToLastMessage,
     attachCorrelationToLastMessage,
+    attachGroupStatsToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -332,6 +335,8 @@ export default function ProjectWorkspace() {
                 attachDataReadinessToLastMessage(json.readiness as DataReadinessResult)
               } else if (json.type === "target_correlation" && json.correlation) {
                 attachCorrelationToLastMessage(json.correlation as TargetCorrelationResult)
+              } else if (json.type === "group_stats" && json.group_stats) {
+                attachGroupStatsToLastMessage(json.group_stats as GroupStatsResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -360,6 +365,7 @@ export default function ProjectWorkspace() {
     attachForecastToLastMessage,
     attachDataReadinessToLastMessage,
     attachCorrelationToLastMessage,
+    attachGroupStatsToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -570,6 +576,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.target_correlation && (
                       <CorrelationBarCard result={msg.target_correlation} />
+                    )}
+                    {msg.group_stats && (
+                      <GroupStatsCard result={msg.group_stats} />
                     )}
                   </div>
                 </div>

@@ -156,6 +156,7 @@ export interface ChatMessage {
   forecast?: ForecastResult
   data_readiness?: DataReadinessResult
   target_correlation?: TargetCorrelationResult
+  group_stats?: GroupStatsResult
 }
 
 export interface QueryResponse {
@@ -991,3 +992,23 @@ export interface TargetCorrelationResult {
   summary: string
 }
 
+
+// ---------------------------------------------------------------------------
+// Group-by Analysis
+// ---------------------------------------------------------------------------
+
+export interface GroupStatsRow {
+  group: string
+  [metric: string]: string | number | null
+}
+
+export interface GroupStatsResult {
+  dataset_id: string
+  group_col: string
+  value_col: string
+  value_cols: string[]
+  agg: 'sum' | 'mean' | 'count' | 'min' | 'max' | 'median'
+  rows: GroupStatsRow[]
+  total: number | null
+  summary: string
+}

@@ -22,6 +22,7 @@ from core.analyzer import (
     analyze_target_correlations,
     compare_segments,
     compute_full_profile,
+    compute_group_stats,
     detect_time_columns,
 )
 from core.anomaly import detect_anomalies
@@ -1906,5 +1907,51 @@ def get_target_correlations(
 
     if result.get("error") in ("column_not_found", "not_numeric"):
         raise HTTPException(status_code=400, detail=result["summary"])
+
+    return {"dataset_id": dataset_id, **result}
+
+
+@router.get("/{dataset_id}/group-stats")
+def get_group_stats(
+    dataset_id: str,
+    group_by: str,
+    metrics: str | None = None,
+    agg: str = "sum",
+    session: Session = Depends(get_session),
+):
+    """Aggregate numeric columns grouped by a categorical column.
+
+    Query parameters
+    ----------------
+    group_by : Column to group by (required).
+    metrics  : Comma-separated list of numeric columns to aggregate.
+               Defaults to all numeric columns.
+    agg      : Aggregation function — sum | mean | count | min | max | median.
+               Defaults to 'sum'.
+
+    Returns 400 if group_by column is not found or the aggregation fails.
+    """
+    dataset = session.get(Dataset, dataset_id)
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    file_path = Path(dataset.file_path)
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Dataset file not found")
+
+    try:
+        df = pd.read_csv(file_path)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(
+            status_code=500, detail=f"Could not read dataset: {exc}"
+        ) from exc
+
+    value_cols: list[str] | None = None
+    if metrics:
+        value_cols = [c.strip() for c in metrics.split(",") if c.strip()]
+
+    result = compute_group_stats(df, group_by, value_cols=value_cols, agg=agg)
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
 
     return {"dataset_id": dataset_id, **result}
