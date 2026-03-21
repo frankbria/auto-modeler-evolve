@@ -146,6 +146,7 @@ class TestAnalyzeTargetCorrelations:
     def test_default_top_n_is_ten(self):
         # Create a wide DataFrame with many numeric columns
         import numpy as np
+
         rng = np.random.default_rng(42)
         data = {"target": rng.random(50)}
         for i in range(15):

@@ -496,9 +496,7 @@ def analyze_target_correlations(
         }
 
     numeric_cols = [
-        c
-        for c in df.select_dtypes(include="number").columns
-        if c != target_col
+        c for c in df.select_dtypes(include="number").columns if c != target_col
     ]
 
     if not numeric_cols:
@@ -535,7 +533,9 @@ def analyze_target_correlations(
         summary = f"No meaningful correlations found with {target_col}."
     else:
         best = top_entries[0]
-        direction_word = "positively" if best["direction"] == "positive" else "negatively"
+        direction_word = (
+            "positively" if best["direction"] == "positive" else "negatively"
+        )
         col_name = best["column"].replace("_", " ")
         target_name = target_col.replace("_", " ")
         summary = (
@@ -544,7 +544,9 @@ def analyze_target_correlations(
         )
         if len(top_entries) > 1:
             second = top_entries[1]
-            second_dir = "positively" if second["direction"] == "positive" else "negatively"
+            second_dir = (
+                "positively" if second["direction"] == "positive" else "negatively"
+            )
             second_name = second["column"].replace("_", " ")
             summary += (
                 f" {second_name.capitalize()} is also {second['strength']} {second_dir} "
@@ -552,7 +554,9 @@ def analyze_target_correlations(
             )
         strong = [e for e in top_entries if e["strength"] in ("strong", "very strong")]
         if strong:
-            summary += f" {len(strong)} column(s) show strong or very strong correlation."
+            summary += (
+                f" {len(strong)} column(s) show strong or very strong correlation."
+            )
 
     return {
         "target_col": target_col,

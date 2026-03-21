@@ -435,7 +435,9 @@ _CORRELATION_TARGET_PATTERNS = re.compile(
 )
 
 
-def _detect_correlation_target_request(message: str, df_columns: list[str]) -> str | None:
+def _detect_correlation_target_request(
+    message: str, df_columns: list[str]
+) -> str | None:
     """Extract the target column name from a correlation request.
 
     Scans known DataFrame column names against the user's message (case-insensitive).
@@ -1361,10 +1363,16 @@ def send_message(
             if _file_path.exists():
                 _df = pd.read_csv(_file_path)
                 _all_cols = _df.columns.tolist()
-                _target_col = _detect_correlation_target_request(body.message, _all_cols)
+                _target_col = _detect_correlation_target_request(
+                    body.message, _all_cols
+                )
                 # Fall back to the feature-set target if the user said "what drives X"
                 # but didn't name a column exactly
-                if not _target_col and ctx["feature_set"] and ctx["feature_set"].target_column:
+                if (
+                    not _target_col
+                    and ctx["feature_set"]
+                    and ctx["feature_set"].target_column
+                ):
                     _target_col = ctx["feature_set"].target_column
                 if _target_col:
                     from core.analyzer import analyze_target_correlations as _atc
