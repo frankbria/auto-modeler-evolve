@@ -420,6 +420,34 @@ def _detect_forecast_request(message: str) -> dict:
     return {"periods": periods, "period_unit": period_unit}
 
 
+# Keywords that trigger target correlation analysis ("what drives X", "correlated with Y")
+_CORRELATION_TARGET_PATTERNS = re.compile(
+    r"(?:"
+    r"what(?:'s|\s+is)?\s+(?:correlated|correlat(?:e|es|ing))\s+with|"
+    r"what\s+(?:drives?|influences?|affects?|impacts?|predicts?)\s+\w|"
+    r"which\s+(?:columns?|features?|variables?|factors?)\s+(?:correlate|relate|affect|drive|predict)|"
+    r"show\s+(?:me\s+)?correlations?\s+(?:for|with|of)\s+\w|"
+    r"correlat(?:e|es|ions?)\s+(?:for|with|of)\s+\w|"
+    r"factors?\s+(?:affecting|influencing|driving|that\s+(?:affect|influence|drive))|"
+    r"what\s+(?:is|are)\s+(?:related|correlated)\s+to"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def _detect_correlation_target_request(message: str, df_columns: list[str]) -> str | None:
+    """Extract the target column name from a correlation request.
+
+    Scans known DataFrame column names against the user's message (case-insensitive).
+    Returns the first matching column name, or None if no column is mentioned.
+    """
+    msg_lower = message.lower()
+    for col in df_columns:
+        if col.lower() in msg_lower:
+            return col
+    return None
+
+
 # Keywords that trigger a data readiness assessment (distinct from model readiness)
 _DATA_READINESS_PATTERNS = re.compile(
     r"(?:"
@@ -1324,6 +1352,44 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Data readiness is nice-to-have; never crash chat
 
+    # Check for target correlation request ("what drives revenue?", "correlated with profit?")
+    target_correlation_event: dict | None = None
+    if _CORRELATION_TARGET_PATTERNS.search(body.message) and ctx["dataset"]:
+        try:
+            _ds = ctx["dataset"]
+            _file_path = Path(_ds.file_path)
+            if _file_path.exists():
+                _df = pd.read_csv(_file_path)
+                _all_cols = _df.columns.tolist()
+                _target_col = _detect_correlation_target_request(body.message, _all_cols)
+                # Fall back to the feature-set target if the user said "what drives X"
+                # but didn't name a column exactly
+                if not _target_col and ctx["feature_set"] and ctx["feature_set"].target_column:
+                    _target_col = ctx["feature_set"].target_column
+                if _target_col:
+                    from core.analyzer import analyze_target_correlations as _atc
+
+                    _corr_result = _atc(_df, _target_col)
+                    if not _corr_result.get("error"):
+                        target_correlation_event = {
+                            "dataset_id": _ds.id,
+                            **_corr_result,
+                        }
+                        _top = _corr_result["correlations"][:3]
+                        _top_desc = ", ".join(
+                            f"{e['column']} (r={e['correlation']:+.2f})" for e in _top
+                        )
+                        system_prompt += (
+                            f"\n\n## Target Correlation Analysis\n"
+                            f"Analysed correlations with '{_target_col}'.\n"
+                            f"{_corr_result['summary']}\n"
+                            f"Top correlates: {_top_desc}.\n"
+                            "A correlation chart is shown in the chat. "
+                            "Narrate which factors matter most and what this means for modeling."
+                        )
+        except Exception:  # noqa: BLE001
+            pass  # Correlation is nice-to-have; never crash chat
+
     # Check for time-series forecast request ("predict next 3 months", "forecast sales")
     forecast_event: dict | None = None
     if _FORECAST_PATTERNS.search(body.message) and ctx["dataset"]:
@@ -1485,6 +1551,10 @@ def send_message(
         # Emit data readiness assessment
         if data_readiness_event:
             yield f"data: {json.dumps({'type': 'data_readiness', 'readiness': data_readiness_event})}\n\n"
+
+        # Emit target correlation analysis
+        if target_correlation_event:
+            yield f"data: {json.dumps({'type': 'target_correlation', 'correlation': target_correlation_event})}\n\n"
 
         # Emit forecast chart if computed
         if forecast_event:

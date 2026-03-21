@@ -445,3 +445,117 @@ def _safe_scalar(value):
     if isinstance(value, np.generic):
         return value.item()
     return value
+
+
+def _correlation_strength(r: float) -> str:
+    abs_r = abs(r)
+    if abs_r >= 0.8:
+        return "very strong"
+    if abs_r >= 0.6:
+        return "strong"
+    if abs_r >= 0.4:
+        return "moderate"
+    if abs_r >= 0.2:
+        return "weak"
+    return "negligible"
+
+
+def analyze_target_correlations(
+    df: pd.DataFrame, target_col: str, top_n: int = 10
+) -> dict:
+    """Compute Pearson correlations between a target column and all other numeric columns.
+
+    Returns a ranked list of correlations sorted by absolute value (strongest first).
+
+    Args:
+        df: Input DataFrame
+        target_col: The column to compute correlations against
+        top_n: Maximum number of columns to return
+
+    Returns:
+        Dict with:
+        - target_col: name of the column analysed
+        - correlations: list of {column, correlation, strength, direction} sorted by |r|
+        - summary: plain-English description of the strongest relationships
+        - error: set only when target_col is not numeric or not found
+    """
+    if target_col not in df.columns:
+        return {
+            "target_col": target_col,
+            "correlations": [],
+            "summary": f"Column '{target_col}' not found in the dataset.",
+            "error": "column_not_found",
+        }
+
+    if not pd.api.types.is_numeric_dtype(df[target_col]):
+        return {
+            "target_col": target_col,
+            "correlations": [],
+            "summary": f"Column '{target_col}' is not numeric — correlation analysis requires a numeric target.",
+            "error": "not_numeric",
+        }
+
+    numeric_cols = [
+        c
+        for c in df.select_dtypes(include="number").columns
+        if c != target_col
+    ]
+
+    if not numeric_cols:
+        return {
+            "target_col": target_col,
+            "correlations": [],
+            "summary": "No other numeric columns found to correlate against.",
+            "error": "no_numeric_columns",
+        }
+
+    entries = []
+    for col in numeric_cols:
+        paired = df[[target_col, col]].dropna()
+        if len(paired) < 3:
+            continue
+        r = paired[target_col].corr(paired[col])
+        if pd.isna(r):
+            continue
+        r_val = round(float(r), 4)
+        entries.append(
+            {
+                "column": col,
+                "correlation": r_val,
+                "strength": _correlation_strength(r_val),
+                "direction": "positive" if r_val >= 0 else "negative",
+            }
+        )
+
+    entries.sort(key=lambda x: abs(x["correlation"]), reverse=True)
+    top_entries = entries[:top_n]
+
+    # Build plain-English summary
+    if not top_entries:
+        summary = f"No meaningful correlations found with {target_col}."
+    else:
+        best = top_entries[0]
+        direction_word = "positively" if best["direction"] == "positive" else "negatively"
+        col_name = best["column"].replace("_", " ")
+        target_name = target_col.replace("_", " ")
+        summary = (
+            f"The strongest relationship with {target_name} is {col_name} "
+            f"(r = {best['correlation']:+.2f}, {best['strength']} {direction_word} correlated)."
+        )
+        if len(top_entries) > 1:
+            second = top_entries[1]
+            second_dir = "positively" if second["direction"] == "positive" else "negatively"
+            second_name = second["column"].replace("_", " ")
+            summary += (
+                f" {second_name.capitalize()} is also {second['strength']} {second_dir} "
+                f"correlated (r = {second['correlation']:+.2f})."
+            )
+        strong = [e for e in top_entries if e["strength"] in ("strong", "very strong")]
+        if strong:
+            summary += f" {len(strong)} column(s) show strong or very strong correlation."
+
+    return {
+        "target_col": target_col,
+        "correlations": top_entries,
+        "summary": summary,
+    }

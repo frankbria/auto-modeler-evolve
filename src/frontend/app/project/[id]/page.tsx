@@ -27,6 +27,7 @@ import { ComputeCard } from "@/components/data/compute-card"
 import { SegmentComparisonCard } from "@/components/data/segment-comparison-card"
 import { ForecastChart } from "@/components/data/forecast-chart"
 import { ReadinessCheckCard } from "@/components/data/readiness-check-card"
+import { CorrelationBarCard } from "@/components/data/correlation-bar-card"
 import { api } from "@/lib/api"
 import { useAppStore } from "@/lib/store"
 import type {
@@ -47,6 +48,7 @@ import type {
   SegmentComparisonResult,
   ForecastResult,
   DataReadinessResult,
+  TargetCorrelationResult,
 } from "@/lib/types"
 
 const WELCOME_MESSAGE =
@@ -101,6 +103,7 @@ export default function ProjectWorkspace() {
     attachSegmentToLastMessage,
     attachForecastToLastMessage,
     attachDataReadinessToLastMessage,
+    attachCorrelationToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -327,6 +330,8 @@ export default function ProjectWorkspace() {
                 attachForecastToLastMessage(json.forecast as ForecastResult)
               } else if (json.type === "data_readiness" && json.readiness) {
                 attachDataReadinessToLastMessage(json.readiness as DataReadinessResult)
+              } else if (json.type === "target_correlation" && json.correlation) {
+                attachCorrelationToLastMessage(json.correlation as TargetCorrelationResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -354,6 +359,7 @@ export default function ProjectWorkspace() {
     attachSegmentToLastMessage,
     attachForecastToLastMessage,
     attachDataReadinessToLastMessage,
+    attachCorrelationToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -561,6 +567,9 @@ export default function ProjectWorkspace() {
                     {msg.forecast && <ForecastChart result={msg.forecast} />}
                     {msg.data_readiness && (
                       <ReadinessCheckCard result={msg.data_readiness} />
+                    )}
+                    {msg.target_correlation && (
+                      <CorrelationBarCard result={msg.target_correlation} />
                     )}
                   </div>
                 </div>

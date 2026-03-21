@@ -155,6 +155,7 @@ export interface ChatMessage {
   segment_comparison?: SegmentComparisonResult
   forecast?: ForecastResult
   data_readiness?: DataReadinessResult
+  target_correlation?: TargetCorrelationResult
 }
 
 export interface QueryResponse {
@@ -971,3 +972,22 @@ export interface DataReadinessResult {
   components: ReadinessComponent[]
   recommendations: string[]
 }
+
+// ---------------------------------------------------------------------------
+// Target correlation analysis
+// ---------------------------------------------------------------------------
+
+export interface CorrelationEntry {
+  column: string
+  correlation: number
+  strength: 'very strong' | 'strong' | 'moderate' | 'weak' | 'negligible'
+  direction: 'positive' | 'negative'
+}
+
+export interface TargetCorrelationResult {
+  dataset_id: string
+  target_col: string
+  correlations: CorrelationEntry[]
+  summary: string
+}
+

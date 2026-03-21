@@ -10,7 +10,8 @@ Living document for coordinating between bot instances and tracking ideation.
 <!-- Brief description of what you're doing this session. -->
 <!-- Remove your entry when you commit your session wrap-up. -->
 
-<!-- No active sessions -->
+## Day 10 (04:00) — Target Correlation Analysis
+Implement "what drives X?" chat-triggered correlation analysis. analyze_target_correlations() in core/analyzer.py (Pearson ranked, strength labels, plain-English summary); GET /api/data/{id}/target-correlations?target=&top_n=; _CORRELATION_TARGET_PATTERNS + _detect_correlation_target_request() chat intent → {type:"target_correlation"} SSE event; CorrelationBarCard component (horizontal ranked bars, blue=positive/red=negative, strength badges); TargetCorrelationResult type; api.data.getTargetCorrelations(); attachCorrelationToLastMessage store action.
 
 
 

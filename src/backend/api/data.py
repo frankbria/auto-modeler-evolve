@@ -18,7 +18,12 @@ from chat.narration import (
     narrate_data_insights_ai,
     narrate_upload,
 )
-from core.analyzer import compare_segments, compute_full_profile, detect_time_columns
+from core.analyzer import (
+    analyze_target_correlations,
+    compare_segments,
+    compute_full_profile,
+    detect_time_columns,
+)
 from core.anomaly import detect_anomalies
 from core.cleaner import (
     cap_outliers,
@@ -1866,3 +1871,40 @@ def compare_dataset_segments(
 
     result = compare_segments(df, col, val1, val2)
     return result
+
+
+@router.get("/{dataset_id}/target-correlations")
+def get_target_correlations(
+    dataset_id: str,
+    target: str,
+    top_n: int = 10,
+    session: Session = Depends(get_session),
+):
+    """Return Pearson correlations between a target column and all other numeric columns.
+
+    Sorted by absolute correlation value (strongest first). Use this to answer
+    "what's correlated with revenue?" or "what drives profit?" questions.
+
+    Returns 400 if target column is not found or not numeric.
+    """
+    dataset = session.get(Dataset, dataset_id)
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    file_path = Path(dataset.file_path)
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Dataset file not found")
+
+    try:
+        df = pd.read_csv(file_path)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(
+            status_code=500, detail=f"Could not read dataset: {exc}"
+        ) from exc
+
+    result = analyze_target_correlations(df, target, top_n=max(1, min(top_n, 50)))
+
+    if result.get("error") in ("column_not_found", "not_numeric"):
+        raise HTTPException(status_code=400, detail=result["summary"])
+
+    return {"dataset_id": dataset_id, **result}

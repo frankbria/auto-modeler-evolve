@@ -11,6 +11,7 @@ import type {
   SegmentComparisonResult,
   ForecastResult,
   DataReadinessResult,
+  TargetCorrelationResult,
 } from "./types"
 
 interface AppState {
@@ -41,6 +42,7 @@ interface AppState {
   attachSegmentToLastMessage: (segment_comparison: SegmentComparisonResult) => void
   attachForecastToLastMessage: (forecast: ForecastResult) => void
   attachDataReadinessToLastMessage: (data_readiness: DataReadinessResult) => void
+  attachCorrelationToLastMessage: (target_correlation: TargetCorrelationResult) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -138,6 +140,16 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, data_readiness }
+      }
+      return { messages }
+    }),
+
+  attachCorrelationToLastMessage: (target_correlation) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, target_correlation }
       }
       return { messages }
     }),

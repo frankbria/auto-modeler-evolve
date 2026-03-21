@@ -31,6 +31,7 @@ import type {
   SegmentComparisonResult,
   ForecastResult,
   DataReadinessResult,
+  TargetCorrelationResult,
 } from "./types"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
@@ -322,6 +323,18 @@ export const api = {
       const qs = params.toString()
       return fetch(
         `${API_URL}/api/data/${datasetId}/readiness-check${qs ? `?${qs}` : ""}`
+      ).then((r) => r.json())
+    },
+
+    getTargetCorrelations: (
+      datasetId: string,
+      target: string,
+      topN?: number
+    ): Promise<TargetCorrelationResult> => {
+      const params = new URLSearchParams({ target })
+      if (topN !== undefined) params.set("top_n", String(topN))
+      return fetch(
+        `${API_URL}/api/data/${datasetId}/target-correlations?${params.toString()}`
       ).then((r) => r.json())
     },
   },
