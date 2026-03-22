@@ -11,7 +11,6 @@ from fastapi.testclient import TestClient
 
 from core.anomaly import detect_anomalies
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -247,6 +246,6 @@ class TestAnomalyPatternDetection:
             "deploy the model",
         ]
         for phrase in phrases:
-            assert not _ANOMALY_PATTERNS.search(phrase), (
-                f"Unexpected match for: {phrase!r}"
-            )
+            assert not _ANOMALY_PATTERNS.search(
+                phrase
+            ), f"Unexpected match for: {phrase!r}"

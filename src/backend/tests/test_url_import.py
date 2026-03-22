@@ -6,7 +6,6 @@ from httpx import AsyncClient, ASGITransport
 from sqlmodel import create_engine, SQLModel
 import db as db_module
 
-
 SAMPLE_CSV_BYTES = (
     b"date,product,region,revenue,units\n"
     b"2024-01-01,Widget A,North,1200.50,10\n"

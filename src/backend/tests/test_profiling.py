@@ -21,7 +21,6 @@ from core.chart_builder import (
     chart_from_query_result,
 )
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -91,9 +90,9 @@ class TestAnalyzeDataframe:
         result = analyze_dataframe(sales_df)
         for col in result["columns"]:
             for v in col["sample_values"]:
-                assert not isinstance(v, np.generic), (
-                    f"numpy type in sample_values: {type(v)}"
-                )
+                assert not isinstance(
+                    v, np.generic
+                ), f"numpy type in sample_values: {type(v)}"
 
 
 # ---------------------------------------------------------------------------

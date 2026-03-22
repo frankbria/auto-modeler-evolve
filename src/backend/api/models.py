@@ -977,9 +977,11 @@ def get_model_readiness(
                     + (
                         "— excellent fit. Model explains most of the variance in your data."
                         if perf_ok
-                        else "— moderate fit. Consider more features or a different algorithm."
-                        if perf_partial
-                        else "— poor fit. The model may not be reliable for production use."
+                        else (
+                            "— moderate fit. Consider more features or a different algorithm."
+                            if perf_partial
+                            else "— poor fit. The model may not be reliable for production use."
+                        )
                     )
                 ),
                 "weight": 30,
@@ -1000,9 +1002,11 @@ def get_model_readiness(
                     + (
                         "— strong performance. Model is predicting reliably."
                         if perf_ok
-                        else "— moderate performance. Consider feature improvements."
-                        if perf_partial
-                        else "— below threshold. Review your features and target column."
+                        else (
+                            "— moderate performance. Consider feature improvements."
+                            if perf_partial
+                            else "— below threshold. Review your features and target column."
+                        )
                     )
                 ),
                 "weight": 30,

@@ -251,9 +251,11 @@ def generate_project_narrative(
     ctx: dict = {
         "project_name": project.name,
         "project_description": project.description or "",
-        "created_at": project.created_at.strftime("%B %d, %Y")
-        if project.created_at
-        else "recently",
+        "created_at": (
+            project.created_at.strftime("%B %d, %Y")
+            if project.created_at
+            else "recently"
+        ),
     }
 
     if dataset:
@@ -295,9 +297,11 @@ def generate_project_narrative(
             "endpoint": deployment.endpoint_path,
             "dashboard_url": deployment.dashboard_url,
             "prediction_count": prediction_count,
-            "created_at": deployment.created_at.strftime("%B %d, %Y")
-            if deployment.created_at
-            else "recently",
+            "created_at": (
+                deployment.created_at.strftime("%B %d, %Y")
+                if deployment.created_at
+                else "recently"
+            ),
         }
     else:
         ctx["deployment"] = {"is_live": False}
@@ -407,9 +411,7 @@ def _static_narrative(ctx: dict) -> str:
         quality = (
             "clean"
             if d["missing_pct"] < 5
-            else "mostly complete"
-            if d["missing_pct"] < 20
-            else "with some gaps"
+            else "mostly complete" if d["missing_pct"] < 20 else "with some gaps"
         )
         parts.append(
             f"The analysis is based on **{d['filename']}** — "

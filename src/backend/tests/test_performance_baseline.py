@@ -143,9 +143,9 @@ class TestUploadPerformance:
                 files={"file": ("large.csv", large_csv, "text/csv")},
             )
         assert resp.status_code == 201
-        assert t.elapsed_ms < 10000, (
-            f"Upload took {t.elapsed_ms:.0f}ms (limit: 10000ms)"
-        )
+        assert (
+            t.elapsed_ms < 10000
+        ), f"Upload took {t.elapsed_ms:.0f}ms (limit: 10000ms)"
         _record("upload_1000_rows_ms", t.elapsed_ms)
 
 
@@ -161,9 +161,9 @@ class TestProfilePerformance:
         with Timer() as t:
             resp = await client.get(f"/api/data/{dataset_id}/profile")
         assert resp.status_code == 200
-        assert t.elapsed_ms < 500, (
-            f"Cached profile took {t.elapsed_ms:.0f}ms (limit: 500ms)"
-        )
+        assert (
+            t.elapsed_ms < 500
+        ), f"Cached profile took {t.elapsed_ms:.0f}ms (limit: 500ms)"
         _record("profile_cached_ms", t.elapsed_ms)
 
     async def test_correlations_under_1s(self, client, perf_csv):
@@ -173,9 +173,9 @@ class TestProfilePerformance:
         with Timer() as t:
             resp = await client.get(f"/api/data/{dataset_id}/correlations")
         assert resp.status_code == 200
-        assert t.elapsed_ms < 1000, (
-            f"Correlations took {t.elapsed_ms:.0f}ms (limit: 1000ms)"
-        )
+        assert (
+            t.elapsed_ms < 1000
+        ), f"Correlations took {t.elapsed_ms:.0f}ms (limit: 1000ms)"
         _record("correlations_ms", t.elapsed_ms)
 
 
@@ -187,9 +187,9 @@ class TestFeaturePerformance:
         with Timer() as t:
             resp = await client.get(f"/api/features/{dataset_id}/suggestions")
         assert resp.status_code == 200
-        assert t.elapsed_ms < 2000, (
-            f"Suggestions took {t.elapsed_ms:.0f}ms (limit: 2000ms)"
-        )
+        assert (
+            t.elapsed_ms < 2000
+        ), f"Suggestions took {t.elapsed_ms:.0f}ms (limit: 2000ms)"
         _record("feature_suggestions_ms", t.elapsed_ms)
 
 
@@ -234,9 +234,9 @@ class TestTrainingPerformance:
 
         total_ms = (time.perf_counter() - poll_start) * 1000 + t.elapsed_ms
         assert done, "Training did not complete within 15 seconds"
-        assert total_ms < 10000, (
-            f"Training pipeline took {total_ms:.0f}ms (limit: 10000ms)"
-        )
+        assert (
+            total_ms < 10000
+        ), f"Training pipeline took {total_ms:.0f}ms (limit: 10000ms)"
         _record("train_linear_regression_ms", total_ms)
 
     async def test_recommendation_endpoint_under_500ms(self, client, perf_csv):
@@ -256,9 +256,9 @@ class TestTrainingPerformance:
         with Timer() as t:
             resp = await client.get(f"/api/models/{pid}/recommendations")
         assert resp.status_code == 200
-        assert t.elapsed_ms < 500, (
-            f"Recommendations took {t.elapsed_ms:.0f}ms (limit: 500ms)"
-        )
+        assert (
+            t.elapsed_ms < 500
+        ), f"Recommendations took {t.elapsed_ms:.0f}ms (limit: 500ms)"
         _record("recommendations_ms", t.elapsed_ms)
 
 
@@ -320,9 +320,9 @@ class TestPredictionPerformance:
                 f"/api/predict/{dep_id}", json={"features": payload}
             )
         assert resp.status_code == 200
-        assert t.elapsed_ms < 200, (
-            f"Prediction took {t.elapsed_ms:.0f}ms (limit: 200ms)"
-        )
+        assert (
+            t.elapsed_ms < 200
+        ), f"Prediction took {t.elapsed_ms:.0f}ms (limit: 200ms)"
         _record("single_prediction_ms", t.elapsed_ms)
 
 

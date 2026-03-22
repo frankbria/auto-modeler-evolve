@@ -298,9 +298,9 @@ def compare_deployments(
                 {
                     "deployment_id": dep_id,
                     "algorithm": dep.algorithm,
-                    "trained_at": dep.created_at.isoformat()
-                    if dep.created_at
-                    else None,
+                    "trained_at": (
+                        dep.created_at.isoformat() if dep.created_at else None
+                    ),
                     "error": "Model file not found",
                 }
             )
@@ -329,9 +329,9 @@ def compare_deployments(
                 {
                     "deployment_id": dep_id,
                     "algorithm": dep.algorithm,
-                    "trained_at": dep.created_at.isoformat()
-                    if dep.created_at
-                    else None,
+                    "trained_at": (
+                        dep.created_at.isoformat() if dep.created_at else None
+                    ),
                     "error": str(exc),
                 }
             )

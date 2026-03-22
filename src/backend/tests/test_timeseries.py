@@ -16,7 +16,6 @@ from sqlmodel import SQLModel, create_engine
 
 import db as db_module
 
-
 # ===========================================================================
 # detect_time_columns (unit tests)
 # ===========================================================================

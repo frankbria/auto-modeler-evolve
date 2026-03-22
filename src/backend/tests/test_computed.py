@@ -16,7 +16,6 @@ from sqlmodel import SQLModel, create_engine
 import db as db_module
 from core.computed import add_computed_column, preview_computed_column
 
-
 # ---------------------------------------------------------------------------
 # Sample data
 # ---------------------------------------------------------------------------

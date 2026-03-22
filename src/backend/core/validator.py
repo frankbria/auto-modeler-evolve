@@ -16,7 +16,6 @@ import numpy as np
 from sklearn.metrics import confusion_matrix
 from sklearn.model_selection import KFold, StratifiedKFold, cross_val_score
 
-
 # ---------------------------------------------------------------------------
 # Cross-validation
 # ---------------------------------------------------------------------------

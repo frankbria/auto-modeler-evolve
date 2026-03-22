@@ -16,7 +16,6 @@ import numpy as np
 import pandas as pd
 import pytest
 
-
 # ===========================================================================
 # chart_builder.py — build_model_comparison_radar
 # ===========================================================================

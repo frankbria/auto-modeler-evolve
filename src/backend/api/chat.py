@@ -1030,7 +1030,9 @@ def _load_project_context(project_id: str, session: Session) -> dict:
     if dataset:
         feature_set = session.exec(
             select(FeatureSet)
-            .where(FeatureSet.dataset_id == dataset.id, FeatureSet.is_active == True)  # noqa: E712
+            .where(
+                FeatureSet.dataset_id == dataset.id, FeatureSet.is_active == True
+            )  # noqa: E712
             .order_by(FeatureSet.created_at.desc())  # type: ignore[arg-type]
         ).first()
 
@@ -1041,7 +1043,9 @@ def _load_project_context(project_id: str, session: Session) -> dict:
     # Latest active deployment
     deployment = session.exec(
         select(Deployment)
-        .where(Deployment.project_id == project_id, Deployment.is_active == True)  # noqa: E712
+        .where(
+            Deployment.project_id == project_id, Deployment.is_active == True
+        )  # noqa: E712
         .order_by(Deployment.created_at.desc())  # type: ignore[arg-type]
     ).first()
 
@@ -1148,9 +1152,9 @@ def send_message(
                 tune_data = {
                     "model_run_id": target_run.id,
                     "algorithm": target_run.algorithm,
-                    "metrics": json.loads(target_run.metrics)
-                    if target_run.metrics
-                    else {},
+                    "metrics": (
+                        json.loads(target_run.metrics) if target_run.metrics else {}
+                    ),
                 }
                 system_prompt += (
                     f"\n\n## Hyperparameter Tuning Available\n"

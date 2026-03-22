@@ -51,7 +51,6 @@ from sklearn.metrics import (
 from sklearn.model_selection import RandomizedSearchCV, train_test_split
 from sklearn.preprocessing import LabelEncoder
 
-
 # ---------------------------------------------------------------------------
 # Algorithm registry
 # ---------------------------------------------------------------------------

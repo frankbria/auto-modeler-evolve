@@ -9,7 +9,6 @@ Provides:
 
 from __future__ import annotations
 
-
 # ---------------------------------------------------------------------------
 # Algorithm descriptions (plain English, non-technical)
 # ---------------------------------------------------------------------------

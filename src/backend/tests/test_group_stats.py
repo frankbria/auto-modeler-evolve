@@ -8,7 +8,6 @@ from sqlmodel import SQLModel, create_engine
 import db as db_module
 from core.analyzer import compute_group_stats
 
-
 # ---------------------------------------------------------------------------
 # Unit tests — compute_group_stats
 # ---------------------------------------------------------------------------

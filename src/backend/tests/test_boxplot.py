@@ -14,7 +14,6 @@ from sqlmodel import SQLModel, create_engine
 
 import db as db_module
 
-
 SAMPLE_CSV = (
     b"product,region,revenue,units\n"
     b"Widget A,North,1200.0,10\n"

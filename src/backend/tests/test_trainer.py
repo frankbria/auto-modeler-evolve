@@ -10,7 +10,6 @@ from fastapi.testclient import TestClient
 from sqlmodel import SQLModel, create_engine
 import db as db_module
 
-
 # ---------------------------------------------------------------------------
 # Shared fixtures
 # ---------------------------------------------------------------------------

@@ -16,7 +16,6 @@ import pytest
 
 from core.storyteller import _build_summary, _recommend_next_step, generate_data_story
 
-
 # ---------------------------------------------------------------------------
 # Helper factories
 # ---------------------------------------------------------------------------
@@ -52,7 +51,9 @@ def make_csv_bytes(df: pd.DataFrame) -> bytes:
 class TestGenerateDataStory:
     def test_returns_required_keys(self):
         df = make_sales_df()
-        result = generate_data_story(df, dataset_id="ds-1", dataset_filename="sales.csv")
+        result = generate_data_story(
+            df, dataset_id="ds-1", dataset_filename="sales.csv"
+        )
         assert "dataset_id" in result
         assert "row_count" in result
         assert "col_count" in result
@@ -174,7 +175,9 @@ class TestBuildSummary:
 class TestRecommendNextStep:
     def test_not_ready_returns_fix_data(self):
         step = _recommend_next_step("not_ready", None, [])
-        assert "quality" in step.lower() or "fix" in step.lower() or "data" in step.lower()
+        assert (
+            "quality" in step.lower() or "fix" in step.lower() or "data" in step.lower()
+        )
 
     def test_no_target_returns_set_target_prompt(self):
         step = _recommend_next_step("ready", None, [])
@@ -220,7 +223,9 @@ async def ac(tmp_path):
 
     from main import app
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
         yield client
 
 

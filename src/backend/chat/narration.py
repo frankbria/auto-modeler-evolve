@@ -15,7 +15,6 @@ from __future__ import annotations
 import json
 import os
 
-
 # ---------------------------------------------------------------------------
 # Claude API helper (best-effort, always falls back to static text)
 # ---------------------------------------------------------------------------

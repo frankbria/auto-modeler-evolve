@@ -23,7 +23,6 @@ from sqlmodel import Session, SQLModel, create_engine
 
 import db as db_module
 
-
 # ---------------------------------------------------------------------------
 # Shared API test fixture (modelled after test_api_coverage_gaps.py)
 # ---------------------------------------------------------------------------

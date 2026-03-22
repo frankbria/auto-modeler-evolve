@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import numpy as np
 
-
 # ---------------------------------------------------------------------------
 # Global feature importance
 # ---------------------------------------------------------------------------
@@ -152,9 +151,9 @@ def explain_single_prediction(
     )
 
     return {
-        "prediction": predicted_class
-        if predicted_class is not None
-        else round(prediction_val, 4),
+        "prediction": (
+            predicted_class if predicted_class is not None else round(prediction_val, 4)
+        ),
         "prediction_value": round(prediction_val, 4),
         "contributions": contributions,
         "summary": summary,

@@ -78,10 +78,7 @@ def generate_data_story(
         cat_cols = [
             c
             for c in df.columns
-            if (
-                df[c].dtype == object
-                or pd.api.types.is_string_dtype(df[c])
-            )
+            if (df[c].dtype == object or pd.api.types.is_string_dtype(df[c]))
             and 2 <= df[c].nunique() <= 20
         ]
         numeric_cols = df.select_dtypes(include="number").columns.tolist()
@@ -94,7 +91,9 @@ def generate_data_story(
                 key=lambda c: abs(df[c].nunique() - min(10, row_count // 10)),
             )
             value_col = numeric_cols[0] if numeric_cols else None
-            grp_result = compute_group_stats(df, best_cat, value_cols=[value_col] if value_col else None)
+            grp_result = compute_group_stats(
+                df, best_cat, value_cols=[value_col] if value_col else None
+            )
             if not grp_result.get("error"):
                 sections.append(
                     {
@@ -136,7 +135,9 @@ def generate_data_story(
 
         numeric_cols = df.select_dtypes(include="number").columns.tolist()[:8]
         if numeric_cols and row_count >= 10:
-            anom_result = detect_anomalies(df, features=numeric_cols, contamination=0.05, n_top=5)
+            anom_result = detect_anomalies(
+                df, features=numeric_cols, contamination=0.05, n_top=5
+            )
             anomaly_count = anom_result.get("anomaly_count", 0)
             if anomaly_count > 0:
                 sections.append(
@@ -154,8 +155,13 @@ def generate_data_story(
     # Narrative summary + recommended next step                           #
     # ------------------------------------------------------------------ #
     summary = _build_summary(
-        row_count, col_count, readiness_score, readiness_grade,
-        anomaly_count, target_col, sections
+        row_count,
+        col_count,
+        readiness_score,
+        readiness_grade,
+        anomaly_count,
+        target_col,
+        sections,
     )
     recommended_next_step = _recommend_next_step(readiness_status, target_col, sections)
 
@@ -220,7 +226,9 @@ def _recommend_next_step(
         rd = next((s for s in sections if s["type"] == "readiness"), None)
         if rd and rd["data"].get("recommendations"):
             return f"Fix data quality first: {rd['data']['recommendations'][0]}"
-        return "Improve data quality before training — check the readiness details above."
+        return (
+            "Improve data quality before training — check the readiness details above."
+        )
 
     if not target_col:
         return (
@@ -235,4 +243,8 @@ def _recommend_next_step(
             + "' and I'll kick off training immediately."
         )
 
-    return "Explore your data further — ask about specific patterns or try 'what drives " + (target_col or "my metrics") + "'."
+    return (
+        "Explore your data further — ask about specific patterns or try 'what drives "
+        + (target_col or "my metrics")
+        + "'."
+    )

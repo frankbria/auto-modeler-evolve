@@ -15,7 +15,6 @@ from sqlmodel import Session, SQLModel, create_engine
 
 import db as db_module
 
-
 # ---------------------------------------------------------------------------
 # Shared test fixture helpers
 # ---------------------------------------------------------------------------

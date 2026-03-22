@@ -3,7 +3,6 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-
 # ---------------------------------------------------------------------------
 # Basic column statistics (called on every upload)
 # ---------------------------------------------------------------------------
