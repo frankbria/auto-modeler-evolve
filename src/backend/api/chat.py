@@ -1857,9 +1857,14 @@ def send_message(
                     _recs = _rec_models(_problem_type, _ds.row_count, _ds.column_count)
                     _algo_names = [r["algorithm"] for r in _recs[:3]]
 
-                    _transforms_raw = json.loads(_fs.transformations or "[]") if _fs else []
+                    _transforms_raw = (
+                        json.loads(_fs.transformations or "[]") if _fs else []
+                    )
                     if _transforms_raw:
-                        from core.feature_engine import apply_transformations as _apply_t
+                        from core.feature_engine import (
+                            apply_transformations as _apply_t,
+                        )
+
                         _df, _ = _apply_t(_df, _transforms_raw)
 
                     _feature_cols = [c for c in _df.columns if c != _target]
