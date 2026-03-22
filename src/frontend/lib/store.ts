@@ -14,6 +14,7 @@ import type {
   TargetCorrelationResult,
   GroupStatsResult,
   RenameResult,
+  TrainingStartedResult,
 } from "./types"
 
 interface AppState {
@@ -47,6 +48,7 @@ interface AppState {
   attachCorrelationToLastMessage: (target_correlation: TargetCorrelationResult) => void
   attachGroupStatsToLastMessage: (group_stats: GroupStatsResult) => void
   attachRenameResultToLastMessage: (rename_result: RenameResult) => void
+  attachTrainingStartedToLastMessage: (training_started: TrainingStartedResult) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -174,6 +176,16 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, rename_result }
+      }
+      return { messages }
+    }),
+
+  attachTrainingStartedToLastMessage: (training_started) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, training_started }
       }
       return { messages }
     }),

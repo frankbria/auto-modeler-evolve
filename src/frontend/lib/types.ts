@@ -152,6 +152,15 @@ export interface RenameResult {
   column_count: number
 }
 
+export interface TrainingStartedResult {
+  project_id: string
+  target_column: string
+  problem_type: "classification" | "regression"
+  algorithms: string[]
+  run_count: number
+  status: "started"
+}
+
 export interface ChatMessage {
   role: "user" | "assistant"
   content: string
@@ -165,6 +174,7 @@ export interface ChatMessage {
   target_correlation?: TargetCorrelationResult
   group_stats?: GroupStatsResult
   rename_result?: RenameResult
+  training_started?: TrainingStartedResult
 }
 
 export interface QueryResponse {

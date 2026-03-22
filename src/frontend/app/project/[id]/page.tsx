@@ -30,6 +30,7 @@ import { ReadinessCheckCard } from "@/components/data/readiness-check-card"
 import { CorrelationBarCard } from "@/components/data/correlation-bar-card"
 import { GroupStatsCard } from "@/components/data/group-stats-card"
 import { RenameResultCard } from "@/components/data/rename-result-card"
+import { TrainingStartedCard } from "@/components/models/training-started-card"
 import { api } from "@/lib/api"
 import { useAppStore } from "@/lib/store"
 import type {
@@ -53,6 +54,7 @@ import type {
   TargetCorrelationResult,
   GroupStatsResult,
   RenameResult,
+  TrainingStartedResult,
 } from "@/lib/types"
 
 const WELCOME_MESSAGE =
@@ -110,6 +112,7 @@ export default function ProjectWorkspace() {
     attachCorrelationToLastMessage,
     attachGroupStatsToLastMessage,
     attachRenameResultToLastMessage,
+    attachTrainingStartedToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -342,6 +345,8 @@ export default function ProjectWorkspace() {
                 attachGroupStatsToLastMessage(json.group_stats as GroupStatsResult)
               } else if (json.type === "rename_result" && json.rename) {
                 attachRenameResultToLastMessage(json.rename as RenameResult)
+              } else if (json.type === "training_started" && json.training) {
+                attachTrainingStartedToLastMessage(json.training as TrainingStartedResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -372,6 +377,7 @@ export default function ProjectWorkspace() {
     attachCorrelationToLastMessage,
     attachGroupStatsToLastMessage,
     attachRenameResultToLastMessage,
+    attachTrainingStartedToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -588,6 +594,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.rename_result && (
                       <RenameResultCard result={msg.rename_result} />
+                    )}
+                    {msg.training_started && (
+                      <TrainingStartedCard result={msg.training_started} />
                     )}
                   </div>
                 </div>

@@ -612,6 +612,54 @@ def _detect_rename_request(message: str, columns: list[str]) -> dict | None:
     return {"old_name": old_name, "new_name": raw_new}
 
 
+# Keywords that trigger chat-initiated model training
+_TRAIN_PATTERNS = re.compile(
+    r"(?:"
+    r"(?:train|build|create|fit|run|start)\s+(?:a\s+)?(?:new\s+)?(?:model|predictor|classifier|regressor)|"
+    r"(?:start|begin|kick.?off)\s+training|"
+    r"train\s+(?:me\s+)?(?:a\s+)?model\s+(?:to\s+)?predict|"
+    r"build\s+(?:a\s+)?(?:ml|machine.learning|predictive|ai)\s+model|"
+    r"(?:I\s+want\s+to|let'?s|can\s+you)\s+(?:train|build|fit|model)\s+(?:a\s+)?(?:model|predictor)|"
+    r"model\s+(?:this|the|my)\s+(?:data|dataset)|"
+    r"predict\s+\w+\s+(?:with|using)\s+(?:a\s+)?(?:model|ml|machine\s+learning)"
+    r")",
+    re.IGNORECASE,
+)
+
+# Extract "predict X" / "target is X" / "model for X" — scan against known columns
+_TRAIN_TARGET_EXTRACT = re.compile(
+    r"(?:"
+    r"predict\s+(?:the\s+)?['\"]?(\w+)['\"]?|"
+    r"target\s+(?:is\s+|column\s+(?:is\s+)?)?['\"]?(\w+)['\"]?|"
+    r"(?:model|forecast|estimate)\s+(?:the\s+)?['\"]?(\w+)['\"]?"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def _detect_train_target(message: str, df_columns: list[str]) -> str | None:
+    """Extract a target column from a training request message.
+
+    First tries pattern extraction ("predict X"), then scans known column names.
+    Returns the matched column name (original casing) or None.
+    """
+    col_lower = {c.lower(): c for c in df_columns}
+
+    # Try pattern-based extraction first
+    for m in _TRAIN_TARGET_EXTRACT.finditer(message):
+        for g in m.groups():
+            if g and g.lower() in col_lower:
+                return col_lower[g.lower()]
+
+    # Fallback: any column name mentioned in the message
+    msg_lower = message.lower()
+    for col in df_columns:
+        if col.lower() in msg_lower:
+            return col
+
+    return None
+
+
 class ChatMessage(BaseModel):
     message: str
 
@@ -1734,6 +1782,151 @@ def send_message(
             "Reassure them that their feature engineering and model history will be kept."
         )
 
+    # Check if user wants to train a model through conversation
+    training_started_event: dict | None = None
+    if _TRAIN_PATTERNS.search(body.message) and ctx["dataset"]:
+        try:
+            import queue as _queue
+            import threading as _threading
+
+            from api.models import (
+                MODELS_DIR as _MODELS_DIR,
+                _lock as _train_lock,
+                _train_in_background,
+                _training_counters,
+                _training_queues,
+            )
+            from core.feature_engine import detect_problem_type as _detect_pt
+            from core.trainer import recommend_models as _rec_models
+            from models.model_run import ModelRun as _ModelRun
+
+            _ds = ctx["dataset"]
+            _file_path = Path(_ds.file_path)
+            if _file_path.exists():
+                _df = pd.read_csv(_file_path)
+                _all_cols = list(_df.columns)
+                _fs = ctx["feature_set"]
+
+                # Resolve target: use existing, or extract from message, or ask
+                _target: str | None = None
+                _problem_type: str = "regression"
+                _feature_set_id: str | None = None
+
+                if _fs and _fs.target_column:
+                    # Case A: already configured — use as-is
+                    _target = _fs.target_column
+                    _problem_type = _fs.problem_type or "regression"
+                    _feature_set_id = _fs.id
+                else:
+                    _target_from_msg = _detect_train_target(body.message, _all_cols)
+                    if _target_from_msg:
+                        _target = _target_from_msg
+                        _pt_result = _detect_pt(_df, _target)
+                        _problem_type = _pt_result.get("problem_type", "regression")
+
+                        if _fs:
+                            # Case B: feature set exists, no target — set it
+                            with Session(session.bind) as _fs_session:
+                                _fs_to_update = _fs_session.get(FeatureSet, _fs.id)
+                                if _fs_to_update:
+                                    _fs_to_update.target_column = _target
+                                    _fs_to_update.problem_type = _problem_type
+                                    _fs_session.add(_fs_to_update)
+                                    _fs_session.commit()
+                            _feature_set_id = _fs.id
+                        else:
+                            # Case C: no feature set — create a minimal one
+                            _feature_cols_raw = [c for c in _all_cols if c != _target]
+                            _col_map = {c: [c] for c in _feature_cols_raw}
+                            with Session(session.bind) as _new_fs_session:
+                                _new_fs = FeatureSet(
+                                    dataset_id=_ds.id,
+                                    transformations=json.dumps([]),
+                                    column_mapping=json.dumps(_col_map),
+                                    target_column=_target,
+                                    problem_type=_problem_type,
+                                    is_active=True,
+                                )
+                                _new_fs_session.add(_new_fs)
+                                _new_fs_session.commit()
+                                _new_fs_session.refresh(_new_fs)
+                                _feature_set_id = _new_fs.id
+
+                if _target and _feature_set_id:
+                    # Get algorithm recommendations and start training
+                    _recs = _rec_models(_problem_type, _ds.row_count, _ds.column_count)
+                    _algo_names = [r["algorithm"] for r in _recs[:3]]
+
+                    _transforms_raw = json.loads(_fs.transformations or "[]") if _fs else []
+                    if _transforms_raw:
+                        from core.feature_engine import apply_transformations as _apply_t
+                        _df, _ = _apply_t(_df, _transforms_raw)
+
+                    _feature_cols = [c for c in _df.columns if c != _target]
+                    _model_dir = _MODELS_DIR / project_id
+
+                    with _train_lock:
+                        _training_queues[project_id] = _queue.Queue()
+                        _training_counters[project_id] = len(_algo_names)
+
+                    _run_ids: list[str] = []
+                    with Session(session.bind) as _tr_session:
+                        for _algo in _algo_names:
+                            _run = _ModelRun(
+                                project_id=project_id,
+                                feature_set_id=_feature_set_id,
+                                algorithm=_algo,
+                                hyperparameters=json.dumps({}),
+                                status="pending",
+                            )
+                            _tr_session.add(_run)
+                            _tr_session.commit()
+                            _tr_session.refresh(_run)
+                            _run_ids.append(_run.id)
+
+                            _t = _threading.Thread(
+                                target=_train_in_background,
+                                args=(
+                                    _run.id,
+                                    project_id,
+                                    _df.copy(),
+                                    _feature_cols,
+                                    _target,
+                                    _algo,
+                                    _problem_type,
+                                    _model_dir,
+                                ),
+                                daemon=True,
+                            )
+                            _t.start()
+
+                    training_started_event = {
+                        "project_id": project_id,
+                        "target_column": _target,
+                        "problem_type": _problem_type,
+                        "algorithms": _algo_names,
+                        "run_count": len(_run_ids),
+                        "status": "started",
+                    }
+                    system_prompt += (
+                        f"\n\n## Model Training Started\n"
+                        f"Training {len(_algo_names)} model(s) to predict '{_target}' "
+                        f"({_problem_type}): {', '.join(_algo_names)}.\n"
+                        "Inform the user enthusiastically that training has started. "
+                        "Tell them to click the Models tab to watch real-time progress. "
+                        "When training finishes you'll automatically narrate the results in chat."
+                    )
+                elif not _target:
+                    # No target found — guide the user
+                    system_prompt += (
+                        "\n\n## Training Request — Target Column Needed\n"
+                        "The user wants to train a model but no target column has been set. "
+                        "Ask them: 'What do you want to predict? For example, say "
+                        "\"train a model to predict revenue\" and I'll set that up automatically.'"
+                    )
+        except Exception:  # noqa: BLE001
+            pass  # Training initiation is nice-to-have; never crash chat
+
     # Pre-compute follow-up suggestions (based on state + current message)
     current_state = detect_state(
         ctx["dataset"], ctx["feature_set"], ctx["model_runs"], ctx["deployment"]
@@ -1847,6 +2040,10 @@ def send_message(
         # Emit refresh prompt — guides user to upload new data
         if refresh_prompt_event:
             yield f"data: {json.dumps({'type': 'refresh_prompt', 'refresh': refresh_prompt_event})}\n\n"
+
+        # Emit training started event — backend has already launched training threads
+        if training_started_event:
+            yield f"data: {json.dumps({'type': 'training_started', 'training': training_started_event})}\n\n"
 
         # Emit follow-up suggestion chips (always, if we have any)
         if suggestions_list:

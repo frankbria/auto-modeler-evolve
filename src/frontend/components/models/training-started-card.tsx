@@ -1,0 +1,68 @@
+"use client"
+
+import type { TrainingStartedResult } from "@/lib/types"
+
+interface TrainingStartedCardProps {
+  result: TrainingStartedResult
+}
+
+const ALGO_LABELS: Record<string, string> = {
+  linear_regression: "Linear Regression",
+  random_forest: "Random Forest",
+  gradient_boosting: "Gradient Boosting",
+  logistic_regression: "Logistic Regression",
+  random_forest_classifier: "Random Forest",
+  gradient_boosting_classifier: "Gradient Boosting",
+  xgboost: "XGBoost",
+  xgboost_classifier: "XGBoost",
+  lightgbm: "LightGBM",
+  lightgbm_classifier: "LightGBM",
+  mlp_regressor: "Neural Network",
+  mlp_classifier: "Neural Network",
+}
+
+function algoLabel(algo: string): string {
+  return ALGO_LABELS[algo] ?? algo.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
+}
+
+export function TrainingStartedCard({ result }: TrainingStartedCardProps) {
+  const problemLabel =
+    result.problem_type === "classification" ? "Classification" : "Regression"
+
+  return (
+    <div
+      className="mt-2 rounded-lg border border-primary/20 bg-primary/5 p-3"
+      data-testid="training-started-card"
+    >
+      <div className="mb-2 flex items-center gap-2">
+        <span className="text-xs font-semibold text-primary">Training Started</span>
+        <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary">
+          {problemLabel}
+        </span>
+      </div>
+      <p className="mb-2 text-sm text-foreground">
+        Training{" "}
+        <span className="font-semibold">{result.run_count}</span>{" "}
+        model{result.run_count !== 1 ? "s" : ""} to predict{" "}
+        <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs font-semibold">
+          {result.target_column}
+        </span>
+      </p>
+      <div className="flex flex-wrap gap-1.5">
+        {result.algorithms.map((algo) => (
+          <span
+            key={algo}
+            className="rounded-full border border-border bg-background px-2 py-0.5 text-xs text-muted-foreground"
+          >
+            {algoLabel(algo)}
+          </span>
+        ))}
+      </div>
+      <p className="mt-2 text-xs text-muted-foreground">
+        Check the{" "}
+        <span className="font-medium text-foreground">Models tab</span> for
+        real-time progress →
+      </p>
+    </div>
+  )
+}
