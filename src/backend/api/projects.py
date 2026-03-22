@@ -411,7 +411,9 @@ def _static_narrative(ctx: dict) -> str:
         quality = (
             "clean"
             if d["missing_pct"] < 5
-            else "mostly complete" if d["missing_pct"] < 20 else "with some gaps"
+            else "mostly complete"
+            if d["missing_pct"] < 20
+            else "with some gaps"
         )
         parts.append(
             f"The analysis is based on **{d['filename']}** — "
