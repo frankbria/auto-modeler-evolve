@@ -1977,9 +1977,7 @@ def send_message(
             _ds = ctx["dataset"]
             with Session(_engine) as _fc_session:
                 _existing_af = _fc_session.exec(
-                    select(_DatasetFilter).where(
-                        _DatasetFilter.dataset_id == _ds.id
-                    )
+                    select(_DatasetFilter).where(_DatasetFilter.dataset_id == _ds.id)
                 ).first()
                 if _existing_af:
                     _fc_session.delete(_existing_af)

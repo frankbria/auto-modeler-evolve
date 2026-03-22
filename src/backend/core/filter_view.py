@@ -56,7 +56,11 @@ def parse_filter_request(
         col = col_lower.get(raw_col.lower())
         if col:
             conditions.append(
-                {"column": col, "operator": _map_sym_op(op_sym), "value": float(val_str)}
+                {
+                    "column": col,
+                    "operator": _map_sym_op(op_sym),
+                    "value": float(val_str),
+                }
             )
 
     # Pattern 2: equality — "region is North", "region = East", "status equals active"
@@ -69,7 +73,15 @@ def parse_filter_request(
         col = col_lower.get(raw_col.lower())
         if col and not _already_covered(conditions, col):
             # skip if it looks like a programming expression, not a column
-            if raw_val.lower() not in ("true", "false", "null", "none", "a", "an", "the"):
+            if raw_val.lower() not in (
+                "true",
+                "false",
+                "null",
+                "none",
+                "a",
+                "an",
+                "the",
+            ):
                 conditions.append({"column": col, "operator": "eq", "value": raw_val})
 
     # Pattern 3: "contains" — "category contains Electronics"
@@ -169,14 +181,20 @@ def validate_filter_conditions(
 # ---------------------------------------------------------------------------
 
 
-def _apply_one(
-    df: pd.DataFrame, col: str, op: str, val: Any
-) -> pd.DataFrame:
+def _apply_one(df: pd.DataFrame, col: str, op: str, val: Any) -> pd.DataFrame:
     series = df[col]
     if op == "eq":
-        return df[series.astype(str).str.lower() == str(val).lower()] if series.dtype == object or pd.api.types.is_string_dtype(series) else df[series == val]
+        return (
+            df[series.astype(str).str.lower() == str(val).lower()]
+            if series.dtype == object or pd.api.types.is_string_dtype(series)
+            else df[series == val]
+        )
     elif op == "ne":
-        return df[series.astype(str).str.lower() != str(val).lower()] if series.dtype == object or pd.api.types.is_string_dtype(series) else df[series != val]
+        return (
+            df[series.astype(str).str.lower() != str(val).lower()]
+            if series.dtype == object or pd.api.types.is_string_dtype(series)
+            else df[series != val]
+        )
     elif op == "gt":
         return df[pd.to_numeric(series, errors="coerce") > float(val)]
     elif op == "lt":

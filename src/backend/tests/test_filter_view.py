@@ -264,9 +264,7 @@ class TestFilterEndpoints:
         resp = await client.post(
             f"/api/data/{dataset_id}/set-filter",
             json={
-                "conditions": [
-                    {"column": "region", "operator": "eq", "value": "North"}
-                ]
+                "conditions": [{"column": "region", "operator": "eq", "value": "North"}]
             },
         )
         assert resp.status_code == 200
@@ -275,7 +273,9 @@ class TestFilterEndpoints:
         assert data["original_rows"] == 3
         assert "region" in data["filter_summary"]
 
-    async def test_set_filter_invalid_column(self, client: AsyncClient, dataset_with_csv):
+    async def test_set_filter_invalid_column(
+        self, client: AsyncClient, dataset_with_csv
+    ):
         resp = await client.post(
             f"/api/data/{dataset_with_csv}/set-filter",
             json={
@@ -299,9 +299,7 @@ class TestFilterEndpoints:
         await client.post(
             f"/api/data/{dataset_with_csv}/set-filter",
             json={
-                "conditions": [
-                    {"column": "region", "operator": "eq", "value": "North"}
-                ]
+                "conditions": [{"column": "region", "operator": "eq", "value": "North"}]
             },
         )
         resp = await client.get(f"/api/data/{dataset_with_csv}/active-filter")
@@ -315,9 +313,7 @@ class TestFilterEndpoints:
         await client.post(
             f"/api/data/{dataset_with_csv}/set-filter",
             json={
-                "conditions": [
-                    {"column": "region", "operator": "eq", "value": "North"}
-                ]
+                "conditions": [{"column": "region", "operator": "eq", "value": "North"}]
             },
         )
         resp = await client.delete(f"/api/data/{dataset_with_csv}/clear-filter")
@@ -334,18 +330,14 @@ class TestFilterEndpoints:
         await client.post(
             f"/api/data/{dataset_with_csv}/set-filter",
             json={
-                "conditions": [
-                    {"column": "region", "operator": "eq", "value": "North"}
-                ]
+                "conditions": [{"column": "region", "operator": "eq", "value": "North"}]
             },
         )
         # Overwrite with new filter
         resp = await client.post(
             f"/api/data/{dataset_with_csv}/set-filter",
             json={
-                "conditions": [
-                    {"column": "revenue", "operator": "gt", "value": 1000}
-                ]
+                "conditions": [{"column": "revenue", "operator": "gt", "value": 1000}]
             },
         )
         assert resp.status_code == 200
@@ -364,9 +356,7 @@ class TestFilterEndpoints:
         resp = await client.post(
             "/api/data/nonexistent-dataset/set-filter",
             json={
-                "conditions": [
-                    {"column": "region", "operator": "eq", "value": "North"}
-                ]
+                "conditions": [{"column": "region", "operator": "eq", "value": "North"}]
             },
         )
         assert resp.status_code == 404
@@ -379,9 +369,7 @@ class TestFilterEndpoints:
         resp = await client.post(
             f"/api/data/{dataset_with_csv}/set-filter",
             json={
-                "conditions": [
-                    {"column": "region", "operator": "eq", "value": "South"}
-                ]
+                "conditions": [{"column": "region", "operator": "eq", "value": "South"}]
             },
         )
         data = resp.json()
