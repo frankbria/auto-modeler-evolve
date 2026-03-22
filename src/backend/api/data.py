@@ -2041,3 +2041,39 @@ def rename_column(
         "row_count": len(df),
         "column_count": len(df.columns),
     }
+
+
+# ---------------------------------------------------------------------------
+# Automated data story
+# ---------------------------------------------------------------------------
+
+
+@router.get("/{dataset_id}/story")
+def get_data_story(
+    dataset_id: str,
+    target: str | None = None,
+    session: Session = Depends(get_session),
+):
+    """Orchestrate a comprehensive data analysis narrative.
+
+    Runs readiness, group-by, target correlations (if target provided), and
+    anomaly detection — combines them into a single DataStory response.
+    """
+    dataset = session.get(Dataset, dataset_id)
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    file_path = Path(dataset.file_path)
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Dataset file not found")
+
+    df = pd.read_csv(file_path)
+
+    from core.storyteller import generate_data_story
+
+    return generate_data_story(
+        df,
+        dataset_id=dataset_id,
+        target_col=target,
+        dataset_filename=dataset.filename,
+    )

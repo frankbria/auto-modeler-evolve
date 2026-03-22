@@ -612,6 +612,23 @@ def _detect_rename_request(message: str, columns: list[str]) -> dict | None:
     return {"old_name": old_name, "new_name": raw_new}
 
 
+# Keywords that trigger an automated data story / full analysis
+_STORY_PATTERNS = re.compile(
+    r"\b("
+    r"analyze\s+(?:my\s+)?(?:data|dataset|this)|"
+    r"walk\s+(?:me\s+)?through\s+(?:my\s+|this\s+)?(?:data|dataset)|"
+    r"give\s+(?:me\s+)?(?:a\s+|the\s+)?(?:full|complete|comprehensive|overall)\s+(?:analysis|summary|overview|picture)|"
+    r"what(?:'?s|\s+is)\s+interesting|"
+    r"what\s+(?:should\s+i\s+know|are\s+the\s+(?:key\s+)?(?:insights?|findings?|highlights?))|"
+    r"summarize\s+(?:my\s+)?(?:data|dataset|this)|"
+    r"(?:tell|show)\s+me\s+(?:everything|the\s+story|the\s+key\s+facts?)|"
+    r"data\s+(?:story|overview|summary)|"
+    r"(?:full|complete)\s+(?:data\s+)?analysis|"
+    r"what\s+do\s+you\s+(?:see|find)\s+in\s+(?:my\s+)?(?:data|this)"
+    r")\b",
+    re.IGNORECASE,
+)
+
 # Keywords that trigger chat-initiated model training
 _TRAIN_PATTERNS = re.compile(
     r"(?:"
@@ -1782,6 +1799,40 @@ def send_message(
             "Reassure them that their feature engineering and model history will be kept."
         )
 
+    # Check if user wants a full data story / comprehensive analysis
+    data_story_event: dict | None = None
+    if _STORY_PATTERNS.search(body.message) and ctx["dataset"]:
+        try:
+            from core.storyteller import generate_data_story as _gen_story
+
+            _ds = ctx["dataset"]
+            _file_path = Path(_ds.file_path)
+            if _file_path.exists():
+                _df = pd.read_csv(_file_path)
+                _fs = ctx["feature_set"]
+                _target = _fs.target_column if _fs else None
+                _story = _gen_story(
+                    _df,
+                    dataset_id=_ds.id,
+                    target_col=_target,
+                    dataset_filename=_ds.filename,
+                )
+                data_story_event = _story
+                _grade = _story["readiness_grade"]
+                _score = _story["readiness_score"]
+                _next = _story["recommended_next_step"]
+                _sec_titles = [s["title"] for s in _story["sections"]]
+                system_prompt += (
+                    f"\n\n## Automated Data Story\n"
+                    f"{_story['summary']}\n"
+                    f"Sections analysed: {', '.join(_sec_titles)}.\n"
+                    f"Recommended next step: {_next}\n"
+                    "A comprehensive data story card is shown in the chat with all findings. "
+                    "Summarise the key insights in plain English and guide the user to the recommended next step."
+                )
+        except Exception:  # noqa: BLE001
+            pass  # Story is nice-to-have; never crash chat
+
     # Check if user wants to train a model through conversation
     training_started_event: dict | None = None
     if _TRAIN_PATTERNS.search(body.message) and ctx["dataset"]:
@@ -2049,6 +2100,10 @@ def send_message(
         # Emit training started event — backend has already launched training threads
         if training_started_event:
             yield f"data: {json.dumps({'type': 'training_started', 'training': training_started_event})}\n\n"
+
+        # Emit automated data story
+        if data_story_event:
+            yield f"data: {json.dumps({'type': 'data_story', 'story': data_story_event})}\n\n"
 
         # Emit follow-up suggestion chips (always, if we have any)
         if suggestions_list:

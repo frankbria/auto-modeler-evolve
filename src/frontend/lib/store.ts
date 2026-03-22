@@ -15,6 +15,7 @@ import type {
   GroupStatsResult,
   RenameResult,
   TrainingStartedResult,
+  DataStory,
 } from "./types"
 
 interface AppState {
@@ -49,6 +50,7 @@ interface AppState {
   attachGroupStatsToLastMessage: (group_stats: GroupStatsResult) => void
   attachRenameResultToLastMessage: (rename_result: RenameResult) => void
   attachTrainingStartedToLastMessage: (training_started: TrainingStartedResult) => void
+  attachDataStoryToLastMessage: (data_story: DataStory) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -186,6 +188,16 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, training_started }
+      }
+      return { messages }
+    }),
+
+  attachDataStoryToLastMessage: (data_story) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, data_story }
       }
       return { messages }
     }),

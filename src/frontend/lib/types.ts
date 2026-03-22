@@ -175,6 +175,7 @@ export interface ChatMessage {
   group_stats?: GroupStatsResult
   rename_result?: RenameResult
   training_started?: TrainingStartedResult
+  data_story?: DataStory
 }
 
 export interface QueryResponse {
@@ -1029,4 +1030,27 @@ export interface GroupStatsResult {
   rows: GroupStatsRow[]
   total: number | null
   summary: string
+}
+
+// ---------------------------------------------------------------------------
+// Automated Data Story (Phase 8)
+// ---------------------------------------------------------------------------
+
+export interface DataStorySection {
+  type: 'readiness' | 'group_by' | 'correlations' | 'anomalies'
+  title: string
+  insight: string
+  data: Record<string, unknown>
+}
+
+export interface DataStory {
+  dataset_id: string
+  filename: string
+  row_count: number
+  col_count: number
+  readiness_score: number
+  readiness_grade: string
+  sections: DataStorySection[]
+  summary: string
+  recommended_next_step: string
 }

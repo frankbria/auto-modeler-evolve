@@ -31,6 +31,7 @@ import { CorrelationBarCard } from "@/components/data/correlation-bar-card"
 import { GroupStatsCard } from "@/components/data/group-stats-card"
 import { RenameResultCard } from "@/components/data/rename-result-card"
 import { TrainingStartedCard } from "@/components/models/training-started-card"
+import { DataStoryCard } from "@/components/data/data-story-card"
 import { api } from "@/lib/api"
 import { useAppStore } from "@/lib/store"
 import type {
@@ -55,6 +56,7 @@ import type {
   GroupStatsResult,
   RenameResult,
   TrainingStartedResult,
+  DataStory,
 } from "@/lib/types"
 
 const WELCOME_MESSAGE =
@@ -113,6 +115,7 @@ export default function ProjectWorkspace() {
     attachGroupStatsToLastMessage,
     attachRenameResultToLastMessage,
     attachTrainingStartedToLastMessage,
+    attachDataStoryToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -347,6 +350,8 @@ export default function ProjectWorkspace() {
                 attachRenameResultToLastMessage(json.rename as RenameResult)
               } else if (json.type === "training_started" && json.training) {
                 attachTrainingStartedToLastMessage(json.training as TrainingStartedResult)
+              } else if (json.type === "data_story" && json.story) {
+                attachDataStoryToLastMessage(json.story as DataStory)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -378,6 +383,7 @@ export default function ProjectWorkspace() {
     attachGroupStatsToLastMessage,
     attachRenameResultToLastMessage,
     attachTrainingStartedToLastMessage,
+    attachDataStoryToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -597,6 +603,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.training_started && (
                       <TrainingStartedCard result={msg.training_started} />
+                    )}
+                    {msg.data_story && (
+                      <DataStoryCard result={msg.data_story} />
                     )}
                   </div>
                 </div>

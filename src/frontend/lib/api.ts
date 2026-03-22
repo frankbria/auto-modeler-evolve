@@ -348,6 +348,15 @@ export const api = {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ old_name: oldName, new_name: newName }),
       }).then((r) => r.json()),
+
+    getDataStory: (datasetId: string, target?: string): Promise<import("./types").DataStory> => {
+      const params = new URLSearchParams()
+      if (target) params.set("target", target)
+      const qs = params.toString()
+      return fetch(
+        `${API_URL}/api/data/${datasetId}/story${qs ? `?${qs}` : ""}`
+      ).then((r) => r.json())
+    },
   },
 
   chat: {

@@ -1,10 +1,10 @@
 {
-  "upload_1000_rows_ms": 44.6,
+  "upload_1000_rows_ms": 53.3,
   "correlations_ms": 1.4,
-  "train_linear_regression_ms": 71.2,
-  "single_prediction_ms": 12.8,
-  "upload_200_rows_ms": 42.1,
-  "profile_cached_ms": 1.0,
-  "feature_suggestions_ms": 5.2,
-  "recommendations_ms": 2.7
+  "train_linear_regression_ms": 75.3,
+  "single_prediction_ms": 12.1,
+  "upload_200_rows_ms": 47.6,
+  "profile_cached_ms": 1.2,
+  "feature_suggestions_ms": 3.9,
+  "recommendations_ms": 2.0
 }
