@@ -357,6 +357,24 @@ export const api = {
         `${API_URL}/api/data/${datasetId}/story${qs ? `?${qs}` : ""}`
       ).then((r) => r.json())
     },
+
+    setFilter: (
+      datasetId: string,
+      conditions: import("./types").FilterCondition[]
+    ): Promise<import("./types").FilterSetResult> =>
+      fetch(`${API_URL}/api/data/${datasetId}/set-filter`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ conditions }),
+      }).then((r) => r.json()),
+
+    clearFilter: (datasetId: string): Promise<{ dataset_id: string; cleared: boolean }> =>
+      fetch(`${API_URL}/api/data/${datasetId}/clear-filter`, {
+        method: "DELETE",
+      }).then((r) => r.json()),
+
+    getActiveFilter: (datasetId: string): Promise<import("./types").ActiveFilter> =>
+      fetch(`${API_URL}/api/data/${datasetId}/active-filter`).then((r) => r.json()),
   },
 
   chat: {

@@ -176,6 +176,7 @@ export interface ChatMessage {
   rename_result?: RenameResult
   training_started?: TrainingStartedResult
   data_story?: DataStory
+  filter_set?: FilterSetResult
 }
 
 export interface QueryResponse {
@@ -1053,4 +1054,33 @@ export interface DataStory {
   sections: DataStorySection[]
   summary: string
   recommended_next_step: string
+}
+
+// ---------------------------------------------------------------------------
+// Non-destructive data filter (Phase 8)
+// ---------------------------------------------------------------------------
+
+export interface FilterCondition {
+  column: string
+  operator: 'eq' | 'ne' | 'gt' | 'lt' | 'gte' | 'lte' | 'contains' | 'not_contains'
+  value: string | number
+}
+
+export interface ActiveFilter {
+  dataset_id: string
+  active: boolean
+  filter_summary?: string
+  conditions?: FilterCondition[]
+  original_rows?: number
+  filtered_rows?: number
+  row_reduction_pct?: number
+}
+
+export interface FilterSetResult {
+  dataset_id: string
+  filter_summary: string
+  conditions: FilterCondition[]
+  original_rows: number
+  filtered_rows: number
+  row_reduction_pct: number
 }

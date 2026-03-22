@@ -47,6 +47,7 @@ from core.merger import merge_datasets, suggest_join_keys
 from core.query_engine import run_nl_query
 from db import get_session
 from models.dataset import Dataset
+from models.dataset_filter import DatasetFilter
 from models.feature_set import FeatureSet
 from models.project import Project
 
@@ -2077,3 +2078,123 @@ def get_data_story(
         target_col=target,
         dataset_filename=dataset.filename,
     )
+
+
+# ---------------------------------------------------------------------------
+# Non-destructive data filter
+# ---------------------------------------------------------------------------
+
+
+class FilterRequest(BaseModel):
+    conditions: list[dict]  # [{column, operator, value}]
+
+
+@router.post("/{dataset_id}/set-filter")
+def set_dataset_filter(
+    dataset_id: str,
+    body: FilterRequest,
+    session: Session = Depends(get_session),
+):
+    """Set the active non-destructive filter for a dataset.
+
+    Overwrites any existing filter. Conditions are AND-ed together.
+    Returns filter summary with row counts.
+    """
+    from core.filter_view import (
+        apply_active_filter,
+        build_filter_summary,
+        validate_filter_conditions,
+    )
+
+    dataset = session.get(Dataset, dataset_id)
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    file_path = Path(dataset.file_path)
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Dataset file not found")
+
+    df = pd.read_csv(file_path)
+    df_columns = list(df.columns)
+
+    errors = validate_filter_conditions(body.conditions, df_columns)
+    if errors:
+        raise HTTPException(status_code=400, detail="; ".join(errors))
+
+    filtered_df = apply_active_filter(df, body.conditions)
+    summary = build_filter_summary(body.conditions)
+
+    # Upsert: replace existing filter for this dataset
+    existing = session.exec(
+        select(DatasetFilter).where(DatasetFilter.dataset_id == dataset_id)
+    ).first()
+    if existing:
+        session.delete(existing)
+        session.commit()
+
+    new_filter = DatasetFilter(
+        dataset_id=dataset_id,
+        conditions=json.dumps(body.conditions),
+        filter_summary=summary,
+        original_rows=len(df),
+        filtered_rows=len(filtered_df),
+    )
+    session.add(new_filter)
+    session.commit()
+    session.refresh(new_filter)
+
+    return {
+        "dataset_id": dataset_id,
+        "filter_summary": summary,
+        "conditions": body.conditions,
+        "original_rows": len(df),
+        "filtered_rows": len(filtered_df),
+        "row_reduction_pct": round((1 - len(filtered_df) / max(len(df), 1)) * 100, 1),
+    }
+
+
+@router.delete("/{dataset_id}/clear-filter")
+def clear_dataset_filter(
+    dataset_id: str,
+    session: Session = Depends(get_session),
+):
+    """Remove the active filter for a dataset, restoring full dataset view."""
+    dataset = session.get(Dataset, dataset_id)
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    existing = session.exec(
+        select(DatasetFilter).where(DatasetFilter.dataset_id == dataset_id)
+    ).first()
+    if existing:
+        session.delete(existing)
+        session.commit()
+
+    return {"dataset_id": dataset_id, "cleared": True}
+
+
+@router.get("/{dataset_id}/active-filter")
+def get_active_filter(
+    dataset_id: str,
+    session: Session = Depends(get_session),
+):
+    """Get the active filter for a dataset, or null if no filter is set."""
+    dataset = session.get(Dataset, dataset_id)
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    active = session.exec(
+        select(DatasetFilter).where(DatasetFilter.dataset_id == dataset_id)
+    ).first()
+    if not active:
+        return {"dataset_id": dataset_id, "active": False}
+
+    return {
+        "dataset_id": dataset_id,
+        "active": True,
+        "filter_summary": active.filter_summary,
+        "conditions": json.loads(active.conditions),
+        "original_rows": active.original_rows,
+        "filtered_rows": active.filtered_rows,
+        "row_reduction_pct": active.row_reduction_pct,
+    }

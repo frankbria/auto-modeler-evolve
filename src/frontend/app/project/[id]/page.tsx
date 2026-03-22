@@ -32,6 +32,8 @@ import { GroupStatsCard } from "@/components/data/group-stats-card"
 import { RenameResultCard } from "@/components/data/rename-result-card"
 import { TrainingStartedCard } from "@/components/models/training-started-card"
 import { DataStoryCard } from "@/components/data/data-story-card"
+import { FilterBadge } from "@/components/data/filter-badge"
+import { FilterSetCard } from "@/components/chat/filter-set-card"
 import { api } from "@/lib/api"
 import { useAppStore } from "@/lib/store"
 import type {
@@ -57,6 +59,8 @@ import type {
   RenameResult,
   TrainingStartedResult,
   DataStory,
+  FilterSetResult,
+  ActiveFilter,
 } from "@/lib/types"
 
 const WELCOME_MESSAGE =
@@ -116,6 +120,9 @@ export default function ProjectWorkspace() {
     attachRenameResultToLastMessage,
     attachTrainingStartedToLastMessage,
     attachDataStoryToLastMessage,
+    attachFilterToLastMessage,
+    setActiveFilter,
+    activeFilter,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -352,6 +359,19 @@ export default function ProjectWorkspace() {
                 attachTrainingStartedToLastMessage(json.training as TrainingStartedResult)
               } else if (json.type === "data_story" && json.story) {
                 attachDataStoryToLastMessage(json.story as DataStory)
+              } else if (json.type === "filter_set" && json.filter_set) {
+                attachFilterToLastMessage(json.filter_set as FilterSetResult)
+                setActiveFilter({
+                  dataset_id: json.filter_set.dataset_id,
+                  active: true,
+                  filter_summary: json.filter_set.filter_summary,
+                  conditions: json.filter_set.conditions,
+                  original_rows: json.filter_set.original_rows,
+                  filtered_rows: json.filter_set.filtered_rows,
+                  row_reduction_pct: json.filter_set.row_reduction_pct,
+                } as ActiveFilter)
+              } else if (json.type === "filter_cleared") {
+                setActiveFilter(null)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -384,6 +404,8 @@ export default function ProjectWorkspace() {
     attachRenameResultToLastMessage,
     attachTrainingStartedToLastMessage,
     attachDataStoryToLastMessage,
+    attachFilterToLastMessage,
+    setActiveFilter,
   ])
 
   const onDrop = useCallback(
@@ -607,6 +629,9 @@ export default function ProjectWorkspace() {
                     {msg.data_story && (
                       <DataStoryCard result={msg.data_story} />
                     )}
+                    {msg.filter_set && (
+                      <FilterSetCard result={msg.filter_set} />
+                    )}
                   </div>
                 </div>
               ))}
@@ -692,6 +717,17 @@ export default function ProjectWorkspace() {
 
                 {activeTab === "data" && (
                   <div className="flex flex-1 flex-col overflow-hidden">
+                    {activeFilter && (
+                      <div className="px-4 pt-3">
+                        <FilterBadge
+                          filter={activeFilter}
+                          onClear={async () => {
+                            await api.data.clearFilter(currentDataset.id)
+                            setActiveFilter(null)
+                          }}
+                        />
+                      </div>
+                    )}
                     <DataPreviewPanel
                       filename={currentDataset.filename}
                       rowCount={currentDataset.row_count}

@@ -677,6 +677,50 @@ def _detect_train_target(message: str, df_columns: list[str]) -> str | None:
     return None
 
 
+# Keywords that trigger a non-destructive data filter
+_FILTER_PATTERNS = re.compile(
+    r"\b("
+    r"filter\s+(?:to|by|the\s+data|my\s+data)|"
+    r"focus\s+on\s+(?:only\s+)?(?:the\s+)?\w|"
+    r"narrow\s+(?:down\s+)?(?:to|the)|"
+    r"show\s+(?:me\s+)?only|"
+    r"just\s+(?:look\s+at|show(?:\s+me)?)|"
+    r"look\s+at\s+only|"
+    r"limit\s+(?:to|the\s+data\s+to)|"
+    r"subset\s+(?:the\s+data\s+)?(?:to|by|where)|"
+    r"restrict\s+(?:to|the\s+data\s+to)|"
+    r"only\s+(?:consider|include|use)\s+\w|"
+    r"where\s+\w+\s+(?:is|=|>|<|>=|<=|contains?)\s+\w|"
+    r"for\s+(?:the\s+)?\w+\s+(?:region|segment|category|group|quarter|year)|"
+    r"set\s+(?:a\s+)?filter"
+    r")\b",
+    re.IGNORECASE,
+)
+
+# Keywords to clear an active filter
+_CLEAR_FILTER_PATTERNS = re.compile(
+    r"\b("
+    r"clear\s+(?:the\s+)?filter|remove\s+(?:the\s+)?filter|"
+    r"reset\s+(?:the\s+)?filter|turn\s+off\s+(?:the\s+)?filter|"
+    r"show\s+all\s+(?:data|rows)|no\s+filter|"
+    r"full\s+dataset|all\s+(?:the\s+)?data(?!\s+story)"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def _load_working_df(
+    file_path: "Path", active_filter_conditions: list | None
+) -> "pd.DataFrame":
+    """Load a DataFrame from CSV and apply active filter conditions if any."""
+    df = pd.read_csv(file_path)
+    if active_filter_conditions:
+        from core.filter_view import apply_active_filter
+
+        df = apply_active_filter(df, active_filter_conditions)
+    return df
+
+
 class ChatMessage(BaseModel):
     message: str
 
@@ -1102,6 +1146,30 @@ def send_message(
 
     client = anthropic.Anthropic()
 
+    # Load active dataset filter (if any) — applied to all analysis DataFrame loads
+    _active_filter_conditions: list | None = None
+    if ctx["dataset"]:
+        try:
+            from models.dataset_filter import DatasetFilter as _DatasetFilter
+
+            _af = session.exec(
+                select(_DatasetFilter).where(
+                    _DatasetFilter.dataset_id == ctx["dataset"].id
+                )
+            ).first()
+            if _af:
+                _active_filter_conditions = json.loads(_af.conditions)
+                system_prompt += (
+                    f"\n\n## Active Data Filter\n"
+                    f"All analyses in this session are running on a filtered subset: "
+                    f"**{_af.filter_summary}** "
+                    f"({_af.filtered_rows:,} of {_af.original_rows:,} rows shown). "
+                    "When referring to data statistics or results, note that they reflect "
+                    "the filtered subset, not the full dataset."
+                )
+        except Exception:  # noqa: BLE001
+            pass  # Filter load is nice-to-have; never crash chat
+
     # Capture dataset info for post-stream chart generation
     dataset = ctx["dataset"]
     dataset_file_path: str | None = dataset.file_path if dataset else None
@@ -1341,7 +1409,7 @@ def send_message(
             _ds = ctx["dataset"]
             _file_path = Path(_ds.file_path)
             if _file_path.exists():
-                _df = pd.read_csv(_file_path)
+                _df = _load_working_df(_file_path, _active_filter_conditions)
                 _cols = list(_df.columns)
                 _op = _detect_clean_op(body.message, _cols)
                 # Build a quality summary for context
@@ -1399,7 +1467,7 @@ def send_message(
             _ds = ctx["dataset"]
             _file_path = Path(_ds.file_path)
             if _file_path.exists():
-                _df = pd.read_csv(_file_path)
+                _df = _load_working_df(_file_path, _active_filter_conditions)
                 _cols = (
                     [c["name"] for c in json.loads(_ds.columns)]
                     if _ds.columns
@@ -1435,7 +1503,7 @@ def send_message(
             _ds = ctx["dataset"]
             _file_path = Path(_ds.file_path)
             if _file_path.exists():
-                _df = pd.read_csv(_file_path)
+                _df = _load_working_df(_file_path, _active_filter_conditions)
                 _numeric_cols = _df.select_dtypes(include="number").columns.tolist()[
                     :10
                 ]
@@ -1461,7 +1529,7 @@ def send_message(
             _ds = ctx["dataset"]
             _file_path = Path(_ds.file_path)
             if _file_path.exists():
-                _df = pd.read_csv(_file_path)
+                _df = _load_working_df(_file_path, _active_filter_conditions)
                 _cols = list(_df.columns)
                 _compute_req = _detect_compute_request(body.message, _cols)
                 if _compute_req:
@@ -1495,7 +1563,7 @@ def send_message(
             _ds = ctx["dataset"]
             _file_path = Path(_ds.file_path)
             if _file_path.exists():
-                _df = pd.read_csv(_file_path)
+                _df = _load_working_df(_file_path, _active_filter_conditions)
                 _compare_req = _detect_compare_request(body.message, _df)
                 if _compare_req:
                     from core.analyzer import compare_segments as _compare_segs
@@ -1544,7 +1612,7 @@ def send_message(
             _ds = ctx["dataset"]
             _file_path = Path(_ds.file_path)
             if _file_path.exists():
-                _df = pd.read_csv(_file_path)
+                _df = _load_working_df(_file_path, _active_filter_conditions)
                 from core.readiness import compute_data_readiness as _compute_dr
 
                 _fs = ctx["feature_set"]
@@ -1573,7 +1641,7 @@ def send_message(
             _ds = ctx["dataset"]
             _file_path = Path(_ds.file_path)
             if _file_path.exists():
-                _df = pd.read_csv(_file_path)
+                _df = _load_working_df(_file_path, _active_filter_conditions)
                 _all_cols = _df.columns.tolist()
                 _target_col = _detect_correlation_target_request(
                     body.message, _all_cols
@@ -1617,7 +1685,7 @@ def send_message(
             _ds = ctx["dataset"]
             _file_path = Path(_ds.file_path)
             if _file_path.exists():
-                _df = pd.read_csv(_file_path)
+                _df = _load_working_df(_file_path, _active_filter_conditions)
                 from core.forecaster import detect_time_series as _detect_ts
                 from core.forecaster import forecast_next_periods as _forecast
 
@@ -1651,7 +1719,7 @@ def send_message(
             _ds = ctx["dataset"]
             _file_path = Path(_ds.file_path)
             if _file_path.exists():
-                _df = pd.read_csv(_file_path)
+                _df = _load_working_df(_file_path, _active_filter_conditions)
                 _grp_req = _detect_group_request(body.message, _df)
                 if _grp_req:
                     from core.analyzer import compute_group_stats as _cgs
@@ -1700,7 +1768,7 @@ def send_message(
                     except Exception:  # noqa: BLE001
                         pass
                 if not _correlations:
-                    _df = pd.read_csv(_file_path)
+                    _df = _load_working_df(_file_path, _active_filter_conditions)
                     from core.analyzer import compute_full_profile as _cfp
 
                     _correlations = _cfp(_df).get("correlations", {})
@@ -1730,7 +1798,7 @@ def send_message(
             _ds = ctx["dataset"]
             _file_path = Path(_ds.file_path)
             if _file_path.exists():
-                _df = pd.read_csv(_file_path)
+                _df = _load_working_df(_file_path, _active_filter_conditions)
                 _cols = list(_df.columns)
                 _rename_req = _detect_rename_request(body.message, _cols)
                 if _rename_req:
@@ -1808,7 +1876,7 @@ def send_message(
             _ds = ctx["dataset"]
             _file_path = Path(_ds.file_path)
             if _file_path.exists():
-                _df = pd.read_csv(_file_path)
+                _df = _load_working_df(_file_path, _active_filter_conditions)
                 _fs = ctx["feature_set"]
                 _target = _fs.target_column if _fs else None
                 _story = _gen_story(
@@ -1833,6 +1901,100 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Story is nice-to-have; never crash chat
 
+    # Check if user wants to set a data filter ("focus on North region", "filter to Q4")
+    filter_set_event: dict | None = None
+    if _FILTER_PATTERNS.search(body.message) and ctx["dataset"]:
+        try:
+            from core.filter_view import (
+                parse_filter_request as _parse_filter,
+                apply_active_filter as _apply_filter,
+                build_filter_summary as _build_filter_summary,
+            )
+            from models.dataset_filter import DatasetFilter as _DatasetFilter
+            from db import engine as _engine
+
+            _ds = ctx["dataset"]
+            _file_path = Path(_ds.file_path)
+            if _file_path.exists():
+                _full_df = pd.read_csv(_file_path)
+                _all_cols = list(_full_df.columns)
+                _conditions = _parse_filter_request(body.message, _all_cols)
+                if _conditions:
+                    _filtered = _apply_filter(_full_df, _conditions)
+                    _summary = _build_filter_summary(_conditions)
+                    _orig_rows = len(_full_df)
+                    _filt_rows = len(_filtered)
+
+                    # Persist filter
+                    with Session(_engine) as _fs_session:
+                        _existing_af = _fs_session.exec(
+                            select(_DatasetFilter).where(
+                                _DatasetFilter.dataset_id == _ds.id
+                            )
+                        ).first()
+                        if _existing_af:
+                            _fs_session.delete(_existing_af)
+                            _fs_session.commit()
+                        _new_filter = _DatasetFilter(
+                            dataset_id=_ds.id,
+                            conditions=json.dumps(_conditions),
+                            filter_summary=_summary,
+                            original_rows=_orig_rows,
+                            filtered_rows=_filt_rows,
+                        )
+                        _fs_session.add(_new_filter)
+                        _fs_session.commit()
+
+                    # Update the active filter for this request
+                    _active_filter_conditions = _conditions
+                    _reduction = round((1 - _filt_rows / max(_orig_rows, 1)) * 100, 1)
+                    filter_set_event = {
+                        "dataset_id": _ds.id,
+                        "filter_summary": _summary,
+                        "conditions": _conditions,
+                        "original_rows": _orig_rows,
+                        "filtered_rows": _filt_rows,
+                        "row_reduction_pct": _reduction,
+                    }
+                    system_prompt += (
+                        f"\n\n## Data Filter Applied\n"
+                        f"Filter set: **{_summary}**\n"
+                        f"This narrows the dataset from {_orig_rows:,} to {_filt_rows:,} rows "
+                        f"({_reduction}% reduction). All subsequent analyses will use this subset. "
+                        "A filter badge will appear in the Data tab. "
+                        "Tell the user the filter is active and what they can now explore."
+                    )
+        except Exception:  # noqa: BLE001
+            pass  # Filter detection is nice-to-have; never crash chat
+
+    # Check if user wants to clear an active filter
+    filter_cleared_event: dict | None = None
+    if _CLEAR_FILTER_PATTERNS.search(body.message) and ctx["dataset"]:
+        try:
+            from models.dataset_filter import DatasetFilter as _DatasetFilter
+            from db import engine as _engine
+
+            _ds = ctx["dataset"]
+            with Session(_engine) as _fc_session:
+                _existing_af = _fc_session.exec(
+                    select(_DatasetFilter).where(
+                        _DatasetFilter.dataset_id == _ds.id
+                    )
+                ).first()
+                if _existing_af:
+                    _fc_session.delete(_existing_af)
+                    _fc_session.commit()
+                    _active_filter_conditions = None
+                    filter_cleared_event = {"dataset_id": _ds.id, "cleared": True}
+                    system_prompt += (
+                        "\n\n## Data Filter Cleared\n"
+                        "The active filter has been removed. "
+                        "All subsequent analyses will use the full dataset again. "
+                        "Confirm to the user that the filter is cleared."
+                    )
+        except Exception:  # noqa: BLE001
+            pass  # Filter clear is nice-to-have; never crash chat
+
     # Check if user wants to train a model through conversation
     training_started_event: dict | None = None
     if _TRAIN_PATTERNS.search(body.message) and ctx["dataset"]:
@@ -1854,7 +2016,7 @@ def send_message(
             _ds = ctx["dataset"]
             _file_path = Path(_ds.file_path)
             if _file_path.exists():
-                _df = pd.read_csv(_file_path)
+                _df = _load_working_df(_file_path, _active_filter_conditions)
                 _all_cols = list(_df.columns)
                 _fs = ctx["feature_set"]
 
@@ -2104,6 +2266,14 @@ def send_message(
         # Emit automated data story
         if data_story_event:
             yield f"data: {json.dumps({'type': 'data_story', 'story': data_story_event})}\n\n"
+
+        # Emit filter set event (filter is now active on the dataset)
+        if filter_set_event:
+            yield f"data: {json.dumps({'type': 'filter_set', 'filter': filter_set_event})}\n\n"
+
+        # Emit filter cleared event (returning to full dataset)
+        if filter_cleared_event:
+            yield f"data: {json.dumps({'type': 'filter_cleared', 'filter': filter_cleared_event})}\n\n"
 
         # Emit follow-up suggestion chips (always, if we have any)
         if suggestions_list:

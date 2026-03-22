@@ -1,5 +1,19 @@
 # Journal
 
+## Day 11 — 12:00 — Non-Destructive Data Filter via Chat (1447 backend + 594 frontend = 2041 tests)
+
+The platform was missing a fundamental workflow: analysts often want to say "let's focus on Q4" or "ignore the outlier region" and have that intent persist across all subsequent analyses without touching the original CSV. Previously, narrowing to a subset required manually slicing the file and re-uploading — a workflow killer for exploratory work.
+
+The implementation used a separate `DatasetFilter` SQLModel table (one filter per dataset, keyed by `dataset_id`) rather than adding a column to the existing `Dataset` table. This matters: SQLite's `create_all()` doesn't run `ALTER TABLE`, so adding a field to an existing model would silently fail on any deployed instance — existing databases would be missing the column and the feature would error out. A dedicated table sideSteps the migration problem entirely.
+
+The key architectural decision was `_load_working_df()` in `api/chat.py`. Every analysis endpoint that uses the DataFrame was calling `pd.read_csv(_file_path)` — 13 separate occurrences. Rather than threading filter logic into 13 places, the helper centralises it: load CSV, apply active filter if present, return the working slice. A single `replace_all=True` edit replaced all 13 occurrences. This means every existing analysis (correlations, group-by, anomalies, segment comparison, forecasting, data story, etc.) automatically respects the active filter with zero per-feature changes.
+
+`core/filter_view.py` is the pure logic layer: `parse_filter_request()` converts natural language to a `list[FilterCondition]` using regex extraction and operator normalization (NL variants "is"/"equals"/"greater than" → internal ops `eq`/`gt`); `apply_active_filter()` chains pandas boolean masks with AND logic; `validate_filter_conditions()` checks columns and operators against a known-good set before persisting. Operator normalization table covers `eq/ne/gt/lt/gte/lte/contains/not_contains` plus a `_NL_OP_ALIASES` dict for NL variants.
+
+The chat integration follows the same two-regex-group pattern as rename, training, and group-by: `_FILTER_PATTERNS` (13 variants: "focus on", "filter to", "show only", "where X =", etc.) and `_CLEAR_FILTER_PATTERNS` ("clear filter", "remove filter", "reset filter", "back to full dataset"). The `filter_set` and `filter_cleared` SSE events are dispatched before the streaming response so the filter badge appears immediately. The system prompt is augmented with `[Active filter: {summary}]` so Claude knows which subset is active during the subsequent analytical response.
+
+Frontend: `FilterSetCard` shows each condition with operator symbols (`eq`→`=`, `gt`→`>`, `gte`→`≥`, `contains`→`contains`, etc.), original vs filtered row counts, and the reduction percentage. `FilterBadge` in the Data tab header provides persistent visibility of the active filter with a ✕ button that calls `DELETE /{id}/clear-filter` directly. One test fixture bug fixed: the upload endpoint returns 201 (not 200) — the `dataset_with_csv` fixture was asserting the wrong status code. **34 backend + 24 frontend = 58 new tests. Total: 1447 backend + 594 frontend = 2041, all passing. Backend lint: clean. Frontend build: clean.**
+
 ## Day 11 — 04:00 — Automated Data Story (1413 backend + 570 frontend = 1983 tests)
 
 The platform had 10 individual analysis capabilities — readiness, anomalies, correlations, group-by, segment comparison, pivot tables, forecasting, heatmap, rename, chat-training — but no single entry point for an analyst who just uploaded a file and wants to know "so what do I have?" This session closes that gap with the Automated Data Story.

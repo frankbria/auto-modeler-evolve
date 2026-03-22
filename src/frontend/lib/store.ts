@@ -16,6 +16,8 @@ import type {
   RenameResult,
   TrainingStartedResult,
   DataStory,
+  FilterSetResult,
+  ActiveFilter,
 } from "./types"
 
 interface AppState {
@@ -27,6 +29,7 @@ interface AppState {
   dataInsights: DataInsight[]
   messages: ChatMessage[]
   isStreaming: boolean
+  activeFilter: ActiveFilter | null
 
   setProjects: (projects: Project[]) => void
   setCurrentProject: (project: Project | null) => void
@@ -51,6 +54,8 @@ interface AppState {
   attachRenameResultToLastMessage: (rename_result: RenameResult) => void
   attachTrainingStartedToLastMessage: (training_started: TrainingStartedResult) => void
   attachDataStoryToLastMessage: (data_story: DataStory) => void
+  attachFilterToLastMessage: (filter_set: FilterSetResult) => void
+  setActiveFilter: (filter: ActiveFilter | null) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -62,6 +67,7 @@ export const useAppStore = create<AppState>((set) => ({
   dataInsights: [],
   messages: [],
   isStreaming: false,
+  activeFilter: null,
 
   setProjects: (projects) => set({ projects }),
 
@@ -201,4 +207,16 @@ export const useAppStore = create<AppState>((set) => ({
       }
       return { messages }
     }),
+
+  attachFilterToLastMessage: (filter_set) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, filter_set }
+      }
+      return { messages }
+    }),
+
+  setActiveFilter: (filter) => set({ activeFilter: filter }),
 }))
