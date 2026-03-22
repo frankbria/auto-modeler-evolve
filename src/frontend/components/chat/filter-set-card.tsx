@@ -18,8 +18,7 @@ const OP_LABELS: Record<string, string> = {
 }
 
 export function FilterSetCard({ result }: FilterSetCardProps) {
-  const { filter_summary, conditions, original_rows, filtered_rows, row_reduction_pct } =
-    result
+  const { conditions, original_rows, filtered_rows, row_reduction_pct } = result
 
   return (
     <div
@@ -52,7 +51,7 @@ export function FilterSetCard({ result }: FilterSetCardProps) {
         {row_reduction_pct > 0 && (
           <span className="ml-1">({row_reduction_pct}% reduction)</span>
         )}
-        . All analyses use this subset. Say "clear filter" to return to the full dataset.
+        . All analyses use this subset. Say &quot;clear filter&quot; to return to the full dataset.
       </div>
     </div>
   )

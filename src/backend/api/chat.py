@@ -1918,7 +1918,7 @@ def send_message(
             if _file_path.exists():
                 _full_df = pd.read_csv(_file_path)
                 _all_cols = list(_full_df.columns)
-                _conditions = _parse_filter_request(body.message, _all_cols)
+                _conditions = _parse_filter(body.message, _all_cols)
                 if _conditions:
                     _filtered = _apply_filter(_full_df, _conditions)
                     _summary = _build_filter_summary(_conditions)

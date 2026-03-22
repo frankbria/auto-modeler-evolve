@@ -7,7 +7,6 @@ Covers:
   - GET /api/data/{id}/active-filter
 """
 
-import json
 import pandas as pd
 import pytest
 from httpx import AsyncClient
