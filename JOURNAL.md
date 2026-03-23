@@ -1,5 +1,17 @@
 # Journal
 
+## Day 11 — 20:00 — Chat-Driven Model Deployment (1464 backend + 612 frontend = 2076 tests)
+
+The platform could already train models through chat (Day 10) and deploy through the Models tab UI, but there was no path to say "deploy my model" in the chat window and have the deployment happen inline. This session closes that gap — completing the full upload → explore → train → deploy workflow entirely through conversation, matching the vision's "smart colleague" promise.
+
+The key architectural decision was extracting `execute_deployment(model_run_id, session) -> dict` as a pure helper from `api/deploy.py`. The existing `POST /api/deploy/{model_run_id}` route now just calls this helper. This eliminates logic duplication: both the HTTP route and the chat handler get the same deployment behavior (idempotency check, pipeline build, residual std computation, Deployment record creation) without copying code. The helper raises `HTTPException` for genuine errors (model not found, model not done) — in the chat handler these are caught by the surrounding `try/except Exception` so they never crash the SSE stream.
+
+The chat handler selection logic has two cases: (1) if there's a `is_selected` model run, use it; (2) otherwise, take the best completed run by primary metric (`r2` for regression, `accuracy` for classification). The `max()` call uses a fallback chain `metrics.get("r2", metrics.get("accuracy", 0))` which handles both problem types in one expression. If no completed runs exist, the system prompt guides the user to train first — no `deployed_event` is emitted.
+
+`DeployedCard` follows the visual language of `TrainingStartedCard` (rounded border, colored text header) but uses green instead of primary blue to signal success. It shows: a green live pulse dot + "Model Deployed" label + problem type badge; primary metric (R² or Accuracy formatted inline); algorithm name + target column; a dashboard link (href to `/predict/{id}`); and an API endpoint URL with copy-to-clipboard. The copy button uses `navigator.clipboard.writeText` and shows "Copied!" for 2s via `setTimeout` state reset — the same pattern used in `IntegrationCard`. One test fix needed: the test fixture used `"region,revenue,units,cost"` with integer revenue values; for a 10-row dataset the cardinality threshold `max(10, int(10*0.05)) = 10` and `n_unique=10 <= 10` triggered classification detection. Fixed by using float revenue values (e.g. `100.5`) which bypass the integer cardinality check entirely.
+
+**17 backend + 18 frontend = 35 new tests. Total: 1464 backend + 612 frontend = 2076, all passing. Backend lint: clean. Frontend build: clean.**
+
 ## Day 11 — 12:00 — Non-Destructive Data Filter via Chat (1447 backend + 594 frontend = 2041 tests)
 
 The platform was missing a fundamental workflow: analysts often want to say "let's focus on Q4" or "ignore the outlier region" and have that intent persist across all subsequent analyses without touching the original CSV. Previously, narrowing to a subset required manually slicing the file and re-uploading — a workflow killer for exploratory work.
