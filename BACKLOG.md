@@ -10,9 +10,8 @@ Living document for coordinating between bot instances and tracking ideation.
 <!-- Brief description of what you're doing this session. -->
 <!-- Remove your entry when you commit your session wrap-up. -->
 
-## Day 12 (12:00) — In Progress
-Chat-triggered PDF report generation — _REPORT_PATTERNS detects "generate a report", "create a PDF", "download a report", etc.; handler finds selected/best model run → builds download URL → emits {type:"report_ready"} SSE event; ReportReadyCard component (teal border, algorithm/metric info, Download PDF button); ReportReady type; attachReportToLastMessage Zustand action. Closes the conversational "share with VP" use case — analysts no longer need to navigate to the Models tab to get their PDF report.
-
+## Day 12 (12:00) — Done
+Chat-triggered PDF report generation — _REPORT_PATTERNS (9 variants) detects "generate a report", "pdf report", "download the model report", etc.; handler finds selected/best run + infers problem_type from metrics; emits {type:"report_ready"} SSE event; ReportReadyCard (teal border, 📄 icon, algorithm label, metric badge, Download PDF Report button); ReportReady type; attachReportToLastMessage store action. Fixed f-string format spec bug + ModelRun.problem_type attr access. 16 backend + 17 frontend = 33 new tests. Total: 1502 backend + 645 frontend = 2147.
 
 ## Day 12 (04:00) — Done
 "Explain my model" conversational model card — GET /api/models/{project_id}/model-card (selected or best run, loads joblib pipeline for feature importances); _algorithm_plain_name() + _metric_plain_english() + _build_limitations() helpers; _MODEL_CARD_PATTERNS (9 variants) + chat handler + system prompt injection → {type:"model_card"} SSE event; ModelCardView (indigo card, algorithm chip, metric value + plain English, importance bars, amber limitation callout, footer stats); ModelCard + ModelCardMetric + ModelCardFeature types; attachModelCardToLastMessage Zustand action; api.models.getModelCard(). 22 backend + 16 frontend = 38 new tests. Total: 1486 backend + 628 frontend = 2114.
