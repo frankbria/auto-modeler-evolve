@@ -2238,9 +2238,7 @@ def send_message(
             )
             if _report_run:
                 _report_metrics = json.loads(_report_run.metrics or "{}")
-                _primary_metric_name = (
-                    "r2" if "r2" in _report_metrics else "accuracy"
-                )
+                _primary_metric_name = "r2" if "r2" in _report_metrics else "accuracy"
                 _primary_metric_val = _report_metrics.get(_primary_metric_name)
                 _report_problem_type = (
                     "regression" if "r2" in _report_metrics else "classification"
