@@ -1537,6 +1537,7 @@ def get_model_card(project_id: str, session: Session = Depends(get_session)):
     # Prefer the selected model; fall back to best by primary metric
     selected = next((r for r in completed_runs if r.is_selected), None)
     if selected is None:
+
         def _primary(r: ModelRun) -> float:
             m = json.loads(r.metrics or "{}")
             return m.get("r2", m.get("accuracy", 0.0))
@@ -1574,13 +1575,17 @@ def get_model_card(project_id: str, session: Session = Depends(get_session)):
             if fitted_model and pipe_features:
                 from core.explainer import compute_feature_importance
 
-                importance_list = compute_feature_importance(fitted_model, pipe_features)
+                importance_list = compute_feature_importance(
+                    fitted_model, pipe_features
+                )
                 top_features = importance_list[:5]
         except Exception:  # noqa: BLE001
             pass  # Importance is nice-to-have
 
     metric_info = _metric_plain_english(metrics, problem_type)
-    limitations = _build_limitations(metrics, problem_type, row_count, len(feature_names))
+    limitations = _build_limitations(
+        metrics, problem_type, row_count, len(feature_names)
+    )
 
     # Plain-English summary sentence
     algo_name = _algorithm_plain_name(selected.algorithm)

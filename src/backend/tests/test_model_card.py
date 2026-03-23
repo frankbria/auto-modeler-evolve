@@ -209,12 +209,18 @@ def test_metric_plain_english_regression_good():
     result = _metric_plain_english({"r2": 0.85}, "regression")
     assert result["name"] == "R²"
     assert "85" in result["display"]
-    assert "good" in result["plain_english"].lower() or "excellent" in result["plain_english"].lower()
+    assert (
+        "good" in result["plain_english"].lower()
+        or "excellent" in result["plain_english"].lower()
+    )
 
 
 def test_metric_plain_english_regression_poor():
     result = _metric_plain_english({"r2": 0.35}, "regression")
-    assert "limited" in result["plain_english"].lower() or "moderate" in result["plain_english"].lower()
+    assert (
+        "limited" in result["plain_english"].lower()
+        or "moderate" in result["plain_english"].lower()
+    )
 
 
 def test_metric_plain_english_mae_fallback():
