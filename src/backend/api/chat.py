@@ -708,6 +708,22 @@ _CLEAR_FILTER_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# Keywords that trigger chat-initiated model deployment
+_DEPLOY_CHAT_PATTERNS = re.compile(
+    r"\b("
+    r"deploy\s+(?:my\s+)?(?:best\s+|selected\s+|the\s+)?model|"
+    r"(?:go|make\s+(?:it|the\s+model))\s+live|"
+    r"publish\s+(?:my\s+|the\s+)?model|"
+    r"launch\s+(?:my\s+|the\s+)?(?:model|api)|"
+    r"put\s+(?:my\s+|the\s+)?model\s+(?:in\s+)?(?:production|prod)|"
+    r"create\s+(?:an?\s+)?(?:api|endpoint)\s+(?:for|from)\s+(?:my\s+|the\s+)?model|"
+    r"ship\s+(?:my\s+|the\s+)?model|"
+    r"share\s+(?:my\s+|the\s+)?model\s+(?:as\s+)?(?:an?\s+)?(?:api|link)|"
+    r"make\s+(?:a\s+)?(?:prediction\s+)?(?:api|endpoint)"
+    r")\b",
+    re.IGNORECASE,
+)
+
 
 def _load_working_df(
     file_path: "Path", active_filter_conditions: list | None
@@ -2143,6 +2159,51 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Training initiation is nice-to-have; never crash chat
 
+    # Check if user wants to deploy their model through conversation
+    deployed_event: dict | None = None
+    if _DEPLOY_CHAT_PATTERNS.search(body.message) and not ctx["deployment"]:
+        try:
+            from api.deploy import execute_deployment as _execute_deployment
+
+            _completed_runs = [
+                mr for mr in ctx["model_runs"] if mr.status == "done"
+            ]
+            _run_to_deploy = (
+                next((mr for mr in _completed_runs if mr.is_selected), None)
+                or (
+                    max(
+                        _completed_runs,
+                        key=lambda r: json.loads(r.metrics or "{}").get(
+                            "r2", json.loads(r.metrics or "{}").get("accuracy", 0)
+                        ),
+                    )
+                    if _completed_runs
+                    else None
+                )
+            )
+
+            if _run_to_deploy:
+                with Session(session.bind) as _dep_session:
+                    _dep_result = _execute_deployment(_run_to_deploy.id, _dep_session)
+                deployed_event = _dep_result
+                system_prompt += (
+                    "\n\n## Model Deployed!\n"
+                    f"The model ({_run_to_deploy.algorithm}) has just been deployed "
+                    f"and is now live. Dashboard URL: {_dep_result.get('dashboard_url')}. "
+                    "Congratulate the user enthusiastically. Tell them their model is live "
+                    "and they can share the dashboard link with anyone. "
+                    "Mention they can also use the API endpoint to plug into their tools."
+                )
+            else:
+                system_prompt += (
+                    "\n\n## Deployment Request — No Trained Model\n"
+                    "The user wants to deploy a model, but no completed training runs exist. "
+                    "Tell them they need to train a model first. "
+                    "Suggest: 'Say \"train a model to predict [column]\" and I'll get started.'"
+                )
+        except Exception:  # noqa: BLE001
+            pass  # Deployment is nice-to-have; never crash chat
+
     # Pre-compute follow-up suggestions (based on state + current message)
     current_state = detect_state(
         ctx["dataset"], ctx["feature_set"], ctx["model_runs"], ctx["deployment"]
@@ -2260,6 +2321,10 @@ def send_message(
         # Emit training started event — backend has already launched training threads
         if training_started_event:
             yield f"data: {json.dumps({'type': 'training_started', 'training': training_started_event})}\n\n"
+
+        # Emit deployed event — model is now live
+        if deployed_event:
+            yield f"data: {json.dumps({'type': 'deployed', 'deployment': deployed_event})}\n\n"
 
         # Emit automated data story
         if data_story_event:

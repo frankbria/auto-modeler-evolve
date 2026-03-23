@@ -34,6 +34,7 @@ import { TrainingStartedCard } from "@/components/models/training-started-card"
 import { DataStoryCard } from "@/components/data/data-story-card"
 import { FilterBadge } from "@/components/data/filter-badge"
 import { FilterSetCard } from "@/components/chat/filter-set-card"
+import { DeployedCard } from "@/components/deploy/deployed-card"
 import { api } from "@/lib/api"
 import { useAppStore } from "@/lib/store"
 import type {
@@ -61,6 +62,7 @@ import type {
   DataStory,
   FilterSetResult,
   ActiveFilter,
+  DeployedResult,
 } from "@/lib/types"
 
 const WELCOME_MESSAGE =
@@ -123,6 +125,7 @@ export default function ProjectWorkspace() {
     attachFilterToLastMessage,
     setActiveFilter,
     activeFilter,
+    attachDeployedToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -372,6 +375,8 @@ export default function ProjectWorkspace() {
                 } as ActiveFilter)
               } else if (json.type === "filter_cleared") {
                 setActiveFilter(null)
+              } else if (json.type === "deployed" && json.deployment) {
+                attachDeployedToLastMessage(json.deployment as DeployedResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -406,6 +411,7 @@ export default function ProjectWorkspace() {
     attachDataStoryToLastMessage,
     attachFilterToLastMessage,
     setActiveFilter,
+    attachDeployedToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -631,6 +637,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.filter_set && (
                       <FilterSetCard result={msg.filter_set} />
+                    )}
+                    {msg.deployed && (
+                      <DeployedCard result={msg.deployed} />
                     )}
                   </div>
                 </div>

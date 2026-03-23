@@ -161,6 +161,21 @@ export interface TrainingStartedResult {
   status: "started"
 }
 
+export interface DeployedResult {
+  id: string
+  model_run_id: string
+  project_id: string
+  endpoint_path: string
+  dashboard_url: string
+  is_active: boolean
+  algorithm: string
+  problem_type: string
+  target_column: string
+  feature_names: string[]
+  metrics: Record<string, number>
+  created_at: string | null
+}
+
 export interface ChatMessage {
   role: "user" | "assistant"
   content: string
@@ -177,6 +192,7 @@ export interface ChatMessage {
   training_started?: TrainingStartedResult
   data_story?: DataStory
   filter_set?: FilterSetResult
+  deployed?: DeployedResult
 }
 
 export interface QueryResponse {

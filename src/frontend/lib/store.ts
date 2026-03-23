@@ -18,6 +18,7 @@ import type {
   DataStory,
   FilterSetResult,
   ActiveFilter,
+  DeployedResult,
 } from "./types"
 
 interface AppState {
@@ -56,6 +57,7 @@ interface AppState {
   attachDataStoryToLastMessage: (data_story: DataStory) => void
   attachFilterToLastMessage: (filter_set: FilterSetResult) => void
   setActiveFilter: (filter: ActiveFilter | null) => void
+  attachDeployedToLastMessage: (deployed: DeployedResult) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -219,4 +221,14 @@ export const useAppStore = create<AppState>((set) => ({
     }),
 
   setActiveFilter: (filter) => set({ activeFilter: filter }),
+
+  attachDeployedToLastMessage: (deployed) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, deployed }
+      }
+      return { messages }
+    }),
 }))

@@ -88,16 +88,11 @@ def _load_deploy_context(model_run_id: str, session: Session):
 # ---------------------------------------------------------------------------
 
 
-@router.post("/api/deploy/{model_run_id}", status_code=201)
-def deploy_model(
-    model_run_id: str,
-    session: Session = Depends(get_session),
-):
-    """Package a trained model for deployment.
+def execute_deployment(model_run_id: str, session: Session) -> dict:
+    """Build and register a deployment for a completed model run.
 
-    - Builds & serializes a PredictionPipeline from the training data
-    - Creates a Deployment record with endpoint/dashboard URLs
-    - Marks the ModelRun as deployed
+    Returns the deployment response dict. Idempotent — returns the existing
+    deployment if one is already active for this run.
     """
     # Check if already deployed
     existing = session.exec(
@@ -170,6 +165,20 @@ def deploy_model(
     session.refresh(deployment)
 
     return _deployment_response(deployment)
+
+
+@router.post("/api/deploy/{model_run_id}", status_code=201)
+def deploy_model(
+    model_run_id: str,
+    session: Session = Depends(get_session),
+):
+    """Package a trained model for deployment.
+
+    - Builds & serializes a PredictionPipeline from the training data
+    - Creates a Deployment record with endpoint/dashboard URLs
+    - Marks the ModelRun as deployed
+    """
+    return execute_deployment(model_run_id, session)
 
 
 # ---------------------------------------------------------------------------
