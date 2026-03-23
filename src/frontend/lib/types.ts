@@ -176,6 +176,40 @@ export interface DeployedResult {
   created_at: string | null
 }
 
+// ---------------------------------------------------------------------------
+// Model Card (plain-English model explanation)
+// ---------------------------------------------------------------------------
+
+export interface ModelCardMetric {
+  name: string
+  value: number
+  display: string
+  plain_english: string
+}
+
+export interface ModelCardFeature {
+  feature: string
+  importance: number
+  rank: number
+}
+
+export interface ModelCard {
+  project_id: string
+  model_run_id: string
+  algorithm: string
+  algorithm_name: string
+  problem_type: string
+  target_col: string
+  row_count: number
+  feature_count: number
+  metric: ModelCardMetric
+  top_features: ModelCardFeature[]
+  limitations: string[]
+  summary: string
+  is_selected: boolean
+  is_deployed: boolean
+}
+
 export interface ChatMessage {
   role: "user" | "assistant"
   content: string
@@ -193,6 +227,7 @@ export interface ChatMessage {
   data_story?: DataStory
   filter_set?: FilterSetResult
   deployed?: DeployedResult
+  model_card?: ModelCard
 }
 
 export interface QueryResponse {

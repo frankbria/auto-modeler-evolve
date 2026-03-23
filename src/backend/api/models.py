@@ -1406,3 +1406,203 @@ def retrain_model(
             "Poll GET /api/models/{project_id}/runs for status updates."
         ),
     }
+
+
+# ---------------------------------------------------------------------------
+# Model card — plain-English synthesis of model state
+# ---------------------------------------------------------------------------
+
+
+def _algorithm_plain_name(algorithm: str) -> str:
+    """Return a human-readable algorithm name."""
+    _names = {
+        "linear_regression": "Linear Regression",
+        "logistic_regression": "Logistic Regression",
+        "random_forest_regressor": "Random Forest",
+        "random_forest_classifier": "Random Forest",
+        "gradient_boosting_regressor": "Gradient Boosting",
+        "gradient_boosting_classifier": "Gradient Boosting",
+        "xgboost_regressor": "XGBoost",
+        "xgboost_classifier": "XGBoost",
+        "lightgbm_regressor": "LightGBM",
+        "lightgbm_classifier": "LightGBM",
+        "neural_network_regressor": "Neural Network",
+        "neural_network_classifier": "Neural Network",
+    }
+    return _names.get(algorithm, algorithm.replace("_", " ").title())
+
+
+def _metric_plain_english(metrics: dict, problem_type: str) -> dict:
+    """Return primary metric value + a plain-English interpretation."""
+    if problem_type == "classification":
+        acc = metrics.get("accuracy", 0.0)
+        correct_10 = round(acc * 10)
+        return {
+            "name": "Accuracy",
+            "value": round(acc, 4),
+            "display": f"{acc * 100:.1f}%",
+            "plain_english": (
+                f"Predicts correctly about {correct_10} out of 10 times"
+                if acc >= 0.5
+                else "Accuracy is below chance level — more training data may help"
+            ),
+        }
+    else:
+        r2 = metrics.get("r2", None)
+        mae = metrics.get("mae", None)
+        if r2 is not None:
+            pct = round(r2 * 100, 1)
+            if r2 >= 0.9:
+                quality = "excellent — explains most of the variation in your data"
+            elif r2 >= 0.7:
+                quality = "good — explains most patterns in your data"
+            elif r2 >= 0.5:
+                quality = "moderate — captures the main trends"
+            else:
+                quality = "limited — the model may need more features or data"
+            return {
+                "name": "R²",
+                "value": round(r2, 4),
+                "display": f"{pct}%",
+                "plain_english": f"R² = {pct}% — {quality}",
+            }
+        elif mae is not None:
+            return {
+                "name": "MAE",
+                "value": round(mae, 4),
+                "display": str(round(mae, 4)),
+                "plain_english": f"Predictions are off by {mae:.4f} on average",
+            }
+        return {
+            "name": "Score",
+            "value": 0.0,
+            "display": "N/A",
+            "plain_english": "No metric data available yet",
+        }
+
+
+def _build_limitations(
+    metrics: dict, problem_type: str, row_count: int, feature_count: int
+) -> list[str]:
+    """Return a list of honest limitation notes in plain English."""
+    limitations = []
+    if row_count < 200:
+        limitations.append(
+            f"Trained on only {row_count} rows — more data would improve reliability"
+        )
+    if problem_type == "regression":
+        r2 = metrics.get("r2", 1.0)
+        if r2 < 0.6:
+            limitations.append(
+                "R² below 60% — predictions may vary significantly from actual values"
+            )
+    else:
+        acc = metrics.get("accuracy", 1.0)
+        if acc < 0.75:
+            limitations.append(
+                "Accuracy below 75% — review whether additional features would help"
+            )
+    if feature_count < 3:
+        limitations.append(
+            "Few input features — the model may miss important patterns in your data"
+        )
+    if not limitations:
+        limitations.append("Predictions reflect patterns in training data only")
+    return limitations
+
+
+@router.get("/api/models/{project_id}/model-card")
+def get_model_card(project_id: str, session: Session = Depends(get_session)):
+    """Return a plain-English model card for the selected (or best) model.
+
+    Synthesises: algorithm, primary metric, feature importances, limitations.
+    """
+    project = session.get(Project, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    completed_runs = session.exec(
+        select(ModelRun).where(
+            ModelRun.project_id == project_id,
+            ModelRun.status == "done",
+        )
+    ).all()
+
+    if not completed_runs:
+        raise HTTPException(
+            status_code=404,
+            detail="No completed model runs found for this project",
+        )
+
+    # Prefer the selected model; fall back to best by primary metric
+    selected = next((r for r in completed_runs if r.is_selected), None)
+    if selected is None:
+        def _primary(r: ModelRun) -> float:
+            m = json.loads(r.metrics or "{}")
+            return m.get("r2", m.get("accuracy", 0.0))
+
+        selected = max(completed_runs, key=_primary)
+
+    metrics = json.loads(selected.metrics or "{}")
+
+    # Feature set context
+    dataset = session.exec(
+        select(Dataset).where(Dataset.project_id == project_id)
+    ).first()
+    feature_set = None
+    if dataset:
+        feature_set = session.exec(
+            select(FeatureSet).where(
+                FeatureSet.dataset_id == dataset.id,
+                FeatureSet.is_active == True,  # noqa: E712
+            )
+        ).first()
+
+    problem_type = (feature_set.problem_type if feature_set else None) or "regression"
+    target_col = (feature_set.target_column if feature_set else None) or "target"
+    col_mapping = json.loads(feature_set.column_mapping or "{}") if feature_set else {}
+    feature_names = list(col_mapping.keys()) if col_mapping else []
+    row_count = dataset.row_count if dataset else 0
+
+    # Feature importances from the fitted model pipeline
+    top_features: list[dict] = []
+    if selected.model_path and Path(selected.model_path).exists():
+        try:
+            pipeline = joblib.load(selected.model_path)
+            fitted_model = pipeline.get("model")
+            pipe_features = pipeline.get("feature_names", feature_names)
+            if fitted_model and pipe_features:
+                from core.explainer import compute_feature_importance
+
+                importance_list = compute_feature_importance(fitted_model, pipe_features)
+                top_features = importance_list[:5]
+        except Exception:  # noqa: BLE001
+            pass  # Importance is nice-to-have
+
+    metric_info = _metric_plain_english(metrics, problem_type)
+    limitations = _build_limitations(metrics, problem_type, row_count, len(feature_names))
+
+    # Plain-English summary sentence
+    algo_name = _algorithm_plain_name(selected.algorithm)
+    summary = (
+        f"Your {algo_name} model predicts '{target_col}' "
+        f"with {metric_info['display']} {metric_info['name']}. "
+        f"{metric_info['plain_english']}."
+    )
+
+    return {
+        "project_id": project_id,
+        "model_run_id": selected.id,
+        "algorithm": selected.algorithm,
+        "algorithm_name": algo_name,
+        "problem_type": problem_type,
+        "target_col": target_col,
+        "row_count": row_count,
+        "feature_count": len(feature_names),
+        "metric": metric_info,
+        "top_features": top_features,
+        "limitations": limitations,
+        "summary": summary,
+        "is_selected": selected.is_selected,
+        "is_deployed": selected.is_deployed,
+    }

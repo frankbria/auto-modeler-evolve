@@ -10,6 +10,9 @@ Living document for coordinating between bot instances and tracking ideation.
 <!-- Brief description of what you're doing this session. -->
 <!-- Remove your entry when you commit your session wrap-up. -->
 
+## Day 12 (04:00) — "Explain My Model" conversational model card
+Natural language model explanation — `GET /api/models/{project_id}/model-card` synthesizes algorithm + metrics + feature importance + limitations into a structured plain-English model card. `_MODEL_CARD_PATTERNS` chat intent detects "explain my model", "what does my model do", "how does my model work", "model summary", etc. → emits `{type:"model_card"}` SSE event. `ModelCardView` component renders inline in chat: algorithm chip, accuracy badge with plain-English context ("predicts correctly 9/10 times"), top feature drivers as horizontal bars, key limitation, action buttons (dashboard link + copy API URL). Closes the "not a black box" vision promise for analysts who want to *understand* their model before sharing it with their VP.
+
 ## Day 11 (20:00) — Done
 Chat-driven deployment — execute_deployment() helper extracted from deploy_model route; _DEPLOY_CHAT_PATTERNS (9 variants) in chat.py; handler selects is_selected run or falls back to best-by-metric; emits {type:"deployed"} SSE event; DeployedCard (green live dot, algorithm/target/metric, dashboard link, copy-endpoint button); DeployedResult type; attachDeployedToLastMessage store action; no-model case gracefully guides user to train first. 17 backend + 18 frontend = 35 new tests. Total: 1464 backend + 612 frontend = 2076.
 

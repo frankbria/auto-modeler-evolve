@@ -708,6 +708,22 @@ _CLEAR_FILTER_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# Keywords that trigger model card / explain-my-model
+_MODEL_CARD_PATTERNS = re.compile(
+    r"\b("
+    r"explain\s+(?:my\s+|the\s+)?model|"
+    r"what\s+does\s+(?:my\s+|the\s+)?model\s+do|"
+    r"how\s+does\s+(?:my\s+|the\s+)?model\s+work|"
+    r"tell\s+me\s+about\s+(?:my\s+|the\s+)?model|"
+    r"describe\s+(?:my\s+|the\s+)?model|"
+    r"model\s+(?:summary|overview|card|report|explanation)|"
+    r"how\s+good\s+is\s+(?:my\s+|the\s+)?model|"
+    r"summarize\s+(?:my\s+|the\s+)?model|"
+    r"what\s+(?:drives|influences|affects)\s+(?:my\s+)?predictions"
+    r")\b",
+    re.IGNORECASE,
+)
+
 # Keywords that trigger chat-initiated model deployment
 _DEPLOY_CHAT_PATTERNS = re.compile(
     r"\b("
@@ -2159,6 +2175,34 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Training initiation is nice-to-have; never crash chat
 
+    # Check if user wants a plain-English model card / explanation
+    model_card_event: dict | None = None
+    if _MODEL_CARD_PATTERNS.search(body.message) and ctx["model_runs"]:
+        try:
+            _completed = [mr for mr in ctx["model_runs"] if mr.status == "done"]
+            if _completed:
+                from api.models import get_model_card as _get_model_card
+
+                with Session(session.bind) as _mc_session:
+                    _card = _get_model_card(project_id, _mc_session)
+                model_card_event = _card
+                system_prompt += (
+                    "\n\n## Model Card\n"
+                    f"Algorithm: {_card['algorithm_name']} | "
+                    f"Problem type: {_card['problem_type']} | "
+                    f"Target: {_card['target_col']} | "
+                    f"Primary metric: {_card['metric']['display']} {_card['metric']['name']}\n"
+                    f"Plain-English metric: {_card['metric']['plain_english']}\n"
+                    f"Top features: {', '.join(f['feature'] for f in _card['top_features'][:3]) if _card['top_features'] else 'not available'}\n"
+                    f"Key limitation: {_card['limitations'][0] if _card['limitations'] else 'none'}\n\n"
+                    "The model card is being shown inline. Use this data to give a friendly, "
+                    "non-technical explanation of the model. Focus on what it predicts, how "
+                    "accurate it is in plain English, and the top 2-3 things driving predictions. "
+                    "Keep it conversational — imagine explaining to a VP who doesn't know ML."
+                )
+        except Exception:  # noqa: BLE001
+            pass  # Model card is nice-to-have; never crash chat
+
     # Check if user wants to deploy their model through conversation
     deployed_event: dict | None = None
     if _DEPLOY_CHAT_PATTERNS.search(body.message) and not ctx["deployment"]:
@@ -2318,6 +2362,10 @@ def send_message(
         # Emit training started event — backend has already launched training threads
         if training_started_event:
             yield f"data: {json.dumps({'type': 'training_started', 'training': training_started_event})}\n\n"
+
+        # Emit model card — plain-English model explanation
+        if model_card_event:
+            yield f"data: {json.dumps({'type': 'model_card', 'model_card': model_card_event})}\n\n"
 
         # Emit deployed event — model is now live
         if deployed_event:

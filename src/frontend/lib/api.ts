@@ -533,6 +533,12 @@ export const api = {
 
     history: (projectId: string): Promise<ModelVersionHistory> =>
       fetch(`${API_URL}/api/models/${projectId}/history`).then((r) => r.json()),
+
+    getModelCard: (projectId: string): Promise<import("./types").ModelCard> =>
+      fetch(`${API_URL}/api/models/${projectId}/model-card`).then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        return r.json()
+      }),
   },
 
   validation: {
