@@ -1,5 +1,11 @@
 # Journal
 
+## Day 12 — 12:00 — Chat-Triggered PDF Report Generation (1502 backend + 645 frontend = 2147 tests)
+
+The platform had a complete `report_generator.py` (reportlab PDF with metrics, feature importance, confidence assessment) and a `GET /api/models/{run_id}/report` endpoint — but the only way to get the report was to navigate to the Models tab and click a button. Analysts who'd just deployed their model through conversation had to context-switch to a UI panel to download a PDF for their VP meeting. This session closes that gap: saying "generate a report" now delivers a `ReportReadyCard` inline in the chat with a one-click download button.
+
+`_REPORT_PATTERNS` (9 variants covering "generate a report", "pdf report", "download the model report", etc.) detects intent; the handler finds the selected or best completed run, infers `problem_type` from metrics (r2→regression, accuracy→classification — `ModelRun` doesn't store it directly), and emits `{type:"report_ready"}` with the download URL. Two bugs caught during implementation: (1) the f-string `:.4f if condition` syntax inside a format spec is invalid Python and throws a `ValueError` — silently eaten by the surrounding `except Exception: pass`, meaning the event was built but never assigned; (2) `_report_run.problem_type` was accessed on a `ModelRun` object that has no such field. Both are now fixed. `ReportReadyCard` uses a teal color scheme (distinct from green=deployed, indigo=model card) with a 📄 icon, algorithm label, metric badge, description, and a full-width "Download PDF Report" link button. No new backend endpoint — reuses existing infrastructure entirely. **16 backend + 17 frontend = 33 new tests. Total: 1502 backend + 645 frontend = 2147, all passing. Backend lint: clean. Frontend build: clean.**
+
 ## Day 12 — 04:00 — "Explain My Model" Conversational Model Card (1486 backend + 628 frontend = 2114 tests)
 
 The platform had 2076 tests and a complete conversational workflow from upload through deployment, but there was no way to ask "explain my model" and get a plain-English synthesis of *why* the model should be trusted. The validation panel showed metrics and SHAP importances, but only through UI navigation — not through conversation. This session closes the "not a black box" vision promise at the chat layer.
