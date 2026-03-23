@@ -20,6 +20,7 @@ import type {
   ActiveFilter,
   DeployedResult,
   ModelCard,
+  ReportReady,
 } from "./types"
 
 interface AppState {
@@ -60,6 +61,7 @@ interface AppState {
   setActiveFilter: (filter: ActiveFilter | null) => void
   attachDeployedToLastMessage: (deployed: DeployedResult) => void
   attachModelCardToLastMessage: (model_card: ModelCard) => void
+  attachReportToLastMessage: (report_ready: ReportReady) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -240,6 +242,16 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, model_card }
+      }
+      return { messages }
+    }),
+
+  attachReportToLastMessage: (report_ready) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, report_ready }
       }
       return { messages }
     }),

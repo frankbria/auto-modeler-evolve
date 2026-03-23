@@ -36,6 +36,7 @@ import { FilterBadge } from "@/components/data/filter-badge"
 import { FilterSetCard } from "@/components/chat/filter-set-card"
 import { DeployedCard } from "@/components/deploy/deployed-card"
 import { ModelCardView } from "@/components/models/model-card-view"
+import { ReportReadyCard } from "@/components/models/report-ready-card"
 import { api } from "@/lib/api"
 import { useAppStore } from "@/lib/store"
 import type {
@@ -65,6 +66,7 @@ import type {
   ActiveFilter,
   DeployedResult,
   ModelCard,
+  ReportReady,
 } from "@/lib/types"
 
 const WELCOME_MESSAGE =
@@ -129,6 +131,7 @@ export default function ProjectWorkspace() {
     activeFilter,
     attachDeployedToLastMessage,
     attachModelCardToLastMessage,
+    attachReportToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -382,6 +385,8 @@ export default function ProjectWorkspace() {
                 attachDeployedToLastMessage(json.deployment as DeployedResult)
               } else if (json.type === "model_card" && json.model_card) {
                 attachModelCardToLastMessage(json.model_card as ModelCard)
+              } else if (json.type === "report_ready" && json.report) {
+                attachReportToLastMessage(json.report as ReportReady)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -418,6 +423,7 @@ export default function ProjectWorkspace() {
     setActiveFilter,
     attachDeployedToLastMessage,
     attachModelCardToLastMessage,
+    attachReportToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -649,6 +655,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.model_card && (
                       <ModelCardView card={msg.model_card} />
+                    )}
+                    {msg.report_ready && (
+                      <ReportReadyCard result={msg.report_ready} />
                     )}
                   </div>
                 </div>

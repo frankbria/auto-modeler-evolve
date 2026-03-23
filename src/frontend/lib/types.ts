@@ -210,6 +210,19 @@ export interface ModelCard {
   is_deployed: boolean
 }
 
+// ---------------------------------------------------------------------------
+// PDF Report Ready (chat-triggered report download)
+// ---------------------------------------------------------------------------
+
+export interface ReportReady {
+  model_run_id: string
+  algorithm: string
+  problem_type: string
+  metric_name: string
+  metric_value: number | null
+  download_url: string
+}
+
 export interface ChatMessage {
   role: "user" | "assistant"
   content: string
@@ -228,6 +241,7 @@ export interface ChatMessage {
   filter_set?: FilterSetResult
   deployed?: DeployedResult
   model_card?: ModelCard
+  report_ready?: ReportReady
 }
 
 export interface QueryResponse {

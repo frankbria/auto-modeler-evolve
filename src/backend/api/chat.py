@@ -740,6 +740,22 @@ _DEPLOY_CHAT_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# Keywords that trigger chat-initiated PDF report download
+_REPORT_PATTERNS = re.compile(
+    r"\b("
+    r"generate\s+(?:a\s+)?(?:model\s+)?(?:pdf\s+)?report|"
+    r"create\s+(?:a\s+)?(?:model\s+)?(?:pdf\s+)?report|"
+    r"(?:download|export|get)\s+(?:a\s+|the\s+)?(?:model\s+)?(?:pdf\s+)?report|"
+    r"(?:make|build)\s+(?:a\s+)?(?:pdf\s+|model\s+)?report|"
+    r"give\s+me\s+(?:a\s+)?(?:pdf\s+|model\s+)?report|"
+    r"(?:pdf|model)\s+report|"
+    r"report\s+(?:for\s+(?:my\s+|the\s+)?model|download|pdf)|"
+    r"share\s+(?:a\s+)?(?:model\s+)?report|"
+    r"print\s+(?:a\s+|the\s+)?(?:model\s+)?report"
+    r")\b",
+    re.IGNORECASE,
+)
+
 
 def _load_working_df(
     file_path: "Path", active_filter_conditions: list | None
@@ -2203,6 +2219,61 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Model card is nice-to-have; never crash chat
 
+    # Check if user wants a downloadable PDF report
+    report_ready_event: dict | None = None
+    if _REPORT_PATTERNS.search(body.message) and ctx["model_runs"]:
+        try:
+            _completed_runs = [mr for mr in ctx["model_runs"] if mr.status == "done"]
+            _report_run = next(
+                (mr for mr in _completed_runs if mr.is_selected), None
+            ) or (
+                max(
+                    _completed_runs,
+                    key=lambda r: json.loads(r.metrics or "{}").get(
+                        "r2", json.loads(r.metrics or "{}").get("accuracy", 0)
+                    ),
+                )
+                if _completed_runs
+                else None
+            )
+            if _report_run:
+                _report_metrics = json.loads(_report_run.metrics or "{}")
+                _primary_metric_name = (
+                    "r2" if "r2" in _report_metrics else "accuracy"
+                )
+                _primary_metric_val = _report_metrics.get(_primary_metric_name)
+                _report_problem_type = (
+                    "regression" if "r2" in _report_metrics else "classification"
+                )
+                report_ready_event = {
+                    "model_run_id": _report_run.id,
+                    "algorithm": _report_run.algorithm,
+                    "problem_type": _report_problem_type,
+                    "metric_name": _primary_metric_name,
+                    "metric_value": (
+                        round(_primary_metric_val, 4)
+                        if _primary_metric_val is not None
+                        else None
+                    ),
+                    "download_url": f"/api/models/{_report_run.id}/report",
+                }
+                _metric_display = (
+                    f"{_primary_metric_val:.4f}"
+                    if _primary_metric_val is not None
+                    else "N/A"
+                )
+                system_prompt += (
+                    "\n\n## PDF Report Ready\n"
+                    f"A PDF model report is ready for download. "
+                    f"Algorithm: {_report_run.algorithm} | "
+                    f"Metric: {_primary_metric_name}={_metric_display}\n"
+                    "Tell the user their report is ready to download. "
+                    "Briefly mention it includes model metrics, feature importance, "
+                    "and confidence assessment — perfect for sharing with stakeholders."
+                )
+        except Exception:  # noqa: BLE001
+            pass  # Report is nice-to-have; never crash chat
+
     # Check if user wants to deploy their model through conversation
     deployed_event: dict | None = None
     if _DEPLOY_CHAT_PATTERNS.search(body.message) and not ctx["deployment"]:
@@ -2366,6 +2437,10 @@ def send_message(
         # Emit model card — plain-English model explanation
         if model_card_event:
             yield f"data: {json.dumps({'type': 'model_card', 'model_card': model_card_event})}\n\n"
+
+        # Emit PDF report ready event — provides download URL
+        if report_ready_event:
+            yield f"data: {json.dumps({'type': 'report_ready', 'report': report_ready_event})}\n\n"
 
         # Emit deployed event — model is now live
         if deployed_event:
