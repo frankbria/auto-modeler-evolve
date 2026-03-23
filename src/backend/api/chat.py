@@ -2165,21 +2165,18 @@ def send_message(
         try:
             from api.deploy import execute_deployment as _execute_deployment
 
-            _completed_runs = [
-                mr for mr in ctx["model_runs"] if mr.status == "done"
-            ]
-            _run_to_deploy = (
-                next((mr for mr in _completed_runs if mr.is_selected), None)
-                or (
-                    max(
-                        _completed_runs,
-                        key=lambda r: json.loads(r.metrics or "{}").get(
-                            "r2", json.loads(r.metrics or "{}").get("accuracy", 0)
-                        ),
-                    )
-                    if _completed_runs
-                    else None
+            _completed_runs = [mr for mr in ctx["model_runs"] if mr.status == "done"]
+            _run_to_deploy = next(
+                (mr for mr in _completed_runs if mr.is_selected), None
+            ) or (
+                max(
+                    _completed_runs,
+                    key=lambda r: json.loads(r.metrics or "{}").get(
+                        "r2", json.loads(r.metrics or "{}").get("accuracy", 0)
+                    ),
                 )
+                if _completed_runs
+                else None
             )
 
             if _run_to_deploy:
