@@ -2509,25 +2509,22 @@ def send_message(
         try:
             _done_runs = [r for r in ctx["runs"] if r.status == "done"]
             _sel_run = next((r for r in _done_runs if r.is_selected), None)
-            _best_run = (
-                _sel_run
-                or (
-                    max(
-                        _done_runs,
-                        key=lambda r: (
-                            (json.loads(r.metrics) if r.metrics else {}).get(
-                                "r2",
-                                (json.loads(r.metrics) if r.metrics else {}).get(
-                                    "accuracy", 0
-                                ),
-                            )
-                        ),
-                    )
-                    if _done_runs
-                    else None
+            _best_run = _sel_run or (
+                max(
+                    _done_runs,
+                    key=lambda r: (json.loads(r.metrics) if r.metrics else {}).get(
+                        "r2",
+                        (json.loads(r.metrics) if r.metrics else {}).get("accuracy", 0),
+                    ),
                 )
+                if _done_runs
+                else None
             )
-            if _best_run and _best_run.model_path and Path(_best_run.model_path).exists():
+            if (
+                _best_run
+                and _best_run.model_path
+                and Path(_best_run.model_path).exists()
+            ):
                 _sp_ds = ctx["dataset"]
                 _sp_file = Path(_sp_ds.file_path)
                 if _sp_file.exists():

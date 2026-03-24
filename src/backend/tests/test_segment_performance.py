@@ -57,13 +57,9 @@ class TestComputeSegmentPerformance:
     def _make_regression_data(self):
         """Create a simple regression scenario: segment affects both y_true and y_pred."""
         group_values = ["East", "East", "West", "West", "North", "North"] * 2
-        y_true = np.array(
-            [100.0, 120.0, 200.0, 210.0, 250.0, 260.0] * 2, dtype=float
-        )
+        y_true = np.array([100.0, 120.0, 200.0, 210.0, 250.0, 260.0] * 2, dtype=float)
         # Perfect predictions for East/West, noisy for North
-        y_pred = np.array(
-            [100.0, 120.0, 200.0, 210.0, 150.0, 350.0] * 2, dtype=float
-        )
+        y_pred = np.array([100.0, 120.0, 200.0, 210.0, 150.0, 350.0] * 2, dtype=float)
         return group_values, y_true, y_pred
 
     def test_basic_output_structure(self):
@@ -117,7 +113,9 @@ class TestComputeSegmentPerformance:
         assert "one segment" in result["summary"].lower()
 
     def test_empty_groups(self):
-        result = compute_segment_performance([], np.array([]), np.array([]), "regression")
+        result = compute_segment_performance(
+            [], np.array([]), np.array([]), "regression"
+        )
         assert result["segments"] == []
         assert result["best_segment"] is None
 
@@ -360,7 +358,9 @@ class TestDetectSegmentPerfCol:
 
     def test_fallback_to_first_categorical(self):
         df = pd.read_csv(io.BytesIO(_SAMPLE_CSV))
-        col = _detect_segment_perf_col("how does the model perform across segments?", df)
+        col = _detect_segment_perf_col(
+            "how does the model perform across segments?", df
+        )
         assert col is not None  # Falls back to first low-cardinality column
 
     def test_returns_none_for_no_candidates(self):

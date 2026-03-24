@@ -331,7 +331,9 @@ def compute_segment_performance(
         )
 
     # Sort segments by metric descending for display
-    segments.sort(key=lambda s: (s["metric"] is not None, s["metric"] or 0), reverse=True)
+    segments.sort(
+        key=lambda s: (s["metric"] is not None, s["metric"] or 0), reverse=True
+    )
 
     valid_segs = [s for s in segments if s["metric"] is not None]
     best = valid_segs[0] if valid_segs else None
