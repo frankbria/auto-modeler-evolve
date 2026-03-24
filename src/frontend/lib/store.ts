@@ -21,6 +21,8 @@ import type {
   DeployedResult,
   ModelCard,
   ReportReady,
+  FeatureSuggestionsChatResult,
+  FeaturesAppliedResult,
 } from "./types"
 
 interface AppState {
@@ -62,6 +64,8 @@ interface AppState {
   attachDeployedToLastMessage: (deployed: DeployedResult) => void
   attachModelCardToLastMessage: (model_card: ModelCard) => void
   attachReportToLastMessage: (report_ready: ReportReady) => void
+  attachFeatureSuggestionsToLastMessage: (feature_suggestions: FeatureSuggestionsChatResult) => void
+  attachFeaturesAppliedToLastMessage: (features_applied: FeaturesAppliedResult) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -252,6 +256,26 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, report_ready }
+      }
+      return { messages }
+    }),
+
+  attachFeatureSuggestionsToLastMessage: (feature_suggestions) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, feature_suggestions }
+      }
+      return { messages }
+    }),
+
+  attachFeaturesAppliedToLastMessage: (features_applied) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, features_applied }
       }
       return { messages }
     }),

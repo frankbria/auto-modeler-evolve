@@ -756,6 +756,33 @@ _REPORT_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# Keywords that trigger chat-driven feature engineering suggestions
+_FEATURE_SUGGEST_PATTERNS = re.compile(
+    r"(?i)\b("
+    r"suggest\s+(?:some\s+)?(?:feature|features|transformation|transformations)|"
+    r"recommend\s+(?:some\s+)?(?:feature|features|transformation|transformations)|"
+    r"(?:what|which)\s+features?\s+(?:should|can|could|would)|"
+    r"feature\s+engineering|"
+    r"(?:improve|engineer|prepare|build|create)\s+(?:my\s+)?features?|"
+    r"(?:show|list)\s+(?:me\s+)?(?:feature|possible)\s+(?:suggestions?|transforms?)|"
+    r"help\s+(?:me\s+)?(?:with\s+)?(?:feature|features)|"
+    r"(?:any|what)\s+(?:feature|transform)(?:ation)?\s+(?:suggestions?|ideas?)"
+    r")\b",
+    re.IGNORECASE,
+)
+
+# Keywords that trigger applying all feature engineering suggestions
+_FEATURE_APPLY_PATTERNS = re.compile(
+    r"(?i)\b("
+    r"apply\s+(?:all\s+)?(?:the\s+)?(?:feature\s+)?(?:suggestions?|transforms?|engineering|features?)|"
+    r"(?:accept|use|approve)\s+(?:all\s+)?(?:the\s+)?(?:feature\s+)?(?:suggestions?|transforms?)|"
+    r"yes,?\s+apply\s+(?:all\s+)?(?:the\s+)?(?:feature\s+)?(?:suggestions?|transforms?)|"
+    r"do\s+(?:all\s+)?(?:the\s+)?(?:feature\s+)?(?:engineering|transforms?|suggestions?)|"
+    r"run\s+(?:the\s+)?feature\s+(?:engineering|transforms?)"
+    r")\b",
+    re.IGNORECASE,
+)
+
 
 def _load_working_df(
     file_path: "Path", active_filter_conditions: list | None
@@ -2314,6 +2341,127 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Deployment is nice-to-have; never crash chat
 
+    # Check if user wants feature engineering suggestions
+    feature_suggestions_event: dict | None = None
+    if _FEATURE_SUGGEST_PATTERNS.search(body.message) and ctx["dataset"]:
+        try:
+            from core.feature_engine import suggest_features as _suggest_features
+
+            _fse_ds = ctx["dataset"]
+            _fse_path = Path(_fse_ds.file_path)
+            if _fse_path.exists():
+                _fse_df = _load_working_df(_fse_path, _active_filter_conditions)
+                _fse_col_stats = json.loads(_fse_ds.columns or "[]")
+                _fse_suggestions = _suggest_features(_fse_df, _fse_col_stats)
+                if _fse_suggestions:
+                    feature_suggestions_event = {
+                        "dataset_id": _fse_ds.id,
+                        "suggestions": [
+                            {
+                                "id": s.id,
+                                "column": s.column,
+                                "transform_type": s.transform_type,
+                                "title": s.title,
+                                "description": s.description,
+                                "preview_columns": s.preview_columns,
+                            }
+                            for s in _fse_suggestions
+                        ],
+                        "count": len(_fse_suggestions),
+                    }
+                    _sug_titles = ", ".join(s.title for s in _fse_suggestions[:3])
+                    if len(_fse_suggestions) > 3:
+                        _sug_titles += f" (+{len(_fse_suggestions) - 3} more)"
+                    system_prompt += (
+                        "\n\n## Feature Engineering Suggestions\n"
+                        f"I've generated {len(_fse_suggestions)} feature transformation suggestions: {_sug_titles}. "
+                        "Tell the user what suggestions were found and that they're shown as a card below. "
+                        "Encourage them to click 'Apply All' on the card, or say 'apply features' to apply them. "
+                        "Keep your reply brief — the card has all the details."
+                    )
+                else:
+                    system_prompt += (
+                        "\n\n## Feature Suggestions — None Found\n"
+                        "No automatic feature transformations were found for this dataset. "
+                        "The data may already be well-structured (no date columns to decompose, "
+                        "no skewed numerics to log-transform, no low-cardinality categoricals to encode). "
+                        "Tell the user their data appears ready to train without extra feature engineering."
+                    )
+        except Exception:  # noqa: BLE001
+            pass  # Feature suggestions are nice-to-have; never crash chat
+
+    # Check if user wants to apply all feature engineering suggestions
+    features_applied_event: dict | None = None
+    if _FEATURE_APPLY_PATTERNS.search(body.message) and ctx["dataset"]:
+        try:
+            from core.feature_engine import (
+                apply_transformations as _apply_transformations,
+                suggest_features as _suggest_features,
+            )
+            from models.feature_set import FeatureSet as _FeatureSet
+
+            _fea_ds = ctx["dataset"]
+            _fea_path = Path(_fea_ds.file_path)
+            if _fea_path.exists():
+                _fea_df = _load_working_df(_fea_path, _active_filter_conditions)
+                _fea_col_stats = json.loads(_fea_ds.columns or "[]")
+                _fea_suggestions = _suggest_features(_fea_df, _fea_col_stats)
+                if _fea_suggestions:
+                    _fea_transforms = [
+                        {"column": s.column, "transform_type": s.transform_type}
+                        for s in _fea_suggestions
+                    ]
+                    _fea_transformed_df, _fea_mapping = _apply_transformations(
+                        _fea_df, _fea_transforms
+                    )
+                    # Deactivate any previous active FeatureSet for this dataset
+                    _fea_prev_sets = session.exec(
+                        select(_FeatureSet).where(
+                            _FeatureSet.dataset_id == _fea_ds.id,
+                            _FeatureSet.is_active == True,  # noqa: E712
+                        )
+                    ).all()
+                    for _fea_prev in _fea_prev_sets:
+                        _fea_prev.is_active = False
+                        session.add(_fea_prev)
+                    _fea_new_fs = _FeatureSet(
+                        dataset_id=_fea_ds.id,
+                        transformations=json.dumps(_fea_transforms),
+                        column_mapping=json.dumps(_fea_mapping),
+                        is_active=True,
+                    )
+                    session.add(_fea_new_fs)
+                    session.commit()
+                    session.refresh(_fea_new_fs)
+                    _fea_new_cols = sorted(
+                        set(_fea_transformed_df.columns) - set(_fea_df.columns)
+                    )
+                    features_applied_event = {
+                        "feature_set_id": _fea_new_fs.id,
+                        "dataset_id": _fea_ds.id,
+                        "new_columns": _fea_new_cols,
+                        "total_columns": len(_fea_transformed_df.columns),
+                        "applied_count": len(_fea_suggestions),
+                    }
+                    system_prompt += (
+                        "\n\n## Feature Engineering Applied!\n"
+                        f"I've applied {len(_fea_suggestions)} feature transformations, "
+                        f"adding {len(_fea_new_cols)} new columns "
+                        f"(total now: {len(_fea_transformed_df.columns)} columns). "
+                        f"New columns: {', '.join(_fea_new_cols[:5])}"
+                        f"{'...' if len(_fea_new_cols) > 5 else ''}. "
+                        "Congratulate the user! The feature set is now active. "
+                        "Suggest they can now train a model — say 'train a model to predict [column]'."
+                    )
+                else:
+                    system_prompt += (
+                        "\n\n## Feature Apply — No Suggestions Available\n"
+                        "No automatic feature transformations were found for this dataset. "
+                        "Tell the user their data looks ready and they can proceed directly to training."
+                    )
+        except Exception:  # noqa: BLE001
+            pass  # Feature application is nice-to-have; never crash chat
+
     # Pre-compute follow-up suggestions (based on state + current message)
     current_state = detect_state(
         ctx["dataset"], ctx["feature_set"], ctx["model_runs"], ctx["deployment"]
@@ -2439,6 +2587,14 @@ def send_message(
         # Emit PDF report ready event — provides download URL
         if report_ready_event:
             yield f"data: {json.dumps({'type': 'report_ready', 'report': report_ready_event})}\n\n"
+
+        # Emit feature engineering suggestions card
+        if feature_suggestions_event:
+            yield f"data: {json.dumps({'type': 'feature_suggestions', 'suggestions': feature_suggestions_event})}\n\n"
+
+        # Emit features applied confirmation card
+        if features_applied_event:
+            yield f"data: {json.dumps({'type': 'features_applied', 'applied': features_applied_event})}\n\n"
 
         # Emit deployed event — model is now live
         if deployed_event:

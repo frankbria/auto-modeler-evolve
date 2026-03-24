@@ -223,6 +223,33 @@ export interface ReportReady {
   download_url: string
 }
 
+// ---------------------------------------------------------------------------
+// Chat-driven feature engineering
+// ---------------------------------------------------------------------------
+
+export interface FeatureSuggestionItem {
+  id: string
+  column: string
+  transform_type: string
+  title: string
+  description: string
+  preview_columns: string[]
+}
+
+export interface FeatureSuggestionsChatResult {
+  dataset_id: string
+  suggestions: FeatureSuggestionItem[]
+  count: number
+}
+
+export interface FeaturesAppliedResult {
+  feature_set_id: string
+  dataset_id: string
+  new_columns: string[]
+  total_columns: number
+  applied_count: number
+}
+
 export interface ChatMessage {
   role: "user" | "assistant"
   content: string
@@ -242,6 +269,8 @@ export interface ChatMessage {
   deployed?: DeployedResult
   model_card?: ModelCard
   report_ready?: ReportReady
+  feature_suggestions?: FeatureSuggestionsChatResult
+  features_applied?: FeaturesAppliedResult
 }
 
 export interface QueryResponse {

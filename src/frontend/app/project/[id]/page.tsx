@@ -37,6 +37,10 @@ import { FilterSetCard } from "@/components/chat/filter-set-card"
 import { DeployedCard } from "@/components/deploy/deployed-card"
 import { ModelCardView } from "@/components/models/model-card-view"
 import { ReportReadyCard } from "@/components/models/report-ready-card"
+import {
+  FeatureSuggestCard,
+  FeaturesAppliedCard,
+} from "@/components/features/feature-suggestions-chat-card"
 import { api } from "@/lib/api"
 import { useAppStore } from "@/lib/store"
 import type {
@@ -67,6 +71,8 @@ import type {
   DeployedResult,
   ModelCard,
   ReportReady,
+  FeatureSuggestionsChatResult,
+  FeaturesAppliedResult,
 } from "@/lib/types"
 
 const WELCOME_MESSAGE =
@@ -132,6 +138,8 @@ export default function ProjectWorkspace() {
     attachDeployedToLastMessage,
     attachModelCardToLastMessage,
     attachReportToLastMessage,
+    attachFeatureSuggestionsToLastMessage,
+    attachFeaturesAppliedToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -387,6 +395,10 @@ export default function ProjectWorkspace() {
                 attachModelCardToLastMessage(json.model_card as ModelCard)
               } else if (json.type === "report_ready" && json.report) {
                 attachReportToLastMessage(json.report as ReportReady)
+              } else if (json.type === "feature_suggestions" && json.suggestions) {
+                attachFeatureSuggestionsToLastMessage(json.suggestions as FeatureSuggestionsChatResult)
+              } else if (json.type === "features_applied" && json.applied) {
+                attachFeaturesAppliedToLastMessage(json.applied as FeaturesAppliedResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -658,6 +670,12 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.report_ready && (
                       <ReportReadyCard result={msg.report_ready} />
+                    )}
+                    {msg.feature_suggestions && (
+                      <FeatureSuggestCard result={msg.feature_suggestions} />
+                    )}
+                    {msg.features_applied && (
+                      <FeaturesAppliedCard result={msg.features_applied} />
                     )}
                   </div>
                 </div>

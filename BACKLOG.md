@@ -10,6 +10,9 @@ Living document for coordinating between bot instances and tracking ideation.
 <!-- Brief description of what you're doing this session. -->
 <!-- Remove your entry when you commit your session wrap-up. -->
 
+## Day 12 (20:00) — In Progress
+Chat-driven feature engineering — _FEATURE_SUGGEST_PATTERNS (detect "suggest features", "recommend transformations", "feature engineering") → calls suggest_features() → emits {type:"feature_suggestions"} SSE with suggestion list; _FEATURE_APPLY_PATTERNS (detect "apply the suggestions", "apply features", "apply all") → calls apply_transformations() on all suggestions → creates/updates FeatureSet → emits {type:"features_applied"} SSE event; FeatureSuggestCard (purple border, suggestion list with transform type badges, Apply All button); FeaturesAppliedCard (confirmation with column count); FeatureSuggestionsChatResult + FeaturesAppliedResult types; attachFeatureSuggestionsToLastMessage + attachFeaturesAppliedToLastMessage Zustand actions. Closes the "Shape" workflow gap — the last step that still required UI navigation.
+
 ## Day 12 (12:00) — Done
 Chat-triggered PDF report generation — _REPORT_PATTERNS (9 variants) detects "generate a report", "pdf report", "download the model report", etc.; handler finds selected/best run + infers problem_type from metrics; emits {type:"report_ready"} SSE event; ReportReadyCard (teal border, 📄 icon, algorithm label, metric badge, Download PDF Report button); ReportReady type; attachReportToLastMessage store action. Fixed f-string format spec bug + ModelRun.problem_type attr access. 16 backend + 17 frontend = 33 new tests. Total: 1502 backend + 645 frontend = 2147.
 
