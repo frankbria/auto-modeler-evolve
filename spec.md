@@ -231,7 +231,93 @@ guides them forward through the natural flow.
       horizontal tab scroll; mobile Chat/Data toggle in topbar switches panels full-screen
       on small viewports; side-by-side layout preserved on md+ breakpoint.
 
-### Phase 8: Continuous Evolution (Perpetual)
+### Phase 8: UI/UX, Accessibility & CX Hardening
+
+> Audit-driven improvements from a full UI/UX, a11y, and CX review. Target audience is
+> business analysts (non-technical users). Items are ordered high → low impact within
+> each track and should be picked up by evolve sessions before moving to Phase 9.
+
+#### Track A — Accessibility (WCAG 2.1 AA)
+
+- [ ] **Skip navigation link** — Add a visually-hidden skip link as the first focusable element in `app/layout.tsx` (`<a href="#main-content" className="sr-only focus:not-sr-only">Skip to main content</a>`) and `id="main-content"` on the `<main>` element so keyboard users can bypass the nav bar on every page.
+
+- [ ] **Tab panel ARIA pattern** — The right-panel tab bar (`app/project/[id]/page.tsx`) and validation sub-tabs (`components/validation/validation-panel.tsx`) use bare `<button>` elements with no `role="tab"`, `aria-selected`, or enclosing `role="tablist"`. Tab panels have no `role="tabpanel"` or `aria-labelledby`. Apply the full ARIA tab widget pattern to both navigation levels.
+
+- [ ] **Feature suggestion rows keyboard accessible** — In `components/features/feature-suggestions.tsx`, suggestion rows use `<div onClick>` with a decorative checkbox `<div>` inside, giving keyboard users no access and no `aria-checked`. Replace the outer div with a `<button>` or `<input type="checkbox">` with a `<label>`, and expose selection state via `aria-checked` or `checked`.
+
+- [ ] **Emoji and Unicode status icons annotated** — Components including `training-started-card.tsx`, `deployed-card.tsx`, `feature-suggestions-chat-card.tsx`, `data-story-card.tsx`, and `readiness-check-card.tsx` use raw emoji (✅, ⚙️, 📄, ✓, ✗, ⚠) in `<span>` elements with no `aria-label`. Mark decorative emoji `aria-hidden="true"` when adjacent text conveys the meaning; add `role="img" aria-label="..."` where the emoji carries unique meaning.
+
+- [ ] **Expand/collapse buttons expose state** — "Show more / Show less" toggles in `anomaly-card.tsx` and `dictionary-card.tsx` have no `aria-expanded`. Add `aria-expanded={showAll}` and `aria-controls` pointing to the list's `id` on every progressive-disclosure toggle.
+
+- [ ] **Algorithm card selection state** — `AlgorithmCard` in `components/models/model-training-panel.tsx` renders as `<button>` but has no `aria-pressed`. Add `aria-pressed={selected}` so screen readers announce whether the algorithm is currently selected.
+
+- [ ] **Heatmap cell keyboard and focus** — In `components/chat/chart-message.tsx`, heatmap cells (`role="button"`, `tabIndex={0}`) handle only `Enter`, not `Space`. They also apply `outline: "none"` removing the focus ring entirely. Add a Space key handler and replace the inline outline removal with `focus-visible:ring-2` class.
+
+- [ ] **Chart SVG accessibility** — Recharts charts in `model-training-panel.tsx`, `validation-panel.tsx`, and `chart-message.tsx` produce unlabeled SVGs. Wrap each chart in a `<figure>` with `<figcaption>` describing the data, or pass `title`/`desc` via Recharts props, so screen readers announce meaningful context instead of raw SVG path data.
+
+- [ ] **Deployment analytics sparkbar accessible** — In `deployment-panel.tsx`, the `AnalyticsMiniChart` sparkbar is purely visual. Add `aria-label="Predictions over last 7 days: [values]"` to the container element.
+
+#### Track B — Ease of Use / CX for Business Analysts
+
+- [ ] **Undeploy confirmation dialog** — In `deployment-panel.tsx`, the "Undeploy" button fires `handleUndeploy` immediately with no confirmation. Undeploying breaks all live users of the prediction API. Add an inline confirmation pattern (replace the button temporarily with "Are you sure? This will break the live prediction link." + Confirm/Cancel) before executing the action.
+
+- [ ] **Plain-English metric explanations in training panel** — `MetricsRow` in `model-training-panel.tsx` shows R², MAE, RMSE, F1, Precision as bare numbers. Add a tooltip or inline explanation for each metric (e.g., "R² 0.84 — your model explains 84% of variation in the data. Higher is better.") to match the plain-English style used in `ModelCardView`.
+
+- [ ] **"Train more" confirmation before clearing results** — Clicking "Train more" in `model-training-panel.tsx` silently clears `runs` and `comparison` from the UI with no warning. Add a confirmation before clearing, or redesign to keep existing results visible alongside the new training configuration form.
+
+- [ ] **Chat input multi-line support** — The chat input in `app/project/[id]/page.tsx` is a single-line `<Input>`. Shift+Enter is caught but does nothing. Replace with a `<Textarea>` that auto-grows (`field-sizing-content` or resize observer) using Shift+Enter for newlines and Enter to send.
+
+- [ ] **Copy chat message to clipboard** — Assistant message bubbles have no copy action. Add a copy-to-clipboard button (visible on hover or via a `...` menu) so business analysts can copy model summaries, chart insights, and data stories to share with colleagues.
+
+- [ ] **"Defaults" defined in What-If analysis** — The What-If card in `deployment-panel.tsx` says "+N more features use defaults" without defining defaults. Add a footnote: "Remaining features use the median value from the training dataset."
+
+- [ ] **Project loading skeleton** — The project workspace shows only the text "Loading project..." during the initial fetch. Replace with a skeleton layout or spinner so users know data is loading, not broken.
+
+- [ ] **Validation empty state navigates to Models tab** — The empty state in `validation-panel.tsx` says "Select a model in the Models tab first" but provides no navigation action. Add a button that calls the parent's tab-switch callback to take users directly to the Models tab.
+
+- [ ] **`handleExplain` silent failure feedback** — In `app/predict/[id]/page.tsx`, errors in `handleExplain` are swallowed silently — the loading spinner stops with no feedback. Show an inline message: "Explanation unavailable for this prediction."
+
+- [ ] **Suggestion chips labeled and visually distinct** — Suggestion chips in `app/project/[id]/page.tsx` have no header label and are styled similarly to message bubbles. Add a "Try asking:" label above the chip row and use a small caret icon on each chip to signal they are clickable prompts, not system messages.
+
+- [ ] **No-dataset right panel call-to-action** — When `!currentDataset`, the right panel is completely blank. Render a prominent upload card with step-by-step instructions and a visible drag-and-drop zone so first-time users are not confused by an empty panel.
+
+#### Track C — Consistent UX Patterns
+
+- [ ] **Standardize data card colors to design tokens** — `forecast-chart.tsx`, `readiness-check-card.tsx`, `group-stats-card.tsx`, and `correlation-bar-card.tsx` use hardcoded Tailwind gray/blue colors (`text-gray-800`, `bg-gray-100`, `stroke="#2563eb"`) instead of semantic tokens (`text-foreground`, `bg-muted`, `text-primary`). These break in dark mode. Audit and replace all hardcoded colors in these files with CSS variable-based tokens.
+
+- [ ] **Unify expand/collapse toggle pattern** — "Show more / Show less" toggles across the codebase use three different implementations (colors, underline behavior, sizing differ). Standardize on `<Button variant="ghost" size="sm">` everywhere.
+
+- [ ] **Standardize Badge usage** — Inline `<span>` elements styled to look like badges exist alongside the design-system `<Badge>` component throughout the codebase. They differ in border-radius, padding, and font-weight. Replace all ad-hoc badge spans with the `<Badge>` component using `className` for color-only overrides.
+
+- [ ] **Unify feature importance bar scaling** — `ImportanceBar` in `model-card-view.tsx` uses a `× 5` magic-number scale; `FeatureImportancePanel` in `feature-suggestions.tsx` uses percentage-of-max. The same feature can appear at different widths in different views. Extract a single `<ImportanceBar importance={0..1} />` component used everywhere.
+
+- [ ] **Page heading hierarchy** — The project workspace has no `<h1>` (the project name is in a `<span>` in the breadcrumb). The prediction page has `<h1>`. `CardTitle` renders as a `<div>` in many components. Establish a hierarchy: `<h1>` per page, `<h2>` for major sections, `<h3>` for card titles via `asChild` or `as` props.
+
+#### Track D — Data Visualization Polish
+
+- [ ] **Radar chart metric labels** — `ModelRadarChart` in `model-training-panel.tsx` shows raw identifiers (`r2`, `mae`) as axis labels. Replace with plain-English labels ("Accuracy", "Avg Error") and correct the note to say "All metrics scaled so a larger area = better performance" (the current "higher is better on every axis" is inaccurate for un-inverted MAE).
+
+- [ ] **Y-axis label fallback** — In `chart-message.tsx`, bar and line charts only show the Y-axis label when `y_label` is truthy. Default to `y_keys[0]` when `y_label` is absent so axes are never unlabeled.
+
+- [ ] **Residuals chart labels and guidance order** — In `validation-panel.tsx`, the residuals scatter has no Y-axis label and the interpretive text appears below the chart. Move guidance above the chart and add `"Residual (actual − predicted)"` as the Y-axis label.
+
+- [ ] **Color-only encoding in correlation and group-stats** — `correlation-bar-card.tsx` uses blue/red to encode positive/negative (fails for colorblind users). `group-stats-card.tsx` uses 4 blue shades to encode rank (also color-only). Add directional arrows (`↑`/`↓`) to correlation bars and numeric rank labels (1, 2, 3…) to group-stats rows.
+
+- [ ] **Forecast chart tick formatter** — In `forecast-chart.tsx`, `tickFormatter` slices date strings to 8 characters, producing "2024-01-" for full datetimes. Replace with a period-aware formatter producing human-friendly labels ("Jan 2024", "Q1 2024") based on the `period_label` value.
+
+- [ ] **Version history chart domain** — In `model-training-panel.tsx`, `VersionHistoryCard` uses `domain={[-0.1, 1]}` for regression, clipping models with R² < -0.1. Use `domain={["auto", "auto"]}` or compute domain from data to accommodate all values.
+
+#### Track E — Workflow Guidance
+
+- [ ] **Workflow stepper includes Feature Engineering** — `WorkflowProgress` covers Upload → Train → Validate → Deploy but skips Feature Engineering. Users following the stepper will be directed to Train before setting a target column or applying transformations. Add a "Features" step between Upload and Train, or update the Upload step description: "Explore your data and configure features before training."
+
+- [ ] **Workflow stepper visible on mobile** — The `WorkflowProgress` is inside the right panel, which is hidden when `mobileView === "chat"`. Mobile users have no workflow indicator while chatting. Move the stepper to the top bar (below the breadcrumb) so it remains visible regardless of which panel is active.
+
+- [ ] **Validate step tied to actual validation** — In `workflow-progress.tsx`, the Validate step is marked `done` as soon as a deployment exists (`hasDeployment`), not when the user actually runs validation. Track validation completion separately (e.g., cross-validation results present) and use that as the Validate step signal to prevent the false "all done" state for users who skipped validation.
+
+- [ ] **Training-started card navigates to Models tab** — In `training-started-card.tsx`, the prompt "Check the Models tab for real-time progress →" uses a Unicode arrow with no navigation action. Make "Models tab" a `<button>` that fires the tab-switch callback, so a single click takes the user to their running training job.
+
+### Phase 9: Continuous Evolution (Perpetual)
 > Goal: Move beyond the initial spec. Research, ideate, and implement — guided by the
 > vision, not a fixed checklist. Balance quality hardening with scope expansion.
 >

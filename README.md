@@ -10,9 +10,9 @@ Built for **business analysts** who know their data but don't write code.
 
 1. **Upload** a CSV -- AutoModeler instantly profiles it (row counts, types, patterns, anomalies)
 2. **Explore** via natural language -- "Which products are trending up?" returns charts and stats
-3. **Shape** features -- AI suggests transformations, you approve/reject through conversation
+3. **Shape** features -- say "suggest features" or "apply transformations" to engineer features through conversation
 4. **Model** -- recommends and trains appropriate algorithms, shows plain-English comparisons
-5. **Validate** -- cross-validation, confusion matrices, feature importance, per-row explanations
+5. **Validate** -- cross-validation, confusion matrices, feature importance, per-row explanations, and segment-level performance breakdowns
 6. **Deploy** -- one click to a live prediction API endpoint + shareable dashboard
 
 ## Tech Stack
@@ -78,11 +78,11 @@ The frontend runs on `http://localhost:3000` and expects the backend at `http://
 ### Running Tests
 
 ```bash
-# Backend (155 tests)
+# Backend (1557 tests)
 cd src/backend
 uv run pytest
 
-# Frontend
+# Frontend (680 tests)
 cd src/frontend
 npm test
 ```
@@ -99,10 +99,24 @@ npm test
 | `POST /api/features/{id}/apply` | Apply transformations |
 | `POST /api/models/{id}/train` | Train models |
 | `GET /api/models/{id}/compare` | Compare trained models |
+| `GET /api/models/{id}/segment-performance` | Per-segment R² / accuracy breakdown |
 | `GET /api/validate/{id}/explain` | Feature importance (SHAP-lite) |
+| `GET /api/models/{id}/report` | Download PDF model report |
 | `POST /api/deploy/{id}` | Deploy model as API |
 | `POST /api/predict/{id}` | Make predictions |
 | `POST /api/predict/{id}/batch` | Batch predictions (CSV) |
+
+## Conversational Capabilities
+
+The chat interface understands natural language for every step of the workflow. Key chat-triggered features:
+
+| Say something like... | What happens |
+|-----------------------|-------------|
+| "suggest features" / "recommend transformations" | Inline `FeatureSuggestCard` with transform badges + one-click Apply All |
+| "apply the feature suggestions" | Applies all transformations, emits `FeatureSuggestCard` confirmation |
+| "how does my model perform by region?" | Inline `SegmentPerformanceCard` showing per-group R² or accuracy with best/worst labels |
+| "model accuracy by product" | Same segment breakdown, auto-detected grouping column |
+| "generate a report" / "pdf report" | Inline `ReportReadyCard` with direct download link |
 
 ## How It's Built
 
@@ -119,8 +133,15 @@ See `spec.md` for the full feature checklist and `JOURNAL.md` for the build log.
 
 ## Current Status
 
-**Phases 1-6 complete** (foundation through deployment). Phase 7 (polish: onboarding,
-project management, chat memory, export, responsive design) is next.
+**Phases 1-8 in progress** (foundation through advanced conversational features).
+2,237 tests passing (1,557 backend + 680 frontend).
+
+Recently shipped:
+- **Model performance by segment** — ask "how does my model perform by region?" for a per-group breakdown with gap analysis and retraining recommendations
+- **Chat-driven feature engineering** — the full Upload → Explore → Shape → Train → Deploy workflow is now 100% conversational
+- **Chat-triggered PDF reports** — "generate a report" delivers a shareable PDF inline in chat
+
+Phase 9 (onboarding, project management, export, responsive design) is next.
 
 ## License
 
