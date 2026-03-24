@@ -539,6 +539,17 @@ export const api = {
         if (!r.ok) throw new Error(`HTTP ${r.status}`)
         return r.json()
       }),
+
+    getSegmentPerformance: (
+      modelRunId: string,
+      col: string,
+    ): Promise<import("./types").SegmentPerformanceResult> =>
+      fetch(
+        `${API_URL}/api/models/${modelRunId}/segment-performance?col=${encodeURIComponent(col)}`,
+      ).then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        return r.json()
+      }),
   },
 
   validation: {

@@ -28,6 +28,7 @@ from core.validator import (
     assess_confidence_limitations,
     compute_confusion_matrix,
     compute_residuals,
+    compute_segment_performance,
     run_cross_validation,
 )
 from db import get_session
@@ -240,4 +241,72 @@ def get_row_explanation(
         "row_index": row_index,
         "actual_value": round(float(y[row_index]), 4) if y is not None else None,
         **explanation,
+    }
+
+
+# ---------------------------------------------------------------------------
+# 4. Segment performance breakdown
+# ---------------------------------------------------------------------------
+
+
+@router.get("/api/models/{model_run_id}/segment-performance")
+def get_segment_performance(
+    model_run_id: str,
+    col: str,
+    session: Session = Depends(get_session),
+):
+    """Break down model performance (R² or accuracy) by a categorical column.
+
+    The column must exist in the original dataset (before feature transforms).
+    Groups with fewer than 2 rows are excluded from metric computation.
+    """
+    run, feature_set, dataset, file_path = _load_run_context(model_run_id, session)
+
+    # Load raw CSV to get group column values (before transforms)
+    df_raw = pd.read_csv(file_path)
+    if col not in df_raw.columns:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Column '{col}' not found in dataset. "
+            f"Available columns: {', '.join(df_raw.columns.tolist())}",
+        )
+
+    # Cap cardinality — prevent useless breakdown on high-cardinality or near-unique columns
+    n_unique = df_raw[col].nunique()
+    n_rows = len(df_raw)
+    is_high_cardinality = n_unique > 50
+    is_near_unique = n_rows > 5 and n_unique >= n_rows * 0.8
+    if is_high_cardinality or is_near_unique:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Column '{col}' has {n_unique} unique values — too many to break down. "
+                "Choose a categorical column with a small number of distinct values "
+                "(e.g., region, product type, segment)."
+            ),
+        )
+
+    # Build features and get predictions
+    problem_type = feature_set.problem_type or "regression"
+    X, y, _feature_cols = _build_Xy(file_path, feature_set)
+
+    fitted_model = joblib.load(run.model_path)
+    y_pred = fitted_model.predict(X)
+
+    # Align group values with X rows (both come from the same CSV in the same order)
+    group_values = df_raw[col].tolist()[: len(y)]
+
+    result = compute_segment_performance(
+        group_values=group_values,
+        y_true=y,
+        y_pred=y_pred,
+        problem_type=problem_type,
+    )
+
+    return {
+        "model_run_id": model_run_id,
+        "group_col": col,
+        "algorithm": run.algorithm,
+        "problem_type": problem_type,
+        **result,
     }

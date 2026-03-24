@@ -271,6 +271,28 @@ export interface ChatMessage {
   report_ready?: ReportReady
   feature_suggestions?: FeatureSuggestionsChatResult
   features_applied?: FeaturesAppliedResult
+  segment_performance?: SegmentPerformanceResult
+}
+
+export interface SegmentPerformanceSegment {
+  name: string
+  n: number
+  metric: number | null
+  metric_name: string
+  status: "strong" | "moderate" | "weak" | "poor" | "insufficient_data"
+  low_sample: boolean
+}
+
+export interface SegmentPerformanceResult {
+  group_col: string
+  algorithm: string
+  problem_type: string
+  metric_name: string
+  segments: SegmentPerformanceSegment[]
+  best_segment: string | null
+  worst_segment: string | null
+  gap: number | null
+  summary: string
 }
 
 export interface QueryResponse {

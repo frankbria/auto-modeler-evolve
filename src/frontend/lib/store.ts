@@ -66,6 +66,7 @@ interface AppState {
   attachReportToLastMessage: (report_ready: ReportReady) => void
   attachFeatureSuggestionsToLastMessage: (feature_suggestions: FeatureSuggestionsChatResult) => void
   attachFeaturesAppliedToLastMessage: (features_applied: FeaturesAppliedResult) => void
+  attachSegmentPerformanceToLastMessage: (segment_performance: import("./types").SegmentPerformanceResult) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -276,6 +277,16 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, features_applied }
+      }
+      return { messages }
+    }),
+
+  attachSegmentPerformanceToLastMessage: (segment_performance) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, segment_performance }
       }
       return { messages }
     }),

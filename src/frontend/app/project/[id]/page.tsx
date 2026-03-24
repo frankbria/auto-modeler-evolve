@@ -37,6 +37,7 @@ import { FilterSetCard } from "@/components/chat/filter-set-card"
 import { DeployedCard } from "@/components/deploy/deployed-card"
 import { ModelCardView } from "@/components/models/model-card-view"
 import { ReportReadyCard } from "@/components/models/report-ready-card"
+import { SegmentPerformanceCard } from "@/components/models/segment-performance-card"
 import {
   FeatureSuggestCard,
   FeaturesAppliedCard,
@@ -73,6 +74,7 @@ import type {
   ReportReady,
   FeatureSuggestionsChatResult,
   FeaturesAppliedResult,
+  SegmentPerformanceResult,
 } from "@/lib/types"
 
 const WELCOME_MESSAGE =
@@ -140,6 +142,7 @@ export default function ProjectWorkspace() {
     attachReportToLastMessage,
     attachFeatureSuggestionsToLastMessage,
     attachFeaturesAppliedToLastMessage,
+    attachSegmentPerformanceToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -399,6 +402,8 @@ export default function ProjectWorkspace() {
                 attachFeatureSuggestionsToLastMessage(json.suggestions as FeatureSuggestionsChatResult)
               } else if (json.type === "features_applied" && json.applied) {
                 attachFeaturesAppliedToLastMessage(json.applied as FeaturesAppliedResult)
+              } else if (json.type === "segment_performance" && json.segment_performance) {
+                attachSegmentPerformanceToLastMessage(json.segment_performance as SegmentPerformanceResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -436,6 +441,9 @@ export default function ProjectWorkspace() {
     attachDeployedToLastMessage,
     attachModelCardToLastMessage,
     attachReportToLastMessage,
+    attachFeatureSuggestionsToLastMessage,
+    attachFeaturesAppliedToLastMessage,
+    attachSegmentPerformanceToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -676,6 +684,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.features_applied && (
                       <FeaturesAppliedCard result={msg.features_applied} />
+                    )}
+                    {msg.segment_performance && (
+                      <SegmentPerformanceCard result={msg.segment_performance} />
                     )}
                   </div>
                 </div>

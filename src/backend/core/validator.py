@@ -265,6 +265,181 @@ def assess_confidence_limitations(
     }
 
 
+# ---------------------------------------------------------------------------
+# Segment performance breakdown
+# ---------------------------------------------------------------------------
+
+
+def compute_segment_performance(
+    group_values: list,
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    problem_type: str,
+    max_groups: int = 15,
+) -> dict:
+    """Compute per-segment model performance metrics.
+
+    Args:
+        group_values: List of group labels aligned 1-to-1 with y_true / y_pred rows.
+        y_true: Ground-truth target values.
+        y_pred: Model predictions.
+        problem_type: "regression" or "classification".
+        max_groups: Cap number of groups shown (picks largest groups first).
+
+    Returns:
+        dict with segments list, best/worst segment, gap, and plain-English summary.
+    """
+    metric_name = "R²" if problem_type == "regression" else "Accuracy"
+    groups: dict[str, dict] = {}
+    for gval, yt, yp in zip(group_values, y_true.tolist(), y_pred.tolist()):
+        key = str(gval)
+        if key not in groups:
+            groups[key] = {"y_true": [], "y_pred": []}
+        groups[key]["y_true"].append(yt)
+        groups[key]["y_pred"].append(yp)
+
+    if not groups:
+        return {
+            "segments": [],
+            "best_segment": None,
+            "worst_segment": None,
+            "gap": None,
+            "metric_name": metric_name,
+            "summary": "No segment data available.",
+        }
+
+    # Sort by group size descending, cap at max_groups
+    sorted_keys = sorted(groups, key=lambda k: len(groups[k]["y_true"]), reverse=True)[
+        :max_groups
+    ]
+
+    segments = []
+    for key in sorted_keys:
+        yt_arr = np.array(groups[key]["y_true"])
+        yp_arr = np.array(groups[key]["y_pred"])
+        n = len(yt_arr)
+        metric = _segment_metric(yt_arr, yp_arr, problem_type)
+        segments.append(
+            {
+                "name": key,
+                "n": n,
+                "metric": metric,
+                "metric_name": metric_name,
+                "status": _segment_status(metric, problem_type),
+                "low_sample": n < 10,
+            }
+        )
+
+    # Sort segments by metric descending for display
+    segments.sort(key=lambda s: (s["metric"] is not None, s["metric"] or 0), reverse=True)
+
+    valid_segs = [s for s in segments if s["metric"] is not None]
+    best = valid_segs[0] if valid_segs else None
+    worst = valid_segs[-1] if valid_segs else None
+    gap = (
+        round(best["metric"] - worst["metric"], 4)
+        if best and worst and best is not worst
+        else 0.0
+    )
+
+    summary = _segment_perf_summary(best, worst, gap, metric_name, problem_type)
+
+    return {
+        "segments": segments,
+        "best_segment": best["name"] if best else None,
+        "worst_segment": worst["name"] if worst else None,
+        "gap": gap,
+        "metric_name": metric_name,
+        "summary": summary,
+    }
+
+
+def _segment_metric(
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    problem_type: str,
+) -> float | None:
+    """Compute a single numeric metric for one segment. Returns None if insufficient data."""
+    if len(y_true) < 2:
+        return None
+    if problem_type == "regression":
+        ss_res = float(np.sum((y_true - y_pred) ** 2))
+        ss_tot = float(np.sum((y_true - np.mean(y_true)) ** 2))
+        if ss_tot == 0:
+            return None
+        r2 = 1 - ss_res / ss_tot
+        return round(max(r2, -1.0), 4)  # clamp to avoid extreme negatives in display
+    else:
+        accuracy = float(np.mean(y_true == y_pred))
+        return round(accuracy, 4)
+
+
+def _segment_status(metric: float | None, problem_type: str) -> str:
+    if metric is None:
+        return "insufficient_data"
+    if problem_type == "regression":
+        if metric >= 0.85:
+            return "strong"
+        if metric >= 0.65:
+            return "moderate"
+        if metric >= 0.4:
+            return "weak"
+        return "poor"
+    else:
+        if metric >= 0.85:
+            return "strong"
+        if metric >= 0.70:
+            return "moderate"
+        if metric >= 0.50:
+            return "weak"
+        return "poor"
+
+
+def _segment_perf_summary(
+    best: dict | None,
+    worst: dict | None,
+    gap: float,
+    metric_name: str,
+    problem_type: str,
+) -> str:
+    if not best:
+        return "Not enough data to compare segment performance."
+
+    if best is worst or worst is None:
+        m_val = best["metric"]
+        m_str = f"{m_val:.2f}" if problem_type == "regression" else f"{m_val:.0%}"
+        return (
+            f"Only one segment found. {metric_name} = {m_str}. "
+            "Collect data from more groups to compare performance across segments."
+        )
+
+    best_m = best["metric"]
+    worst_m = worst["metric"]
+    best_str = f"{best_m:.2f}" if problem_type == "regression" else f"{best_m:.0%}"
+    worst_str = f"{worst_m:.2f}" if problem_type == "regression" else f"{worst_m:.0%}"
+    gap_str = f"{gap:.2f}" if problem_type == "regression" else f"{gap:.0%}"
+
+    summary = (
+        f"Your model performs best on '{best['name']}' ({metric_name}={best_str}) "
+        f"and worst on '{worst['name']}' ({metric_name}={worst_str}). "
+    )
+    if gap > 0.2:
+        summary += (
+            f"The {gap_str} performance gap is significant — "
+            f"consider collecting more training data for '{worst['name']}' "
+            "or training a separate model for that segment."
+        )
+    else:
+        summary += f"The {gap_str} gap is small — the model is fairly consistent across segments."
+
+    if worst.get("low_sample"):
+        summary += (
+            f" Note: '{worst['name']}' has fewer than 10 rows — "
+            "its metric may not be reliable."
+        )
+    return summary
+
+
 def _overall_confidence(
     metrics: dict,
     problem_type: str,

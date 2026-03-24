@@ -783,6 +783,47 @@ _FEATURE_APPLY_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# Model performance by segment — "how does my model perform by region?"
+_SEGMENT_PERF_PATTERNS = re.compile(
+    r"(?i)\b("
+    r"how\s+(?:does|do)\s+(?:my\s+)?model\s+(?:perform|work|do)\s+(?:by|across|for|on|per)|"
+    r"model\s+(?:performance|accuracy|error|score)\s+(?:by|across|per|for)|"
+    r"(?:performance|accuracy)\s+(?:by|across|per|breakdown\s+by)|"
+    r"(?:performance|accuracy)\s+(?:breakdown|split)|"
+    r"(?:check|analyze|show)\s+model\s+(?:performance|accuracy)\s+(?:by|across|per)|"
+    r"does\s+my\s+model\s+(?:work|perform)\s+(?:equally|the\s+same|consistently)|"
+    r"which\s+(?:segment|group|category|region|product|class)\s+(?:does\s+my\s+model\s+)?(?:perform|work)s?\s+(?:worst|best|poorly|well)"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def _detect_segment_perf_col(message: str, df: "pd.DataFrame") -> str | None:
+    """Extract the column name from a segment performance request.
+
+    Scans the message for a word that matches a low-cardinality column in the DataFrame.
+    Falls back to the first categorical column if no match.
+    """
+    import re as _re
+
+    msg_lower = message.lower()
+    candidates = []
+    for col in df.columns:
+        if df[col].nunique() <= 30 and df[col].nunique() >= 2:
+            candidates.append(col)
+
+    # Try to find a column name mentioned in the message
+    for col in candidates:
+        if col.lower() in msg_lower:
+            return col
+        # Also try individual words from the column name (for multi-word columns)
+        for part in _re.split(r"[\s_-]", col.lower()):
+            if len(part) > 2 and part in msg_lower:
+                return col
+
+    # Fall back to first categorical column (likely the most useful grouper)
+    return candidates[0] if candidates else None
+
 
 def _load_working_df(
     file_path: "Path", active_filter_conditions: list | None
@@ -2462,6 +2503,92 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Feature application is nice-to-have; never crash chat
 
+    # Check for segment performance request ("how does my model perform by region?")
+    segment_performance_event: dict | None = None
+    if _SEGMENT_PERF_PATTERNS.search(body.message) and ctx["dataset"] and ctx["runs"]:
+        try:
+            _done_runs = [r for r in ctx["runs"] if r.status == "done"]
+            _sel_run = next((r for r in _done_runs if r.is_selected), None)
+            _best_run = (
+                _sel_run
+                or (
+                    max(
+                        _done_runs,
+                        key=lambda r: (
+                            (json.loads(r.metrics) if r.metrics else {}).get(
+                                "r2",
+                                (json.loads(r.metrics) if r.metrics else {}).get(
+                                    "accuracy", 0
+                                ),
+                            )
+                        ),
+                    )
+                    if _done_runs
+                    else None
+                )
+            )
+            if _best_run and _best_run.model_path and Path(_best_run.model_path).exists():
+                _sp_ds = ctx["dataset"]
+                _sp_file = Path(_sp_ds.file_path)
+                if _sp_file.exists():
+                    _sp_df_raw = pd.read_csv(_sp_file)
+                    _sp_col = _detect_segment_perf_col(body.message, _sp_df_raw)
+                    if _sp_col:
+                        from core.validator import compute_segment_performance as _csp
+
+                        _sp_fs = ctx.get("feature_set")
+                        if _sp_fs:
+                            _sp_transforms = json.loads(_sp_fs.transformations or "[]")
+                            _sp_df_t = _sp_df_raw.copy()
+                            if _sp_transforms:
+                                from core.feature_engine import (
+                                    apply_transformations as _sp_at,
+                                )
+
+                                _sp_df_t, _ = _sp_at(_sp_df_t, _sp_transforms)
+                            _sp_target = _sp_fs.target_column
+                            _sp_problem = _sp_fs.problem_type or "regression"
+                            _sp_feat_cols = [
+                                c for c in _sp_df_t.columns if c != _sp_target
+                            ]
+                            from core.trainer import prepare_features as _sp_pf
+
+                            _sp_X, _sp_y, _ = _sp_pf(
+                                _sp_df_t,
+                                _sp_feat_cols,
+                                _sp_target,
+                                _sp_problem,
+                            )
+                            import joblib as _jl
+
+                            _sp_model = _jl.load(_best_run.model_path)
+                            _sp_y_pred = _sp_model.predict(_sp_X)
+                            _sp_group_vals = _sp_df_raw[_sp_col].tolist()[: len(_sp_y)]
+                            _sp_result = _csp(
+                                group_values=_sp_group_vals,
+                                y_true=_sp_y,
+                                y_pred=_sp_y_pred,
+                                problem_type=_sp_problem,
+                            )
+                            segment_performance_event = {
+                                "group_col": _sp_col,
+                                "algorithm": _best_run.algorithm,
+                                "problem_type": _sp_problem,
+                                **_sp_result,
+                            }
+                            system_prompt += (
+                                f"\n\n## Model Performance by {_sp_col}\n"
+                                f"{_sp_result['summary']}\n"
+                                f"Metric: {_sp_result['metric_name']}. "
+                                f"Best segment: '{_sp_result['best_segment']}', "
+                                f"Worst segment: '{_sp_result['worst_segment']}'. "
+                                "A SegmentPerformanceCard is shown in the chat. "
+                                "Narrate the key insight — tell the analyst what this means for their use case "
+                                "and whether they need to worry about the performance gap."
+                            )
+        except Exception:  # noqa: BLE001
+            pass  # Segment performance is nice-to-have; never crash chat
+
     # Pre-compute follow-up suggestions (based on state + current message)
     current_state = detect_state(
         ctx["dataset"], ctx["feature_set"], ctx["model_runs"], ctx["deployment"]
@@ -2611,6 +2738,10 @@ def send_message(
         # Emit filter cleared event (returning to full dataset)
         if filter_cleared_event:
             yield f"data: {json.dumps({'type': 'filter_cleared', 'filter': filter_cleared_event})}\n\n"
+
+        # Emit segment performance breakdown (how does model perform per segment?)
+        if segment_performance_event:
+            yield f"data: {json.dumps({'type': 'segment_performance', 'segment_performance': segment_performance_event})}\n\n"
 
         # Emit follow-up suggestion chips (always, if we have any)
         if suggestions_list:
