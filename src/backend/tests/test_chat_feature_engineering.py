@@ -40,12 +40,7 @@ _SAMPLE_CSV = (
 
 # CSV with no transformable columns — no date, numeric-only
 _NUMERIC_ONLY_CSV = (
-    b"a,b,c\n"
-    b"1.0,2.0,3.0\n"
-    b"4.0,5.0,6.0\n"
-    b"7.0,8.0,9.0\n"
-    b"10.0,11.0,12.0\n"
-    b"13.0,14.0,15.0\n"
+    b"a,b,c\n1.0,2.0,3.0\n4.0,5.0,6.0\n7.0,8.0,9.0\n10.0,11.0,12.0\n13.0,14.0,15.0\n"
 )
 
 
@@ -253,7 +248,9 @@ async def test_chat_emits_feature_suggestions_event(ac, project_id, dataset_id):
 
 
 @pytest.mark.anyio
-async def test_feature_suggestions_event_has_suggestions_list(ac, project_id, dataset_id):
+async def test_feature_suggestions_event_has_suggestions_list(
+    ac, project_id, dataset_id
+):
     """feature_suggestions event contains a list of suggestion dicts."""
     import unittest.mock as mock
 
@@ -279,7 +276,9 @@ async def test_feature_suggestions_event_has_suggestions_list(ac, project_id, da
 
 
 @pytest.mark.anyio
-async def test_feature_suggestions_items_have_required_fields(ac, project_id, dataset_id):
+async def test_feature_suggestions_items_have_required_fields(
+    ac, project_id, dataset_id
+):
     """Each suggestion item has id, column, transform_type, title, description."""
     import unittest.mock as mock
 
@@ -298,7 +297,14 @@ async def test_feature_suggestions_items_have_required_fields(ac, project_id, da
     ev = next((e for e in events if e.get("type") == "feature_suggestions"), None)
     assert ev is not None
     first = ev["suggestions"]["suggestions"][0]
-    for field in ("id", "column", "transform_type", "title", "description", "preview_columns"):
+    for field in (
+        "id",
+        "column",
+        "transform_type",
+        "title",
+        "description",
+        "preview_columns",
+    ):
         assert field in first, f"Missing field: {field}"
 
 
