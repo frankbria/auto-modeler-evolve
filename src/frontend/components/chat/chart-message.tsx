@@ -378,6 +378,8 @@ function renderChart(
   xLabel: string,
   yLabel: string,
 ): React.ReactElement {
+  // Default Y-axis label to first key when not provided
+  const effectiveYLabel = yLabel || yKeys[0] || ""
   const axisStyle = { fontSize: 10, fill: "hsl(var(--muted-foreground))" }
   const tooltipStyle = {
     contentStyle: {
@@ -401,7 +403,7 @@ function renderChart(
           />
           <YAxis
             tick={axisStyle}
-            label={yLabel ? { value: yLabel, angle: -90, position: "insideLeft", style: axisStyle } : undefined}
+            label={effectiveYLabel ? { value: effectiveYLabel, angle: -90, position: "insideLeft", style: axisStyle } : undefined}
           />
           <Tooltip {...tooltipStyle} />
           {yKeys.map((key, i) => (
@@ -415,7 +417,10 @@ function renderChart(
         <LineChart data={data} margin={{ top: 4, right: 8, bottom: 20, left: 8 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
           <XAxis dataKey={xKey} tick={axisStyle} />
-          <YAxis tick={axisStyle} />
+          <YAxis
+            tick={axisStyle}
+            label={effectiveYLabel ? { value: effectiveYLabel, angle: -90, position: "insideLeft", style: axisStyle } : undefined}
+          />
           <Tooltip {...tooltipStyle} />
           {yKeys.length > 1 && <Legend wrapperStyle={{ fontSize: 10 }} />}
           {yKeys.map((key, i) => (

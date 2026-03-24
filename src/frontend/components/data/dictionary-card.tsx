@@ -168,7 +168,7 @@ export function DictionaryCard({ datasetId, initialData }: DictionaryCardProps) 
             </div>
 
             {/* Column rows */}
-            <div>
+            <div id="dictionary-columns-list">
               {displayed.map((col) => (
                 <ColumnRow key={col.name} col={col} />
               ))}
@@ -178,6 +178,8 @@ export function DictionaryCard({ datasetId, initialData }: DictionaryCardProps) 
               <button
                 className="mt-2 text-xs text-blue-600 hover:underline"
                 onClick={() => setShowAll((v) => !v)}
+                aria-expanded={showAll}
+                aria-controls="dictionary-columns-list"
               >
                 {showAll
                   ? "Show less"

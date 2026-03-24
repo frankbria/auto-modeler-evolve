@@ -213,7 +213,7 @@ function WhatIfCard({ deployment }: { deployment: Deployment }) {
             </div>
           ))}
           {featureNames.length > 4 && (
-            <p className="text-[10px] text-muted-foreground">+{featureNames.length - 4} more features use defaults</p>
+            <p className="text-[10px] text-muted-foreground">+{featureNames.length - 4} more features use defaults (median value from training data)</p>
           )}
         </div>
         <div className="flex items-center gap-2 text-xs">
@@ -613,6 +613,7 @@ export function DeploymentPanel({
   const [deployment, setDeployment] = useState<Deployment | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [undeploying, setUndeploying] = useState(false)
+  const [confirmUndeploy, setConfirmUndeploy] = useState(false)
   const [copied, setCopied] = useState(false)
   const [readiness, setReadiness] = useState<ModelReadiness | null>(null)
   const [analytics, setAnalytics] = useState<DeploymentAnalytics | null>(null)
@@ -764,14 +765,35 @@ export function DeploymentPanel({
         {deployment && <IntegrationCard deploymentId={deployment.id} />}
 
         <div className="flex justify-end">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleUndeploy}
-            disabled={undeploying}
-          >
-            {undeploying ? "Undeploying..." : "Undeploy"}
-          </Button>
+          {confirmUndeploy ? (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">This will break the live prediction link.</span>
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={() => { setConfirmUndeploy(false); handleUndeploy() }}
+                disabled={undeploying}
+              >
+                {undeploying ? "Undeploying..." : "Confirm"}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setConfirmUndeploy(false)}
+              >
+                Cancel
+              </Button>
+            </div>
+          ) : (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setConfirmUndeploy(true)}
+              disabled={undeploying}
+            >
+              Undeploy
+            </Button>
+          )}
         </div>
       </div>
     )

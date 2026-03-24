@@ -279,7 +279,12 @@ describe("DeploymentPanel — deployed state", () => {
     await waitFor(() =>
       expect(screen.getByRole("button", { name: /undeploy/i })).toBeInTheDocument()
     )
-    fireEvent.click(screen.getByRole("button", { name: /undeploy/i }))
+    // First click shows confirmation; second click (Confirm) executes undeploy
+    fireEvent.click(screen.getByRole("button", { name: /^undeploy$/i }))
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /confirm/i })).toBeInTheDocument()
+    )
+    fireEvent.click(screen.getByRole("button", { name: /confirm/i }))
     await waitFor(() => expect(mockUndeploy).toHaveBeenCalledWith("dep-1"))
     await waitFor(() =>
       expect(screen.getByRole("button", { name: /deploy model/i })).toBeInTheDocument()

@@ -4,6 +4,7 @@ import type { TrainingStartedResult } from "@/lib/types"
 
 interface TrainingStartedCardProps {
   result: TrainingStartedResult
+  onNavigateToModels?: () => void
 }
 
 const ALGO_LABELS: Record<string, string> = {
@@ -25,7 +26,7 @@ function algoLabel(algo: string): string {
   return ALGO_LABELS[algo] ?? algo.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
 }
 
-export function TrainingStartedCard({ result }: TrainingStartedCardProps) {
+export function TrainingStartedCard({ result, onNavigateToModels }: TrainingStartedCardProps) {
   const problemLabel =
     result.problem_type === "classification" ? "Classification" : "Regression"
 
@@ -60,8 +61,17 @@ export function TrainingStartedCard({ result }: TrainingStartedCardProps) {
       </div>
       <p className="mt-2 text-xs text-muted-foreground">
         Check the{" "}
-        <span className="font-medium text-foreground">Models tab</span> for
-        real-time progress →
+        {onNavigateToModels ? (
+          <button
+            onClick={onNavigateToModels}
+            className="font-medium text-foreground underline-offset-2 hover:underline"
+          >
+            Models tab
+          </button>
+        ) : (
+          <span className="font-medium text-foreground">Models tab</span>
+        )}{" "}
+        for real-time progress →
       </p>
     </div>
   )

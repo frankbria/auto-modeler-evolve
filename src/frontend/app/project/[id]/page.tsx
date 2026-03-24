@@ -6,6 +6,7 @@ import { useDropzone } from "react-dropzone"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
@@ -562,8 +563,29 @@ export default function ProjectWorkspace() {
 
   if (loadingProject) {
     return (
-      <div className="flex h-[calc(100vh-3rem)] items-center justify-center">
-        <p className="text-sm text-muted-foreground">Loading project...</p>
+      <div className="flex h-screen flex-col">
+        <div className="flex h-10 shrink-0 items-center gap-3 border-b px-4">
+          <div className="h-3 w-16 animate-pulse rounded bg-muted" />
+          <div className="h-3 w-2 animate-pulse rounded bg-muted" />
+          <div className="h-3 w-32 animate-pulse rounded bg-muted" />
+        </div>
+        <div className="flex flex-1 overflow-hidden">
+          <div className="flex w-2/5 flex-col border-r gap-3 p-4">
+            <div className="h-4 w-48 animate-pulse rounded bg-muted" />
+            <div className="h-20 w-full animate-pulse rounded bg-muted" />
+            <div className="h-4 w-32 animate-pulse rounded bg-muted" />
+            <div className="h-16 w-full animate-pulse rounded bg-muted" />
+          </div>
+          <div className="flex flex-1 flex-col gap-3 p-4">
+            <div className="flex gap-2">
+              {[...Array(6)].map((_, i) => (
+                <div key={i} className="h-8 w-16 animate-pulse rounded bg-muted" />
+              ))}
+            </div>
+            <div className="h-40 w-full animate-pulse rounded bg-muted" />
+            <div className="h-24 w-full animate-pulse rounded bg-muted" />
+          </div>
+        </div>
       </div>
     )
   }
@@ -662,7 +684,10 @@ export default function ProjectWorkspace() {
                       <RenameResultCard result={msg.rename_result} />
                     )}
                     {msg.training_started && (
-                      <TrainingStartedCard result={msg.training_started} />
+                      <TrainingStartedCard
+                        result={msg.training_started}
+                        onNavigateToModels={() => setActiveTab("models")}
+                      />
                     )}
                     {msg.data_story && (
                       <DataStoryCard result={msg.data_story} />
@@ -698,27 +723,36 @@ export default function ProjectWorkspace() {
           <div className="border-t p-3">
             {/* Follow-up suggestion chips */}
             {!isStreaming && chatSuggestions.length > 0 && (
-              <div className="mb-2 flex flex-wrap gap-1.5" data-testid="suggestion-chips">
-                {chatSuggestions.map((suggestion, i) => (
-                  <button
-                    key={i}
-                    onClick={() => {
-                      setChatInput(suggestion)
-                      setChatSuggestions([])
-                    }}
-                    className="rounded-full border border-primary/30 bg-primary/5 px-3 py-1 text-xs text-primary hover:bg-primary/10 transition-colors"
-                    data-testid="suggestion-chip"
-                  >
-                    {suggestion}
-                  </button>
-                ))}
+              <div className="mb-2" data-testid="suggestion-chips">
+                <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Try asking:</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {chatSuggestions.map((suggestion, i) => (
+                    <button
+                      key={i}
+                      onClick={() => {
+                        setChatInput(suggestion)
+                        setChatSuggestions([])
+                      }}
+                      className="flex items-center gap-1 rounded-full border border-primary/30 bg-primary/5 px-3 py-1 text-xs text-primary hover:bg-primary/10 transition-colors"
+                      data-testid="suggestion-chip"
+                    >
+                      <span className="text-primary/60">▸</span>
+                      {suggestion}
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
-            <div className="flex gap-2">
-              <Input
-                placeholder="Ask about your data..."
+            <div className="flex gap-2 items-end">
+              <Textarea
+                placeholder="Ask about your data... (Shift+Enter for new line)"
                 value={chatInput}
-                onChange={(e) => setChatInput(e.target.value)}
+                onChange={(e) => {
+                  setChatInput(e.target.value)
+                  // Auto-grow: reset then allow natural height
+                  e.target.style.height = "auto"
+                  e.target.style.height = `${Math.min(e.target.scrollHeight, 120)}px`
+                }}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && !e.shiftKey) {
                     e.preventDefault()
@@ -726,6 +760,8 @@ export default function ProjectWorkspace() {
                   }
                 }}
                 disabled={isStreaming}
+                rows={1}
+                className="resize-none min-h-[36px] max-h-[120px] py-2"
               />
               <Button
                 onClick={handleSendMessage}
@@ -745,7 +781,7 @@ export default function ProjectWorkspace() {
             {currentDataset ? (
               <>
                 {/* Tab Bar */}
-                <div className="flex border-b overflow-x-auto">
+                <div role="tablist" aria-label="Project workspace tabs" className="flex border-b overflow-x-auto">
                   {(["data", "features", "importance", "models", "validate", "deploy"] as RightTab[]).map((tab) => {
                     const labels: Record<RightTab, string> = {
                       data: "Data",
@@ -758,6 +794,10 @@ export default function ProjectWorkspace() {
                     return (
                       <button
                         key={tab}
+                        role="tab"
+                        aria-selected={activeTab === tab}
+                        aria-controls={`tabpanel-${tab}`}
+                        id={`tab-${tab}`}
                         onClick={() => setActiveTab(tab)}
                         className={`shrink-0 px-4 py-2.5 text-xs font-medium capitalize transition-colors ${
                           activeTab === tab
@@ -772,7 +812,7 @@ export default function ProjectWorkspace() {
                 </div>
 
                 {activeTab === "data" && (
-                  <div className="flex flex-1 flex-col overflow-hidden">
+                  <div role="tabpanel" id="tabpanel-data" aria-labelledby="tab-data" className="flex flex-1 flex-col overflow-hidden">
                     {activeFilter && (
                       <div className="px-4 pt-3">
                         <FilterBadge
@@ -894,7 +934,7 @@ export default function ProjectWorkspace() {
                 )}
 
                 {activeTab === "features" && (
-                  <ScrollArea className="flex-1">
+                  <ScrollArea role="tabpanel" id="tabpanel-features" aria-labelledby="tab-features" className="flex-1">
                     <div className="p-4">
                       <div className="mb-3">
                         <h3 className="text-sm font-semibold">Feature Suggestions</h3>
@@ -916,7 +956,7 @@ export default function ProjectWorkspace() {
                 )}
 
                 {activeTab === "importance" && (
-                  <ScrollArea className="flex-1">
+                  <ScrollArea role="tabpanel" id="tabpanel-importance" aria-labelledby="tab-importance" className="flex-1">
                     <div className="p-4">
                       <div className="mb-3">
                         <h3 className="text-sm font-semibold">Feature Importance</h3>
@@ -954,17 +994,18 @@ export default function ProjectWorkspace() {
                 )}
 
                 {activeTab === "validate" && currentDataset && (
-                  <div className="flex flex-1 flex-col overflow-hidden">
+                  <div role="tabpanel" id="tabpanel-validate" aria-labelledby="tab-validate" className="flex flex-1 flex-col overflow-hidden">
                     <ValidationPanel
                       projectId={projectId}
                       selectedRunId={selectedModelRunId}
                       algorithmName={selectedModelAlgorithm}
+                      onNavigateToModels={() => setActiveTab("models")}
                     />
                   </div>
                 )}
 
                 {activeTab === "deploy" && currentDataset && (
-                  <ScrollArea className="flex-1">
+                  <ScrollArea role="tabpanel" id="tabpanel-deploy" aria-labelledby="tab-deploy" className="flex-1">
                     <div className="p-4">
                       <div className="mb-3">
                         <h3 className="text-sm font-semibold">Deploy Model</h3>
@@ -989,7 +1030,7 @@ export default function ProjectWorkspace() {
                 )}
 
                 {activeTab === "models" && currentDataset && (
-                  <ScrollArea className="flex-1">
+                  <ScrollArea role="tabpanel" id="tabpanel-models" aria-labelledby="tab-models" className="flex-1">
                     <div className="p-4">
                       <div className="mb-3">
                         <h3 className="text-sm font-semibold">Model Training</h3>

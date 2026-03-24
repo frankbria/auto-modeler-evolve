@@ -31,11 +31,12 @@ interface Props {
   projectId: string
   selectedRunId: string | null
   algorithmName: string | null
+  onNavigateToModels?: () => void
 }
 
 type SubTab = "cv" | "error" | "importance" | "explain"
 
-export function ValidationPanel({ selectedRunId, algorithmName }: Props) {
+export function ValidationPanel({ selectedRunId, algorithmName, onNavigateToModels }: Props) {
   const [subTab, setSubTab] = useState<SubTab>("cv")
   const [loading, setLoading] = useState(false)
   const [metrics, setMetrics] = useState<ValidationMetricsResponse | null>(null)
@@ -97,8 +98,13 @@ export function ValidationPanel({ selectedRunId, algorithmName }: Props) {
 
   if (!selectedRunId) {
     return (
-      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-        Select a model in the Models tab first to validate it.
+      <div className="flex h-full flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
+        <p>Select a model in the Models tab first to validate it.</p>
+        {onNavigateToModels && (
+          <Button variant="outline" size="sm" onClick={onNavigateToModels}>
+            Go to Models tab
+          </Button>
+        )}
       </div>
     )
   }
@@ -131,7 +137,7 @@ export function ValidationPanel({ selectedRunId, algorithmName }: Props) {
         </div>
 
         {/* Sub-tabs */}
-        <div className="mb-4 flex gap-1 border-b">
+        <div role="tablist" aria-label="Validation sections" className="mb-4 flex gap-1 border-b">
           {(["cv", "error", "importance", "explain"] as SubTab[]).map((tab) => {
             const labels: Record<SubTab, string> = {
               cv: "Cross-Validation",
@@ -142,6 +148,10 @@ export function ValidationPanel({ selectedRunId, algorithmName }: Props) {
             return (
               <button
                 key={tab}
+                role="tab"
+                aria-selected={subTab === tab}
+                aria-controls={`validation-tabpanel-${tab}`}
+                id={`validation-tab-${tab}`}
                 onClick={() => handleTabChange(tab)}
                 className={`px-3 py-1.5 text-xs font-medium transition-colors ${
                   subTab === tab

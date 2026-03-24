@@ -324,15 +324,43 @@ export function ModelTrainingPanel({ projectId, onModelSelected, onModelDownload
 // Palette for radar polygons — one color per model
 const RADAR_COLORS = ["#6366f1", "#f59e0b", "#10b981", "#ef4444", "#8b5cf6"]
 
+// Plain-English labels for radar chart axes
+const RADAR_AXIS_LABELS: Record<string, string> = {
+  r2: "Accuracy (R²)",
+  mae: "Avg Error (MAE)",
+  rmse: "Root Error (RMSE)",
+  accuracy: "Accuracy",
+  f1: "F1 Score",
+  precision: "Precision",
+  recall: "Recall",
+}
+
+function radarAxisLabel(key: string): string {
+  return RADAR_AXIS_LABELS[key] ?? key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
+}
+
 function ModelRadarChart({ chart }: { chart: ChartSpec }) {
+  // Remap data keys to human-readable labels for display
+  const remappedData = chart.data.map((row) => {
+    const out: Record<string, unknown> = {}
+    Object.keys(row).forEach((k) => {
+      out[k === chart.x_key ? k : k] = row[k]
+    })
+    // Replace the x_key value (metric name) with a plain-English label
+    if (typeof row[chart.x_key] === "string") {
+      out[chart.x_key] = radarAxisLabel(row[chart.x_key] as string)
+    }
+    return out
+  })
+
   return (
     <div>
       <h4 className="mb-2 text-xs font-semibold">{chart.title}</h4>
       <p className="mb-2 text-[11px] text-muted-foreground">
-        Normalized 0–1 (higher = better on every axis)
+        All metrics normalized 0–1 so larger area = better performance overall
       </p>
       <ResponsiveContainer width="100%" height={220}>
-        <RadarChart data={chart.data}>
+        <RadarChart data={remappedData}>
           <PolarGrid />
           <PolarAngleAxis dataKey={chart.x_key} tick={{ fontSize: 10 }} />
           <Tooltip
@@ -369,6 +397,7 @@ function AlgorithmCard({
   return (
     <button
       onClick={onToggle}
+      aria-pressed={selected}
       className={`rounded-lg border px-3 py-2 text-left text-xs transition-colors ${
         selected
           ? "border-primary bg-primary/5 text-foreground"

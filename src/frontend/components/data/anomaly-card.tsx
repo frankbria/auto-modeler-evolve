@@ -101,7 +101,7 @@ export function AnomalyCard({ result: initialResult, datasetId, numericFeatures 
         {result && result.top_anomalies.length > 0 && (
           <div className="space-y-2">
             <p className="text-xs font-medium">Top unusual rows:</p>
-            <div className="overflow-x-auto rounded border border-border">
+            <div id="anomaly-rows-list" className="overflow-x-auto rounded border border-border">
               <table className="w-full text-xs">
                 <thead>
                   <tr className="border-b border-border bg-muted/40">
@@ -143,6 +143,8 @@ export function AnomalyCard({ result: initialResult, datasetId, numericFeatures 
               <button
                 className="text-xs text-primary underline-offset-2 hover:underline"
                 onClick={() => setShowAll((v) => !v)}
+                aria-expanded={showAll}
+                aria-controls="anomaly-rows-list"
               >
                 {showAll
                   ? "Show less"
