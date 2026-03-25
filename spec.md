@@ -287,11 +287,11 @@ guides them forward through the natural flow.
 
 - [x] **Unify expand/collapse toggle pattern** — "Show more / Show less" toggles across the codebase use three different implementations (colors, underline behavior, sizing differ). Standardize on `<Button variant="ghost" size="sm">` everywhere.
 
-- [ ] **Standardize Badge usage** — Inline `<span>` elements styled to look like badges exist alongside the design-system `<Badge>` component throughout the codebase. They differ in border-radius, padding, and font-weight. Replace all ad-hoc badge spans with the `<Badge>` component using `className` for color-only overrides.
+- [x] **Standardize Badge usage** — Inline `<span>` elements styled to look like badges exist alongside the design-system `<Badge>` component throughout the codebase. They differ in border-radius, padding, and font-weight. Replace all ad-hoc badge spans with the `<Badge>` component using `className` for color-only overrides.
 
-- [ ] **Unify feature importance bar scaling** — `ImportanceBar` in `model-card-view.tsx` uses a `× 5` magic-number scale; `FeatureImportancePanel` in `feature-suggestions.tsx` uses percentage-of-max. The same feature can appear at different widths in different views. Extract a single `<ImportanceBar importance={0..1} />` component used everywhere.
+- [x] **Unify feature importance bar scaling** — `ImportanceBar` in `model-card-view.tsx` uses a `× 5` magic-number scale; `FeatureImportancePanel` in `feature-suggestions.tsx` uses percentage-of-max. The same feature can appear at different widths in different views. Extract a single `<ImportanceBar importance={0..1} />` component used everywhere.
 
-- [ ] **Page heading hierarchy** — The project workspace has no `<h1>` (the project name is in a `<span>` in the breadcrumb). The prediction page has `<h1>`. `CardTitle` renders as a `<div>` in many components. Establish a hierarchy: `<h1>` per page, `<h2>` for major sections, `<h3>` for card titles via `asChild` or `as` props.
+- [x] **Page heading hierarchy** — The project workspace has no `<h1>` (the project name is in a `<span>` in the breadcrumb). The prediction page has `<h1>`. `CardTitle` renders as a `<div>` in many components. Establish a hierarchy: `<h1>` per page, `<h2>` for major sections, `<h3>` for card titles via `asChild` or `as` props.
 
 #### Track D — Data Visualization Polish
 
@@ -311,7 +311,7 @@ guides them forward through the natural flow.
 
 - [x] **Workflow stepper includes Feature Engineering** — `WorkflowProgress` covers Upload → Train → Validate → Deploy but skips Feature Engineering. Users following the stepper will be directed to Train before setting a target column or applying transformations. Add a "Features" step between Upload and Train, or update the Upload step description: "Explore your data and configure features before training."
 
-- [ ] **Workflow stepper visible on mobile** — The `WorkflowProgress` is inside the right panel, which is hidden when `mobileView === "chat"`. Mobile users have no workflow indicator while chatting. Move the stepper to the top bar (below the breadcrumb) so it remains visible regardless of which panel is active.
+- [x] **Workflow stepper visible on mobile** — The `WorkflowProgress` is inside the right panel, which is hidden when `mobileView === "chat"`. Mobile users have no workflow indicator while chatting. Move the stepper to the top bar (below the breadcrumb) so it remains visible regardless of which panel is active.
 
 - [x] **Validate step tied to actual validation** — In `workflow-progress.tsx`, the Validate step is marked `done` as soon as a deployment exists (`hasDeployment`), not when the user actually runs validation. Track validation completion separately (e.g., cross-validation results present) and use that as the Validate step signal to prevent the false "all done" state for users who skipped validation.
 
