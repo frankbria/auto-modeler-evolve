@@ -84,7 +84,7 @@ describe("CorrelationBarCard", () => {
 
   it("shows positive/negative indicator in header", () => {
     render(<CorrelationBarCard result={fullResult} />)
-    expect(screen.getByText(/Blue = positive/i)).toBeInTheDocument()
+    expect(screen.getByText(/positive.*blue/i)).toBeInTheDocument()
   })
 
   it("renders empty state when no correlations", () => {

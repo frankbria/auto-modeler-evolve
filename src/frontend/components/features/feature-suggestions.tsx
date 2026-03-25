@@ -107,9 +107,11 @@ export function FeatureSuggestionsPanel({ datasetId, suggestions, onApplied }: P
       {suggestions.map((s) => {
         const isApproved = approved.has(s.id)
         return (
-          <div
+          <button
             key={s.id}
-            className={`rounded-lg border px-3 py-2 transition-colors cursor-pointer ${
+            role="checkbox"
+            aria-checked={isApproved}
+            className={`w-full rounded-lg border px-3 py-2 text-left transition-colors ${
               isApproved
                 ? "border-primary bg-primary/5"
                 : "border-border hover:border-muted-foreground/40"
@@ -118,6 +120,7 @@ export function FeatureSuggestionsPanel({ datasetId, suggestions, onApplied }: P
           >
             <div className="flex items-start gap-2">
               <div
+                aria-hidden="true"
                 className={`mt-0.5 h-4 w-4 flex-shrink-0 rounded border-2 ${
                   isApproved ? "border-primary bg-primary" : "border-muted-foreground/50"
                 }`}
@@ -152,7 +155,7 @@ export function FeatureSuggestionsPanel({ datasetId, suggestions, onApplied }: P
                 )}
               </div>
             </div>
-          </div>
+          </button>
         )
       })}
     </div>

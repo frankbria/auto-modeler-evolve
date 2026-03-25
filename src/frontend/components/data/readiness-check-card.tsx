@@ -97,6 +97,7 @@ function ComponentRow({ component }: { component: ReadinessComponent }) {
   return (
     <div className="flex items-start gap-2 py-1.5" data-testid="readiness-component">
       <span
+        aria-hidden="true"
         className={`mt-0.5 w-4 shrink-0 text-center text-xs font-bold ${statusColor(component.status)}`}
         data-testid={`component-icon-${component.status}`}
       >

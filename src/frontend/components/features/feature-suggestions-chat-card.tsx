@@ -67,7 +67,7 @@ export function FeatureSuggestCard({ result }: FeatureSuggestCardProps) {
         data-testid="features-applied-card"
       >
         <div className="mb-2 flex items-center gap-2">
-          <span className="text-sm">✅</span>
+          <span className="text-sm" aria-hidden="true">✅</span>
           <span className="text-xs font-semibold text-purple-700 dark:text-purple-400">
             Features Applied
           </span>
@@ -102,7 +102,7 @@ export function FeatureSuggestCard({ result }: FeatureSuggestCardProps) {
     >
       {/* Header */}
       <div className="mb-2 flex items-center gap-2">
-        <span className="text-sm">⚙️</span>
+        <span className="text-sm" aria-hidden="true">⚙️</span>
         <span className="text-xs font-semibold text-purple-700 dark:text-purple-400">
           Feature Engineering Suggestions
         </span>
@@ -170,7 +170,7 @@ export function FeaturesAppliedCard({ result }: FeaturesAppliedCardProps) {
       data-testid="features-applied-confirmation-card"
     >
       <div className="mb-2 flex items-center gap-2">
-        <span className="text-sm">✅</span>
+        <span className="text-sm" aria-hidden="true">✅</span>
         <span className="text-xs font-semibold text-purple-700 dark:text-purple-400">
           Feature Engineering Done
         </span>

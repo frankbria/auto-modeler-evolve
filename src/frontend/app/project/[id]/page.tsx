@@ -648,12 +648,15 @@ export default function ProjectWorkspace() {
                   className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
                 >
                   <div
-                    className={`max-w-[90%] rounded-lg px-3 py-2 text-sm whitespace-pre-wrap ${
+                    className={`group relative max-w-[90%] rounded-lg px-3 py-2 text-sm whitespace-pre-wrap ${
                       msg.role === "user"
                         ? "bg-muted text-foreground"
                         : "border bg-card text-card-foreground"
                     }`}
                   >
+                    {msg.role === "assistant" && msg.content && (
+                      <CopyButton text={msg.content} />
+                    )}
                     {msg.content}
                     {isStreaming &&
                       i === messages.length - 1 &&
@@ -1077,6 +1080,27 @@ export default function ProjectWorkspace() {
   )
 }
 
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false)
+
+  function handleCopy() {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    })
+  }
+
+  return (
+    <button
+      onClick={handleCopy}
+      aria-label={copied ? "Copied!" : "Copy message"}
+      className="absolute right-2 top-2 hidden group-hover:flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+    >
+      {copied ? "✓ Copied" : "Copy"}
+    </button>
+  )
+}
+
 function UploadPanel({
   getRootProps,
   getInputProps,
@@ -1096,10 +1120,37 @@ function UploadPanel({
   const [urlOpen, setUrlOpen] = useState(false)
 
   return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-4 p-8">
+    <div className="flex flex-1 flex-col items-center justify-center gap-6 p-8">
+      {/* Step-by-step workflow */}
+      <div className="w-full max-w-md">
+        <p className="mb-3 text-center text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          How it works
+        </p>
+        <ol className="space-y-2">
+          {[
+            { step: 1, label: "Upload", desc: "Drop a CSV or Excel file to get started" },
+            { step: 2, label: "Explore", desc: "Ask questions about your data in plain English" },
+            { step: 3, label: "Shape", desc: "AI suggests features; you approve or adjust" },
+            { step: 4, label: "Train", desc: "Choose a target column and train models" },
+            { step: 5, label: "Validate", desc: "See what the model gets right and where it struggles" },
+            { step: 6, label: "Deploy", desc: "One click — live API + shareable prediction dashboard" },
+          ].map(({ step, label, desc }) => (
+            <li key={step} className={`flex items-start gap-3 ${step === 1 ? "" : "opacity-50"}`}>
+              <span className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${step === 1 ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"}`}>
+                {step}
+              </span>
+              <div>
+                <span className="text-xs font-semibold">{label}</span>
+                <span className="ml-1.5 text-xs text-muted-foreground">{desc}</span>
+              </div>
+            </li>
+          ))}
+        </ol>
+      </div>
+
       <div
         {...getRootProps()}
-        className={`flex h-56 w-full max-w-md cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed transition-colors ${
+        className={`flex h-48 w-full max-w-md cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed transition-colors ${
           isDragActive
             ? "border-primary bg-primary/5"
             : "border-muted-foreground/25 hover:border-muted-foreground/50"
@@ -1114,10 +1165,6 @@ function UploadPanel({
           <>
             <p className="text-sm font-medium">Drop your CSV or Excel file here</p>
             <p className="mt-1 text-xs text-muted-foreground">or click to browse</p>
-            <p className="mt-3 text-xs text-muted-foreground max-w-xs text-center">
-              AutoModeler will profile your data, suggest features, train models,
-              and help you deploy — all through conversation.
-            </p>
           </>
         )}
       </div>

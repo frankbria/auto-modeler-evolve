@@ -21,11 +21,11 @@ function scoreBarClass(score: number): string {
 }
 
 function SectionIcon({ type }: { type: DataStorySection["type"] }) {
-  if (type === "readiness") return <span>📊</span>
-  if (type === "group_by") return <span>📈</span>
-  if (type === "correlations") return <span>🔗</span>
-  if (type === "anomalies") return <span>⚠️</span>
-  return <span>•</span>
+  if (type === "readiness") return <span aria-hidden="true">📊</span>
+  if (type === "group_by") return <span aria-hidden="true">📈</span>
+  if (type === "correlations") return <span aria-hidden="true">🔗</span>
+  if (type === "anomalies") return <span aria-hidden="true">⚠️</span>
+  return <span aria-hidden="true">•</span>
 }
 
 export function DataStoryCard({ result }: DataStoryCardProps) {
@@ -34,7 +34,7 @@ export function DataStoryCard({ result }: DataStoryCardProps) {
       {/* Header */}
       <div className="border-b bg-muted/30 px-3 py-2 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
-          <span className="text-base">📋</span>
+          <span className="text-base" aria-hidden="true">📋</span>
           <span className="text-xs font-semibold text-foreground">Data Story — {result.filename}</span>
         </div>
         <div className="flex items-center gap-2 text-xs text-muted-foreground">

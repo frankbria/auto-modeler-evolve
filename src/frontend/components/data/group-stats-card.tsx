@@ -42,9 +42,13 @@ function BarRow({
 
   return (
     <div className="flex items-center gap-2 py-0.5">
+      {/* Rank number */}
+      <span className="w-5 shrink-0 text-center text-[10px] text-muted-foreground tabular-nums">
+        {rank + 1}
+      </span>
       {/* Group label */}
       <span
-        className="w-28 shrink-0 truncate text-right text-xs text-gray-700"
+        className="w-24 shrink-0 truncate text-right text-xs text-gray-700"
         title={row.group}
       >
         {row.group}

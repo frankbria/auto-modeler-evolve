@@ -68,7 +68,7 @@ export function CorrelationBarCard({ result }: CorrelationBarCardProps) {
           <span className="text-blue-600">{target_col.replace(/_/g, " ")}</span>
         </h3>
         <p className="mt-0.5 text-xs text-gray-500">
-          Blue = positive relationship · Red = negative relationship
+          ↑ positive (blue) · ↓ negative (red) · bar width = strength
         </p>
       </div>
 
@@ -99,15 +99,17 @@ export function CorrelationBarCard({ result }: CorrelationBarCardProps) {
                     style={{ width: `${widthPct}%` }}
                   />
                 </div>
-                {/* Numeric value */}
+                {/* Direction arrow + numeric value */}
                 <span
-                  className={`w-14 text-right text-xs font-medium tabular-nums ${
+                  className={`w-16 text-right text-xs font-medium tabular-nums ${
                     entry.direction === "positive"
                       ? "text-blue-700"
                       : "text-red-700"
                   }`}
                 >
-                  {dirSymbol}
+                  <span aria-label={entry.direction === "positive" ? "positive" : "negative"}>
+                    {entry.direction === "positive" ? "↑" : "↓"}
+                  </span>{" "}
                   {Math.abs(entry.correlation).toFixed(2)}
                 </span>
               </div>

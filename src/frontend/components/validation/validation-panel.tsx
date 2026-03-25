@@ -332,20 +332,25 @@ function ResidualsView({ data }: { data: ResidualsResult }) {
         </CardContent>
       </Card>
       <div>
-        <p className="mb-2 text-xs font-medium">Predicted vs Residual</p>
-        <p className="mb-1 text-xs text-muted-foreground">
-          Points scattered around zero = good. Patterns = systematic errors.
+        <p className="mb-1 text-xs font-medium">Predicted vs Residual</p>
+        <p className="mb-2 text-xs text-muted-foreground">
+          Points scattered around zero = good. Patterns or drift = systematic errors.
         </p>
         <ResponsiveContainer width="100%" height={180}>
-          <ScatterChart margin={{ top: 0, right: 8, left: -20, bottom: 0 }}>
+          <ScatterChart margin={{ top: 0, right: 8, left: 8, bottom: 16 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
             <XAxis
               dataKey="predicted"
               name="Predicted"
               tick={{ fontSize: 9 }}
-              label={{ value: "Predicted", position: "insideBottom", offset: -2, fontSize: 10 }}
+              label={{ value: "Predicted", position: "insideBottom", offset: -4, fontSize: 10 }}
             />
-            <YAxis dataKey="residual" name="Residual" tick={{ fontSize: 9 }} />
+            <YAxis
+              dataKey="residual"
+              name="Residual"
+              tick={{ fontSize: 9 }}
+              label={{ value: "Residual (actual − predicted)", angle: -90, position: "insideLeft", offset: 10, fontSize: 9 }}
+            />
             <ReferenceLine y={0} stroke="hsl(var(--destructive))" strokeDasharray="4 4" />
             <Tooltip
               contentStyle={{ fontSize: 11 }}

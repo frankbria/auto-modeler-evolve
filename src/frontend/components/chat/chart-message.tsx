@@ -174,7 +174,8 @@ function HeatmapChart({
                     role="button"
                     tabIndex={0}
                     onClick={() => handleCellClick(rowLabel, col, val)}
-                    onKeyDown={(e) => e.key === "Enter" && handleCellClick(rowLabel, col, val)}
+                    onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && handleCellClick(rowLabel, col, val)}
+                    className="focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1"
                     style={{
                       width: cellSize,
                       height: cellSize,
@@ -189,7 +190,6 @@ function HeatmapChart({
                         ? "2px solid hsl(var(--primary))"
                         : "1px solid hsl(var(--border))",
                       cursor: "pointer",
-                      outline: "none",
                     }}
                     title={`${rowLabel} × ${col}: ${val != null ? val.toFixed(3) : "N/A"}`}
                   >

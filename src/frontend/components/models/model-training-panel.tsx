@@ -51,6 +51,7 @@ export function ModelTrainingPanel({ projectId, onModelSelected, onModelDownload
   const [tuningRunId, setTuningRunId] = useState<string | null>(null)
   const [tuningResults, setTuningResults] = useState<Record<string, TuningResult>>({})
   const [versionHistory, setVersionHistory] = useState<ModelVersionHistory | null>(null)
+  const [confirmTrainMore, setConfirmTrainMore] = useState(false)
 
   // Load recommendations and any existing runs on mount
   useEffect(() => {
@@ -259,18 +260,40 @@ export function ModelTrainingPanel({ projectId, onModelSelected, onModelDownload
         <div>
           <div className="flex items-center justify-between mb-2">
             <h4 className="text-xs font-semibold">Training runs</h4>
-            {!anyTraining && (
+            {!anyTraining && !confirmTrainMore && (
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => {
-                  setRuns([])
-                  setComparison(null)
-                }}
+                onClick={() => setConfirmTrainMore(true)}
                 className="text-xs h-6"
               >
                 Train more
               </Button>
+            )}
+            {!anyTraining && confirmTrainMore && (
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] text-muted-foreground">Clear results?</span>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  className="text-[10px] h-6 px-2"
+                  onClick={() => {
+                    setRuns([])
+                    setComparison(null)
+                    setConfirmTrainMore(false)
+                  }}
+                >
+                  Yes, clear
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-[10px] h-6 px-2"
+                  onClick={() => setConfirmTrainMore(false)}
+                >
+                  Cancel
+                </Button>
+              </div>
             )}
           </div>
           <div className="flex flex-col gap-2">
@@ -517,22 +540,66 @@ function RunCard({
 }
 
 
+function MetricCell({
+  label,
+  value,
+  tooltip,
+}: {
+  label: string
+  value: string
+  tooltip: string
+}) {
+  return (
+    <span title={tooltip} className="cursor-help">
+      {label} <strong>{value}</strong>
+      <span className="ml-0.5 text-[10px] text-muted-foreground/70">ⓘ</span>
+    </span>
+  )
+}
+
 function MetricsRow({ metrics, problemType }: { metrics: ModelMetrics; problemType: string }) {
   const m = metrics as unknown as Record<string, number>
   if (problemType === "regression") {
+    const r2Str = m.r2?.toFixed(3) ?? "—"
+    const r2Pct = m.r2 != null ? Math.round(m.r2 * 100) : null
     return (
-      <div className="flex gap-3 text-xs">
-        <span>R² <strong>{m.r2?.toFixed(3) ?? "—"}</strong></span>
-        <span>MAE <strong>{m.mae?.toFixed(2) ?? "—"}</strong></span>
-        <span>RMSE <strong>{m.rmse?.toFixed(2) ?? "—"}</strong></span>
+      <div className="flex flex-wrap gap-3 text-xs">
+        <MetricCell
+          label="R²"
+          value={r2Str}
+          tooltip={r2Pct != null ? `R² ${r2Str} — your model explains ${r2Pct}% of variation in the data. Closer to 1.0 is better.` : "R² — how well the model explains variation. Closer to 1.0 is better."}
+        />
+        <MetricCell
+          label="MAE"
+          value={m.mae?.toFixed(2) ?? "—"}
+          tooltip={`Mean Absolute Error — the average size of prediction errors in the same units as your target. Lower is better.`}
+        />
+        <MetricCell
+          label="RMSE"
+          value={m.rmse?.toFixed(2) ?? "—"}
+          tooltip={`Root Mean Square Error — like MAE but penalizes large errors more heavily. Lower is better.`}
+        />
       </div>
     )
   }
+  const accPct = m.accuracy != null ? (m.accuracy * 100).toFixed(1) : null
   return (
-    <div className="flex gap-3 text-xs">
-      <span>Accuracy <strong>{m.accuracy != null ? `${(m.accuracy * 100).toFixed(1)}%` : "—"}</strong></span>
-      <span>F1 <strong>{m.f1?.toFixed(3) ?? "—"}</strong></span>
-      <span>Precision <strong>{m.precision?.toFixed(3) ?? "—"}</strong></span>
+    <div className="flex flex-wrap gap-3 text-xs">
+      <MetricCell
+        label="Accuracy"
+        value={accPct != null ? `${accPct}%` : "—"}
+        tooltip={accPct != null ? `Accuracy ${accPct}% — the model predicts correctly ${accPct}% of the time. Higher is better.` : "Accuracy — percentage of correct predictions. Higher is better."}
+      />
+      <MetricCell
+        label="F1"
+        value={m.f1?.toFixed(3) ?? "—"}
+        tooltip="F1 Score — balances precision and recall. Useful when classes are imbalanced. Closer to 1.0 is better."
+      />
+      <MetricCell
+        label="Precision"
+        value={m.precision?.toFixed(3) ?? "—"}
+        tooltip="Precision — of all positive predictions, what fraction were correct. Closer to 1.0 is better."
+      />
     </div>
   )
 }
