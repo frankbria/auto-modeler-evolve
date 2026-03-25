@@ -33,7 +33,7 @@ function statusColor(status: string): string {
     case "critical":
       return "text-red-600"
     default:
-      return "text-gray-500"
+      return "text-muted-foreground"
   }
 }
 
@@ -105,21 +105,21 @@ function ComponentRow({ component }: { component: ReadinessComponent }) {
       </span>
       <div className="min-w-0 flex-1">
         <div className="flex items-center justify-between gap-2">
-          <span className="text-xs font-medium text-gray-800">
+          <span className="text-xs font-medium text-foreground">
             {component.name}
             {isAdvisory && (
-              <span className="ml-1 text-xs font-normal text-gray-400">(advisory)</span>
+              <span className="ml-1 text-xs font-normal text-muted-foreground">(advisory)</span>
             )}
           </span>
           {!isAdvisory && (
-            <span className="shrink-0 text-xs text-gray-500">
+            <span className="shrink-0 text-xs text-muted-foreground">
               {component.score}/{component.max_score}
             </span>
           )}
         </div>
         {!isAdvisory && (
           <div
-            className="mt-0.5 h-1.5 w-full overflow-hidden rounded-full bg-gray-100"
+            className="mt-0.5 h-1.5 w-full overflow-hidden rounded-full bg-muted"
             data-testid="component-progress-bar"
           >
             <div
@@ -134,7 +134,7 @@ function ComponentRow({ component }: { component: ReadinessComponent }) {
             />
           </div>
         )}
-        <p className="mt-0.5 text-xs text-gray-500 leading-relaxed">{component.detail}</p>
+        <p className="mt-0.5 text-xs text-muted-foreground leading-relaxed">{component.detail}</p>
       </div>
     </div>
   )
@@ -165,13 +165,13 @@ export function ReadinessCheckCard({ result: initialResult, datasetId }: Props) 
   if (!result) {
     return (
       <div
-        className="rounded-lg border bg-white p-3 shadow-sm"
+        className="rounded-lg border bg-card p-3 shadow-sm"
         data-testid="readiness-check-card"
       >
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-sm font-semibold text-gray-900">Data Readiness Check</p>
-            <p className="text-xs text-gray-500">
+            <p className="text-sm font-semibold text-foreground">Data Readiness Check</p>
+            <p className="text-xs text-muted-foreground">
               Assess your dataset before training
             </p>
           </div>
@@ -196,14 +196,14 @@ export function ReadinessCheckCard({ result: initialResult, datasetId }: Props) 
 
   return (
     <div
-      className="rounded-lg border bg-white p-4 shadow-sm"
+      className="rounded-lg border bg-card p-4 shadow-sm"
       data-testid="readiness-check-card"
     >
       {/* Header — score gauge */}
       <div className="mb-3 flex items-start justify-between gap-3">
         <div>
-          <p className="text-sm font-semibold text-gray-900">Data Readiness</p>
-          <p className="mt-0.5 text-xs text-gray-500 leading-relaxed">
+          <p className="text-sm font-semibold text-foreground">Data Readiness</p>
+          <p className="mt-0.5 text-xs text-muted-foreground leading-relaxed">
             {result.summary}
           </p>
           <div className="mt-1.5">
@@ -219,7 +219,7 @@ export function ReadinessCheckCard({ result: initialResult, datasetId }: Props) 
           >
             {result.grade}
           </div>
-          <div className="text-sm font-semibold text-gray-600" data-testid="readiness-score">
+          <div className="text-sm font-semibold text-muted-foreground" data-testid="readiness-score">
             {result.score}/100
           </div>
         </div>
@@ -227,7 +227,7 @@ export function ReadinessCheckCard({ result: initialResult, datasetId }: Props) 
 
       {/* Component breakdown */}
       <div className="border-t pt-2">
-        <p className="mb-1 text-xs font-medium text-gray-400 uppercase tracking-wide">
+        <p className="mb-1 text-xs font-medium text-muted-foreground uppercase tracking-wide">
           Components
         </p>
         <div className="divide-y divide-gray-50">
@@ -247,12 +247,12 @@ export function ReadinessCheckCard({ result: initialResult, datasetId }: Props) 
       {/* Recommendations */}
       {result.recommendations.length > 0 && (
         <div className="mt-3 border-t pt-2">
-          <p className="mb-1.5 text-xs font-medium text-gray-400 uppercase tracking-wide">
+          <p className="mb-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wide">
             Recommendations
           </p>
           <ul className="space-y-1" data-testid="readiness-recommendations">
             {result.recommendations.map((rec, i) => (
-              <li key={i} className="flex items-start gap-1.5 text-xs text-gray-600">
+              <li key={i} className="flex items-start gap-1.5 text-xs text-muted-foreground">
                 <span className="mt-0.5 shrink-0 text-primary">→</span>
                 <span>{rec}</span>
               </li>

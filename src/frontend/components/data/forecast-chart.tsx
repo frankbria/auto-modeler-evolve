@@ -122,16 +122,16 @@ export function ForecastChart({ result }: Props) {
 
   return (
     <div
-      className="mt-3 rounded-lg border bg-white p-4 shadow-sm"
+      className="mt-3 rounded-lg border bg-card p-4 shadow-sm"
       data-testid="forecast-chart"
     >
       {/* Header */}
       <div className="mb-3 flex items-center justify-between">
         <div>
-          <p className="text-sm font-semibold text-gray-900">
+          <p className="text-sm font-semibold text-foreground">
             {value_col} — {forecastCount}-{period_label} Forecast
           </p>
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-muted-foreground">
             Historical + projected values with 95% confidence band
           </p>
         </div>
@@ -141,14 +141,26 @@ export function ForecastChart({ result }: Props) {
       {/* Chart */}
       <ResponsiveContainer width="100%" height={220}>
         <ComposedChart data={chartData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+          <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
           <XAxis
             dataKey="date"
             tick={{ fontSize: 11 }}
             tickFormatter={(v: string) => {
-              // Shorten long date strings for readability
-              if (typeof v === "string" && v.length > 8) return v.slice(0, 8)
-              return v
+              if (typeof v !== "string") return v
+              const d = new Date(v)
+              if (isNaN(d.getTime())) return v
+              if (period_label === "quarter") {
+                const q = Math.ceil((d.getMonth() + 1) / 3)
+                return `Q${q} ${d.getFullYear()}`
+              }
+              if (period_label === "month") {
+                return d.toLocaleDateString(undefined, { month: "short", year: "numeric" })
+              }
+              if (period_label === "week") {
+                return d.toLocaleDateString(undefined, { month: "short", day: "numeric" })
+              }
+              // daily — show month + day
+              return d.toLocaleDateString(undefined, { month: "short", day: "numeric" })
             }}
             interval="preserveStartEnd"
           />
@@ -204,7 +216,7 @@ export function ForecastChart({ result }: Props) {
           <Line
             type="monotone"
             dataKey="historical"
-            stroke="#2563eb"
+            stroke="hsl(var(--primary))"
             strokeWidth={2}
             dot={false}
             name="historical"
@@ -215,10 +227,10 @@ export function ForecastChart({ result }: Props) {
           <Line
             type="monotone"
             dataKey="forecast"
-            stroke="#2563eb"
+            stroke="hsl(var(--primary))"
             strokeWidth={2}
             strokeDasharray="5 3"
-            dot={{ r: 3, fill: "#2563eb" }}
+            dot={{ r: 3, fill: "hsl(var(--primary))" }}
             name="forecast"
             connectNulls={false}
           />
@@ -236,7 +248,7 @@ export function ForecastChart({ result }: Props) {
       </ResponsiveContainer>
 
       {/* Summary */}
-      <p className="mt-2 text-xs text-gray-600 leading-relaxed" data-testid="forecast-summary">
+      <p className="mt-2 text-xs text-muted-foreground leading-relaxed" data-testid="forecast-summary">
         {summary}
       </p>
     </div>

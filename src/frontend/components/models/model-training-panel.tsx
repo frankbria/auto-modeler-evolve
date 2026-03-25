@@ -382,27 +382,30 @@ function ModelRadarChart({ chart }: { chart: ChartSpec }) {
       <p className="mb-2 text-[11px] text-muted-foreground">
         All metrics normalized 0–1 so larger area = better performance overall
       </p>
-      <ResponsiveContainer width="100%" height={220}>
-        <RadarChart data={remappedData}>
-          <PolarGrid />
-          <PolarAngleAxis dataKey={chart.x_key} tick={{ fontSize: 10 }} />
-          <Tooltip
-            contentStyle={{ fontSize: 11 }}
-            formatter={(v) => (typeof v === "number" ? `${(v * 100).toFixed(0)}%` : String(v))}
-          />
-          <Legend wrapperStyle={{ fontSize: 10 }} />
-          {chart.y_keys.map((key, i) => (
-            <Radar
-              key={key}
-              name={key}
-              dataKey={key}
-              stroke={RADAR_COLORS[i % RADAR_COLORS.length]}
-              fill={RADAR_COLORS[i % RADAR_COLORS.length]}
-              fillOpacity={0.15}
+      <figure aria-label={`${chart.title} — model comparison radar chart`}>
+        <ResponsiveContainer width="100%" height={220}>
+          <RadarChart data={remappedData}>
+            <PolarGrid />
+            <PolarAngleAxis dataKey={chart.x_key} tick={{ fontSize: 10 }} />
+            <Tooltip
+              contentStyle={{ fontSize: 11 }}
+              formatter={(v) => (typeof v === "number" ? `${(v * 100).toFixed(0)}%` : String(v))}
             />
-          ))}
-        </RadarChart>
-      </ResponsiveContainer>
+            <Legend wrapperStyle={{ fontSize: 10 }} />
+            {chart.y_keys.map((key, i) => (
+              <Radar
+                key={key}
+                name={key}
+                dataKey={key}
+                stroke={RADAR_COLORS[i % RADAR_COLORS.length]}
+                fill={RADAR_COLORS[i % RADAR_COLORS.length]}
+                fillOpacity={0.15}
+              />
+            ))}
+          </RadarChart>
+        </ResponsiveContainer>
+        <figcaption className="sr-only">{chart.title} — all metrics normalized 0–1, larger area means better overall performance</figcaption>
+      </figure>
     </div>
   )
 }
@@ -708,38 +711,41 @@ function VersionHistoryCard({ history }: { history: ModelVersionHistory }) {
       </CardHeader>
       <CardContent className="space-y-3">
         {/* Metric line chart */}
-        <ResponsiveContainer width="100%" height={100}>
-          <LineChart data={chartData} margin={{ top: 4, right: 8, bottom: 4, left: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-            <XAxis dataKey="run" tick={{ fontSize: 10 }} />
-            <YAxis
-              tick={{ fontSize: 10 }}
-              width={36}
-              domain={isRegression ? [-0.1, 1] : [0, 1]}
-              tickFormatter={(v) =>
-                isRegression ? v.toFixed(2) : `${(v * 100).toFixed(0)}%`
-              }
-            />
-            <Tooltip
-              contentStyle={{ fontSize: 11 }}
-              formatter={(v) =>
-                typeof v === "number"
-                  ? isRegression
-                    ? v.toFixed(3)
-                    : `${(v * 100).toFixed(1)}%`
-                  : String(v)
-              }
-            />
-            <Line
-              type="monotone"
-              dataKey="value"
-              stroke="#6366f1"
-              strokeWidth={2}
-              dot={{ r: 3 }}
-              name={history.primary_metric_label}
-            />
-          </LineChart>
-        </ResponsiveContainer>
+        <figure aria-label={`${history.primary_metric_label} over ${chartData.length} training runs`}>
+          <ResponsiveContainer width="100%" height={100}>
+            <LineChart data={chartData} margin={{ top: 4, right: 8, bottom: 4, left: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+              <XAxis dataKey="run" tick={{ fontSize: 10 }} />
+              <YAxis
+                tick={{ fontSize: 10 }}
+                width={36}
+                domain={["auto", "auto"]}
+                tickFormatter={(v) =>
+                  isRegression ? v.toFixed(2) : `${(v * 100).toFixed(0)}%`
+                }
+              />
+              <Tooltip
+                contentStyle={{ fontSize: 11 }}
+                formatter={(v) =>
+                  typeof v === "number"
+                    ? isRegression
+                      ? v.toFixed(3)
+                      : `${(v * 100).toFixed(1)}%`
+                    : String(v)
+                }
+              />
+              <Line
+                type="monotone"
+                dataKey="value"
+                stroke="#6366f1"
+                strokeWidth={2}
+                dot={{ r: 3 }}
+                name={history.primary_metric_label}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+          <figcaption className="sr-only">{history.primary_metric_label} over {chartData.length} training runs</figcaption>
+        </figure>
 
         {/* Summary stats */}
         <div className="flex gap-4 text-xs">

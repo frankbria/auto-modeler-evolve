@@ -69,8 +69,10 @@ export function ChartMessage({ spec }: ChartMessageProps) {
     )
   }
 
+  const caption = [title, x_label && `X: ${x_label}`, y_label && `Y: ${y_label}`].filter(Boolean).join(" — ") || `${chart_type} chart`
+
   return (
-    <div className="mt-2 rounded-lg border bg-card p-3">
+    <figure className="mt-2 rounded-lg border bg-card p-3" aria-label={caption}>
       {title && (
         <p className="mb-2 text-xs font-semibold text-muted-foreground">
           {title}
@@ -81,7 +83,8 @@ export function ChartMessage({ spec }: ChartMessageProps) {
           {renderChart(chart_type, data, x_key, y_keys, x_label, y_label)}
         </ResponsiveContainer>
       </div>
-    </div>
+      <figcaption className="sr-only">{caption}</figcaption>
+    </figure>
   )
 }
 

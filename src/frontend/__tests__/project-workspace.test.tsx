@@ -333,7 +333,8 @@ describe("ProjectWorkspace — project with existing dataset", () => {
     // "Data" appears twice (mobile toggle + tab), use getAllByText
     await waitFor(() => expect(screen.getAllByText("Data").length).toBeGreaterThanOrEqual(1))
     for (const tab of ["Features", "Importance", "Models", "Validate", "Deploy"]) {
-      expect(screen.getByText(tab)).toBeInTheDocument()
+      // WorkflowProgress also renders these labels, so target the tab role specifically
+      expect(screen.getByRole("tab", { name: tab })).toBeInTheDocument()
     }
   })
 
@@ -355,9 +356,9 @@ describe("ProjectWorkspace — project with existing dataset", () => {
     fetchMock.mockResponseOnce(JSON.stringify(mockPreview))
     fetchMock.mockResponseOnce(JSON.stringify(mockRuns))
     render(<ProjectWorkspace />)
-    await waitFor(() => expect(screen.getByText("Validate")).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByRole("tab", { name: "Validate" })).toBeInTheDocument())
 
-    fireEvent.click(screen.getByText("Validate"))
+    fireEvent.click(screen.getByRole("tab", { name: "Validate" }))
     await waitFor(() => {
       expect(screen.getByTestId("validation-panel").getAttribute("data-run")).toBe("run-1")
     })
@@ -397,8 +398,8 @@ describe("ProjectWorkspace — tab switching", () => {
 
   it("switches to Validate tab showing ValidationPanel", async () => {
     render(<ProjectWorkspace />)
-    await waitFor(() => expect(screen.getByText("Validate")).toBeInTheDocument())
-    fireEvent.click(screen.getByText("Validate"))
+    await waitFor(() => expect(screen.getByRole("tab", { name: "Validate" })).toBeInTheDocument())
+    fireEvent.click(screen.getByRole("tab", { name: "Validate" }))
     await waitFor(() => {
       expect(screen.getByTestId("validation-panel")).toBeInTheDocument()
     })
@@ -406,8 +407,8 @@ describe("ProjectWorkspace — tab switching", () => {
 
   it("switches to Deploy tab showing DeploymentPanel", async () => {
     render(<ProjectWorkspace />)
-    await waitFor(() => expect(screen.getByText("Deploy")).toBeInTheDocument())
-    fireEvent.click(screen.getByText("Deploy"))
+    await waitFor(() => expect(screen.getByRole("tab", { name: "Deploy" })).toBeInTheDocument())
+    fireEvent.click(screen.getByRole("tab", { name: "Deploy" }))
     await waitFor(() => {
       expect(screen.getByTestId("deployment-panel")).toBeInTheDocument()
     })
@@ -416,8 +417,8 @@ describe("ProjectWorkspace — tab switching", () => {
   it("switches to Features tab and fetches suggestions", async () => {
     fetchMock.mockResponseOnce(JSON.stringify({ suggestions: [] }))
     render(<ProjectWorkspace />)
-    await waitFor(() => expect(screen.getByText("Features")).toBeInTheDocument())
-    fireEvent.click(screen.getByText("Features"))
+    await waitFor(() => expect(screen.getByRole("tab", { name: "Features" })).toBeInTheDocument())
+    fireEvent.click(screen.getByRole("tab", { name: "Features" }))
     await waitFor(() => {
       expect(screen.getByTestId("feature-suggestions-panel")).toBeInTheDocument()
     })
@@ -761,7 +762,7 @@ describe("ProjectWorkspace — child panel callbacks", () => {
       expect(screen.getByText(/selected this model/i)).toBeInTheDocument()
     })
     // Validate tab should show the run ID
-    fireEvent.click(screen.getByText("Validate"))
+    fireEvent.click(screen.getByRole("tab", { name: "Validate" }))
     await waitFor(() => {
       expect(screen.getByTestId("validation-panel").getAttribute("data-run")).toBe("run-1")
     })
@@ -769,9 +770,9 @@ describe("ProjectWorkspace — child panel callbacks", () => {
 
   it("onDeployed adds deployment live message to chat", async () => {
     render(<ProjectWorkspace />)
-    await waitFor(() => expect(screen.getByText("Deploy")).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByRole("tab", { name: "Deploy" })).toBeInTheDocument())
 
-    fireEvent.click(screen.getByText("Deploy"))
+    fireEvent.click(screen.getByRole("tab", { name: "Deploy" }))
     await waitFor(() => expect(screen.getByTestId("deployment-panel")).toBeInTheDocument())
 
     fireEvent.click(screen.getByText("Trigger Deploy"))
@@ -804,9 +805,9 @@ describe("ProjectWorkspace — child panel callbacks", () => {
   it("feature apply callback adds message with column count", async () => {
     fetchMock.mockResponseOnce(JSON.stringify({ suggestions: [] }))
     render(<ProjectWorkspace />)
-    await waitFor(() => expect(screen.getByText("Features")).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByRole("tab", { name: "Features" })).toBeInTheDocument())
 
-    fireEvent.click(screen.getByText("Features"))
+    fireEvent.click(screen.getByRole("tab", { name: "Features" }))
     await waitFor(() => expect(screen.getByTestId("feature-suggestions-panel")).toBeInTheDocument())
 
     fireEvent.click(screen.getByText("Apply Features"))

@@ -304,6 +304,7 @@ export default function PredictionDashboard() {
   const [predError, setPredError] = useState<string | null>(null)
   const [showExplanation, setShowExplanation] = useState(false)
   const [fetchingExplanation, setFetchingExplanation] = useState(false)
+  const [explanationError, setExplanationError] = useState(false)
   const [history, setHistory] = useState<PredictionHistoryRecord[]>([])
   const [, setHistoryCounter] = useState(0)
 
@@ -381,13 +382,14 @@ export default function PredictionDashboard() {
       return
     }
     setFetchingExplanation(true)
+    setExplanationError(false)
     const payload = buildPayload()
     try {
       const exp = await api.deploy.explain(deploymentId, payload)
       setExplanation(exp)
       setShowExplanation(true)
     } catch {
-      // Silently fall back — explanation is optional enhancement
+      setExplanationError(true)
     } finally {
       setFetchingExplanation(false)
     }
@@ -577,6 +579,11 @@ export default function PredictionDashboard() {
                   ? "Hide explanation"
                   : "Why this prediction?"}
               </Button>
+              {explanationError && (
+                <p className="text-xs text-muted-foreground text-center" data-testid="explanation-error">
+                  Explanation unavailable for this prediction.
+                </p>
+              )}
             </CardContent>
           </Card>
         )}

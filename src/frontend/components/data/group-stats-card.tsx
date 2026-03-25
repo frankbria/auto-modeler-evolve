@@ -48,7 +48,7 @@ function BarRow({
       </span>
       {/* Group label */}
       <span
-        className="w-24 shrink-0 truncate text-right text-xs text-gray-700"
+        className="w-24 shrink-0 truncate text-right text-xs text-foreground"
         title={row.group}
       >
         {row.group}
@@ -56,13 +56,13 @@ function BarRow({
 
       {/* Bar + value */}
       <div className="flex flex-1 items-center gap-1">
-        <div className="h-5 flex-1 overflow-hidden rounded bg-gray-100">
+        <div className="h-5 flex-1 overflow-hidden rounded bg-muted">
           <div
             className={`h-full rounded ${barColor} transition-all`}
             style={{ width: `${widthPct}%` }}
           />
         </div>
-        <span className="w-20 text-right text-xs font-medium tabular-nums text-gray-700">
+        <span className="w-20 text-right text-xs font-medium tabular-nums text-foreground">
           {formatValue(rawVal, agg)}
         </span>
       </div>
@@ -77,9 +77,9 @@ export function GroupStatsCard({ result }: GroupStatsCardProps) {
     return (
       <div
         data-testid="group-stats-card"
-        className="mt-2 rounded-lg border border-gray-200 bg-gray-50 p-3"
+        className="mt-2 rounded-lg border border bg-muted/30 p-3"
       >
-        <p className="text-sm text-gray-500">{summary}</p>
+        <p className="text-sm text-muted-foreground">{summary}</p>
       </div>
     )
   }
@@ -116,17 +116,17 @@ export function GroupStatsCard({ result }: GroupStatsCardProps) {
   return (
     <div
       data-testid="group-stats-card"
-      className="mt-2 rounded-lg border border-blue-100 bg-white shadow-sm"
+      className="mt-2 rounded-lg border border bg-card shadow-sm"
     >
       {/* Header */}
-      <div className="border-b border-gray-100 px-3 py-2">
-        <h3 className="text-sm font-semibold text-gray-800">
+      <div className="border-b border px-3 py-2">
+        <h3 className="text-sm font-semibold text-foreground">
           {aggLabel}{" "}
           <span className="text-blue-600">{valueLabel}</span>{" "}
           by{" "}
           <span className="text-purple-600">{groupLabel}</span>
         </h3>
-        <div className="mt-0.5 flex flex-wrap gap-2 text-xs text-gray-500">
+        <div className="mt-0.5 flex flex-wrap gap-2 text-xs text-muted-foreground">
           <span>{visibleRows.length} groups</span>
           {total !== null && agg === "sum" && (
             <span>· Total: {formatValue(total, agg)}</span>
@@ -149,8 +149,8 @@ export function GroupStatsCard({ result }: GroupStatsCardProps) {
       </div>
 
       {/* Summary */}
-      <div className="border-t border-gray-100 px-3 py-2">
-        <p className="text-xs text-gray-600">{summary}</p>
+      <div className="border-t border px-3 py-2">
+        <p className="text-xs text-muted-foreground">{summary}</p>
       </div>
     </div>
   )

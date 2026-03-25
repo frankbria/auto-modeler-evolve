@@ -32,11 +32,12 @@ interface Props {
   selectedRunId: string | null
   algorithmName: string | null
   onNavigateToModels?: () => void
+  onValidationComplete?: () => void
 }
 
 type SubTab = "cv" | "error" | "importance" | "explain"
 
-export function ValidationPanel({ selectedRunId, algorithmName, onNavigateToModels }: Props) {
+export function ValidationPanel({ selectedRunId, algorithmName, onNavigateToModels, onValidationComplete }: Props) {
   const [subTab, setSubTab] = useState<SubTab>("cv")
   const [loading, setLoading] = useState(false)
   const [metrics, setMetrics] = useState<ValidationMetricsResponse | null>(null)
@@ -52,6 +53,7 @@ export function ValidationPanel({ selectedRunId, algorithmName, onNavigateToMode
     try {
       const result = await api.validation.metrics(selectedRunId)
       setMetrics(result)
+      onValidationComplete?.()
     } catch {
       setError("Failed to load validation metrics.")
     } finally {
@@ -277,7 +279,7 @@ function CrossValidationView({ cv }: { cv: ValidationMetricsResponse["cross_vali
       </Card>
 
       {scoreData.length > 0 && (
-        <div>
+        <figure aria-label={`Cross-validation score per fold — ${scoreData.length} folds`}>
           <p className="mb-2 text-xs font-medium">Score per fold</p>
           <ResponsiveContainer width="100%" height={150}>
             <BarChart data={scoreData} margin={{ top: 0, right: 8, left: -20, bottom: 0 }}>
@@ -291,7 +293,8 @@ function CrossValidationView({ cv }: { cv: ValidationMetricsResponse["cross_vali
               <Bar dataKey="score" fill="hsl(var(--primary))" radius={[3, 3, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
-        </div>
+          <figcaption className="sr-only">Bar chart showing the model score for each cross-validation fold. Consistent scores across folds indicate a stable model.</figcaption>
+        </figure>
       )}
     </div>
   )
@@ -331,7 +334,7 @@ function ResidualsView({ data }: { data: ResidualsResult }) {
           </div>
         </CardContent>
       </Card>
-      <div>
+      <figure aria-label="Residuals scatter plot — predicted values vs prediction errors">
         <p className="mb-1 text-xs font-medium">Predicted vs Residual</p>
         <p className="mb-2 text-xs text-muted-foreground">
           Points scattered around zero = good. Patterns or drift = systematic errors.
@@ -359,7 +362,8 @@ function ResidualsView({ data }: { data: ResidualsResult }) {
             <Scatter data={data.scatter} fill="hsl(var(--primary))" opacity={0.6} />
           </ScatterChart>
         </ResponsiveContainer>
-      </div>
+        <figcaption className="sr-only">Scatter plot of predicted values on the X-axis vs residuals (actual minus predicted) on the Y-axis. Points close to the zero line indicate accurate predictions.</figcaption>
+      </figure>
     </div>
   )
 }
@@ -455,29 +459,32 @@ function GlobalImportanceView({ data }: { data: GlobalExplanationResponse }) {
   return (
     <div className="space-y-4">
       <p className="text-xs text-muted-foreground">{data.summary}</p>
-      <ResponsiveContainer width="100%" height={Math.max(200, chartData.length * 22)}>
-        <BarChart
-          layout="vertical"
-          data={chartData}
-          margin={{ top: 0, right: 16, left: 0, bottom: 0 }}
-        >
-          <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-          <XAxis
-            type="number"
-            tick={{ fontSize: 9 }}
-            label={{ value: "Importance (%)", position: "insideBottom", offset: -2, fontSize: 10 }}
-          />
-          <YAxis type="category" dataKey="feature" tick={{ fontSize: 9 }} width={110} />
-          <Tooltip
-            contentStyle={{ fontSize: 11 }}
-            formatter={(v, _name, props) => [
-              typeof v === "number" ? `${v.toFixed(2)}%` : String(v),
-              props.payload?.fullName ?? "Importance",
-            ]}
-          />
-          <Bar dataKey="importance" fill="hsl(var(--primary))" radius={[0, 3, 3, 0]} />
-        </BarChart>
-      </ResponsiveContainer>
+      <figure aria-label={`Feature importance chart — top ${chartData.length} features`}>
+        <ResponsiveContainer width="100%" height={Math.max(200, chartData.length * 22)}>
+          <BarChart
+            layout="vertical"
+            data={chartData}
+            margin={{ top: 0, right: 16, left: 0, bottom: 0 }}
+          >
+            <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+            <XAxis
+              type="number"
+              tick={{ fontSize: 9 }}
+              label={{ value: "Importance (%)", position: "insideBottom", offset: -2, fontSize: 10 }}
+            />
+            <YAxis type="category" dataKey="feature" tick={{ fontSize: 9 }} width={110} />
+            <Tooltip
+              contentStyle={{ fontSize: 11 }}
+              formatter={(v, _name, props) => [
+                typeof v === "number" ? `${v.toFixed(2)}%` : String(v),
+                props.payload?.fullName ?? "Importance",
+              ]}
+            />
+            <Bar dataKey="importance" fill="hsl(var(--primary))" radius={[0, 3, 3, 0]} />
+          </BarChart>
+        </ResponsiveContainer>
+        <figcaption className="sr-only">Horizontal bar chart showing the relative importance of each feature in the model. Longer bars indicate greater influence on predictions.</figcaption>
+      </figure>
     </div>
   )
 }

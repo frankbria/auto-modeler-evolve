@@ -2,7 +2,7 @@
 
 /**
  * WorkflowProgress — horizontal stepper showing where the user is in the
- * Upload → Train → Validate → Deploy workflow.
+ * Upload → Features → Train → Validate → Deploy workflow.
  *
  * Each step is clickable (calls onStepClick) so the user can jump directly
  * to the relevant right-panel tab. The active step is the first incomplete one.
@@ -17,6 +17,7 @@ interface Step {
 
 const STEPS: Step[] = [
   { key: "upload", label: "Upload", description: "Load your data", tab: "data" },
+  { key: "features", label: "Features", description: "Explore and shape your data", tab: "features" },
   { key: "train", label: "Train", description: "Build a model", tab: "models" },
   { key: "validate", label: "Validate", description: "Review accuracy", tab: "validate" },
   { key: "deploy", label: "Deploy", description: "Share predictions", tab: "deploy" },
@@ -24,7 +25,9 @@ const STEPS: Step[] = [
 
 interface WorkflowProgressProps {
   hasDataset: boolean
+  hasFeatures: boolean
   hasSelectedModel: boolean
+  hasValidation: boolean
   hasDeployment: boolean
   /** Called when the user clicks a step pill */
   onStepClick?: (tab: string) => void
@@ -33,17 +36,22 @@ interface WorkflowProgressProps {
 function stepStatus(
   stepKey: string,
   hasDataset: boolean,
+  hasFeatures: boolean,
   hasSelectedModel: boolean,
+  hasValidation: boolean,
   hasDeployment: boolean
 ): "done" | "active" | "pending" {
   switch (stepKey) {
     case "upload":
       return hasDataset ? "done" : "active"
+    case "features":
+      if (hasFeatures) return "done"
+      return hasDataset ? "active" : "pending"
     case "train":
       if (hasSelectedModel) return "done"
       return hasDataset ? "active" : "pending"
     case "validate":
-      if (hasDeployment) return "done"
+      if (hasValidation) return "done"
       return hasSelectedModel ? "active" : "pending"
     case "deploy":
       return hasDeployment ? "done" : hasSelectedModel ? "active" : "pending"
@@ -54,7 +62,9 @@ function stepStatus(
 
 export function WorkflowProgress({
   hasDataset,
+  hasFeatures,
   hasSelectedModel,
+  hasValidation,
   hasDeployment,
   onStepClick,
 }: WorkflowProgressProps) {
@@ -64,7 +74,7 @@ export function WorkflowProgress({
       data-testid="workflow-progress"
     >
       {STEPS.map((step, index) => {
-        const status = stepStatus(step.key, hasDataset, hasSelectedModel, hasDeployment)
+        const status = stepStatus(step.key, hasDataset, hasFeatures, hasSelectedModel, hasValidation, hasDeployment)
         const isLast = index === STEPS.length - 1
 
         return (
@@ -96,13 +106,14 @@ export function WorkflowProgress({
                   fill="none"
                   stroke="currentColor"
                   strokeWidth={2.5}
+                  aria-hidden="true"
                 >
                   <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                 </svg>
               ) : status === "active" ? (
-                <span className="size-1.5 shrink-0 rounded-full bg-current" />
+                <span className="size-1.5 shrink-0 rounded-full bg-current" aria-hidden="true" />
               ) : (
-                <span className="size-1.5 shrink-0 rounded-full bg-muted-foreground/30" />
+                <span className="size-1.5 shrink-0 rounded-full bg-muted-foreground/30" aria-hidden="true" />
               )}
               <span>{step.label}</span>
             </button>
@@ -114,7 +125,9 @@ export function WorkflowProgress({
                   stepStatus(
                     STEPS[index + 1].key,
                     hasDataset,
+                    hasFeatures,
                     hasSelectedModel,
+                    hasValidation,
                     hasDeployment
                   ) !== "pending"
                     ? "bg-primary/30"

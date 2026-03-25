@@ -140,8 +140,9 @@ export function AnomalyCard({ result: initialResult, datasetId, numericFeatures 
             </div>
 
             {result.top_anomalies.length > 5 && (
-              <button
-                className="text-xs text-primary underline-offset-2 hover:underline"
+              <Button
+                variant="ghost"
+                size="sm"
                 onClick={() => setShowAll((v) => !v)}
                 aria-expanded={showAll}
                 aria-controls="anomaly-rows-list"
@@ -149,7 +150,7 @@ export function AnomalyCard({ result: initialResult, datasetId, numericFeatures 
                 {showAll
                   ? "Show less"
                   : `Show ${result.top_anomalies.length - 5} more`}
-              </button>
+              </Button>
             )}
           </div>
         )}

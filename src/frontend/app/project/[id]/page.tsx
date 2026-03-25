@@ -43,6 +43,7 @@ import {
   FeatureSuggestCard,
   FeaturesAppliedCard,
 } from "@/components/features/feature-suggestions-chat-card"
+import { WorkflowProgress } from "@/components/ui/workflow-progress"
 import { api } from "@/lib/api"
 import { useAppStore } from "@/lib/store"
 import type {
@@ -165,6 +166,8 @@ export default function ProjectWorkspace() {
   // Validation state
   const [selectedModelRunId, setSelectedModelRunId] = useState<string | null>(null)
   const [selectedModelAlgorithm, setSelectedModelAlgorithm] = useState<string | null>(null)
+  const [hasValidation, setHasValidation] = useState(false)
+  const [hasDeployment, setHasDeployment] = useState(false)
 
   // Chat follow-up suggestion chips
   const [chatSuggestions, setChatSuggestions] = useState<string[]>([])
@@ -191,6 +194,7 @@ export default function ProjectWorkspace() {
           api.chat.history(projectId),
         ])
         setCurrentProject(project)
+        if (project.has_deployment) setHasDeployment(true)
 
         // Restore dataset state when navigating back to an existing project
         if (project.dataset_id) {
@@ -783,6 +787,16 @@ export default function ProjectWorkspace() {
             w-full md:w-3/5`}>
             {currentDataset ? (
               <>
+                {/* Workflow progress stepper — shown once a dataset is uploaded */}
+                <WorkflowProgress
+                  hasDataset={!!currentDataset}
+                  hasFeatures={featureSuggestions.length > 0 || importanceFeatures.length > 0}
+                  hasSelectedModel={!!selectedModelRunId}
+                  hasValidation={hasValidation}
+                  hasDeployment={hasDeployment}
+                  onStepClick={(tab) => setActiveTab(tab as RightTab)}
+                />
+
                 {/* Tab Bar */}
                 <div role="tablist" aria-label="Project workspace tabs" className="flex border-b overflow-x-auto">
                   {(["data", "features", "importance", "models", "validate", "deploy"] as RightTab[]).map((tab) => {
@@ -1003,6 +1017,7 @@ export default function ProjectWorkspace() {
                       selectedRunId={selectedModelRunId}
                       algorithmName={selectedModelAlgorithm}
                       onNavigateToModels={() => setActiveTab("models")}
+                      onValidationComplete={() => setHasValidation(true)}
                     />
                   </div>
                 )}
@@ -1021,6 +1036,7 @@ export default function ProjectWorkspace() {
                         selectedRunId={selectedModelRunId}
                         algorithmName={selectedModelAlgorithm}
                         onDeployed={(dep) => {
+                          setHasDeployment(true)
                           addMessage({
                             role: "assistant",
                             content: `Your model is live! Share this link with anyone: ${dep.dashboard_url}\n\nThey can fill in values and get instant predictions — no code required. Developers can also use the API endpoint directly: POST ${dep.endpoint_path}`,

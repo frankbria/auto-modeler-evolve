@@ -57,8 +57,13 @@ function AnalyticsMiniChart({ data }: { data: { date: string; count: number }[] 
   if (!data.length) return null
   const max = Math.max(...data.map((d) => d.count), 1)
   const recent = data.slice(-7)
+  const valuesLabel = recent.map((d) => `${d.date}: ${d.count}`).join(", ")
   return (
-    <div className="flex items-end gap-0.5 h-10">
+    <div
+      className="flex items-end gap-0.5 h-10"
+      role="img"
+      aria-label={`Predictions over last 7 days: ${valuesLabel}`}
+    >
       {recent.map((d) => (
         <div key={d.date} className="flex-1 flex flex-col items-center gap-0.5">
           <div

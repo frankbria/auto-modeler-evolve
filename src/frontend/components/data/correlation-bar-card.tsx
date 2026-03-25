@@ -29,7 +29,7 @@ function StrengthBadge({ entry }: { entry: CorrelationEntry }) {
         : "bg-red-100 text-red-800"
       : entry.strength === "moderate"
         ? "bg-yellow-100 text-yellow-800"
-        : "bg-gray-100 text-gray-600"
+        : "bg-muted text-muted-foreground"
 
   return (
     <span
@@ -47,9 +47,9 @@ export function CorrelationBarCard({ result }: CorrelationBarCardProps) {
     return (
       <div
         data-testid="correlation-bar-card"
-        className="mt-2 rounded-lg border border-gray-200 bg-gray-50 p-3"
+        className="mt-2 rounded-lg border border bg-muted/30 p-3"
       >
-        <p className="text-sm text-gray-500">{summary}</p>
+        <p className="text-sm text-muted-foreground">{summary}</p>
       </div>
     )
   }
@@ -59,15 +59,15 @@ export function CorrelationBarCard({ result }: CorrelationBarCardProps) {
   return (
     <div
       data-testid="correlation-bar-card"
-      className="mt-2 rounded-lg border border-blue-100 bg-white shadow-sm"
+      className="mt-2 rounded-lg border border bg-card shadow-sm"
     >
       {/* Header */}
-      <div className="border-b border-gray-100 px-3 py-2">
-        <h3 className="text-sm font-semibold text-gray-800">
+      <div className="border-b border px-3 py-2">
+        <h3 className="text-sm font-semibold text-foreground">
           Correlations with{" "}
           <span className="text-blue-600">{target_col.replace(/_/g, " ")}</span>
         </h3>
-        <p className="mt-0.5 text-xs text-gray-500">
+        <p className="mt-0.5 text-xs text-muted-foreground">
           ↑ positive (blue) · ↓ negative (red) · bar width = strength
         </p>
       </div>
@@ -85,7 +85,7 @@ export function CorrelationBarCard({ result }: CorrelationBarCardProps) {
             <div key={entry.column} className="flex items-center gap-2">
               {/* Column name */}
               <span
-                className="w-28 shrink-0 truncate text-right text-xs text-gray-700"
+                className="w-28 shrink-0 truncate text-right text-xs text-foreground"
                 title={entry.column}
               >
                 {entry.column.replace(/_/g, " ")}
@@ -93,7 +93,7 @@ export function CorrelationBarCard({ result }: CorrelationBarCardProps) {
 
               {/* Bar */}
               <div className="flex flex-1 items-center gap-1">
-                <div className="h-4 flex-1 overflow-hidden rounded bg-gray-100">
+                <div className="h-4 flex-1 overflow-hidden rounded bg-muted">
                   <div
                     className={`h-full rounded ${strengthColor(entry)} transition-all`}
                     style={{ width: `${widthPct}%` }}
@@ -121,8 +121,8 @@ export function CorrelationBarCard({ result }: CorrelationBarCardProps) {
       </div>
 
       {/* Summary */}
-      <div className="border-t border-gray-100 px-3 py-2">
-        <p className="text-xs text-gray-600">{summary}</p>
+      <div className="border-t border px-3 py-2">
+        <p className="text-xs text-muted-foreground">{summary}</p>
       </div>
     </div>
   )

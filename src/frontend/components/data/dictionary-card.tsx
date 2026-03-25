@@ -175,8 +175,10 @@ export function DictionaryCard({ datasetId, initialData }: DictionaryCardProps) 
             </div>
 
             {hasMore && (
-              <button
-                className="mt-2 text-xs text-blue-600 hover:underline"
+              <Button
+                variant="ghost"
+                size="sm"
+                className="mt-2"
                 onClick={() => setShowAll((v) => !v)}
                 aria-expanded={showAll}
                 aria-controls="dictionary-columns-list"
@@ -184,7 +186,7 @@ export function DictionaryCard({ datasetId, initialData }: DictionaryCardProps) 
                 {showAll
                   ? "Show less"
                   : `Show ${columns.length - PREVIEW_LIMIT} more column${columns.length - PREVIEW_LIMIT !== 1 ? "s" : ""}`}
-              </button>
+              </Button>
             )}
           </>
         )}

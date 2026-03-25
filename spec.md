@@ -253,9 +253,9 @@ guides them forward through the natural flow.
 
 - [x] **Heatmap cell keyboard and focus** — In `components/chat/chart-message.tsx`, heatmap cells (`role="button"`, `tabIndex={0}`) handle only `Enter`, not `Space`. They also apply `outline: "none"` removing the focus ring entirely. Add a Space key handler and replace the inline outline removal with `focus-visible:ring-2` class.
 
-- [ ] **Chart SVG accessibility** — Recharts charts in `model-training-panel.tsx`, `validation-panel.tsx`, and `chart-message.tsx` produce unlabeled SVGs. Wrap each chart in a `<figure>` with `<figcaption>` describing the data, or pass `title`/`desc` via Recharts props, so screen readers announce meaningful context instead of raw SVG path data.
+- [x] **Chart SVG accessibility** — Recharts charts in `model-training-panel.tsx`, `validation-panel.tsx`, and `chart-message.tsx` produce unlabeled SVGs. Wrap each chart in a `<figure>` with `<figcaption>` describing the data, or pass `title`/`desc` via Recharts props, so screen readers announce meaningful context instead of raw SVG path data.
 
-- [ ] **Deployment analytics sparkbar accessible** — In `deployment-panel.tsx`, the `AnalyticsMiniChart` sparkbar is purely visual. Add `aria-label="Predictions over last 7 days: [values]"` to the container element.
+- [x] **Deployment analytics sparkbar accessible** — In `deployment-panel.tsx`, the `AnalyticsMiniChart` sparkbar is purely visual. Add `aria-label="Predictions over last 7 days: [values]"` to the container element.
 
 #### Track B — Ease of Use / CX for Business Analysts
 
@@ -275,7 +275,7 @@ guides them forward through the natural flow.
 
 - [x] **Validation empty state navigates to Models tab** — The empty state in `validation-panel.tsx` says "Select a model in the Models tab first" but provides no navigation action. Add a button that calls the parent's tab-switch callback to take users directly to the Models tab.
 
-- [ ] **`handleExplain` silent failure feedback** — In `app/predict/[id]/page.tsx`, errors in `handleExplain` are swallowed silently — the loading spinner stops with no feedback. Show an inline message: "Explanation unavailable for this prediction."
+- [x] **`handleExplain` silent failure feedback** — In `app/predict/[id]/page.tsx`, errors in `handleExplain` are swallowed silently — the loading spinner stops with no feedback. Show an inline message: "Explanation unavailable for this prediction."
 
 - [x] **Suggestion chips labeled and visually distinct** — Suggestion chips in `app/project/[id]/page.tsx` have no header label and are styled similarly to message bubbles. Add a "Try asking:" label above the chip row and use a small caret icon on each chip to signal they are clickable prompts, not system messages.
 
@@ -283,9 +283,9 @@ guides them forward through the natural flow.
 
 #### Track C — Consistent UX Patterns
 
-- [ ] **Standardize data card colors to design tokens** — `forecast-chart.tsx`, `readiness-check-card.tsx`, `group-stats-card.tsx`, and `correlation-bar-card.tsx` use hardcoded Tailwind gray/blue colors (`text-gray-800`, `bg-gray-100`, `stroke="#2563eb"`) instead of semantic tokens (`text-foreground`, `bg-muted`, `text-primary`). These break in dark mode. Audit and replace all hardcoded colors in these files with CSS variable-based tokens.
+- [x] **Standardize data card colors to design tokens** — `forecast-chart.tsx`, `readiness-check-card.tsx`, `group-stats-card.tsx`, and `correlation-bar-card.tsx` use hardcoded Tailwind gray/blue colors (`text-gray-800`, `bg-gray-100`, `stroke="#2563eb"`) instead of semantic tokens (`text-foreground`, `bg-muted`, `text-primary`). These break in dark mode. Audit and replace all hardcoded colors in these files with CSS variable-based tokens.
 
-- [ ] **Unify expand/collapse toggle pattern** — "Show more / Show less" toggles across the codebase use three different implementations (colors, underline behavior, sizing differ). Standardize on `<Button variant="ghost" size="sm">` everywhere.
+- [x] **Unify expand/collapse toggle pattern** — "Show more / Show less" toggles across the codebase use three different implementations (colors, underline behavior, sizing differ). Standardize on `<Button variant="ghost" size="sm">` everywhere.
 
 - [ ] **Standardize Badge usage** — Inline `<span>` elements styled to look like badges exist alongside the design-system `<Badge>` component throughout the codebase. They differ in border-radius, padding, and font-weight. Replace all ad-hoc badge spans with the `<Badge>` component using `className` for color-only overrides.
 
@@ -303,17 +303,17 @@ guides them forward through the natural flow.
 
 - [x] **Color-only encoding in correlation and group-stats** — `correlation-bar-card.tsx` uses blue/red to encode positive/negative (fails for colorblind users). `group-stats-card.tsx` uses 4 blue shades to encode rank (also color-only). Add directional arrows (`↑`/`↓`) to correlation bars and numeric rank labels (1, 2, 3…) to group-stats rows.
 
-- [ ] **Forecast chart tick formatter** — In `forecast-chart.tsx`, `tickFormatter` slices date strings to 8 characters, producing "2024-01-" for full datetimes. Replace with a period-aware formatter producing human-friendly labels ("Jan 2024", "Q1 2024") based on the `period_label` value.
+- [x] **Forecast chart tick formatter** — In `forecast-chart.tsx`, `tickFormatter` slices date strings to 8 characters, producing "2024-01-" for full datetimes. Replace with a period-aware formatter producing human-friendly labels ("Jan 2024", "Q1 2024") based on the `period_label` value.
 
-- [ ] **Version history chart domain** — In `model-training-panel.tsx`, `VersionHistoryCard` uses `domain={[-0.1, 1]}` for regression, clipping models with R² < -0.1. Use `domain={["auto", "auto"]}` or compute domain from data to accommodate all values.
+- [x] **Version history chart domain** — In `model-training-panel.tsx`, `VersionHistoryCard` uses `domain={[-0.1, 1]}` for regression, clipping models with R² < -0.1. Use `domain={["auto", "auto"]}` or compute domain from data to accommodate all values.
 
 #### Track E — Workflow Guidance
 
-- [ ] **Workflow stepper includes Feature Engineering** — `WorkflowProgress` covers Upload → Train → Validate → Deploy but skips Feature Engineering. Users following the stepper will be directed to Train before setting a target column or applying transformations. Add a "Features" step between Upload and Train, or update the Upload step description: "Explore your data and configure features before training."
+- [x] **Workflow stepper includes Feature Engineering** — `WorkflowProgress` covers Upload → Train → Validate → Deploy but skips Feature Engineering. Users following the stepper will be directed to Train before setting a target column or applying transformations. Add a "Features" step between Upload and Train, or update the Upload step description: "Explore your data and configure features before training."
 
 - [ ] **Workflow stepper visible on mobile** — The `WorkflowProgress` is inside the right panel, which is hidden when `mobileView === "chat"`. Mobile users have no workflow indicator while chatting. Move the stepper to the top bar (below the breadcrumb) so it remains visible regardless of which panel is active.
 
-- [ ] **Validate step tied to actual validation** — In `workflow-progress.tsx`, the Validate step is marked `done` as soon as a deployment exists (`hasDeployment`), not when the user actually runs validation. Track validation completion separately (e.g., cross-validation results present) and use that as the Validate step signal to prevent the false "all done" state for users who skipped validation.
+- [x] **Validate step tied to actual validation** — In `workflow-progress.tsx`, the Validate step is marked `done` as soon as a deployment exists (`hasDeployment`), not when the user actually runs validation. Track validation completion separately (e.g., cross-validation results present) and use that as the Validate step signal to prevent the false "all done" state for users who skipped validation.
 
 - [x] **Training-started card navigates to Models tab** — In `training-started-card.tsx`, the prompt "Check the Models tab for real-time progress →" uses a Unicode arrow with no navigation action. Make "Models tab" a `<button>` that fires the tab-switch callback, so a single click takes the user to their running training job.
 
