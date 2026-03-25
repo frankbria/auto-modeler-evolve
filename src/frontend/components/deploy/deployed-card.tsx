@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import { Badge } from "@/components/ui/badge"
 import type { DeployedResult } from "@/lib/types"
 
 interface DeployedCardProps {
@@ -64,9 +65,9 @@ export function DeployedCard({ result }: DeployedCardProps) {
         <span className="text-xs font-semibold text-green-700 dark:text-green-400">
           Model Deployed
         </span>
-        <span className="rounded-full bg-green-500/10 px-2 py-0.5 text-xs text-green-700 dark:text-green-400">
+        <Badge className="bg-green-100 text-green-800 border-green-200 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800">
           {result.problem_type === "classification" ? "Classification" : "Regression"}
-        </span>
+        </Badge>
         {metricLabel && (
           <span className="ml-auto text-xs text-muted-foreground">{metricLabel}</span>
         )}

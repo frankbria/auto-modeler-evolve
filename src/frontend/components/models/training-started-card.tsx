@@ -1,5 +1,6 @@
 "use client"
 
+import { Badge } from "@/components/ui/badge"
 import type { TrainingStartedResult } from "@/lib/types"
 
 interface TrainingStartedCardProps {
@@ -37,9 +38,7 @@ export function TrainingStartedCard({ result, onNavigateToModels }: TrainingStar
     >
       <div className="mb-2 flex items-center gap-2">
         <span className="text-xs font-semibold text-primary">Training Started</span>
-        <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary">
-          {problemLabel}
-        </span>
+        <Badge variant="secondary">{problemLabel}</Badge>
       </div>
       <p className="mb-2 text-sm text-foreground">
         Training{" "}
@@ -51,12 +50,7 @@ export function TrainingStartedCard({ result, onNavigateToModels }: TrainingStar
       </p>
       <div className="flex flex-wrap gap-1.5">
         {result.algorithms.map((algo) => (
-          <span
-            key={algo}
-            className="rounded-full border border-border bg-background px-2 py-0.5 text-xs text-muted-foreground"
-          >
-            {algoLabel(algo)}
-          </span>
+          <Badge key={algo} variant="outline">{algoLabel(algo)}</Badge>
         ))}
       </div>
       <p className="mt-2 text-xs text-muted-foreground">

@@ -433,9 +433,7 @@ function AlgorithmCard({
       <div className="flex items-start justify-between gap-2">
         <span className="font-medium">{rec.name}</span>
         {selected && (
-          <span className="shrink-0 rounded bg-primary px-1 py-0.5 text-[10px] text-primary-foreground">
-            Selected
-          </span>
+          <Badge>Selected</Badge>
         )}
       </div>
       <p className="mt-0.5 text-muted-foreground">{rec.plain_english}</p>

@@ -559,14 +559,14 @@ export function AlertsCard({
           <CardTitle className="text-sm">Model Alerts</CardTitle>
           <div className="flex items-center gap-1.5">
             {alerts.critical_count > 0 && (
-              <span className="rounded-full bg-red-100 text-red-800 text-[10px] font-bold px-1.5 py-0.5">
+              <Badge variant="destructive" className="bg-red-100 text-red-800 border-red-200">
                 {alerts.critical_count} critical
-              </span>
+              </Badge>
             )}
             {alerts.warning_count > 0 && (
-              <span className="rounded-full bg-yellow-100 text-yellow-800 text-[10px] font-bold px-1.5 py-0.5">
+              <Badge className="bg-yellow-100 text-yellow-800 border-yellow-200">
                 {alerts.warning_count} warning
-              </span>
+              </Badge>
             )}
             {!hasAlerts && (
               <Badge className="bg-green-100 text-green-800 border-green-200">All clear</Badge>

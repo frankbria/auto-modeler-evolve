@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import { Badge } from "@/components/ui/badge"
 import { api } from "@/lib/api"
 import type {
   FeatureSuggestionsChatResult,
@@ -71,9 +72,9 @@ export function FeatureSuggestCard({ result }: FeatureSuggestCardProps) {
           <span className="text-xs font-semibold text-purple-700 dark:text-purple-400">
             Features Applied
           </span>
-          <span className="rounded-full bg-purple-500/10 px-2 py-0.5 text-xs text-purple-700 dark:text-purple-400">
+          <Badge className="bg-purple-100 text-purple-800 border-purple-200 dark:bg-purple-900/30 dark:text-purple-400 dark:border-purple-800">
             {applied.new_columns.length} new columns
-          </span>
+          </Badge>
         </div>
         <p className="text-sm text-foreground">
           Your feature set is now active with{" "}
@@ -106,9 +107,9 @@ export function FeatureSuggestCard({ result }: FeatureSuggestCardProps) {
         <span className="text-xs font-semibold text-purple-700 dark:text-purple-400">
           Feature Engineering Suggestions
         </span>
-        <span className="rounded-full bg-purple-500/10 px-2 py-0.5 text-xs text-purple-700 dark:text-purple-400">
+        <Badge className="bg-purple-100 text-purple-800 border-purple-200 dark:bg-purple-900/30 dark:text-purple-400 dark:border-purple-800">
           {result.count} suggestions
-        </span>
+        </Badge>
       </div>
 
       {/* Suggestion list */}
@@ -118,11 +119,11 @@ export function FeatureSuggestCard({ result }: FeatureSuggestCardProps) {
             key={s.id}
             className="flex items-start gap-2 rounded-md border border-purple-500/10 bg-background/60 px-2 py-1.5"
           >
-            <span
-              className={`mt-0.5 shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${TRANSFORM_COLORS[s.transform_type] ?? "bg-gray-100 text-gray-700"}`}
+            <Badge
+              className={`mt-0.5 shrink-0 ${TRANSFORM_COLORS[s.transform_type] ?? "bg-gray-100 text-gray-700"}`}
             >
               {TRANSFORM_LABELS[s.transform_type] ?? s.transform_type}
-            </span>
+            </Badge>
             <div className="min-w-0">
               <p className="truncate text-xs font-medium text-foreground">{s.title}</p>
               <p className="text-xs text-muted-foreground">{s.description}</p>
@@ -174,9 +175,9 @@ export function FeaturesAppliedCard({ result }: FeaturesAppliedCardProps) {
         <span className="text-xs font-semibold text-purple-700 dark:text-purple-400">
           Feature Engineering Done
         </span>
-        <span className="rounded-full bg-purple-500/10 px-2 py-0.5 text-xs text-purple-700 dark:text-purple-400">
+        <Badge className="bg-purple-100 text-purple-800 border-purple-200 dark:bg-purple-900/30 dark:text-purple-400 dark:border-purple-800">
           {result.applied_count} transforms applied
-        </span>
+        </Badge>
       </div>
       <p className="text-sm text-foreground">
         Added{" "}

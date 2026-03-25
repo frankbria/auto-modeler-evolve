@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { ImportanceBar } from "@/components/ui/importance-bar"
 import type {
   FeatureSuggestion,
   FeatureSetResult,
@@ -128,13 +129,9 @@ export function FeatureSuggestionsPanel({ datasetId, suggestions, onApplied }: P
               <div className="flex-1 min-w-0">
                 <div className="flex flex-wrap items-center gap-1.5 mb-1">
                   <span className="text-xs font-semibold">{s.title}</span>
-                  <span
-                    className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                      TRANSFORM_COLORS[s.transform_type]
-                    }`}
-                  >
+                  <Badge className={TRANSFORM_COLORS[s.transform_type]}>
                     {TRANSFORM_LABELS[s.transform_type]}
-                  </span>
+                  </Badge>
                 </div>
                 <p className="text-xs text-muted-foreground leading-relaxed">
                   {s.description}
@@ -507,21 +504,19 @@ export function FeatureImportancePanel({
       <p className="text-xs text-muted-foreground">
         Predicting <strong>{targetColumn}</strong> ({label}). Bars show relative predictive signal.
       </p>
-      {features.map((f) => (
+      {features.map((f, idx) => (
         <div key={f.column} className="group">
-          <div className="flex items-center justify-between mb-0.5">
-            <span className="text-xs font-medium truncate max-w-[60%]">{f.column}</span>
-            <span className="text-xs text-muted-foreground">{f.importance_pct.toFixed(1)}%</span>
-          </div>
-          <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
-            <div
-              className="h-full rounded-full bg-primary transition-all"
-              style={{ width: `${(f.importance_pct / maxImportance) * 100}%` }}
-            />
-          </div>
-          <p className="text-[10px] text-muted-foreground mt-0.5 hidden group-hover:block">
-            {f.description}
-          </p>
+          <ImportanceBar
+            feature={f.column}
+            importance={maxImportance > 0 ? f.importance_pct / maxImportance : 0}
+            rank={idx + 1}
+            label={`${f.importance_pct.toFixed(1)}%`}
+          />
+          {f.description && (
+            <p className="text-[10px] text-muted-foreground mt-0.5 hidden group-hover:block pl-7">
+              {f.description}
+            </p>
+          )}
         </div>
       ))}
     </div>

@@ -605,9 +605,9 @@ export default function ProjectWorkspace() {
           ← Projects
         </button>
         <span className="text-xs text-muted-foreground">/</span>
-        <span className="text-xs font-medium truncate">
+        <h1 className="text-xs font-medium truncate">
           {currentProject?.name ?? "Loading..."}
-        </span>
+        </h1>
         <div className="ml-auto flex items-center gap-2">
           {/* Desktop: hide/show panel toggle */}
           <Button
@@ -635,6 +635,21 @@ export default function ProjectWorkspace() {
           </div>
         </div>
       </div>
+
+      {/* Workflow progress stepper — always visible regardless of active panel */}
+      {currentDataset && (
+        <WorkflowProgress
+          hasDataset={!!currentDataset}
+          hasFeatures={featureSuggestions.length > 0 || importanceFeatures.length > 0}
+          hasSelectedModel={!!selectedModelRunId}
+          hasValidation={hasValidation}
+          hasDeployment={hasDeployment}
+          onStepClick={(tab) => {
+            setActiveTab(tab as RightTab)
+            setMobileView("panel")
+          }}
+        />
+      )}
 
       <div className="flex flex-1 overflow-hidden">
         {/* Chat Panel — full-width on mobile when active, fixed width on md+ */}
@@ -787,16 +802,6 @@ export default function ProjectWorkspace() {
             w-full md:w-3/5`}>
             {currentDataset ? (
               <>
-                {/* Workflow progress stepper — shown once a dataset is uploaded */}
-                <WorkflowProgress
-                  hasDataset={!!currentDataset}
-                  hasFeatures={featureSuggestions.length > 0 || importanceFeatures.length > 0}
-                  hasSelectedModel={!!selectedModelRunId}
-                  hasValidation={hasValidation}
-                  hasDeployment={hasDeployment}
-                  onStepClick={(tab) => setActiveTab(tab as RightTab)}
-                />
-
                 {/* Tab Bar */}
                 <div role="tablist" aria-label="Project workspace tabs" className="flex border-b overflow-x-auto">
                   {(["data", "features", "importance", "models", "validate", "deploy"] as RightTab[]).map((tab) => {

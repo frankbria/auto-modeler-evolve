@@ -1,5 +1,6 @@
 "use client"
 
+import { Badge } from "@/components/ui/badge"
 import type { FilterSetResult } from "@/lib/types"
 
 interface FilterSetCardProps {
@@ -27,9 +28,9 @@ export function FilterSetCard({ result }: FilterSetCardProps) {
     >
       <div className="mb-2 flex items-center gap-2">
         <span className="text-sm font-semibold text-blue-800">🔍 Filter Active</span>
-        <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">
+        <Badge className="bg-blue-100 text-blue-800 border-blue-200">
           {filtered_rows.toLocaleString()} rows
-        </span>
+        </Badge>
       </div>
 
       <div className="mb-2 space-y-1">

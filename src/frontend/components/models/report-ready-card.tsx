@@ -1,5 +1,6 @@
 "use client"
 
+import { Badge } from "@/components/ui/badge"
 import type { ReportReady } from "@/lib/types"
 
 interface ReportReadyCardProps {
@@ -55,11 +56,9 @@ export function ReportReadyCard({ result }: ReportReadyCardProps) {
         <span className="text-xs font-semibold text-teal-700 dark:text-teal-400">
           PDF Report Ready
         </span>
-        <span className="rounded-full bg-teal-500/10 px-2 py-0.5 text-xs text-teal-700 dark:text-teal-400">
-          {result.problem_type === "classification"
-            ? "Classification"
-            : "Regression"}
-        </span>
+        <Badge className="bg-teal-100 text-teal-800 border-teal-200 dark:bg-teal-900/30 dark:text-teal-400 dark:border-teal-800">
+          {result.problem_type === "classification" ? "Classification" : "Regression"}
+        </Badge>
         {metricLabel && (
           <span className="ml-auto text-xs text-muted-foreground">
             {metricLabel}
