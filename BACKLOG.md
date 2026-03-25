@@ -10,6 +10,9 @@ Living document for coordinating between bot instances and tracking ideation.
 <!-- Brief description of what you're doing this session. -->
 <!-- Remove your entry when you commit your session wrap-up. -->
 
+## Day 14 (12:00) — Done
+Phase 8 complete — 4 remaining spec items: Badge standardization across 8 component files (ad-hoc badge spans → design-system `<Badge>` with `className` overrides); shared ImportanceBar component (`components/ui/importance-bar.tsx`, `importance={0..1}` normalized, optional `label` override) replacing the × 5 magic-number hack in `model-card-view.tsx` and percentage-of-max in `FeatureImportancePanel`; project name `<span>` → `<h1>` for heading hierarchy; WorkflowProgress moved from inside right panel to between topbar and main flex container (always visible, onStepClick now also sets mobileView to "panel"). 0 new tests. 1557 backend + 684 frontend = 2241.
+
 ## Day 13 (04:00) — Done
 Model performance by segment — compute_segment_performance() in core/validator.py (aligns group_values with y_true/y_pred arrays, computes R²/Accuracy per group, best/worst/gap, plain-English summary); GET /api/models/{run_id}/segment-performance?col= (400 on unknown/high-cardinality columns); _SEGMENT_PERF_PATTERNS (7 variants) + _detect_segment_perf_col() chat intent; {type:"segment_performance"} SSE event; SegmentPerformanceCard (▲best/▼lowest labels, status badges, performance bars, low-sample !, summary); SegmentPerformanceResult + SegmentPerformanceSegment types; api.models.getSegmentPerformance(); attachSegmentPerformanceToLastMessage() Zustand action. Fixed: trailing \b in regex caused false negatives; models.filter→models.dataset_filter; training fixture used dataset_id where project_id required; is_near_unique check for continuous column rejection. 26 backend + 12 frontend = 38 new tests. Total: 1557 backend + 680 frontend = 2237.
 
