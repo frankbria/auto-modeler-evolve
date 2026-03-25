@@ -243,15 +243,15 @@ guides them forward through the natural flow.
 
 - [x] **Tab panel ARIA pattern** — The right-panel tab bar (`app/project/[id]/page.tsx`) and validation sub-tabs (`components/validation/validation-panel.tsx`) use bare `<button>` elements with no `role="tab"`, `aria-selected`, or enclosing `role="tablist"`. Tab panels have no `role="tabpanel"` or `aria-labelledby`. Apply the full ARIA tab widget pattern to both navigation levels.
 
-- [ ] **Feature suggestion rows keyboard accessible** — In `components/features/feature-suggestions.tsx`, suggestion rows use `<div onClick>` with a decorative checkbox `<div>` inside, giving keyboard users no access and no `aria-checked`. Replace the outer div with a `<button>` or `<input type="checkbox">` with a `<label>`, and expose selection state via `aria-checked` or `checked`.
+- [x] **Feature suggestion rows keyboard accessible** — In `components/features/feature-suggestions.tsx`, suggestion rows use `<div onClick>` with a decorative checkbox `<div>` inside, giving keyboard users no access and no `aria-checked`. Replace the outer div with a `<button>` or `<input type="checkbox">` with a `<label>`, and expose selection state via `aria-checked` or `checked`.
 
-- [ ] **Emoji and Unicode status icons annotated** — Components including `training-started-card.tsx`, `deployed-card.tsx`, `feature-suggestions-chat-card.tsx`, `data-story-card.tsx`, and `readiness-check-card.tsx` use raw emoji (✅, ⚙️, 📄, ✓, ✗, ⚠) in `<span>` elements with no `aria-label`. Mark decorative emoji `aria-hidden="true"` when adjacent text conveys the meaning; add `role="img" aria-label="..."` where the emoji carries unique meaning.
+- [x] **Emoji and Unicode status icons annotated** — Components including `training-started-card.tsx`, `deployed-card.tsx`, `feature-suggestions-chat-card.tsx`, `data-story-card.tsx`, and `readiness-check-card.tsx` use raw emoji (✅, ⚙️, 📄, ✓, ✗, ⚠) in `<span>` elements with no `aria-label`. Mark decorative emoji `aria-hidden="true"` when adjacent text conveys the meaning; add `role="img" aria-label="..."` where the emoji carries unique meaning.
 
 - [x] **Expand/collapse buttons expose state** — "Show more / Show less" toggles in `anomaly-card.tsx` and `dictionary-card.tsx` have no `aria-expanded`. Add `aria-expanded={showAll}` and `aria-controls` pointing to the list's `id` on every progressive-disclosure toggle.
 
 - [x] **Algorithm card selection state** — `AlgorithmCard` in `components/models/model-training-panel.tsx` renders as `<button>` but has no `aria-pressed`. Add `aria-pressed={selected}` so screen readers announce whether the algorithm is currently selected.
 
-- [ ] **Heatmap cell keyboard and focus** — In `components/chat/chart-message.tsx`, heatmap cells (`role="button"`, `tabIndex={0}`) handle only `Enter`, not `Space`. They also apply `outline: "none"` removing the focus ring entirely. Add a Space key handler and replace the inline outline removal with `focus-visible:ring-2` class.
+- [x] **Heatmap cell keyboard and focus** — In `components/chat/chart-message.tsx`, heatmap cells (`role="button"`, `tabIndex={0}`) handle only `Enter`, not `Space`. They also apply `outline: "none"` removing the focus ring entirely. Add a Space key handler and replace the inline outline removal with `focus-visible:ring-2` class.
 
 - [ ] **Chart SVG accessibility** — Recharts charts in `model-training-panel.tsx`, `validation-panel.tsx`, and `chart-message.tsx` produce unlabeled SVGs. Wrap each chart in a `<figure>` with `<figcaption>` describing the data, or pass `title`/`desc` via Recharts props, so screen readers announce meaningful context instead of raw SVG path data.
 
@@ -261,13 +261,13 @@ guides them forward through the natural flow.
 
 - [x] **Undeploy confirmation dialog** — In `deployment-panel.tsx`, the "Undeploy" button fires `handleUndeploy` immediately with no confirmation. Undeploying breaks all live users of the prediction API. Add an inline confirmation pattern (replace the button temporarily with "Are you sure? This will break the live prediction link." + Confirm/Cancel) before executing the action.
 
-- [ ] **Plain-English metric explanations in training panel** — `MetricsRow` in `model-training-panel.tsx` shows R², MAE, RMSE, F1, Precision as bare numbers. Add a tooltip or inline explanation for each metric (e.g., "R² 0.84 — your model explains 84% of variation in the data. Higher is better.") to match the plain-English style used in `ModelCardView`.
+- [x] **Plain-English metric explanations in training panel** — `MetricsRow` in `model-training-panel.tsx` shows R², MAE, RMSE, F1, Precision as bare numbers. Add a tooltip or inline explanation for each metric (e.g., "R² 0.84 — your model explains 84% of variation in the data. Higher is better.") to match the plain-English style used in `ModelCardView`.
 
-- [ ] **"Train more" confirmation before clearing results** — Clicking "Train more" in `model-training-panel.tsx` silently clears `runs` and `comparison` from the UI with no warning. Add a confirmation before clearing, or redesign to keep existing results visible alongside the new training configuration form.
+- [x] **"Train more" confirmation before clearing results** — Clicking "Train more" in `model-training-panel.tsx` silently clears `runs` and `comparison` from the UI with no warning. Add a confirmation before clearing, or redesign to keep existing results visible alongside the new training configuration form.
 
 - [x] **Chat input multi-line support** — The chat input in `app/project/[id]/page.tsx` is a single-line `<Input>`. Shift+Enter is caught but does nothing. Replace with a `<Textarea>` that auto-grows (`field-sizing-content` or resize observer) using Shift+Enter for newlines and Enter to send.
 
-- [ ] **Copy chat message to clipboard** — Assistant message bubbles have no copy action. Add a copy-to-clipboard button (visible on hover or via a `...` menu) so business analysts can copy model summaries, chart insights, and data stories to share with colleagues.
+- [x] **Copy chat message to clipboard** — Assistant message bubbles have no copy action. Add a copy-to-clipboard button (visible on hover or via a `...` menu) so business analysts can copy model summaries, chart insights, and data stories to share with colleagues.
 
 - [x] **"Defaults" defined in What-If analysis** — The What-If card in `deployment-panel.tsx` says "+N more features use defaults" without defining defaults. Add a footnote: "Remaining features use the median value from the training dataset."
 
@@ -279,7 +279,7 @@ guides them forward through the natural flow.
 
 - [x] **Suggestion chips labeled and visually distinct** — Suggestion chips in `app/project/[id]/page.tsx` have no header label and are styled similarly to message bubbles. Add a "Try asking:" label above the chip row and use a small caret icon on each chip to signal they are clickable prompts, not system messages.
 
-- [ ] **No-dataset right panel call-to-action** — When `!currentDataset`, the right panel is completely blank. Render a prominent upload card with step-by-step instructions and a visible drag-and-drop zone so first-time users are not confused by an empty panel.
+- [x] **No-dataset right panel call-to-action** — When `!currentDataset`, the right panel is completely blank. Render a prominent upload card with step-by-step instructions and a visible drag-and-drop zone so first-time users are not confused by an empty panel.
 
 #### Track C — Consistent UX Patterns
 
@@ -299,9 +299,9 @@ guides them forward through the natural flow.
 
 - [x] **Y-axis label fallback** — In `chart-message.tsx`, bar and line charts only show the Y-axis label when `y_label` is truthy. Default to `y_keys[0]` when `y_label` is absent so axes are never unlabeled.
 
-- [ ] **Residuals chart labels and guidance order** — In `validation-panel.tsx`, the residuals scatter has no Y-axis label and the interpretive text appears below the chart. Move guidance above the chart and add `"Residual (actual − predicted)"` as the Y-axis label.
+- [x] **Residuals chart labels and guidance order** — In `validation-panel.tsx`, the residuals scatter has no Y-axis label and the interpretive text appears below the chart. Move guidance above the chart and add `"Residual (actual − predicted)"` as the Y-axis label.
 
-- [ ] **Color-only encoding in correlation and group-stats** — `correlation-bar-card.tsx` uses blue/red to encode positive/negative (fails for colorblind users). `group-stats-card.tsx` uses 4 blue shades to encode rank (also color-only). Add directional arrows (`↑`/`↓`) to correlation bars and numeric rank labels (1, 2, 3…) to group-stats rows.
+- [x] **Color-only encoding in correlation and group-stats** — `correlation-bar-card.tsx` uses blue/red to encode positive/negative (fails for colorblind users). `group-stats-card.tsx` uses 4 blue shades to encode rank (also color-only). Add directional arrows (`↑`/`↓`) to correlation bars and numeric rank labels (1, 2, 3…) to group-stats rows.
 
 - [ ] **Forecast chart tick formatter** — In `forecast-chart.tsx`, `tickFormatter` slices date strings to 8 characters, producing "2024-01-" for full datetimes. Replace with a period-aware formatter producing human-friendly labels ("Jan 2024", "Q1 2024") based on the `period_label` value.
 
