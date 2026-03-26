@@ -57,7 +57,7 @@ function DistributionBars({
               key={i}
               className="flex-1 bg-primary/60 rounded-t transition-all"
               style={{ height: `${Math.max(4, Math.round((c / maxCount) * 48))}px` }}
-              title={`${bins?.[i]?.toFixed ? bins[i].toFixed(2) : bins?.[i]}: ${c} rows`}
+              title={`${typeof bins?.[i] === 'number' ? (bins[i] as number).toFixed(2) : bins?.[i]}: ${c} rows`}
             />
           ))}
         </div>
