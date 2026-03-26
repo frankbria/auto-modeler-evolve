@@ -2651,7 +2651,9 @@ def send_message(
                         )
                         if _cp_issues:
                             _issue_msgs = [i["message"] for i in _cp_issues]
-                            system_prompt += f"Issues detected: {'; '.join(_issue_msgs)}\n"
+                            system_prompt += (
+                                f"Issues detected: {'; '.join(_issue_msgs)}\n"
+                            )
                         system_prompt += (
                             "A ColumnProfileCard is shown in the chat. "
                             "Narrate the key insights — help the analyst understand what this column contains, "

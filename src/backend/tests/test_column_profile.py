@@ -56,7 +56,20 @@ _SAMPLE_CSV = (
 class TestComputeColumnProfileNumeric:
     def _df(self):
         return pd.DataFrame(
-            {"revenue": [100.5, 200.3, 150.7, 300.1, 250.9, 175.2, 220.4, 190.6, 130.8, 280.0]}
+            {
+                "revenue": [
+                    100.5,
+                    200.3,
+                    150.7,
+                    300.1,
+                    250.9,
+                    175.2,
+                    220.4,
+                    190.6,
+                    130.8,
+                    280.0,
+                ]
+            }
         )
 
     def test_col_type_is_numeric(self):
@@ -96,7 +109,9 @@ class TestComputeColumnProfileNumeric:
         assert result["issues"] == []
 
     def test_high_null_issue_detected(self):
-        df = pd.DataFrame({"revenue": [1.0, None, None, None, None, None, 2.0, None, None, None]})
+        df = pd.DataFrame(
+            {"revenue": [1.0, None, None, None, None, None, 2.0, None, None, None]}
+        )
         result = compute_column_profile(df, "revenue")
         issue_types = [i["type"] for i in result["issues"]]
         assert "high_null_rate" in issue_types
@@ -124,7 +139,20 @@ class TestComputeColumnProfileNumeric:
 class TestComputeColumnProfileCategorical:
     def _df(self):
         return pd.DataFrame(
-            {"region": ["East", "West", "East", "West", "North", "East", "West", "North", "East", "West"]}
+            {
+                "region": [
+                    "East",
+                    "West",
+                    "East",
+                    "West",
+                    "North",
+                    "East",
+                    "West",
+                    "North",
+                    "East",
+                    "West",
+                ]
+            }
         )
 
     def test_col_type_is_categorical(self):
@@ -244,10 +272,14 @@ class TestDetectProfileCol:
         assert _detect_profile_col("tell me about revenue", self._df()) == "revenue"
 
     def test_case_insensitive(self):
-        assert _detect_profile_col("show me REVENUE distribution", self._df()) == "revenue"
+        assert (
+            _detect_profile_col("show me REVENUE distribution", self._df()) == "revenue"
+        )
 
     def test_categorical_match(self):
-        assert _detect_profile_col("profile the category column", self._df()) == "category"
+        assert (
+            _detect_profile_col("profile the category column", self._df()) == "category"
+        )
 
     def test_returns_none_no_match(self):
         result = _detect_profile_col("what time is it", self._df())

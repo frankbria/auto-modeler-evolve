@@ -961,7 +961,11 @@ def _build_column_distribution(
             return {"type": "histogram", "bins": [], "counts": []}
         n_bins = min(10, n_unique)
         if n_bins < 2:
-            return {"type": "histogram", "bins": [_safe_scalar(finite.iloc[0])], "counts": [len(finite)]}
+            return {
+                "type": "histogram",
+                "bins": [_safe_scalar(finite.iloc[0])],
+                "counts": [len(finite)],
+            }
         counts, bin_edges = np.histogram(finite, bins=n_bins)
         return {
             "type": "histogram",
@@ -1026,4 +1030,6 @@ def _build_column_summary(
         elif warnings:
             parts.append(f". Note: {warnings[0]['message']}")
 
-    return "".join(parts) + "." if parts else f"Column '{col_name}' with {n_total} rows."
+    return (
+        "".join(parts) + "." if parts else f"Column '{col_name}' with {n_total} rows."
+    )
