@@ -40,6 +40,7 @@ import { ModelCardView } from "@/components/models/model-card-view"
 import { ReportReadyCard } from "@/components/models/report-ready-card"
 import { SegmentPerformanceCard } from "@/components/models/segment-performance-card"
 import { ColumnProfileCard } from "@/components/data/column-profile-card"
+import { ClusteringCard } from "@/components/data/clustering-card"
 import {
   FeatureSuggestCard,
   FeaturesAppliedCard,
@@ -79,6 +80,7 @@ import type {
   FeaturesAppliedResult,
   SegmentPerformanceResult,
   ColumnProfile,
+  ClusteringResult,
 } from "@/lib/types"
 
 const WELCOME_MESSAGE =
@@ -148,6 +150,7 @@ export default function ProjectWorkspace() {
     attachFeaturesAppliedToLastMessage,
     attachSegmentPerformanceToLastMessage,
     attachColumnProfileToLastMessage,
+    attachClustersToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -414,6 +417,8 @@ export default function ProjectWorkspace() {
                 attachSegmentPerformanceToLastMessage(json.segment_performance as SegmentPerformanceResult)
               } else if (json.type === "column_profile" && json.column_profile) {
                 attachColumnProfileToLastMessage(json.column_profile as ColumnProfile)
+              } else if (json.type === "clusters" && json.clusters) {
+                attachClustersToLastMessage(json.clusters as ClusteringResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -455,6 +460,7 @@ export default function ProjectWorkspace() {
     attachFeaturesAppliedToLastMessage,
     attachSegmentPerformanceToLastMessage,
     attachColumnProfileToLastMessage,
+    attachClustersToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -743,6 +749,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.column_profile && (
                       <ColumnProfileCard profile={msg.column_profile} />
+                    )}
+                    {msg.clusters && (
+                      <ClusteringCard result={msg.clusters} />
                     )}
                   </div>
                 </div>

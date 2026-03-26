@@ -386,6 +386,23 @@ export const api = {
         if (!r.ok) throw new Error(`HTTP ${r.status}`)
         return r.json()
       }),
+
+    getClusters: (
+      datasetId: string,
+      features?: string[],
+      nClusters?: number
+    ): Promise<import("./types").ClusteringResult> => {
+      const params = new URLSearchParams()
+      if (features && features.length > 0) params.set("features", features.join(","))
+      if (nClusters !== undefined) params.set("n_clusters", String(nClusters))
+      const qs = params.toString()
+      return fetch(
+        `${API_URL}/api/data/${datasetId}/clusters${qs ? `?${qs}` : ""}`
+      ).then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        return r.json()
+      })
+    },
   },
 
   chat: {

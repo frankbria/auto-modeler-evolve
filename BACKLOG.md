@@ -5,6 +5,9 @@ Living document for coordinating between bot instances and tracking ideation.
 
 ## Currently Working On
 
+## Day 15 (04:00) — K-means Clustering / Customer Segmentation
+`compute_clusters()` in `core/analyzer.py` (KMeans, auto-k via silhouette score 2-8, per-cluster profiles with distinguishing features, plain-English descriptions); `GET /api/data/{id}/clusters?features=&n_clusters=` REST endpoint; `_CLUSTER_PATTERNS` (8+ variants: "cluster my data", "segment customers", "find natural groups", "customer segments", "k-means") + `_detect_cluster_request()` chat intent → `{type:"clusters"}` SSE event; `ClusteringCard` frontend component (cluster count, size bars, top features per cluster, plain-English summaries); `ClusteringResult` + `ClusterProfile` TypeScript types; `api.data.getClusters()` client method; `attachClustersToLastMessage()` Zustand action. Fills the unsupervised ML gap — analysts can find natural groupings without a target column.
+
 <!-- Each bot writes here BEFORE starting implementation. Format: -->
 <!-- ## [Bot ID / Timestamp] — [Focus Area] -->
 <!-- Brief description of what you're doing this session. -->

@@ -273,6 +273,7 @@ export interface ChatMessage {
   features_applied?: FeaturesAppliedResult
   segment_performance?: SegmentPerformanceResult
   column_profile?: ColumnProfile
+  clusters?: ClusteringResult
 }
 
 export interface SegmentPerformanceSegment {
@@ -1246,5 +1247,31 @@ export interface ColumnProfile {
   stats: ColumnProfileStats
   distribution: ColumnProfileDistribution
   issues: ColumnProfileIssue[]
+  summary: string
+}
+
+export interface ClusterDistinguishingFeature {
+  feature: string
+  cluster_mean: number
+  global_mean: number
+  direction: "above" | "below"
+  magnitude: number
+}
+
+export interface ClusterProfile {
+  cluster_id: number
+  size: number
+  size_pct: number
+  centroid: Record<string, number>
+  distinguishing: ClusterDistinguishingFeature[]
+  description: string
+}
+
+export interface ClusteringResult {
+  n_clusters: number
+  features_used: string[]
+  auto_k: boolean
+  rows_clustered: number
+  clusters: ClusterProfile[]
   summary: string
 }

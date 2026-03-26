@@ -21,6 +21,7 @@ from chat.narration import (
 from core.analyzer import (
     analyze_target_correlations,
     compare_segments,
+    compute_clusters,
     compute_column_profile,
     compute_full_profile,
     compute_group_stats,
@@ -2225,6 +2226,50 @@ def get_column_profile(
         )
 
     result = compute_column_profile(df, col)
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+
+    return result
+
+
+@router.get("/{dataset_id}/clusters")
+def get_clusters(
+    dataset_id: str,
+    features: str | None = None,
+    n_clusters: int | None = None,
+    session: Session = Depends(get_session),
+):
+    """K-means clustering on numeric features.
+
+    Query params:
+      - features: comma-separated column names to cluster on (defaults to all numeric)
+      - n_clusters: number of clusters (2-8); omit for auto-selection via silhouette score
+    """
+    dataset = session.get(Dataset, dataset_id)
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    file_path = Path(dataset.file_path)
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Dataset file not found")
+
+    df = _load_df_from_path(file_path)
+
+    feature_cols: list[str] | None = None
+    if features:
+        feature_cols = [f.strip() for f in features.split(",") if f.strip()]
+        # Validate each requested column exists
+        missing = [c for c in feature_cols if c not in df.columns]
+        if missing:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unknown columns: {', '.join(missing)}. Available: {', '.join(df.columns.tolist())}",
+            )
+
+    if n_clusters is not None and (n_clusters < 2 or n_clusters > 8):
+        raise HTTPException(status_code=400, detail="n_clusters must be between 2 and 8.")
+
+    result = compute_clusters(df, feature_cols=feature_cols, n_clusters=n_clusters)
     if "error" in result:
         raise HTTPException(status_code=400, detail=result["error"])
 

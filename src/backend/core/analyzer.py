@@ -2,6 +2,9 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
+from sklearn.cluster import KMeans
+from sklearn.metrics import silhouette_score
+from sklearn.preprocessing import StandardScaler
 
 # ---------------------------------------------------------------------------
 # Basic column statistics (called on every upload)
@@ -1033,3 +1036,173 @@ def _build_column_summary(
     return (
         "".join(parts) + "." if parts else f"Column '{col_name}' with {n_total} rows."
     )
+
+
+# ---------------------------------------------------------------------------
+# K-means clustering
+# ---------------------------------------------------------------------------
+
+_MIN_ROWS_FOR_CLUSTERING = 10
+_MAX_K = 8
+
+
+def compute_clusters(
+    df: pd.DataFrame,
+    feature_cols: list[str] | None = None,
+    n_clusters: int | None = None,
+) -> dict:
+    """Cluster numeric columns using K-means.
+
+    Returns a dict with n_clusters, features_used, auto_k, clusters (list of
+    ClusterProfile dicts), and a plain-English summary.  Each ClusterProfile
+    contains: cluster_id, size, size_pct, centroid, distinguishing, description.
+
+    Distinguishing features are those whose cluster mean deviates from the
+    global mean by more than 0.5 standard deviations, sorted by magnitude.
+    """
+    # --- select feature columns ---
+    numeric_cols = df.select_dtypes(include="number").columns.tolist()
+    if feature_cols:
+        # keep only valid numeric cols from the requested list
+        feature_cols = [c for c in feature_cols if c in numeric_cols]
+    if not feature_cols:
+        feature_cols = numeric_cols
+
+    if len(feature_cols) < 1:
+        return {"error": "No numeric columns available for clustering."}
+
+    n_rows = len(df)
+    if n_rows < _MIN_ROWS_FOR_CLUSTERING:
+        return {
+            "error": f"Need at least {_MIN_ROWS_FOR_CLUSTERING} rows for clustering (got {n_rows})."
+        }
+
+    # Drop rows with any NaN in the selected features
+    data = df[feature_cols].dropna()
+    if len(data) < _MIN_ROWS_FOR_CLUSTERING:
+        return {"error": "Not enough non-null rows for clustering after dropping missing values."}
+
+    # --- scale ---
+    scaler = StandardScaler()
+    X = scaler.fit_transform(data)
+
+    # --- choose k ---
+    auto_k = n_clusters is None
+    if auto_k:
+        max_k = min(_MAX_K, len(data) - 1)
+        best_k, best_score = 2, -1.0
+        for k in range(2, max_k + 1):
+            km = KMeans(n_clusters=k, random_state=42, n_init=10)
+            labels = km.fit_predict(X)
+            if len(set(labels)) < 2:
+                continue
+            score = float(silhouette_score(X, labels))
+            if score > best_score:
+                best_score, best_k = score, k
+        n_clusters = best_k
+    else:
+        n_clusters = max(2, min(int(n_clusters), min(_MAX_K, len(data) - 1)))
+
+    # --- fit final model ---
+    km = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+    labels = km.fit_predict(X)
+
+    # --- global stats for distinguishing features ---
+    global_means = {c: float(data[c].mean()) for c in feature_cols}
+    global_stds = {c: float(data[c].std()) for c in feature_cols}
+
+    clusters = []
+    total_rows = len(data)
+    for cid in range(n_clusters):
+        mask = labels == cid
+        cluster_data = data[mask]
+        size = int(mask.sum())
+
+        centroid = {c: round(float(cluster_data[c].mean()), 4) for c in feature_cols}
+
+        # Distinguishing: |cluster_mean - global_mean| / std > 0.5
+        distinguishing = []
+        for c in feature_cols:
+            gstd = global_stds[c]
+            if gstd < 1e-9:
+                continue
+            cmean = centroid[c]
+            gmean = global_means[c]
+            deviation = (cmean - gmean) / gstd
+            if abs(deviation) >= 0.5:
+                distinguishing.append(
+                    {
+                        "feature": c,
+                        "cluster_mean": centroid[c],
+                        "global_mean": round(gmean, 4),
+                        "direction": "above" if deviation > 0 else "below",
+                        "magnitude": round(abs(deviation), 2),
+                    }
+                )
+        distinguishing.sort(key=lambda x: x["magnitude"], reverse=True)
+
+        description = _build_cluster_description(cid, size, total_rows, distinguishing)
+
+        clusters.append(
+            {
+                "cluster_id": cid,
+                "size": size,
+                "size_pct": round(size / total_rows * 100, 1),
+                "centroid": centroid,
+                "distinguishing": distinguishing[:5],  # top 5
+                "description": description,
+            }
+        )
+
+    # Sort clusters by size descending
+    clusters.sort(key=lambda c: c["size"], reverse=True)
+    # Re-label 0-based after sort
+    for i, c in enumerate(clusters):
+        c["cluster_id"] = i
+
+    summary = _build_cluster_summary(clusters, feature_cols, n_rows, total_rows)
+
+    return {
+        "n_clusters": n_clusters,
+        "features_used": feature_cols,
+        "auto_k": auto_k,
+        "rows_clustered": total_rows,
+        "clusters": clusters,
+        "summary": summary,
+    }
+
+
+def _build_cluster_description(
+    cluster_id: int, size: int, total: int, distinguishing: list[dict]
+) -> str:
+    """Generate a plain-English one-sentence description for a cluster."""
+    pct = round(size / total * 100)
+    if not distinguishing:
+        return f"Group {cluster_id + 1}: {size} records ({pct}%) with no strongly distinguishing features."
+
+    top = distinguishing[:3]
+    parts = []
+    for d in top:
+        feat = d["feature"].replace("_", " ")
+        direction = "high" if d["direction"] == "above" else "low"
+        parts.append(f"{direction} {feat}")
+
+    feature_desc = ", ".join(parts)
+    return f"Group {cluster_id + 1} ({pct}% of data): tends toward {feature_desc}."
+
+
+def _build_cluster_summary(
+    clusters: list[dict], feature_cols: list[str], n_rows: int, n_clustered: int
+) -> str:
+    """Generate a plain-English overview of all clusters."""
+    k = len(clusters)
+    skipped = n_rows - n_clustered
+    skip_note = f" ({skipped} rows with missing values excluded)" if skipped > 0 else ""
+    intro = f"Found {k} natural groups in {n_clustered} rows{skip_note} using {len(feature_cols)} feature{'s' if len(feature_cols) != 1 else ''}."
+    largest = clusters[0]
+    smallest = clusters[-1]
+    size_note = (
+        f" Largest group has {largest['size']} records ({largest['size_pct']}%),"
+        f" smallest has {smallest['size']} ({smallest['size_pct']}%)."
+    )
+    return intro + size_note

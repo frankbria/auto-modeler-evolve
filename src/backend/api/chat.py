@@ -876,6 +876,34 @@ def _detect_profile_col(message: str, df: "pd.DataFrame") -> str | None:
     return None
 
 
+# Keywords that trigger K-means clustering / natural segmentation
+_CLUSTER_PATTERNS = re.compile(
+    r"(?i)\b("
+    r"cluster\s+(?:my\s+)?(?:data|customers?|records?|rows?)|"
+    r"(?:find|identify|discover|detect)\s+(?:natural\s+)?(?:groups?|segments?|clusters?)|"
+    r"segment\s+(?:my\s+)?(?:customers?|data|users?|records?)|"
+    r"group\s+(?:similar|my)\s+(?:customers?|records?|data)|"
+    r"(?:k.?means|kmeans|k\s+means)|"
+    r"natural\s+(?:groups?|segments?|clusters?)|"
+    r"(?:what|which)\s+(?:groups?|segments?|clusters?)\s+(?:exist|are\s+there)|"
+    r"(?:customer|data|record)\s+segmentation"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def _detect_cluster_features(message: str, df: "pd.DataFrame") -> list[str] | None:
+    """Extract specific feature columns to cluster on from the message.
+
+    Returns a list of column names if specific numeric columns are mentioned,
+    or None to use all numeric columns (auto-select).
+    """
+    msg_lower = message.lower()
+    numeric_cols = df.select_dtypes(include="number").columns.tolist()
+    mentioned = [c for c in numeric_cols if c.lower() in msg_lower]
+    return mentioned if len(mentioned) >= 2 else None
+
+
 class ChatMessage(BaseModel):
     message: str
 
@@ -2662,6 +2690,39 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Column profile is nice-to-have; never crash chat
 
+    # Check for clustering / natural segmentation request
+    cluster_event: dict | None = None
+    if _CLUSTER_PATTERNS.search(body.message) and ctx["dataset"]:
+        try:
+            _cl_ds = ctx["dataset"]
+            _cl_file = Path(_cl_ds.file_path)
+            if _cl_file.exists():
+                _cl_df = _load_working_df(_cl_file, _active_filter_conditions)
+                _cl_features = _detect_cluster_features(body.message, _cl_df)
+                from core.analyzer import compute_clusters as _cc
+
+                _cl_result = _cc(_cl_df, feature_cols=_cl_features)
+                if "error" not in _cl_result:
+                    cluster_event = _cl_result
+                    _cl_k = _cl_result["n_clusters"]
+                    _cl_summary = _cl_result["summary"]
+                    _cl_feat_list = ", ".join(_cl_result["features_used"][:5])
+                    system_prompt += (
+                        f"\n\n## K-means Clustering Result\n"
+                        f"Found {_cl_k} natural groups using features: {_cl_feat_list}.\n"
+                        f"Summary: {_cl_summary}\n"
+                        f"Cluster descriptions:\n"
+                    )
+                    for _c in _cl_result["clusters"]:
+                        system_prompt += f"  - {_c['description']}\n"
+                    system_prompt += (
+                        "A ClusteringCard is shown in the chat. "
+                        "Narrate the findings — tell the analyst what each group represents, "
+                        "whether the segments are actionable, and what they should do next."
+                    )
+        except Exception:  # noqa: BLE001
+            pass  # Clustering is nice-to-have; never crash chat
+
     # Pre-compute follow-up suggestions (based on state + current message)
     current_state = detect_state(
         ctx["dataset"], ctx["feature_set"], ctx["model_runs"], ctx["deployment"]
@@ -2819,6 +2880,10 @@ def send_message(
         # Emit column profile deep-dive (tell me about the revenue column)
         if column_profile_event:
             yield f"data: {json.dumps({'type': 'column_profile', 'column_profile': column_profile_event})}\n\n"
+
+        # Emit K-means clustering result
+        if cluster_event:
+            yield f"data: {json.dumps({'type': 'clusters', 'clusters': cluster_event})}\n\n"
 
         # Emit follow-up suggestion chips (always, if we have any)
         if suggestions_list:
