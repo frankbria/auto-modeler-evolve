@@ -2267,7 +2267,9 @@ def get_clusters(
             )
 
     if n_clusters is not None and (n_clusters < 2 or n_clusters > 8):
-        raise HTTPException(status_code=400, detail="n_clusters must be between 2 and 8.")
+        raise HTTPException(
+            status_code=400, detail="n_clusters must be between 2 and 8."
+        )
 
     result = compute_clusters(df, feature_cols=feature_cols, n_clusters=n_clusters)
     if "error" in result:

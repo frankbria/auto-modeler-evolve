@@ -1080,7 +1080,9 @@ def compute_clusters(
     # Drop rows with any NaN in the selected features
     data = df[feature_cols].dropna()
     if len(data) < _MIN_ROWS_FOR_CLUSTERING:
-        return {"error": "Not enough non-null rows for clustering after dropping missing values."}
+        return {
+            "error": "Not enough non-null rows for clustering after dropping missing values."
+        }
 
     # --- scale ---
     scaler = StandardScaler()

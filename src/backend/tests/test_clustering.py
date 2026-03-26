@@ -33,11 +33,35 @@ def multifeature_df():
     """Dataset with numeric + categorical columns."""
     return pd.DataFrame(
         {
-            "revenue": [100.0, 200.0, 300.0, 400.0, 500.0, 600.0,
-                        700.0, 800.0, 900.0, 1000.0, 150.0, 250.0],
+            "revenue": [
+                100.0,
+                200.0,
+                300.0,
+                400.0,
+                500.0,
+                600.0,
+                700.0,
+                800.0,
+                900.0,
+                1000.0,
+                150.0,
+                250.0,
+            ],
             "units": [10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 15, 25],
-            "cost": [50.0, 80.0, 110.0, 140.0, 180.0, 210.0,
-                     250.0, 280.0, 310.0, 340.0, 60.0, 90.0],
+            "cost": [
+                50.0,
+                80.0,
+                110.0,
+                140.0,
+                180.0,
+                210.0,
+                250.0,
+                280.0,
+                310.0,
+                340.0,
+                60.0,
+                90.0,
+            ],
             "region": ["East"] * 6 + ["West"] * 6,
         }
     )
@@ -142,10 +166,38 @@ def test_compute_clusters_with_missing_values():
     # 14 total rows, 3 with NaN → 11 valid (above MIN_ROWS_FOR_CLUSTERING=10)
     df = pd.DataFrame(
         {
-            "x": [1.0, None, 1.1, 10.0, 10.1, 10.2, 1.0, 10.0, 1.1, 10.1,
-                  1.2, 10.3, None, None],
-            "y": [1.0, 1.1, 0.9, 10.0, 9.9, 10.1, 1.2, 10.2, 0.8, 9.8,
-                  1.3, 9.7, None, 5.0],
+            "x": [
+                1.0,
+                None,
+                1.1,
+                10.0,
+                10.1,
+                10.2,
+                1.0,
+                10.0,
+                1.1,
+                10.1,
+                1.2,
+                10.3,
+                None,
+                None,
+            ],
+            "y": [
+                1.0,
+                1.1,
+                0.9,
+                10.0,
+                9.9,
+                10.1,
+                1.2,
+                10.2,
+                0.8,
+                9.8,
+                1.3,
+                9.7,
+                None,
+                5.0,
+            ],
         }
     )
     result = compute_clusters(df)
@@ -183,10 +235,20 @@ def test_compute_clusters_sorted_by_size(multifeature_df):
 
 def test_build_cluster_description_with_features():
     distinguishing = [
-        {"feature": "revenue", "cluster_mean": 800.0, "global_mean": 400.0,
-         "direction": "above", "magnitude": 1.2},
-        {"feature": "cost", "cluster_mean": 50.0, "global_mean": 200.0,
-         "direction": "below", "magnitude": 0.8},
+        {
+            "feature": "revenue",
+            "cluster_mean": 800.0,
+            "global_mean": 400.0,
+            "direction": "above",
+            "magnitude": 1.2,
+        },
+        {
+            "feature": "cost",
+            "cluster_mean": 50.0,
+            "global_mean": 200.0,
+            "direction": "below",
+            "magnitude": 0.8,
+        },
     ]
     desc = _build_cluster_description(0, 5, 10, distinguishing)
     assert "Group 1" in desc
@@ -369,4 +431,6 @@ def test_cluster_patterns_match(message):
     ],
 )
 def test_cluster_patterns_no_match(message):
-    assert not _CLUSTER_PATTERNS.search(message), f"Pattern should NOT match: {message!r}"
+    assert not _CLUSTER_PATTERNS.search(message), (
+        f"Pattern should NOT match: {message!r}"
+    )
