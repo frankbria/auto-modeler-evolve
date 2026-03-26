@@ -1,5 +1,17 @@
 # Journal
 
+## Day 15 — 04:00 — K-means Customer Segmentation via Chat (1635 backend + 718 frontend = 2353 tests)
+
+AutoModeler now answers "cluster my data" or "segment my customers" with a `ClusteringCard` — a violet-bordered inline card that reveals natural groups in uploaded data without the analyst knowing anything about ML. Auto-k selection (silhouette score across k=2–8) means they never have to specify a cluster count; the algorithm finds the best separation on its own.
+
+**Backend:** `compute_clusters()` in `core/analyzer.py` — selects numeric columns, drops NaN rows, StandardScaler-normalizes, runs KMeans with either user-specified k or auto-k via silhouette score loop. Per-cluster output: centroid values, distinguishing features (features where |cluster_mean − global_mean| / std ≥ 0.5, sorted by magnitude), size + size_pct, and a plain-English description. Clusters sorted by size descending (largest group first). `GET /api/data/{id}/clusters` endpoint accepts optional `features` (comma-separated) and `n_clusters` (2–8) query params; returns 400 on invalid column names, out-of-range k, or no valid numeric columns.
+
+**Chat plumbing:** `_CLUSTER_PATTERNS` (9 NL variants) + `_detect_cluster_features()` helper scans the message for known column names. Handler runs alongside LLM streaming; emits `{type:"clusters", clusters:{...}}` SSE event after LLM output. Respects active data filters via `_load_working_df(file_path, _active_filter_conditions)`.
+
+**Frontend:** `ClusteringCard` in `components/data/clustering-card.tsx` — `ClusterRow` sub-component with a color-coded `SizeBar` (percentage-based width, 8-color violet/blue/emerald/amber/rose/cyan/orange/pink palette), distinguishing feature badges with ↑/↓ arrows, and plain-English description. Header shows "Customer Segmentation" + cluster count + auto/manual badge. Footer: rows clustered + k value + whether k was auto-selected or user-specified. `ClusteringResult`, `ClusterProfile`, `ClusterDistinguishingFeature` TypeScript types; `getClusters()` API method; `attachClustersToLastMessage()` Zustand action.
+
+**Tests:** 39 backend (unit: auto-k, explicit k, feature selection, categorical exclusion, NaN handling, too-few-rows guard, invalid feature fallback, k clamping to 8, size sorting, distinguishing feature keys, description/summary helpers; endpoint: 200/400/404 paths; pattern: 10 match + 4 no-match). 18 frontend (component: header/badge/summary/features/descriptions/percentages/arrows/footer; store: attach action + user-message guard; API: URL construction + params + error throw). All 2353 pass.
+
 ## Day 14 — 20:00 — Column Profile Deep-Dive (1596 backend + 700 frontend = 2296 tests)
 
 The "what's in this column?" question is now answered inline in chat. When a business analyst asks "tell me about the revenue column" or "profile region" or "distribution of sales", AutoModeler now responds with a `ColumnProfileCard` — a cyan-bordered inline card that shows a complete statistical portrait of the column without leaving the conversation.
