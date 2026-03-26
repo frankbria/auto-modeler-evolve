@@ -1,5 +1,15 @@
 # Journal
 
+## Day 15 — 12:00 — Time-Period Comparison via Chat (1662 backend + 735 frontend = 2397 tests)
+
+AutoModeler now answers "compare 2023 vs 2024", "Q1 vs Q2 performance", "year over year", "H1 vs H2", and similar questions with a `TimeWindowCard` — an orange-bordered inline card showing side-by-side numeric metric means for any two date ranges. The NL parser handles five distinct patterns (explicit year pairs, quarter vs quarter with optional year, YoY/MoM keywords, H1/H2 halves, and a fallback that bisects the data's date range when no pattern matches), all without requiring the analyst to specify exact ISO dates.
+
+**Backend:** `compare_time_windows()` in `core/analyzer.py` filters a DataFrame to two named windows, computes per-column means with `pct_change` and `direction` (up/down/flat — flat when |change| < 1%), flags `notable` columns at ≥20% change, and generates a plain-English summary naming the biggest mover. `_detect_timewindow_request()` in `api/chat.py` is a six-case NL parser: first tries `20\d\d vs 20\d\d` year patterns, then `Q[1-4](?:\s+20\d\d)?` quarter pairs with auto-year from data max date, then H1/H2 half-year pattern, then YoY (latest year vs previous year in data), then MoM (last two complete months), then bisects the date range as fallback. `_TIMEWINDOW_PATTERNS` (8 trigger variants including "period comparison", "how did this year change", quarter/year-over-year keywords). `GET /api/data/{id}/compare-time-windows` REST endpoint returns 400 on empty period or unknown column.
+
+**Frontend:** `TimeWindowCard` renders period name chips (muted for P1, amber-tinted for P2), a side-by-side table with Change % column showing ↑/↓ arrows in green/red, amber row highlights for notable columns, a callout listing all >20% movers, and a plain-English summary footer. One test fix needed: `getByText("4 rows")` matched both period chips (both periods had 4 rows) — changed to `getAllByText`.
+
+**27 backend + 17 frontend = 44 new tests. Total: 1662 backend + 735 frontend = 2397, all passing. Backend lint: clean. Frontend build: clean.**
+
 ## Day 15 — 04:00 — K-means Customer Segmentation via Chat (1635 backend + 718 frontend = 2353 tests)
 
 AutoModeler now answers "cluster my data" or "segment my customers" with a `ClusteringCard` — a violet-bordered inline card that reveals natural groups in uploaded data without the analyst knowing anything about ML. Auto-k selection (silhouette score across k=2–8) means they never have to specify a cluster count; the algorithm finds the best separation on its own.
