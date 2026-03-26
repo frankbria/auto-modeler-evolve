@@ -925,14 +925,18 @@ _YEAR_VS_PATTERN = re.compile(r"\b(20\d\d)\b.*?\b(20\d\d)\b", re.IGNORECASE)
 _QUARTER_VS_PATTERN = re.compile(
     r"\bQ([1-4])(?:\s+(20\d\d))?\s+vs\.?\s*Q([1-4])(?:\s+(20\d\d))?\b", re.IGNORECASE
 )
-_HALF_PATTERN = re.compile(r"\b(first half|H1)\s+vs\.?\s*(second half|H2)\b", re.IGNORECASE)
-_YOY_PATTERN = re.compile(r"\b(year.over.year|yoy|year.on.year|this year vs last year)\b", re.IGNORECASE)
-_MOM_PATTERN = re.compile(r"\b(month.over.month|mom|month.on.month|this month vs last month)\b", re.IGNORECASE)
+_HALF_PATTERN = re.compile(
+    r"\b(first half|H1)\s+vs\.?\s*(second half|H2)\b", re.IGNORECASE
+)
+_YOY_PATTERN = re.compile(
+    r"\b(year.over.year|yoy|year.on.year|this year vs last year)\b", re.IGNORECASE
+)
+_MOM_PATTERN = re.compile(
+    r"\b(month.over.month|mom|month.on.month|this month vs last month)\b", re.IGNORECASE
+)
 
 
-def _detect_timewindow_request(
-    message: str, df: "pd.DataFrame"
-) -> dict | None:
+def _detect_timewindow_request(message: str, df: "pd.DataFrame") -> dict | None:
     """Extract two time periods from the user message and the DataFrame.
 
     Returns a dict with keys:
@@ -976,7 +980,12 @@ def _detect_timewindow_request(
     # --- Pattern 2: quarter vs quarter ("Q1 vs Q2", "Q3 2023 vs Q4 2023") ---
     m = _QUARTER_VS_PATTERN.search(message)
     if m:
-        q1, opt_y1, q2, opt_y2 = int(m.group(1)), m.group(2), int(m.group(3)), m.group(4)
+        q1, opt_y1, q2, opt_y2 = (
+            int(m.group(1)),
+            m.group(2),
+            int(m.group(3)),
+            m.group(4),
+        )
         # If no explicit year, use the most recent year in the data
         data_year = max_date.year
         y1 = int(opt_y1) if opt_y1 else data_year
@@ -1028,6 +1037,7 @@ def _detect_timewindow_request(
         prev_month_start = prev_month_end.replace(day=1)
         # End of latest month
         import calendar
+
         latest_month_end = max_date.replace(
             day=calendar.monthrange(max_date.year, max_date.month)[1]
         )

@@ -1,6 +1,5 @@
 """Tests for time-period comparison: compare_time_windows() + endpoint + chat patterns."""
 
-
 import pandas as pd
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -20,8 +19,14 @@ def sales_df():
     return pd.DataFrame(
         {
             "date": [
-                "2023-01-15", "2023-04-10", "2023-07-20", "2023-10-05",
-                "2024-02-01", "2024-05-15", "2024-08-22", "2024-11-30",
+                "2023-01-15",
+                "2023-04-10",
+                "2023-07-20",
+                "2023-10-05",
+                "2024-02-01",
+                "2024-05-15",
+                "2024-08-22",
+                "2024-11-30",
             ],
             "revenue": [1000.0, 1200.0, 900.0, 1100.0, 1400.0, 1600.0, 1300.0, 1800.0],
             "units": [10, 12, 9, 11, 14, 16, 13, 18],
@@ -36,8 +41,12 @@ def single_year_df():
     return pd.DataFrame(
         {
             "date": [
-                "2024-01-10", "2024-02-15", "2024-03-20",
-                "2024-07-05", "2024-08-12", "2024-09-25",
+                "2024-01-10",
+                "2024-02-15",
+                "2024-03-20",
+                "2024-07-05",
+                "2024-08-12",
+                "2024-09-25",
             ],
             "revenue": [500.0, 600.0, 550.0, 750.0, 800.0, 720.0],
             "units": [5, 6, 5, 8, 8, 7],
@@ -64,9 +73,14 @@ def no_numeric_df():
 
 def test_basic_year_comparison(sales_df):
     result = compare_time_windows(
-        sales_df, "date",
-        "2023", "2023-01-01", "2023-12-31",
-        "2024", "2024-01-01", "2024-12-31",
+        sales_df,
+        "date",
+        "2023",
+        "2023-01-01",
+        "2023-12-31",
+        "2024",
+        "2024-01-01",
+        "2024-12-31",
     )
     assert "error" not in result
     assert result["period1"]["name"] == "2023"
@@ -77,9 +91,14 @@ def test_basic_year_comparison(sales_df):
 
 def test_pct_change_direction(sales_df):
     result = compare_time_windows(
-        sales_df, "date",
-        "2023", "2023-01-01", "2023-12-31",
-        "2024", "2024-01-01", "2024-12-31",
+        sales_df,
+        "date",
+        "2023",
+        "2023-01-01",
+        "2023-12-31",
+        "2024",
+        "2024-01-01",
+        "2024-12-31",
     )
     # Revenue is higher in 2024 → direction should be "up"
     rev_col = next(c for c in result["columns"] if c["column"] == "revenue")
@@ -89,9 +108,14 @@ def test_pct_change_direction(sales_df):
 
 def test_notable_changes_flagged(sales_df):
     result = compare_time_windows(
-        sales_df, "date",
-        "2023", "2023-01-01", "2023-12-31",
-        "2024", "2024-01-01", "2024-12-31",
+        sales_df,
+        "date",
+        "2023",
+        "2023-01-01",
+        "2023-12-31",
+        "2024",
+        "2024-01-01",
+        "2024-12-31",
     )
     # Revenue goes from avg ~1050 to avg ~1525 → ~45% change — should be notable
     rev_col = next(c for c in result["columns"] if c["column"] == "revenue")
@@ -101,9 +125,14 @@ def test_notable_changes_flagged(sales_df):
 
 def test_columns_list_structure(sales_df):
     result = compare_time_windows(
-        sales_df, "date",
-        "2023", "2023-01-01", "2023-12-31",
-        "2024", "2024-01-01", "2024-12-31",
+        sales_df,
+        "date",
+        "2023",
+        "2023-01-01",
+        "2023-12-31",
+        "2024",
+        "2024-01-01",
+        "2024-12-31",
     )
     assert len(result["columns"]) == 3  # revenue, units, cost
     for col in result["columns"]:
@@ -117,9 +146,14 @@ def test_columns_list_structure(sales_df):
 
 def test_summary_is_string(sales_df):
     result = compare_time_windows(
-        sales_df, "date",
-        "2023", "2023-01-01", "2023-12-31",
-        "2024", "2024-01-01", "2024-12-31",
+        sales_df,
+        "date",
+        "2023",
+        "2023-01-01",
+        "2023-12-31",
+        "2024",
+        "2024-01-01",
+        "2024-12-31",
     )
     assert isinstance(result["summary"], str)
     assert len(result["summary"]) > 20
@@ -129,18 +163,28 @@ def test_summary_is_string(sales_df):
 
 def test_unknown_date_col_returns_error(sales_df):
     result = compare_time_windows(
-        sales_df, "nonexistent",
-        "2023", "2023-01-01", "2023-12-31",
-        "2024", "2024-01-01", "2024-12-31",
+        sales_df,
+        "nonexistent",
+        "2023",
+        "2023-01-01",
+        "2023-12-31",
+        "2024",
+        "2024-01-01",
+        "2024-12-31",
     )
     assert "error" in result
 
 
 def test_no_rows_in_period_returns_error(sales_df):
     result = compare_time_windows(
-        sales_df, "date",
-        "P1", "2020-01-01", "2020-12-31",
-        "P2", "2024-01-01", "2024-12-31",
+        sales_df,
+        "date",
+        "P1",
+        "2020-01-01",
+        "2020-12-31",
+        "P2",
+        "2024-01-01",
+        "2024-12-31",
     )
     assert "error" in result
     assert "P1" in result["error"]
@@ -148,9 +192,14 @@ def test_no_rows_in_period_returns_error(sales_df):
 
 def test_no_numeric_columns_returns_error(no_numeric_df):
     result = compare_time_windows(
-        no_numeric_df, "date",
-        "A", "2024-01-01", "2024-01-31",
-        "B", "2024-02-01", "2024-02-28",
+        no_numeric_df,
+        "date",
+        "A",
+        "2024-01-01",
+        "2024-01-31",
+        "B",
+        "2024-02-01",
+        "2024-02-28",
     )
     assert "error" in result
 
@@ -163,9 +212,14 @@ def test_flat_direction_near_zero_change():
         }
     )
     result = compare_time_windows(
-        df, "date",
-        "H1-2023", "2023-06-01", "2023-07-01",
-        "H1-2024", "2024-06-01", "2024-07-01",
+        df,
+        "date",
+        "H1-2023",
+        "2023-06-01",
+        "2023-07-01",
+        "H1-2024",
+        "2024-06-01",
+        "2024-07-01",
     )
     assert "error" not in result
     rev_col = next(c for c in result["columns"] if c["column"] == "revenue")
@@ -174,16 +228,28 @@ def test_flat_direction_near_zero_change():
 
 def test_invalid_date_boundaries_returns_error(sales_df):
     result = compare_time_windows(
-        sales_df, "date",
-        "P1", "not-a-date", "also-not",
-        "P2", "2024-01-01", "2024-12-31",
+        sales_df,
+        "date",
+        "P1",
+        "not-a-date",
+        "also-not",
+        "P2",
+        "2024-01-01",
+        "2024-12-31",
     )
     assert "error" in result
 
 
 def test_build_timewindow_summary_no_notable():
     cols = [
-        {"column": "revenue", "p1_mean": 1000.0, "p2_mean": 1050.0, "pct_change": 5.0, "direction": "up", "notable": False},
+        {
+            "column": "revenue",
+            "p1_mean": 1000.0,
+            "p2_mean": 1050.0,
+            "pct_change": 5.0,
+            "direction": "up",
+            "notable": False,
+        },
     ]
     summary = _build_timewindow_summary("2023", "2024", 10, 12, cols, [])
     assert "2023" in summary
@@ -192,10 +258,26 @@ def test_build_timewindow_summary_no_notable():
 
 def test_build_timewindow_summary_with_notable():
     cols = [
-        {"column": "revenue", "p1_mean": 1000.0, "p2_mean": 1500.0, "pct_change": 50.0, "direction": "up", "notable": True},
-        {"column": "cost", "p1_mean": 500.0, "p2_mean": 400.0, "pct_change": -20.0, "direction": "down", "notable": True},
+        {
+            "column": "revenue",
+            "p1_mean": 1000.0,
+            "p2_mean": 1500.0,
+            "pct_change": 50.0,
+            "direction": "up",
+            "notable": True,
+        },
+        {
+            "column": "cost",
+            "p1_mean": 500.0,
+            "p2_mean": 400.0,
+            "pct_change": -20.0,
+            "direction": "down",
+            "notable": True,
+        },
     ]
-    summary = _build_timewindow_summary("2023", "2024", 10, 12, cols, ["revenue", "cost"])
+    summary = _build_timewindow_summary(
+        "2023", "2024", 10, 12, cols, ["revenue", "cost"]
+    )
     assert "revenue" in summary or "cost" in summary
     assert "increased" in summary or "decreased" in summary
 
@@ -227,9 +309,7 @@ async def client_with_dataset(tmp_path, set_test_env):
             "2024-07-01,1500.0,15\n"
         )
         # Create project first
-        proj_resp = await ac.post(
-            "/api/projects", json={"name": "Test Project"}
-        )
+        proj_resp = await ac.post("/api/projects", json={"name": "Test Project"})
         assert proj_resp.status_code == 201
         project_id = proj_resp.json()["id"]
 

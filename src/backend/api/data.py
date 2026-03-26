@@ -2318,7 +2318,9 @@ def compare_time_windows_endpoint(
             detail=f"Column '{date_col}' not found. Available: {', '.join(df.columns.tolist())}",
         )
 
-    result = compare_time_windows(df, date_col, p1_name, p1_start, p1_end, p2_name, p2_start, p2_end)
+    result = compare_time_windows(
+        df, date_col, p1_name, p1_start, p1_end, p2_name, p2_start, p2_end
+    )
     if "error" in result:
         raise HTTPException(status_code=400, detail=result["error"])
 

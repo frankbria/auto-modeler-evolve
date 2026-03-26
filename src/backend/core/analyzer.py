@@ -1271,9 +1271,13 @@ def compare_time_windows(
     df2 = df[(df[date_col] >= p2s) & (df[date_col] <= p2e)]
 
     if df1.empty:
-        return {"error": f"No rows found for period '{period1_name}' ({period1_start} – {period1_end})."}
+        return {
+            "error": f"No rows found for period '{period1_name}' ({period1_start} – {period1_end})."
+        }
     if df2.empty:
-        return {"error": f"No rows found for period '{period2_name}' ({period2_start} – {period2_end})."}
+        return {
+            "error": f"No rows found for period '{period2_name}' ({period2_start} – {period2_end})."
+        }
 
     numeric_cols = [
         c for c in df.select_dtypes(include="number").columns if c != date_col
@@ -1300,7 +1304,9 @@ def compare_time_windows(
         else:
             pct_change = round((p2_mean - p1_mean) / abs(p1_mean) * 100, 1)
 
-        direction = "flat" if abs(pct_change) < 1.0 else ("up" if pct_change > 0 else "down")
+        direction = (
+            "flat" if abs(pct_change) < 1.0 else ("up" if pct_change > 0 else "down")
+        )
         notable = abs(pct_change) >= 20.0
 
         if notable:
