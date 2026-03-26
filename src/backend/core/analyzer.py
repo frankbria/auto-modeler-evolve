@@ -711,3 +711,319 @@ def compute_group_stats(
         "total": total,
         "summary": summary,
     }
+
+
+# ---------------------------------------------------------------------------
+# Column profile deep-dive (rich per-column analytics)
+# ---------------------------------------------------------------------------
+
+
+def compute_column_profile(df: pd.DataFrame, col_name: str) -> dict:
+    """Return a rich profile for a single column: stats, distribution, issues, summary.
+
+    Supports numeric, categorical, and date-like columns.
+    Result is designed for inline chat card rendering.
+    """
+    if col_name not in df.columns:
+        return {"error": f"Column '{col_name}' not found"}
+
+    series = df[col_name]
+    n_total = len(series)
+    n_null = int(series.isna().sum())
+    null_pct = round(n_null / n_total * 100, 1) if n_total > 0 else 0.0
+    n_unique = int(series.nunique(dropna=True))
+    non_null = series.dropna()
+
+    issues: list[dict] = []
+    stats: dict = {
+        "total_rows": n_total,
+        "null_count": n_null,
+        "null_pct": null_pct,
+        "unique_count": n_unique,
+    }
+
+    # Detect column type
+    if pd.api.types.is_numeric_dtype(series):
+        col_type = "numeric"
+        _populate_numeric_stats(series, non_null, stats, issues, n_total, n_unique)
+    elif _is_date_column(series, col_name):
+        col_type = "date"
+        _populate_date_stats(series, non_null, stats, issues)
+    else:
+        col_type = "categorical"
+        _populate_categorical_stats(series, non_null, stats, issues, n_total, n_unique)
+
+    # Common issue: high null rate
+    if null_pct > 20:
+        severity = "critical" if null_pct > 50 else "warning"
+        issues.append(
+            {
+                "type": "high_null_rate",
+                "severity": severity,
+                "message": f"{null_pct:.0f}% of values are missing — consider filling or dropping",
+            }
+        )
+
+    # Build distribution for chart rendering
+    distribution = _build_column_distribution(series, col_type, non_null, n_unique)
+
+    # Build plain-English summary
+    summary = _build_column_summary(col_name, col_type, stats, issues, n_total)
+
+    return {
+        "col_name": col_name,
+        "col_type": col_type,
+        "stats": stats,
+        "distribution": distribution,
+        "issues": issues,
+        "summary": summary,
+    }
+
+
+def _populate_numeric_stats(
+    series: pd.Series,
+    non_null: pd.Series,
+    stats: dict,
+    issues: list,
+    n_total: int,
+    n_unique: int,
+) -> None:
+    """Add numeric-specific stats and detect issues."""
+    if non_null.empty:
+        return
+    finite = non_null[np.isfinite(non_null)]
+    if finite.empty:
+        return
+
+    stats["min"] = _safe_scalar(finite.min())
+    stats["max"] = _safe_scalar(finite.max())
+    stats["mean"] = round(_safe_scalar(finite.mean()), 4)
+    stats["median"] = round(_safe_scalar(finite.median()), 4)
+    stats["std"] = round(_safe_scalar(finite.std()), 4) if len(finite) > 1 else 0.0
+    stats["p25"] = round(_safe_scalar(finite.quantile(0.25)), 4)
+    stats["p75"] = round(_safe_scalar(finite.quantile(0.75)), 4)
+
+    if len(finite) > 2:
+        try:
+            skew_val = float(finite.skew())
+            stats["skewness"] = round(skew_val, 3)
+            if abs(skew_val) > 2:
+                direction = "right" if skew_val > 0 else "left"
+                issues.append(
+                    {
+                        "type": "skewed",
+                        "severity": "info",
+                        "message": f"Distribution is {direction}-skewed (skewness {skew_val:.2f}) — a log transform might help",
+                    }
+                )
+        except Exception:  # noqa: BLE001
+            pass
+
+    # Constant value check
+    if n_unique == 1:
+        issues.append(
+            {
+                "type": "constant_value",
+                "severity": "warning",
+                "message": "All non-null values are identical — this column has no predictive power",
+            }
+        )
+
+    # Potential ID column (near-unique numeric)
+    if n_unique >= n_total * 0.95 and n_total > 10:
+        issues.append(
+            {
+                "type": "potential_id",
+                "severity": "info",
+                "message": "Nearly every value is unique — this may be an ID column that should be excluded from modeling",
+            }
+        )
+
+
+def _populate_categorical_stats(
+    series: pd.Series,
+    non_null: pd.Series,
+    stats: dict,
+    issues: list,
+    n_total: int,
+    n_unique: int,
+) -> None:
+    """Add categorical-specific stats and detect issues."""
+    if non_null.empty:
+        return
+
+    value_counts = non_null.value_counts(dropna=True)
+    most_common = str(value_counts.index[0]) if not value_counts.empty else None
+    most_common_pct = (
+        round(float(value_counts.iloc[0]) / len(non_null) * 100, 1)
+        if not value_counts.empty
+        else 0.0
+    )
+
+    stats["most_common"] = most_common
+    stats["most_common_pct"] = most_common_pct
+    stats["top_categories"] = [
+        {"label": str(idx), "count": int(cnt)}
+        for idx, cnt in value_counts.head(10).items()
+    ]
+
+    # Constant value
+    if n_unique == 1:
+        issues.append(
+            {
+                "type": "constant_value",
+                "severity": "warning",
+                "message": "Only one unique value — this column adds no variation",
+            }
+        )
+
+    # High cardinality
+    if n_unique > 50:
+        issues.append(
+            {
+                "type": "high_cardinality",
+                "severity": "warning",
+                "message": f"{n_unique} unique values — too many for direct use; consider grouping or encoding",
+            }
+        )
+    elif n_unique >= n_total * 0.8 and n_total > 10:
+        issues.append(
+            {
+                "type": "near_unique",
+                "severity": "info",
+                "message": "Most values are unique — likely a free-text or ID column, not suitable as a category",
+            }
+        )
+
+    # Dominant value
+    if most_common_pct > 90 and n_unique > 1:
+        issues.append(
+            {
+                "type": "dominant_value",
+                "severity": "info",
+                "message": f"'{most_common}' appears in {most_common_pct:.0f}% of rows — low variation",
+            }
+        )
+
+
+def _populate_date_stats(
+    series: pd.Series, non_null: pd.Series, stats: dict, issues: list
+) -> None:
+    """Add date-specific stats."""
+    try:
+        parsed = pd.to_datetime(non_null, errors="coerce").dropna()
+        if parsed.empty:
+            return
+        stats["min_date"] = str(parsed.min().date())
+        stats["max_date"] = str(parsed.max().date())
+        stats["date_range_days"] = int((parsed.max() - parsed.min()).days)
+        # Estimate frequency
+        if len(parsed) > 2:
+            sorted_dates = parsed.sort_values()
+            median_gap = (sorted_dates.diff().dropna().median()).days
+            if median_gap is not None:
+                if median_gap <= 1:
+                    stats["estimated_frequency"] = "daily"
+                elif median_gap <= 8:
+                    stats["estimated_frequency"] = "weekly"
+                elif median_gap <= 35:
+                    stats["estimated_frequency"] = "monthly"
+                elif median_gap <= 100:
+                    stats["estimated_frequency"] = "quarterly"
+                else:
+                    stats["estimated_frequency"] = "annual"
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _is_date_column(series: pd.Series, col_name: str) -> bool:
+    """Heuristic: is this a date-like column?"""
+    name_lower = col_name.lower()
+    if any(kw in name_lower for kw in ("date", "time", "at", "day", "month", "year")):
+        # Only treat as date if it's a string/object column
+        if pd.api.types.is_string_dtype(series) or series.dtype == object:
+            try:
+                sample = series.dropna().head(5)
+                pd.to_datetime(sample, errors="raise")
+                return True
+            except Exception:  # noqa: BLE001
+                pass
+    return False
+
+
+def _build_column_distribution(
+    series: pd.Series, col_type: str, non_null: pd.Series, n_unique: int
+) -> dict:
+    """Build chart-ready distribution data."""
+    if col_type == "numeric":
+        finite = non_null[np.isfinite(non_null)] if not non_null.empty else non_null
+        if finite.empty:
+            return {"type": "histogram", "bins": [], "counts": []}
+        n_bins = min(10, n_unique)
+        if n_bins < 2:
+            return {"type": "histogram", "bins": [_safe_scalar(finite.iloc[0])], "counts": [len(finite)]}
+        counts, bin_edges = np.histogram(finite, bins=n_bins)
+        return {
+            "type": "histogram",
+            "bins": [round(float(e), 4) for e in bin_edges[:-1]],
+            "counts": [int(c) for c in counts],
+        }
+    elif col_type == "categorical":
+        vc = non_null.value_counts(dropna=True).head(10)
+        return {
+            "type": "bar",
+            "labels": vc.index.astype(str).tolist(),
+            "counts": [int(c) for c in vc.values],
+        }
+    elif col_type == "date":
+        return {"type": "date", "bins": [], "counts": []}
+    return {"type": "unknown", "bins": [], "counts": []}
+
+
+def _build_column_summary(
+    col_name: str, col_type: str, stats: dict, issues: list, n_total: int
+) -> str:
+    """Generate a plain-English one-sentence summary for the column."""
+    null_pct = stats.get("null_pct", 0)
+    n_unique = stats.get("unique_count", 0)
+    parts = []
+
+    if col_type == "numeric":
+        mean_val = stats.get("mean")
+        min_val = stats.get("min")
+        max_val = stats.get("max")
+        if mean_val is not None:
+            parts.append(
+                f"Numeric column ranging from {min_val:g} to {max_val:g} with a mean of {mean_val:g}"
+            )
+    elif col_type == "categorical":
+        most_common = stats.get("most_common")
+        most_common_pct = stats.get("most_common_pct", 0)
+        parts.append(
+            f"Categorical column with {n_unique} unique value{'s' if n_unique != 1 else ''}"
+        )
+        if most_common:
+            parts.append(f"; most common is '{most_common}' ({most_common_pct:.0f}%)")
+    elif col_type == "date":
+        min_d = stats.get("min_date", "")
+        max_d = stats.get("max_date", "")
+        freq = stats.get("estimated_frequency", "")
+        if min_d and max_d:
+            parts.append(f"Date column from {min_d} to {max_d}")
+            if freq:
+                parts.append(f" ({freq} data)")
+
+    if null_pct > 0:
+        parts.append(f"; {null_pct:.0f}% missing")
+    elif n_total > 0:
+        parts.append("; no missing values")
+
+    if issues:
+        critical = [i for i in issues if i["severity"] == "critical"]
+        warnings = [i for i in issues if i["severity"] == "warning"]
+        if critical:
+            parts.append(f". ⚠️ {critical[0]['message']}")
+        elif warnings:
+            parts.append(f". Note: {warnings[0]['message']}")
+
+    return "".join(parts) + "." if parts else f"Column '{col_name}' with {n_total} rows."

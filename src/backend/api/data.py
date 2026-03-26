@@ -21,6 +21,7 @@ from chat.narration import (
 from core.analyzer import (
     analyze_target_correlations,
     compare_segments,
+    compute_column_profile,
     compute_full_profile,
     compute_group_stats,
     detect_time_columns,
@@ -2198,3 +2199,33 @@ def get_active_filter(
         "filtered_rows": active.filtered_rows,
         "row_reduction_pct": active.row_reduction_pct,
     }
+
+
+@router.get("/{dataset_id}/column-profile")
+def get_column_profile(
+    dataset_id: str,
+    col: str,
+    session: Session = Depends(get_session),
+):
+    """Return a rich profile for a single column: stats, distribution, issues, plain-English summary."""
+    dataset = session.get(Dataset, dataset_id)
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    file_path = Path(dataset.file_path)
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Dataset file not found")
+
+    df = _load_df_from_path(file_path)
+
+    if col not in df.columns:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Column '{col}' not found. Available columns: {', '.join(df.columns.tolist())}",
+        )
+
+    result = compute_column_profile(df, col)
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+
+    return result

@@ -39,6 +39,7 @@ import { DeployedCard } from "@/components/deploy/deployed-card"
 import { ModelCardView } from "@/components/models/model-card-view"
 import { ReportReadyCard } from "@/components/models/report-ready-card"
 import { SegmentPerformanceCard } from "@/components/models/segment-performance-card"
+import { ColumnProfileCard } from "@/components/data/column-profile-card"
 import {
   FeatureSuggestCard,
   FeaturesAppliedCard,
@@ -77,6 +78,7 @@ import type {
   FeatureSuggestionsChatResult,
   FeaturesAppliedResult,
   SegmentPerformanceResult,
+  ColumnProfile,
 } from "@/lib/types"
 
 const WELCOME_MESSAGE =
@@ -145,6 +147,7 @@ export default function ProjectWorkspace() {
     attachFeatureSuggestionsToLastMessage,
     attachFeaturesAppliedToLastMessage,
     attachSegmentPerformanceToLastMessage,
+    attachColumnProfileToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -409,6 +412,8 @@ export default function ProjectWorkspace() {
                 attachFeaturesAppliedToLastMessage(json.applied as FeaturesAppliedResult)
               } else if (json.type === "segment_performance" && json.segment_performance) {
                 attachSegmentPerformanceToLastMessage(json.segment_performance as SegmentPerformanceResult)
+              } else if (json.type === "column_profile" && json.column_profile) {
+                attachColumnProfileToLastMessage(json.column_profile as ColumnProfile)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -449,6 +454,7 @@ export default function ProjectWorkspace() {
     attachFeatureSuggestionsToLastMessage,
     attachFeaturesAppliedToLastMessage,
     attachSegmentPerformanceToLastMessage,
+    attachColumnProfileToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -734,6 +740,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.segment_performance && (
                       <SegmentPerformanceCard result={msg.segment_performance} />
+                    )}
+                    {msg.column_profile && (
+                      <ColumnProfileCard profile={msg.column_profile} />
                     )}
                   </div>
                 </div>

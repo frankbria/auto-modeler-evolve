@@ -67,6 +67,7 @@ interface AppState {
   attachFeatureSuggestionsToLastMessage: (feature_suggestions: FeatureSuggestionsChatResult) => void
   attachFeaturesAppliedToLastMessage: (features_applied: FeaturesAppliedResult) => void
   attachSegmentPerformanceToLastMessage: (segment_performance: import("./types").SegmentPerformanceResult) => void
+  attachColumnProfileToLastMessage: (column_profile: import("./types").ColumnProfile) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -287,6 +288,16 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, segment_performance }
+      }
+      return { messages }
+    }),
+
+  attachColumnProfileToLastMessage: (column_profile) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, column_profile }
       }
       return { messages }
     }),

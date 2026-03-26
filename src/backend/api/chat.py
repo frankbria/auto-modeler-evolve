@@ -837,6 +837,45 @@ def _load_working_df(
     return df
 
 
+# Keywords that trigger a column profile deep-dive card
+_COLUMN_PROFILE_PATTERNS = re.compile(
+    r"(?i)("
+    r"tell\s+me\s+(?:more\s+)?about\s+(?:the\s+)?(?:column\s+)?(?:\w+\s+)?column|"
+    r"profile\s+(?:the\s+)?(?:column\s+)?|"
+    r"describe\s+(?:the\s+)?(?:column\s+)?|"
+    r"analyze\s+(?:the\s+)?(?:column\s+)?|"
+    r"what\s+(?:is|does|are)\s+(?:the\s+)?(?:column\s+)?(?:\w+\s+)?(?:column\s+)?(?:look\s+like|contain|show|represent)|"
+    r"show\s+(?:me\s+)?(?:the\s+)?stats\s+(?:for|of|on)\s+|"
+    r"(?:distribution|histogram|breakdown)\s+(?:of|for)\s+|"
+    r"deep.?dive\s+(?:into|on)\s+|"
+    r"explore\s+(?:the\s+)?(?:column\s+)?|"
+    r"what\s+are\s+the\s+values\s+(?:in|of)\s+"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def _detect_profile_col(message: str, df: "pd.DataFrame") -> str | None:
+    """Extract the column name to profile from the message.
+
+    Scans the message for a word matching any column name in the DataFrame.
+    Returns the first match, or None if no column is identified.
+    """
+    import re as _re
+
+    msg_lower = message.lower()
+    # Try exact column name match first
+    for col in df.columns:
+        if col.lower() in msg_lower:
+            return col
+    # Try partial word match (handles snake_case column names)
+    for col in df.columns:
+        for part in _re.split(r"[\s_-]", col.lower()):
+            if len(part) > 2 and part in msg_lower:
+                return col
+    return None
+
+
 class ChatMessage(BaseModel):
     message: str
 
@@ -2586,6 +2625,41 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Segment performance is nice-to-have; never crash chat
 
+    # Check for column profile request ("tell me about the revenue column")
+    column_profile_event: dict | None = None
+    if _COLUMN_PROFILE_PATTERNS.search(body.message) and ctx["dataset"]:
+        try:
+            _cp_ds = ctx["dataset"]
+            _cp_file = Path(_cp_ds.file_path)
+            if _cp_file.exists():
+                _cp_df = _load_working_df(_cp_file, _active_filter_conditions)
+                _cp_col = _detect_profile_col(body.message, _cp_df)
+                if _cp_col:
+                    from core.analyzer import compute_column_profile as _ccp
+
+                    _cp_result = _ccp(_cp_df, _cp_col)
+                    if "error" not in _cp_result:
+                        column_profile_event = _cp_result
+                        _cp_stats = _cp_result["stats"]
+                        _cp_type = _cp_result["col_type"]
+                        _cp_issues = _cp_result.get("issues", [])
+                        _cp_summary = _cp_result.get("summary", "")
+                        system_prompt += (
+                            f"\n\n## Column Profile: '{_cp_col}'\n"
+                            f"Type: {_cp_type}. {_cp_summary}\n"
+                            f"Stats: {json.dumps({k: v for k, v in _cp_stats.items() if k not in ('top_categories',)})}\n"
+                        )
+                        if _cp_issues:
+                            _issue_msgs = [i["message"] for i in _cp_issues]
+                            system_prompt += f"Issues detected: {'; '.join(_issue_msgs)}\n"
+                        system_prompt += (
+                            "A ColumnProfileCard is shown in the chat. "
+                            "Narrate the key insights — help the analyst understand what this column contains, "
+                            "whether there are problems, and what they should do next."
+                        )
+        except Exception:  # noqa: BLE001
+            pass  # Column profile is nice-to-have; never crash chat
+
     # Pre-compute follow-up suggestions (based on state + current message)
     current_state = detect_state(
         ctx["dataset"], ctx["feature_set"], ctx["model_runs"], ctx["deployment"]
@@ -2739,6 +2813,10 @@ def send_message(
         # Emit segment performance breakdown (how does model perform per segment?)
         if segment_performance_event:
             yield f"data: {json.dumps({'type': 'segment_performance', 'segment_performance': segment_performance_event})}\n\n"
+
+        # Emit column profile deep-dive (tell me about the revenue column)
+        if column_profile_event:
+            yield f"data: {json.dumps({'type': 'column_profile', 'column_profile': column_profile_event})}\n\n"
 
         # Emit follow-up suggestion chips (always, if we have any)
         if suggestions_list:

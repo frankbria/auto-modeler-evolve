@@ -272,6 +272,7 @@ export interface ChatMessage {
   feature_suggestions?: FeatureSuggestionsChatResult
   features_applied?: FeaturesAppliedResult
   segment_performance?: SegmentPerformanceResult
+  column_profile?: ColumnProfile
 }
 
 export interface SegmentPerformanceSegment {
@@ -1199,4 +1200,51 @@ export interface FilterSetResult {
   original_rows: number
   filtered_rows: number
   row_reduction_pct: number
+}
+
+export interface ColumnProfileIssue {
+  type: string
+  severity: "critical" | "warning" | "info"
+  message: string
+}
+
+export interface ColumnProfileDistribution {
+  type: "histogram" | "bar" | "date" | "unknown"
+  bins?: number[]
+  counts?: number[]
+  labels?: string[]
+}
+
+export interface ColumnProfileStats {
+  total_rows: number
+  null_count: number
+  null_pct: number
+  unique_count: number
+  // numeric
+  min?: number
+  max?: number
+  mean?: number
+  median?: number
+  std?: number
+  p25?: number
+  p75?: number
+  skewness?: number
+  // categorical
+  most_common?: string
+  most_common_pct?: number
+  top_categories?: { label: string; count: number }[]
+  // date
+  min_date?: string
+  max_date?: string
+  date_range_days?: number
+  estimated_frequency?: string
+}
+
+export interface ColumnProfile {
+  col_name: string
+  col_type: "numeric" | "categorical" | "date"
+  stats: ColumnProfileStats
+  distribution: ColumnProfileDistribution
+  issues: ColumnProfileIssue[]
+  summary: string
 }

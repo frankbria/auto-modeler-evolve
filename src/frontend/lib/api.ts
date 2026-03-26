@@ -375,6 +375,17 @@ export const api = {
 
     getActiveFilter: (datasetId: string): Promise<import("./types").ActiveFilter> =>
       fetch(`${API_URL}/api/data/${datasetId}/active-filter`).then((r) => r.json()),
+
+    getColumnProfile: (
+      datasetId: string,
+      col: string
+    ): Promise<import("./types").ColumnProfile> =>
+      fetch(
+        `${API_URL}/api/data/${datasetId}/column-profile?col=${encodeURIComponent(col)}`
+      ).then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        return r.json()
+      }),
   },
 
   chat: {
