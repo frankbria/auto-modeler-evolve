@@ -41,6 +41,7 @@ import { ReportReadyCard } from "@/components/models/report-ready-card"
 import { SegmentPerformanceCard } from "@/components/models/segment-performance-card"
 import { ColumnProfileCard } from "@/components/data/column-profile-card"
 import { ClusteringCard } from "@/components/data/clustering-card"
+import { TimeWindowCard } from "@/components/data/time-window-card"
 import {
   FeatureSuggestCard,
   FeaturesAppliedCard,
@@ -81,6 +82,7 @@ import type {
   SegmentPerformanceResult,
   ColumnProfile,
   ClusteringResult,
+  TimeWindowComparison,
 } from "@/lib/types"
 
 const WELCOME_MESSAGE =
@@ -151,6 +153,7 @@ export default function ProjectWorkspace() {
     attachSegmentPerformanceToLastMessage,
     attachColumnProfileToLastMessage,
     attachClustersToLastMessage,
+    attachTimeWindowToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -419,6 +422,8 @@ export default function ProjectWorkspace() {
                 attachColumnProfileToLastMessage(json.column_profile as ColumnProfile)
               } else if (json.type === "clusters" && json.clusters) {
                 attachClustersToLastMessage(json.clusters as ClusteringResult)
+              } else if (json.type === "time_window_comparison" && json.time_window) {
+                attachTimeWindowToLastMessage(json.time_window as TimeWindowComparison)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -461,6 +466,7 @@ export default function ProjectWorkspace() {
     attachSegmentPerformanceToLastMessage,
     attachColumnProfileToLastMessage,
     attachClustersToLastMessage,
+    attachTimeWindowToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -752,6 +758,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.clusters && (
                       <ClusteringCard result={msg.clusters} />
+                    )}
+                    {msg.time_window_comparison && (
+                      <TimeWindowCard result={msg.time_window_comparison} />
                     )}
                   </div>
                 </div>

@@ -403,6 +403,33 @@ export const api = {
         return r.json()
       })
     },
+
+    compareTimeWindows: (
+      datasetId: string,
+      dateCol: string,
+      p1Name: string,
+      p1Start: string,
+      p1End: string,
+      p2Name: string,
+      p2Start: string,
+      p2End: string
+    ): Promise<import("./types").TimeWindowComparison> => {
+      const params = new URLSearchParams({
+        date_col: dateCol,
+        p1_name: p1Name,
+        p1_start: p1Start,
+        p1_end: p1End,
+        p2_name: p2Name,
+        p2_start: p2Start,
+        p2_end: p2End,
+      })
+      return fetch(`${API_URL}/api/data/${datasetId}/compare-time-windows?${params}`).then(
+        (r) => {
+          if (!r.ok) throw new Error(`HTTP ${r.status}`)
+          return r.json()
+        }
+      )
+    },
   },
 
   chat: {

@@ -69,6 +69,7 @@ interface AppState {
   attachSegmentPerformanceToLastMessage: (segment_performance: import("./types").SegmentPerformanceResult) => void
   attachColumnProfileToLastMessage: (column_profile: import("./types").ColumnProfile) => void
   attachClustersToLastMessage: (clusters: import("./types").ClusteringResult) => void
+  attachTimeWindowToLastMessage: (time_window_comparison: import("./types").TimeWindowComparison) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -309,6 +310,16 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, clusters }
+      }
+      return { messages }
+    }),
+
+  attachTimeWindowToLastMessage: (time_window_comparison) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, time_window_comparison }
       }
       return { messages }
     }),

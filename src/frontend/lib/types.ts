@@ -274,6 +274,7 @@ export interface ChatMessage {
   segment_performance?: SegmentPerformanceResult
   column_profile?: ColumnProfile
   clusters?: ClusteringResult
+  time_window_comparison?: TimeWindowComparison
 }
 
 export interface SegmentPerformanceSegment {
@@ -1273,5 +1274,30 @@ export interface ClusteringResult {
   auto_k: boolean
   rows_clustered: number
   clusters: ClusterProfile[]
+  summary: string
+}
+
+export interface TimeWindowPeriod {
+  name: string
+  start: string
+  end: string
+  row_count: number
+}
+
+export interface TimeWindowColumn {
+  column: string
+  p1_mean: number
+  p2_mean: number
+  pct_change: number
+  direction: "up" | "down" | "flat"
+  notable: boolean
+}
+
+export interface TimeWindowComparison {
+  date_col: string
+  period1: TimeWindowPeriod
+  period2: TimeWindowPeriod
+  columns: TimeWindowColumn[]
+  notable_changes: string[]
   summary: string
 }

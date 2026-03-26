@@ -1208,3 +1208,176 @@ def _build_cluster_summary(
         f" smallest has {smallest['size']} ({smallest['size_pct']}%)."
     )
     return intro + size_note
+
+
+# ---------------------------------------------------------------------------
+# Time-period comparison (compare metrics across two date ranges)
+# ---------------------------------------------------------------------------
+
+
+def compare_time_windows(
+    df: pd.DataFrame,
+    date_col: str,
+    period1_name: str,
+    period1_start: str,
+    period1_end: str,
+    period2_name: str,
+    period2_start: str,
+    period2_end: str,
+) -> dict:
+    """Compare numeric column means between two date ranges.
+
+    Parameters
+    ----------
+    df           : Source DataFrame (must contain *date_col*).
+    date_col     : Name of the date/datetime column to filter on.
+    period1_name : Display label for the first period (e.g. "2023", "Q1").
+    period1_start: ISO date string for period 1 start (inclusive).
+    period1_end  : ISO date string for period 1 end (inclusive).
+    period2_name : Display label for the second period.
+    period2_start: ISO date string for period 2 start (inclusive).
+    period2_end  : ISO date string for period 2 end (inclusive).
+
+    Returns a dict with:
+      date_col, period1 {name, start, end, row_count},
+      period2 {name, start, end, row_count},
+      columns [{column, p1_mean, p2_mean, pct_change, direction, notable}],
+      notable_changes [column names with abs(pct_change) > 20],
+      summary (plain English), error (if something went wrong).
+    """
+    if date_col not in df.columns:
+        return {"error": f"Column '{date_col}' not found in dataset."}
+
+    # Parse dates
+    try:
+        df = df.copy()
+        df[date_col] = pd.to_datetime(df[date_col], errors="coerce")
+        df = df.dropna(subset=[date_col])
+    except Exception:  # noqa: BLE001
+        return {"error": f"Could not parse '{date_col}' as dates."}
+
+    if df.empty:
+        return {"error": "No valid dates found in the date column after parsing."}
+
+    try:
+        p1s = pd.Timestamp(period1_start)
+        p1e = pd.Timestamp(period1_end) + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
+        p2s = pd.Timestamp(period2_start)
+        p2e = pd.Timestamp(period2_end) + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
+    except Exception:  # noqa: BLE001
+        return {"error": "Could not parse the provided date range boundaries."}
+
+    df1 = df[(df[date_col] >= p1s) & (df[date_col] <= p1e)]
+    df2 = df[(df[date_col] >= p2s) & (df[date_col] <= p2e)]
+
+    if df1.empty:
+        return {"error": f"No rows found for period '{period1_name}' ({period1_start} – {period1_end})."}
+    if df2.empty:
+        return {"error": f"No rows found for period '{period2_name}' ({period2_start} – {period2_end})."}
+
+    numeric_cols = [
+        c for c in df.select_dtypes(include="number").columns if c != date_col
+    ]
+    if not numeric_cols:
+        return {"error": "No numeric columns available for comparison."}
+
+    columns = []
+    notable_changes: list[str] = []
+
+    for col in numeric_cols:
+        p1_mean = float(df1[col].mean()) if not df1[col].dropna().empty else None
+        p2_mean = float(df2[col].mean()) if not df2[col].dropna().empty else None
+
+        if p1_mean is None or p2_mean is None:
+            continue
+
+        # Round to 4 significant figures
+        p1_mean = round(p1_mean, 4)
+        p2_mean = round(p2_mean, 4)
+
+        if abs(p1_mean) < 1e-10:
+            pct_change = 0.0
+        else:
+            pct_change = round((p2_mean - p1_mean) / abs(p1_mean) * 100, 1)
+
+        direction = "flat" if abs(pct_change) < 1.0 else ("up" if pct_change > 0 else "down")
+        notable = abs(pct_change) >= 20.0
+
+        if notable:
+            notable_changes.append(col)
+
+        columns.append(
+            {
+                "column": col,
+                "p1_mean": p1_mean,
+                "p2_mean": p2_mean,
+                "pct_change": pct_change,
+                "direction": direction,
+                "notable": notable,
+            }
+        )
+
+    if not columns:
+        return {"error": "No numeric columns had data in both periods."}
+
+    # Build plain-English summary
+    summary = _build_timewindow_summary(
+        period1_name, period2_name, len(df1), len(df2), columns, notable_changes
+    )
+
+    return {
+        "date_col": date_col,
+        "period1": {
+            "name": period1_name,
+            "start": period1_start,
+            "end": period1_end,
+            "row_count": len(df1),
+        },
+        "period2": {
+            "name": period2_name,
+            "start": period2_start,
+            "end": period2_end,
+            "row_count": len(df2),
+        },
+        "columns": columns,
+        "notable_changes": notable_changes,
+        "summary": summary,
+    }
+
+
+def _build_timewindow_summary(
+    p1_name: str,
+    p2_name: str,
+    p1_rows: int,
+    p2_rows: int,
+    columns: list[dict],
+    notable_changes: list[str],
+) -> str:
+    """Generate a plain-English summary for a time-window comparison."""
+    total_cols = len(columns)
+    up = [c for c in columns if c["direction"] == "up"]
+    down = [c for c in columns if c["direction"] == "down"]
+
+    summary = f"Comparing {p1_name} ({p1_rows} rows) vs {p2_name} ({p2_rows} rows) across {total_cols} metric{'s' if total_cols != 1 else ''}."
+
+    if not notable_changes:
+        summary += f" {p2_name} is broadly similar to {p1_name} — no metrics changed by more than 20%."
+        return summary
+
+    # Summarise the biggest mover
+    biggest = max(columns, key=lambda c: abs(c["pct_change"]))
+    col_label = biggest["column"].replace("_", " ")
+    direction_word = "increased" if biggest["direction"] == "up" else "decreased"
+    summary += (
+        f" Biggest change: {col_label} {direction_word} by {abs(biggest['pct_change']):.0f}%"
+        f" ({biggest['p1_mean']:,.2f} → {biggest['p2_mean']:,.2f})."
+    )
+
+    if len(up) > 0 and len(down) > 0:
+        summary += f" Overall, {len(up)} metric{'s' if len(up) != 1 else ''} went up and {len(down)} went down."
+    elif len(up) > 0:
+        summary += f" All tracked metrics improved in {p2_name}."
+    elif len(down) > 0:
+        summary += f" All tracked metrics declined in {p2_name}."
+
+    return summary

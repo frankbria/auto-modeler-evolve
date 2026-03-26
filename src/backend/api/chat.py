@@ -904,6 +904,162 @@ def _detect_cluster_features(message: str, df: "pd.DataFrame") -> list[str] | No
     return mentioned if len(mentioned) >= 2 else None
 
 
+# Keywords that trigger a time-period comparison ("compare 2023 vs 2024")
+_TIMEWINDOW_PATTERNS = re.compile(
+    r"(?i)"
+    r"compare\s+(?:\w+\s+)?(?:to|vs\.?|versus|and|against)\s+|"
+    r"\b(20\d\d)\s+vs\.?\s+(20\d\d)\b|"
+    r"\bQ[1-4](?:\s+20\d\d)?\s+vs\.?\s+Q[1-4]\b|"
+    r"\b(year.over.year|yoy|year.on.year)\b|"
+    r"\b(month.over.month|mom|month.on.month)\b|"
+    r"\b(this year vs last year|last year vs this year)\b|"
+    r"\b(this month vs last month|last month vs this month)\b|"
+    r"\b(first half vs second half|H1 vs H2|h1 vs h2)\b|"
+    r"\bhow.*(year|quarter|month|period).*(change|differ|compar)|"
+    r"\b(period.comparison|time.window|compare.period|compare.date)",
+    re.IGNORECASE,
+)
+
+# Sub-patterns for extracting specific date ranges
+_YEAR_VS_PATTERN = re.compile(r"\b(20\d\d)\b.*?\b(20\d\d)\b", re.IGNORECASE)
+_QUARTER_VS_PATTERN = re.compile(
+    r"\bQ([1-4])(?:\s+(20\d\d))?\s+vs\.?\s*Q([1-4])(?:\s+(20\d\d))?\b", re.IGNORECASE
+)
+_HALF_PATTERN = re.compile(r"\b(first half|H1)\s+vs\.?\s*(second half|H2)\b", re.IGNORECASE)
+_YOY_PATTERN = re.compile(r"\b(year.over.year|yoy|year.on.year|this year vs last year)\b", re.IGNORECASE)
+_MOM_PATTERN = re.compile(r"\b(month.over.month|mom|month.on.month|this month vs last month)\b", re.IGNORECASE)
+
+
+def _detect_timewindow_request(
+    message: str, df: "pd.DataFrame"
+) -> dict | None:
+    """Extract two time periods from the user message and the DataFrame.
+
+    Returns a dict with keys:
+      date_col, period1_name, period1_start, period1_end,
+      period2_name, period2_start, period2_end
+    or None if no date column or pattern can be resolved.
+    """
+    from core.analyzer import detect_time_columns
+
+    date_cols = detect_time_columns(df)
+    if not date_cols:
+        return None
+    date_col = date_cols[0]
+
+    # Parse date column once
+    try:
+        dates = pd.to_datetime(df[date_col], errors="coerce").dropna()
+    except Exception:  # noqa: BLE001
+        return None
+    if dates.empty:
+        return None
+
+    min_date = dates.min()
+    max_date = dates.max()
+
+    # --- Pattern 1: two explicit years ("compare 2023 vs 2024") ---
+    m = _YEAR_VS_PATTERN.search(message)
+    if m:
+        y1, y2 = int(m.group(1)), int(m.group(2))
+        if y1 != y2:
+            return {
+                "date_col": date_col,
+                "period1_name": str(y1),
+                "period1_start": f"{y1}-01-01",
+                "period1_end": f"{y1}-12-31",
+                "period2_name": str(y2),
+                "period2_start": f"{y2}-01-01",
+                "period2_end": f"{y2}-12-31",
+            }
+
+    # --- Pattern 2: quarter vs quarter ("Q1 vs Q2", "Q3 2023 vs Q4 2023") ---
+    m = _QUARTER_VS_PATTERN.search(message)
+    if m:
+        q1, opt_y1, q2, opt_y2 = int(m.group(1)), m.group(2), int(m.group(3)), m.group(4)
+        # If no explicit year, use the most recent year in the data
+        data_year = max_date.year
+        y1 = int(opt_y1) if opt_y1 else data_year
+        y2 = int(opt_y2) if opt_y2 else data_year
+        _Q_STARTS = {1: "01-01", 2: "04-01", 3: "07-01", 4: "10-01"}
+        _Q_ENDS = {1: "03-31", 2: "06-30", 3: "09-30", 4: "12-31"}
+        return {
+            "date_col": date_col,
+            "period1_name": f"Q{q1} {y1}",
+            "period1_start": f"{y1}-{_Q_STARTS[q1]}",
+            "period1_end": f"{y1}-{_Q_ENDS[q1]}",
+            "period2_name": f"Q{q2} {y2}",
+            "period2_start": f"{y2}-{_Q_STARTS[q2]}",
+            "period2_end": f"{y2}-{_Q_ENDS[q2]}",
+        }
+
+    # --- Pattern 3: "first half vs second half" / "H1 vs H2" ---
+    if _HALF_PATTERN.search(message):
+        data_year = max_date.year
+        return {
+            "date_col": date_col,
+            "period1_name": f"H1 {data_year}",
+            "period1_start": f"{data_year}-01-01",
+            "period1_end": f"{data_year}-06-30",
+            "period2_name": f"H2 {data_year}",
+            "period2_start": f"{data_year}-07-01",
+            "period2_end": f"{data_year}-12-31",
+        }
+
+    # --- Pattern 4: year-over-year ---
+    if _YOY_PATTERN.search(message):
+        latest_year = max_date.year
+        prev_year = latest_year - 1
+        return {
+            "date_col": date_col,
+            "period1_name": str(prev_year),
+            "period1_start": f"{prev_year}-01-01",
+            "period1_end": f"{prev_year}-12-31",
+            "period2_name": str(latest_year),
+            "period2_start": f"{latest_year}-01-01",
+            "period2_end": f"{latest_year}-12-31",
+        }
+
+    # --- Pattern 5: month-over-month ---
+    if _MOM_PATTERN.search(message):
+        # Use last two complete months in the data
+        latest_month_start = max_date.replace(day=1)
+        prev_month_end = latest_month_start - pd.Timedelta(days=1)
+        prev_month_start = prev_month_end.replace(day=1)
+        # End of latest month
+        import calendar
+        latest_month_end = max_date.replace(
+            day=calendar.monthrange(max_date.year, max_date.month)[1]
+        )
+        p1_label = prev_month_start.strftime("%b %Y")
+        p2_label = latest_month_start.strftime("%b %Y")
+        return {
+            "date_col": date_col,
+            "period1_name": p1_label,
+            "period1_start": prev_month_start.strftime("%Y-%m-%d"),
+            "period1_end": prev_month_end.strftime("%Y-%m-%d"),
+            "period2_name": p2_label,
+            "period2_start": latest_month_start.strftime("%Y-%m-%d"),
+            "period2_end": latest_month_end.strftime("%Y-%m-%d"),
+        }
+
+    # --- Fallback: split the data date range in half ---
+    midpoint = min_date + (max_date - min_date) / 2
+    mid_str = midpoint.strftime("%Y-%m-%d")
+    day_before_mid = (midpoint - pd.Timedelta(days=1)).strftime("%Y-%m-%d")
+    p1_label = f"{min_date.strftime('%b %Y')} – {midpoint.strftime('%b %Y')}"
+    p2_label = f"{midpoint.strftime('%b %Y')} – {max_date.strftime('%b %Y')}"
+    return {
+        "date_col": date_col,
+        "period1_name": p1_label,
+        "period1_start": min_date.strftime("%Y-%m-%d"),
+        "period1_end": day_before_mid,
+        "period2_name": p2_label,
+        "period2_start": mid_str,
+        "period2_end": max_date.strftime("%Y-%m-%d"),
+    }
+
+
 class ChatMessage(BaseModel):
     message: str
 
@@ -2723,6 +2879,51 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Clustering is nice-to-have; never crash chat
 
+    # Check for time-period comparison request ("compare 2023 vs 2024", "Q1 vs Q2", etc.)
+    time_window_event: dict | None = None
+    if _TIMEWINDOW_PATTERNS.search(body.message) and ctx["dataset"]:
+        try:
+            _tw_ds = ctx["dataset"]
+            _tw_file = Path(_tw_ds.file_path)
+            if _tw_file.exists():
+                _tw_df = _load_working_df(_tw_file, _active_filter_conditions)
+                _tw_params = _detect_timewindow_request(body.message, _tw_df)
+                if _tw_params:
+                    from core.analyzer import compare_time_windows as _ctw
+
+                    _tw_result = _ctw(
+                        _tw_df,
+                        _tw_params["date_col"],
+                        _tw_params["period1_name"],
+                        _tw_params["period1_start"],
+                        _tw_params["period1_end"],
+                        _tw_params["period2_name"],
+                        _tw_params["period2_start"],
+                        _tw_params["period2_end"],
+                    )
+                    if "error" not in _tw_result:
+                        time_window_event = _tw_result
+                        system_prompt += (
+                            f"\n\n## Time-Period Comparison\n"
+                            f"Comparing {_tw_result['period1']['name']} "
+                            f"({_tw_result['period1']['row_count']} rows) vs "
+                            f"{_tw_result['period2']['name']} "
+                            f"({_tw_result['period2']['row_count']} rows).\n"
+                            f"Summary: {_tw_result['summary']}\n"
+                        )
+                        if _tw_result["notable_changes"]:
+                            system_prompt += (
+                                f"Notable changes (>20%): "
+                                f"{', '.join(_tw_result['notable_changes'])}.\n"
+                            )
+                        system_prompt += (
+                            "A TimeWindowCard is shown in the chat. "
+                            "Narrate the key findings — highlight the biggest changes, "
+                            "whether the trend is positive or negative, and what the analyst should do next."
+                        )
+        except Exception:  # noqa: BLE001
+            pass  # Time-window comparison is nice-to-have; never crash chat
+
     # Pre-compute follow-up suggestions (based on state + current message)
     current_state = detect_state(
         ctx["dataset"], ctx["feature_set"], ctx["model_runs"], ctx["deployment"]
@@ -2884,6 +3085,10 @@ def send_message(
         # Emit K-means clustering result
         if cluster_event:
             yield f"data: {json.dumps({'type': 'clusters', 'clusters': cluster_event})}\n\n"
+
+        # Emit time-period comparison result
+        if time_window_event:
+            yield f"data: {json.dumps({'type': 'time_window_comparison', 'time_window': time_window_event})}\n\n"
 
         # Emit follow-up suggestion chips (always, if we have any)
         if suggestions_list:

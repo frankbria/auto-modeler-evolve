@@ -21,6 +21,7 @@ from chat.narration import (
 from core.analyzer import (
     analyze_target_correlations,
     compare_segments,
+    compare_time_windows,
     compute_clusters,
     compute_column_profile,
     compute_full_profile,
@@ -2272,6 +2273,52 @@ def get_clusters(
         )
 
     result = compute_clusters(df, feature_cols=feature_cols, n_clusters=n_clusters)
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+
+    return result
+
+
+@router.get("/{dataset_id}/compare-time-windows")
+def compare_time_windows_endpoint(
+    dataset_id: str,
+    date_col: str,
+    p1_name: str,
+    p1_start: str,
+    p1_end: str,
+    p2_name: str,
+    p2_start: str,
+    p2_end: str,
+    session: Session = Depends(get_session),
+):
+    """Compare numeric metrics across two date ranges.
+
+    Query params:
+      - date_col  : name of the date column to split on
+      - p1_name   : display label for period 1 (e.g. "2023")
+      - p1_start  : ISO date for period 1 start (e.g. "2023-01-01")
+      - p1_end    : ISO date for period 1 end (e.g. "2023-12-31")
+      - p2_name   : display label for period 2 (e.g. "2024")
+      - p2_start  : ISO date for period 2 start
+      - p2_end    : ISO date for period 2 end
+    """
+    dataset = session.get(Dataset, dataset_id)
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    file_path = Path(dataset.file_path)
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Dataset file not found")
+
+    df = _load_df_from_path(file_path)
+
+    if date_col not in df.columns:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Column '{date_col}' not found. Available: {', '.join(df.columns.tolist())}",
+        )
+
+    result = compare_time_windows(df, date_col, p1_name, p1_start, p1_end, p2_name, p2_start, p2_end)
     if "error" in result:
         raise HTTPException(status_code=400, detail=result["error"])
 
