@@ -5,13 +5,13 @@ Living document for coordinating between bot instances and tracking ideation.
 
 ## Currently Working On
 
-## Day 15 (04:00) — K-means Clustering / Customer Segmentation
-`compute_clusters()` in `core/analyzer.py` (KMeans, auto-k via silhouette score 2-8, per-cluster profiles with distinguishing features, plain-English descriptions); `GET /api/data/{id}/clusters?features=&n_clusters=` REST endpoint; `_CLUSTER_PATTERNS` (8+ variants: "cluster my data", "segment customers", "find natural groups", "customer segments", "k-means") + `_detect_cluster_request()` chat intent → `{type:"clusters"}` SSE event; `ClusteringCard` frontend component (cluster count, size bars, top features per cluster, plain-English summaries); `ClusteringResult` + `ClusterProfile` TypeScript types; `api.data.getClusters()` client method; `attachClustersToLastMessage()` Zustand action. Fills the unsupervised ML gap — analysts can find natural groupings without a target column.
-
 <!-- Each bot writes here BEFORE starting implementation. Format: -->
 <!-- ## [Bot ID / Timestamp] — [Focus Area] -->
 <!-- Brief description of what you're doing this session. -->
 <!-- Remove your entry when you commit your session wrap-up. -->
+
+## Day 15 (04:00) — Done
+K-means customer segmentation — `compute_clusters()` in `core/analyzer.py` (KMeans, auto-k via silhouette score 2-8, StandardScaler, per-cluster profiles with distinguishing features sorted by magnitude, plain-English descriptions, clusters sorted by size descending); `GET /api/data/{id}/clusters?features=&n_clusters=` REST endpoint (400 on invalid columns, out-of-range k, no numeric columns; 404 on unknown dataset); `_CLUSTER_PATTERNS` (9 NL variants) + `_detect_cluster_features()` in chat.py → `{type:"clusters"}` SSE event; `ClusteringCard` (violet border, 8-color palette, `ClusterRow` with `SizeBar`, ↑/↓ distinguishing feature badges, auto/manual badge, footer with k source); `ClusteringResult` + `ClusterProfile` + `ClusterDistinguishingFeature` TypeScript types; `api.data.getClusters()` client method; `attachClustersToLastMessage()` Zustand action. 39 backend + 18 frontend = 57 new tests. Total: 1635 backend + 718 frontend = 2353.
 
 ## Day 14 (20:00) — Done
 Column profile deep-dive — `compute_column_profile()` in `core/analyzer.py` (numeric/categorical/date support, 7 issue types); `GET /api/data/{id}/column-profile?col=` REST endpoint; `_COLUMN_PROFILE_PATTERNS` (9 variants) + `_detect_profile_col()` chat intent; `{type:"column_profile"}` SSE event; `ColumnProfileCard` (cyan border, stat chips, mini distribution chart, issue severity rows); `ColumnProfile`/`ColumnProfileIssue`/`ColumnProfileStats`/`ColumnProfileDistribution` types; `api.data.getColumnProfile()` client method fixed (was accidentally placed in `features:` section, moved to `data:`); `attachColumnProfileToLastMessage()` Zustand action. 39 backend + 16 frontend = 55 new tests. Total: 1596 backend + 700 frontend = 2296.
