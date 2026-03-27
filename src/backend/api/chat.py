@@ -1113,6 +1113,18 @@ _WHATIF_CHAT_PATTERNS = re.compile(
 )
 
 
+# Keywords that trigger a prediction error analysis ("where was my model wrong?")
+# Note: no trailing \b — patterns use .* and words like "errors"/"mistakes" extend beyond the stem
+_PRED_ERROR_PATTERNS = re.compile(
+    r"\b(where.*model.*wrong|model.*wrong|wrong.*prediction|worst.*prediction|"
+    r"prediction.*errors?|biggest.*errors?|largest.*errors?|"
+    r"where.*fail|model.*fail|miss.*prediction|"
+    r"which.*rows?.*wrong|which.*records?.*wrong|"
+    r"show.*errors?|show.*mistakes?|prediction.*mistakes?)",
+    re.IGNORECASE,
+)
+
+
 def _detect_topn_request(message: str, df: "pd.DataFrame") -> dict | None:
     """Extract sort column, n, and direction from the user message.
 
@@ -3121,6 +3133,107 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Top-N ranking is nice-to-have; never crash chat
 
+    # Check for prediction error analysis ("where was my model wrong?", "biggest errors")
+    pred_error_event: dict | None = None
+    if _PRED_ERROR_PATTERNS.search(body.message) and ctx["dataset"] and ctx["runs"]:
+        try:
+            _pe_done_runs = [r for r in ctx["runs"] if r.status == "done"]
+            _pe_sel_run = next((r for r in _pe_done_runs if r.is_selected), None)
+            _pe_best_run = _pe_sel_run or (
+                max(
+                    _pe_done_runs,
+                    key=lambda r: (json.loads(r.metrics) if r.metrics else {}).get(
+                        "r2",
+                        (json.loads(r.metrics) if r.metrics else {}).get("accuracy", 0),
+                    ),
+                )
+                if _pe_done_runs
+                else None
+            )
+            if (
+                _pe_best_run
+                and _pe_best_run.model_path
+                and Path(_pe_best_run.model_path).exists()
+            ):
+                _pe_fs = ctx.get("feature_set")
+                _pe_ds = ctx["dataset"]
+                _pe_file = Path(_pe_ds.file_path)
+                if _pe_fs and _pe_file.exists():
+                    import json as _pe_json
+
+                    _pe_transforms = _pe_json.loads(_pe_fs.transformations or "[]")
+                    _pe_df_raw = pd.read_csv(_pe_file)
+                    _pe_df_t = _pe_df_raw.copy()
+                    if _pe_transforms:
+                        from core.feature_engine import (
+                            apply_transformations as _pe_at,
+                        )
+
+                        _pe_df_t, _ = _pe_at(_pe_df_t, _pe_transforms)
+                    _pe_target = _pe_fs.target_column
+                    _pe_problem = _pe_fs.problem_type or "regression"
+                    _pe_feat_cols = [c for c in _pe_df_t.columns if c != _pe_target]
+                    from core.trainer import prepare_features as _pe_pf
+
+                    _pe_X, _pe_y, _ = _pe_pf(
+                        _pe_df_t, _pe_feat_cols, _pe_target, _pe_problem
+                    )
+                    import joblib as _pe_jl
+
+                    _pe_model = _pe_jl.load(_pe_best_run.model_path)
+                    _pe_y_pred = _pe_model.predict(_pe_X)
+
+                    # Build display rows from the raw (pre-transform) CSV
+                    _pe_display_cols = [
+                        c for c in _pe_feat_cols if c in _pe_df_raw.columns
+                    ]
+                    _pe_feature_rows = [
+                        {col: row[col] for col in _pe_display_cols if col in row}
+                        for row in _pe_df_raw.head(len(_pe_y)).to_dict(orient="records")
+                    ]
+
+                    # Get class labels from pipeline if available
+                    _pe_target_classes = None
+                    _pe_pipeline_path = _pe_best_run.model_path.replace(
+                        "_model.joblib", "_pipeline.joblib"
+                    )
+                    if Path(_pe_pipeline_path).exists():
+                        from core.deployer import load_pipeline as _pe_lp
+
+                        _pe_pipe = _pe_lp(_pe_pipeline_path)
+                        _pe_target_classes = getattr(_pe_pipe, "target_classes", None)
+
+                    from core.validator import compute_prediction_errors as _pe_cpe
+
+                    _pe_n = 10  # sensible default for chat display
+                    _pe_result = _pe_cpe(
+                        y_true=_pe_y,
+                        y_pred=_pe_y_pred,
+                        problem_type=_pe_problem,
+                        n=_pe_n,
+                        feature_rows=_pe_feature_rows,
+                        target_classes=_pe_target_classes,
+                    )
+                    pred_error_event = {
+                        "algorithm": _pe_best_run.algorithm,
+                        "target_col": _pe_target,
+                        **_pe_result,
+                    }
+                    _pe_label = "errors" if _pe_problem == "regression" else "wrong predictions"
+                    system_prompt += (
+                        f"\n\n## Prediction Error Analysis\n"
+                        f"Problem type: {_pe_problem}. "
+                        f"Algorithm: {_pe_best_run.algorithm}. "
+                        f"Summary: {_pe_result['summary']}\n"
+                        f"A PredictionErrorCard is shown in chat with the top {_pe_n} "
+                        f"{_pe_label}. "
+                        "Narrate the key pattern: are the worst errors clustered in a "
+                        "specific value range, category, or subset of the data? "
+                        "Give the analyst an actionable insight, not just a description."
+                    )
+        except Exception:  # noqa: BLE001
+            pass  # Error analysis is nice-to-have; never crash chat
+
     # Check for what-if / hypothetical prediction request ("what if revenue was 500?", etc.)
     whatif_chat_event: dict | None = None
     if _WHATIF_CHAT_PATTERNS.search(body.message) and ctx["deployment"]:
@@ -3467,6 +3580,10 @@ def send_message(
         # Emit top-N ranking result
         if top_n_event:
             yield f"data: {json.dumps({'type': 'top_n', 'top_n': top_n_event})}\n\n"
+
+        # Emit prediction error analysis result
+        if pred_error_event:
+            yield f"data: {json.dumps({'type': 'prediction_errors', 'pred_errors': pred_error_event})}\n\n"
 
         # Emit what-if prediction result
         if whatif_chat_event:

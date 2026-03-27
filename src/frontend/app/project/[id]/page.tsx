@@ -39,6 +39,7 @@ import { DeployedCard } from "@/components/deploy/deployed-card"
 import { ModelCardView } from "@/components/models/model-card-view"
 import { ReportReadyCard } from "@/components/models/report-ready-card"
 import { SegmentPerformanceCard } from "@/components/models/segment-performance-card"
+import { PredictionErrorCard } from "@/components/models/prediction-error-card"
 import { ColumnProfileCard } from "@/components/data/column-profile-card"
 import { ClusteringCard } from "@/components/data/clustering-card"
 import { TimeWindowCard } from "@/components/data/time-window-card"
@@ -87,6 +88,7 @@ import type {
   TimeWindowComparison,
   TopNResult,
   WhatIfChatResult,
+  PredictionErrorResult,
 } from "@/lib/types"
 
 const WELCOME_MESSAGE =
@@ -160,6 +162,7 @@ export default function ProjectWorkspace() {
     attachTimeWindowToLastMessage,
     attachTopNToLastMessage,
     attachWhatIfChatToLastMessage,
+    attachPredictionErrorsToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -434,6 +437,8 @@ export default function ProjectWorkspace() {
                 attachTopNToLastMessage(json.top_n as TopNResult)
               } else if (json.type === "whatif_result" && json.whatif) {
                 attachWhatIfChatToLastMessage(json.whatif as WhatIfChatResult)
+              } else if (json.type === "prediction_errors" && json.pred_errors) {
+                attachPredictionErrorsToLastMessage(json.pred_errors as PredictionErrorResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -479,6 +484,7 @@ export default function ProjectWorkspace() {
     attachTimeWindowToLastMessage,
     attachTopNToLastMessage,
     attachWhatIfChatToLastMessage,
+    attachPredictionErrorsToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -779,6 +785,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.whatif_chat_result && (
                       <WhatIfChatCard result={msg.whatif_chat_result} />
+                    )}
+                    {msg.pred_errors && (
+                      <PredictionErrorCard result={msg.pred_errors} />
                     )}
                   </div>
                 </div>

@@ -618,6 +618,15 @@ export const api = {
         if (!r.ok) throw new Error(`HTTP ${r.status}`)
         return r.json()
       }),
+
+    getPredictionErrors: (
+      modelRunId: string,
+      n: number = 10,
+    ): Promise<import("./types").PredictionErrorResult> =>
+      fetch(`${API_URL}/api/models/${modelRunId}/prediction-errors?n=${n}`).then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        return r.json()
+      }),
   },
 
   validation: {

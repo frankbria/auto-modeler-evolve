@@ -442,6 +442,131 @@ def _segment_perf_summary(
     return summary
 
 
+# ---------------------------------------------------------------------------
+# Prediction error analysis (worst-case training errors)
+# ---------------------------------------------------------------------------
+
+
+def compute_prediction_errors(
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    problem_type: str,
+    n: int = 10,
+    feature_rows: list[dict] | None = None,
+    target_classes: list | None = None,
+) -> dict:
+    """Find the top-N largest prediction errors on training data.
+
+    For regression: rows with largest absolute residuals, sorted descending.
+    For classification: rows where the prediction was wrong (first n wrong rows).
+
+    Args:
+        y_true: Ground-truth target values.
+        y_pred: Model predictions aligned 1-to-1 with y_true.
+        problem_type: "regression" or "classification".
+        n: Max error rows to return (clamped 1–50, default 10).
+        feature_rows: Optional list of feature dicts (same row order as y_true).
+                      When provided, each error row includes a 'features' sub-dict.
+        target_classes: Class label list for classification decoding.
+
+    Returns:
+        dict with errors list, total_errors, error_rate, problem_type, summary.
+    """
+    n = max(1, min(50, n))
+    total = len(y_true)
+
+    if total == 0:
+        return {
+            "errors": [],
+            "total_errors": 0,
+            "error_rate": 0.0,
+            "problem_type": problem_type,
+            "summary": "No training data available.",
+        }
+
+    if problem_type == "regression":
+        abs_errors = np.abs(y_true - y_pred)
+        sorted_idx = np.argsort(abs_errors)[::-1]
+        top_idx = sorted_idx[:n]
+
+        errors = []
+        for rank, i in enumerate(top_idx, 1):
+            row: dict = {
+                "actual": round(float(y_true[i]), 4),
+                "predicted": round(float(y_pred[i]), 4),
+                "error": round(float(y_true[i] - y_pred[i]), 4),
+                "abs_error": round(float(abs_errors[i]), 4),
+                "rank": rank,
+            }
+            if feature_rows and i < len(feature_rows):
+                row["features"] = feature_rows[i]
+            errors.append(row)
+
+        mae = float(np.mean(abs_errors))
+        y_range = float(np.max(y_true) - np.min(y_true)) if np.ptp(y_true) != 0 else 1.0
+        worst_pct = round(float(abs_errors[sorted_idx[0]]) / y_range * 100, 1)
+
+        summary = (
+            f"The model's worst {len(errors)} predictions have errors up to "
+            f"{worst_pct:.0f}% of the data range "
+            f"(MAE across all {total} training rows = {mae:.3f}). "
+            "Examine these rows for patterns — they may reveal segments where the "
+            "model needs more training data or better features."
+        )
+        return {
+            "errors": errors,
+            "total_errors": total,
+            "error_rate": 0.0,
+            "problem_type": problem_type,
+            "summary": summary,
+        }
+
+    else:
+        # Classification: wrong predictions
+        wrong_mask = y_true != y_pred
+        wrong_idx = np.where(wrong_mask)[0]
+        total_errors = int(wrong_mask.sum())
+        error_rate = round(total_errors / total, 4) if total > 0 else 0.0
+        top_idx = wrong_idx[:n]
+
+        def _decode(v: float) -> str:
+            if target_classes:
+                idx = max(0, min(int(round(float(v))), len(target_classes) - 1))
+                return str(target_classes[idx])
+            return str(v)
+
+        errors = []
+        for rank, i in enumerate(top_idx, 1):
+            actual_lbl = _decode(float(y_true[i]))
+            pred_lbl = _decode(float(y_pred[i]))
+            row = {
+                "actual": actual_lbl,
+                "predicted": pred_lbl,
+                "error": f"predicted {pred_lbl}, actually {actual_lbl}",
+                "abs_error": None,
+                "rank": rank,
+            }
+            if feature_rows and i < len(feature_rows):
+                row["features"] = feature_rows[i]
+            errors.append(row)
+
+        acc = round(1.0 - error_rate, 4)
+        summary = (
+            f"The model made {total_errors} incorrect predictions out of {total} "
+            f"training rows ({error_rate:.0%} error rate, {acc:.0%} accuracy). "
+            f"Showing {len(errors)} misclassified rows. "
+            "Check if they share common feature values — that may indicate a "
+            "segment where the model needs more training data."
+        )
+        return {
+            "errors": errors,
+            "total_errors": total_errors,
+            "error_rate": error_rate,
+            "problem_type": problem_type,
+            "summary": summary,
+        }
+
+
 def _overall_confidence(
     metrics: dict,
     problem_type: str,

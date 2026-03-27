@@ -27,6 +27,7 @@ from core.trainer import (
 from core.validator import (
     assess_confidence_limitations,
     compute_confusion_matrix,
+    compute_prediction_errors,
     compute_residuals,
     compute_segment_performance,
     run_cross_validation,
@@ -308,5 +309,77 @@ def get_segment_performance(
         "group_col": col,
         "algorithm": run.algorithm,
         "problem_type": problem_type,
+        **result,
+    }
+
+
+# ---------------------------------------------------------------------------
+# 4. Prediction error analysis
+# ---------------------------------------------------------------------------
+
+
+@router.get("/api/models/{model_run_id}/prediction-errors")
+def get_prediction_errors(
+    model_run_id: str,
+    n: int = 10,
+    session: Session = Depends(get_session),
+):
+    """Return the top-N largest prediction errors on training data.
+
+    For regression: rows with largest absolute residuals.
+    For classification: rows where the prediction was wrong.
+
+    Query params:
+        n: Number of error rows to return (1-50, default 10).
+    """
+    n = max(1, min(50, n))
+    run, feature_set, dataset, file_path = _load_run_context(model_run_id, session)
+
+    problem_type = feature_set.problem_type or "regression"
+    X, y, feature_cols = _build_Xy(file_path, feature_set)
+
+    fitted_model = joblib.load(run.model_path)
+    y_pred = fitted_model.predict(X)
+
+    # Build display rows from the raw (pre-transform) CSV so analysts see
+    # original values, not encoded integers.
+    df_raw = pd.read_csv(file_path)
+    target_col = feature_set.target_column
+    display_cols = [c for c in feature_cols if c in df_raw.columns]
+    feature_rows = [
+        {col: row[col] for col in display_cols if col in row}
+        for row in df_raw.head(len(y)).to_dict(orient="records")
+    ]
+
+    # Resolve classification class labels from pipeline if available
+    from core.deployer import load_pipeline as _lp
+
+    target_classes = None
+    if run.model_path:
+        pipeline_path = run.model_path.replace("_model.joblib", "_pipeline.joblib")
+        try:
+            from pathlib import Path as _Path
+
+            if _Path(pipeline_path).exists():
+                _pipe = _lp(pipeline_path)
+                target_classes = getattr(_pipe, "target_classes", None)
+        except Exception:  # noqa: BLE001
+            pass
+
+    result = compute_prediction_errors(
+        y_true=y,
+        y_pred=y_pred,
+        problem_type=problem_type,
+        n=n,
+        feature_rows=feature_rows,
+        target_classes=target_classes,
+    )
+
+    return {
+        "model_run_id": model_run_id,
+        "algorithm": run.algorithm,
+        "problem_type": problem_type,
+        "target_col": target_col,
+        "n_requested": n,
         **result,
     }

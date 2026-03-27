@@ -277,6 +277,7 @@ export interface ChatMessage {
   time_window_comparison?: TimeWindowComparison
   top_n?: TopNResult
   whatif_chat_result?: WhatIfChatResult
+  pred_errors?: PredictionErrorResult
 }
 
 export interface SegmentPerformanceSegment {
@@ -1339,5 +1340,24 @@ export interface TopNResult {
   total_rows: number
   display_cols: string[]
   rows: TopNRow[]
+  summary: string
+}
+
+export interface PredictionErrorRow {
+  actual: string | number
+  predicted: string | number
+  error: string | number
+  abs_error: number | null
+  rank: number
+  features?: Record<string, string | number>
+}
+
+export interface PredictionErrorResult {
+  algorithm: string
+  target_col: string
+  problem_type: "regression" | "classification"
+  errors: PredictionErrorRow[]
+  total_errors: number
+  error_rate: number
   summary: string
 }
