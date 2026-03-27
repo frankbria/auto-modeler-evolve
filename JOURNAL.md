@@ -1,5 +1,15 @@
 # Journal
 
+## Day 16 — 04:00 — Chat-Triggered What-If Prediction Analysis (1721 backend + 768 frontend = 2489 tests)
+
+AutoModeler now answers "what if units was 20?", "what would happen if I doubled revenue?", or "change region to West" with an inline `WhatIfChatCard` — an amber-bordered card comparing the original vs. modified prediction side-by-side. This fills the last major conversational gap in the deployment workflow: analysts could view their prediction dashboard and run what-ifs from the `DeploymentPanel`, but had no chat path to ask hypotheticals while still in conversation.
+
+**Backend:** `_WHATIF_CHAT_PATTERNS` (8 NL variants including "what if", "suppose", "change X to", "how would the prediction change") + `_detect_whatif_request()` — a feature-name-first parser (not regex-first) that iterates known feature names and checks three pattern types: (A) `feature was/is/were/becomes/equals/set-to value`, (B) `change feature to value`, (C) `feature = value`. A multiplier fallback handles "double/triple/halve the X" by emitting `__multiply__N` sentinels resolved at runtime from `PredictionPipeline.feature_means`. The feature-name-first design is the key insight: naive regex-first approaches greedily captured "what if total revenue was 2000" as the feature name "what if total revenue" — iterating features first avoids this. Handler uses `load_pipeline()` to read `feature_means` as the base dict, calls `predict_single()` twice (base vs. modified), computes delta/pct_change/direction/summary, and emits `{type:"whatif_result"}` SSE event. System prompt injection guides Claude to explain the business meaning of the change.
+
+**Frontend:** `WhatIfChatCard` (amber border + 🔀 icon, problem type badge, Hypothetical Change row with old→new values, side-by-side Original/Modified prediction boxes, `DeltaBadge` with ↑/↓/→ + ±%, classification probability rows, plain-English summary). `WhatIfChatResult` TypeScript type; `whatif_chat_result` field on `ChatMessage`; `attachWhatIfChatToLastMessage()` Zustand action; SSE handler wired in the project workspace page.
+
+**Two bugs caught during implementation:** (1) Lazy regex `[\w\s]*?` in a naive feature-capture pattern greedily matched "what if total revenue" instead of "total revenue" — fixed by feature-name-first design; (2) Value extraction from `msg_lower` returned lowercase "north" for "North" — fixed by searching the original message (case-insensitive) rather than the pre-lowercased version. **15 backend + 17 frontend = 32 new tests. Total: 1721 backend + 768 frontend = 2489, all passing. Backend lint: clean. Frontend build: clean.**
+
 ## Day 15 — 20:00 — Top-N Record Ranking via Chat (1706 backend + 751 frontend = 2457 tests)
 
 AutoModeler now answers "show me top 10 customers by revenue", "bottom 5 products", "worst-performing orders", "rank by margin", and similar ranking queries with a `TopNCard` — an inline ranked table showing individual records sorted by any numeric column. This fills the "#1 analyst reflex" gap: no dedicated chat handler previously existed for "who are my best customers?" despite it being the most natural first question about sales data.
