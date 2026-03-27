@@ -275,6 +275,7 @@ export interface ChatMessage {
   column_profile?: ColumnProfile
   clusters?: ClusteringResult
   time_window_comparison?: TimeWindowComparison
+  top_n?: TopNResult
 }
 
 export interface SegmentPerformanceSegment {
@@ -1299,5 +1300,22 @@ export interface TimeWindowComparison {
   period2: TimeWindowPeriod
   columns: TimeWindowColumn[]
   notable_changes: string[]
+  summary: string
+}
+
+export interface TopNRow {
+  _rank: number
+  [key: string]: number | string | null
+}
+
+export interface TopNResult {
+  sort_col: string
+  direction: "top" | "bottom"
+  ascending: boolean
+  n_requested: number
+  n_returned: number
+  total_rows: number
+  display_cols: string[]
+  rows: TopNRow[]
   summary: string
 }

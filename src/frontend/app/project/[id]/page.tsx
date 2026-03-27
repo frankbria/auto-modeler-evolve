@@ -42,6 +42,7 @@ import { SegmentPerformanceCard } from "@/components/models/segment-performance-
 import { ColumnProfileCard } from "@/components/data/column-profile-card"
 import { ClusteringCard } from "@/components/data/clustering-card"
 import { TimeWindowCard } from "@/components/data/time-window-card"
+import { TopNCard } from "@/components/data/top-n-card"
 import {
   FeatureSuggestCard,
   FeaturesAppliedCard,
@@ -83,6 +84,7 @@ import type {
   ColumnProfile,
   ClusteringResult,
   TimeWindowComparison,
+  TopNResult,
 } from "@/lib/types"
 
 const WELCOME_MESSAGE =
@@ -154,6 +156,7 @@ export default function ProjectWorkspace() {
     attachColumnProfileToLastMessage,
     attachClustersToLastMessage,
     attachTimeWindowToLastMessage,
+    attachTopNToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -424,6 +427,8 @@ export default function ProjectWorkspace() {
                 attachClustersToLastMessage(json.clusters as ClusteringResult)
               } else if (json.type === "time_window_comparison" && json.time_window) {
                 attachTimeWindowToLastMessage(json.time_window as TimeWindowComparison)
+              } else if (json.type === "top_n" && json.top_n) {
+                attachTopNToLastMessage(json.top_n as TopNResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -467,6 +472,7 @@ export default function ProjectWorkspace() {
     attachColumnProfileToLastMessage,
     attachClustersToLastMessage,
     attachTimeWindowToLastMessage,
+    attachTopNToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -761,6 +767,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.time_window_comparison && (
                       <TimeWindowCard result={msg.time_window_comparison} />
+                    )}
+                    {msg.top_n && (
+                      <TopNCard result={msg.top_n} />
                     )}
                   </div>
                 </div>

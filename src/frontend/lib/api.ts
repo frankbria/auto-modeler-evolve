@@ -430,6 +430,19 @@ export const api = {
         }
       )
     },
+
+    getTopN: (
+      datasetId: string,
+      col: string,
+      n = 10,
+      order: "asc" | "desc" = "desc"
+    ): Promise<import("./types").TopNResult> => {
+      const params = new URLSearchParams({ col, n: String(n), order })
+      return fetch(`${API_URL}/api/data/${datasetId}/top-n?${params}`).then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        return r.json()
+      })
+    },
   },
 
   chat: {
