@@ -1070,6 +1070,74 @@ def _detect_timewindow_request(message: str, df: "pd.DataFrame") -> dict | None:
     }
 
 
+# Keywords that trigger a top-N / bottom-N ranking table
+_TOPN_PATTERNS = re.compile(
+    r"(?i)"
+    r"\b(top|bottom|highest|lowest|best|worst|largest|smallest|most|fewest|least)\s+\d+\b|"
+    r"\b(top|bottom|highest|lowest|best|worst|largest|smallest)\s+(five|ten|twenty|five|three)\b|"
+    r"\bshow\s+me\s+(top|bottom|best|worst|highest|lowest)\b|"
+    r"\brank(ed)?\s+(by|from)\b|"
+    r"\bwho\s+are\s+(my\s+)?(best|worst|top|bottom|highest|lowest)\b|"
+    r"\blist\s+(top|bottom|best|worst)\b|"
+    r"\bwhich\s+(product|customer|region|category|item|store|order|account)s?\s+.{0,20}"
+    r"(highest|lowest|most|fewest|best|worst)\b",
+    re.IGNORECASE,
+)
+
+_TOPN_N_WORDS = {
+    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+    "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+    "twenty": 20, "fifty": 50,
+}
+
+
+def _detect_topn_request(message: str, df: "pd.DataFrame") -> dict | None:
+    """Extract sort column, n, and direction from the user message.
+
+    Returns dict with sort_col, n, ascending  — or None if cannot be resolved.
+    """
+    # Detect direction: ascending = bottom/lowest/worst/smallest/fewest/least
+    ascending = bool(
+        re.search(
+            r"\b(bottom|lowest|worst|smallest|fewest|least|minimum)\b",
+            message,
+            re.IGNORECASE,
+        )
+    )
+
+    # Extract n (numeric or word)
+    n = 10  # default
+    m_digit = re.search(r"\b(\d+)\b", message)
+    if m_digit:
+        candidate = int(m_digit.group(1))
+        if 1 <= candidate <= 50:
+            n = candidate
+    else:
+        for word, val in _TOPN_N_WORDS.items():
+            if re.search(r"\b" + word + r"\b", message, re.IGNORECASE):
+                n = val
+                break
+
+    # Identify numeric columns
+    numeric_cols = [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])]
+    if not numeric_cols:
+        return None
+
+    # Try to match a column name from the message
+    msg_lower = message.lower()
+    sort_col = None
+    for col in numeric_cols:
+        if col.lower() in msg_lower or col.replace("_", " ").lower() in msg_lower:
+            sort_col = col
+            break
+
+    # Fallback: pick first numeric column
+    if sort_col is None:
+        sort_col = numeric_cols[0]
+
+    return {"sort_col": sort_col, "n": n, "ascending": ascending}
+
+
 class ChatMessage(BaseModel):
     message: str
 
@@ -2889,6 +2957,40 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Clustering is nice-to-have; never crash chat
 
+    # Check for top-N / bottom-N ranking request ("top 10 customers by revenue", etc.)
+    top_n_event: dict | None = None
+    if _TOPN_PATTERNS.search(body.message) and ctx["dataset"]:
+        try:
+            _tn_ds = ctx["dataset"]
+            _tn_file = Path(_tn_ds.file_path)
+            if _tn_file.exists():
+                _tn_df = _load_working_df(_tn_file, _active_filter_conditions)
+                _tn_params = _detect_topn_request(body.message, _tn_df)
+                if _tn_params:
+                    from core.analyzer import compute_top_n as _ctn
+
+                    _tn_result = _ctn(
+                        _tn_df,
+                        _tn_params["sort_col"],
+                        n=_tn_params["n"],
+                        ascending=_tn_params["ascending"],
+                    )
+                    if "error" not in _tn_result:
+                        top_n_event = _tn_result
+                        _tn_dir = _tn_result["direction"]
+                        _tn_col = _tn_result["sort_col"].replace("_", " ")
+                        _tn_n = _tn_result["n_returned"]
+                        system_prompt += (
+                            f"\n\n## Top-N Ranking Result\n"
+                            f"Showing the {_tn_dir} {_tn_n} records by {_tn_col}.\n"
+                            f"Summary: {_tn_result['summary']}\n"
+                            "A TopNCard is shown in the chat with a ranked table. "
+                            "Narrate the key findings — who/what is at the top, "
+                            "what patterns you notice, and what the analyst should do next."
+                        )
+        except Exception:  # noqa: BLE001
+            pass  # Top-N ranking is nice-to-have; never crash chat
+
     # Check for time-period comparison request ("compare 2023 vs 2024", "Q1 vs Q2", etc.)
     time_window_event: dict | None = None
     if _TIMEWINDOW_PATTERNS.search(body.message) and ctx["dataset"]:
@@ -3095,6 +3197,10 @@ def send_message(
         # Emit K-means clustering result
         if cluster_event:
             yield f"data: {json.dumps({'type': 'clusters', 'clusters': cluster_event})}\n\n"
+
+        # Emit top-N ranking result
+        if top_n_event:
+            yield f"data: {json.dumps({'type': 'top_n', 'top_n': top_n_event})}\n\n"
 
         # Emit time-period comparison result
         if time_window_event:

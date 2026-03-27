@@ -449,6 +449,112 @@ def _safe_scalar(value):
     return value
 
 
+def compute_top_n(
+    df: pd.DataFrame,
+    sort_col: str,
+    n: int = 10,
+    ascending: bool = False,
+    display_cols: list[str] | None = None,
+) -> dict:
+    """Return the top (or bottom) N rows ranked by a numeric column.
+
+    Parameters
+    ----------
+    df          : source DataFrame
+    sort_col    : column to rank by (must exist in df)
+    n           : number of rows to return (capped at 50)
+    ascending   : False = top/highest first; True = bottom/lowest first
+    display_cols: columns to include in output (defaults to all, capped at 8)
+
+    Returns a dict with:
+      sort_col, ascending, n_returned, total_rows, rows (list of dicts),
+      summary (plain-English), direction ("top" or "bottom")
+    """
+    if sort_col not in df.columns:
+        return {"error": f"Column '{sort_col}' not found in dataset."}
+
+    if not pd.api.types.is_numeric_dtype(df[sort_col]):
+        return {"error": f"Column '{sort_col}' is not numeric and cannot be ranked."}
+
+    n = max(1, min(n, 50))
+    direction = "bottom" if ascending else "top"
+
+    # Drop NaN in sort column for ranking; keep other columns as-is
+    ranked = df.dropna(subset=[sort_col])
+    if ascending:
+        ranked = ranked.nsmallest(n, sort_col, keep="first")
+    else:
+        ranked = ranked.nlargest(n, sort_col, keep="first")
+
+    # Select display columns
+    if display_cols:
+        valid_display = [c for c in display_cols if c in df.columns]
+    else:
+        valid_display = list(df.columns)
+
+    # Cap at 8 columns; always include sort_col
+    if sort_col in valid_display:
+        other_cols = [c for c in valid_display if c != sort_col][:7]
+        show_cols = [sort_col] + other_cols
+    else:
+        show_cols = [sort_col] + valid_display[:7]
+
+    rows = []
+    for rank_i, (_, row) in enumerate(ranked.iterrows(), start=1):
+        row_dict: dict[str, Any] = {"_rank": rank_i}
+        for col in show_cols:
+            val = row.get(col)
+            if val is None or (isinstance(val, float) and np.isnan(val)):
+                row_dict[col] = None
+            elif isinstance(val, np.generic):
+                row_dict[col] = val.item()
+            else:
+                row_dict[col] = val
+        rows.append(row_dict)
+
+    n_returned = len(rows)
+    total_rows = len(df)
+
+    # Plain-English summary
+    col_label = sort_col.replace("_", " ")
+    if n_returned == 0:
+        summary = f"No rows found with valid values in {col_label}."
+    else:
+        top_val = rows[0][sort_col]
+        bottom_val = rows[-1][sort_col] if n_returned > 1 else top_val
+        if isinstance(top_val, float):
+            val_str = f"{top_val:,.2f}"
+            bot_str = f"{bottom_val:,.2f}"
+        else:
+            val_str = str(top_val)
+            bot_str = str(bottom_val)
+
+        if direction == "top":
+            summary = (
+                f"Top {n_returned} records by {col_label} "
+                f"(highest: {val_str}, lowest in this list: {bot_str}). "
+                f"Showing {n_returned} of {total_rows} total rows."
+            )
+        else:
+            summary = (
+                f"Bottom {n_returned} records by {col_label} "
+                f"(lowest: {val_str}, highest in this list: {bot_str}). "
+                f"Showing {n_returned} of {total_rows} total rows."
+            )
+
+    return {
+        "sort_col": sort_col,
+        "direction": direction,
+        "ascending": ascending,
+        "n_requested": n,
+        "n_returned": n_returned,
+        "total_rows": total_rows,
+        "display_cols": show_cols,
+        "rows": rows,
+        "summary": summary,
+    }
+
+
 def _correlation_strength(r: float) -> str:
     abs_r = abs(r)
     if abs_r >= 0.8:

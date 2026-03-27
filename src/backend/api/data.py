@@ -26,6 +26,7 @@ from core.analyzer import (
     compute_column_profile,
     compute_full_profile,
     compute_group_stats,
+    compute_top_n,
     detect_time_columns,
 )
 from core.anomaly import detect_anomalies
@@ -2321,6 +2322,49 @@ def compare_time_windows_endpoint(
     result = compare_time_windows(
         df, date_col, p1_name, p1_start, p1_end, p2_name, p2_start, p2_end
     )
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+
+    return result
+
+
+@router.get("/{dataset_id}/top-n")
+def get_top_n(
+    dataset_id: str,
+    col: str,
+    n: int = 10,
+    order: str = "desc",
+    session: Session = Depends(get_session),
+):
+    """Return the top (or bottom) N records ranked by a numeric column.
+
+    Query params:
+      - col   : column name to sort by (required, must be numeric)
+      - n     : number of rows to return (1-50, default 10)
+      - order : "desc" for top/highest (default), "asc" for bottom/lowest
+    """
+    dataset = session.get(Dataset, dataset_id)
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    file_path = Path(dataset.file_path)
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Dataset file not found")
+
+    known_cols = {c["name"] for c in json.loads(dataset.columns)} if dataset.columns else set()
+    if col not in known_cols:
+        df_check = _load_df_from_path(file_path)
+        if col not in df_check.columns:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Column '{col}' not found. Available: {', '.join(df_check.columns.tolist())}",
+            )
+
+    n = max(1, min(n, 50))
+    ascending = order.lower() == "asc"
+
+    df = _load_df_from_path(file_path)
+    result = compute_top_n(df, col, n=n, ascending=ascending)
     if "error" in result:
         raise HTTPException(status_code=400, detail=result["error"])
 
