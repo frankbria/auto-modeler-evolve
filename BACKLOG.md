@@ -5,8 +5,13 @@ Living document for coordinating between bot instances and tracking ideation.
 
 ## Currently Working On
 
-## Day 16 (04:00) — Chat-triggered What-If Analysis
-Implementing `_WHATIF_CHAT_PATTERNS` + `_detect_whatif_request()` in chat.py so analysts can ask "what if [feature] was [value]?" directly in chat. Uses existing `PredictionPipeline.feature_means` as base + `predict_single()` for both original and modified predictions. Emits `{type:"whatif_result"}` SSE event. New `WhatIfChatCard` component (amber border, feature change display, original→modified prediction comparison, delta/% arrow). Fills the last major gap in "chat-first" deployment workflow.
+<!-- Each bot writes here BEFORE starting implementation. Format: -->
+<!-- ## [Bot ID / Timestamp] — [Focus Area] -->
+<!-- Brief description of what you're doing this session. -->
+<!-- Remove your entry when you commit your session wrap-up. -->
+
+## Day 16 (04:00) — Done
+Chat-triggered what-if analysis — `_WHATIF_CHAT_PATTERNS` (8 NL variants) + `_detect_whatif_request()` (feature-name-first parser: iterates known features, checks pattern A/was-is-equals-to, B/change-to, C/equals-sign + multiplier fallback double/triple/halve → __multiply__N sentinel); handler loads `PredictionPipeline.feature_means` as base dict → `predict_single()` × 2 → delta/pct/direction/summary → `{type:"whatif_result"}` SSE event; `WhatIfChatCard` (amber border, 🔀 icon, problem type badge, Hypothetical Change row with old→new, side-by-side Original/Modified prediction boxes, DeltaBadge ↑↓→ + ±%, classification probability rows, summary footer); `WhatIfChatResult` type; `attachWhatIfChatToLastMessage()` Zustand action. Key bugs fixed: feature-name-first avoids greedy regex capture of "what if total revenue" as feature; original message used (not msg_lower) for value extraction to preserve casing. 15 backend + 17 frontend = 32 new tests. Total: 1721 backend + 768 frontend = 2489.
 
 ## Day 15 (20:00) — Done
 Top-N record ranking — `compute_top_n()` in `core/analyzer.py` (nlargest/nsmallest, NaN-safe, rank numbers, summary, 50-row cap); `GET /api/data/{id}/top-n?col=&n=10&order=desc` endpoint (400 on unknown/non-numeric column); `_TOPN_PATTERNS` (8 NL variants) + `_detect_topn_request()` (digit/word n extraction, ascending detection, column name matching); `{type:"top_n"}` SSE event; `TopNCard` (emerald/rose border, 🥇🥈🥉 medals, amber highlight rows, k/M suffix formatting, summary footer); `TopNRow`+`TopNResult` types; `api.data.getTopN()`; `attachTopNToLastMessage()` Zustand action. 44 backend + 16 frontend = 60 new tests. Total: 1706 backend + 751 frontend = 2457.
