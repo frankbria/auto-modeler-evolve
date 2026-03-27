@@ -18,10 +18,28 @@ def sales_df():
     """Simple sales dataset for ranking tests."""
     return pd.DataFrame(
         {
-            "customer": ["Alice", "Bob", "Carol", "Dave", "Eve", "Frank", "Grace", "Hank"],
+            "customer": [
+                "Alice",
+                "Bob",
+                "Carol",
+                "Dave",
+                "Eve",
+                "Frank",
+                "Grace",
+                "Hank",
+            ],
             "revenue": [5000.0, 1200.0, 8500.0, 300.0, 4200.0, 9100.0, 750.0, 6300.0],
             "units": [50, 12, 85, 3, 42, 91, 7, 63],
-            "region": ["East", "West", "East", "North", "West", "East", "South", "North"],
+            "region": [
+                "East",
+                "West",
+                "East",
+                "North",
+                "West",
+                "East",
+                "South",
+                "North",
+            ],
         }
     )
 
@@ -102,7 +120,9 @@ class TestComputeTopN:
         assert result["total_rows"] == 2
 
     def test_display_cols_included(self, sales_df):
-        result = compute_top_n(sales_df, "revenue", n=3, display_cols=["customer", "revenue"])
+        result = compute_top_n(
+            sales_df, "revenue", n=3, display_cols=["customer", "revenue"]
+        )
         for row in result["rows"]:
             assert "customer" in row
             assert "revenue" in row
@@ -132,8 +152,17 @@ class TestComputeTopN:
 
     def test_result_keys(self, sales_df):
         result = compute_top_n(sales_df, "revenue", n=5)
-        for key in ["sort_col", "direction", "ascending", "n_requested", "n_returned",
-                    "total_rows", "display_cols", "rows", "summary"]:
+        for key in [
+            "sort_col",
+            "direction",
+            "ascending",
+            "n_requested",
+            "n_returned",
+            "total_rows",
+            "display_cols",
+            "rows",
+            "summary",
+        ]:
             assert key in result
 
     def test_cols_capped_at_8(self):
@@ -154,6 +183,7 @@ class TestTopNPatterns:
     @pytest.fixture(autouse=True)
     def load_pattern(self):
         from api.chat import _TOPN_PATTERNS
+
         self.pattern = _TOPN_PATTERNS
 
     def test_top_10_customers(self):
@@ -205,15 +235,18 @@ class TestDetectTopnRequest:
     @pytest.fixture(autouse=True)
     def load_fn(self):
         from api.chat import _detect_topn_request
+
         self.detect = _detect_topn_request
 
     @pytest.fixture
     def df(self):
-        return pd.DataFrame({
-            "customer": ["a", "b", "c"],
-            "revenue": [100.0, 200.0, 300.0],
-            "units": [1.0, 2.0, 3.0],
-        })
+        return pd.DataFrame(
+            {
+                "customer": ["a", "b", "c"],
+                "revenue": [100.0, 200.0, 300.0],
+                "units": [1.0, 2.0, 3.0],
+            }
+        )
 
     def test_detects_column_name(self, df):
         result = self.detect("show me top 5 by revenue", df)

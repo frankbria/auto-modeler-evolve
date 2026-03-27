@@ -2351,7 +2351,9 @@ def get_top_n(
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="Dataset file not found")
 
-    known_cols = {c["name"] for c in json.loads(dataset.columns)} if dataset.columns else set()
+    known_cols = (
+        {c["name"] for c in json.loads(dataset.columns)} if dataset.columns else set()
+    )
     if col not in known_cols:
         df_check = _load_df_from_path(file_path)
         if col not in df_check.columns:
