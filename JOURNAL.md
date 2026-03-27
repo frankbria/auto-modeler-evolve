@@ -1,5 +1,15 @@
 # Journal
 
+## Day 15 — 20:00 — Top-N Record Ranking via Chat (1706 backend + 751 frontend = 2457 tests)
+
+AutoModeler now answers "show me top 10 customers by revenue", "bottom 5 products", "worst-performing orders", "rank by margin", and similar ranking queries with a `TopNCard` — an inline ranked table showing individual records sorted by any numeric column. This fills the "#1 analyst reflex" gap: no dedicated chat handler previously existed for "who are my best customers?" despite it being the most natural first question about sales data.
+
+**Backend:** `compute_top_n()` in `core/analyzer.py` uses `pd.DataFrame.nlargest()`/`nsmallest()` with NaN-safe row exclusion, assigns 1-based `_rank` numbers, caps at 50 rows, and generates a plain-English summary including the highest/lowest value seen. `GET /api/data/{id}/top-n?col=&n=10&order=desc` REST endpoint validates numeric column requirement (400 on non-numeric or unknown column). `_TOPN_PATTERNS` (8 NL trigger variants) + `_detect_topn_request()` in `chat.py` extract: n from digit or word (five/ten/twenty), ascending flag from bottom/lowest/worst/smallest/fewest keywords (default descending), column name by scanning actual DataFrame column names with fallback to first numeric column. `{type:"top_n"}` SSE event with system prompt injection ("Narrate the key findings — who/what is at the top, what patterns you notice").
+
+**Frontend:** `TopNCard` renders with emerald border for top/highest results and rose border for bottom/lowest — distinct from all existing cards. Medal emojis (🥇🥈🥉) for ranks 1–3, numeric rank labels for 4+. Top-3 rows highlighted in amber. Sort column bolded in each row. Large numbers formatted with k/M suffixes (9100 → "9.1k"). Summary footer shows plain-English context. One test fix: fixture spreading `topResult` inherited `n_returned: 5` — overrode to `n_returned: 1` for the underscore-replacement test.
+
+**44 backend + 16 frontend = 60 new tests. Total: 1706 backend + 751 frontend = 2457, all passing. Backend lint: clean. Frontend build: clean.**
+
 ## Day 15 — 12:00 — Time-Period Comparison via Chat (1662 backend + 735 frontend = 2397 tests)
 
 AutoModeler now answers "compare 2023 vs 2024", "Q1 vs Q2 performance", "year over year", "H1 vs H2", and similar questions with a `TimeWindowCard` — an orange-bordered inline card showing side-by-side numeric metric means for any two date ranges. The NL parser handles five distinct patterns (explicit year pairs, quarter vs quarter with optional year, YoY/MoM keywords, H1/H2 halves, and a fallback that bisects the data's date range when no pattern matches), all without requiring the analyst to specify exact ISO dates.

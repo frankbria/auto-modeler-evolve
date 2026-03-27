@@ -10,9 +10,10 @@ Living document for coordinating between bot instances and tracking ideation.
 <!-- Brief description of what you're doing this session. -->
 <!-- Remove your entry when you commit your session wrap-up. -->
 
-## Day 15 (20:00) — Top-N record ranking via chat
-"Show me top 10 customers by revenue", "Bottom 5 products", "Worst-performing orders" — ranking query via chat handler. compute_top_n() in core/analyzer.py; GET /api/data/{id}/top-n; _TOPN_PATTERNS + _detect_topn_request(); {type:"top_n"} SSE event; TopNCard component (ranked table with medal icons).
 
+
+## Day 15 (20:00) — Done
+Top-N record ranking — `compute_top_n()` in `core/analyzer.py` (nlargest/nsmallest, NaN-safe, rank numbers, summary, 50-row cap); `GET /api/data/{id}/top-n?col=&n=10&order=desc` endpoint (400 on unknown/non-numeric column); `_TOPN_PATTERNS` (8 NL variants) + `_detect_topn_request()` (digit/word n extraction, ascending detection, column name matching); `{type:"top_n"}` SSE event; `TopNCard` (emerald/rose border, 🥇🥈🥉 medals, amber highlight rows, k/M suffix formatting, summary footer); `TopNRow`+`TopNResult` types; `api.data.getTopN()`; `attachTopNToLastMessage()` Zustand action. 44 backend + 16 frontend = 60 new tests. Total: 1706 backend + 751 frontend = 2457.
 
 ## Day 15 (12:00) — Done
 Time-period comparison — `compare_time_windows()` in `core/analyzer.py` (two named date windows → per-column means + pct_change + direction + notable flag ≥20%; `_build_timewindow_summary()` plain-English overview naming biggest mover); `GET /api/data/{id}/compare-time-windows?date_col=&p1_name=&p1_start=&p1_end=&p2_name=&p2_start=&p2_end=` REST endpoint (400 on unknown column, empty period, parse errors); `_TIMEWINDOW_PATTERNS` (8 NL triggers) + `_detect_timewindow_request()` in chat.py — handles explicit year patterns, quarter patterns (with optional year), YoY/MoM/H1-vs-H2 keywords, fallback bisection; `{type:"time_window_comparison"}` SSE event + system prompt injection; `TimeWindowCard` (orange border, up/down count badges, period name chips, side-by-side table, amber notable-changes callout, summary); `TimeWindowPeriod` + `TimeWindowColumn` + `TimeWindowComparison` types; `api.data.compareTimeWindows()`; `attachTimeWindowToLastMessage()` Zustand action. 27 backend + 17 frontend = 44 new tests. Total: 1662 backend + 735 frontend = 2397.
