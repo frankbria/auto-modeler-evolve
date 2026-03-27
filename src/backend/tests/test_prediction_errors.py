@@ -99,9 +99,7 @@ def trained_regression_run(client):
     dataset_id = upload.json()["dataset_id"]
 
     client.post(f"/api/features/{dataset_id}/apply", json={"transformations": []})
-    client.post(
-        f"/api/features/{dataset_id}/target", json={"target_column": "revenue"}
-    )
+    client.post(f"/api/features/{dataset_id}/target", json={"target_column": "revenue"})
 
     train = client.post(
         f"/api/models/{project_id}/train",
@@ -130,15 +128,15 @@ def trained_classification_run(client):
     upload = client.post(
         "/api/data/upload",
         data={"project_id": project_id},
-        files={"file": ("churn.csv", io.BytesIO(SAMPLE_CLASSIFICATION_CSV), "text/csv")},
+        files={
+            "file": ("churn.csv", io.BytesIO(SAMPLE_CLASSIFICATION_CSV), "text/csv")
+        },
     )
     assert upload.status_code == 201
     dataset_id = upload.json()["dataset_id"]
 
     client.post(f"/api/features/{dataset_id}/apply", json={"transformations": []})
-    client.post(
-        f"/api/features/{dataset_id}/target", json={"target_column": "churned"}
-    )
+    client.post(f"/api/features/{dataset_id}/target", json={"target_column": "churned"})
 
     train = client.post(
         f"/api/models/{project_id}/train",
@@ -291,8 +289,7 @@ class TestComputePredictionErrorsClassification:
         y_true = np.array([0.0, 1.0])
         y_pred = np.array([1.0, 0.0])
         result = compute_prediction_errors(
-            y_true, y_pred, "classification", n=5,
-            target_classes=["no", "yes"]
+            y_true, y_pred, "classification", n=5, target_classes=["no", "yes"]
         )
         for err in result["errors"]:
             assert err["actual"] in ("no", "yes")

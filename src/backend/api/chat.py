@@ -3219,7 +3219,9 @@ def send_message(
                         "target_col": _pe_target,
                         **_pe_result,
                     }
-                    _pe_label = "errors" if _pe_problem == "regression" else "wrong predictions"
+                    _pe_label = (
+                        "errors" if _pe_problem == "regression" else "wrong predictions"
+                    )
                     system_prompt += (
                         f"\n\n## Prediction Error Analysis\n"
                         f"Problem type: {_pe_problem}. "
