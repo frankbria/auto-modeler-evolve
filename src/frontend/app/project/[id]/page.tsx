@@ -43,6 +43,7 @@ import { ColumnProfileCard } from "@/components/data/column-profile-card"
 import { ClusteringCard } from "@/components/data/clustering-card"
 import { TimeWindowCard } from "@/components/data/time-window-card"
 import { TopNCard } from "@/components/data/top-n-card"
+import { WhatIfChatCard } from "@/components/deploy/whatif-chat-card"
 import {
   FeatureSuggestCard,
   FeaturesAppliedCard,
@@ -85,6 +86,7 @@ import type {
   ClusteringResult,
   TimeWindowComparison,
   TopNResult,
+  WhatIfChatResult,
 } from "@/lib/types"
 
 const WELCOME_MESSAGE =
@@ -157,6 +159,7 @@ export default function ProjectWorkspace() {
     attachClustersToLastMessage,
     attachTimeWindowToLastMessage,
     attachTopNToLastMessage,
+    attachWhatIfChatToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -429,6 +432,8 @@ export default function ProjectWorkspace() {
                 attachTimeWindowToLastMessage(json.time_window as TimeWindowComparison)
               } else if (json.type === "top_n" && json.top_n) {
                 attachTopNToLastMessage(json.top_n as TopNResult)
+              } else if (json.type === "whatif_result" && json.whatif) {
+                attachWhatIfChatToLastMessage(json.whatif as WhatIfChatResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -473,6 +478,7 @@ export default function ProjectWorkspace() {
     attachClustersToLastMessage,
     attachTimeWindowToLastMessage,
     attachTopNToLastMessage,
+    attachWhatIfChatToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -770,6 +776,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.top_n && (
                       <TopNCard result={msg.top_n} />
+                    )}
+                    {msg.whatif_chat_result && (
+                      <WhatIfChatCard result={msg.whatif_chat_result} />
                     )}
                   </div>
                 </div>

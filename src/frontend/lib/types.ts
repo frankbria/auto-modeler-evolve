@@ -276,6 +276,7 @@ export interface ChatMessage {
   clusters?: ClusteringResult
   time_window_comparison?: TimeWindowComparison
   top_n?: TopNResult
+  whatif_chat_result?: WhatIfChatResult
 }
 
 export interface SegmentPerformanceSegment {
@@ -1301,6 +1302,27 @@ export interface TimeWindowComparison {
   columns: TimeWindowColumn[]
   notable_changes: string[]
   summary: string
+}
+
+// ---------------------------------------------------------------------------
+// What-If Chat Analysis (Day 16)
+// ---------------------------------------------------------------------------
+
+export interface WhatIfChatResult {
+  deployment_id: string
+  changed_feature: string
+  original_feature_value: number | string
+  new_feature_value: number | string
+  original_prediction: number | string
+  modified_prediction: number | string
+  delta: number | null
+  percent_change: number | null
+  direction: "increase" | "decrease" | "no change" | null
+  summary: string
+  problem_type: string | null
+  target_column: string | null
+  original_probabilities?: Record<string, number>
+  modified_probabilities?: Record<string, number>
 }
 
 export interface TopNRow {

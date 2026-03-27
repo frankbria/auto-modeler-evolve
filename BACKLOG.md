@@ -5,12 +5,8 @@ Living document for coordinating between bot instances and tracking ideation.
 
 ## Currently Working On
 
-<!-- Each bot writes here BEFORE starting implementation. Format: -->
-<!-- ## [Bot ID / Timestamp] — [Focus Area] -->
-<!-- Brief description of what you're doing this session. -->
-<!-- Remove your entry when you commit your session wrap-up. -->
-
-
+## Day 16 (04:00) — Chat-triggered What-If Analysis
+Implementing `_WHATIF_CHAT_PATTERNS` + `_detect_whatif_request()` in chat.py so analysts can ask "what if [feature] was [value]?" directly in chat. Uses existing `PredictionPipeline.feature_means` as base + `predict_single()` for both original and modified predictions. Emits `{type:"whatif_result"}` SSE event. New `WhatIfChatCard` component (amber border, feature change display, original→modified prediction comparison, delta/% arrow). Fills the last major gap in "chat-first" deployment workflow.
 
 ## Day 15 (20:00) — Done
 Top-N record ranking — `compute_top_n()` in `core/analyzer.py` (nlargest/nsmallest, NaN-safe, rank numbers, summary, 50-row cap); `GET /api/data/{id}/top-n?col=&n=10&order=desc` endpoint (400 on unknown/non-numeric column); `_TOPN_PATTERNS` (8 NL variants) + `_detect_topn_request()` (digit/word n extraction, ascending detection, column name matching); `{type:"top_n"}` SSE event; `TopNCard` (emerald/rose border, 🥇🥈🥉 medals, amber highlight rows, k/M suffix formatting, summary footer); `TopNRow`+`TopNResult` types; `api.data.getTopN()`; `attachTopNToLastMessage()` Zustand action. 44 backend + 16 frontend = 60 new tests. Total: 1706 backend + 751 frontend = 2457.

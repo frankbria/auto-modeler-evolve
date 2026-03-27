@@ -71,6 +71,7 @@ interface AppState {
   attachClustersToLastMessage: (clusters: import("./types").ClusteringResult) => void
   attachTimeWindowToLastMessage: (time_window_comparison: import("./types").TimeWindowComparison) => void
   attachTopNToLastMessage: (top_n: import("./types").TopNResult) => void
+  attachWhatIfChatToLastMessage: (whatif_chat_result: import("./types").WhatIfChatResult) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -331,6 +332,16 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, top_n }
+      }
+      return { messages }
+    }),
+
+  attachWhatIfChatToLastMessage: (whatif_chat_result) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, whatif_chat_result }
       }
       return { messages }
     }),

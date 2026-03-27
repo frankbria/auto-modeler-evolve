@@ -1099,6 +1099,19 @@ _TOPN_N_WORDS = {
     "fifty": 50,
 }
 
+_WHATIF_CHAT_PATTERNS = re.compile(
+    r"(?i)"
+    r"\bwhat\s+(if|would\s+happen\s+if|happens?\s+if)\b|"
+    r"\bif\s+(i\s+)?(change[d]?|set|increase[d]?|decrease[d]?|double[d]?|halve[d]?|raise[d]?|lower[ed]?)\b|"
+    r"\bsuppose\s+(that\s+)?\w+|"
+    r"\bif\s+\w+\s+(was|were|is|equals?|becomes?|had|changed?\s+to)\b|"
+    r"\bchange\s+\w+\s+to\b|"
+    r"\bpredict\s+(with|for|where|if)\b|"
+    r"\bwhat\s+would\s+(my\s+)?(prediction|result|forecast|output)\s+be\b|"
+    r"\bhow\s+would\s+(the\s+)?prediction\s+change\b",
+    re.IGNORECASE,
+)
+
 
 def _detect_topn_request(message: str, df: "pd.DataFrame") -> dict | None:
     """Extract sort column, n, and direction from the user message.
@@ -1145,6 +1158,114 @@ def _detect_topn_request(message: str, df: "pd.DataFrame") -> dict | None:
         sort_col = numeric_cols[0]
 
     return {"sort_col": sort_col, "n": n, "ascending": ascending}
+
+
+def _detect_whatif_request(
+    message: str, feature_names: list[str]
+) -> dict[str, object] | None:
+    """Extract a feature name and new value from a natural-language what-if message.
+
+    Uses a feature-name-first approach: for each known feature, searches the
+    message for an associated value using targeted patterns. This avoids greedy
+    regex captures that would include context phrases like "what if".
+
+    Handles patterns like:
+      "what if revenue was 500?"
+      "what happens if I double the price?"
+      "if quantity were 10, what would be predicted?"
+      "change margin to 0.3"
+      "predict with discount = 20"
+
+    Returns {"feature": str, "new_value": float|str, "original_phrase": str} or None.
+    """
+    msg_lower = message.lower()
+    # Build lookup: both underscore and space versions map to original feature name
+    feat_variants: list[tuple[str, str]] = []
+    for feat in feature_names:
+        feat_variants.append((feat.lower(), feat))  # e.g. "total_revenue" → original
+        spaced = feat.lower().replace("_", " ")
+        if spaced != feat.lower():
+            feat_variants.append((spaced, feat))  # e.g. "total revenue" → original
+
+    _val_pattern = r"([\"']?[\w.,%-]+[\"']?)"
+
+    for feat_key, feat_orig in feat_variants:
+        if feat_key not in msg_lower:
+            continue
+
+        feat_escaped = re.escape(feat_key)
+
+        # Pattern A: "<feat> was/is/were/becomes/equals/to <value>"
+        ma = re.search(
+            feat_escaped
+            + r"\s+(?:was|is|were|becomes?|equals?|changed?\s+to|set\s+to)\s+"
+            + _val_pattern,
+            message,  # original case for value extraction
+            re.IGNORECASE,
+        )
+        if ma:
+            return _build_whatif_result(feat_orig, ma.group(1))
+
+        # Pattern B: "change <feat> to <value>"
+        mb = re.search(
+            r"\bchange\s+" + feat_escaped + r"\s+to\s+" + _val_pattern,
+            message,
+            re.IGNORECASE,
+        )
+        if mb:
+            return _build_whatif_result(feat_orig, mb.group(1))
+
+        # Pattern C: "<feat> = <value>" or "<feat>: <value>"
+        mc = re.search(
+            feat_escaped + r"\s*[=:]\s*" + _val_pattern,
+            message,
+            re.IGNORECASE,
+        )
+        if mc:
+            return _build_whatif_result(feat_orig, mc.group(1))
+
+    # --- Fallback: detect "double/halve the <feature>" ---
+    multiplier_map = {
+        "doubl": 2.0,   # matches "double", "doubled"
+        "tripl": 3.0,   # matches "triple", "tripled"
+        "halv": 0.5,    # matches "halve", "halved"
+        "half": 0.5,
+    }
+    for prefix, mult in multiplier_map.items():
+        if prefix not in msg_lower:
+            continue
+        pm = re.search(
+            r"\b" + prefix + r"\w*\s+(?:the\s+)?(\w[\w\s]*?)(?:\s*[?!,.]|$)",
+            msg_lower,
+            re.IGNORECASE,
+        )
+        if not pm:
+            continue
+        candidate = pm.group(1).strip()
+        # Match candidate to feature names / space variants
+        for feat_key, feat_orig in feat_variants:
+            if feat_key == candidate or feat_key in candidate or candidate in feat_key:
+                return {
+                    "feature": feat_orig,
+                    "new_value": f"__multiply__{mult}",
+                    "original_phrase": f"{prefix} {feat_orig}",
+                }
+
+    return None
+
+
+def _build_whatif_result(feat: str, raw_val: str) -> dict[str, object]:
+    """Convert a raw string value into a typed result dict."""
+    val_clean = raw_val.strip("\"'").replace(",", "")
+    try:
+        parsed: float | str = float(val_clean)
+    except ValueError:
+        parsed = raw_val.strip("\"'")
+    return {
+        "feature": feat,
+        "new_value": parsed,
+        "original_phrase": f"{feat} → {parsed}",
+    }
 
 
 class ChatMessage(BaseModel):
@@ -3000,6 +3121,142 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Top-N ranking is nice-to-have; never crash chat
 
+    # Check for what-if / hypothetical prediction request ("what if revenue was 500?", etc.)
+    whatif_chat_event: dict | None = None
+    if _WHATIF_CHAT_PATTERNS.search(body.message) and ctx["deployment"]:
+        try:
+            _wi_deployment = ctx["deployment"]
+            if (
+                _wi_deployment.pipeline_path
+                and Path(_wi_deployment.pipeline_path).exists()
+            ):
+                from core.deployer import load_pipeline as _load_pipeline
+                from core.deployer import predict_single as _predict_single
+
+                _wi_pipeline = _load_pipeline(_wi_deployment.pipeline_path)
+                _wi_feature_names = _wi_pipeline.feature_names
+                _wi_params = _detect_whatif_request(body.message, _wi_feature_names)
+                if _wi_params:
+                    _wi_feature = str(_wi_params["feature"])
+                    _wi_new_value = _wi_params["new_value"]
+                    # Build base from feature_means (handles unseen/zero values)
+                    _wi_base: dict[str, object] = dict(_wi_pipeline.feature_means)
+                    # Resolve multiplier shorthand (e.g. "double the price")
+                    if isinstance(_wi_new_value, str) and _wi_new_value.startswith(
+                        "__multiply__"
+                    ):
+                        _mult = float(_wi_new_value.split("__multiply__")[1])
+                        _wi_new_value = round(
+                            float(_wi_base.get(_wi_feature, 1.0)) * _mult, 4
+                        )
+                    # Get original prediction (from means)
+                    _wi_run = next(
+                        (
+                            mr
+                            for mr in ctx["model_runs"]
+                            if mr.id == _wi_deployment.model_run_id
+                        ),
+                        None,
+                    )
+                    if _wi_run and _wi_run.model_path and Path(_wi_run.model_path).exists():
+                        _wi_orig = _predict_single(
+                            _wi_deployment.pipeline_path,
+                            _wi_run.model_path,
+                            _wi_base,
+                        )
+                        _wi_modified_input = {**_wi_base, _wi_feature: _wi_new_value}
+                        _wi_mod = _predict_single(
+                            _wi_deployment.pipeline_path,
+                            _wi_run.model_path,
+                            _wi_modified_input,
+                        )
+                        _wi_orig_pred = _wi_orig["prediction"]
+                        _wi_mod_pred = _wi_mod["prediction"]
+                        # Compute delta
+                        _wi_delta: float | None = None
+                        _wi_pct: float | None = None
+                        _wi_dir: str | None = None
+                        try:
+                            _orig_num = float(_wi_orig_pred)  # type: ignore[arg-type]
+                            _mod_num = float(_wi_mod_pred)  # type: ignore[arg-type]
+                            _wi_delta = round(_mod_num - _orig_num, 4)
+                            _wi_pct = (
+                                round((_wi_delta / (_orig_num + 1e-9)) * 100, 2)
+                                if _orig_num != 0
+                                else None
+                            )
+                            _wi_dir = (
+                                "increase"
+                                if _wi_delta > 0
+                                else ("decrease" if _wi_delta < 0 else "no change")
+                            )
+                        except (TypeError, ValueError):
+                            pass
+                        # Build plain-English summary
+                        _wi_orig_val_str = _wi_base.get(_wi_feature, "N/A")
+                        if _wi_delta is not None and _wi_dir and _wi_dir != "no change":
+                            _wi_summary = (
+                                f"Changing {_wi_feature.replace('_', ' ')} "
+                                f"from {_wi_orig_val_str} to {_wi_new_value} would "
+                                f"{_wi_dir} the prediction "
+                                f"from {_wi_orig_pred} to {_wi_mod_pred}"
+                                + (
+                                    f" ({_wi_pct:+.1f}%)"
+                                    if _wi_pct is not None
+                                    else ""
+                                )
+                                + "."
+                            )
+                        elif _wi_delta == 0:
+                            _wi_summary = (
+                                f"Changing {_wi_feature.replace('_', ' ')} "
+                                f"from {_wi_orig_val_str} to {_wi_new_value} "
+                                f"has no effect on the prediction ({_wi_orig_pred})."
+                            )
+                        else:
+                            if _wi_orig_pred == _wi_mod_pred:
+                                _wi_summary = (
+                                    f"Changing {_wi_feature.replace('_', ' ')} "
+                                    f"from {_wi_orig_val_str} to {_wi_new_value} "
+                                    f"does not change the predicted class ({_wi_orig_pred})."
+                                )
+                            else:
+                                _wi_summary = (
+                                    f"Changing {_wi_feature.replace('_', ' ')} "
+                                    f"from {_wi_orig_val_str} to {_wi_new_value} "
+                                    f"changes the prediction from '{_wi_orig_pred}' "
+                                    f"to '{_wi_mod_pred}'."
+                                )
+                        whatif_chat_event = {
+                            "deployment_id": _wi_deployment.id,
+                            "changed_feature": _wi_feature,
+                            "original_feature_value": _wi_orig_val_str,
+                            "new_feature_value": _wi_new_value,
+                            "original_prediction": _wi_orig_pred,
+                            "modified_prediction": _wi_mod_pred,
+                            "delta": _wi_delta,
+                            "percent_change": _wi_pct,
+                            "direction": _wi_dir,
+                            "summary": _wi_summary,
+                            "problem_type": _wi_deployment.problem_type,
+                            "target_column": _wi_deployment.target_column,
+                            "original_probabilities": _wi_orig.get("probabilities"),
+                            "modified_probabilities": _wi_mod.get("probabilities"),
+                        }
+                        system_prompt += (
+                            f"\n\n## What-If Prediction Analysis\n"
+                            f"The analyst asked a hypothetical: what happens if "
+                            f"{_wi_feature.replace('_', ' ')} changes "
+                            f"from {_wi_orig_val_str} to {_wi_new_value}?\n"
+                            f"Result: {_wi_summary}\n"
+                            f"A WhatIfCard is shown with the before/after comparison. "
+                            f"Explain the prediction change in plain English — "
+                            f"tell the analyst what this means for their decision, "
+                            f"whether the change is significant, and what they might do next."
+                        )
+        except Exception:  # noqa: BLE001
+            pass  # What-if analysis is nice-to-have; never crash chat
+
     # Check for time-period comparison request ("compare 2023 vs 2024", "Q1 vs Q2", etc.)
     time_window_event: dict | None = None
     if _TIMEWINDOW_PATTERNS.search(body.message) and ctx["dataset"]:
@@ -3210,6 +3467,10 @@ def send_message(
         # Emit top-N ranking result
         if top_n_event:
             yield f"data: {json.dumps({'type': 'top_n', 'top_n': top_n_event})}\n\n"
+
+        # Emit what-if prediction result
+        if whatif_chat_event:
+            yield f"data: {json.dumps({'type': 'whatif_result', 'whatif': whatif_chat_event})}\n\n"
 
         # Emit time-period comparison result
         if time_window_event:
