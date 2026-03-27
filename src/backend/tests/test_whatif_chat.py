@@ -147,7 +147,9 @@ def test_whatif_patterns_no_match():
 def test_detect_whatif_simple_numeric():
     from api.chat import _detect_whatif_request
 
-    result = _detect_whatif_request("what if revenue was 500?", ["units", "revenue", "region"])
+    result = _detect_whatif_request(
+        "what if revenue was 500?", ["units", "revenue", "region"]
+    )
     assert result is not None
     assert result["feature"] == "revenue"
     assert result["new_value"] == 500.0
@@ -165,7 +167,9 @@ def test_detect_whatif_change_to():
 def test_detect_whatif_equals_pattern():
     from api.chat import _detect_whatif_request
 
-    result = _detect_whatif_request("if units equals 15, what happens?", ["units", "revenue"])
+    result = _detect_whatif_request(
+        "if units equals 15, what happens?", ["units", "revenue"]
+    )
     assert result is not None
     assert result["feature"] == "units"
     assert result["new_value"] == 15.0
@@ -196,7 +200,9 @@ def test_detect_whatif_underscore_feature():
 def test_detect_whatif_double_multiplier():
     from api.chat import _detect_whatif_request
 
-    result = _detect_whatif_request("what if I doubled the units?", ["units", "revenue"])
+    result = _detect_whatif_request(
+        "what if I doubled the units?", ["units", "revenue"]
+    )
     assert result is not None
     assert result["feature"] == "units"
     assert isinstance(result["new_value"], str)
@@ -281,9 +287,7 @@ def test_chat_whatif_sse_event(client, deployed_project):
         )
 
     assert response.status_code == 200
-    lines = [
-        line for line in response.text.split("\n") if line.startswith("data: ")
-    ]
+    lines = [line for line in response.text.split("\n") if line.startswith("data: ")]
     event_types = []
     for line in lines:
         try:
@@ -315,9 +319,7 @@ def test_chat_whatif_sse_event_no_deployment(client, deployed_project):
             json={"message": "what if units was 20?"},
         )
 
-    lines = [
-        line for line in response.text.split("\n") if line.startswith("data: ")
-    ]
+    lines = [line for line in response.text.split("\n") if line.startswith("data: ")]
     event_types = []
     for line in lines:
         try:

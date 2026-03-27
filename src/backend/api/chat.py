@@ -1226,9 +1226,9 @@ def _detect_whatif_request(
 
     # --- Fallback: detect "double/halve the <feature>" ---
     multiplier_map = {
-        "doubl": 2.0,   # matches "double", "doubled"
-        "tripl": 3.0,   # matches "triple", "tripled"
-        "halv": 0.5,    # matches "halve", "halved"
+        "doubl": 2.0,  # matches "double", "doubled"
+        "tripl": 3.0,  # matches "triple", "tripled"
+        "halv": 0.5,  # matches "halve", "halved"
         "half": 0.5,
     }
     for prefix, mult in multiplier_map.items():
@@ -3158,7 +3158,11 @@ def send_message(
                         ),
                         None,
                     )
-                    if _wi_run and _wi_run.model_path and Path(_wi_run.model_path).exists():
+                    if (
+                        _wi_run
+                        and _wi_run.model_path
+                        and Path(_wi_run.model_path).exists()
+                    ):
                         _wi_orig = _predict_single(
                             _wi_deployment.pipeline_path,
                             _wi_run.model_path,
@@ -3200,11 +3204,7 @@ def send_message(
                                 f"from {_wi_orig_val_str} to {_wi_new_value} would "
                                 f"{_wi_dir} the prediction "
                                 f"from {_wi_orig_pred} to {_wi_mod_pred}"
-                                + (
-                                    f" ({_wi_pct:+.1f}%)"
-                                    if _wi_pct is not None
-                                    else ""
-                                )
+                                + (f" ({_wi_pct:+.1f}%)" if _wi_pct is not None else "")
                                 + "."
                             )
                         elif _wi_delta == 0:
