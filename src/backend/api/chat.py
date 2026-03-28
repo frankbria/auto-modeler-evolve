@@ -612,6 +612,71 @@ def _detect_rename_request(message: str, columns: list[str]) -> dict | None:
     return {"old_name": old_name, "new_name": raw_new}
 
 
+# Keywords that trigger a two-column scatter plot ("plot X vs Y")
+_SCATTER_PATTERNS = re.compile(
+    r"(?:"
+    r"(?:scatter|plot|chart|graph)\s+(?:\w+\s+)?(?:vs\.?|versus|against|and)\s+\w+|"
+    r"\bplot\s+(?:the\s+)?relationship\s+between|"
+    r"\bscatter\s+plot\b|"
+    r"\b(?:show|visualize|display)\s+(?:me\s+)?(?:the\s+)?relationship\s+between|"
+    r"\brelationship\s+between\s+\w+\s+and\s+\w+|"
+    r"\bhow\s+(?:does|do)\s+\w+\s+(?:relate|correlate)\s+to\s+\w+|"
+    r"\b\w+\s+(?:vs\.?|versus|against)\s+\w+\s+(?:scatter|plot|chart|graph)"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def _detect_scatter_request(message: str, df: "pd.DataFrame") -> dict | None:
+    """Extract x_col and y_col from a scatter plot request.
+
+    Uses column-name-first approach: scans known column names around separator
+    words (vs, against, versus, and, between/and).
+
+    Returns dict with {x_col, y_col} or None if two numeric columns not found.
+    """
+    numeric_cols = {c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])}
+    if len(numeric_cols) < 2:
+        return None
+
+    msg_lower = message.lower()
+
+    # Helper: find best matching column in a text fragment (longest match first)
+    def _match_col(fragment: str) -> str | None:
+        fragment = fragment.strip()
+        for col in sorted(df.columns, key=len, reverse=True):
+            if col.lower() in fragment:
+                return col
+        return None
+
+    # Pattern 1: "X vs Y", "X versus Y", "X against Y"
+    for sep_pat in [r"\bvs\.?\b", r"\bversus\b", r"\bagainst\b"]:
+        m = re.search(rf"(\w[\w\s]{{0,30}}?)\s+{sep_pat}\s+(\w[\w\s]{{0,30}}?)(?:\s+(?:scatter|plot|chart|graph|$)|$)", msg_lower)
+        if m:
+            x_col = _match_col(m.group(1))
+            y_col = _match_col(m.group(2))
+            if x_col and y_col and x_col != y_col:
+                return {"x_col": x_col, "y_col": y_col}
+
+    # Pattern 2: "between X and Y"
+    m = re.search(r"\bbetween\s+(\w[\w\s]{0,30}?)\s+and\s+(\w[\w\s]{0,30}?)(?:\s*[.?!]|$)", msg_lower)
+    if m:
+        x_col = _match_col(m.group(1))
+        y_col = _match_col(m.group(2))
+        if x_col and y_col and x_col != y_col:
+            return {"x_col": x_col, "y_col": y_col}
+
+    # Fallback: find all numeric columns mentioned in message, use first two
+    mentioned = []
+    for col in sorted(df.columns, key=len, reverse=True):
+        if col.lower() in msg_lower and col in numeric_cols and col not in mentioned:
+            mentioned.append(col)
+    if len(mentioned) >= 2:
+        return {"x_col": mentioned[0], "y_col": mentioned[1]}
+
+    return None
+
+
 # Keywords that trigger an automated data story / full analysis
 _STORY_PATTERNS = re.compile(
     r"\b("
@@ -2399,6 +2464,62 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Heatmap is nice-to-have; never crash chat
 
+    # Check for scatter plot request ("plot revenue vs quantity")
+    scatter_chart: dict | None = None
+    if _SCATTER_PATTERNS.search(body.message) and ctx["dataset"]:
+        try:
+            _ds = ctx["dataset"]
+            _file_path = Path(_ds.file_path)
+            if _file_path.exists():
+                _df = _load_working_df(_file_path, _active_filter_conditions)
+                _scatter_req = _detect_scatter_request(body.message, _df)
+                if _scatter_req:
+                    _x_col = _scatter_req["x_col"]
+                    _y_col = _scatter_req["y_col"]
+                    _x_vals = _df[_x_col].dropna().tolist()
+                    _y_vals = _df[_y_col].dropna().tolist()
+                    # Align lengths (common index after dropna per column)
+                    _aligned = _df[[_x_col, _y_col]].dropna()
+                    _x_vals = _aligned[_x_col].tolist()
+                    _y_vals = _aligned[_y_col].tolist()
+                    # Cap at 500 points for rendering performance
+                    if len(_x_vals) > 500:
+                        import random as _random
+                        _idx = sorted(_random.sample(range(len(_x_vals)), 500))
+                        _x_vals = [_x_vals[i] for i in _idx]
+                        _y_vals = [_y_vals[i] for i in _idx]
+                    from core.chart_builder import build_scatter_chart as _build_sc
+                    scatter_chart = _build_sc(
+                        _x_vals,
+                        _y_vals,
+                        title=f"{_x_col} vs {_y_col}",
+                        x_label=_x_col,
+                        y_label=_y_col,
+                    )
+                    # Compute Pearson r for system prompt context
+                    import numpy as _np
+                    _r: float | None = None
+                    if len(_x_vals) >= 3:
+                        try:
+                            _r = float(_np.corrcoef(_x_vals, _y_vals)[0, 1])
+                        except Exception:  # noqa: BLE001
+                            pass
+                    _r_text = (
+                        f"Pearson r = {_r:.3f} ({'positive' if _r > 0 else 'negative'} correlation, "
+                        f"{'strong' if abs(_r) > 0.7 else 'moderate' if abs(_r) > 0.4 else 'weak'})"
+                        if _r is not None
+                        else "correlation could not be computed"
+                    )
+                    system_prompt += (
+                        f"\n\n## Scatter Plot: {_x_col} vs {_y_col}\n"
+                        f"Showing {len(_x_vals)} data points. {_r_text}.\n"
+                        "A scatter plot is shown in the chat. Describe the relationship: "
+                        "direction, strength, any clusters or outliers visible, and what "
+                        "this means for the analyst's data."
+                    )
+        except Exception:  # noqa: BLE001
+            pass  # Scatter chart is nice-to-have; never crash chat
+
     # Check for column rename request ("rename revenue_usd to Revenue")
     rename_result: dict | None = None
     if _RENAME_PATTERNS.search(body.message) and ctx["dataset"]:
@@ -3684,6 +3805,10 @@ def send_message(
         # Emit correlation heatmap if triggered (reuses existing {type:"chart"} path)
         if heatmap_chart:
             yield f"data: {json.dumps({'type': 'chart', 'chart': heatmap_chart})}\n\n"
+
+        # Emit scatter chart if triggered (reuses existing {type:"chart"} path)
+        if scatter_chart:
+            yield f"data: {json.dumps({'type': 'chart', 'chart': scatter_chart})}\n\n"
 
         # Emit column rename result if executed
         if rename_result:
