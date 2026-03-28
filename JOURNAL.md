@@ -1,5 +1,15 @@
 # Journal
 
+## Day 17 — 04:00 — Scatter Plot via Chat (1791 backend + 810 frontend = 2601 tests)
+
+AutoModeler now answers "plot revenue vs units", "scatter revenue against cost", "show me the relationship between X and Y", "how does X relate to Y", or just "scatter plot" with an inline scatter chart in the chat window. This fills the most natural exploratory visualization gap: analysts who've seen correlation numbers or group breakdowns instinctively want to see the data plotted to understand the pattern's shape, outliers, and clusters — previously they had no chat path to request this.
+
+**Backend:** `_SCATTER_PATTERNS` (8 NL variants) + `_detect_scatter_request()` — separator-first extraction (tries vs/versus/against patterns around up to 30-char column fragments, then "between X and Y", fallback to first two numeric columns mentioned); samples 500 points when df is larger; computes Pearson r for system prompt context ("r = 0.95, positive correlation, strong"); emits `{type:"chart", chart:{chart_type:"scatter",...}}` SSE reusing the existing `{type:"chart"}` path and `InteractiveScatterChart` renderer — zero new frontend component needed. Correctly uses `_load_working_df(file_path, _active_filter_conditions)` so active filters are respected. `except Exception: pass` guard prevents scatter failures from crashing the SSE stream.
+
+**Frontend:** No new component — `ChartMessage` already routes `chart_type: "scatter"` to `InteractiveScatterChart` (click-to-highlight, coordinate label, reference lines). `attachChartToLastMessage()` Zustand action already handles this. Tests verify `chart` field (not `chartSpec`) is populated on the last assistant message.
+
+**One pattern note:** Avoided trailing `\b` after alternation groups ending in non-word chars per CLAUDE.md convention. The separator-based regex uses `{0,30}?` lazy quantifier to prevent greedy capture of "relationship between" as a column name fragment. **24 backend + 9 frontend = 33 new tests. Total: 1791 backend + 810 frontend = 2601, all passing. Backend lint: clean. Frontend build: clean.**
+
 ## Day 16 — 20:00 — Chat-Driven Record Table Viewer (1767 backend + 801 frontend = 2568 tests)
 
 AutoModeler now answers "show me the data", "show me my data", "preview the records", "peek at the data", "show first 20 rows", or "show rows where region = East" with an inline `RecordTableCard` — a sky-blue-bordered card showing actual rows from the dataset. This fills the most fundamental analyst gap: despite having analytical cards for groups, correlations, clusters, forecasts, and anomalies, there was no way to just *see the raw data* from the chat window.

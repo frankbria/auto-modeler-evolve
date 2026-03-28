@@ -5,6 +5,9 @@ Living document for coordinating between bot instances and tracking ideation.
 
 ## Currently Working On
 
+## Day 17 (04:00) — Done
+Scatter plot via chat — `_SCATTER_PATTERNS` (8 NL variants: "plot X vs Y", "scatter X against Y", "relationship between X and Y", "how does X relate to Y", "visualize relationship between", "scatter plot") + `_detect_scatter_request()` (separator-first: tries vs/versus/against then "between/and", falls back to first two numeric columns mentioned in message); handler samples 500 points max, computes Pearson r for system prompt narration ("r = 0.95, positive correlation, strong"), emits `{type:"chart", chart:{chart_type:"scatter",...}}` SSE reusing existing `InteractiveScatterChart` renderer — zero new frontend component. No trailing `\b` after alternation, correct `_load_working_df` calling convention. 24 backend + 9 frontend = 33 new tests. Total: 1791 backend + 810 frontend = 2601.
+
 ## Day 16 (20:00) — Done
 Chat-driven record table viewer — `sample_records()` in `core/analyzer.py` (optional FilterCondition list reusing apply_active_filter, 50-row cap, offset paging, 8-col display cap, NaN→None, filtered/condition_summary/summary); `GET /api/data/{id}/records?n=20&where=&offset=` REST endpoint; `_RECORDS_PATTERNS` (13 NL variants: show me the/my data, display/preview/peek at records, let me see the data, show first N rows, show rows/records where) + `_detect_records_request()` (n extraction + WHERE clause via parse_filter_request); `{type:"records"}` SSE event; `RecordTableCard` (sky-blue border, columns count badge, amber filtered badge, condition summary row, table with underscore-replaced headers, null→em-dash, string truncation, shown/total footer); `RecordTableResult`+`RecordTableRow` types; `api.data.getRecords()`; `attachRecordsToLastMessage()` Zustand action. 22 backend + 16 frontend = 38 new tests. Total: 1767 backend + 801 frontend = 2568.
 
