@@ -5,6 +5,9 @@ Living document for coordinating between bot instances and tracking ideation.
 
 ## Currently Working On
 
+## Day 17 (12:00) — Done
+Line chart via chat + Box plot via chat — `_LINE_CHART_PATTERNS` (8 NL variants: "plot X over time", "trend of X", "line chart of X", "chart X by month/week/year", "how has X changed", "show X trend") + `_detect_line_chart_request()` (uses `detect_time_columns()` for date col auto-detect, scans message for numeric col, falls back to first numeric; calls `build_timeseries_chart()`; trend direction + % change in system prompt); `_BOXPLOT_PATTERNS` (8 NL variants: "box plot of X", "distribution/spread/range/quartile of X by Y", "compare distribution of X across Y", "show outliers in X by Y", "whisker plot") + `_detect_boxplot_request()` (value_col=numeric, group_col=categorical via "by/across/per/for each" clause; calls `build_boxplot()`). Both emit `{type:"chart"}` SSE reusing existing multi-series line chart renderer + `BoxPlotChart` SVG renderer — zero new frontend components. 39 backend + 14 frontend = 53 new tests. Total: 1830 backend + 824 frontend = 2654.
+
 ## Day 17 (04:00) — Done
 Scatter plot via chat — `_SCATTER_PATTERNS` (8 NL variants: "plot X vs Y", "scatter X against Y", "relationship between X and Y", "how does X relate to Y", "visualize relationship between", "scatter plot") + `_detect_scatter_request()` (separator-first: tries vs/versus/against then "between/and", falls back to first two numeric columns mentioned in message); handler samples 500 points max, computes Pearson r for system prompt narration ("r = 0.95, positive correlation, strong"), emits `{type:"chart", chart:{chart_type:"scatter",...}}` SSE reusing existing `InteractiveScatterChart` renderer — zero new frontend component. No trailing `\b` after alternation, correct `_load_working_df` calling convention. 24 backend + 9 frontend = 33 new tests. Total: 1791 backend + 810 frontend = 2601.
 
