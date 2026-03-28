@@ -2669,9 +2669,15 @@ def send_message(
 
                     line_chart = _build_ts(_dates, _vals, _val_col)
                     _first_val = next((v for v in _vals if v is not None), None)
-                    _last_val = next((v for v in reversed(_vals) if v is not None), None)
+                    _last_val = next(
+                        (v for v in reversed(_vals) if v is not None), None
+                    )
                     _trend_text = ""
-                    if _first_val is not None and _last_val is not None and _first_val != 0:
+                    if (
+                        _first_val is not None
+                        and _last_val is not None
+                        and _first_val != 0
+                    ):
                         _pct = (_last_val - _first_val) / abs(_first_val) * 100
                         _trend_text = (
                             f"Overall trend: {'up' if _pct > 0 else 'down'} {abs(_pct):.1f}% "
@@ -2707,7 +2713,9 @@ def send_message(
                         if _bp_grp
                         else "overall distribution"
                     )
-                    _bp_median = float(_df[_bp_val].median()) if not _df[_bp_val].empty else 0
+                    _bp_median = (
+                        float(_df[_bp_val].median()) if not _df[_bp_val].empty else 0
+                    )
                     system_prompt += (
                         f"\n\n## Box Plot: {_bp_val} ({_bp_groups})\n"
                         f"Median: {_bp_median:.2f}. "

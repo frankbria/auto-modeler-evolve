@@ -37,7 +37,14 @@ _TIMESERIES_CSV = (
 _DF_TS = pd.DataFrame(
     {
         "date": pd.to_datetime(
-            ["2023-01-01", "2023-02-01", "2023-03-01", "2023-04-01", "2023-05-01", "2023-06-01"]
+            [
+                "2023-01-01",
+                "2023-02-01",
+                "2023-03-01",
+                "2023-04-01",
+                "2023-05-01",
+                "2023-06-01",
+            ]
         ),
         "revenue": [100, 120, 115, 140, 160, 175],
         "units": [10, 12, 11, 14, 16, 18],
@@ -195,7 +202,9 @@ def test_detect_line_no_date_column():
 
 def test_detect_line_no_numeric_column():
     """Returns None when no numeric columns."""
-    df = pd.DataFrame({"date": pd.to_datetime(["2023-01", "2023-02"]), "label": ["A", "B"]})
+    df = pd.DataFrame(
+        {"date": pd.to_datetime(["2023-01", "2023-02"]), "label": ["A", "B"]}
+    )
     result = _detect_line_chart_request("plot trend over time", df)
     assert result is None
 
@@ -261,7 +270,9 @@ def test_boxplot_pattern_no_match_generic():
 
 
 def test_detect_boxplot_value_and_group():
-    result = _detect_boxplot_request("distribution of revenue by region", _DF_CATEGORICAL)
+    result = _detect_boxplot_request(
+        "distribution of revenue by region", _DF_CATEGORICAL
+    )
     assert result is not None
     assert result["value_col"] == "revenue"
     assert result["group_col"] == "region"
