@@ -1245,6 +1245,119 @@ def _detect_records_request(message: str, df: "pd.DataFrame") -> dict:
     return {"n": n, "conditions": conditions, "offset": 0}
 
 
+# Keywords that trigger a line/trend chart over time
+_LINE_CHART_PATTERNS = re.compile(
+    r"(?:"
+    r"(?:plot|chart|graph|show|visualize)\s+(?:me\s+)?(?:the\s+)?(?:\w+\s+)?(?:over\s+time|by\s+(?:month|week|year|quarter|day|date))|"
+    r"(?:trend|change)\s+(?:of|in|for)\s+|"
+    r"\bline\s+chart\s+(?:of|for)\s+|"
+    r"\bhow\s+(?:has|have|did)\s+\w+\s+(?:changed?|trended?|evolved?|moved?)|"
+    r"\bshow\s+(?:me\s+)?(?:the\s+)?\w+\s+trend\b|"
+    r"\btime\s+series\s+(?:of|for)\s+|"
+    r"\b\w+\s+over\s+time\b|"
+    r"\bplot\s+(?:the\s+)?trend\b"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def _detect_line_chart_request(message: str, df: "pd.DataFrame") -> dict | None:
+    """Extract value_col and date_col for a line/trend chart request.
+
+    Uses detect_time_columns() to find the date column automatically.
+    Scans the message for a numeric column name to plot.
+    Returns dict with {value_col, date_col} or None if no date column detected.
+    """
+    from core.analyzer import detect_time_columns as _dtc
+
+    date_cols = _dtc(df)
+    if not date_cols:
+        return None
+
+    numeric_cols = [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])]
+    if not numeric_cols:
+        return None
+
+    msg_lower = message.lower()
+    # Scan for a numeric column name mentioned in the message (longest match first)
+    value_col = None
+    for col in sorted(numeric_cols, key=len, reverse=True):
+        if col.lower() in msg_lower:
+            value_col = col
+            break
+
+    # Fall back to first numeric column
+    if not value_col:
+        value_col = numeric_cols[0]
+
+    return {"value_col": value_col, "date_col": date_cols[0]}
+
+
+# Keywords that trigger a box plot (distribution comparison, optionally by group)
+_BOXPLOT_PATTERNS = re.compile(
+    r"(?:"
+    r"\bbox\s*(?:-\s*and\s*-\s*whisker|plot|chart)?\s*(?:of|for)\s+|"
+    r"(?:distribution|spread|range|quartile|whisker)\s+(?:of|for)\s+\w+\s+by\s+|"
+    r"(?:compare|show)\s+(?:the\s+)?(?:distribution|spread|range)\s+(?:of|for)\s+\w+\s+(?:by|across|per|for\s+each)\s+|"
+    r"\boutliers?\s+(?:in|for)\s+\w+\s+by\s+|"
+    r"\bwhisker\s+(?:plot|chart)\b"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def _detect_boxplot_request(message: str, df: "pd.DataFrame") -> dict | None:
+    """Extract value_col and optional group_col from a box plot request.
+
+    Looks for a numeric value column and an optional categorical group column.
+    Returns dict with {value_col, group_col} or None if no numeric column detected.
+    """
+    numeric_cols = [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])]
+    if not numeric_cols:
+        return None
+
+    categorical_cols = [
+        c
+        for c in df.columns
+        if not pd.api.types.is_numeric_dtype(df[c])
+        and df[c].nunique() <= 30
+        and df[c].nunique() >= 2
+    ]
+
+    msg_lower = message.lower()
+
+    # Find value_col: numeric column mentioned in message (longest match first)
+    value_col = None
+    for col in sorted(numeric_cols, key=len, reverse=True):
+        if col.lower() in msg_lower:
+            value_col = col
+            break
+    if not value_col:
+        value_col = numeric_cols[0]
+
+    # Find group_col: categorical column mentioned after "by/across/per/for each"
+    group_col = None
+    by_match = re.search(
+        r"\b(?:by|across|per|for\s+each)\s+([\w\s]{1,40}?)(?:\s*[.?!]|$)",
+        msg_lower,
+    )
+    if by_match:
+        fragment = by_match.group(1).strip()
+        for col in sorted(categorical_cols, key=len, reverse=True):
+            if col.lower() in fragment:
+                group_col = col
+                break
+
+    # If no group_col found via "by" but a categorical column is mentioned
+    if not group_col:
+        for col in sorted(categorical_cols, key=len, reverse=True):
+            if col.lower() in msg_lower and col != value_col:
+                group_col = col
+                break
+
+    return {"value_col": value_col, "group_col": group_col}
+
+
 def _detect_topn_request(message: str, df: "pd.DataFrame") -> dict | None:
     """Extract sort column, n, and direction from the user message.
 
@@ -2528,6 +2641,82 @@ def send_message(
                     )
         except Exception:  # noqa: BLE001
             pass  # Scatter chart is nice-to-have; never crash chat
+
+    # Check for line/trend chart request ("plot revenue over time", "trend of sales")
+    line_chart: dict | None = None
+    if _LINE_CHART_PATTERNS.search(body.message) and ctx["dataset"]:
+        try:
+            _ds = ctx["dataset"]
+            _file_path = Path(_ds.file_path)
+            if _file_path.exists():
+                _df = _load_working_df(_file_path, _active_filter_conditions)
+                _line_req = _detect_line_chart_request(body.message, _df)
+                if _line_req:
+                    _val_col = _line_req["value_col"]
+                    _date_col = _line_req["date_col"]
+                    import pandas as _pd_lc
+
+                    _df[_date_col] = _pd_lc.to_datetime(_df[_date_col], errors="coerce")
+                    _df_ts = _df.dropna(subset=[_date_col]).sort_values(_date_col)
+                    _dates = _df_ts[_date_col].astype(str).tolist()
+                    _vals = _df_ts[_val_col].tolist()
+                    # Cap at 500 points for rendering
+                    if len(_dates) > 500:
+                        _step = len(_dates) // 500
+                        _dates = _dates[::_step]
+                        _vals = _vals[::_step]
+                    from core.chart_builder import build_timeseries_chart as _build_ts
+
+                    line_chart = _build_ts(_dates, _vals, _val_col)
+                    _first_val = next((v for v in _vals if v is not None), None)
+                    _last_val = next((v for v in reversed(_vals) if v is not None), None)
+                    _trend_text = ""
+                    if _first_val is not None and _last_val is not None and _first_val != 0:
+                        _pct = (_last_val - _first_val) / abs(_first_val) * 100
+                        _trend_text = (
+                            f"Overall trend: {'up' if _pct > 0 else 'down'} {abs(_pct):.1f}% "
+                            f"(from {_first_val:.2f} to {_last_val:.2f})."
+                        )
+                    system_prompt += (
+                        f"\n\n## Trend Chart: {_val_col} over time\n"
+                        f"Date column: {_date_col}. {len(_dates)} data points. {_trend_text}\n"
+                        "A line chart is shown in the chat with raw values, rolling average, "
+                        "and trend line. Describe the overall direction, any notable peaks or "
+                        "dips, and what this means for the analyst."
+                    )
+        except Exception:  # noqa: BLE001
+            pass  # Line chart is nice-to-have; never crash chat
+
+    # Check for box plot request ("distribution of revenue by region", "box plot of sales")
+    boxplot_chart: dict | None = None
+    if _BOXPLOT_PATTERNS.search(body.message) and ctx["dataset"]:
+        try:
+            _ds = ctx["dataset"]
+            _file_path = Path(_ds.file_path)
+            if _file_path.exists():
+                _df = _load_working_df(_file_path, _active_filter_conditions)
+                _bp_req = _detect_boxplot_request(body.message, _df)
+                if _bp_req:
+                    _bp_val = _bp_req["value_col"]
+                    _bp_grp = _bp_req["group_col"]
+                    from core.chart_builder import build_boxplot as _build_bp
+
+                    boxplot_chart = _build_bp(_df, _bp_val, _bp_grp)
+                    _bp_groups = (
+                        f"grouped by {_bp_grp} ({_df[_bp_grp].nunique()} categories)"
+                        if _bp_grp
+                        else "overall distribution"
+                    )
+                    _bp_median = float(_df[_bp_val].median()) if not _df[_bp_val].empty else 0
+                    system_prompt += (
+                        f"\n\n## Box Plot: {_bp_val} ({_bp_groups})\n"
+                        f"Median: {_bp_median:.2f}. "
+                        "A box-and-whisker chart is shown in the chat. "
+                        "Describe the spread, median, any outliers visible, "
+                        f"and{' how the groups compare' if _bp_grp else ' what the distribution looks like'}."
+                    )
+        except Exception:  # noqa: BLE001
+            pass  # Box plot is nice-to-have; never crash chat
 
     # Check for column rename request ("rename revenue_usd to Revenue")
     rename_result: dict | None = None
@@ -3818,6 +4007,14 @@ def send_message(
         # Emit scatter chart if triggered (reuses existing {type:"chart"} path)
         if scatter_chart:
             yield f"data: {json.dumps({'type': 'chart', 'chart': scatter_chart})}\n\n"
+
+        # Emit line/trend chart if triggered (reuses existing {type:"chart"} path)
+        if line_chart:
+            yield f"data: {json.dumps({'type': 'chart', 'chart': line_chart})}\n\n"
+
+        # Emit box plot chart if triggered (reuses existing {type:"chart"} path)
+        if boxplot_chart:
+            yield f"data: {json.dumps({'type': 'chart', 'chart': boxplot_chart})}\n\n"
 
         # Emit column rename result if executed
         if rename_result:
