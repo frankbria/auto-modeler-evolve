@@ -31,9 +31,7 @@ def sales_df():
 @pytest.fixture
 def large_df():
     """60-row dataset for paging tests."""
-    return pd.DataFrame(
-        {"id": range(60), "value": [float(i) * 1.5 for i in range(60)]}
-    )
+    return pd.DataFrame({"id": range(60), "value": [float(i) * 1.5 for i in range(60)]})
 
 
 # ---------------------------------------------------------------------------
@@ -132,7 +130,9 @@ def app():
     from main import app as fastapi_app
 
     SQLModel.metadata.create_all(
-        fastapi_app.state.engine if hasattr(fastapi_app.state, "engine") else __import__("db").engine
+        fastapi_app.state.engine
+        if hasattr(fastapi_app.state, "engine")
+        else __import__("db").engine
     )
     return fastapi_app
 
@@ -153,7 +153,9 @@ def csv_file(tmp_path):
 
 @pytest.mark.asyncio
 async def test_records_endpoint_returns_rows(app, csv_file):
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
         # Upload dataset
         with open(csv_file, "rb") as f:
             upload = await client.post(
@@ -174,7 +176,9 @@ async def test_records_endpoint_returns_rows(app, csv_file):
 
 @pytest.mark.asyncio
 async def test_records_endpoint_with_where(app, csv_file):
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
         with open(csv_file, "rb") as f:
             upload = await client.post(
                 "/api/data/upload",
@@ -183,9 +187,7 @@ async def test_records_endpoint_with_where(app, csv_file):
             )
         dataset_id = upload.json()["dataset_id"]
 
-        resp = await client.get(
-            f"/api/data/{dataset_id}/records?n=10&where=score+>+80"
-        )
+        resp = await client.get(f"/api/data/{dataset_id}/records?n=10&where=score+>+80")
         assert resp.status_code == 200
         body = resp.json()
         assert body["filtered"] is True
@@ -194,7 +196,9 @@ async def test_records_endpoint_with_where(app, csv_file):
 
 @pytest.mark.asyncio
 async def test_records_endpoint_unknown_dataset(app):
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
         resp = await client.get("/api/data/nonexistent-id/records")
         assert resp.status_code == 404
 

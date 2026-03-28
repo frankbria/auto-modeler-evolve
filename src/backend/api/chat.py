@@ -1150,7 +1150,11 @@ def _detect_records_request(message: str, df: "pd.DataFrame") -> dict:
     """
     # Extract n from "first 20 rows", "show 10 records", etc.
     n = 20
-    m_n = re.search(r"\b(first|last|next|show|top)?\s*(\d+)\s*(rows?|records?|entries?|lines?)\b", message, re.IGNORECASE)
+    m_n = re.search(
+        r"\b(first|last|next|show|top)?\s*(\d+)\s*(rows?|records?|entries?|lines?)\b",
+        message,
+        re.IGNORECASE,
+    )
     if m_n:
         candidate = int(m_n.group(2))
         if 1 <= candidate <= 50:
@@ -1162,6 +1166,7 @@ def _detect_records_request(message: str, df: "pd.DataFrame") -> dict:
     if m_where:
         where_clause = m_where.group(1).strip()
         from core.filter_view import parse_filter_request
+
         parsed = parse_filter_request(where_clause, list(df.columns))
         if parsed:
             conditions = parsed
