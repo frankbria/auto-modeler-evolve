@@ -651,7 +651,10 @@ def _detect_scatter_request(message: str, df: "pd.DataFrame") -> dict | None:
 
     # Pattern 1: "X vs Y", "X versus Y", "X against Y"
     for sep_pat in [r"\bvs\.?\b", r"\bversus\b", r"\bagainst\b"]:
-        m = re.search(rf"(\w[\w\s]{{0,30}}?)\s+{sep_pat}\s+(\w[\w\s]{{0,30}}?)(?:\s+(?:scatter|plot|chart|graph|$)|$)", msg_lower)
+        m = re.search(
+            rf"(\w[\w\s]{{0,30}}?)\s+{sep_pat}\s+(\w[\w\s]{{0,30}}?)(?:\s+(?:scatter|plot|chart|graph|$)|$)",
+            msg_lower,
+        )
         if m:
             x_col = _match_col(m.group(1))
             y_col = _match_col(m.group(2))
@@ -659,7 +662,10 @@ def _detect_scatter_request(message: str, df: "pd.DataFrame") -> dict | None:
                 return {"x_col": x_col, "y_col": y_col}
 
     # Pattern 2: "between X and Y"
-    m = re.search(r"\bbetween\s+(\w[\w\s]{0,30}?)\s+and\s+(\w[\w\s]{0,30}?)(?:\s*[.?!]|$)", msg_lower)
+    m = re.search(
+        r"\bbetween\s+(\w[\w\s]{0,30}?)\s+and\s+(\w[\w\s]{0,30}?)(?:\s*[.?!]|$)",
+        msg_lower,
+    )
     if m:
         x_col = _match_col(m.group(1))
         y_col = _match_col(m.group(2))
@@ -2485,10 +2491,12 @@ def send_message(
                     # Cap at 500 points for rendering performance
                     if len(_x_vals) > 500:
                         import random as _random
+
                         _idx = sorted(_random.sample(range(len(_x_vals)), 500))
                         _x_vals = [_x_vals[i] for i in _idx]
                         _y_vals = [_y_vals[i] for i in _idx]
                     from core.chart_builder import build_scatter_chart as _build_sc
+
                     scatter_chart = _build_sc(
                         _x_vals,
                         _y_vals,
@@ -2498,6 +2506,7 @@ def send_message(
                     )
                     # Compute Pearson r for system prompt context
                     import numpy as _np
+
                     _r: float | None = None
                     if len(_x_vals) >= 3:
                         try:
