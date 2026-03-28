@@ -443,6 +443,20 @@ export const api = {
         return r.json()
       })
     },
+
+    getRecords: (
+      datasetId: string,
+      n = 20,
+      where = "",
+      offset = 0
+    ): Promise<import("./types").RecordTableResult> => {
+      const params = new URLSearchParams({ n: String(n), offset: String(offset) })
+      if (where) params.set("where", where)
+      return fetch(`${API_URL}/api/data/${datasetId}/records?${params}`).then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        return r.json()
+      })
+    },
   },
 
   chat: {

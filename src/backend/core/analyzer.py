@@ -1493,3 +1493,104 @@ def _build_timewindow_summary(
         summary += f" All tracked metrics declined in {p2_name}."
 
     return summary
+
+
+# ---------------------------------------------------------------------------
+# Record table viewer (show me the data / peek at rows)
+# ---------------------------------------------------------------------------
+
+
+def sample_records(
+    df: pd.DataFrame,
+    n: int = 20,
+    conditions: list[dict] | None = None,
+    offset: int = 0,
+) -> dict:
+    """Return a sample of rows from the DataFrame, with optional filtering.
+
+    Parameters
+    ----------
+    df         : source DataFrame
+    n          : rows to return (capped at 50)
+    conditions : list of FilterCondition dicts (column/operator/value)
+                 applied via boolean AND logic
+    offset     : starting row index (for paging, default 0)
+
+    Returns a dict with:
+      columns, rows (list of serialisable dicts), total_rows, shown_rows,
+      filtered (bool), condition_summary (plain-English), summary
+    """
+    from core.filter_view import apply_active_filter  # avoid circular
+
+    n = max(1, min(n, 50))
+    offset = max(0, offset)
+    total_rows = len(df)
+    filtered = bool(conditions)
+
+    working = df
+    if conditions:
+        working = apply_active_filter(df, conditions)
+
+    filtered_rows = len(working)
+    page = working.iloc[offset : offset + n]
+    shown = len(page)
+
+    # Cap display columns at 8
+    display_cols = list(df.columns[:8])
+
+    rows = []
+    for _, row in page.iterrows():
+        row_dict: dict = {}
+        for col in display_cols:
+            val = row.get(col)
+            if val is None or (isinstance(val, float) and np.isnan(val)):
+                row_dict[col] = None
+            elif isinstance(val, np.generic):
+                row_dict[col] = val.item()
+            else:
+                row_dict[col] = val
+        rows.append(row_dict)
+
+    condition_summary = ""
+    if conditions:
+        parts = []
+        for c in conditions:
+            op_labels = {
+                "eq": "=",
+                "ne": "≠",
+                "gt": ">",
+                "lt": "<",
+                "gte": "≥",
+                "lte": "≤",
+                "contains": "contains",
+                "not_contains": "does not contain",
+            }
+            op = op_labels.get(c.get("operator", "eq"), c.get("operator", "="))
+            parts.append(f"{c['column']} {op} {c['value']}")
+        condition_summary = " AND ".join(parts)
+
+    if filtered:
+        if filtered_rows == 0:
+            summary = f"No rows match: {condition_summary}."
+        else:
+            pct = round(filtered_rows / total_rows * 100) if total_rows else 0
+            summary = (
+                f"Found {filtered_rows:,} matching rows ({pct}% of {total_rows:,} total). "
+                f"Showing {shown}."
+            )
+    else:
+        summary = (
+            f"Showing {shown} of {total_rows:,} rows"
+            f"{' (starting from row ' + str(offset + 1) + ')' if offset > 0 else ''}."
+        )
+
+    return {
+        "columns": display_cols,
+        "rows": rows,
+        "total_rows": total_rows,
+        "filtered_rows": filtered_rows if filtered else total_rows,
+        "shown_rows": shown,
+        "filtered": filtered,
+        "condition_summary": condition_summary,
+        "summary": summary,
+    }

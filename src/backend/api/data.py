@@ -28,6 +28,7 @@ from core.analyzer import (
     compute_group_stats,
     compute_top_n,
     detect_time_columns,
+    sample_records,
 )
 from core.anomaly import detect_anomalies
 from core.cleaner import (
@@ -2371,3 +2372,38 @@ def get_top_n(
         raise HTTPException(status_code=400, detail=result["error"])
 
     return result
+
+
+@router.get("/{dataset_id}/records")
+def get_records(
+    dataset_id: str,
+    n: int = 20,
+    where: str = "",
+    offset: int = 0,
+    session: Session = Depends(get_session),
+):
+    """Return a sample of rows, with optional WHERE-style filter.
+
+    Query params:
+      - n      : rows to return (1-50, default 20)
+      - where  : plain-English condition string, e.g. "region = West"
+      - offset : starting row index for paging (default 0)
+    """
+    dataset = session.get(Dataset, dataset_id)
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    file_path = Path(dataset.file_path)
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Dataset file not found")
+
+    n = max(1, min(n, 50))
+    df = _load_df_from_path(file_path)
+
+    conditions: list[dict] | None = None
+    if where.strip():
+        from core.filter_view import parse_filter_request
+
+        conditions = parse_filter_request(where, list(df.columns))
+
+    return sample_records(df, n=n, conditions=conditions, offset=offset)

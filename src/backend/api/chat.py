@@ -1124,6 +1124,50 @@ _PRED_ERROR_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# Chat intent: show me the data / peek at rows / display records
+# Intentionally excludes "show me top/bottom" (handled by TOPN) and
+# "show errors/mistakes" (handled by PRED_ERROR above).
+_RECORDS_PATTERNS = re.compile(
+    r"(?i)"
+    r"\bshow\s+me\s+(the\s+|my\s+)?(data|rows?|records?|table|dataset)\b|"
+    r"\b(display|preview|peek\s+at|view)\s+(the\s+)?(data|rows?|records?|table|dataset)\b|"
+    r"\blet\s+me\s+see\s+(the\s+)?(data|rows?|records?|dataset)\b|"
+    r"\bwhat\s+does\s+(the\s+)?data\s+look\s+like\b|"
+    r"\bshow\s+(first|last|next)\s+\d+\s+(rows?|records?|entries?|lines?)\b|"
+    r"\bgive\s+me\s+(a\s+)?(sample|peek|look)\s+(of\s+)?(the\s+)?(data|rows?|records?)\b|"
+    r"\bsample\s+(the\s+)?(data|rows?|records?)\b|"
+    r"\bshow\s+rows?\s+where\b|"
+    r"\bfind\s+(rows?|records?)\s+where\b|"
+    r"\bshow\s+records?\s+where\b",
+    re.IGNORECASE,
+)
+
+
+def _detect_records_request(message: str, df: "pd.DataFrame") -> dict:
+    """Extract n, optional conditions, and offset from the user message.
+
+    Returns dict with: n, conditions (list|None), offset
+    """
+    # Extract n from "first 20 rows", "show 10 records", etc.
+    n = 20
+    m_n = re.search(r"\b(first|last|next|show|top)?\s*(\d+)\s*(rows?|records?|entries?|lines?)\b", message, re.IGNORECASE)
+    if m_n:
+        candidate = int(m_n.group(2))
+        if 1 <= candidate <= 50:
+            n = candidate
+
+    # Extract optional WHERE clause: "where X op Y"
+    conditions = None
+    m_where = re.search(r"\bwhere\s+(.+)$", message, re.IGNORECASE)
+    if m_where:
+        where_clause = m_where.group(1).strip()
+        from core.filter_view import parse_filter_request
+        parsed = parse_filter_request(where_clause, list(df.columns))
+        if parsed:
+            conditions = parsed
+
+    return {"n": n, "conditions": conditions, "offset": 0}
+
 
 def _detect_topn_request(message: str, df: "pd.DataFrame") -> dict | None:
     """Extract sort column, n, and direction from the user message.
@@ -3372,6 +3416,35 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # What-if analysis is nice-to-have; never crash chat
 
+    # Check for "show me the data" / record table viewer
+    records_event: dict | None = None
+    if _RECORDS_PATTERNS.search(body.message) and ctx["dataset"]:
+        try:
+            _rec_ds = ctx["dataset"]
+            _rec_file = Path(_rec_ds.file_path)
+            if _rec_file.exists():
+                _rec_df = _load_working_df(_rec_file, _active_filter_conditions)
+                _rec_params = _detect_records_request(body.message, _rec_df)
+                from core.analyzer import sample_records as _sample_records
+
+                _rec_result = _sample_records(
+                    _rec_df,
+                    n=_rec_params["n"],
+                    conditions=_rec_params["conditions"],
+                )
+                records_event = _rec_result
+                system_prompt += (
+                    f"\n\n## Data Sample\n"
+                    f"{_rec_result['summary']}\n"
+                    f"A RecordTableCard is shown in the chat with "
+                    f"{_rec_result['shown_rows']} rows "
+                    f"({'filtered by: ' + _rec_result['condition_summary'] if _rec_result['filtered'] else 'from the beginning of the dataset'}).\n"
+                    "Briefly narrate what the analyst is looking at — mention a few "
+                    "notable values if any stand out, and suggest a next analysis step."
+                )
+        except Exception:  # noqa: BLE001
+            pass  # Record preview is nice-to-have; never crash chat
+
     # Check for time-period comparison request ("compare 2023 vs 2024", "Q1 vs Q2", etc.)
     time_window_event: dict | None = None
     if _TIMEWINDOW_PATTERNS.search(body.message) and ctx["dataset"]:
@@ -3586,6 +3659,10 @@ def send_message(
         # Emit prediction error analysis result
         if pred_error_event:
             yield f"data: {json.dumps({'type': 'prediction_errors', 'pred_errors': pred_error_event})}\n\n"
+
+        # Emit record table viewer result
+        if records_event:
+            yield f"data: {json.dumps({'type': 'records', 'records': records_event})}\n\n"
 
         # Emit what-if prediction result
         if whatif_chat_event:

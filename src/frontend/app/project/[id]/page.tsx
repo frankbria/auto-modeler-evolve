@@ -44,6 +44,7 @@ import { ColumnProfileCard } from "@/components/data/column-profile-card"
 import { ClusteringCard } from "@/components/data/clustering-card"
 import { TimeWindowCard } from "@/components/data/time-window-card"
 import { TopNCard } from "@/components/data/top-n-card"
+import { RecordTableCard } from "@/components/data/record-table-card"
 import { WhatIfChatCard } from "@/components/deploy/whatif-chat-card"
 import {
   FeatureSuggestCard,
@@ -163,6 +164,7 @@ export default function ProjectWorkspace() {
     attachTopNToLastMessage,
     attachWhatIfChatToLastMessage,
     attachPredictionErrorsToLastMessage,
+    attachRecordsToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -439,6 +441,8 @@ export default function ProjectWorkspace() {
                 attachWhatIfChatToLastMessage(json.whatif as WhatIfChatResult)
               } else if (json.type === "prediction_errors" && json.pred_errors) {
                 attachPredictionErrorsToLastMessage(json.pred_errors as PredictionErrorResult)
+              } else if (json.type === "records" && json.records) {
+                attachRecordsToLastMessage(json.records as import("@/lib/types").RecordTableResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -485,6 +489,7 @@ export default function ProjectWorkspace() {
     attachTopNToLastMessage,
     attachWhatIfChatToLastMessage,
     attachPredictionErrorsToLastMessage,
+    attachRecordsToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -788,6 +793,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.pred_errors && (
                       <PredictionErrorCard result={msg.pred_errors} />
+                    )}
+                    {msg.records && (
+                      <RecordTableCard result={msg.records} />
                     )}
                   </div>
                 </div>

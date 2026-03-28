@@ -73,6 +73,7 @@ interface AppState {
   attachTopNToLastMessage: (top_n: import("./types").TopNResult) => void
   attachWhatIfChatToLastMessage: (whatif_chat_result: import("./types").WhatIfChatResult) => void
   attachPredictionErrorsToLastMessage: (pred_errors: import("./types").PredictionErrorResult) => void
+  attachRecordsToLastMessage: (records: import("./types").RecordTableResult) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -353,6 +354,16 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, pred_errors }
+      }
+      return { messages }
+    }),
+
+  attachRecordsToLastMessage: (records) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, records }
       }
       return { messages }
     }),

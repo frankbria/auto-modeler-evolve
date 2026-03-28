@@ -278,6 +278,7 @@ export interface ChatMessage {
   top_n?: TopNResult
   whatif_chat_result?: WhatIfChatResult
   pred_errors?: PredictionErrorResult
+  records?: RecordTableResult
 }
 
 export interface SegmentPerformanceSegment {
@@ -1340,6 +1341,21 @@ export interface TopNResult {
   total_rows: number
   display_cols: string[]
   rows: TopNRow[]
+  summary: string
+}
+
+export interface RecordTableRow {
+  [key: string]: number | string | null
+}
+
+export interface RecordTableResult {
+  columns: string[]
+  rows: RecordTableRow[]
+  total_rows: number
+  filtered_rows: number
+  shown_rows: number
+  filtered: boolean
+  condition_summary: string
   summary: string
 }
 
