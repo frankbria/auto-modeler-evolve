@@ -36,7 +36,7 @@ function DataRow({ row, columns }: { row: RecordTableRow; columns: string[] }) {
 }
 
 export function RecordTableCard({ result }: RecordTableCardProps) {
-  const { columns, rows, total_rows, filtered_rows, shown_rows, filtered, condition_summary, summary } = result
+  const { columns, rows, total_rows, filtered_rows, shown_rows, filtered, condition_summary } = result
 
   return (
     <div className="rounded-lg border border-sky-200 dark:border-sky-800 bg-card overflow-hidden mt-2">

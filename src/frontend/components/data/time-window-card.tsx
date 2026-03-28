@@ -27,7 +27,7 @@ function ChangeArrow({ direction, pctChange }: { direction: string; pctChange: n
   )
 }
 
-function ColumnRow({ col, p1Name, p2Name }: { col: TimeWindowColumn; p1Name: string; p2Name: string }) {
+function ColumnRow({ col }: { col: TimeWindowColumn; p1Name: string; p2Name: string }) {
   const rowClass = col.notable ? "bg-amber-50 border-l-2 border-amber-400" : ""
   return (
     <tr className={`border-b border-border/40 last:border-0 ${rowClass}`}>

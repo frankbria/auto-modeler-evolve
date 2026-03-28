@@ -43,21 +43,6 @@ const classificationResult: WhatIfChatResult = {
   modified_probabilities: { cat: 0.3, dog: 0.7 },
 }
 
-const noChangeResult: WhatIfChatResult = {
-  deployment_id: "dep-3",
-  changed_feature: "units",
-  original_feature_value: 10,
-  new_feature_value: 10,
-  original_prediction: 1200.5,
-  modified_prediction: 1200.5,
-  delta: 0,
-  percent_change: 0,
-  direction: "no change",
-  summary: "Changing units from 10 to 10 has no effect on the prediction (1200.5).",
-  problem_type: "regression",
-  target_column: "revenue",
-}
-
 const decreaseResult: WhatIfChatResult = {
   deployment_id: "dep-4",
   changed_feature: "units",

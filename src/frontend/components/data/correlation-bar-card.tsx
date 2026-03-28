@@ -79,8 +79,6 @@ export function CorrelationBarCard({ result }: CorrelationBarCardProps) {
             maxAbs > 0
               ? Math.round((Math.abs(entry.correlation) / maxAbs) * 100)
               : 0
-          const dirSymbol = entry.direction === "positive" ? "+" : "−"
-
           return (
             <div key={entry.column} className="flex items-center gap-2">
               {/* Column name */}

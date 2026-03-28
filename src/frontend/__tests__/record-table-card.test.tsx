@@ -2,6 +2,8 @@ import "@testing-library/jest-dom"
 import { render, screen } from "@testing-library/react"
 import { RecordTableCard } from "@/components/data/record-table-card"
 import type { RecordTableResult } from "@/lib/types"
+import { useAppStore } from "@/lib/store"
+import { api } from "@/lib/api"
 
 const baseResult: RecordTableResult = {
   columns: ["customer", "revenue", "region"],
@@ -130,7 +132,6 @@ describe("RecordTableCard", () => {
 // Store action test
 describe("attachRecordsToLastMessage store action", () => {
   it("attaches records to the last assistant message", () => {
-    const { useAppStore } = require("@/lib/store")
     const store = useAppStore.getState()
 
     store.setMessages([
@@ -147,7 +148,6 @@ describe("attachRecordsToLastMessage store action", () => {
   })
 
   it("does not attach to user message", () => {
-    const { useAppStore } = require("@/lib/store")
     const store = useAppStore.getState()
 
     store.setMessages([{ role: "user", content: "show me the data" }])
@@ -168,7 +168,6 @@ describe("api.data.getRecords", () => {
     })
     global.fetch = fetchMock
 
-    const { api } = require("@/lib/api")
     await api.data.getRecords("ds-1", 15, "region = East", 0)
 
     expect(fetchMock).toHaveBeenCalledWith(
@@ -181,7 +180,6 @@ describe("api.data.getRecords", () => {
 
   it("throws on non-ok response", async () => {
     global.fetch = jest.fn().mockResolvedValue({ ok: false, status: 404 })
-    const { api } = require("@/lib/api")
     await expect(api.data.getRecords("bad-id")).rejects.toThrow("HTTP 404")
   })
 })
