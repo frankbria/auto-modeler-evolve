@@ -232,7 +232,7 @@ def test_scatter_chat_emits_chart_event(client, project_and_dataset):
         )
 
     assert response.status_code == 200
-    lines = [l for l in response.text.split("\n") if l.startswith("data: ")]
+    lines = [line for line in response.text.split("\n") if line.startswith("data: ")]
     event_types = []
     chart_types = []
     for line in lines:
