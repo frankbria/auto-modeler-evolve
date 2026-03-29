@@ -13,12 +13,7 @@ from sqlmodel import SQLModel, create_engine
 
 import db as db_module
 
-_SAMPLE_CSV = (
-    b"region,revenue,units\n"
-    b"East,100,10\n"
-    b"West,200,20\n"
-    b"East,150,15\n"
-)
+_SAMPLE_CSV = b"region,revenue,units\nEast,100,10\nWest,200,20\nEast,150,15\n"
 
 
 @pytest.fixture(autouse=True)
@@ -154,7 +149,9 @@ def test_download_chat_emits_data_export_event(client, project_and_dataset):
         except json.JSONDecodeError:
             pass
 
-    assert "data_export" in event_types, f"Expected data_export event. Got: {event_types}"
+    assert "data_export" in event_types, (
+        f"Expected data_export event. Got: {event_types}"
+    )
 
 
 def test_download_chat_event_has_correct_fields(client, project_and_dataset):

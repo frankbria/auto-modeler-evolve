@@ -2438,7 +2438,11 @@ def download_dataset(
             from core.filter_view import apply_active_filter
 
             df = pd.read_csv(file_path)
-            cond_objs = json.loads(active_filter.conditions) if isinstance(active_filter.conditions, str) else active_filter.conditions
+            cond_objs = (
+                json.loads(active_filter.conditions)
+                if isinstance(active_filter.conditions, str)
+                else active_filter.conditions
+            )
             df_out = apply_active_filter(df, cond_objs)
             stem = Path(dataset.filename).stem if dataset.filename else file_path.stem
             out_filename = f"{stem}_filtered.csv"

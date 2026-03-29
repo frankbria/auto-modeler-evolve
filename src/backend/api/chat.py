@@ -1466,7 +1466,9 @@ def _detect_bar_chart_request(message: str, df: "pd.DataFrame") -> dict | None:
     categorical_cols = [
         c
         for c in df.columns
-        if not pd.api.types.is_numeric_dtype(df[c]) and df[c].nunique() >= 2 and df[c].nunique() <= 50
+        if not pd.api.types.is_numeric_dtype(df[c])
+        and df[c].nunique() >= 2
+        and df[c].nunique() <= 50
     ]
 
     if not numeric_cols:
@@ -1500,7 +1502,10 @@ def _detect_bar_chart_request(message: str, df: "pd.DataFrame") -> dict | None:
         # Fallback: categorical column mentioned anywhere in message
         if not group_col:
             for col in sorted(categorical_cols, key=len, reverse=True):
-                if col.lower() in msg_lower or col.replace("_", " ").lower() in msg_lower:
+                if (
+                    col.lower() in msg_lower
+                    or col.replace("_", " ").lower() in msg_lower
+                ):
                     group_col = col
                     break
 
@@ -3001,8 +3006,14 @@ def send_message(
                     from core.chart_builder import build_bar_chart as _build_bar
 
                     if _bar_grp:
-                        _bar_series = _df.groupby(_bar_grp)[_bar_val].agg(_bar_agg).sort_values(ascending=False)
-                        _bar_title = f"{_bar_agg.capitalize()} of {_bar_val} by {_bar_grp}"
+                        _bar_series = (
+                            _df.groupby(_bar_grp)[_bar_val]
+                            .agg(_bar_agg)
+                            .sort_values(ascending=False)
+                        )
+                        _bar_title = (
+                            f"{_bar_agg.capitalize()} of {_bar_val} by {_bar_grp}"
+                        )
                     else:
                         # No group column — bar chart of value column's values
                         _bar_series = _df[_bar_val].head(20)
@@ -3017,7 +3028,9 @@ def send_message(
                     _bar_top = (
                         f"{_bar_series.index[0]}: {_bar_series.iloc[0]:.2f}"
                         if _bar_grp and not _bar_series.empty
-                        else str(_bar_series.iloc[0]) if not _bar_series.empty else "n/a"
+                        else str(_bar_series.iloc[0])
+                        if not _bar_series.empty
+                        else "n/a"
                     )
                     system_prompt += (
                         f"\n\n## Bar Chart: {_bar_title}\n"
@@ -3039,7 +3052,9 @@ def send_message(
                 _df_export = _load_working_df(_file_path, _active_filter_conditions)
                 _is_filtered = bool(_active_filter_conditions)
                 _export_filename = (
-                    Path(_ds.filename).stem + ("_filtered" if _is_filtered else "") + ".csv"
+                    Path(_ds.filename).stem
+                    + ("_filtered" if _is_filtered else "")
+                    + ".csv"
                 )
                 data_export = {
                     "dataset_id": _ds.id,
