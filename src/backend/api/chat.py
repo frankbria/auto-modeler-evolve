@@ -2676,7 +2676,9 @@ def send_message(
                         # Single column: enrich with rolling avg + OLS trend line
                         _val_col = _val_cols[0]
                         _vals = _df_ts[_val_col].tolist()
-                        from core.chart_builder import build_timeseries_chart as _build_ts
+                        from core.chart_builder import (
+                            build_timeseries_chart as _build_ts,
+                        )
 
                         line_chart = _build_ts(_dates, _vals, _val_col)
                         _first_val = next((v for v in _vals if v is not None), None)
@@ -2703,7 +2705,9 @@ def send_message(
                         )
                     else:
                         # Multiple columns: overlay chart with raw series per column
-                        from core.chart_builder import build_overlay_chart as _build_overlay
+                        from core.chart_builder import (
+                            build_overlay_chart as _build_overlay,
+                        )
 
                         _cols_data = {col: _df_ts[col].tolist() for col in _val_cols}
                         _overlay_title = f"{', '.join(_val_cols)} over time"
@@ -2713,7 +2717,9 @@ def send_message(
                         for _oc in _val_cols:
                             _ov = _df_ts[_oc].tolist()
                             _of = next((v for v in _ov if v is not None), None)
-                            _ol = next((v for v in reversed(_ov) if v is not None), None)
+                            _ol = next(
+                                (v for v in reversed(_ov) if v is not None), None
+                            )
                             if _of is not None and _ol is not None and _of != 0:
                                 _op = (_ol - _of) / abs(_of) * 100
                                 _col_summaries.append(

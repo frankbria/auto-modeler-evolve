@@ -223,9 +223,7 @@ def test_detect_line_case_insensitive():
 
 def test_detect_line_multi_col_both_mentioned():
     """Both revenue and units mentioned → value_cols has both."""
-    result = _detect_line_chart_request(
-        "compare revenue and units over time", _DF_TS
-    )
+    result = _detect_line_chart_request("compare revenue and units over time", _DF_TS)
     assert result is not None
     assert set(result["value_cols"]) == {"revenue", "units"}
 
@@ -590,13 +588,11 @@ def test_overlay_chart_emits_line_chart_event(client, project_and_ts_dataset):
             pass
 
     assert "chart" in event_types, f"Expected chart event. Got: {event_types}"
-    assert any(
-        ce.get("chart_type") == "line" for ce in chart_events
-    ), f"Expected line chart. Got: {chart_events}"
-    # Overlay chart has both 'revenue' and 'units' as y_keys
-    overlay = next(
-        (ce for ce in chart_events if ce.get("chart_type") == "line"), None
+    assert any(ce.get("chart_type") == "line" for ce in chart_events), (
+        f"Expected line chart. Got: {chart_events}"
     )
+    # Overlay chart has both 'revenue' and 'units' as y_keys
+    overlay = next((ce for ce in chart_events if ce.get("chart_type") == "line"), None)
     assert overlay is not None
     assert "revenue" in overlay.get("y_keys", [])
     assert "units" in overlay.get("y_keys", [])
