@@ -261,7 +261,10 @@ def test_pie_chart_data_has_slices(client, project_and_dataset):
     for line in lines:
         try:
             parsed = json.loads(line[6:])
-            if parsed.get("type") == "chart" and parsed.get("chart", {}).get("chart_type") == "pie":
+            if (
+                parsed.get("type") == "chart"
+                and parsed.get("chart", {}).get("chart_type") == "pie"
+            ):
                 pie_event = parsed
                 break
         except json.JSONDecodeError:

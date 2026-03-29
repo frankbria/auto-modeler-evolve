@@ -2858,14 +2858,18 @@ def send_message(
                     from core.chart_builder import build_pie_chart as _build_pie
 
                     _pie_series = (
-                        _df.groupby(_pie_slc)[_pie_val].sum().sort_values(ascending=False)
+                        _df.groupby(_pie_slc)[_pie_val]
+                        .sum()
+                        .sort_values(ascending=False)
                     )
                     pie_chart = _build_pie(
                         _pie_series,
                         title=f"{_pie_val} by {_pie_slc}",
                         limit=10,
                     )
-                    _pie_total = float(_pie_series.sum()) if not _pie_series.empty else 0
+                    _pie_total = (
+                        float(_pie_series.sum()) if not _pie_series.empty else 0
+                    )
                     _pie_top = (
                         f"{_pie_series.index[0]} ({_pie_series.iloc[0] / _pie_total * 100:.1f}%)"
                         if _pie_total > 0 and len(_pie_series) > 0
