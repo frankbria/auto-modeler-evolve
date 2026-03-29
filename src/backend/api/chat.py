@@ -1255,18 +1255,23 @@ _LINE_CHART_PATTERNS = re.compile(
     r"\bshow\s+(?:me\s+)?(?:the\s+)?\w+\s+trend\b|"
     r"\btime\s+series\s+(?:of|for)\s+|"
     r"\b\w+\s+over\s+time\b|"
-    r"\bplot\s+(?:the\s+)?trend\b"
+    r"\bplot\s+(?:the\s+)?trend\b|"
+    r"\b(?:compare|overlay)\s+\w+\s+(?:and|vs\.?|versus|with)\s+\w+\b|"
+    r"\b(?:compare|overlay)\s+\w+\s+and\s+\w+\s+(?:over\s+time|by\s+(?:month|week|year|quarter))\b"
     r")",
     re.IGNORECASE,
 )
 
 
 def _detect_line_chart_request(message: str, df: "pd.DataFrame") -> dict | None:
-    """Extract value_col and date_col for a line/trend chart request.
+    """Extract value_cols and date_col for a line/trend chart request.
 
     Uses detect_time_columns() to find the date column automatically.
-    Scans the message for a numeric column name to plot.
-    Returns dict with {value_col, date_col} or None if no date column detected.
+    Scans the message for ALL mentioned numeric column names (longest-match-first
+    to avoid partial matches), enabling multi-column overlay charts.
+
+    Returns dict with {value_cols: list[str], date_col: str} or None if no
+    date column is detected.  value_cols always has at least one entry.
     """
     from core.analyzer import detect_time_columns as _dtc
 
@@ -1279,18 +1284,20 @@ def _detect_line_chart_request(message: str, df: "pd.DataFrame") -> dict | None:
         return None
 
     msg_lower = message.lower()
-    # Scan for a numeric column name mentioned in the message (longest match first)
-    value_col = None
+    # Collect ALL mentioned numeric columns (longest match first to prevent
+    # shorter column names shadowing longer ones, e.g. "cost" inside "unit_cost")
+    found: list[str] = []
+    seen: set[str] = set()
     for col in sorted(numeric_cols, key=len, reverse=True):
-        if col.lower() in msg_lower:
-            value_col = col
-            break
+        if col.lower() in msg_lower and col not in seen:
+            found.append(col)
+            seen.add(col)
 
-    # Fall back to first numeric column
-    if not value_col:
-        value_col = numeric_cols[0]
+    # Fall back to first numeric column when none are explicitly mentioned
+    if not found:
+        found = [numeric_cols[0]]
 
-    return {"value_col": value_col, "date_col": date_cols[0]}
+    return {"value_cols": found, "date_col": date_cols[0]}
 
 
 # Keywords that trigger a box plot (distribution comparison, optionally by group)
@@ -2652,44 +2659,75 @@ def send_message(
                 _df = _load_working_df(_file_path, _active_filter_conditions)
                 _line_req = _detect_line_chart_request(body.message, _df)
                 if _line_req:
-                    _val_col = _line_req["value_col"]
+                    _val_cols = _line_req["value_cols"]
                     _date_col = _line_req["date_col"]
                     import pandas as _pd_lc
 
                     _df[_date_col] = _pd_lc.to_datetime(_df[_date_col], errors="coerce")
                     _df_ts = _df.dropna(subset=[_date_col]).sort_values(_date_col)
                     _dates = _df_ts[_date_col].astype(str).tolist()
-                    _vals = _df_ts[_val_col].tolist()
                     # Cap at 500 points for rendering
                     if len(_dates) > 500:
                         _step = len(_dates) // 500
                         _dates = _dates[::_step]
-                        _vals = _vals[::_step]
-                    from core.chart_builder import build_timeseries_chart as _build_ts
+                        _df_ts = _df_ts.iloc[::_step].reset_index(drop=True)
 
-                    line_chart = _build_ts(_dates, _vals, _val_col)
-                    _first_val = next((v for v in _vals if v is not None), None)
-                    _last_val = next(
-                        (v for v in reversed(_vals) if v is not None), None
-                    )
-                    _trend_text = ""
-                    if (
-                        _first_val is not None
-                        and _last_val is not None
-                        and _first_val != 0
-                    ):
-                        _pct = (_last_val - _first_val) / abs(_first_val) * 100
-                        _trend_text = (
-                            f"Overall trend: {'up' if _pct > 0 else 'down'} {abs(_pct):.1f}% "
-                            f"(from {_first_val:.2f} to {_last_val:.2f})."
+                    if len(_val_cols) == 1:
+                        # Single column: enrich with rolling avg + OLS trend line
+                        _val_col = _val_cols[0]
+                        _vals = _df_ts[_val_col].tolist()
+                        from core.chart_builder import build_timeseries_chart as _build_ts
+
+                        line_chart = _build_ts(_dates, _vals, _val_col)
+                        _first_val = next((v for v in _vals if v is not None), None)
+                        _last_val = next(
+                            (v for v in reversed(_vals) if v is not None), None
                         )
-                    system_prompt += (
-                        f"\n\n## Trend Chart: {_val_col} over time\n"
-                        f"Date column: {_date_col}. {len(_dates)} data points. {_trend_text}\n"
-                        "A line chart is shown in the chat with raw values, rolling average, "
-                        "and trend line. Describe the overall direction, any notable peaks or "
-                        "dips, and what this means for the analyst."
-                    )
+                        _trend_text = ""
+                        if (
+                            _first_val is not None
+                            and _last_val is not None
+                            and _first_val != 0
+                        ):
+                            _pct = (_last_val - _first_val) / abs(_first_val) * 100
+                            _trend_text = (
+                                f"Overall trend: {'up' if _pct > 0 else 'down'} {abs(_pct):.1f}% "
+                                f"(from {_first_val:.2f} to {_last_val:.2f})."
+                            )
+                        system_prompt += (
+                            f"\n\n## Trend Chart: {_val_col} over time\n"
+                            f"Date column: {_date_col}. {len(_dates)} data points. {_trend_text}\n"
+                            "A line chart is shown in the chat with raw values, rolling average, "
+                            "and trend line. Describe the overall direction, any notable peaks or "
+                            "dips, and what this means for the analyst."
+                        )
+                    else:
+                        # Multiple columns: overlay chart with raw series per column
+                        from core.chart_builder import build_overlay_chart as _build_overlay
+
+                        _cols_data = {col: _df_ts[col].tolist() for col in _val_cols}
+                        _overlay_title = f"{', '.join(_val_cols)} over time"
+                        line_chart = _build_overlay(_dates, _cols_data, _overlay_title)
+                        # Build per-column summary for the LLM prompt
+                        _col_summaries = []
+                        for _oc in _val_cols:
+                            _ov = _df_ts[_oc].tolist()
+                            _of = next((v for v in _ov if v is not None), None)
+                            _ol = next((v for v in reversed(_ov) if v is not None), None)
+                            if _of is not None and _ol is not None and _of != 0:
+                                _op = (_ol - _of) / abs(_of) * 100
+                                _col_summaries.append(
+                                    f"{_oc}: {'up' if _op > 0 else 'down'} {abs(_op):.1f}% "
+                                    f"({_of:.2f}→{_ol:.2f})"
+                                )
+                        system_prompt += (
+                            f"\n\n## Overlay Chart: {', '.join(_val_cols)} over time\n"
+                            f"Date column: {_date_col}. {len(_dates)} data points. "
+                            f"Per-metric trend: {'; '.join(_col_summaries)}.\n"
+                            "An overlay line chart is shown in the chat with one line per metric. "
+                            "Compare the trends across all metrics — describe which moved more, "
+                            "whether they moved together or diverged, and what this means."
+                        )
         except Exception:  # noqa: BLE001
             pass  # Line chart is nice-to-have; never crash chat
 

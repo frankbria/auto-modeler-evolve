@@ -436,6 +436,40 @@ def build_timeseries_chart(
     )
 
 
+def build_overlay_chart(
+    dates: list,
+    columns_values: dict[str, list],
+    title: str = "",
+) -> dict[str, Any]:
+    """Build a multi-column overlay line chart with raw values only.
+
+    Used when the analyst asks to compare 2+ numeric metrics over time
+    (e.g. "plot revenue and cost over time").  No rolling average or trend
+    line is added — with multiple y-scales that would be visually confusing.
+    Each column becomes its own line; the frontend renders a legend automatically
+    when more than one series is present.
+
+    Args:
+        dates:          List of x-axis date label strings.
+        columns_values: Mapping of column_name → list of numeric values
+                        (aligned with dates).
+        title:          Chart title (defaults to "Metrics over time").
+
+    Returns a chart spec compatible with the existing multi-series line renderer.
+    """
+    x_values = [str(d) for d in dates]
+    y_series = {
+        col: [_jsonify(v) for v in vals] for col, vals in columns_values.items()
+    }
+    return build_line_chart(
+        x_values=x_values,
+        y_series=y_series,
+        title=title or "Metrics over time",
+        x_label="Date",
+        y_label="",
+    )
+
+
 def build_boxplot(
     df: pd.DataFrame,
     value_col: str,

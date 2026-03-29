@@ -176,21 +176,22 @@ def test_line_pattern_no_match_generic():
 def test_detect_line_finds_date_and_value():
     result = _detect_line_chart_request("plot revenue over time", _DF_TS)
     assert result is not None
-    assert result["value_col"] == "revenue"
+    assert result["value_cols"] == ["revenue"]
     assert result["date_col"] == "date"
 
 
 def test_detect_line_extracts_mentioned_column():
     result = _detect_line_chart_request("show me units by month", _DF_TS)
     assert result is not None
-    assert result["value_col"] == "units"
+    assert "units" in result["value_cols"]
 
 
 def test_detect_line_fallback_to_first_numeric():
     result = _detect_line_chart_request("plot trend over time", _DF_TS)
     assert result is not None
-    # Falls back to first numeric col (revenue)
-    assert result["value_col"] in ["revenue", "units"]
+    # Falls back to first numeric col
+    assert len(result["value_cols"]) == 1
+    assert result["value_cols"][0] in ["revenue", "units"]
 
 
 def test_detect_line_no_date_column():
@@ -212,7 +213,40 @@ def test_detect_line_no_numeric_column():
 def test_detect_line_case_insensitive():
     result = _detect_line_chart_request("plot REVENUE over time", _DF_TS)
     assert result is not None
-    assert result["value_col"] == "revenue"
+    assert "revenue" in result["value_cols"]
+
+
+# ---------------------------------------------------------------------------
+# Unit tests — multi-column detection
+# ---------------------------------------------------------------------------
+
+
+def test_detect_line_multi_col_both_mentioned():
+    """Both revenue and units mentioned → value_cols has both."""
+    result = _detect_line_chart_request(
+        "compare revenue and units over time", _DF_TS
+    )
+    assert result is not None
+    assert set(result["value_cols"]) == {"revenue", "units"}
+
+
+def test_detect_line_multi_col_overlay_phrasing():
+    result = _detect_line_chart_request("overlay revenue and units by month", _DF_TS)
+    assert result is not None
+    assert set(result["value_cols"]) == {"revenue", "units"}
+
+
+def test_detect_line_multi_col_only_one_mentioned():
+    """Only one column explicitly mentioned → single-element list."""
+    result = _detect_line_chart_request("plot revenue over time", _DF_TS)
+    assert result is not None
+    assert result["value_cols"] == ["revenue"]
+
+
+def test_detect_line_multi_col_returns_list():
+    """Return value is always a list, never a string."""
+    result = _detect_line_chart_request("plot revenue over time", _DF_TS)
+    assert isinstance(result["value_cols"], list)
 
 
 # ---------------------------------------------------------------------------
@@ -437,3 +471,132 @@ def test_boxplot_no_dataset_no_crash(client):
         )
 
     assert response.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# Unit tests — _LINE_CHART_PATTERNS (overlay phrases)
+# ---------------------------------------------------------------------------
+
+
+def test_line_pattern_compare_and():
+    assert _LINE_CHART_PATTERNS.search("compare revenue and units over time")
+
+
+def test_line_pattern_overlay_vs():
+    assert _LINE_CHART_PATTERNS.search("overlay revenue vs units")
+
+
+def test_line_pattern_compare_with():
+    assert _LINE_CHART_PATTERNS.search("compare revenue with units")
+
+
+def test_line_pattern_overlay_by_month():
+    assert _LINE_CHART_PATTERNS.search("compare revenue and units by month")
+
+
+# ---------------------------------------------------------------------------
+# Unit tests — build_overlay_chart
+# ---------------------------------------------------------------------------
+
+
+def test_build_overlay_chart_basic():
+    """Overlay chart produces a line chart with one series per column."""
+    from core.chart_builder import build_overlay_chart
+
+    dates = ["2023-01", "2023-02", "2023-03"]
+    cols = {"revenue": [100, 120, 115], "units": [10, 12, 11]}
+    result = build_overlay_chart(dates, cols, "Revenue & Units over time")
+    assert result["chart_type"] == "line"
+    assert result["title"] == "Revenue & Units over time"
+    assert "revenue" in result["y_keys"]
+    assert "units" in result["y_keys"]
+    assert len(result["data"]) == 3
+
+
+def test_build_overlay_chart_default_title():
+    from core.chart_builder import build_overlay_chart
+
+    result = build_overlay_chart(["2023-01"], {"revenue": [100]})
+    assert result["title"] == "Metrics over time"
+
+
+def test_build_overlay_chart_empty_dates():
+    from core.chart_builder import build_overlay_chart
+
+    result = build_overlay_chart([], {"revenue": [], "units": []})
+    assert result["chart_type"] == "line"
+    assert result["data"] == []
+
+
+def test_build_overlay_chart_three_columns():
+    from core.chart_builder import build_overlay_chart
+
+    dates = ["Jan", "Feb"]
+    cols = {"a": [1, 2], "b": [3, 4], "c": [5, 6]}
+    result = build_overlay_chart(dates, cols)
+    assert set(result["y_keys"]) == {"a", "b", "c"}
+    assert len(result["data"]) == 2
+
+
+def test_build_overlay_chart_data_alignment():
+    """x_key values in data rows match dates."""
+    from core.chart_builder import build_overlay_chart
+
+    dates = ["2023-01", "2023-02"]
+    result = build_overlay_chart(dates, {"revenue": [100, 200]})
+    x_key = result["x_key"]
+    x_vals = [row[x_key] for row in result["data"]]
+    assert x_vals == ["2023-01", "2023-02"]
+
+
+# ---------------------------------------------------------------------------
+# Chat SSE integration — multi-column overlay
+# ---------------------------------------------------------------------------
+
+
+def test_overlay_chart_emits_line_chart_event(client, project_and_ts_dataset):
+    """Asking to compare two metrics over time should emit a line chart event."""
+    project_id, dataset_id = project_and_ts_dataset
+
+    with patch("anthropic.Anthropic") as mock_cls:
+        mock_client = MagicMock()
+        mock_cls.return_value = mock_client
+
+        mock_stream = MagicMock()
+        mock_stream.__enter__ = MagicMock(return_value=mock_stream)
+        mock_stream.__exit__ = MagicMock(return_value=False)
+        mock_stream.text_stream = iter(["Here is the comparison."])
+        mock_client.messages.stream.return_value = mock_stream
+
+        response = client.post(
+            f"/api/chat/{project_id}",
+            json={
+                "message": "compare revenue and units over time",
+                "dataset_id": dataset_id,
+            },
+        )
+
+    assert response.status_code == 200
+    lines = [line for line in response.text.split("\n") if line.startswith("data: ")]
+    event_types = []
+    chart_events = []
+    for line in lines:
+        try:
+            parsed = json.loads(line[6:])
+            event_types.append(parsed.get("type"))
+            if parsed.get("type") == "chart":
+                chart_events.append(parsed.get("chart", {}))
+        except json.JSONDecodeError:
+            pass
+
+    assert "chart" in event_types, f"Expected chart event. Got: {event_types}"
+    assert any(
+        ce.get("chart_type") == "line" for ce in chart_events
+    ), f"Expected line chart. Got: {chart_events}"
+    # Overlay chart has both 'revenue' and 'units' as y_keys
+    overlay = next(
+        (ce for ce in chart_events if ce.get("chart_type") == "line"), None
+    )
+    assert overlay is not None
+    assert "revenue" in overlay.get("y_keys", [])
+    assert "units" in overlay.get("y_keys", [])
