@@ -224,6 +224,18 @@ export interface ReportReady {
 }
 
 // ---------------------------------------------------------------------------
+// Dataset export (chat-triggered CSV download)
+// ---------------------------------------------------------------------------
+
+export interface DataExportResult {
+  dataset_id: string
+  filename: string
+  row_count: number
+  filtered: boolean
+  download_url: string
+}
+
+// ---------------------------------------------------------------------------
 // Chat-driven feature engineering
 // ---------------------------------------------------------------------------
 
@@ -279,6 +291,7 @@ export interface ChatMessage {
   whatif_chat_result?: WhatIfChatResult
   pred_errors?: PredictionErrorResult
   records?: RecordTableResult
+  data_export?: DataExportResult
 }
 
 export interface SegmentPerformanceSegment {

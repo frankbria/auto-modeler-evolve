@@ -1438,6 +1438,105 @@ def _detect_pie_chart_request(message: str, df: "pd.DataFrame") -> dict | None:
     return {"value_col": value_col, "slice_col": slice_col}
 
 
+# ---------------------------------------------------------------------------
+# Bar / column chart via chat
+# ---------------------------------------------------------------------------
+
+_BAR_CHART_PATTERNS = re.compile(
+    r"(?:"
+    r"\bbar\s+(?:chart|graph|plot)\b|"
+    r"\bcolumn\s+(?:chart|graph|plot)\b|"
+    r"\bvertical\s+bar\b|"
+    r"\b(?:show|create|make|draw|generate|give\s+me|plot)\s+(?:me\s+)?(?:a\s+)?bar\s+(?:chart|graph)\b|"
+    r"\b(?:bar|column)\s+(?:chart|graph)\s+(?:of|for|showing)\b"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def _detect_bar_chart_request(message: str, df: "pd.DataFrame") -> dict | None:
+    """Extract value_col (numeric) and optional group_col (categorical) for a bar chart.
+
+    Looks for 'by/per/for each <group_col>' clause for the group, and the longest
+    matching numeric column name in the message for the value.
+
+    Returns dict with {value_col, group_col, agg} or None if no numeric column found.
+    """
+    numeric_cols = [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])]
+    categorical_cols = [
+        c
+        for c in df.columns
+        if not pd.api.types.is_numeric_dtype(df[c]) and df[c].nunique() >= 2 and df[c].nunique() <= 50
+    ]
+
+    if not numeric_cols:
+        return None
+
+    msg_lower = message.lower()
+
+    # Find value_col: numeric column mentioned in message (longest match first)
+    value_col = None
+    for col in sorted(numeric_cols, key=len, reverse=True):
+        if col.lower() in msg_lower or col.replace("_", " ").lower() in msg_lower:
+            value_col = col
+            break
+    if not value_col:
+        value_col = numeric_cols[0]
+
+    # Find group_col via "by/per/for each" clause
+    group_col = None
+    if categorical_cols:
+        by_match = re.search(
+            r"\b(?:by|per|for\s+each|grouped\s+by|grouped\s+on)\s+([\w\s]{1,40}?)(?:\s*[.?!]|$)",
+            msg_lower,
+        )
+        if by_match:
+            fragment = by_match.group(1).strip()
+            for col in sorted(categorical_cols, key=len, reverse=True):
+                if col.lower() in fragment or col.replace("_", " ").lower() in fragment:
+                    group_col = col
+                    break
+
+        # Fallback: categorical column mentioned anywhere in message
+        if not group_col:
+            for col in sorted(categorical_cols, key=len, reverse=True):
+                if col.lower() in msg_lower or col.replace("_", " ").lower() in msg_lower:
+                    group_col = col
+                    break
+
+        # Final fallback: first categorical column
+        if not group_col:
+            group_col = categorical_cols[0]
+
+    # Detect aggregation keyword
+    agg = "sum"
+    if re.search(r"\b(?:average|mean|avg)\b", msg_lower):
+        agg = "mean"
+    elif re.search(r"\bcount\b", msg_lower):
+        agg = "count"
+    elif re.search(r"\bmax(?:imum)?\b", msg_lower):
+        agg = "max"
+    elif re.search(r"\bmin(?:imum)?\b", msg_lower):
+        agg = "min"
+
+    return {"value_col": value_col, "group_col": group_col, "agg": agg}
+
+
+# ---------------------------------------------------------------------------
+# Dataset download / export via chat
+# ---------------------------------------------------------------------------
+
+_DOWNLOAD_PATTERNS = re.compile(
+    r"(?:"
+    r"\bdownload\s+(?:my\s+)?(?:the\s+)?(?:data(?:set)?|csv|file|filtered\s+data)\b|"
+    r"\bexport\s+(?:my\s+)?(?:the\s+)?(?:data(?:set)?|csv|results?|records?)\b|"
+    r"\bsave\s+(?:the\s+)?(?:data(?:set)?|csv)\s*(?:to|as)?\s*(?:csv|file)?\b|"
+    r"\b(?:give\s+me)\s+(?:the\s+)?(?:data(?:set)?\s+(?:as\s+)?csv|csv\s+(?:export|file|download))\b"
+    r")",
+    re.IGNORECASE,
+)
+
+
 def _detect_topn_request(message: str, df: "pd.DataFrame") -> dict | None:
     """Extract sort column, n, and direction from the user message.
 
@@ -2886,6 +2985,83 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Pie chart is nice-to-have; never crash chat
 
+    # Check for bar chart request ("bar chart of revenue by region")
+    bar_chart: dict | None = None
+    if _BAR_CHART_PATTERNS.search(body.message) and ctx["dataset"]:
+        try:
+            _ds = ctx["dataset"]
+            _file_path = Path(_ds.file_path)
+            if _file_path.exists():
+                _df = _load_working_df(_file_path, _active_filter_conditions)
+                _bar_req = _detect_bar_chart_request(body.message, _df)
+                if _bar_req:
+                    _bar_val = _bar_req["value_col"]
+                    _bar_grp = _bar_req["group_col"]
+                    _bar_agg = _bar_req["agg"]
+                    from core.chart_builder import build_bar_chart as _build_bar
+
+                    if _bar_grp:
+                        _bar_series = _df.groupby(_bar_grp)[_bar_val].agg(_bar_agg).sort_values(ascending=False)
+                        _bar_title = f"{_bar_agg.capitalize()} of {_bar_val} by {_bar_grp}"
+                    else:
+                        # No group column — bar chart of value column's values
+                        _bar_series = _df[_bar_val].head(20)
+                        _bar_title = f"{_bar_val} (first 20 rows)"
+                    bar_chart = _build_bar(
+                        _bar_series,
+                        title=_bar_title,
+                        x_label=_bar_grp or "",
+                        y_label=_bar_val,
+                        limit=20,
+                    )
+                    _bar_top = (
+                        f"{_bar_series.index[0]}: {_bar_series.iloc[0]:.2f}"
+                        if _bar_grp and not _bar_series.empty
+                        else str(_bar_series.iloc[0]) if not _bar_series.empty else "n/a"
+                    )
+                    system_prompt += (
+                        f"\n\n## Bar Chart: {_bar_title}\n"
+                        f"Aggregation: {_bar_agg}. Top bar: {_bar_top}. "
+                        f"{len(_bar_series)} groups shown. "
+                        "A vertical bar chart is shown in the chat. Describe the key findings: "
+                        "which group leads, any notable outliers or patterns."
+                    )
+        except Exception:  # noqa: BLE001
+            pass  # Bar chart is nice-to-have; never crash chat
+
+    # Check for dataset download/export request ("download my data", "export to CSV")
+    data_export: dict | None = None
+    if _DOWNLOAD_PATTERNS.search(body.message) and ctx["dataset"]:
+        try:
+            _ds = ctx["dataset"]
+            _file_path = Path(_ds.file_path)
+            if _file_path.exists():
+                _df_export = _load_working_df(_file_path, _active_filter_conditions)
+                _is_filtered = bool(_active_filter_conditions)
+                _export_filename = (
+                    Path(_ds.filename).stem + ("_filtered" if _is_filtered else "") + ".csv"
+                )
+                data_export = {
+                    "dataset_id": _ds.id,
+                    "filename": _export_filename,
+                    "row_count": len(_df_export),
+                    "filtered": _is_filtered,
+                    "download_url": f"/api/data/{_ds.id}/download",
+                }
+                _filter_note = (
+                    f" (filtered to {len(_df_export)} of {len(pd.read_csv(_file_path))} rows)"
+                    if _is_filtered
+                    else ""
+                )
+                system_prompt += (
+                    f"\n\n## Dataset Export Ready\n"
+                    f"File: {_export_filename}{_filter_note}. "
+                    "The user can download the dataset as a CSV. "
+                    "Tell them their data is ready to download via the export card."
+                )
+        except Exception:  # noqa: BLE001
+            pass  # Export is nice-to-have; never crash chat
+
     # Check for column rename request ("rename revenue_usd to Revenue")
     rename_result: dict | None = None
     if _RENAME_PATTERNS.search(body.message) and ctx["dataset"]:
@@ -4187,6 +4363,14 @@ def send_message(
         # Emit pie / donut chart if triggered (reuses existing {type:"chart"} path)
         if pie_chart:
             yield f"data: {json.dumps({'type': 'chart', 'chart': pie_chart})}\n\n"
+
+        # Emit bar chart if triggered (reuses existing {type:"chart"} path)
+        if bar_chart:
+            yield f"data: {json.dumps({'type': 'chart', 'chart': bar_chart})}\n\n"
+
+        # Emit dataset export card if triggered
+        if data_export:
+            yield f"data: {json.dumps({'type': 'data_export', 'data_export': data_export})}\n\n"
 
         # Emit column rename result if executed
         if rename_result:

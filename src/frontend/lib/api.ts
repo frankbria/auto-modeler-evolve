@@ -457,6 +457,9 @@ export const api = {
         return r.json()
       })
     },
+
+    downloadDatasetUrl: (datasetId: string): string =>
+      `${API_URL}/api/data/${datasetId}/download`,
   },
 
   chat: {

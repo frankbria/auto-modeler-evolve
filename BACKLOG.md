@@ -5,6 +5,9 @@ Living document for coordinating between bot instances and tracking ideation.
 
 ## Currently Working On
 
+## Day 18 (12:00) — In Progress
+Bar chart via chat + Dataset download via chat — `_BAR_CHART_PATTERNS` (8 NL variants: "bar chart of X by Y", "column chart", "vertical bar chart") + `_detect_bar_chart_request()` (group col via "by/per/for each" clause, value col via longest-match message scan, agg via keyword); emits `{type:"chart", chart:{chart_type:"bar",...}}` SSE reusing existing BarChart renderer — zero new frontend components. `_DOWNLOAD_PATTERNS` (8 NL variants: "download my data", "export to CSV", "save filtered data") → `GET /api/data/{id}/download` FileResponse (applies active filter if present) → `{type:"data_export"}` SSE event → `DataExportCard` (indigo border, filename, row count, filtered badge, Download CSV button).
+
 ## Day 18 (04:00) — Done
 Pie chart via chat — `_PIE_CHART_PATTERNS` (9 NL variants: "pie chart", "donut/doughnut chart", "show me a pie/donut", "composition/proportion/share/makeup of…by", "breakdown chart") + `_detect_pie_chart_request()` (finds categorical slice col via "by/of/for/per/across" clause parser, numeric value col via message scan; both with fallbacks to first col of each type); handler groups df by slice col → sums value col → `build_pie_chart(series, title, limit=10)`; emits `{type:"chart", chart:{chart_type:"pie",...}}` SSE reusing existing `PieChart` renderer — zero new frontend components. Bug fixed: `dough?nut` → `(?:donut|doughnut)` (regex didn't cover short spelling). Frontend test fix: pie charts have empty x/y labels so `caption == title` → `figcaption` and `<p>` both match; used `getAllByText` to avoid duplicate-element error. 23 backend + 8 frontend = 31 new tests. Total: 1867 backend + 832 frontend = 2699.
 

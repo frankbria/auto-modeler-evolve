@@ -10,6 +10,7 @@ from typing import Any
 
 import pandas as pd
 from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
@@ -2407,3 +2408,54 @@ def get_records(
         conditions = parse_filter_request(where, list(df.columns))
 
     return sample_records(df, n=n, conditions=conditions, offset=offset)
+
+
+@router.get("/{dataset_id}/download")
+def download_dataset(
+    dataset_id: str,
+    session: Session = Depends(get_session),
+):
+    """Download the dataset as a CSV file.
+
+    If an active filter is set on the dataset, the downloaded CSV contains only
+    the filtered rows. The filename is suffixed with '_filtered' in that case.
+    """
+    dataset = session.get(Dataset, dataset_id)
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    file_path = Path(dataset.file_path)
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Dataset file not found")
+
+    # Check for active filter
+    active_filter = session.exec(
+        select(DatasetFilter).where(DatasetFilter.dataset_id == dataset_id)
+    ).first()
+
+    if active_filter and active_filter.conditions:
+        try:
+            from core.filter_view import apply_active_filter
+
+            df = pd.read_csv(file_path)
+            cond_objs = json.loads(active_filter.conditions) if isinstance(active_filter.conditions, str) else active_filter.conditions
+            df_out = apply_active_filter(df, cond_objs)
+            stem = Path(dataset.filename).stem if dataset.filename else file_path.stem
+            out_filename = f"{stem}_filtered.csv"
+            buf = io.StringIO()
+            df_out.to_csv(buf, index=False)
+            return StreamingResponse(
+                iter([buf.getvalue()]),
+                media_type="text/csv",
+                headers={"Content-Disposition": f"attachment; filename={out_filename}"},
+            )
+        except Exception:  # noqa: BLE001
+            pass  # Fall through to unfiltered download
+
+    # No filter — serve the raw CSV
+    filename = dataset.filename or file_path.name
+    return FileResponse(
+        path=str(file_path),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
