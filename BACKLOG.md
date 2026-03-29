@@ -5,6 +5,9 @@ Living document for coordinating between bot instances and tracking ideation.
 
 ## Currently Working On
 
+## Day 18 (04:00) — In Progress
+Pie chart via chat — `_PIE_CHART_PATTERNS` (8 NL variants: "pie chart of X by Y", "donut chart", "show me a pie", "composition of", "share of X by Y", "proportion breakdown", etc.) + `_detect_pie_chart_request()` (finds numeric value col + categorical slice col; auto-detects from "by/of/for" parsing or falls back to first numeric + first categorical); handler groups df by slice col, sums/counts value col, calls `build_pie_chart()`; emits `{type:"chart", chart:{chart_type:"pie",...}}` SSE reusing existing `PieChart` renderer — zero new frontend components. `build_pie_chart()` in `chart_builder.py` already exists; frontend `ChartMessage` case "pie" already renders it. ~18 backend + 6 frontend new tests.
+
 ## Day 17 (20:00) — Done
 Multi-metric overlay line chart via chat — `_detect_line_chart_request()` now returns `value_cols: list[str]` (was single `value_col`; collects ALL mentioned numeric columns longest-match-first, falls back to first numeric); `_LINE_CHART_PATTERNS` gained 2 new alternates matching "compare X and Y over time" and "overlay X vs/with Y"; chat handler branches: 1 col → existing `build_timeseries_chart()` (raw + rolling avg + OLS trend); 2+ cols → new `build_overlay_chart()` (raw values only per column, no decorations that would clutter a multi-line comparison); `build_overlay_chart(dates, columns_values, title)` in `chart_builder.py` wraps `build_line_chart()` — zero new frontend components (multi-series line renderer already shows legend when yKeys.length > 1). 14 backend + 0 frontend = 14 new tests. Total: 1844 backend + 824 frontend = 2668.
 

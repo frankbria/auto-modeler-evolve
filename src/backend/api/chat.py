@@ -1365,6 +1365,79 @@ def _detect_boxplot_request(message: str, df: "pd.DataFrame") -> dict | None:
     return {"value_col": value_col, "group_col": group_col}
 
 
+# Keywords that trigger a pie / donut chart (composition / share breakdown)
+_PIE_CHART_PATTERNS = re.compile(
+    r"(?:"
+    r"\bpie\s+(?:chart|graph|plot)\b|"
+    r"\b(?:donut|doughnut)\s+(?:chart|graph|plot)\b|"
+    r"\b(?:show|create|make|draw|generate|give\s+me|plot)\s+(?:me\s+)?(?:a\s+)?(?:pie|donut|doughnut)\b|"
+    r"\b(?:composition|proportion|share|makeup)\s+(?:of\s+\w+\s+)?(?:chart|plot|pie|graph)\b|"
+    r"\b(?:composition|proportion|share|makeup)\s+(?:by|of|for)\s+|"
+    r"\bbreakdown\s+(?:chart|pie|plot)\b"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def _detect_pie_chart_request(message: str, df: "pd.DataFrame") -> dict | None:
+    """Extract value_col (numeric) and slice_col (categorical) for a pie chart.
+
+    Looks for a numeric column to sum per slice and a categorical column to
+    group by. Returns dict with {value_col, slice_col} or None if no usable
+    columns found.
+    """
+    numeric_cols = [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])]
+    categorical_cols = [
+        c
+        for c in df.columns
+        if not pd.api.types.is_numeric_dtype(df[c])
+        and df[c].nunique() >= 2
+        and df[c].nunique() <= 30
+    ]
+
+    if not numeric_cols or not categorical_cols:
+        return None
+
+    msg_lower = message.lower()
+
+    # Find slice_col: categorical column mentioned after "by/of/for/per/across"
+    slice_col = None
+    by_match = re.search(
+        r"\b(?:by|of|for|per|across|grouped\s+by|segmented\s+by)\s+([\w\s]{1,40}?)(?:\s*[.?!]|$)",
+        msg_lower,
+    )
+    if by_match:
+        fragment = by_match.group(1).strip()
+        for col in sorted(categorical_cols, key=len, reverse=True):
+            if col.lower() in fragment:
+                slice_col = col
+                break
+
+    # Fallback: first categorical column mentioned in message
+    if not slice_col:
+        for col in sorted(categorical_cols, key=len, reverse=True):
+            if col.lower() in msg_lower:
+                slice_col = col
+                break
+
+    # Final fallback: first categorical column in dataset
+    if not slice_col:
+        slice_col = categorical_cols[0]
+
+    # Find value_col: numeric column mentioned in message (longest match first)
+    value_col = None
+    for col in sorted(numeric_cols, key=len, reverse=True):
+        if col.lower() in msg_lower:
+            value_col = col
+            break
+
+    # Fallback: first numeric column
+    if not value_col:
+        value_col = numeric_cols[0]
+
+    return {"value_col": value_col, "slice_col": slice_col}
+
+
 def _detect_topn_request(message: str, df: "pd.DataFrame") -> dict | None:
     """Extract sort column, n, and direction from the user message.
 
@@ -2770,6 +2843,45 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Box plot is nice-to-have; never crash chat
 
+    # Check for pie / donut chart request ("pie chart of revenue by region")
+    pie_chart: dict | None = None
+    if _PIE_CHART_PATTERNS.search(body.message) and ctx["dataset"]:
+        try:
+            _ds = ctx["dataset"]
+            _file_path = Path(_ds.file_path)
+            if _file_path.exists():
+                _df = _load_working_df(_file_path, _active_filter_conditions)
+                _pie_req = _detect_pie_chart_request(body.message, _df)
+                if _pie_req:
+                    _pie_val = _pie_req["value_col"]
+                    _pie_slc = _pie_req["slice_col"]
+                    from core.chart_builder import build_pie_chart as _build_pie
+
+                    _pie_series = (
+                        _df.groupby(_pie_slc)[_pie_val].sum().sort_values(ascending=False)
+                    )
+                    pie_chart = _build_pie(
+                        _pie_series,
+                        title=f"{_pie_val} by {_pie_slc}",
+                        limit=10,
+                    )
+                    _pie_total = float(_pie_series.sum()) if not _pie_series.empty else 0
+                    _pie_top = (
+                        f"{_pie_series.index[0]} ({_pie_series.iloc[0] / _pie_total * 100:.1f}%)"
+                        if _pie_total > 0 and len(_pie_series) > 0
+                        else "unknown"
+                    )
+                    system_prompt += (
+                        f"\n\n## Pie Chart: {_pie_val} by {_pie_slc}\n"
+                        f"Total: {_pie_total:.2f}. Largest slice: {_pie_top}. "
+                        f"{_pie_series.shape[0]} categories shown. "
+                        "A pie chart is shown in the chat. Describe the composition: "
+                        "which slice dominates, how concentrated is the distribution, "
+                        "any surprising or notable segments."
+                    )
+        except Exception:  # noqa: BLE001
+            pass  # Pie chart is nice-to-have; never crash chat
+
     # Check for column rename request ("rename revenue_usd to Revenue")
     rename_result: dict | None = None
     if _RENAME_PATTERNS.search(body.message) and ctx["dataset"]:
@@ -4067,6 +4179,10 @@ def send_message(
         # Emit box plot chart if triggered (reuses existing {type:"chart"} path)
         if boxplot_chart:
             yield f"data: {json.dumps({'type': 'chart', 'chart': boxplot_chart})}\n\n"
+
+        # Emit pie / donut chart if triggered (reuses existing {type:"chart"} path)
+        if pie_chart:
+            yield f"data: {json.dumps({'type': 'chart', 'chart': pie_chart})}\n\n"
 
         # Emit column rename result if executed
         if rename_result:
