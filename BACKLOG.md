@@ -5,7 +5,7 @@ Living document for coordinating between bot instances and tracking ideation.
 
 ## Currently Working On
 
-## Day 19 (04:00) — In Progress
+## Day 19 (04:00) — Done
 Summary statistics table via chat + Category value counts via chat — `_SUMMARY_STATS_PATTERNS` (7 NL variants: "summarize my data", "describe my dataset", "summary statistics", "stats for all columns", "statistical overview", "dataset statistics", "descriptive statistics") + handler calls `compute_summary_stats()` (pandas describe() equivalent: numeric cols get count/mean/std/min/Q25/median/Q75/max/null_count; categorical cols get count/unique/top/freq/null_count); emits `{type:"summary_stats"}` SSE event; `SummaryStatsCard` (slate border, two-section table: Numeric Columns + Categorical Columns, summary footer). `_VALUE_COUNT_PATTERNS` (8 NL variants: "most common values in X", "frequency table for X", "value counts for X", "how often does each X appear", "most frequent X", "count occurrences of X") + `_detect_value_counts_col()` + `compute_value_counts()` (top-N value frequencies with count + pct for categorical column; cap 20 values); emits `{type:"value_counts"}` SSE event; `ValueCountCard` (lime border, value/count/% table).
 
 ## Day 18 (20:00) — Done
