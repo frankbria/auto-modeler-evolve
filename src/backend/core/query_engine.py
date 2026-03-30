@@ -285,7 +285,9 @@ def _execute_spec(spec: dict, df: pd.DataFrame) -> tuple[pd.DataFrame | None, st
         strength = (
             "strong"
             if abs(corr_val) >= 0.7
-            else "moderate" if abs(corr_val) >= 0.4 else "weak"
+            else "moderate"
+            if abs(corr_val) >= 0.4
+            else "weak"
         )
         direction = "positive" if corr_val >= 0 else "negative"
         text = (
