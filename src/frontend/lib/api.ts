@@ -460,6 +460,22 @@ export const api = {
 
     downloadDatasetUrl: (datasetId: string): string =>
       `${API_URL}/api/data/${datasetId}/download`,
+
+    getSummaryStats: (
+      datasetId: string
+    ): Promise<import("./types").SummaryStatsResult> =>
+      fetch(`${API_URL}/api/data/${datasetId}/summary-stats`).then((r) =>
+        r.json()
+      ),
+
+    getValueCounts: (
+      datasetId: string,
+      col: string,
+      n: number = 20
+    ): Promise<import("./types").ValueCountResult> =>
+      fetch(
+        `${API_URL}/api/data/${datasetId}/value-counts?col=${encodeURIComponent(col)}&n=${n}`
+      ).then((r) => r.json()),
   },
 
   chat: {

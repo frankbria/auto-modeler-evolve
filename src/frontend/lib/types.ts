@@ -258,6 +258,63 @@ export interface NullMapResult {
 }
 
 // ---------------------------------------------------------------------------
+// Summary statistics table
+// ---------------------------------------------------------------------------
+
+export interface NumericColumnStats {
+  column: string
+  count: number
+  mean: number | null
+  std: number | null
+  min: number | null
+  q25: number | null
+  median: number | null
+  q75: number | null
+  max: number | null
+  null_count: number
+}
+
+export interface CategoricalColumnStats {
+  column: string
+  count: number
+  unique: number
+  top: string | null
+  freq: number
+  null_count: number
+}
+
+export interface SummaryStatsResult {
+  dataset_id: string
+  total_rows: number
+  total_cols: number
+  numeric_stats: NumericColumnStats[]
+  categorical_stats: CategoricalColumnStats[]
+  summary: string
+}
+
+// ---------------------------------------------------------------------------
+// Category value counts
+// ---------------------------------------------------------------------------
+
+export interface ValueCountRow {
+  value: string
+  count: number
+  pct: number
+}
+
+export interface ValueCountResult {
+  dataset_id: string
+  column: string
+  total_rows: number
+  non_null: number
+  null_count: number
+  unique_count: number
+  rows: ValueCountRow[]
+  has_more: boolean
+  summary: string
+}
+
+// ---------------------------------------------------------------------------
 // Chat-driven feature engineering
 // ---------------------------------------------------------------------------
 
@@ -315,6 +372,8 @@ export interface ChatMessage {
   records?: RecordTableResult
   data_export?: DataExportResult
   null_map?: NullMapResult
+  summary_stats?: SummaryStatsResult
+  value_counts?: ValueCountResult
 }
 
 export interface SegmentPerformanceSegment {

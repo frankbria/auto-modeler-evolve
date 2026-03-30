@@ -47,6 +47,8 @@ import { TopNCard } from "@/components/data/top-n-card"
 import { RecordTableCard } from "@/components/data/record-table-card"
 import { DataExportCard } from "@/components/data/data-export-card"
 import { NullMapCard } from "@/components/data/null-map-card"
+import { SummaryStatsCard } from "@/components/data/summary-stats-card"
+import { ValueCountCard } from "@/components/data/value-count-card"
 import { WhatIfChatCard } from "@/components/deploy/whatif-chat-card"
 import {
   FeatureSuggestCard,
@@ -169,6 +171,8 @@ export default function ProjectWorkspace() {
     attachRecordsToLastMessage,
     attachDataExportToLastMessage,
     attachNullMapToLastMessage,
+    attachSummaryStatsToLastMessage,
+    attachValueCountsToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -451,6 +455,10 @@ export default function ProjectWorkspace() {
                 attachDataExportToLastMessage(json.data_export as import("@/lib/types").DataExportResult)
               } else if (json.type === "null_map" && json.null_map) {
                 attachNullMapToLastMessage(json.null_map as import("@/lib/types").NullMapResult)
+              } else if (json.type === "summary_stats" && json.summary_stats) {
+                attachSummaryStatsToLastMessage(json.summary_stats as import("@/lib/types").SummaryStatsResult)
+              } else if (json.type === "value_counts" && json.value_counts) {
+                attachValueCountsToLastMessage(json.value_counts as import("@/lib/types").ValueCountResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -500,6 +508,8 @@ export default function ProjectWorkspace() {
     attachRecordsToLastMessage,
     attachDataExportToLastMessage,
     attachNullMapToLastMessage,
+    attachSummaryStatsToLastMessage,
+    attachValueCountsToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -812,6 +822,12 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.null_map && (
                       <NullMapCard result={msg.null_map} />
+                    )}
+                    {msg.summary_stats && (
+                      <SummaryStatsCard result={msg.summary_stats} />
+                    )}
+                    {msg.value_counts && (
+                      <ValueCountCard result={msg.value_counts} />
                     )}
                   </div>
                 </div>

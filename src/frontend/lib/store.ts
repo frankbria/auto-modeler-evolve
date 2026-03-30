@@ -76,6 +76,8 @@ interface AppState {
   attachRecordsToLastMessage: (records: import("./types").RecordTableResult) => void
   attachDataExportToLastMessage: (data_export: import("./types").DataExportResult) => void
   attachNullMapToLastMessage: (null_map: import("./types").NullMapResult) => void
+  attachSummaryStatsToLastMessage: (summary_stats: import("./types").SummaryStatsResult) => void
+  attachValueCountsToLastMessage: (value_counts: import("./types").ValueCountResult) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -386,6 +388,26 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, null_map }
+      }
+      return { messages }
+    }),
+
+  attachSummaryStatsToLastMessage: (summary_stats) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, summary_stats }
+      }
+      return { messages }
+    }),
+
+  attachValueCountsToLastMessage: (value_counts) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, value_counts }
       }
       return { messages }
     }),

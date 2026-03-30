@@ -1594,3 +1594,144 @@ def sample_records(
         "condition_summary": condition_summary,
         "summary": summary,
     }
+
+
+# ---------------------------------------------------------------------------
+# Summary statistics (describe() equivalent for all columns)
+# ---------------------------------------------------------------------------
+
+
+def compute_summary_stats(df: pd.DataFrame) -> dict:
+    """Return describe()-style statistics for all columns in the DataFrame.
+
+    Numeric columns: count, mean, std, min, Q25, median, Q75, max, null_count.
+    Categorical columns: count, unique, top (most common value), freq, null_count.
+
+    Returns a dict with total_rows, total_cols, numeric_stats, categorical_stats,
+    and a plain-English summary.
+    """
+    numeric_cols = df.select_dtypes(include="number").columns.tolist()
+    categorical_cols = df.select_dtypes(exclude="number").columns.tolist()
+
+    def _safe_round(val: Any, ndigits: int = 4) -> float | None:
+        try:
+            f = float(val)
+            if np.isnan(f) or np.isinf(f):
+                return None
+            return round(f, ndigits)
+        except (TypeError, ValueError):
+            return None
+
+    numeric_stats = []
+    for col in numeric_cols:
+        s = df[col].dropna()
+        n = len(s)
+        numeric_stats.append(
+            {
+                "column": col,
+                "count": n,
+                "mean": _safe_round(s.mean()) if n > 0 else None,
+                "std": _safe_round(s.std()) if n > 1 else None,
+                "min": _safe_round(s.min()) if n > 0 else None,
+                "q25": _safe_round(s.quantile(0.25)) if n > 0 else None,
+                "median": _safe_round(s.median()) if n > 0 else None,
+                "q75": _safe_round(s.quantile(0.75)) if n > 0 else None,
+                "max": _safe_round(s.max()) if n > 0 else None,
+                "null_count": int(df[col].isna().sum()),
+            }
+        )
+
+    categorical_stats = []
+    for col in categorical_cols:
+        s = df[col].dropna().astype(str)
+        n = len(s)
+        top_val: str | None = None
+        top_freq = 0
+        if n > 0:
+            vc = s.value_counts()
+            top_val = str(vc.index[0])
+            top_freq = int(vc.iloc[0])
+        categorical_stats.append(
+            {
+                "column": col,
+                "count": n,
+                "unique": int(df[col].nunique()),
+                "top": top_val,
+                "freq": top_freq,
+                "null_count": int(df[col].isna().sum()),
+            }
+        )
+
+    total_rows = len(df)
+    total_cols = len(df.columns)
+    summary = (
+        f"{total_rows:,} rows × {total_cols} columns "
+        f"({len(numeric_cols)} numeric, {len(categorical_cols)} categorical)."
+    )
+
+    return {
+        "total_rows": total_rows,
+        "total_cols": total_cols,
+        "numeric_stats": numeric_stats,
+        "categorical_stats": categorical_stats,
+        "summary": summary,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Category value counts (frequency table for a single categorical column)
+# ---------------------------------------------------------------------------
+
+
+def compute_value_counts(df: pd.DataFrame, col: str, n: int = 20) -> dict:
+    """Return the top-N value frequencies for a single column.
+
+    Returns a dict with column, total_rows, unique_count, rows (list of
+    {value, count, pct}), has_more (bool), and a plain-English summary.
+    """
+    n = max(1, min(n, 50))
+    if col not in df.columns:
+        raise ValueError(f"Column '{col}' not found in dataset.")
+
+    series = df[col].dropna().astype(str)
+    total_rows = len(df)
+    non_null = len(series)
+    null_count = total_rows - non_null
+    unique_count = int(series.nunique())
+
+    vc = series.value_counts().head(n)
+    rows = [
+        {
+            "value": str(val),
+            "count": int(cnt),
+            "pct": round(int(cnt) / non_null * 100, 1) if non_null > 0 else 0.0,
+        }
+        for val, cnt in vc.items()
+    ]
+
+    has_more = unique_count > n
+    top_val = rows[0]["value"] if rows else None
+    top_pct = rows[0]["pct"] if rows else 0.0
+
+    summary_parts = [
+        f"'{col}' has {unique_count} unique value{'s' if unique_count != 1 else ''}."
+    ]
+    if top_val:
+        summary_parts.append(
+            f"Most common: '{top_val}' ({top_pct}% of non-null rows)."
+        )
+    if null_count > 0:
+        summary_parts.append(f"{null_count} null value{'s' if null_count != 1 else ''}.")
+    if has_more:
+        summary_parts.append(f"Showing top {n} of {unique_count}.")
+
+    return {
+        "column": col,
+        "total_rows": total_rows,
+        "non_null": non_null,
+        "null_count": null_count,
+        "unique_count": unique_count,
+        "rows": rows,
+        "has_more": has_more,
+        "summary": " ".join(summary_parts),
+    }

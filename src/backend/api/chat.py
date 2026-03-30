@@ -1575,6 +1575,58 @@ _NULL_MAP_PATTERNS = re.compile(
 )
 
 
+# Keywords that trigger a full-dataset summary statistics table
+_SUMMARY_STATS_PATTERNS = re.compile(
+    r"(?:"
+    r"\b(?:summarize|describe|overview\s+of)\s+(?:all\s+)?(?:my\s+)?(?:data|dataset|all\s+columns?)\b|"
+    r"\bstatistical\s+(?:summary|overview)\b|"
+    r"\bsummary\s+statistics\b|"
+    r"\bdescriptive\s+statistics\b|"
+    r"\bstats\s+(?:for\s+)?(?:all\s+)?(?:my\s+)?(?:columns?|data|dataset)\b|"
+    r"\b(?:data|dataset)\s+(?:statistics|stats|summary|overview)\b|"
+    r"\b(?:show|give)\s+me\s+(?:all\s+)?(?:the\s+)?(?:statistics|stats|summary)\s+"
+    r"(?:for\s+)?(?:all\s+)?(?:my\s+)?(?:data|columns?)\b"
+    r")",
+    re.IGNORECASE,
+)
+
+# Keywords that trigger a single-column value frequency table
+_VALUE_COUNT_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"\bmost\s+(?:common|frequent)\s+(?:values?\s+(?:in|for|of)\s+\w+|\w+\s+values?|\w+)\b|"
+    r"\bfrequency\s+(?:table\s+)?(?:for|of)\s+\w+\b|"
+    r"\bvalue\s+(?:counts?|frequencies?)\s+(?:for|of)\s+\w+\b|"
+    r"\bhow\s+(?:often|common|frequent)\s+(?:does|do|is|are)\s+(?:each\s+)?\w+\s*(?:value\s+)?(?:appear|occur|show\s+up)\b|"
+    r"\bhow\s+(?:common|frequent)\s+(?:is|are)\s+(?:each\s+)?\w+\b|"
+    r"\bcount\s+(?:of\s+)?(?:each|every)\s+\w+\s+(?:value|occurrence)\b|"
+    r"\bhow\s+is\s+(?:my\s+)?data\s+split\s+(?:by|across)\s+\w+\b|"
+    r"\btop\s+(?:values?\s+(?:in|for|of)|occurrences?\s+(?:in|for))\s+\w+\b"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def _detect_value_counts_col(message: str, df: "pd.DataFrame") -> str | None:
+    """Extract the categorical column for value counts from the user message.
+
+    Scans actual DataFrame column names (longest first) against the message.
+    Falls back to the first categorical column if no column name is found.
+    Returns the column name or None if the DataFrame has no columns.
+    """
+    if df.empty or len(df.columns) == 0:
+        return None
+    msg_lower = message.lower()
+    # Try longest match first to avoid partial matches
+    for col in sorted(df.columns, key=len, reverse=True):
+        if col.lower() in msg_lower or col.replace("_", " ").lower() in msg_lower:
+            return col
+    # Fallback: first non-numeric column, else first column
+    cat_cols = [c for c in df.columns if not pd.api.types.is_numeric_dtype(df[c])]
+    if cat_cols:
+        return cat_cols[0]
+    return df.columns[0]
+
+
 def _detect_histogram_col(message: str, df: "pd.DataFrame") -> str | None:
     """Extract the numeric column to histogram from the user message.
 
@@ -3232,6 +3284,55 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Null map is nice-to-have; never crash chat
 
+    # Check for summary statistics request ("summarize my data", "stats for all columns")
+    summary_stats_event: dict | None = None
+    if _SUMMARY_STATS_PATTERNS.search(body.message) and ctx["dataset"]:
+        try:
+            from core.analyzer import compute_summary_stats as _compute_ss
+
+            _ds = ctx["dataset"]
+            _file_path = Path(_ds.file_path)
+            if _file_path.exists():
+                _df = _load_working_df(_file_path, _active_filter_conditions)
+                summary_stats_event = _compute_ss(_df)
+                summary_stats_event["dataset_id"] = _ds.id
+                _ns = len(summary_stats_event["numeric_stats"])
+                _cs = len(summary_stats_event["categorical_stats"])
+                system_prompt += (
+                    f"\n\n## Dataset Summary Statistics\n"
+                    f"{summary_stats_event['summary']}\n"
+                    f"{_ns} numeric column(s), {_cs} categorical column(s). "
+                    "A summary statistics table is shown in the chat. "
+                    "Narrate the key highlights — range of values, any column "
+                    "with many nulls, the most common categorical values."
+                )
+        except Exception:  # noqa: BLE001
+            pass  # Summary stats is nice-to-have; never crash chat
+
+    # Check for value counts request ("most common values in region", "frequency table for product")
+    value_counts_event: dict | None = None
+    if _VALUE_COUNT_PATTERNS.search(body.message) and ctx["dataset"]:
+        try:
+            from core.analyzer import compute_value_counts as _compute_vc
+
+            _ds = ctx["dataset"]
+            _file_path = Path(_ds.file_path)
+            if _file_path.exists():
+                _df = _load_working_df(_file_path, _active_filter_conditions)
+                _vc_col = _detect_value_counts_col(body.message, _df)
+                if _vc_col:
+                    value_counts_event = _compute_vc(_df, col=_vc_col, n=20)
+                    value_counts_event["dataset_id"] = _ds.id
+                    system_prompt += (
+                        f"\n\n## Value Counts: {_vc_col}\n"
+                        f"{value_counts_event['summary']}\n"
+                        "A value-frequency table is shown in the chat. "
+                        "Narrate the distribution — what the most common values are, "
+                        "whether one category dominates, and any notable patterns."
+                    )
+        except Exception:  # noqa: BLE001
+            pass  # Value counts is nice-to-have; never crash chat
+
     # Check for column rename request ("rename revenue_usd to Revenue")
     rename_result: dict | None = None
     if _RENAME_PATTERNS.search(body.message) and ctx["dataset"]:
@@ -4545,6 +4646,14 @@ def send_message(
         # Emit missing values overview card
         if null_map_event:
             yield f"data: {json.dumps({'type': 'null_map', 'null_map': null_map_event})}\n\n"
+
+        # Emit summary statistics table
+        if summary_stats_event:
+            yield f"data: {json.dumps({'type': 'summary_stats', 'summary_stats': summary_stats_event})}\n\n"
+
+        # Emit value counts table
+        if value_counts_event:
+            yield f"data: {json.dumps({'type': 'value_counts', 'value_counts': value_counts_event})}\n\n"
 
         # Emit dataset export card if triggered
         if data_export:

@@ -27,7 +27,9 @@ from core.analyzer import (
     compute_column_profile,
     compute_full_profile,
     compute_group_stats,
+    compute_summary_stats,
     compute_top_n,
+    compute_value_counts,
     detect_time_columns,
     sample_records,
 )
@@ -2463,3 +2465,55 @@ def download_dataset(
         media_type="text/csv",
         headers={"Content-Disposition": f"attachment; filename={filename}"},
     )
+
+
+@router.get("/{dataset_id}/summary-stats")
+def get_summary_stats(
+    dataset_id: str,
+    session: Session = Depends(get_session),
+):
+    """Return summary statistics (describe-equivalent) for all columns.
+
+    Numeric columns: count, mean, std, min, Q25, median, Q75, max, null_count.
+    Categorical columns: count, unique, top, freq, null_count.
+    """
+    dataset = session.get(Dataset, dataset_id)
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    file_path = Path(dataset.file_path)
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Dataset file not found")
+
+    df = pd.read_csv(file_path)
+    return compute_summary_stats(df)
+
+
+@router.get("/{dataset_id}/value-counts")
+def get_value_counts(
+    dataset_id: str,
+    col: str,
+    n: int = 20,
+    session: Session = Depends(get_session),
+):
+    """Return the top-N value frequencies for a single column.
+
+    Returns ranked {value, count, pct} rows sorted by frequency descending.
+    400 if the column is not found in the dataset.
+    """
+    dataset = session.get(Dataset, dataset_id)
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    file_path = Path(dataset.file_path)
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Dataset file not found")
+
+    df = pd.read_csv(file_path)
+    if col not in df.columns:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Column '{col}' not found. Available: {list(df.columns)}",
+        )
+
+    return compute_value_counts(df, col=col, n=n)
