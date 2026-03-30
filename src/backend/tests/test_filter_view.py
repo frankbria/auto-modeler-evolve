@@ -11,7 +11,6 @@ import pandas as pd
 import pytest
 from httpx import AsyncClient
 
-
 # ---------------------------------------------------------------------------
 # Unit tests — core/filter_view.py
 # ---------------------------------------------------------------------------

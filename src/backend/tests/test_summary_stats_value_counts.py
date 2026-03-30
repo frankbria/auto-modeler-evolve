@@ -7,7 +7,6 @@ from sqlmodel import SQLModel
 
 from core.analyzer import compute_summary_stats, compute_value_counts
 
-
 # ---------------------------------------------------------------------------
 # Test DataFrames
 # ---------------------------------------------------------------------------

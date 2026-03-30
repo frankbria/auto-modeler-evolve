@@ -1849,7 +1849,9 @@ def compute_stat_query(
     agg = agg.lower().strip()
     valid_aggs = ("count", "sum", "mean", "median", "max", "min", "std")
     if agg not in valid_aggs:
-        raise ValueError(f"Unknown aggregation '{agg}'. Choose from: {', '.join(valid_aggs)}.")
+        raise ValueError(
+            f"Unknown aggregation '{agg}'. Choose from: {', '.join(valid_aggs)}."
+        )
 
     n_rows = len(df)
 
@@ -1858,12 +1860,26 @@ def compute_stat_query(
             value = int(df[col].notna().sum())
             formatted = f"{value:,}"
             summary = f"There are {value:,} non-null values in '{col}' (out of {n_rows:,} total rows)."
-            return {"agg": "count", "col": col, "value": value, "n_rows": n_rows, "formatted_value": formatted, "summary": summary}
+            return {
+                "agg": "count",
+                "col": col,
+                "value": value,
+                "n_rows": n_rows,
+                "formatted_value": formatted,
+                "summary": summary,
+            }
         else:
             value = n_rows
             formatted = f"{value:,}"
             summary = f"The dataset has {value:,} rows."
-            return {"agg": "count", "col": None, "value": value, "n_rows": n_rows, "formatted_value": formatted, "summary": summary}
+            return {
+                "agg": "count",
+                "col": None,
+                "value": value,
+                "n_rows": n_rows,
+                "formatted_value": formatted,
+                "summary": summary,
+            }
 
     if not col:
         raise ValueError("Column name is required for aggregations other than count.")

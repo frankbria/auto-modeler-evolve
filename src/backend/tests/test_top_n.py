@@ -7,7 +7,6 @@ from sqlmodel import SQLModel
 
 from core.analyzer import compute_top_n
 
-
 # ---------------------------------------------------------------------------
 # Test DataFrames
 # ---------------------------------------------------------------------------

@@ -1644,9 +1644,7 @@ _PAIR_CORR_PATTERNS = re.compile(
 )
 
 
-def _detect_pair_corr_cols(
-    message: str, df: "pd.DataFrame"
-) -> tuple[str, str] | None:
+def _detect_pair_corr_cols(message: str, df: "pd.DataFrame") -> tuple[str, str] | None:
     """Extract the two column names for a pair correlation request.
 
     Scans actual DataFrame column names (longest first) to find two mentions.
@@ -1709,9 +1707,7 @@ _AGG_WORD_MAP = {
 }
 
 
-def _detect_stat_query(
-    message: str, df: "pd.DataFrame"
-) -> dict | None:
+def _detect_stat_query(message: str, df: "pd.DataFrame") -> dict | None:
     """Extract agg and col from a stat query message.
 
     Returns {"agg": ..., "col": ...} or None if no aggregation detected.
@@ -1721,10 +1717,14 @@ def _detect_stat_query(
     # Detect aggregation word — check count/how-many FIRST to avoid
     # "total rows" being captured as "sum" via the "total" word mapping
     agg: str | None = None
-    if "how many" in msg_lower or re.search(r"\bcount\s+(?:the\s+)?(?:rows?|records?|entries?|total)\b", msg_lower):
+    if "how many" in msg_lower or re.search(
+        r"\bcount\s+(?:the\s+)?(?:rows?|records?|entries?|total)\b", msg_lower
+    ):
         agg = "count"
     else:
-        for phrase, canonical in sorted(_AGG_WORD_MAP.items(), key=lambda x: len(x[0]), reverse=True):
+        for phrase, canonical in sorted(
+            _AGG_WORD_MAP.items(), key=lambda x: len(x[0]), reverse=True
+        ):
             if phrase in msg_lower:
                 agg = canonical
                 break
@@ -2277,7 +2277,9 @@ def _load_project_context(project_id: str, session: Session) -> dict:
     if dataset:
         feature_set = session.exec(
             select(FeatureSet)
-            .where(FeatureSet.dataset_id == dataset.id, FeatureSet.is_active == True)  # noqa: E712
+            .where(
+                FeatureSet.dataset_id == dataset.id, FeatureSet.is_active == True
+            )  # noqa: E712
             .order_by(FeatureSet.created_at.desc())  # type: ignore[arg-type]
         ).first()
 
@@ -2288,7 +2290,9 @@ def _load_project_context(project_id: str, session: Session) -> dict:
     # Latest active deployment
     deployment = session.exec(
         select(Deployment)
-        .where(Deployment.project_id == project_id, Deployment.is_active == True)  # noqa: E712
+        .where(
+            Deployment.project_id == project_id, Deployment.is_active == True
+        )  # noqa: E712
         .order_by(Deployment.created_at.desc())  # type: ignore[arg-type]
     ).first()
 
@@ -3255,9 +3259,9 @@ def send_message(
                     _bar_top = (
                         f"{_bar_series.index[0]}: {_bar_series.iloc[0]:.2f}"
                         if _bar_grp and not _bar_series.empty
-                        else str(_bar_series.iloc[0])
-                        if not _bar_series.empty
-                        else "n/a"
+                        else (
+                            str(_bar_series.iloc[0]) if not _bar_series.empty else "n/a"
+                        )
                     )
                     system_prompt += (
                         f"\n\n## Bar Chart: {_bar_title}\n"

@@ -7,7 +7,6 @@ from sqlmodel import SQLModel, create_engine
 
 from core.analyzer import compare_time_windows, _build_timewindow_summary
 
-
 # ---------------------------------------------------------------------------
 # Test DataFrames
 # ---------------------------------------------------------------------------

@@ -9,7 +9,6 @@ from sqlmodel import SQLModel
 
 from core.analyzer import compute_pair_correlation, compute_stat_query
 
-
 # ---------------------------------------------------------------------------
 # Test DataFrames
 # ---------------------------------------------------------------------------
@@ -97,7 +96,10 @@ class TestComputePairCorrelation:
         result = compute_pair_correlation(small_df, "a", "b")
         assert result["r"] is None
         assert result["n"] == 2
-        assert "insufficient" in result["strength"].lower() or "insufficient" in result["summary"].lower()
+        assert (
+            "insufficient" in result["strength"].lower()
+            or "insufficient" in result["summary"].lower()
+        )
 
     def test_missing_col1_raises(self, corr_df):
         with pytest.raises(ValueError, match="not found"):
@@ -131,7 +133,13 @@ class TestComputePairCorrelation:
 
     def test_strength_labels_valid(self, corr_df):
         result = compute_pair_correlation(corr_df, "revenue", "cost")
-        assert result["strength"] in ("very strong", "strong", "moderate", "weak", "negligible")
+        assert result["strength"] in (
+            "very strong",
+            "strong",
+            "moderate",
+            "weak",
+            "negligible",
+        )
 
     def test_direction_valid(self, corr_df):
         result = compute_pair_correlation(corr_df, "revenue", "cost")
@@ -203,7 +211,10 @@ class TestComputeStatQuery:
     def test_formatted_value_thousands(self, sales_df):
         result = compute_stat_query(sales_df, agg="sum", col="revenue")
         # 19200 → "19.20k"
-        assert "k" in result["formatted_value"] or result["formatted_value"].replace(",", "").replace(".", "").isdigit()
+        assert (
+            "k" in result["formatted_value"]
+            or result["formatted_value"].replace(",", "").replace(".", "").isdigit()
+        )
 
     def test_n_rows_recorded(self, sales_df):
         result = compute_stat_query(sales_df, agg="mean", col="revenue")
@@ -248,6 +259,7 @@ class TestComputeStatQuery:
 @pytest.fixture
 def app():
     from main import app as fastapi_app
+
     return fastapi_app
 
 
@@ -265,6 +277,7 @@ def sample_csv():
 @pytest.fixture(autouse=True)
 def reset_db():
     from db import engine as _engine
+
     SQLModel.metadata.drop_all(bind=_engine)
     SQLModel.metadata.create_all(bind=_engine)
     yield
@@ -272,7 +285,9 @@ def reset_db():
 
 async def _create_dataset(client, sample_csv: bytes, suffix: str = "") -> str:
     """Helper: create a project, upload CSV, return dataset_id."""
-    proj_resp = await client.post("/api/projects", json={"name": f"Test Project {suffix}"})
+    proj_resp = await client.post(
+        "/api/projects", json={"name": f"Test Project {suffix}"}
+    )
     assert proj_resp.status_code == 201
     project_id = proj_resp.json()["id"]
 
@@ -287,7 +302,9 @@ async def _create_dataset(client, sample_csv: bytes, suffix: str = "") -> str:
 
 @pytest.mark.asyncio
 async def test_pair_correlation_endpoint(app, sample_csv):
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
         dataset_id = await _create_dataset(client, sample_csv, "1")
 
         resp2 = await client.get(
@@ -303,7 +320,9 @@ async def test_pair_correlation_endpoint(app, sample_csv):
 
 @pytest.mark.asyncio
 async def test_pair_correlation_missing_col(app, sample_csv):
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
         dataset_id = await _create_dataset(client, sample_csv, "2")
 
         resp2 = await client.get(
@@ -314,7 +333,9 @@ async def test_pair_correlation_missing_col(app, sample_csv):
 
 @pytest.mark.asyncio
 async def test_pair_correlation_non_numeric_col(app, sample_csv):
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
         dataset_id = await _create_dataset(client, sample_csv, "3")
 
         resp2 = await client.get(
@@ -325,7 +346,9 @@ async def test_pair_correlation_non_numeric_col(app, sample_csv):
 
 @pytest.mark.asyncio
 async def test_stat_query_mean(app, sample_csv):
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
         dataset_id = await _create_dataset(client, sample_csv, "4")
 
         resp2 = await client.get(
@@ -340,7 +363,9 @@ async def test_stat_query_mean(app, sample_csv):
 
 @pytest.mark.asyncio
 async def test_stat_query_count_no_col(app, sample_csv):
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
         dataset_id = await _create_dataset(client, sample_csv, "5")
 
         resp2 = await client.get(f"/api/data/{dataset_id}/stat-query?agg=count")
@@ -350,7 +375,9 @@ async def test_stat_query_count_no_col(app, sample_csv):
 
 @pytest.mark.asyncio
 async def test_stat_query_invalid_agg(app, sample_csv):
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
         dataset_id = await _create_dataset(client, sample_csv, "6")
 
         resp2 = await client.get(
@@ -361,7 +388,9 @@ async def test_stat_query_invalid_agg(app, sample_csv):
 
 @pytest.mark.asyncio
 async def test_stat_query_missing_col(app, sample_csv):
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
         dataset_id = await _create_dataset(client, sample_csv, "7")
 
         resp2 = await client.get(
@@ -378,6 +407,7 @@ async def test_stat_query_missing_col(app, sample_csv):
 class TestPairCorrPatterns:
     def setup_method(self):
         from api.chat import _PAIR_CORR_PATTERNS, _detect_pair_corr_cols
+
         self.pattern = _PAIR_CORR_PATTERNS
         self.detect = _detect_pair_corr_cols
 
@@ -426,6 +456,7 @@ class TestPairCorrPatterns:
 class TestStatQueryPatterns:
     def setup_method(self):
         from api.chat import _STAT_QUERY_PATTERNS, _detect_stat_query
+
         self.pattern = _STAT_QUERY_PATTERNS
         self.detect = _detect_stat_query
 
