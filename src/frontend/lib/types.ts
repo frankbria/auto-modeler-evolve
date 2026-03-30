@@ -236,6 +236,28 @@ export interface DataExportResult {
 }
 
 // ---------------------------------------------------------------------------
+// Missing values overview (chat-triggered null map)
+// ---------------------------------------------------------------------------
+
+export interface NullMapColumn {
+  column: string
+  null_count: number
+  null_pct: number
+  complete_pct: number
+}
+
+export interface NullMapResult {
+  dataset_id: string
+  total_rows: number
+  total_columns: number
+  columns_with_nulls: number
+  fully_complete_columns: number
+  overall_completeness: number
+  columns: NullMapColumn[]
+  summary: string
+}
+
+// ---------------------------------------------------------------------------
 // Chat-driven feature engineering
 // ---------------------------------------------------------------------------
 
@@ -292,6 +314,7 @@ export interface ChatMessage {
   pred_errors?: PredictionErrorResult
   records?: RecordTableResult
   data_export?: DataExportResult
+  null_map?: NullMapResult
 }
 
 export interface SegmentPerformanceSegment {

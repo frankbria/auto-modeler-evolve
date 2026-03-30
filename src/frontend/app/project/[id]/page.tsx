@@ -46,6 +46,7 @@ import { TimeWindowCard } from "@/components/data/time-window-card"
 import { TopNCard } from "@/components/data/top-n-card"
 import { RecordTableCard } from "@/components/data/record-table-card"
 import { DataExportCard } from "@/components/data/data-export-card"
+import { NullMapCard } from "@/components/data/null-map-card"
 import { WhatIfChatCard } from "@/components/deploy/whatif-chat-card"
 import {
   FeatureSuggestCard,
@@ -167,6 +168,7 @@ export default function ProjectWorkspace() {
     attachPredictionErrorsToLastMessage,
     attachRecordsToLastMessage,
     attachDataExportToLastMessage,
+    attachNullMapToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -447,6 +449,8 @@ export default function ProjectWorkspace() {
                 attachRecordsToLastMessage(json.records as import("@/lib/types").RecordTableResult)
               } else if (json.type === "data_export" && json.data_export) {
                 attachDataExportToLastMessage(json.data_export as import("@/lib/types").DataExportResult)
+              } else if (json.type === "null_map" && json.null_map) {
+                attachNullMapToLastMessage(json.null_map as import("@/lib/types").NullMapResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -495,6 +499,7 @@ export default function ProjectWorkspace() {
     attachPredictionErrorsToLastMessage,
     attachRecordsToLastMessage,
     attachDataExportToLastMessage,
+    attachNullMapToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -804,6 +809,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.data_export && (
                       <DataExportCard result={msg.data_export} />
+                    )}
+                    {msg.null_map && (
+                      <NullMapCard result={msg.null_map} />
                     )}
                   </div>
                 </div>

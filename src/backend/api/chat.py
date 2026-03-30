@@ -1541,6 +1541,54 @@ _DOWNLOAD_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# ---------------------------------------------------------------------------
+# Histogram / frequency distribution via chat
+# ---------------------------------------------------------------------------
+
+_HISTOGRAM_PATTERNS = re.compile(
+    r"(?:"
+    r"\bhistogram\s+(?:of|for)\b|"
+    r"\b(?:show|create|make|draw|generate|give\s+me|plot)\s+(?:me\s+)?(?:a\s+)?histogram\b|"
+    r"\bfrequency\s+histogram\s+(?:of|for)\b|"
+    r"\bbinned?\s+distribution\s+(?:of|for)\b|"
+    r"\bfrequency\s+chart\s+(?:of|for)\b|"
+    r"\bdistribution\s+(?:chart|histogram)\s+(?:of|for)\b"
+    r")",
+    re.IGNORECASE,
+)
+
+# ---------------------------------------------------------------------------
+# Missing values / null overview via chat
+# ---------------------------------------------------------------------------
+
+_NULL_MAP_PATTERNS = re.compile(
+    r"(?:"
+    r"\b(?:show|display|list|tell\s+me|give\s+me)\s+(?:me\s+)?(?:the\s+)?missing\s+(?:values?|data|fields?)\b|"
+    r"\bwhich\s+columns?\s+(?:have|has|contain)\s+(?:missing|null|blank|empty)\b|"
+    r"\b(?:null|missing)\s+(?:values?|data)\s+(?:overview|summary|report|map|by\s+column)\b|"
+    r"\bdata\s+completeness\s+(?:overview|summary|by\s+column|per\s+column|breakdown)\b|"
+    r"\bhow\s+(?:many|much)\s+missing\s+(?:values?|data)\b|"
+    r"\b(?:null|missing)\s+(?:count|rate|percentage|percent)\s+(?:by|per|for\s+each)\s+column\b|"
+    r"\bwhere\s+(?:is|are)\s+(?:my\s+)?missing\s+(?:data|values?)\b"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def _detect_histogram_col(message: str, df: "pd.DataFrame") -> str | None:
+    """Extract the numeric column to histogram from the user message.
+
+    Returns the column name or None if no numeric column found.
+    """
+    numeric_cols = [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])]
+    if not numeric_cols:
+        return None
+    msg_lower = message.lower()
+    for col in sorted(numeric_cols, key=len, reverse=True):
+        if col.lower() in msg_lower or col.replace("_", " ").lower() in msg_lower:
+            return col
+    return numeric_cols[0]
+
 
 def _detect_topn_request(message: str, df: "pd.DataFrame") -> dict | None:
     """Extract sort column, n, and direction from the user message.
@@ -3077,6 +3125,107 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Export is nice-to-have; never crash chat
 
+    # Check for histogram request ("histogram of revenue", "frequency histogram of age")
+    histogram_chart: dict | None = None
+    if _HISTOGRAM_PATTERNS.search(body.message) and ctx["dataset"]:
+        try:
+            _ds = ctx["dataset"]
+            _file_path = Path(_ds.file_path)
+            if _file_path.exists():
+                import numpy as _np_hist
+
+                _df = _load_working_df(_file_path, _active_filter_conditions)
+                _hist_col = _detect_histogram_col(body.message, _df)
+                if _hist_col:
+                    _vals = _df[_hist_col].dropna().values
+                    _n_bins = min(30, max(5, len(_vals) // 10))
+                    _counts, _bin_edges = _np_hist.histogram(_vals, bins=_n_bins)
+                    from core.chart_builder import build_histogram as _build_hist
+
+                    histogram_chart = _build_hist(
+                        bins=_bin_edges[:-1].tolist(),
+                        counts=_counts.tolist(),
+                        title=f"Distribution of {_hist_col}",
+                        x_label=_hist_col,
+                        y_label="Count",
+                    )
+                    _mean = float(_np_hist.mean(_vals))
+                    _std = float(_np_hist.std(_vals))
+                    system_prompt += (
+                        f"\n\n## Histogram: {_hist_col}\n"
+                        f"Column: {_hist_col} | {len(_vals)} values | "
+                        f"Mean: {_mean:.2f} | Std dev: {_std:.2f} | Bins: {_n_bins}.\n"
+                        "A frequency histogram is shown in the chat. "
+                        "Describe the shape of the distribution — is it symmetric, skewed, "
+                        "bimodal? Are there any gaps or outlier bins?"
+                    )
+        except Exception:  # noqa: BLE001
+            pass  # Histogram is nice-to-have; never crash chat
+
+    # Check for missing values overview ("which columns have missing data?", "show nulls")
+    null_map_event: dict | None = None
+    if _NULL_MAP_PATTERNS.search(body.message) and ctx["dataset"]:
+        try:
+            _ds = ctx["dataset"]
+            _file_path = Path(_ds.file_path)
+            if _file_path.exists():
+                _df = _load_working_df(_file_path, _active_filter_conditions)
+                _total_rows = len(_df)
+                _col_nulls = []
+                for _col in _df.columns:
+                    _null_count = int(_df[_col].isna().sum())
+                    _null_pct = round(_null_count / _total_rows * 100, 1) if _total_rows else 0
+                    _col_nulls.append(
+                        {
+                            "column": _col,
+                            "null_count": _null_count,
+                            "null_pct": _null_pct,
+                            "complete_pct": round(100 - _null_pct, 1),
+                        }
+                    )
+                # Sort by most missing first
+                _col_nulls.sort(key=lambda x: x["null_pct"], reverse=True)
+                _cols_with_nulls = [c for c in _col_nulls if c["null_count"] > 0]
+                _fully_complete = len(_col_nulls) - len(_cols_with_nulls)
+                _overall_completeness = round(
+                    sum(c["complete_pct"] for c in _col_nulls) / len(_col_nulls), 1
+                ) if _col_nulls else 100.0
+                _summary = (
+                    f"{len(_cols_with_nulls)} of {len(_col_nulls)} columns have missing values. "
+                    f"Overall completeness: {_overall_completeness}%."
+                    if _cols_with_nulls
+                    else f"All {len(_col_nulls)} columns are fully complete — no missing values!"
+                )
+                null_map_event = {
+                    "dataset_id": _ds.id,
+                    "total_rows": _total_rows,
+                    "total_columns": len(_col_nulls),
+                    "columns_with_nulls": len(_cols_with_nulls),
+                    "fully_complete_columns": _fully_complete,
+                    "overall_completeness": _overall_completeness,
+                    "columns": _col_nulls,
+                    "summary": _summary,
+                }
+                system_prompt += (
+                    f"\n\n## Missing Values Overview\n"
+                    f"{_summary}\n"
+                    + (
+                        "Worst columns: "
+                        + ", ".join(
+                            f"{c['column']} ({c['null_pct']}% missing)"
+                            for c in _cols_with_nulls[:3]
+                        )
+                        + ".\n"
+                        if _cols_with_nulls
+                        else ""
+                    )
+                    + "A missing-values card is shown in the chat. "
+                    "Narrate the data completeness situation. "
+                    "If there are missing values, suggest specific cleaning actions."
+                )
+        except Exception:  # noqa: BLE001
+            pass  # Null map is nice-to-have; never crash chat
+
     # Check for column rename request ("rename revenue_usd to Revenue")
     rename_result: dict | None = None
     if _RENAME_PATTERNS.search(body.message) and ctx["dataset"]:
@@ -4382,6 +4531,14 @@ def send_message(
         # Emit bar chart if triggered (reuses existing {type:"chart"} path)
         if bar_chart:
             yield f"data: {json.dumps({'type': 'chart', 'chart': bar_chart})}\n\n"
+
+        # Emit histogram chart if triggered (reuses existing {type:"chart"} path)
+        if histogram_chart:
+            yield f"data: {json.dumps({'type': 'chart', 'chart': histogram_chart})}\n\n"
+
+        # Emit missing values overview card
+        if null_map_event:
+            yield f"data: {json.dumps({'type': 'null_map', 'null_map': null_map_event})}\n\n"
 
         # Emit dataset export card if triggered
         if data_export:

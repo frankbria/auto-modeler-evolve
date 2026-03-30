@@ -75,6 +75,7 @@ interface AppState {
   attachPredictionErrorsToLastMessage: (pred_errors: import("./types").PredictionErrorResult) => void
   attachRecordsToLastMessage: (records: import("./types").RecordTableResult) => void
   attachDataExportToLastMessage: (data_export: import("./types").DataExportResult) => void
+  attachNullMapToLastMessage: (null_map: import("./types").NullMapResult) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -375,6 +376,16 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, data_export }
+      }
+      return { messages }
+    }),
+
+  attachNullMapToLastMessage: (null_map) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, null_map }
       }
       return { messages }
     }),
