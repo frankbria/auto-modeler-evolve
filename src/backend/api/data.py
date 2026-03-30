@@ -27,6 +27,8 @@ from core.analyzer import (
     compute_column_profile,
     compute_full_profile,
     compute_group_stats,
+    compute_pair_correlation,
+    compute_stat_query,
     compute_summary_stats,
     compute_top_n,
     compute_value_counts,
@@ -2517,3 +2519,82 @@ def get_value_counts(
         )
 
     return compute_value_counts(df, col=col, n=n)
+
+
+@router.get("/{dataset_id}/pair-correlation")
+def get_pair_correlation(
+    dataset_id: str,
+    col1: str,
+    col2: str,
+    session: Session = Depends(get_session),
+):
+    """Return Pearson correlation between two numeric columns.
+
+    Returns r, p_value, n, strength, direction, significance, and plain-English summary.
+    400 if either column is not found or not numeric.
+    """
+    dataset = session.get(Dataset, dataset_id)
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    file_path = Path(dataset.file_path)
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Dataset file not found")
+
+    df = pd.read_csv(file_path)
+    for col in (col1, col2):
+        if col not in df.columns:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Column '{col}' not found. Available: {list(df.columns)}",
+            )
+        if not pd.api.types.is_numeric_dtype(df[col]):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Column '{col}' is not numeric. Pearson correlation requires numeric columns.",
+            )
+
+    return compute_pair_correlation(df, col1=col1, col2=col2)
+
+
+@router.get("/{dataset_id}/stat-query")
+def get_stat_query(
+    dataset_id: str,
+    agg: str,
+    col: str | None = None,
+    session: Session = Depends(get_session),
+):
+    """Compute a single aggregate statistic for a column.
+
+    agg: one of count, sum, mean, median, max, min, std
+    col: column name (required for all aggregations except count)
+
+    Returns agg, col, value, n_rows, formatted_value, summary.
+    400 if agg is unknown, column is not found, or column has no numeric values.
+    """
+    dataset = session.get(Dataset, dataset_id)
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    file_path = Path(dataset.file_path)
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Dataset file not found")
+
+    valid_aggs = ("count", "sum", "mean", "median", "max", "min", "std")
+    if agg.lower() not in valid_aggs:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown aggregation '{agg}'. Choose from: {', '.join(valid_aggs)}.",
+        )
+
+    df = pd.read_csv(file_path)
+    if col and col not in df.columns:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Column '{col}' not found. Available: {list(df.columns)}",
+        )
+
+    try:
+        return compute_stat_query(df, agg=agg, col=col)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc

@@ -1735,3 +1735,189 @@ def compute_value_counts(df: pd.DataFrame, col: str, n: int = 20) -> dict:
         "has_more": has_more,
         "summary": " ".join(summary_parts),
     }
+
+
+def compute_pair_correlation(df: pd.DataFrame, col1: str, col2: str) -> dict:
+    """Compute Pearson correlation between two numeric columns.
+
+    Returns r, p_value, n, strength label, direction, significance, and summary.
+    """
+    from scipy import stats
+
+    if col1 not in df.columns:
+        raise ValueError(f"Column '{col1}' not found in dataset.")
+    if col2 not in df.columns:
+        raise ValueError(f"Column '{col2}' not found in dataset.")
+
+    valid_mask = df[[col1, col2]].notna().all(axis=1)
+    aligned = df.loc[valid_mask, [col1, col2]]
+    n = len(aligned)
+
+    if n < 3:
+        return {
+            "col1": col1,
+            "col2": col2,
+            "r": None,
+            "p_value": None,
+            "n": n,
+            "strength": "insufficient data",
+            "direction": "unknown",
+            "significant": "insufficient data for correlation",
+            "summary": f"Need at least 3 paired observations (only {n} found).",
+        }
+
+    try:
+        r_val, p_val = stats.pearsonr(aligned[col1].values, aligned[col2].values)
+        r_val = float(r_val)
+        p_val = float(p_val)
+    except Exception:  # noqa: BLE001
+        return {
+            "col1": col1,
+            "col2": col2,
+            "r": None,
+            "p_value": None,
+            "n": n,
+            "strength": "error",
+            "direction": "unknown",
+            "significant": "could not compute",
+            "summary": f"Could not compute correlation between '{col1}' and '{col2}'.",
+        }
+
+    abs_r = abs(r_val)
+    if abs_r >= 0.9:
+        strength = "very strong"
+    elif abs_r >= 0.7:
+        strength = "strong"
+    elif abs_r >= 0.5:
+        strength = "moderate"
+    elif abs_r >= 0.3:
+        strength = "weak"
+    else:
+        strength = "negligible"
+
+    direction = "positive" if r_val >= 0 else "negative"
+
+    if p_val < 0.001:
+        sig = "highly significant (p < 0.001)"
+    elif p_val < 0.01:
+        sig = "significant (p < 0.01)"
+    elif p_val < 0.05:
+        sig = "significant (p < 0.05)"
+    else:
+        sig = "not statistically significant (p ≥ 0.05)"
+
+    if abs_r >= 0.7:
+        interp = f"When '{col1}' increases, '{col2}' tends to {'increase' if r_val > 0 else 'decrease'} strongly."
+    elif abs_r >= 0.5:
+        interp = f"There is a moderate {'positive' if r_val > 0 else 'negative'} relationship between these columns."
+    elif abs_r >= 0.3:
+        interp = f"There is a weak {'positive' if r_val > 0 else 'negative'} relationship — other factors are likely involved."
+    else:
+        interp = "These two columns show little to no linear relationship."
+
+    summary = (
+        f"'{col1}' and '{col2}' have a {strength} {direction} correlation "
+        f"(r = {r_val:.3f}, n = {n}). {interp} The relationship is {sig}."
+    )
+
+    return {
+        "col1": col1,
+        "col2": col2,
+        "r": round(r_val, 4),
+        "p_value": round(p_val, 6),
+        "n": n,
+        "strength": strength,
+        "direction": direction,
+        "significant": sig,
+        "interpretation": interp,
+        "summary": summary,
+    }
+
+
+def compute_stat_query(
+    df: pd.DataFrame,
+    agg: str,
+    col: str | None = None,
+) -> dict:
+    """Compute a single aggregate statistic for a column.
+
+    agg: one of count, sum, mean, median, max, min, std
+    col: column name (required unless agg == 'count')
+
+    Returns: agg, col, value, n_rows, formatted_value, summary.
+    """
+    agg = agg.lower().strip()
+    valid_aggs = ("count", "sum", "mean", "median", "max", "min", "std")
+    if agg not in valid_aggs:
+        raise ValueError(f"Unknown aggregation '{agg}'. Choose from: {', '.join(valid_aggs)}.")
+
+    n_rows = len(df)
+
+    if agg == "count":
+        if col and col in df.columns:
+            value = int(df[col].notna().sum())
+            formatted = f"{value:,}"
+            summary = f"There are {value:,} non-null values in '{col}' (out of {n_rows:,} total rows)."
+            return {"agg": "count", "col": col, "value": value, "n_rows": n_rows, "formatted_value": formatted, "summary": summary}
+        else:
+            value = n_rows
+            formatted = f"{value:,}"
+            summary = f"The dataset has {value:,} rows."
+            return {"agg": "count", "col": None, "value": value, "n_rows": n_rows, "formatted_value": formatted, "summary": summary}
+
+    if not col:
+        raise ValueError("Column name is required for aggregations other than count.")
+    if col not in df.columns:
+        raise ValueError(f"Column '{col}' not found in dataset.")
+
+    series = pd.to_numeric(df[col], errors="coerce").dropna()
+    if len(series) == 0:
+        raise ValueError(f"Column '{col}' has no numeric values.")
+
+    if agg == "sum":
+        value = float(series.sum())
+    elif agg == "mean":
+        value = float(series.mean())
+    elif agg == "median":
+        value = float(series.median())
+    elif agg == "max":
+        value = float(series.max())
+    elif agg == "min":
+        value = float(series.min())
+    elif agg == "std":
+        value = float(series.std())
+    else:
+        raise ValueError(f"Unknown aggregation '{agg}'.")
+
+    # Format value nicely
+    if abs(value) >= 1_000_000:
+        formatted = f"{value / 1_000_000:.2f}M"
+    elif abs(value) >= 1_000:
+        formatted = f"{value / 1_000:.2f}k"
+    else:
+        formatted = f"{value:,.2f}" if value != int(value) else f"{int(value):,}"
+
+    agg_labels = {
+        "sum": "total",
+        "mean": "average",
+        "median": "median",
+        "max": "maximum",
+        "min": "minimum",
+        "std": "standard deviation",
+    }
+    label = agg_labels.get(agg, agg)
+    summary = (
+        f"The {label} of '{col}' is {formatted} "
+        f"(based on {len(series):,} non-null values out of {n_rows:,} rows)."
+    )
+
+    return {
+        "agg": agg,
+        "col": col,
+        "value": value,
+        "n_rows": n_rows,
+        "n_valid": len(series),
+        "formatted_value": formatted,
+        "label": label,
+        "summary": summary,
+    }

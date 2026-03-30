@@ -1627,6 +1627,133 @@ def _detect_value_counts_col(message: str, df: "pd.DataFrame") -> str | None:
     return df.columns[0]
 
 
+# Keywords that trigger pair correlation analysis between two specific columns
+# Does NOT overlap with _CORRELATION_TARGET_PATTERNS (which needs a single target) or
+# _HEATMAP_PATTERNS (which requires "matrix/heatmap/pairwise/all columns")
+_PAIR_CORR_PATTERNS = re.compile(
+    r"(?:"
+    r"\bcorrelation\s+between\s+\w[\w\s]*\s+and\s+\w|"
+    r"\bhow\s+(?:strongly\s+)?correlated\s+(?:are|is)\s+\w[\w\s]*\s+(?:and|with|to)\s+\w|"
+    r"\bpearson\s+(?:r\b|correlation|coefficient)|"
+    r"\br\s*(?:value|coefficient)\s+(?:for|between|of)\s+\w|"
+    r"\bdoes\s+\w[\w\s]*\s+correlate\s+with\s+\w|"
+    r"\bcorrelation\s+of\s+\w[\w\s]*\s+(?:with|vs|versus|and|against)\s+\w|"
+    r"\bhow\s+(?:closely|strongly)?\s+(?:related|linked)\s+(?:are|is)\s+\w[\w\s]*\s+(?:and|to|with)\s+\w"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def _detect_pair_corr_cols(
+    message: str, df: "pd.DataFrame"
+) -> tuple[str, str] | None:
+    """Extract the two column names for a pair correlation request.
+
+    Scans actual DataFrame column names (longest first) to find two mentions.
+    Returns (col1, col2) or None if fewer than 2 numeric columns found.
+    """
+    numeric_cols = [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])]
+    if len(numeric_cols) < 2:
+        return None
+
+    msg_lower = message.lower()
+    found: list[str] = []
+    for col in sorted(numeric_cols, key=len, reverse=True):
+        if col.lower() in msg_lower or col.replace("_", " ").lower() in msg_lower:
+            if col not in found:
+                found.append(col)
+        if len(found) == 2:
+            break
+
+    if len(found) == 2:
+        return found[0], found[1]
+    # Fallback: first two numeric columns
+    if len(numeric_cols) >= 2:
+        return numeric_cols[0], numeric_cols[1]
+    return None
+
+
+# Keywords that trigger a single-column aggregate statistic query
+# ("what's the average of revenue?", "total sales", "max cost", "count rows")
+# Does NOT overlap with _GROUP_PATTERNS (no "by" clause) or _COLUMN_PROFILE_PATTERNS
+# (no "describe/tell me about"). Requires explicit aggregation word.
+_STAT_QUERY_PATTERNS = re.compile(
+    r"(?:"
+    r"\bwhat(?:'s|\s+is)?\s+the\s+(?:average|mean|median|total|sum|max(?:imum)?|min(?:imum)?|count|std(?:ev(?:iation)?)?)\s+(?:of|for|value\s+of)?\s*\w|"
+    r"\b(?:average|mean|median|sum|total)\s+(?:of|for)\s+\w|"
+    r"\b(?:max(?:imum)?|min(?:imum)?)\s+(?:value\s+(?:of|for)\s+\w|\w+\s+value)|"
+    r"\bhow\s+(?:many|much)\s+(?:total|rows?|records?|entries?)\b|"
+    r"\bcount\s+(?:the\s+)?(?:rows?|records?|entries?|total)\b|"
+    r"\btotal\s+(?:number\s+of|count\s+of)?\s*\w+\s+(?:is|are|=)?\b|"
+    r"\b(?:sum|total)\s+\w+\b"
+    r")",
+    re.IGNORECASE,
+)
+
+# Map natural-language aggregation words to canonical agg names
+_AGG_WORD_MAP = {
+    "average": "mean",
+    "mean": "mean",
+    "median": "median",
+    "sum": "sum",
+    "total": "sum",
+    "maximum": "max",
+    "max": "max",
+    "minimum": "min",
+    "min": "min",
+    "count": "count",
+    "std": "std",
+    "stdev": "std",
+    "stddev": "std",
+    "standard deviation": "std",
+}
+
+
+def _detect_stat_query(
+    message: str, df: "pd.DataFrame"
+) -> dict | None:
+    """Extract agg and col from a stat query message.
+
+    Returns {"agg": ..., "col": ...} or None if no aggregation detected.
+    """
+    msg_lower = message.lower()
+
+    # Detect aggregation word — check count/how-many FIRST to avoid
+    # "total rows" being captured as "sum" via the "total" word mapping
+    agg: str | None = None
+    if "how many" in msg_lower or re.search(r"\bcount\s+(?:the\s+)?(?:rows?|records?|entries?|total)\b", msg_lower):
+        agg = "count"
+    else:
+        for phrase, canonical in sorted(_AGG_WORD_MAP.items(), key=lambda x: len(x[0]), reverse=True):
+            if phrase in msg_lower:
+                agg = canonical
+                break
+    if not agg:
+        return None
+
+    # Detect column name (longest-match first)
+    col: str | None = None
+    for c in sorted(df.columns, key=len, reverse=True):
+        if c.lower() in msg_lower or c.replace("_", " ").lower() in msg_lower:
+            col = c
+            break
+
+    # For count, col is optional
+    if agg == "count":
+        return {"agg": "count", "col": col}
+
+    # For other aggregations, need a numeric col
+    numeric_cols = [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])]
+    if not col or col not in numeric_cols:
+        # Fallback to first numeric column
+        if numeric_cols:
+            col = numeric_cols[0]
+        else:
+            return None
+
+    return {"agg": agg, "col": col}
+
+
 def _detect_histogram_col(message: str, df: "pd.DataFrame") -> str | None:
     """Extract the numeric column to histogram from the user message.
 
@@ -3333,6 +3460,58 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Value counts is nice-to-have; never crash chat
 
+    # Check for pair correlation request ("correlation between revenue and cost")
+    pair_corr_event: dict | None = None
+    if _PAIR_CORR_PATTERNS.search(body.message) and ctx["dataset"]:
+        try:
+            from core.analyzer import compute_pair_correlation as _compute_pc
+
+            _ds = ctx["dataset"]
+            _file_path = Path(_ds.file_path)
+            if _file_path.exists():
+                _df = _load_working_df(_file_path, _active_filter_conditions)
+                _pc_cols = _detect_pair_corr_cols(body.message, _df)
+                if _pc_cols:
+                    _col1, _col2 = _pc_cols
+                    pair_corr_event = _compute_pc(_df, col1=_col1, col2=_col2)
+                    pair_corr_event["dataset_id"] = _ds.id
+                    system_prompt += (
+                        f"\n\n## Pair Correlation: {_col1} vs {_col2}\n"
+                        f"{pair_corr_event['summary']}\n"
+                        "A PairCorrelationCard is shown in the chat with the exact r value "
+                        "and significance. Narrate what this means for the analyst — is this "
+                        "relationship meaningful? Should they use both columns in a model or is "
+                        "one redundant? Suggest a follow-up question."
+                    )
+        except Exception:  # noqa: BLE001
+            pass  # Pair correlation is nice-to-have; never crash chat
+
+    # Check for stat query request ("what's the average revenue?", "total sales")
+    stat_query_event: dict | None = None
+    if _STAT_QUERY_PATTERNS.search(body.message) and ctx["dataset"]:
+        try:
+            from core.analyzer import compute_stat_query as _compute_sq
+
+            _ds = ctx["dataset"]
+            _file_path = Path(_ds.file_path)
+            if _file_path.exists():
+                _df = _load_working_df(_file_path, _active_filter_conditions)
+                _sq_params = _detect_stat_query(body.message, _df)
+                if _sq_params:
+                    stat_query_event = _compute_sq(
+                        _df, agg=_sq_params["agg"], col=_sq_params["col"]
+                    )
+                    stat_query_event["dataset_id"] = _ds.id
+                    system_prompt += (
+                        f"\n\n## Stat Query Result\n"
+                        f"{stat_query_event['summary']}\n"
+                        "A StatQueryCard is shown in the chat with the computed value. "
+                        "Narrate the result briefly — put it in context (is it high, low, "
+                        "expected?) and suggest what the analyst might want to explore next."
+                    )
+        except Exception:  # noqa: BLE001
+            pass  # Stat query is nice-to-have; never crash chat
+
     # Check for column rename request ("rename revenue_usd to Revenue")
     rename_result: dict | None = None
     if _RENAME_PATTERNS.search(body.message) and ctx["dataset"]:
@@ -4654,6 +4833,14 @@ def send_message(
         # Emit value counts table
         if value_counts_event:
             yield f"data: {json.dumps({'type': 'value_counts', 'value_counts': value_counts_event})}\n\n"
+
+        # Emit pair correlation card
+        if pair_corr_event:
+            yield f"data: {json.dumps({'type': 'pair_correlation', 'pair_correlation': pair_corr_event})}\n\n"
+
+        # Emit stat query card
+        if stat_query_event:
+            yield f"data: {json.dumps({'type': 'stat_query', 'stat_query': stat_query_event})}\n\n"
 
         # Emit dataset export card if triggered
         if data_export:

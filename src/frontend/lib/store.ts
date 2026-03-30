@@ -78,6 +78,8 @@ interface AppState {
   attachNullMapToLastMessage: (null_map: import("./types").NullMapResult) => void
   attachSummaryStatsToLastMessage: (summary_stats: import("./types").SummaryStatsResult) => void
   attachValueCountsToLastMessage: (value_counts: import("./types").ValueCountResult) => void
+  attachPairCorrelationToLastMessage: (pair_correlation: import("./types").PairCorrelationResult) => void
+  attachStatQueryToLastMessage: (stat_query: import("./types").StatQueryResult) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -408,6 +410,26 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, value_counts }
+      }
+      return { messages }
+    }),
+
+  attachPairCorrelationToLastMessage: (pair_correlation) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, pair_correlation }
+      }
+      return { messages }
+    }),
+
+  attachStatQueryToLastMessage: (stat_query) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, stat_query }
       }
       return { messages }
     }),

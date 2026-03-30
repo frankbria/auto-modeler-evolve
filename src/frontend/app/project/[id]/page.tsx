@@ -47,6 +47,8 @@ import { TopNCard } from "@/components/data/top-n-card"
 import { RecordTableCard } from "@/components/data/record-table-card"
 import { DataExportCard } from "@/components/data/data-export-card"
 import { NullMapCard } from "@/components/data/null-map-card"
+import { PairCorrelationCard } from "@/components/data/pair-correlation-card"
+import { StatQueryCard } from "@/components/data/stat-query-card"
 import { SummaryStatsCard } from "@/components/data/summary-stats-card"
 import { ValueCountCard } from "@/components/data/value-count-card"
 import { WhatIfChatCard } from "@/components/deploy/whatif-chat-card"
@@ -173,6 +175,8 @@ export default function ProjectWorkspace() {
     attachNullMapToLastMessage,
     attachSummaryStatsToLastMessage,
     attachValueCountsToLastMessage,
+    attachPairCorrelationToLastMessage,
+    attachStatQueryToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -459,6 +463,10 @@ export default function ProjectWorkspace() {
                 attachSummaryStatsToLastMessage(json.summary_stats as import("@/lib/types").SummaryStatsResult)
               } else if (json.type === "value_counts" && json.value_counts) {
                 attachValueCountsToLastMessage(json.value_counts as import("@/lib/types").ValueCountResult)
+              } else if (json.type === "pair_correlation" && json.pair_correlation) {
+                attachPairCorrelationToLastMessage(json.pair_correlation as import("@/lib/types").PairCorrelationResult)
+              } else if (json.type === "stat_query" && json.stat_query) {
+                attachStatQueryToLastMessage(json.stat_query as import("@/lib/types").StatQueryResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -510,6 +518,8 @@ export default function ProjectWorkspace() {
     attachNullMapToLastMessage,
     attachSummaryStatsToLastMessage,
     attachValueCountsToLastMessage,
+    attachPairCorrelationToLastMessage,
+    attachStatQueryToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -828,6 +838,12 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.value_counts && (
                       <ValueCountCard result={msg.value_counts} />
+                    )}
+                    {msg.pair_correlation && (
+                      <PairCorrelationCard result={msg.pair_correlation} />
+                    )}
+                    {msg.stat_query && (
+                      <StatQueryCard result={msg.stat_query} />
                     )}
                   </div>
                 </div>

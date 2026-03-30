@@ -315,6 +315,40 @@ export interface ValueCountResult {
 }
 
 // ---------------------------------------------------------------------------
+// Pair correlation analysis
+// ---------------------------------------------------------------------------
+
+export interface PairCorrelationResult {
+  dataset_id: string
+  col1: string
+  col2: string
+  r: number | null
+  p_value: number | null
+  n: number
+  strength: string
+  direction: string
+  significant: string
+  interpretation?: string
+  summary: string
+}
+
+// ---------------------------------------------------------------------------
+// Stat query (single aggregate result)
+// ---------------------------------------------------------------------------
+
+export interface StatQueryResult {
+  dataset_id: string
+  agg: string
+  col: string | null
+  value: number
+  n_rows: number
+  n_valid?: number
+  formatted_value: string
+  label?: string
+  summary: string
+}
+
+// ---------------------------------------------------------------------------
 // Chat-driven feature engineering
 // ---------------------------------------------------------------------------
 
@@ -374,6 +408,8 @@ export interface ChatMessage {
   null_map?: NullMapResult
   summary_stats?: SummaryStatsResult
   value_counts?: ValueCountResult
+  pair_correlation?: PairCorrelationResult
+  stat_query?: StatQueryResult
 }
 
 export interface SegmentPerformanceSegment {

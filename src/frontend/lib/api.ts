@@ -476,6 +476,27 @@ export const api = {
       fetch(
         `${API_URL}/api/data/${datasetId}/value-counts?col=${encodeURIComponent(col)}&n=${n}`
       ).then((r) => r.json()),
+
+    getPairCorrelation: (
+      datasetId: string,
+      col1: string,
+      col2: string
+    ): Promise<import("./types").PairCorrelationResult> =>
+      fetch(
+        `${API_URL}/api/data/${datasetId}/pair-correlation?col1=${encodeURIComponent(col1)}&col2=${encodeURIComponent(col2)}`
+      ).then((r) => r.json()),
+
+    getStatQuery: (
+      datasetId: string,
+      agg: string,
+      col?: string
+    ): Promise<import("./types").StatQueryResult> => {
+      const params = new URLSearchParams({ agg })
+      if (col) params.set("col", col)
+      return fetch(
+        `${API_URL}/api/data/${datasetId}/stat-query?${params.toString()}`
+      ).then((r) => r.json())
+    },
   },
 
   chat: {
