@@ -3174,7 +3174,9 @@ def send_message(
                 _col_nulls = []
                 for _col in _df.columns:
                     _null_count = int(_df[_col].isna().sum())
-                    _null_pct = round(_null_count / _total_rows * 100, 1) if _total_rows else 0
+                    _null_pct = (
+                        round(_null_count / _total_rows * 100, 1) if _total_rows else 0
+                    )
                     _col_nulls.append(
                         {
                             "column": _col,
@@ -3187,9 +3189,13 @@ def send_message(
                 _col_nulls.sort(key=lambda x: x["null_pct"], reverse=True)
                 _cols_with_nulls = [c for c in _col_nulls if c["null_count"] > 0]
                 _fully_complete = len(_col_nulls) - len(_cols_with_nulls)
-                _overall_completeness = round(
-                    sum(c["complete_pct"] for c in _col_nulls) / len(_col_nulls), 1
-                ) if _col_nulls else 100.0
+                _overall_completeness = (
+                    round(
+                        sum(c["complete_pct"] for c in _col_nulls) / len(_col_nulls), 1
+                    )
+                    if _col_nulls
+                    else 100.0
+                )
                 _summary = (
                     f"{len(_cols_with_nulls)} of {len(_col_nulls)} columns have missing values. "
                     f"Overall completeness: {_overall_completeness}%."

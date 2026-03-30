@@ -26,12 +26,7 @@ _SAMPLE_CSV_WITH_NULLS = (
     b"North,250,25,\n"
 )
 
-_SAMPLE_CSV_COMPLETE = (
-    b"region,revenue,units\n"
-    b"East,100,10\n"
-    b"West,200,20\n"
-    b"North,250,25\n"
-)
+_SAMPLE_CSV_COMPLETE = b"region,revenue,units\nEast,100,10\nWest,200,20\nNorth,250,25\n"
 
 
 # ---------------------------------------------------------------------------
@@ -282,7 +277,10 @@ def test_null_map_columns_with_nulls_count(client, project_with_nulls):
     assert null_map is not None
     # We uploaded CSV with nulls in revenue, units, notes columns
     assert null_map["columns_with_nulls"] > 0
-    assert null_map["columns_with_nulls"] + null_map["fully_complete_columns"] == null_map["total_columns"]
+    assert (
+        null_map["columns_with_nulls"] + null_map["fully_complete_columns"]
+        == null_map["total_columns"]
+    )
 
 
 def test_null_map_complete_dataset_shows_zero_missing(client, project_complete):

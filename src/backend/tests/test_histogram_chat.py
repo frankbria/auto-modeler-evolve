@@ -147,7 +147,9 @@ def test_detect_histogram_units_col():
 
 
 def test_detect_histogram_cost_col():
-    assert _detect_histogram_col("show me a distribution histogram of cost", _DF) == "cost"
+    assert (
+        _detect_histogram_col("show me a distribution histogram of cost", _DF) == "cost"
+    )
 
 
 def test_detect_histogram_fallback_to_first_numeric():
@@ -194,7 +196,10 @@ def test_histogram_chat_emits_chart_event(client, project_and_dataset):
 
         response = client.post(
             f"/api/chat/{project_id}",
-            json={"message": "show me a histogram of revenue", "dataset_id": dataset_id},
+            json={
+                "message": "show me a histogram of revenue",
+                "dataset_id": dataset_id,
+            },
         )
 
     assert response.status_code == 200
@@ -227,7 +232,10 @@ def test_histogram_chart_has_bins_and_counts(client, project_and_dataset):
 
         response = client.post(
             f"/api/chat/{project_id}",
-            json={"message": "frequency histogram of revenue", "dataset_id": dataset_id},
+            json={
+                "message": "frequency histogram of revenue",
+                "dataset_id": dataset_id,
+            },
         )
 
     lines = [line for line in response.text.split("\n") if line.startswith("data: ")]
@@ -235,7 +243,10 @@ def test_histogram_chart_has_bins_and_counts(client, project_and_dataset):
     for line in lines:
         try:
             parsed = json.loads(line[6:])
-            if parsed.get("type") == "chart" and parsed.get("chart", {}).get("chart_type") == "histogram":
+            if (
+                parsed.get("type") == "chart"
+                and parsed.get("chart", {}).get("chart_type") == "histogram"
+            ):
                 hist_event = parsed
                 break
         except json.JSONDecodeError:
@@ -276,7 +287,6 @@ def test_histogram_no_dataset_no_event(client):
     chart_types = [
         json.loads(line[6:]).get("chart", {}).get("chart_type")
         for line in lines
-        if line.startswith("data: ")
-        and "chart" in json.loads(line[6:]).get("type", "")
+        if line.startswith("data: ") and "chart" in json.loads(line[6:]).get("type", "")
     ]
     assert "histogram" not in chart_types
