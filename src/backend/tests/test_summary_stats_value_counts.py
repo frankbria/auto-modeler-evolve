@@ -18,7 +18,16 @@ def mixed_df():
     """DataFrame with both numeric and categorical columns."""
     return pd.DataFrame(
         {
-            "region": ["East", "West", "East", "North", "West", "East", "South", "North"],
+            "region": [
+                "East",
+                "West",
+                "East",
+                "North",
+                "West",
+                "East",
+                "South",
+                "North",
+            ],
             "product": ["A", "B", "A", "C", "B", "A", "C", "B"],
             "revenue": [5000.0, 1200.0, 8500.0, 300.0, 4200.0, 9100.0, 750.0, 6300.0],
             "units": [50, 12, 85, 3, 42, 91, 7, 63],
@@ -47,7 +56,10 @@ def numeric_only_df():
 def categorical_only_df():
     """DataFrame with only categorical columns."""
     return pd.DataFrame(
-        {"color": ["red", "blue", "red", "green", "blue", "red"], "size": ["S", "M", "L", "S", "M", "L"]}
+        {
+            "color": ["red", "blue", "red", "green", "blue", "red"],
+            "size": ["S", "M", "L", "S", "M", "L"],
+        }
     )
 
 
@@ -59,7 +71,13 @@ def categorical_only_df():
 class TestComputeSummaryStats:
     def test_returns_required_keys(self, mixed_df):
         result = compute_summary_stats(mixed_df)
-        for key in ("total_rows", "total_cols", "numeric_stats", "categorical_stats", "summary"):
+        for key in (
+            "total_rows",
+            "total_cols",
+            "numeric_stats",
+            "categorical_stats",
+            "summary",
+        ):
             assert key in result
 
     def test_total_counts(self, mixed_df):
@@ -84,7 +102,17 @@ class TestComputeSummaryStats:
     def test_numeric_stat_keys(self, mixed_df):
         result = compute_summary_stats(mixed_df)
         rev_stat = next(s for s in result["numeric_stats"] if s["column"] == "revenue")
-        for key in ("count", "mean", "std", "min", "q25", "median", "q75", "max", "null_count"):
+        for key in (
+            "count",
+            "mean",
+            "std",
+            "min",
+            "q25",
+            "median",
+            "q75",
+            "max",
+            "null_count",
+        ):
             assert key in rev_stat
 
     def test_numeric_values_correct(self, mixed_df):
@@ -97,13 +125,17 @@ class TestComputeSummaryStats:
 
     def test_categorical_stat_keys(self, mixed_df):
         result = compute_summary_stats(mixed_df)
-        reg_stat = next(s for s in result["categorical_stats"] if s["column"] == "region")
+        reg_stat = next(
+            s for s in result["categorical_stats"] if s["column"] == "region"
+        )
         for key in ("count", "unique", "top", "freq", "null_count"):
             assert key in reg_stat
 
     def test_categorical_values_correct(self, mixed_df):
         result = compute_summary_stats(mixed_df)
-        reg_stat = next(s for s in result["categorical_stats"] if s["column"] == "region")
+        reg_stat = next(
+            s for s in result["categorical_stats"] if s["column"] == "region"
+        )
         assert reg_stat["count"] == 8
         assert reg_stat["unique"] == 4
         assert reg_stat["top"] == "East"  # most common (3 times)
@@ -113,7 +145,9 @@ class TestComputeSummaryStats:
     def test_null_counts_tracked(self, null_df):
         result = compute_summary_stats(null_df)
         val_stat = next(s for s in result["numeric_stats"] if s["column"] == "value")
-        cat_stat = next(s for s in result["categorical_stats"] if s["column"] == "category")
+        cat_stat = next(
+            s for s in result["categorical_stats"] if s["column"] == "category"
+        )
         assert val_stat["null_count"] == 2
         assert cat_stat["null_count"] == 2
 
@@ -159,7 +193,16 @@ class TestComputeSummaryStats:
 class TestComputeValueCounts:
     def test_returns_required_keys(self, mixed_df):
         result = compute_value_counts(mixed_df, "region")
-        for key in ("column", "total_rows", "non_null", "null_count", "unique_count", "rows", "has_more", "summary"):
+        for key in (
+            "column",
+            "total_rows",
+            "non_null",
+            "null_count",
+            "unique_count",
+            "rows",
+            "has_more",
+            "summary",
+        ):
             assert key in result
 
     def test_column_set_correctly(self, mixed_df):
@@ -324,7 +367,9 @@ class TestValueCountPatterns:
 class TestDetectValueCountsCol:
     @pytest.fixture
     def sample_df(self):
-        return pd.DataFrame({"region": ["A"], "product_category": ["B"], "revenue": [1.0]})
+        return pd.DataFrame(
+            {"region": ["A"], "product_category": ["B"], "revenue": [1.0]}
+        )
 
     def test_detects_exact_column_name(self, sample_df):
         from api.chat import _detect_value_counts_col
@@ -335,14 +380,18 @@ class TestDetectValueCountsCol:
     def test_detects_underscore_variant(self, sample_df):
         from api.chat import _detect_value_counts_col
 
-        result = _detect_value_counts_col("frequency table for product category", sample_df)
+        result = _detect_value_counts_col(
+            "frequency table for product category", sample_df
+        )
         assert result == "product_category"
 
     def test_longest_match_first(self, sample_df):
         from api.chat import _detect_value_counts_col
 
         # "product_category" is longer than "product" (which isn't in df anyway)
-        result = _detect_value_counts_col("most common product category values", sample_df)
+        result = _detect_value_counts_col(
+            "most common product category values", sample_df
+        )
         assert result == "product_category"
 
     def test_fallback_to_first_categorical(self, sample_df):

@@ -1717,11 +1717,11 @@ def compute_value_counts(df: pd.DataFrame, col: str, n: int = 20) -> dict:
         f"'{col}' has {unique_count} unique value{'s' if unique_count != 1 else ''}."
     ]
     if top_val:
-        summary_parts.append(
-            f"Most common: '{top_val}' ({top_pct}% of non-null rows)."
-        )
+        summary_parts.append(f"Most common: '{top_val}' ({top_pct}% of non-null rows).")
     if null_count > 0:
-        summary_parts.append(f"{null_count} null value{'s' if null_count != 1 else ''}.")
+        summary_parts.append(
+            f"{null_count} null value{'s' if null_count != 1 else ''}."
+        )
     if has_more:
         summary_parts.append(f"Showing top {n} of {unique_count}.")
 
