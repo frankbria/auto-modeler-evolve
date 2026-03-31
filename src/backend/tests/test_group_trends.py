@@ -321,4 +321,7 @@ async def test_group_trends_endpoint_400_bad_col(trend_csv):
             },
         )
     assert resp.status_code == 400
-    assert "error" in resp.json().get("detail", "").lower() or "not found" in resp.json().get("detail", "").lower()
+    assert (
+        "error" in resp.json().get("detail", "").lower()
+        or "not found" in resp.json().get("detail", "").lower()
+    )

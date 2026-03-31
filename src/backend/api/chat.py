@@ -1768,9 +1768,7 @@ _GROUP_TREND_PATTERNS = re.compile(
 )
 
 
-def _detect_group_trend_request(
-    message: str, df: "pd.DataFrame"
-) -> dict | None:
+def _detect_group_trend_request(message: str, df: "pd.DataFrame") -> dict | None:
     """Extract date_col, group_col, value_col from a group-trend message.
 
     Returns {"date_col": ..., "group_col": ..., "value_col": ...} or None.

@@ -2624,7 +2624,9 @@ def get_group_trends(
         raise HTTPException(status_code=404, detail="Dataset file not found")
 
     df = pd.read_csv(file_path)
-    result = compute_group_trends(df, date_col=date_col, group_col=group_col, value_col=value_col)
+    result = compute_group_trends(
+        df, date_col=date_col, group_col=group_col, value_col=value_col
+    )
     if "error" in result:
         raise HTTPException(status_code=400, detail=result["error"])
     return result
