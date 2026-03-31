@@ -1754,6 +1754,65 @@ def _detect_stat_query(message: str, df: "pd.DataFrame") -> dict | None:
     return {"agg": agg, "col": col}
 
 
+_GROUP_TREND_PATTERNS = re.compile(
+    r"(?:"
+    r"which\s+\w+\s+(?:are|is)\s+(?:growing|trending|increasing|declining|falling|rising)\b|"
+    r"fastest\s+(?:growing|rising|declining|falling)\s+\w+|"
+    r"(?:growth|trend|trending)\s+(?:rate\s+)?(?:by|per|for\s+each)\s+\w+|"
+    r"which\s+\w+\s+(?:has|have)\s+(?:the\s+)?(?:most\s+)?(?:growth|increase|decline|decrease)\b|"
+    r"how\s+(?:are|is)\s+(?:my\s+)?\w+\s+(?:trending|growing|changing\s+over\s+time)\b|"
+    r"trending\s+(?:up|down)\s+(?:by|per|for\s+each)\s+\w+|"
+    r"compare\s+(?:growth|trend)s?\s+(?:across|by|per|for)\s+\w+"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def _detect_group_trend_request(
+    message: str, df: "pd.DataFrame"
+) -> dict | None:
+    """Extract date_col, group_col, value_col from a group-trend message.
+
+    Returns {"date_col": ..., "group_col": ..., "value_col": ...} or None.
+    """
+    from core.analyzer import detect_time_columns as _dtc
+
+    msg_lower = message.lower()
+    time_cols = _dtc(df)
+    if not time_cols:
+        return None
+    date_col = time_cols[0]
+
+    cat_cols = df.select_dtypes(exclude="number").columns.tolist()
+    numeric_cols = df.select_dtypes(include="number").columns.tolist()
+
+    # Exclude the date column from candidates
+    cat_cols = [c for c in cat_cols if c != date_col]
+
+    if not cat_cols or not numeric_cols:
+        return None
+
+    # Try to find a mentioned categorical column (longest-match first)
+    group_col: str | None = None
+    for c in sorted(cat_cols, key=len, reverse=True):
+        if c.lower() in msg_lower or c.replace("_", " ").lower() in msg_lower:
+            group_col = c
+            break
+    if group_col is None:
+        group_col = cat_cols[0]
+
+    # Try to find a mentioned numeric column (longest-match first)
+    value_col: str | None = None
+    for c in sorted(numeric_cols, key=len, reverse=True):
+        if c.lower() in msg_lower or c.replace("_", " ").lower() in msg_lower:
+            value_col = c
+            break
+    if value_col is None:
+        value_col = numeric_cols[0]
+
+    return {"date_col": date_col, "group_col": group_col, "value_col": value_col}
+
+
 def _detect_histogram_col(message: str, df: "pd.DataFrame") -> str | None:
     """Extract the numeric column to histogram from the user message.
 
@@ -3512,6 +3571,39 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Stat query is nice-to-have; never crash chat
 
+    # Check for group trend request ("which regions are growing?", "fastest growing product?")
+    group_trends_event: dict | None = None
+    if _GROUP_TREND_PATTERNS.search(body.message) and ctx["dataset"]:
+        try:
+            from core.analyzer import compute_group_trends as _compute_gt
+
+            _ds = ctx["dataset"]
+            _file_path = Path(_ds.file_path)
+            if _file_path.exists():
+                _df = _load_working_df(_file_path, _active_filter_conditions)
+                _gt_params = _detect_group_trend_request(body.message, _df)
+                if _gt_params:
+                    _gt_result = _compute_gt(
+                        _df,
+                        date_col=_gt_params["date_col"],
+                        group_col=_gt_params["group_col"],
+                        value_col=_gt_params["value_col"],
+                    )
+                    if "error" not in _gt_result:
+                        group_trends_event = _gt_result
+                        group_trends_event["dataset_id"] = _ds.id
+                        system_prompt += (
+                            f"\n\n## Group Trend Analysis: {_gt_params['value_col']} by {_gt_params['group_col']} over time\n"
+                            f"{_gt_result['summary']}\n"
+                            f"Rising: {_gt_result['rising']} group(s), Falling: {_gt_result['falling']} group(s), "
+                            f"Flat: {_gt_result['flat']} group(s).\n"
+                            "A GroupTrendCard is shown in the chat ranking groups by growth rate. "
+                            "Narrate the key findings — which groups are growing fastest, which are declining, "
+                            "and what this might mean for the analyst's business decisions."
+                        )
+        except Exception:  # noqa: BLE001
+            pass  # Group trends are nice-to-have; never crash chat
+
     # Check for column rename request ("rename revenue_usd to Revenue")
     rename_result: dict | None = None
     if _RENAME_PATTERNS.search(body.message) and ctx["dataset"]:
@@ -4841,6 +4933,10 @@ def send_message(
         # Emit stat query card
         if stat_query_event:
             yield f"data: {json.dumps({'type': 'stat_query', 'stat_query': stat_query_event})}\n\n"
+
+        # Emit group trend analysis card
+        if group_trends_event:
+            yield f"data: {json.dumps({'type': 'group_trends', 'group_trends': group_trends_event})}\n\n"
 
         # Emit dataset export card if triggered
         if data_export:

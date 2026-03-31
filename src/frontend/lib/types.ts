@@ -349,6 +349,33 @@ export interface StatQueryResult {
 }
 
 // ---------------------------------------------------------------------------
+// Group trend analysis
+// ---------------------------------------------------------------------------
+
+export interface GroupTrendRow {
+  group: string
+  slope: number
+  pct_change: number
+  direction: "up" | "down" | "flat"
+  first_value: number
+  last_value: number
+  n_periods: number
+  rank: number
+}
+
+export interface GroupTrendResult {
+  dataset_id: string
+  date_col: string
+  group_col: string
+  value_col: string
+  groups: GroupTrendRow[]
+  rising: number
+  falling: number
+  flat: number
+  summary: string
+}
+
+// ---------------------------------------------------------------------------
 // Chat-driven feature engineering
 // ---------------------------------------------------------------------------
 
@@ -410,6 +437,7 @@ export interface ChatMessage {
   value_counts?: ValueCountResult
   pair_correlation?: PairCorrelationResult
   stat_query?: StatQueryResult
+  group_trends?: GroupTrendResult
 }
 
 export interface SegmentPerformanceSegment {

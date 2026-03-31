@@ -27,6 +27,7 @@ from core.analyzer import (
     compute_column_profile,
     compute_full_profile,
     compute_group_stats,
+    compute_group_trends,
     compute_pair_correlation,
     compute_stat_query,
     compute_summary_stats,
@@ -2598,3 +2599,32 @@ def get_stat_query(
         return compute_stat_query(df, agg=agg, col=col)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/{dataset_id}/group-trends")
+def get_group_trends(
+    dataset_id: str,
+    date_col: str,
+    group_col: str,
+    value_col: str,
+    session: Session = Depends(get_session),
+):
+    """Compute per-group trends over time.
+
+    Returns a ranked list of groups sorted by trend slope (fastest growers
+    first), including % change, direction (up/down/flat), and a plain-English
+    summary.  400 if columns are missing or group_col has >50 unique values.
+    """
+    dataset = session.get(Dataset, dataset_id)
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    file_path = Path(dataset.file_path)
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Dataset file not found")
+
+    df = pd.read_csv(file_path)
+    result = compute_group_trends(df, date_col=date_col, group_col=group_col, value_col=value_col)
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result

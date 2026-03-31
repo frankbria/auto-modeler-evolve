@@ -1834,6 +1834,161 @@ def compute_pair_correlation(df: pd.DataFrame, col1: str, col2: str) -> dict:
     }
 
 
+def compute_group_trends(
+    df: pd.DataFrame,
+    date_col: str,
+    group_col: str,
+    value_col: str,
+) -> dict:
+    """Compute per-group trends over time using OLS slope.
+
+    For each unique value in *group_col*, fits a linear regression of
+    *value_col* over time (converted to a numeric index) and returns
+    slope, total % change (first→last non-null period), direction, and rank.
+
+    Parameters
+    ----------
+    df        : Source DataFrame.
+    date_col  : Name of the date/time column.
+    group_col : Categorical column to group by (≤50 unique values).
+    value_col : Numeric column whose trend to measure.
+
+    Returns a dict with keys:
+      date_col, group_col, value_col, groups (list, ranked fastest→slowest),
+      rising, falling, flat, summary, error.
+    """
+    if date_col not in df.columns:
+        return {"error": f"Date column '{date_col}' not found."}
+    if group_col not in df.columns:
+        return {"error": f"Group column '{group_col}' not found."}
+    if value_col not in df.columns:
+        return {"error": f"Value column '{value_col}' not found."}
+
+    n_unique = df[group_col].nunique()
+    if n_unique > 50:
+        return {
+            "error": (
+                f"'{group_col}' has {n_unique} unique values — too many to compute "
+                "group trends. Choose a column with 50 or fewer categories."
+            )
+        }
+
+    # Parse dates
+    dates = pd.to_datetime(df[date_col], errors="coerce")
+    values = pd.to_numeric(df[value_col], errors="coerce")
+    groups_series = df[group_col]
+
+    # Drop rows with missing date or value
+    mask = dates.notna() & values.notna() & groups_series.notna()
+    dates = dates[mask]
+    values = values[mask]
+    groups_series = groups_series[mask]
+
+    if len(dates) == 0:
+        return {"error": "No valid rows after dropping missing date/value entries."}
+
+    # Convert dates to numeric index (days since min date)
+    min_date = dates.min()
+    date_index = (dates - min_date).dt.days.astype(float)
+
+    group_results = []
+    for grp_val in groups_series.unique():
+        sel = groups_series == grp_val
+        x = date_index[sel].values
+        y = values[sel].values
+
+        if len(x) < 2:
+            continue
+
+        # Sort by date
+        order = np.argsort(x)
+        x = x[order]
+        y = y[order]
+
+        # OLS slope: b = cov(x,y) / var(x)
+        var_x = float(np.var(x))
+        if var_x == 0:
+            slope = 0.0
+        else:
+            slope = float(np.cov(x, y, ddof=0)[0, 1] / var_x)
+
+        # % change first → last
+        first_val = float(y[0])
+        last_val = float(y[-1])
+        if first_val != 0:
+            pct_change = (last_val - first_val) / abs(first_val) * 100
+        else:
+            pct_change = 0.0
+
+        if slope > 0.001:
+            direction = "up"
+        elif slope < -0.001:
+            direction = "down"
+        else:
+            direction = "flat"
+
+        group_results.append(
+            {
+                "group": str(grp_val),
+                "slope": round(slope, 4),
+                "pct_change": round(pct_change, 1),
+                "direction": direction,
+                "first_value": round(first_val, 2),
+                "last_value": round(last_val, 2),
+                "n_periods": int(len(x)),
+            }
+        )
+
+    if not group_results:
+        return {"error": "No groups had enough data points to compute a trend."}
+
+    # Rank by slope descending (fastest growers first)
+    group_results.sort(key=lambda r: r["slope"], reverse=True)
+    for i, r in enumerate(group_results):
+        r["rank"] = i + 1
+
+    rising = [r for r in group_results if r["direction"] == "up"]
+    falling = [r for r in group_results if r["direction"] == "down"]
+    flat = [r for r in group_results if r["direction"] == "flat"]
+
+    # Build plain-English summary
+    if rising:
+        top = rising[0]["group"]
+        summary = (
+            f"'{top}' is growing fastest in '{value_col}' "
+            f"(+{rising[0]['pct_change']:.1f}% over the period)."
+        )
+        if len(rising) > 1:
+            summary += f" {len(rising)} group(s) are trending up"
+        if falling:
+            bottom = falling[-1]["group"]
+            summary += (
+                f", while '{bottom}' is declining most "
+                f"({falling[-1]['pct_change']:.1f}%)."
+            )
+        else:
+            summary += "."
+    elif falling:
+        bottom = falling[-1]["group"]
+        summary = (
+            f"All groups are declining. '{bottom}' is falling fastest "
+            f"({falling[-1]['pct_change']:.1f}% over the period)."
+        )
+    else:
+        summary = f"All groups show flat trends in '{value_col}'."
+
+    return {
+        "date_col": date_col,
+        "group_col": group_col,
+        "value_col": value_col,
+        "groups": group_results,
+        "rising": len(rising),
+        "falling": len(falling),
+        "flat": len(flat),
+        "summary": summary,
+    }
+
+
 def compute_stat_query(
     df: pd.DataFrame,
     agg: str,

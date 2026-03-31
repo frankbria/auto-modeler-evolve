@@ -47,6 +47,7 @@ import { TopNCard } from "@/components/data/top-n-card"
 import { RecordTableCard } from "@/components/data/record-table-card"
 import { DataExportCard } from "@/components/data/data-export-card"
 import { NullMapCard } from "@/components/data/null-map-card"
+import { GroupTrendCard } from "@/components/data/group-trend-card"
 import { PairCorrelationCard } from "@/components/data/pair-correlation-card"
 import { StatQueryCard } from "@/components/data/stat-query-card"
 import { SummaryStatsCard } from "@/components/data/summary-stats-card"
@@ -177,6 +178,7 @@ export default function ProjectWorkspace() {
     attachValueCountsToLastMessage,
     attachPairCorrelationToLastMessage,
     attachStatQueryToLastMessage,
+    attachGroupTrendsToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -467,6 +469,8 @@ export default function ProjectWorkspace() {
                 attachPairCorrelationToLastMessage(json.pair_correlation as import("@/lib/types").PairCorrelationResult)
               } else if (json.type === "stat_query" && json.stat_query) {
                 attachStatQueryToLastMessage(json.stat_query as import("@/lib/types").StatQueryResult)
+              } else if (json.type === "group_trends" && json.group_trends) {
+                attachGroupTrendsToLastMessage(json.group_trends as import("@/lib/types").GroupTrendResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -520,6 +524,7 @@ export default function ProjectWorkspace() {
     attachValueCountsToLastMessage,
     attachPairCorrelationToLastMessage,
     attachStatQueryToLastMessage,
+    attachGroupTrendsToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -844,6 +849,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.stat_query && (
                       <StatQueryCard result={msg.stat_query} />
+                    )}
+                    {msg.group_trends && (
+                      <GroupTrendCard result={msg.group_trends} />
                     )}
                   </div>
                 </div>

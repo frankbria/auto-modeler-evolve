@@ -497,6 +497,22 @@ export const api = {
         `${API_URL}/api/data/${datasetId}/stat-query?${params.toString()}`
       ).then((r) => r.json())
     },
+
+    getGroupTrends: (
+      datasetId: string,
+      dateCol: string,
+      groupCol: string,
+      valueCol: string
+    ): Promise<import("./types").GroupTrendResult> => {
+      const params = new URLSearchParams({
+        date_col: dateCol,
+        group_col: groupCol,
+        value_col: valueCol,
+      })
+      return fetch(
+        `${API_URL}/api/data/${datasetId}/group-trends?${params.toString()}`
+      ).then((r) => r.json())
+    },
   },
 
   chat: {
