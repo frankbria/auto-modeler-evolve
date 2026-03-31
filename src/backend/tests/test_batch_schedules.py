@@ -188,7 +188,12 @@ def test_create_schedule_weekly(client, deployed):
 def test_create_schedule_monthly(client, deployed):
     resp = client.post(
         f"/api/deploy/{deployed}/schedules",
-        json={"frequency": "monthly", "run_hour": 6, "run_minute": 0, "day_of_month": 1},
+        json={
+            "frequency": "monthly",
+            "run_hour": 6,
+            "run_minute": 0,
+            "day_of_month": 1,
+        },
     )
     assert resp.status_code == 201
     data = resp.json()

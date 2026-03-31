@@ -1892,7 +1892,9 @@ def create_schedule(
         raise HTTPException(status_code=404, detail="Deployment not found")
 
     if body.frequency not in ("daily", "weekly", "monthly"):
-        raise HTTPException(status_code=400, detail="frequency must be daily, weekly, or monthly")
+        raise HTTPException(
+            status_code=400, detail="frequency must be daily, weekly, or monthly"
+        )
     if not (0 <= body.run_hour <= 23):
         raise HTTPException(status_code=400, detail="run_hour must be 0-23")
     if not (0 <= body.run_minute <= 59):
@@ -1999,10 +2001,12 @@ def download_batch_output(filename: str):
 
     # Security: filename must be alphanumeric + underscores/dashes + .csv
     import re
+
     if not re.match(r"^[\w\-]+\.csv$", filename):
         raise HTTPException(status_code=400, detail="Invalid filename")
 
     from core.scheduler import BATCH_OUTPUT_DIR
+
     path = BATCH_OUTPUT_DIR / filename
     if not path.exists():
         raise HTTPException(status_code=404, detail="Output file not found")

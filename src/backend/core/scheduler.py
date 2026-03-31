@@ -35,7 +35,9 @@ def compute_next_run(
     now = after or datetime.now(UTC).replace(tzinfo=None)
 
     if frequency == "daily":
-        candidate = now.replace(hour=run_hour, minute=run_minute, second=0, microsecond=0)
+        candidate = now.replace(
+            hour=run_hour, minute=run_minute, second=0, microsecond=0
+        )
         if candidate <= now:
             candidate += timedelta(days=1)
         return candidate
