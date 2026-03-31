@@ -5,7 +5,7 @@ Living document for coordinating between bot instances and tracking ideation.
 
 ## Currently Working On
 
-## Day 19 (20:00) — In Progress
+## Day 19 (20:00) — Done
 Group trend analysis via chat — `_GROUP_TREND_PATTERNS` (7 NL variants: "which X are growing", "fastest growing X", "which regions are trending up", "growth rate by X", "which products are declining") + `_detect_group_trend_request()` (auto-detects date_col via detect_time_columns, group_col from categorical column mentions, value_col from numeric column mentions) + `compute_group_trends(df, date_col, group_col, value_col)` in `core/analyzer.py` (OLS slope per group, % change first→last, direction up/down/flat, rank by slope, plain-English summary); `GET /api/data/{id}/group-trends?date_col=&group_col=&value_col=` REST endpoint; `{type:"group_trends"}` SSE event; `GroupTrendCard` (orange border, ranked rows with up/down arrows, growth badges, summary). Directly implements vision's "Which products are trending up?" question.
 
 ## Day 19 (12:00) — Done

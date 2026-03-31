@@ -1,5 +1,15 @@
 # Journal
 
+## Day 19 — 20:00 — Group Trend Analysis via Chat (2108 backend + 941 frontend = 3049 tests)
+
+AutoModeler now answers "which regions are growing?", "fastest growing products?", "which segments are trending up?", "compare growth by product category", or "how are my regions trending over time?" with an inline `GroupTrendCard` — an orange-bordered card ranking all groups by growth rate. Each row shows the group name, first value, last value, a color-coded % change badge (+green/−rose/→muted), and a direction arrow (▲▼→). Rising/falling/flat count badges appear in the header. The footer contains a plain-English summary naming the fastest grower and steepest decliner.
+
+`compute_group_trends(df, date_col, group_col, value_col)` in `core/analyzer.py` converts the date column to a numeric day-index (days since min), then for each group fits OLS slope via `cov(x,y)/var(x)` and computes % change first→last. Groups are sorted by slope descending (fastest growers ranked 1st). High-cardinality guard: rejects if group_col has >50 unique values. `GET /api/data/{id}/group-trends?date_col=&group_col=&value_col=` REST endpoint; `_GROUP_TREND_PATTERNS` (7 NL variants) + `_detect_group_trend_request()` auto-detects date column via `detect_time_columns()` and scans message for categorical/numeric column names (longest-match first); `{type:"group_trends"}` SSE event.
+
+**One lint fix:** `x_mean` and `y_mean` were computed but not used (ruff F841) — removed. **One test fix:** endpoint tests used `session.add()` which fails on repeated runs in the shared SQLite DB; changed to `session.merge()` (idempotent upsert). Directly implements the vision's "Which products are trending up?" question — distinct from scatter/correlation (static relationship), time-window comparison (two specific periods), and line chart (single series raw trend).
+
+**17 backend + 13 frontend = 30 new tests. Total: 2108 backend + 941 frontend = 3049, all passing. Backend lint: clean. Frontend build + lint: clean.**
+
 ## Day 19 — 12:00 — Pair Correlation Analysis + Quick Stat Query via Chat (2091 backend + 928 frontend = 3019 tests)
 
 AutoModeler now answers "how correlated are revenue and cost?", "correlation between X and Y?", "does price correlate with demand?", or "Pearson r for units and sales?" with an inline `PairCorrelationCard` — a violet-bordered card showing Pearson r in large colored text, strength badge (very strong/strong/moderate/weak/negligible), direction badge (positive/negative/no correlation), p-value with significance classification (highly significant p<0.001, significant p<0.01, marginally significant p<0.05, not significant), a one-sentence interpretation, and a summary footer. It also now answers "what's the average revenue?", "total sales?", "maximum cost?", "count the rows?" with an inline `StatQueryCard` — a color-coded card (cyan=mean, blue=sum, teal=median, emerald=max, orange=min, purple=std, amber=count) with an agg icon (x̄/Σ/m/↑/↓/σ/#), a large formatted value with k/M suffixes, and an optional row-info paragraph when some values are null.
