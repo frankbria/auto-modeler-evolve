@@ -759,12 +759,13 @@ guides them forward through the natural flow.
       who wants to share a model with their dev team.
       *Day 20 (04:00): `api_key_hash` + `api_key_salt` + `api_key_enabled` added to Deployment model with inline SQLite migration. `POST /api/deploy/{id}/api-key` generates `secrets.token_urlsafe(32)`, stores `sha256(salt:key)`, returns key once. `DELETE /api/deploy/{id}/api-key` removes protection. `_verify_api_key()` helper enforces `Authorization: Bearer` on predict/batch/explain endpoints using `secrets.compare_digest`. `ApiKeyCard` in DeploymentPanel: amber border, Protected/Open-access badge, Generate/Regenerate/Remove protection buttons, copy-to-clipboard for the generated key. 14 backend + 8 frontend = 22 new tests.*
 
-- [ ] **Scheduled batch prediction jobs** — Let analysts set up a recurring prediction run:
+- [x] **Scheduled batch prediction jobs** — Let analysts set up a recurring prediction run:
       "Run batch predictions on my sales_forecast.csv every Monday at 9am." Store schedules in a
       `BatchSchedule` SQLModel table (cron expression, dataset_id, deployment_id, last_run,
       next_run, output_path). Use APScheduler (already available via FastAPI's background tasks).
       Email/webhook notification on completion (configurable). Frontend: "Schedule" tab in the
       deployment panel with a simple form (frequency: daily/weekly/monthly + time picker).
+      *Day 20 (12:00): `BatchSchedule` + `BatchJobRun` SQLModel tables (auto-created by `create_all`). Background daemon thread wakes every 60s, finds due schedules, runs batch predictions against deployment's training dataset, saves results to `data/batch_outputs/<sid>_<ts>.csv`. `compute_next_run()` computes UTC next-fire for daily/weekly/monthly frequencies. 5 endpoints: POST/GET/DELETE schedules + POST run (immediate trigger) + GET run history + GET batch-outputs download (path-traversal guarded). `ScheduleCard` in DeploymentPanel: frequency/time/day form, schedule list with next_run/last_run/last_row_count, Run Now / History / Remove per-schedule, paginated run history with download links. 19 backend + 13 frontend = 32 new tests.*
 
 - [ ] **Deployment versioning and rollback** — When a model is retrained and redeployed, the
       old version should be preserved and accessible. Maintain a `DeploymentVersion` table tracking

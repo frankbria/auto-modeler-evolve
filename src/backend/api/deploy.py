@@ -1825,3 +1825,190 @@ def _verify_api_key(deployment: Deployment, authorization: str | None) -> None:
 
     if not secrets.compare_digest(expected_hash, stored_hash):
         raise HTTPException(status_code=401, detail="Invalid API key.")
+
+
+# ---------------------------------------------------------------------------
+# Batch schedule endpoints
+# ---------------------------------------------------------------------------
+
+from core.scheduler import compute_next_run  # noqa: E402
+from models.batch_schedule import BatchJobRun, BatchSchedule  # noqa: E402
+
+
+def _schedule_response(s: BatchSchedule) -> dict:
+    return {
+        "id": s.id,
+        "deployment_id": s.deployment_id,
+        "frequency": s.frequency,
+        "run_hour": s.run_hour,
+        "run_minute": s.run_minute,
+        "day_of_week": s.day_of_week,
+        "day_of_month": s.day_of_month,
+        "is_active": s.is_active,
+        "last_run": s.last_run.isoformat() if s.last_run else None,
+        "next_run": s.next_run.isoformat() if s.next_run else None,
+        "last_output_path": s.last_output_path,
+        "last_row_count": s.last_row_count,
+        "last_error": s.last_error,
+        "created_at": s.created_at.isoformat() if s.created_at else None,
+    }
+
+
+def _job_run_response(r: BatchJobRun) -> dict:
+    return {
+        "id": r.id,
+        "schedule_id": r.schedule_id,
+        "deployment_id": r.deployment_id,
+        "started_at": r.started_at.isoformat() if r.started_at else None,
+        "completed_at": r.completed_at.isoformat() if r.completed_at else None,
+        "status": r.status,
+        "row_count": r.row_count,
+        "error": r.error,
+        "download_url": (
+            f"/api/deploy/batch-outputs/{Path(r.output_path).name}"
+            if r.output_path and r.status == "success"
+            else None
+        ),
+    }
+
+
+class ScheduleCreate(BaseModel):
+    frequency: str = "daily"  # daily | weekly | monthly
+    run_hour: int = 9
+    run_minute: int = 0
+    day_of_week: int | None = None
+    day_of_month: int | None = None
+
+
+@router.post("/api/deploy/{deployment_id}/schedules", status_code=201)
+def create_schedule(
+    deployment_id: str,
+    body: ScheduleCreate,
+    session: Session = Depends(get_session),
+):
+    """Create a recurring batch prediction schedule."""
+    dep = session.get(Deployment, deployment_id)
+    if not dep or not dep.is_active:
+        raise HTTPException(status_code=404, detail="Deployment not found")
+
+    if body.frequency not in ("daily", "weekly", "monthly"):
+        raise HTTPException(status_code=400, detail="frequency must be daily, weekly, or monthly")
+    if not (0 <= body.run_hour <= 23):
+        raise HTTPException(status_code=400, detail="run_hour must be 0-23")
+    if not (0 <= body.run_minute <= 59):
+        raise HTTPException(status_code=400, detail="run_minute must be 0-59")
+
+    schedule = BatchSchedule(
+        deployment_id=deployment_id,
+        frequency=body.frequency,
+        run_hour=body.run_hour,
+        run_minute=body.run_minute,
+        day_of_week=body.day_of_week,
+        day_of_month=body.day_of_month,
+    )
+    schedule.next_run = compute_next_run(
+        body.frequency,
+        body.run_hour,
+        body.run_minute,
+        body.day_of_week,
+        body.day_of_month,
+    )
+    session.add(schedule)
+    session.commit()
+    session.refresh(schedule)
+    return _schedule_response(schedule)
+
+
+@router.get("/api/deploy/{deployment_id}/schedules")
+def list_schedules(
+    deployment_id: str,
+    session: Session = Depends(get_session),
+):
+    """List all schedules for a deployment."""
+    dep = session.get(Deployment, deployment_id)
+    if not dep:
+        raise HTTPException(status_code=404, detail="Deployment not found")
+
+    schedules = session.exec(
+        select(BatchSchedule).where(BatchSchedule.deployment_id == deployment_id)
+    ).all()
+    return [_schedule_response(s) for s in schedules]
+
+
+@router.delete("/api/deploy/{deployment_id}/schedules/{schedule_id}", status_code=204)
+def delete_schedule(
+    deployment_id: str,
+    schedule_id: str,
+    session: Session = Depends(get_session),
+):
+    """Delete (deactivate) a schedule."""
+    schedule = session.get(BatchSchedule, schedule_id)
+    if not schedule or schedule.deployment_id != deployment_id:
+        raise HTTPException(status_code=404, detail="Schedule not found")
+
+    schedule.is_active = False
+    session.add(schedule)
+    session.commit()
+
+
+@router.post("/api/deploy/{deployment_id}/schedules/{schedule_id}/run")
+def trigger_schedule_run(
+    deployment_id: str,
+    schedule_id: str,
+    session: Session = Depends(get_session),
+):
+    """Trigger an immediate run of a schedule (outside its normal schedule)."""
+    schedule = session.get(BatchSchedule, schedule_id)
+    if not schedule or schedule.deployment_id != deployment_id:
+        raise HTTPException(status_code=404, detail="Schedule not found")
+
+    # Run in a background thread so the request returns immediately
+    import threading
+    from core.scheduler import _run_job
+
+    thread = threading.Thread(target=_run_job, args=(schedule_id,), daemon=True)
+    thread.start()
+    return {"status": "running", "schedule_id": schedule_id}
+
+
+@router.get("/api/deploy/{deployment_id}/schedules/{schedule_id}/runs")
+def list_schedule_runs(
+    deployment_id: str,
+    schedule_id: str,
+    limit: int = Query(default=20, ge=1, le=100),
+    session: Session = Depends(get_session),
+):
+    """Return recent job runs for a schedule."""
+    schedule = session.get(BatchSchedule, schedule_id)
+    if not schedule or schedule.deployment_id != deployment_id:
+        raise HTTPException(status_code=404, detail="Schedule not found")
+
+    runs = session.exec(
+        select(BatchJobRun)
+        .where(BatchJobRun.schedule_id == schedule_id)
+        .order_by(BatchJobRun.started_at.desc())  # type: ignore[union-attr]
+        .limit(limit)
+    ).all()
+    return [_job_run_response(r) for r in runs]
+
+
+@router.get("/api/deploy/batch-outputs/{filename}")
+def download_batch_output(filename: str):
+    """Download a completed batch prediction CSV."""
+    from fastapi.responses import FileResponse
+
+    # Security: filename must be alphanumeric + underscores/dashes + .csv
+    import re
+    if not re.match(r"^[\w\-]+\.csv$", filename):
+        raise HTTPException(status_code=400, detail="Invalid filename")
+
+    from core.scheduler import BATCH_OUTPUT_DIR
+    path = BATCH_OUTPUT_DIR / filename
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Output file not found")
+
+    return FileResponse(
+        path=str(path),
+        media_type="text/csv",
+        filename=filename,
+    )

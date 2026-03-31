@@ -37,6 +37,11 @@ jest.mock("../lib/api", () => ({
       drift: jest.fn().mockResolvedValue({ status: "insufficient_data", drift_score: null }),
       feedbackAccuracy: jest.fn().mockResolvedValue({ status: "no_feedback", total_feedback: 0, message: "No feedback yet.", problem_type: "regression" }),
       health: jest.fn(),
+      getSchedules: jest.fn().mockResolvedValue([]),
+      createSchedule: jest.fn(),
+      deleteSchedule: jest.fn(),
+      triggerSchedule: jest.fn(),
+      getScheduleRuns: jest.fn().mockResolvedValue([]),
     },
   },
 }))

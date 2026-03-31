@@ -14,6 +14,7 @@ from api.models import router as models_router
 from api.projects import router as projects_router
 from api.templates import router as templates_router
 from api.validation import router as validation_router
+from core.scheduler import start_scheduler
 from db import create_db_and_tables
 
 DATA_DIR = Path(__file__).parent / "data"
@@ -25,6 +26,7 @@ async def lifespan(app: FastAPI):
     DATA_DIR.mkdir(exist_ok=True)
     UPLOAD_DIR.mkdir(exist_ok=True)
     create_db_and_tables()
+    start_scheduler()
     yield
 
 

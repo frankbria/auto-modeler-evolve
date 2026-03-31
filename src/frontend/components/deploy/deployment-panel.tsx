@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { api } from "@/lib/api"
 import type { Deployment, DeploymentAnalytics, ModelReadiness, DriftReport, WhatIfResult, FeedbackAccuracy, ModelHealth, ProjectAlerts, ProjectAlert } from "@/lib/types"
 import { IntegrationCard } from "./integration-card"
+import { ScheduleCard } from "./schedule-card"
 
 interface DeploymentPanelProps {
   projectId: string
@@ -877,6 +878,18 @@ export function DeploymentPanel({
         <AlertsCard projectId={projectId} />
         {deployment && <ApiKeyCard deployment={deployment} onUpdated={setDeployment} />}
         {deployment && <IntegrationCard deploymentId={deployment.id} />}
+        {deployment && (
+          <Card className="border-violet-500/30">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                <span aria-hidden="true">🗓</span> Scheduled Batch Predictions
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ScheduleCard deploymentId={deployment.id} />
+            </CardContent>
+          </Card>
+        )}
 
         <div className="flex justify-end">
           {confirmUndeploy ? (

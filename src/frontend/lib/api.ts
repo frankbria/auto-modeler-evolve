@@ -832,5 +832,48 @@ export const api = {
 
     disableApiKey: (deploymentId: string): Promise<Response> =>
       fetch(`${API_URL}/api/deploy/${deploymentId}/api-key`, { method: "DELETE" }),
+
+    getSchedules: (deploymentId: string): Promise<import("./types").BatchSchedule[]> =>
+      fetch(`${API_URL}/api/deploy/${deploymentId}/schedules`).then((r) => r.json()),
+
+    createSchedule: (
+      deploymentId: string,
+      body: {
+        frequency: string
+        run_hour: number
+        run_minute: number
+        day_of_week?: number | null
+        day_of_month?: number | null
+      }
+    ): Promise<import("./types").BatchSchedule> =>
+      fetch(`${API_URL}/api/deploy/${deploymentId}/schedules`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }).then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        return r.json()
+      }),
+
+    deleteSchedule: (deploymentId: string, scheduleId: string): Promise<void> =>
+      fetch(`${API_URL}/api/deploy/${deploymentId}/schedules/${scheduleId}`, {
+        method: "DELETE",
+      }).then(() => undefined),
+
+    triggerSchedule: (
+      deploymentId: string,
+      scheduleId: string
+    ): Promise<{ status: string; schedule_id: string }> =>
+      fetch(`${API_URL}/api/deploy/${deploymentId}/schedules/${scheduleId}/run`, {
+        method: "POST",
+      }).then((r) => r.json()),
+
+    getScheduleRuns: (
+      deploymentId: string,
+      scheduleId: string
+    ): Promise<import("./types").BatchJobRun[]> =>
+      fetch(
+        `${API_URL}/api/deploy/${deploymentId}/schedules/${scheduleId}/runs`
+      ).then((r) => r.json()),
   },
 }

@@ -1543,3 +1543,32 @@ export interface PredictionErrorResult {
   error_rate: number
   summary: string
 }
+
+export interface BatchSchedule {
+  id: string
+  deployment_id: string
+  frequency: "daily" | "weekly" | "monthly"
+  run_hour: number
+  run_minute: number
+  day_of_week: number | null
+  day_of_month: number | null
+  is_active: boolean
+  last_run: string | null
+  next_run: string | null
+  last_output_path: string | null
+  last_row_count: number | null
+  last_error: string | null
+  created_at: string
+}
+
+export interface BatchJobRun {
+  id: string
+  schedule_id: string
+  deployment_id: string
+  started_at: string
+  completed_at: string | null
+  status: "running" | "success" | "failed"
+  row_count: number | null
+  error: string | null
+  download_url: string | null
+}

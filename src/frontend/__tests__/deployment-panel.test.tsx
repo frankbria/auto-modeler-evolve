@@ -28,6 +28,11 @@ jest.mock("../lib/api", () => ({
       }),
       submitFeedback: jest.fn(),
       health: jest.fn().mockResolvedValue(null),
+      getSchedules: jest.fn().mockResolvedValue([]),
+      createSchedule: jest.fn(),
+      deleteSchedule: jest.fn(),
+      triggerSchedule: jest.fn(),
+      getScheduleRuns: jest.fn().mockResolvedValue([]),
     },
     models: {
       readiness: jest.fn(),

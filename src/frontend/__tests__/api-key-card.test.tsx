@@ -33,6 +33,11 @@ jest.mock("../lib/api", () => ({
       health: jest.fn().mockResolvedValue(null),
       generateApiKey: jest.fn(),
       disableApiKey: jest.fn(),
+      getSchedules: jest.fn().mockResolvedValue([]),
+      createSchedule: jest.fn(),
+      deleteSchedule: jest.fn(),
+      triggerSchedule: jest.fn(),
+      getScheduleRuns: jest.fn().mockResolvedValue([]),
     },
     models: {
       readiness: jest.fn().mockRejectedValue(new Error("not ready")),
