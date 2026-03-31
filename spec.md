@@ -323,6 +323,18 @@ guides them forward through the natural flow.
 >
 > These items are **never checked off**. Each session, pick work from one or more of
 > these tracks based on what will have the most impact right now.
+>
+> **PRIORITY ORDER (as of Day 19):**
+> 1. **Track D — Deployment Depth** ← highest priority; this is AutoModeler's biggest
+>    competitive differentiator and the most underbuilt area relative to the vision.
+> 2. **Track C — Model Building Depth** ← second priority; richer training = better models.
+> 3. **Track E — End-to-End Polish** ← third; close friction in the "lunch break" flow.
+> 4. **Track B — Vision-Driven Innovation** ← only if D/C/E have nothing obvious to do.
+> 5. **Track A — Quality Hardening** ← test coverage has reached its target (see below).
+>    **DO NOT add new tests purely for coverage.** Backend is at 99%, frontend at 91%.
+>    Both exceed the 85% target. Write tests only for new features. Stop chasing 100%.
+>    The Explore phase (analytics cards) is **saturated** — do not add more chat-triggered
+>    analysis card types. Focus on what happens *after* a model is built.
 
 #### Track A — Quality Hardening
 
@@ -691,7 +703,134 @@ guides them forward through the natural flow.
 - [x] **Group trend analysis via chat** — Business analysts can ask "which regions are growing?", "fastest growing products?", "which segments are trending up?", "compare growth by product category", or "how are my regions trending over time?" and receive an inline `GroupTrendCard` ranking all groups by growth rate. `compute_group_trends(df, date_col, group_col, value_col)` in `core/analyzer.py` converts dates to a numeric day-index, fits OLS slope per group (b = cov(x,y)/var(x)), computes % change (first→last), classifies direction (up/down/flat), ranks by slope descending, and builds a plain-English summary naming the fastest grower and worst decliner. Guards: rejects if group_col has >50 unique values (high cardinality). `GET /api/data/{id}/group-trends?date_col=&group_col=&value_col=` REST endpoint (400 on missing columns or high-cardinality group_col). `_GROUP_TREND_PATTERNS` (7 NL variants: "which X are growing/trending/increasing/declining/rising", "fastest growing/declining X", "growth/trend rate by/per X", "which X have the most growth/decline", "how are X trending over time", "compare growth by X") + `_detect_group_trend_request()` in `chat.py` — auto-detects date column via `detect_time_columns()`, scans message for mentioned categorical col (longest-match, fallback first cat col) and numeric col (longest-match, fallback first numeric). Handler computes `_compute_gt()`, injects rising/falling counts + summary into system prompt. `{type:"group_trends"}` SSE event; `attachGroupTrendsToLastMessage()` Zustand store action. `GroupTrendCard` renders: orange border, 📈 icon, rising/falling/flat count badges, table with rank/#/group/first/last/change badge (color-coded +green/-rose/→muted) / direction arrow (▲▼→), summary footer. `GroupTrendRow` + `GroupTrendResult` TypeScript types; `api.data.getGroupTrends()` client method. Directly implements the vision's "Which products are trending up?" question — distinct from scatter (static relationship), correlation (strength/direction), time-window comparison (two specific periods), and line chart (single series raw trend line).
       *Day 19 (20:00): 17 backend + 13 frontend = 30 new tests. Total: 2108 backend + 941 frontend = 3049.*
 
-#### Track C — Coordination
+#### Track C — Model Building Depth
+
+> AutoModeler's competitive differentiation is making ML accessible to business analysts.
+> Right now, model training works but lacks sophistication. These improvements make models
+> meaningfully better — and help analysts understand *why* one approach beats another.
+
+- [ ] **Class imbalance handling** — When target class distribution is skewed (e.g., 95% no-churn / 5% churn),
+      auto-detect imbalance (minority class < 20% of total) and offer three strategies: class weighting
+      (`class_weight="balanced"`), SMOTE oversampling (via `imbalanced-learn`), and threshold tuning
+      (optimize decision threshold by F1 score). Show the analyst the class distribution before training,
+      explain what imbalance means in plain English, and recommend a strategy. Include before/after
+      comparison in the model metrics.
+
+- [ ] **Ensemble methods** — Add `VotingClassifier` / `VotingRegressor` (soft voting across the
+      best 2-3 base models from the comparison run) and `StackingRegressor` / `StackingClassifier`
+      (linear meta-learner). Surface these in the algorithm selection UI as "Ensemble (combines multiple
+      models — often the most accurate choice)". Include plain-English explainability for ensemble
+      decisions ("3 out of 4 models voted for 'high revenue'").
+
+- [ ] **Date-aware train/test split** — When a date column is present, default to a chronological
+      split (oldest 80% = train, newest 20% = test) rather than random shuffle. Explain why: "We used
+      time-based splitting — training on past data and testing on more recent data gives a more honest
+      picture of how your model will perform in the real world." Chat should detect "use time-based
+      split" intent and toggle the strategy.
+
+- [ ] **Feature selection automation** — After training, identify features with near-zero importance
+      (bottom 20% by SHAP or coefficient magnitude) and offer to retrain without them. "I found 3
+      features that aren't helping the model — removing them may reduce noise and improve predictions
+      on new data." Show the user a before/after metric comparison. This closes a real analyst question:
+      "Are all my columns actually useful?"
+
+- [ ] **Training on large datasets** — Current training loads the full CSV into memory. Add a
+      chunked-training path for datasets >50k rows: random sample 20k rows for training, train on
+      that, report "trained on 20,000 rows (random sample — full dataset is too large for in-memory
+      training)". This prevents OOM errors and keeps the experience fast.
+
+- [ ] **Calibration for classifiers** — Apply `CalibratedClassifierCV` to classifiers so that
+      `predict_proba` outputs are well-calibrated (a predicted 80% confidence should be right ~80%
+      of the time). Show a reliability diagram in the validation panel. Plain-English: "This chart
+      shows how trustworthy the model's confidence scores are — a well-calibrated model's bars
+      follow the diagonal line."
+
+#### Track D — Deployment Depth
+
+> **This is the highest-priority track.** The vision's "one click and you have a live API"
+> promise is implemented but thin. Real deployment for business analysts requires the features below.
+> These are what no-code AutoML tools consistently get wrong — and where AutoModeler can win.
+
+- [ ] **API key authentication for prediction endpoints** — Right now, any person with the
+      prediction URL can call the model. Add optional API key protection: generate a key at deploy
+      time, store a salted hash, require `Authorization: Bearer <key>` header. The deployment panel
+      shows the key once (copy-to-clipboard), with a Regenerate button. Plain-English: "Your model
+      is now protected — only people with this key can use it." This is table-stakes for any analyst
+      who wants to share a model with their dev team.
+
+- [ ] **Scheduled batch prediction jobs** — Let analysts set up a recurring prediction run:
+      "Run batch predictions on my sales_forecast.csv every Monday at 9am." Store schedules in a
+      `BatchSchedule` SQLModel table (cron expression, dataset_id, deployment_id, last_run,
+      next_run, output_path). Use APScheduler (already available via FastAPI's background tasks).
+      Email/webhook notification on completion (configurable). Frontend: "Schedule" tab in the
+      deployment panel with a simple form (frequency: daily/weekly/monthly + time picker).
+
+- [ ] **Deployment versioning and rollback** — When a model is retrained and redeployed, the
+      old version should be preserved and accessible. Maintain a `DeploymentVersion` table tracking
+      each version (model_run_id, version_number, deployed_at, metrics snapshot). The deployment
+      panel shows a "Version history" timeline with one-click rollback: "Restore v2 (R² 0.84)".
+      Old prediction logs remain associated with the version that made them.
+
+- [ ] **Champion-challenger A/B testing** — Allow splitting live prediction traffic between two
+      deployed model versions (e.g., 80% to champion, 20% to challenger). Record which version
+      served each prediction in PredictionLog. The deployment panel shows a side-by-side comparison
+      of champion vs challenger accuracy, confidence, and request counts in real time. Auto-promote
+      challenger to champion when it achieves statistical significance (Mann-Whitney U or bootstrap).
+
+- [ ] **Webhook notifications** — Let users register a webhook URL to be called when model health
+      degrades, drift is detected, or a scheduled batch job completes. `POST /api/deploy/{id}/webhook`
+      stores the URL + event types. Dispatch via `httpx.post()` with a signed payload (HMAC-SHA256).
+      This connects AutoModeler into existing analyst workflows (Slack, Teams, Zapier integrations).
+
+- [ ] **Deployment environment promotion (staging → production)** — Add an environment concept:
+      each deployment is tagged `staging` or `production`. A "Promote to production" button in the
+      deployment panel swaps the active endpoint, preserving the staging URL for testing. The predict
+      page shows an environment badge. Plain-English: "You're looking at the staging version — your
+      team is using the production version at a different URL."
+
+- [ ] **Export as self-contained prediction service** — "Download as ZIP" exports the model
+      pipeline, a minimal FastAPI server (`server.py`), `requirements.txt`, and a `README.md`
+      with one-command deployment instructions (`uvicorn server:app`). This lets developers take the
+      model and run it on their own infrastructure with no dependency on AutoModeler. Closes the
+      vision's "An API their developer can plug into the company's reporting tool" promise.
+
+- [ ] **Prediction SLA monitoring** — Track p50/p95/p99 prediction latency per deployment.
+      Alert (inline in deployment panel) when p95 > 500ms. Show a latency sparkline in the
+      analytics card next to the prediction count sparkline. This gives developers confidence
+      before wiring the API into production systems.
+
+#### Track E — End-to-End Polish
+
+> The "lunch break" success criterion: a business analyst uploads quarterly sales data and
+> in 30 minutes has a shareable dashboard for their VP. Run this flow end-to-end and fix
+> every friction point you find. Tests don't catch UX debt — only running it does.
+
+- [ ] **"Lunch break" flow audit** — Using `scripts/demo.py` as a starting point, run the
+      complete analyst journey manually: upload → ask 2-3 questions → approve features → train
+      → validate → deploy → share the prediction link. Document every moment of confusion,
+      missing affordance, or required domain knowledge. Fix the top 3 friction points found.
+      Journal findings honestly.
+
+- [ ] **Proactive insights after upload** — The system calls `narrate_data_insights_ai()` after
+      upload but the analyst still has to know to ask questions. Expand proactive suggestions:
+      after upload, the AI should offer 3-5 specific, data-aware questions in suggestion chips
+      (not generic "ask me anything" prompts). E.g., "I see a `date` column and a `revenue` column
+      — want me to show you the revenue trend over time?" These should be generated from the
+      actual profile, not hardcoded templates.
+
+- [ ] **"What can I do next?" guidance at every step** — At the end of each major action
+      (upload complete, features applied, model trained, model deployed), the AI should proactively
+      say what the logical next step is and offer it as a clickable suggestion. This replaces the
+      current state where the analyst has to remember the workflow. Tie this to the conversation
+      state machine stages.
+
+- [ ] **The shareable prediction page UX** — The `predict/[id]` page is what the analyst
+      shares with their VP. Run it with a fresh eye: Is it immediately obvious what to do?
+      Does it explain what the model is predicting? Does the form field order match the way
+      analysts think about their data? Does it look polished enough to show a VP? Fix whatever
+      needs fixing.
+
+#### Track F — Coordination
 
 - [x] **Update BACKLOG.md** — Before starting work, check BACKLOG.md for what the other
       bot instance is working on or has recently explored. Write your chosen focus at the
@@ -828,7 +967,7 @@ Deployment
 - **Visual regression:** Chart rendering, responsive layout
 
 ### Quality Gates
-- Coverage: >85%
+- Coverage: >85% (both stacks already exceed this — do not chase 100%)
 - Pass rate: 100%
 - All E2E scenarios pass before merge
 

@@ -3,6 +3,50 @@
 Living document for coordinating between bot instances and tracking ideation.
 **Read this before starting work. Write your focus before implementing.**
 
+---
+
+## ⚠ STEERING DIRECTIVE (updated Day 19) — READ BEFORE CHOOSING WORK
+
+**The Explore phase is done. Stop adding analytics cards.**
+
+As of Day 19 the chat can answer every major exploratory question a business analyst
+would ask: scatter, line, bar, pie, box, histogram, heatmap, group stats, group trends,
+pair correlation, segment comparison, value counts, summary stats, time windows, crosstab,
+top-N, clustering, forecasting, anomalies, null maps, column profiles, filters, computed
+columns, data stories, and more. There is no meaningful analytics gap left to fill.
+
+**Where to focus instead (priority order):**
+
+1. **Deployment depth (Track D)** — This is AutoModeler's biggest competitive gap and
+   the most underbuilt area relative to the vision. Pick from spec.md Track D:
+   - API key auth for prediction endpoints
+   - Scheduled batch prediction jobs
+   - Deployment versioning + rollback
+   - Champion-challenger A/B testing
+   - Webhook notifications on model drift/degradation
+   - Export as self-contained prediction service (ZIP + uvicorn)
+   - Prediction SLA / latency monitoring
+
+2. **Model building depth (Track C)** — Better models = more analyst trust:
+   - Class imbalance detection + handling (SMOTE / class weights / threshold tuning)
+   - Ensemble methods (voting + stacking)
+   - Date-aware chronological train/test splits
+   - Feature selection automation (drop near-zero-importance features)
+
+3. **End-to-end polish (Track E)** — Run the "lunch break" flow as a real user:
+   - Proactive insight suggestions after upload (data-aware, not generic)
+   - "What's next?" guidance at every step transition
+   - Prediction page UX audit (the VP-facing dashboard)
+
+4. **Vision-Driven Innovation (Track B)** — Only if D/C/E have nothing obvious.
+
+**Test coverage:** Backend 99%, frontend 91%. Both EXCEED the 85% target.
+Do NOT write new tests purely for coverage. Write tests only for new features.
+Stop chasing 100% — it's not achievable (SSE streams, ImportError branches) and
+the time is better spent on real features.
+
+---
+
 ## Currently Working On
 
 ## Day 19 (20:00) — Done
