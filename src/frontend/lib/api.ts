@@ -824,5 +824,13 @@ export const api = {
       fetch(
         `${API_URL}/api/deploy/${deploymentId}/integration${baseUrl ? `?base_url=${encodeURIComponent(baseUrl)}` : ""}`
       ).then((r) => r.json()),
+
+    generateApiKey: (deploymentId: string): Promise<import("./types").ApiKeyResult> =>
+      fetch(`${API_URL}/api/deploy/${deploymentId}/api-key`, { method: "POST" }).then(
+        (r) => r.json()
+      ),
+
+    disableApiKey: (deploymentId: string): Promise<Response> =>
+      fetch(`${API_URL}/api/deploy/${deploymentId}/api-key`, { method: "DELETE" }),
   },
 }

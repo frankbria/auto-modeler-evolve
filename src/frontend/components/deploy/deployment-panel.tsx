@@ -608,6 +608,114 @@ export function AlertsCard({
   )
 }
 
+function ApiKeyCard({ deployment, onUpdated }: { deployment: Deployment; onUpdated: (d: Deployment) => void }) {
+  const [generatedKey, setGeneratedKey] = useState<string | null>(null)
+  const [keyCopied, setKeyCopied] = useState(false)
+  const [loading, setLoading] = useState(false)
+
+  const handleGenerate = async () => {
+    setLoading(true)
+    try {
+      const result = await api.deploy.generateApiKey(deployment.id)
+      setGeneratedKey(result.api_key)
+      onUpdated({ ...deployment, api_key_enabled: true })
+    } catch {
+      // ignore
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleDisable = async () => {
+    setLoading(true)
+    try {
+      await api.deploy.disableApiKey(deployment.id)
+      setGeneratedKey(null)
+      onUpdated({ ...deployment, api_key_enabled: false })
+    } catch {
+      // ignore
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const copyKey = () => {
+    if (!generatedKey) return
+    navigator.clipboard.writeText(generatedKey).then(() => {
+      setKeyCopied(true)
+      setTimeout(() => setKeyCopied(false), 2000)
+    }).catch(() => {})
+  }
+
+  return (
+    <Card className="border-amber-200">
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <span aria-hidden="true">🔑</span> API Key Protection
+          </CardTitle>
+          <Badge
+            className={
+              deployment.api_key_enabled
+                ? "bg-green-100 text-green-800 border-green-200"
+                : "bg-gray-100 text-gray-600 border-gray-200"
+            }
+          >
+            {deployment.api_key_enabled ? "Protected" : "Open access"}
+          </Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {!deployment.api_key_enabled ? (
+          <div className="space-y-2">
+            <p className="text-xs text-muted-foreground">
+              Your prediction endpoint is publicly accessible. Enable API key protection
+              so only authorised callers can use it.
+            </p>
+            <Button size="sm" onClick={handleGenerate} disabled={loading}>
+              {loading ? "Generating…" : "Generate API key"}
+            </Button>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {generatedKey ? (
+              <div className="space-y-1">
+                <p className="text-xs font-medium text-amber-700">
+                  Copy this key now — it will not be shown again.
+                </p>
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 text-xs bg-muted px-2 py-1 rounded font-mono break-all">
+                    {generatedKey}
+                  </code>
+                  <Button size="sm" variant="outline" onClick={copyKey}>
+                    {keyCopied ? "Copied!" : "Copy"}
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                This endpoint is protected. Callers must include{" "}
+                <code className="text-xs bg-muted px-1 rounded">
+                  Authorization: Bearer &lt;key&gt;
+                </code>{" "}
+                in every request.
+              </p>
+            )}
+            <div className="flex gap-2">
+              <Button size="sm" variant="outline" onClick={handleGenerate} disabled={loading}>
+                {loading ? "Generating…" : "Regenerate key"}
+              </Button>
+              <Button size="sm" variant="ghost" onClick={handleDisable} disabled={loading}>
+                Remove protection
+              </Button>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
 export function DeploymentPanel({
   projectId,
   selectedRunId,
@@ -767,6 +875,7 @@ export function DeploymentPanel({
         {deployment && <FeedbackCard deploymentId={deployment.id} problemType={deployment.problem_type} />}
         {deployment && <ModelHealthCard deploymentId={deployment.id} projectId={projectId} />}
         <AlertsCard projectId={projectId} />
+        {deployment && <ApiKeyCard deployment={deployment} onUpdated={setDeployment} />}
         {deployment && <IntegrationCard deploymentId={deployment.id} />}
 
         <div className="flex justify-end">

@@ -15,13 +15,15 @@ Routes:
 
 from __future__ import annotations
 
+import hashlib
 import json
+import secrets
 from collections import defaultdict
 from datetime import UTC, datetime
 from pathlib import Path
 
 import pandas as pd
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Header, Query, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlmodel import Session, select
@@ -253,6 +255,60 @@ def undeploy_model(
 
 
 # ---------------------------------------------------------------------------
+# 4b. API key management
+# ---------------------------------------------------------------------------
+
+
+@router.post("/api/deploy/{deployment_id}/api-key", status_code=201)
+def generate_api_key(
+    deployment_id: str,
+    session: Session = Depends(get_session),
+):
+    """Generate (or regenerate) an API key for a deployment.
+
+    The plaintext key is returned ONCE in this response.
+    Only its hash is stored — it cannot be retrieved again.
+    """
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment or not deployment.is_active:
+        raise HTTPException(status_code=404, detail="Deployment not found or inactive")
+
+    key = secrets.token_urlsafe(32)
+    salt = secrets.token_hex(16)
+    key_hash = hashlib.sha256(f"{salt}:{key}".encode()).hexdigest()
+
+    deployment.api_key_enabled = True
+    deployment.api_key_hash = key_hash
+    deployment.api_key_salt = salt
+    session.add(deployment)
+    session.commit()
+
+    return {
+        "deployment_id": deployment_id,
+        "api_key": key,  # shown only once
+        "message": "API key generated. Store this key — it cannot be retrieved again.",
+    }
+
+
+@router.delete("/api/deploy/{deployment_id}/api-key", status_code=204)
+def disable_api_key(
+    deployment_id: str,
+    session: Session = Depends(get_session),
+):
+    """Remove API key protection from a deployment (makes it publicly accessible again)."""
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment or not deployment.is_active:
+        raise HTTPException(status_code=404, detail="Deployment not found or inactive")
+
+    deployment.api_key_enabled = False
+    deployment.api_key_hash = None
+    deployment.api_key_salt = None
+    session.add(deployment)
+    session.commit()
+    return None
+
+
+# ---------------------------------------------------------------------------
 # 5a. Cross-deployment model comparison (must appear before parameterised routes)
 # ---------------------------------------------------------------------------
 
@@ -357,16 +413,20 @@ def compare_deployments(
 def make_prediction(
     deployment_id: str,
     input_data: dict,
+    authorization: str | None = Header(default=None),
     session: Session = Depends(get_session),
 ):
     """Make a single prediction.
 
     Request body: JSON object mapping feature names to values.
     Response: prediction + optional class probabilities.
+    If the deployment has API key protection, include Authorization: Bearer <key>.
     """
     deployment = session.get(Deployment, deployment_id)
     if not deployment or not deployment.is_active:
         raise HTTPException(status_code=404, detail="Deployment not found or inactive")
+
+    _verify_api_key(deployment, authorization)
 
     if not deployment.pipeline_path or not Path(deployment.pipeline_path).exists():
         raise HTTPException(
@@ -417,15 +477,19 @@ def make_prediction(
 def batch_prediction(
     deployment_id: str,
     file: UploadFile = File(...),
+    authorization: str | None = Header(default=None),
     session: Session = Depends(get_session),
 ):
     """Batch prediction: upload CSV, get back CSV with predictions added.
 
     Returns the enriched CSV as a file download.
+    If the deployment has API key protection, include Authorization: Bearer <key>.
     """
     deployment = session.get(Deployment, deployment_id)
     if not deployment or not deployment.is_active:
         raise HTTPException(status_code=404, detail="Deployment not found or inactive")
+
+    _verify_api_key(deployment, authorization)
 
     if not deployment.pipeline_path or not Path(deployment.pipeline_path).exists():
         raise HTTPException(
@@ -461,6 +525,7 @@ def batch_prediction(
 def explain_single_prediction(
     deployment_id: str,
     input_data: dict,
+    authorization: str | None = Header(default=None),
     session: Session = Depends(get_session),
 ):
     """Explain a single prediction using feature contributions.
@@ -475,6 +540,8 @@ def explain_single_prediction(
     deployment = session.get(Deployment, deployment_id)
     if not deployment or not deployment.is_active:
         raise HTTPException(status_code=404, detail="Deployment not found or inactive")
+
+    _verify_api_key(deployment, authorization)
 
     if not deployment.pipeline_path or not Path(deployment.pipeline_path).exists():
         raise HTTPException(
@@ -1735,4 +1802,26 @@ def _deployment_response(d: Deployment) -> dict:
         "last_predicted_at": (
             d.last_predicted_at.isoformat() if d.last_predicted_at else None
         ),
+        "api_key_enabled": bool(getattr(d, "api_key_enabled", False)),
     }
+
+
+def _verify_api_key(deployment: Deployment, authorization: str | None) -> None:
+    """Raise 401 if the deployment is key-protected and the key is missing/wrong."""
+    if not getattr(deployment, "api_key_enabled", False):
+        return  # No protection — open access
+
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=401,
+            detail="This prediction endpoint requires an API key. "
+            "Include 'Authorization: Bearer <key>' in your request.",
+        )
+
+    provided_key = authorization.removeprefix("Bearer ").strip()
+    salt = getattr(deployment, "api_key_salt", "") or ""
+    expected_hash = hashlib.sha256(f"{salt}:{provided_key}".encode()).hexdigest()
+    stored_hash = getattr(deployment, "api_key_hash", "") or ""
+
+    if not secrets.compare_digest(expected_hash, stored_hash):
+        raise HTTPException(status_code=401, detail="Invalid API key.")

@@ -692,6 +692,13 @@ export interface Deployment {
   created_at: string | null
   last_predicted_at: string | null
   feature_schema?: FeatureSchemaEntry[]
+  api_key_enabled: boolean
+}
+
+export interface ApiKeyResult {
+  deployment_id: string
+  api_key: string
+  message: string
 }
 
 export interface ConfidenceInterval {
