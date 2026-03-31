@@ -30,6 +30,7 @@ fi
 # ── Configuration ──
 REPO="${REPO:-$(git remote get-url origin 2>/dev/null | sed 's|.*github.com[:/]||;s|\.git$||' || echo "owner/code-evolve")}"
 MODEL="${MODEL:-claude-sonnet-4-6}"
+FAST_MODEL="${FAST_MODEL:-claude-haiku-4-5-20251001}"
 TIMEOUT="${TIMEOUT:-3600}"
 PROJECT_DIR="${PROJECT_DIR:-src}"
 BIRTH_DATE="${BIRTH_DATE:-$(date +%Y-%m-%d)}"
@@ -514,7 +515,7 @@ Steps:
 3. Run the verification commands and keep fixing until they pass
 4. Commit: git add -A && git commit -m "Day $DAY ($SESSION_TIME): fix build errors"
 FIXEOF
-            ${TIMEOUT_CMD:+$TIMEOUT_CMD 300} claude -p --model "$MODEL" \
+            ${TIMEOUT_CMD:+$TIMEOUT_CMD 300} claude -p --model "$FAST_MODEL" \
                 --allowedTools "Bash,Read,Write,Edit,Glob,Grep" \
                 < "$FIX_PROMPT" || true
             rm -f "$FIX_PROMPT"
@@ -551,7 +552,7 @@ Then 2-4 sentences: what you did, what worked, what's next.
 Be specific and honest. Then commit: git add JOURNAL.md && git commit -m "Day $DAY ($SESSION_TIME): journal entry"
 JEOF
 
-    ${TIMEOUT_CMD:+$TIMEOUT_CMD 120} claude -p --model "$MODEL" \
+    ${TIMEOUT_CMD:+$TIMEOUT_CMD 120} claude -p --model "$FAST_MODEL" \
         --allowedTools "Bash,Read,Write,Edit" \
         < "$JOURNAL_PROMPT" || true
     rm -f "$JOURNAL_PROMPT"
@@ -599,7 +600,7 @@ Separate multiple with "---". Only claim "fixed" if fully resolved.
 IEOF
 
     AGENT_EXIT=0
-    ${TIMEOUT_CMD:+$TIMEOUT_CMD 120} claude -p --model "$MODEL" \
+    ${TIMEOUT_CMD:+$TIMEOUT_CMD 120} claude -p --model "$FAST_MODEL" \
         --allowedTools "Bash,Read,Write,Edit" \
         < "$ISSUE_PROMPT" || AGENT_EXIT=$?
     rm -f "$ISSUE_PROMPT"
