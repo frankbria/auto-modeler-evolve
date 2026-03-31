@@ -28,5 +28,5 @@ class Deployment(SQLModel, table=True):
     last_predicted_at: Optional[datetime] = None
     # API key authentication (optional protection for prediction endpoints)
     api_key_enabled: bool = Field(default=False)
-    api_key_hash: Optional[str] = None   # sha256(salt + ":" + key)
-    api_key_salt: Optional[str] = None   # random hex salt
+    api_key_hash: Optional[str] = None  # sha256(salt + ":" + key)
+    api_key_salt: Optional[str] = None  # random hex salt
