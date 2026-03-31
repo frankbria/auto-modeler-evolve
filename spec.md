@@ -751,12 +751,13 @@ guides them forward through the natural flow.
 > promise is implemented but thin. Real deployment for business analysts requires the features below.
 > These are what no-code AutoML tools consistently get wrong — and where AutoModeler can win.
 
-- [ ] **API key authentication for prediction endpoints** — Right now, any person with the
+- [x] **API key authentication for prediction endpoints** — Right now, any person with the
       prediction URL can call the model. Add optional API key protection: generate a key at deploy
       time, store a salted hash, require `Authorization: Bearer <key>` header. The deployment panel
       shows the key once (copy-to-clipboard), with a Regenerate button. Plain-English: "Your model
       is now protected — only people with this key can use it." This is table-stakes for any analyst
       who wants to share a model with their dev team.
+      *Day 20 (04:00): `api_key_hash` + `api_key_salt` + `api_key_enabled` added to Deployment model with inline SQLite migration. `POST /api/deploy/{id}/api-key` generates `secrets.token_urlsafe(32)`, stores `sha256(salt:key)`, returns key once. `DELETE /api/deploy/{id}/api-key` removes protection. `_verify_api_key()` helper enforces `Authorization: Bearer` on predict/batch/explain endpoints using `secrets.compare_digest`. `ApiKeyCard` in DeploymentPanel: amber border, Protected/Open-access badge, Generate/Regenerate/Remove protection buttons, copy-to-clipboard for the generated key. 14 backend + 8 frontend = 22 new tests.*
 
 - [ ] **Scheduled batch prediction jobs** — Let analysts set up a recurring prediction run:
       "Run batch predictions on my sales_forecast.csv every Monday at 9am." Store schedules in a

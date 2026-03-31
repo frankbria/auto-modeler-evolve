@@ -1,5 +1,13 @@
 # Journal
 
+## Day 20 — 04:00 — API Key Authentication for Prediction Endpoints (2122 backend + 949 frontend = 3071 tests)
+
+AutoModeler prediction endpoints can now be optionally protected with an API key. `POST /api/deploy/{id}/api-key` generates a `secrets.token_urlsafe(32)` key, stores only `sha256(salt:key)` with a random hex salt — the plaintext key is returned exactly once. `DELETE /api/deploy/{id}/api-key` removes protection, reopening the endpoint. `_verify_api_key()` checks the `Authorization: Bearer <key>` header on all three prediction endpoints (predict, batch, explain) using `secrets.compare_digest` to prevent timing attacks. Three new fields on `Deployment` (`api_key_enabled`, `api_key_hash`, `api_key_salt`) with inline SQLite `ALTER TABLE` migration so existing deployments are unaffected. `ApiKeyCard` in `DeploymentPanel` shows an amber-bordered card with a Protected/Open-access badge, Generate/Regenerate key buttons, a copy-once warning with clipboard copy, and a Remove-protection button.
+
+**Key design choices:** (1) SHA-256 with random salt rather than bcrypt — avoids a new dependency; prediction endpoints care more about speed than maximally slow key verification, and 32-byte tokens are high-entropy machine-generated strings (not human-memorized credentials). (2) Key shown once in the generate response and never again — mirrors the GitHub/AWS pattern analysts already know. (3) All three prediction-path endpoints (predict, batch, explain) share one `_verify_api_key()` helper to ensure no endpoint can be used to bypass protection. (4) `api_key_enabled` in `_deployment_response` so the frontend can reflect protection state without a separate fetch. Implements Track D's highest-priority item — table-stakes for sharing a model's API with a developer team.
+
+**14 backend + 8 frontend = 22 new tests. Total: 2122 backend + 949 frontend = 3071, all passing. Backend lint: clean. Frontend build + lint: clean.**
+
 ## Day 19 — 20:00 — Group Trend Analysis via Chat (2108 backend + 941 frontend = 3049 tests)
 
 AutoModeler now answers "which regions are growing?", "fastest growing products?", "which segments are trending up?", "compare growth by product category", or "how are my regions trending over time?" with an inline `GroupTrendCard` — an orange-bordered card ranking all groups by growth rate. Each row shows the group name, first value, last value, a color-coded % change badge (+green/−rose/→muted), and a direction arrow (▲▼→). Rising/falling/flat count badges appear in the header. The footer contains a plain-English summary naming the fastest grower and steepest decliner.
