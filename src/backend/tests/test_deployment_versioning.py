@@ -157,7 +157,9 @@ async def test_redeploy_archives_v1_creates_v2(
     ac, project_id, feature_set_id, deployment_id, first_run_id
 ):
     """Re-deploying a new model archives v1 and produces v2, endpoint stays stable."""
-    original_endpoint = (await ac.get(f"/api/deploy/{deployment_id}")).json()["endpoint_path"]
+    original_endpoint = (await ac.get(f"/api/deploy/{deployment_id}")).json()[
+        "endpoint_path"
+    ]
 
     second_run = await _train_and_wait(ac, project_id, feature_set_id)
     r = await ac.post(f"/api/deploy/{second_run}")
@@ -199,7 +201,9 @@ async def test_rollback_to_v1(
     ac, project_id, feature_set_id, deployment_id, first_run_id
 ):
     """Rolling back to v1 restores v1's model, creates v3, endpoint stays stable."""
-    original_endpoint = (await ac.get(f"/api/deploy/{deployment_id}")).json()["endpoint_path"]
+    original_endpoint = (await ac.get(f"/api/deploy/{deployment_id}")).json()[
+        "endpoint_path"
+    ]
 
     second_run = await _train_and_wait(ac, project_id, feature_set_id)
     await ac.post(f"/api/deploy/{second_run}")

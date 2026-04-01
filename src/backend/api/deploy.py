@@ -185,7 +185,9 @@ def execute_deployment(model_run_id: str, session: Session) -> dict:
         # Re-deploy: archive current state, increment version, update deployment in-place
         _archive_current_version(existing_for_project, session)
 
-        new_version_number = getattr(existing_for_project, "current_version_number", 1) + 1
+        new_version_number = (
+            getattr(existing_for_project, "current_version_number", 1) + 1
+        )
 
         # Update deployment to point at new model
         existing_for_project.model_run_id = model_run_id
@@ -2206,7 +2208,11 @@ def rollback_deployment(
 
     # Validate the model run still has its model file
     target_run = session.get(ModelRun, target.model_run_id)
-    if not target_run or not target_run.model_path or not Path(target_run.model_path).exists():
+    if (
+        not target_run
+        or not target_run.model_path
+        or not Path(target_run.model_path).exists()
+    ):
         raise HTTPException(
             status_code=400,
             detail=f"Model file for version {version_number} is no longer available on disk",
