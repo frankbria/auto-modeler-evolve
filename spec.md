@@ -799,10 +799,11 @@ guides them forward through the natural flow.
       vision's "An API their developer can plug into the company's reporting tool" promise.
       *Day 21 (05:04): `GET /api/deploy/{id}/export` returns a ZIP with server.py (FastAPI predict + health + root endpoints, CORS middleware, joblib model/pipeline loading), model_pipeline.joblib, model.joblib, requirements.txt, README.md. server.py is syntactically valid Python, embeds target_column, algorithm, and example payload from training data. `ExportServiceCard` (emerald border, "📦 Export as Service") in DeploymentPanel: lists 5 included files, shows uvicorn quick-start snippet, Download as ZIP button triggers blob download with correct filename. `api.deploy.exportServiceUrl()` client helper. 18 backend + 18 frontend = 36 new tests.*
 
-- [ ] **Prediction SLA monitoring** — Track p50/p95/p99 prediction latency per deployment.
+- [x] **Prediction SLA monitoring** — Track p50/p95/p99 prediction latency per deployment.
       Alert (inline in deployment panel) when p95 > 500ms. Show a latency sparkline in the
       analytics card next to the prediction count sparkline. This gives developers confidence
       before wiring the API into production systems.
+      *Day 21 (12:00): `response_ms` added to `PredictionLog` (Optional[float], inline SQLite migration) and populated via `time.monotonic()` around `predict_single()` in `make_prediction()`. `GET /api/deploy/{id}/sla` endpoint returns `p50_ms`/`p95_ms`/`p99_ms`/`avg_ms`/`sample_count`/`alert`/`alert_message`/`latency_by_day` — `_percentile()` helper uses linear interpolation on sorted list. `alert=True` when `p95 > 500ms`; `alert_message` names the threshold and suggests remediation. `latency_by_day` groups by day and averages ms for the sparkbar. `SlaData` TypeScript type; `api.deploy.sla()` client method. `SlaMonitorCard` (sky-blue border when healthy, red border on alert) in `DeploymentPanel`: p50/p95/p99 grid, Healthy/`p95 > 500ms` badge, `LatencySparkbar` (bars colored red when > 500ms), avg ms + sample count, red alert message callout. Logs with NULL `response_ms` (legacy rows) excluded from sample_count. 12 backend + 11 frontend = 23 new tests.*
 
 #### Track E — End-to-End Polish
 
