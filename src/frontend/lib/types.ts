@@ -1572,3 +1572,34 @@ export interface BatchJobRun {
   error: string | null
   download_url: string | null
 }
+
+export interface DeploymentVersion {
+  id: string
+  deployment_id: string
+  version_number: number
+  model_run_id: string
+  algorithm: string | null
+  problem_type: string | null
+  target_column: string | null
+  metrics: Record<string, number>
+  pipeline_path: string | null
+  deployed_at: string | null
+  is_current: boolean
+}
+
+export interface DeploymentVersionHistory {
+  deployment_id: string
+  current_version_number: number
+  versions: DeploymentVersion[]
+}
+
+export interface RollbackResult {
+  rolled_back_to_version: number
+  new_version_number: number
+  id: string
+  model_run_id: string
+  endpoint_path: string
+  algorithm: string | null
+  metrics: Record<string, number>
+  api_key_enabled: boolean
+}

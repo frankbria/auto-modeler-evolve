@@ -8,6 +8,7 @@ import { api } from "@/lib/api"
 import type { Deployment, DeploymentAnalytics, ModelReadiness, DriftReport, WhatIfResult, FeedbackAccuracy, ModelHealth, ProjectAlerts, ProjectAlert } from "@/lib/types"
 import { IntegrationCard } from "./integration-card"
 import { ScheduleCard } from "./schedule-card"
+import { DeploymentVersionCard } from "./deployment-version-card"
 
 interface DeploymentPanelProps {
   projectId: string
@@ -889,6 +890,18 @@ export function DeploymentPanel({
               <ScheduleCard deploymentId={deployment.id} />
             </CardContent>
           </Card>
+        )}
+        {deployment && (
+          <DeploymentVersionCard
+            deploymentId={deployment.id}
+            onRollback={() => {
+              // Refresh deployment info after rollback
+              fetch(`${process.env.NEXT_PUBLIC_API_URL ?? ""}/api/deploy/${deployment.id}`)
+                .then((r) => r.json())
+                .then((d) => setDeployment(d))
+                .catch(() => {})
+            }}
+          />
         )}
 
         <div className="flex justify-end">

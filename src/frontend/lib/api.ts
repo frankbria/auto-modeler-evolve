@@ -875,5 +875,21 @@ export const api = {
       fetch(
         `${API_URL}/api/deploy/${deploymentId}/schedules/${scheduleId}/runs`
       ).then((r) => r.json()),
+
+    getVersions: (
+      deploymentId: string
+    ): Promise<import("./types").DeploymentVersionHistory> =>
+      fetch(`${API_URL}/api/deploy/${deploymentId}/versions`).then((r) => r.json()),
+
+    rollback: (
+      deploymentId: string,
+      versionNumber: number
+    ): Promise<import("./types").RollbackResult> =>
+      fetch(`${API_URL}/api/deploy/${deploymentId}/rollback/${versionNumber}`, {
+        method: "POST",
+      }).then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        return r.json()
+      }),
   },
 }
