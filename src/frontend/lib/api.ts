@@ -894,5 +894,44 @@ export const api = {
 
     exportServiceUrl: (deploymentId: string): string =>
       `${API_URL}/api/deploy/${deploymentId}/export`,
+
+    getWebhooks: (
+      deploymentId: string
+    ): Promise<import("./types").WebhookConfig[]> =>
+      fetch(`${API_URL}/api/deploy/${deploymentId}/webhooks`).then((r) =>
+        r.json()
+      ),
+
+    createWebhook: (
+      deploymentId: string,
+      url: string,
+      eventTypes: string[]
+    ): Promise<import("./types").WebhookConfig> =>
+      fetch(`${API_URL}/api/deploy/${deploymentId}/webhooks`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url, event_types: eventTypes }),
+      }).then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        return r.json()
+      }),
+
+    deleteWebhook: (
+      deploymentId: string,
+      webhookId: string
+    ): Promise<void> =>
+      fetch(
+        `${API_URL}/api/deploy/${deploymentId}/webhooks/${webhookId}`,
+        { method: "DELETE" }
+      ).then(() => undefined),
+
+    testWebhook: (
+      deploymentId: string,
+      webhookId: string
+    ): Promise<import("./types").WebhookTestResult> =>
+      fetch(
+        `${API_URL}/api/deploy/${deploymentId}/webhooks/${webhookId}/test`,
+        { method: "POST" }
+      ).then((r) => r.json()),
   },
 }

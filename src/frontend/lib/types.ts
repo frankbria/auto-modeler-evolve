@@ -1603,3 +1603,23 @@ export interface RollbackResult {
   metrics: Record<string, number>
   api_key_enabled: boolean
 }
+
+export interface WebhookConfig {
+  id: string
+  deployment_id: string
+  url: string
+  event_types: string[]
+  is_active: boolean
+  created_at: string | null
+  last_fired_at: string | null
+  last_status_code: number | null
+  /** Only present on initial creation response */
+  secret?: string
+}
+
+export interface WebhookTestResult {
+  webhook_id: string
+  url: string
+  status_code: number
+  success: boolean
+}

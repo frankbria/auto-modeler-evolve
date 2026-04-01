@@ -10,6 +10,7 @@ import { IntegrationCard } from "./integration-card"
 import { ExportServiceCard } from "./export-service-card"
 import { ScheduleCard } from "./schedule-card"
 import { DeploymentVersionCard } from "./deployment-version-card"
+import { WebhookCard } from "./webhook-card"
 
 interface DeploymentPanelProps {
   projectId: string
@@ -911,6 +912,7 @@ export function DeploymentPanel({
             }}
           />
         )}
+        {deployment && <WebhookCard deploymentId={deployment.id} />}
 
         <div className="flex justify-end">
           {confirmUndeploy ? (

@@ -44,6 +44,7 @@ from models.feature_set import FeatureSet
 from models.model_run import ModelRun
 from models.feedback_record import FeedbackRecord
 from models.prediction_log import PredictionLog
+from models.webhook_config import WebhookConfig
 
 router = APIRouter(tags=["deployment"])
 
@@ -916,7 +917,7 @@ def get_prediction_drift(
             "count": len(recent_vals),
         }
 
-        return {
+        drift_result = {
             "deployment_id": deployment_id,
             "status": status,
             "drift_score": drift_score,
@@ -927,6 +928,18 @@ def get_prediction_drift(
             "recent_dist": None,
             "problem_type": problem_type,
         }
+        if drift_score >= 50:
+            try:
+                from core.webhook import EVENT_DRIFT_DETECTED, dispatch_webhooks
+
+                dispatch_webhooks(
+                    deployment_id,
+                    EVENT_DRIFT_DETECTED,
+                    {"drift_score": drift_score, "status": status, "explanation": explanation},
+                )
+            except Exception:
+                pass
+        return drift_result
 
     else:
         # Classification: compare class distribution proportions
@@ -973,7 +986,7 @@ def get_prediction_drift(
                 "data drift or a shift in your user base. Consider retraining."
             )
 
-        return {
+        drift_result = {
             "deployment_id": deployment_id,
             "status": status,
             "drift_score": drift_score,
@@ -984,6 +997,18 @@ def get_prediction_drift(
             "recent_dist": recent_dist,
             "problem_type": problem_type,
         }
+        if drift_score >= 50:
+            try:
+                from core.webhook import EVENT_DRIFT_DETECTED, dispatch_webhooks
+
+                dispatch_webhooks(
+                    deployment_id,
+                    EVENT_DRIFT_DETECTED,
+                    {"drift_score": drift_score, "status": status, "explanation": explanation},
+                )
+            except Exception:
+                pass
+        return drift_result
 
 
 # ---------------------------------------------------------------------------
@@ -1741,6 +1766,23 @@ def get_model_health(
         recommendations.append(
             "Model health is good. Continue monitoring for drift and feedback accuracy."
         )
+
+    # Fire "health_degraded" webhook when score drops below 60
+    if health_score < 60:
+        try:
+            from core.webhook import EVENT_HEALTH_DEGRADED, dispatch_webhooks
+
+            dispatch_webhooks(
+                deployment_id,
+                EVENT_HEALTH_DEGRADED,
+                {
+                    "health_score": health_score,
+                    "status": status,
+                    "recommendations": recommendations,
+                },
+            )
+        except Exception:
+            pass
 
     return {
         "deployment_id": deployment_id,
@@ -2577,3 +2619,147 @@ def export_deployment(
             "Content-Disposition": f'attachment; filename="{safe_name}.zip"',
         },
     )
+
+
+# ---------------------------------------------------------------------------
+# Webhook notification endpoints
+# ---------------------------------------------------------------------------
+
+
+class WebhookCreateBody(BaseModel):
+    url: str
+    event_types: list[str] = ["batch_complete", "drift_detected", "health_degraded"]
+
+
+def _webhook_response(wh: WebhookConfig, include_secret: bool = False) -> dict:
+    data = {
+        "id": wh.id,
+        "deployment_id": wh.deployment_id,
+        "url": wh.url,
+        "event_types": json.loads(wh.event_types or "[]"),
+        "is_active": wh.is_active,
+        "created_at": wh.created_at.isoformat() if wh.created_at else None,
+        "last_fired_at": wh.last_fired_at.isoformat() if wh.last_fired_at else None,
+        "last_status_code": wh.last_status_code,
+    }
+    if include_secret:
+        data["secret"] = wh.secret
+    return data
+
+
+@router.post("/api/deploy/{deployment_id}/webhooks", status_code=201)
+def create_webhook(
+    deployment_id: str,
+    body: WebhookCreateBody,
+    session: Session = Depends(get_session),
+):
+    """Register a webhook URL for a deployment.
+
+    The secret is returned **once** in the response. Store it securely — it is
+    used to verify the ``X-AutoModeler-Signature`` header on every dispatch.
+
+    Supported event_types:
+    - "batch_complete"  — a scheduled batch job finished (success or failure)
+    - "drift_detected"  — prediction drift score >= 50
+    - "health_degraded" — model health score < 60
+    """
+    from core.webhook import ALL_EVENTS
+
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment or not deployment.is_active:
+        raise HTTPException(status_code=404, detail="Deployment not found or inactive")
+
+    if not body.url.startswith(("http://", "https://")):
+        raise HTTPException(status_code=400, detail="URL must start with http:// or https://")
+
+    unknown = set(body.event_types) - ALL_EVENTS
+    if unknown:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown event types: {sorted(unknown)}. Valid: {sorted(ALL_EVENTS)}",
+        )
+
+    wh = WebhookConfig(
+        deployment_id=deployment_id,
+        url=body.url,
+        event_types=json.dumps(body.event_types),
+    )
+    session.add(wh)
+    session.commit()
+    session.refresh(wh)
+    return _webhook_response(wh, include_secret=True)
+
+
+@router.get("/api/deploy/{deployment_id}/webhooks")
+def list_webhooks(
+    deployment_id: str,
+    session: Session = Depends(get_session),
+):
+    """List all registered webhooks for a deployment (secrets excluded)."""
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment:
+        raise HTTPException(status_code=404, detail="Deployment not found")
+
+    hooks = session.exec(
+        select(WebhookConfig).where(
+            WebhookConfig.deployment_id == deployment_id,
+            WebhookConfig.is_active == True,  # noqa: E712
+        )
+    ).all()
+    return [_webhook_response(h) for h in hooks]
+
+
+@router.delete("/api/deploy/{deployment_id}/webhooks/{webhook_id}", status_code=204)
+def delete_webhook(
+    deployment_id: str,
+    webhook_id: str,
+    session: Session = Depends(get_session),
+):
+    """Remove (soft-delete) a webhook registration."""
+    wh = session.get(WebhookConfig, webhook_id)
+    if not wh or wh.deployment_id != deployment_id:
+        raise HTTPException(status_code=404, detail="Webhook not found")
+
+    wh.is_active = False
+    session.add(wh)
+    session.commit()
+    return None
+
+
+@router.post("/api/deploy/{deployment_id}/webhooks/{webhook_id}/test")
+def test_webhook(
+    deployment_id: str,
+    webhook_id: str,
+    session: Session = Depends(get_session),
+):
+    """Send a test payload to the webhook URL immediately.
+
+    Returns the HTTP status code received from the target server (or 0 on network error).
+    Useful for verifying the URL and signature verification are working.
+    """
+    wh = session.get(WebhookConfig, webhook_id)
+    if not wh or wh.deployment_id != deployment_id:
+        raise HTTPException(status_code=404, detail="Webhook not found")
+
+    from core.webhook import _do_dispatch
+
+    test_payload = {
+        "deployment_id": deployment_id,
+        "event_type": "test",
+        "fired_at": datetime.now(UTC).isoformat(),
+        "message": "AutoModeler webhook test — if you received this, your webhook is working correctly.",
+    }
+    status_code = _do_dispatch(wh.id, wh.url, wh.secret, test_payload)
+
+    # Update stats
+    wh.last_fired_at = datetime.now(UTC).replace(tzinfo=None)
+    wh.last_status_code = status_code
+    session.add(wh)
+    session.commit()
+
+    return {
+        "webhook_id": webhook_id,
+        "url": wh.url,
+        "status_code": status_code,
+        "success": 200 <= status_code < 300,
+    }

@@ -42,6 +42,12 @@ jest.mock("../lib/api", () => ({
       deleteSchedule: jest.fn(),
       triggerSchedule: jest.fn(),
       getScheduleRuns: jest.fn().mockResolvedValue([]),
+      getVersions: jest.fn().mockResolvedValue({ deployment_id: "dep1", current_version_number: 1, versions: [] }),
+      rollback: jest.fn(),
+      getWebhooks: jest.fn().mockResolvedValue([]),
+      createWebhook: jest.fn(),
+      deleteWebhook: jest.fn(),
+      testWebhook: jest.fn(),
     },
   },
 }))

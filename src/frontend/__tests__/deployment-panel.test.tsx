@@ -35,6 +35,10 @@ jest.mock("../lib/api", () => ({
       getScheduleRuns: jest.fn().mockResolvedValue([]),
       getVersions: jest.fn().mockResolvedValue({ deployment_id: "dep-1", current_version_number: 1, versions: [] }),
       rollback: jest.fn(),
+      getWebhooks: jest.fn().mockResolvedValue([]),
+      createWebhook: jest.fn(),
+      deleteWebhook: jest.fn(),
+      testWebhook: jest.fn(),
     },
     models: {
       readiness: jest.fn(),

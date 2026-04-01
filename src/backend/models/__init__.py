@@ -11,6 +11,7 @@ from models.feedback_record import FeedbackRecord
 from models.dataset_filter import DatasetFilter
 from models.batch_schedule import BatchJobRun, BatchSchedule
 from models.deployment_version import DeploymentVersion
+from models.webhook_config import WebhookConfig
 
 __all__ = [
     "Project",
@@ -25,4 +26,5 @@ __all__ = [
     "BatchSchedule",
     "BatchJobRun",
     "DeploymentVersion",
+    "WebhookConfig",
 ]

@@ -206,6 +206,24 @@ def _run_job(schedule_id: str) -> None:
         session.add(schedule)
         session.commit()
 
+    # Fire batch_complete webhook (outside DB session — best-effort)
+    try:
+        from core.webhook import EVENT_BATCH_COMPLETE, dispatch_webhooks
+
+        dispatch_webhooks(
+            schedule.deployment_id,
+            EVENT_BATCH_COMPLETE,
+            {
+                "schedule_id": schedule_id,
+                "status": job_run.status,
+                "row_count": job_run.row_count,
+                "error": job_run.error,
+                "completed_at": job_run.completed_at.isoformat() if job_run.completed_at else None,
+            },
+        )
+    except Exception:
+        pass
+
 
 # ---------------------------------------------------------------------------
 # Scheduler loop
