@@ -2510,6 +2510,7 @@ def export_deployment(
     # Build example payload (feature medians / first category value)
     try:
         from core.deployer import load_pipeline as _load_pipeline
+
         _pl = _load_pipeline(pipeline_path)
         example: dict = {}
         for fname in feature_names:
@@ -2517,7 +2518,11 @@ def export_deployment(
                 example[fname] = round(_pl.medians.get(fname, 0.0), 4)
             else:
                 le = _pl.label_encoders.get(fname)
-                example[fname] = str(le.classes_[0]) if (le is not None and len(le.classes_)) else "value"
+                example[fname] = (
+                    str(le.classes_[0])
+                    if (le is not None and len(le.classes_))
+                    else "value"
+                )
     except Exception:
         example = {f: 0 for f in feature_names}
 

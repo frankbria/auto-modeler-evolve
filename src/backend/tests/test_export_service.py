@@ -204,6 +204,7 @@ class TestExportService:
         with zipfile.ZipFile(io.BytesIO(resp.content)) as zf:
             pipeline_bytes = zf.read("model_pipeline.joblib")
         import joblib
+
         pipeline = joblib.load(io.BytesIO(pipeline_bytes))
         assert hasattr(pipeline, "feature_names")
         assert hasattr(pipeline, "transform")
@@ -214,6 +215,7 @@ class TestExportService:
         with zipfile.ZipFile(io.BytesIO(resp.content)) as zf:
             model_bytes = zf.read("model.joblib")
         import joblib
+
         model = joblib.load(io.BytesIO(model_bytes))
         assert hasattr(model, "predict")
 
@@ -245,8 +247,11 @@ class TestExportService:
         model = joblib.load(io.BytesIO(model_bytes))
 
         # Build a sample prediction input using training medians
-        sample = {f: pipeline.medians.get(f, 0.0) for f in pipeline.feature_names
-                  if pipeline.column_types.get(f) == "numeric"}
+        sample = {
+            f: pipeline.medians.get(f, 0.0)
+            for f in pipeline.feature_names
+            if pipeline.column_types.get(f) == "numeric"
+        }
         for f in pipeline.feature_names:
             if pipeline.column_types.get(f) == "categorical":
                 le = pipeline.label_encoders.get(f)
