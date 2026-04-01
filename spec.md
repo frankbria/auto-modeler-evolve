@@ -791,11 +791,12 @@ guides them forward through the natural flow.
       page shows an environment badge. Plain-English: "You're looking at the staging version — your
       team is using the production version at a different URL."
 
-- [ ] **Export as self-contained prediction service** — "Download as ZIP" exports the model
+- [x] **Export as self-contained prediction service** — "Download as ZIP" exports the model
       pipeline, a minimal FastAPI server (`server.py`), `requirements.txt`, and a `README.md`
       with one-command deployment instructions (`uvicorn server:app`). This lets developers take the
       model and run it on their own infrastructure with no dependency on AutoModeler. Closes the
       vision's "An API their developer can plug into the company's reporting tool" promise.
+      *Day 21 (05:04): `GET /api/deploy/{id}/export` returns a ZIP with server.py (FastAPI predict + health + root endpoints, CORS middleware, joblib model/pipeline loading), model_pipeline.joblib, model.joblib, requirements.txt, README.md. server.py is syntactically valid Python, embeds target_column, algorithm, and example payload from training data. `ExportServiceCard` (emerald border, "📦 Export as Service") in DeploymentPanel: lists 5 included files, shows uvicorn quick-start snippet, Download as ZIP button triggers blob download with correct filename. `api.deploy.exportServiceUrl()` client helper. 18 backend + 18 frontend = 36 new tests.*
 
 - [ ] **Prediction SLA monitoring** — Track p50/p95/p99 prediction latency per deployment.
       Alert (inline in deployment panel) when p95 > 500ms. Show a latency sparkline in the

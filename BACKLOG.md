@@ -49,7 +49,10 @@ the time is better spent on real features.
 
 ## Currently Working On
 
-## Day 19 (20:00) — Done
+## Day 21 (05:04) — Done
+Export as self-contained prediction service — `GET /api/deploy/{id}/export` returns a ZIP with `server.py` (FastAPI predict/health/root endpoints, CORS, joblib loading), `model_pipeline.joblib`, `model.joblib`, `requirements.txt`, `README.md`. server.py embeds target_column, algorithm, uvicorn quickstart, and example payload from training medians. `ExportServiceCard` (emerald border, 📦 icon) in DeploymentPanel: lists 5 included files, uvicorn snippet, Download as ZIP button with blob download and correct filename. `api.deploy.exportServiceUrl()` client helper. 18 backend + 18 frontend = 36 new tests. Total: 2170 backend + 993 frontend = 3163.
+
+## Day 20 (20:00) — Done
 Group trend analysis via chat — `_GROUP_TREND_PATTERNS` (7 NL variants: "which X are growing", "fastest growing X", "which regions are trending up", "growth rate by X", "which products are declining") + `_detect_group_trend_request()` (auto-detects date_col via detect_time_columns, group_col from categorical column mentions, value_col from numeric column mentions) + `compute_group_trends(df, date_col, group_col, value_col)` in `core/analyzer.py` (OLS slope per group, % change first→last, direction up/down/flat, rank by slope, plain-English summary); `GET /api/data/{id}/group-trends?date_col=&group_col=&value_col=` REST endpoint; `{type:"group_trends"}` SSE event; `GroupTrendCard` (orange border, ranked rows with up/down arrows, growth badges, summary). Directly implements vision's "Which products are trending up?" question.
 
 ## Day 19 (12:00) — Done
