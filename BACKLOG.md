@@ -49,6 +49,9 @@ the time is better spent on real features.
 
 ## Currently Working On
 
+## Day 21 (04:00) — Done
+Webhook notifications — `WebhookConfig` SQLModel table (auto-created). `core/webhook.py` provides `dispatch_webhooks(deployment_id, event_type, payload)` — HMAC-SHA256 signed `X-AutoModeler-Signature` header, daemon threads, `except Exception: pass` guard. Three event triggers: `batch_complete` in scheduler, `drift_detected` when score >= 50, `health_degraded` when score < 60. Four endpoints: POST/GET/DELETE webhooks + POST test. `WebhookCard` (sky-blue border) in DeploymentPanel: URL input, event-type checkboxes, list with Test/Remove per entry, test result inline, secret-once amber callout. 18 backend + 13 frontend = 31 new tests. Total: 2188 backend + 1006 frontend = 3194.
+
 ## Day 21 (05:04) — Done
 Export as self-contained prediction service — `GET /api/deploy/{id}/export` returns a ZIP with `server.py` (FastAPI predict/health/root endpoints, CORS, joblib loading), `model_pipeline.joblib`, `model.joblib`, `requirements.txt`, `README.md`. server.py embeds target_column, algorithm, uvicorn quickstart, and example payload from training medians. `ExportServiceCard` (emerald border, 📦 icon) in DeploymentPanel: lists 5 included files, uvicorn snippet, Download as ZIP button with blob download and correct filename. `api.deploy.exportServiceUrl()` client helper. 18 backend + 18 frontend = 36 new tests. Total: 2170 backend + 993 frontend = 3163.
 
