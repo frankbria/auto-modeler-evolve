@@ -780,10 +780,11 @@ guides them forward through the natural flow.
       of champion vs challenger accuracy, confidence, and request counts in real time. Auto-promote
       challenger to champion when it achieves statistical significance (Mann-Whitney U or bootstrap).
 
-- [ ] **Webhook notifications** — Let users register a webhook URL to be called when model health
+- [x] **Webhook notifications** — Let users register a webhook URL to be called when model health
       degrades, drift is detected, or a scheduled batch job completes. `POST /api/deploy/{id}/webhook`
       stores the URL + event types. Dispatch via `httpx.post()` with a signed payload (HMAC-SHA256).
       This connects AutoModeler into existing analyst workflows (Slack, Teams, Zapier integrations).
+      *Day 21 (04:00): `WebhookConfig` SQLModel table (auto-created by `create_all`). `core/webhook.py` provides `dispatch_webhooks(deployment_id, event_type, payload)` — queries active webhooks, fires matching ones in daemon threads, signs each payload with HMAC-SHA256 (`X-AutoModeler-Signature` header). Three event types: `batch_complete` (fired in scheduler._run_job), `drift_detected` (fired when drift_score >= 50), `health_degraded` (fired when health_score < 60). Four REST endpoints: `POST /api/deploy/{id}/webhooks` (register, returns secret once), `GET /api/deploy/{id}/webhooks` (list, no secret), `DELETE /api/deploy/{id}/webhooks/{wid}` (soft-delete), `POST .../test` (synchronous test dispatch, returns HTTP status). `WebhookCard` (sky-blue border, "🔔 Webhook Notifications") in DeploymentPanel: signed-header explanation, webhook list with event-type badges / Test / Remove per entry, test result inline (OK/Failed), last-fired timestamp, add-webhook form with URL input + event-type checkboxes + Save/Cancel. Secret shown once after creation in amber callout with Copy button. 18 backend + 13 frontend = 31 new tests.*
 
 - [ ] **Deployment environment promotion (staging → production)** — Add an environment concept:
       each deployment is tagged `staging` or `production`. A "Promote to production" button in the
