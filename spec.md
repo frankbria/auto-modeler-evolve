@@ -767,11 +767,12 @@ guides them forward through the natural flow.
       deployment panel with a simple form (frequency: daily/weekly/monthly + time picker).
       *Day 20 (12:00): `BatchSchedule` + `BatchJobRun` SQLModel tables (auto-created by `create_all`). Background daemon thread wakes every 60s, finds due schedules, runs batch predictions against deployment's training dataset, saves results to `data/batch_outputs/<sid>_<ts>.csv`. `compute_next_run()` computes UTC next-fire for daily/weekly/monthly frequencies. 5 endpoints: POST/GET/DELETE schedules + POST run (immediate trigger) + GET run history + GET batch-outputs download (path-traversal guarded). `ScheduleCard` in DeploymentPanel: frequency/time/day form, schedule list with next_run/last_run/last_row_count, Run Now / History / Remove per-schedule, paginated run history with download links. 19 backend + 13 frontend = 32 new tests.*
 
-- [ ] **Deployment versioning and rollback** — When a model is retrained and redeployed, the
+- [x] **Deployment versioning and rollback** — When a model is retrained and redeployed, the
       old version should be preserved and accessible. Maintain a `DeploymentVersion` table tracking
       each version (model_run_id, version_number, deployed_at, metrics snapshot). The deployment
       panel shows a "Version history" timeline with one-click rollback: "Restore v2 (R² 0.84)".
       Old prediction logs remain associated with the version that made them.
+      *Day 20 (20:00): `DeploymentVersion` SQLModel table (auto-created). `execute_deployment()` archives current version on re-deploy, keeping endpoint URL stable. `GET /api/deploy/{id}/versions` + `POST /api/deploy/{id}/rollback/{version}` endpoints. `DeploymentVersionCard` shows indigo-bordered timeline (newest-first); Restore button with two-click confirmation (click-to-arm, click-to-confirm prevents accidental rollback); current version has "Current" badge; card only shows when 2+ versions exist. 11 backend + 13 frontend = 24 new tests.*
 
 - [ ] **Champion-challenger A/B testing** — Allow splitting live prediction traffic between two
       deployed model versions (e.g., 80% to champion, 20% to challenger). Record which version
