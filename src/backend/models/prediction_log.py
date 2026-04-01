@@ -18,4 +18,5 @@ class PredictionLog(SQLModel, table=True):
     prediction: str  # JSON: the raw prediction result (value or class label)
     prediction_numeric: Optional[float] = None  # parsed numeric value for aggregation
     confidence: Optional[float] = None  # probability / confidence score if available
+    response_ms: Optional[float] = None  # prediction latency in milliseconds
     created_at: datetime = Field(default_factory=_utcnow)

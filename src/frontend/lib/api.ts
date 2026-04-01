@@ -747,6 +747,9 @@ export const api = {
     drift: (deploymentId: string, window?: number): Promise<import("./types").DriftReport> =>
       fetch(`${API_URL}/api/deploy/${deploymentId}/drift${window ? `?window=${window}` : ""}`).then((r) => r.json()),
 
+    sla: (deploymentId: string): Promise<import("./types").SlaData> =>
+      fetch(`${API_URL}/api/deploy/${deploymentId}/sla`).then((r) => r.json()),
+
     whatif: (
       deploymentId: string,
       base: Record<string, unknown>,

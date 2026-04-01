@@ -771,6 +771,22 @@ export interface PredictionLogsResponse {
 }
 
 // ---------------------------------------------------------------------------
+// SLA Monitoring (Phase 9 Track D)
+// ---------------------------------------------------------------------------
+
+export interface SlaData {
+  deployment_id: string
+  sample_count: number
+  p50_ms: number | null
+  p95_ms: number | null
+  p99_ms: number | null
+  avg_ms: number | null
+  alert: boolean
+  alert_message: string | null
+  latency_by_day: { date: string; avg_ms: number }[]
+}
+
+// ---------------------------------------------------------------------------
 // Model Readiness (Phase 8)
 // ---------------------------------------------------------------------------
 

@@ -18,6 +18,7 @@ from __future__ import annotations
 import hashlib
 import json
 import secrets
+import time
 from collections import defaultdict
 from datetime import UTC, datetime
 from pathlib import Path
@@ -541,7 +542,9 @@ def make_prediction(
     if not run or not run.model_path or not Path(run.model_path).exists():
         raise HTTPException(status_code=500, detail="Model file not found on disk")
 
+    _t0 = time.monotonic()
     result = predict_single(deployment.pipeline_path, run.model_path, input_data)
+    response_ms = round((time.monotonic() - _t0) * 1000, 2)
 
     # Update usage stats
     deployment.request_count += 1
@@ -562,6 +565,7 @@ def make_prediction(
         prediction=json.dumps(prediction_value),
         prediction_numeric=numeric_value,
         confidence=result.get("confidence"),
+        response_ms=response_ms,
     )
     session.add(log_entry)
     session.commit()
@@ -1020,7 +1024,97 @@ def get_prediction_drift(
 
 
 # ---------------------------------------------------------------------------
-# 10. What-if analysis
+# 10. SLA monitoring
+# ---------------------------------------------------------------------------
+
+
+def _percentile(sorted_vals: list[float], pct: float) -> float:
+    """Return the pct-th percentile of a pre-sorted list (0-100 scale)."""
+    if not sorted_vals:
+        return 0.0
+    idx = (pct / 100) * (len(sorted_vals) - 1)
+    lo, hi = int(idx), min(int(idx) + 1, len(sorted_vals) - 1)
+    return round(sorted_vals[lo] + (sorted_vals[hi] - sorted_vals[lo]) * (idx - lo), 2)
+
+
+@router.get("/api/deploy/{deployment_id}/sla")
+def get_sla_metrics(
+    deployment_id: str,
+    session: Session = Depends(get_session),
+):
+    """Return prediction latency percentiles (p50/p95/p99) and per-day averages.
+
+    Uses response_ms stored on PredictionLog entries. Returns:
+    - p50_ms, p95_ms, p99_ms: latency percentiles across all recorded predictions
+    - avg_ms: mean latency
+    - sample_count: number of predictions with latency data
+    - alert: True when p95 > 500ms
+    - alert_message: plain-English description when alert is True
+    - latency_by_day: [{"date": "YYYY-MM-DD", "avg_ms": N}] for sparkline
+    """
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment:
+        raise HTTPException(status_code=404, detail="Deployment not found")
+
+    logs = session.exec(
+        select(PredictionLog).where(PredictionLog.deployment_id == deployment_id)
+    ).all()
+
+    timed_logs = [log for log in logs if log.response_ms is not None]
+
+    if not timed_logs:
+        return {
+            "deployment_id": deployment_id,
+            "sample_count": 0,
+            "p50_ms": None,
+            "p95_ms": None,
+            "p99_ms": None,
+            "avg_ms": None,
+            "alert": False,
+            "alert_message": None,
+            "latency_by_day": [],
+        }
+
+    latencies = sorted(log.response_ms for log in timed_logs)  # type: ignore[misc]
+    p50 = _percentile(latencies, 50)
+    p95 = _percentile(latencies, 95)
+    p99 = _percentile(latencies, 99)
+    avg_ms = round(sum(latencies) / len(latencies), 2)
+
+    alert = p95 > 500.0
+    alert_message = (
+        f"p95 latency is {p95}ms — above the 500ms target. "
+        "Consider retraining with fewer features or switching to a simpler algorithm."
+        if alert
+        else None
+    )
+
+    # Per-day averages for sparkline (last 30 days)
+    day_totals: dict[str, list[float]] = defaultdict(list)
+    for log in timed_logs:
+        day_key = log.created_at.strftime("%Y-%m-%d")
+        day_totals[day_key].append(log.response_ms)  # type: ignore[arg-type]
+
+    latency_by_day = [
+        {"date": date, "avg_ms": round(sum(ms) / len(ms), 2)}
+        for date, ms in sorted(day_totals.items())
+    ]
+
+    return {
+        "deployment_id": deployment_id,
+        "sample_count": len(timed_logs),
+        "p50_ms": p50,
+        "p95_ms": p95,
+        "p99_ms": p99,
+        "avg_ms": avg_ms,
+        "alert": alert,
+        "alert_message": alert_message,
+        "latency_by_day": latency_by_day,
+    }
+
+
+# ---------------------------------------------------------------------------
+# 11. What-if analysis
 # ---------------------------------------------------------------------------
 
 

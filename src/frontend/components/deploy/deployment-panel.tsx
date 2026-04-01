@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { api } from "@/lib/api"
-import type { Deployment, DeploymentAnalytics, ModelReadiness, DriftReport, WhatIfResult, FeedbackAccuracy, ModelHealth, ProjectAlerts, ProjectAlert } from "@/lib/types"
+import type { Deployment, DeploymentAnalytics, ModelReadiness, DriftReport, WhatIfResult, FeedbackAccuracy, ModelHealth, ProjectAlerts, ProjectAlert, SlaData } from "@/lib/types"
 import { IntegrationCard } from "./integration-card"
 import { ExportServiceCard } from "./export-service-card"
 import { ScheduleCard } from "./schedule-card"
@@ -110,6 +110,93 @@ function AnalyticsCard({ analytics }: { analytics: DeploymentAnalytics }) {
         {!hasData && (
           <p className="text-muted-foreground italic">No predictions yet — share the dashboard link to get started.</p>
         )}
+      </CardContent>
+    </Card>
+  )
+}
+
+function LatencySparkbar({ data }: { data: { date: string; avg_ms: number }[] }) {
+  if (!data.length) return null
+  const max = Math.max(...data.map((d) => d.avg_ms), 1)
+  const recent = data.slice(-7)
+  const valuesLabel = recent.map((d) => `${d.date}: ${d.avg_ms}ms`).join(", ")
+  return (
+    <div
+      className="flex items-end gap-0.5 h-10"
+      role="img"
+      aria-label={`Avg latency last 7 days: ${valuesLabel}`}
+    >
+      {recent.map((d) => (
+        <div key={d.date} className="flex-1 flex flex-col items-center gap-0.5">
+          <div
+            className={`w-full rounded-sm ${d.avg_ms > 500 ? "bg-red-400" : "bg-sky-400/70"}`}
+            style={{ height: `${Math.max(2, (d.avg_ms / max) * 36)}px` }}
+            title={`${d.date}: ${d.avg_ms}ms avg`}
+          />
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function SlaMonitorCard({ sla }: { sla: SlaData }) {
+  if (sla.sample_count === 0) {
+    return (
+      <Card className="border-sky-200">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm flex items-center gap-2">
+            ⚡ Prediction Latency
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="text-xs text-muted-foreground italic">
+          No timing data yet — latency will appear after the first prediction.
+        </CardContent>
+      </Card>
+    )
+  }
+
+  return (
+    <Card className={`border-sky-200 ${sla.alert ? "border-red-300" : ""}`}>
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-sm flex items-center gap-2">
+            ⚡ Prediction Latency
+          </CardTitle>
+          {sla.alert ? (
+            <Badge className="bg-red-100 text-red-800 border-red-200 text-[10px]">p95 &gt; 500ms</Badge>
+          ) : (
+            <Badge className="bg-green-100 text-green-800 border-green-200 text-[10px]">Healthy</Badge>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-2 text-xs">
+        <div className="grid grid-cols-3 gap-2">
+          <div className="text-center">
+            <div className="font-semibold text-base">{sla.p50_ms}ms</div>
+            <div className="text-muted-foreground">p50</div>
+          </div>
+          <div className="text-center">
+            <div className={`font-semibold text-base ${sla.p95_ms !== null && sla.p95_ms > 500 ? "text-red-600" : ""}`}>{sla.p95_ms}ms</div>
+            <div className="text-muted-foreground">p95</div>
+          </div>
+          <div className="text-center">
+            <div className="font-semibold text-base">{sla.p99_ms}ms</div>
+            <div className="text-muted-foreground">p99</div>
+          </div>
+        </div>
+        {sla.latency_by_day.length > 0 && (
+          <>
+            <div className="flex items-center justify-between text-muted-foreground">
+              <span>Avg: <strong className="text-foreground">{sla.avg_ms}ms</strong></span>
+              <span className="text-[10px]">last 7 days</span>
+            </div>
+            <LatencySparkbar data={sla.latency_by_day} />
+          </>
+        )}
+        {sla.alert && sla.alert_message && (
+          <p className="text-red-700 bg-red-50 rounded p-2">{sla.alert_message}</p>
+        )}
+        <p className="text-muted-foreground">Based on {sla.sample_count} timed prediction{sla.sample_count !== 1 ? "s" : ""}.</p>
       </CardContent>
     </Card>
   )
@@ -735,6 +822,7 @@ export function DeploymentPanel({
   const [readiness, setReadiness] = useState<ModelReadiness | null>(null)
   const [analytics, setAnalytics] = useState<DeploymentAnalytics | null>(null)
   const [drift, setDrift] = useState<DriftReport | null>(null)
+  const [sla, setSla] = useState<SlaData | null>(null)
 
   // Load readiness check when a run is selected
   useEffect(() => {
@@ -747,11 +835,12 @@ export function DeploymentPanel({
       .catch(() => {/* not ready yet — ignore */})
   }, [selectedRunId])
 
-  // Load analytics + drift when deployed
+  // Load analytics + drift + SLA when deployed
   useEffect(() => {
     if (!deployment) {
       setAnalytics(null)
       setDrift(null)
+      setSla(null)
       return
     }
     api.deploy.analytics(deployment.id)
@@ -759,6 +848,9 @@ export function DeploymentPanel({
       .catch(() => {})
     api.deploy.drift(deployment.id)
       .then(setDrift)
+      .catch(() => {})
+    api.deploy.sla(deployment.id)
+      .then(setSla)
       .catch(() => {})
   }, [deployment])
 
@@ -874,6 +966,7 @@ export function DeploymentPanel({
         </Card>
 
         {analytics && <AnalyticsCard analytics={analytics} />}
+        {sla && <SlaMonitorCard sla={sla} />}
         {drift && <DriftCard drift={drift} />}
         {deployment && <WhatIfCard deployment={deployment} />}
         {deployment && <FeedbackCard deploymentId={deployment.id} problemType={deployment.problem_type} />}

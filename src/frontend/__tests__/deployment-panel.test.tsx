@@ -39,6 +39,17 @@ jest.mock("../lib/api", () => ({
       createWebhook: jest.fn(),
       deleteWebhook: jest.fn(),
       testWebhook: jest.fn(),
+      sla: jest.fn().mockResolvedValue({
+        deployment_id: "dep-1",
+        sample_count: 0,
+        p50_ms: null,
+        p95_ms: null,
+        p99_ms: null,
+        avg_ms: null,
+        alert: false,
+        alert_message: null,
+        latency_by_day: [],
+      }),
     },
     models: {
       readiness: jest.fn(),
