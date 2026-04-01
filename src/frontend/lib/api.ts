@@ -891,5 +891,8 @@ export const api = {
         if (!r.ok) throw new Error(`HTTP ${r.status}`)
         return r.json()
       }),
+
+    exportServiceUrl: (deploymentId: string): string =>
+      `${API_URL}/api/deploy/${deploymentId}/export`,
   },
 }

@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { api } from "@/lib/api"
 import type { Deployment, DeploymentAnalytics, ModelReadiness, DriftReport, WhatIfResult, FeedbackAccuracy, ModelHealth, ProjectAlerts, ProjectAlert } from "@/lib/types"
 import { IntegrationCard } from "./integration-card"
+import { ExportServiceCard } from "./export-service-card"
 import { ScheduleCard } from "./schedule-card"
 import { DeploymentVersionCard } from "./deployment-version-card"
 
@@ -879,6 +880,13 @@ export function DeploymentPanel({
         <AlertsCard projectId={projectId} />
         {deployment && <ApiKeyCard deployment={deployment} onUpdated={setDeployment} />}
         {deployment && <IntegrationCard deploymentId={deployment.id} />}
+        {deployment && (
+          <ExportServiceCard
+            deploymentId={deployment.id}
+            algorithm={deployment.algorithm}
+            targetColumn={deployment.target_column}
+          />
+        )}
         {deployment && (
           <Card className="border-violet-500/30">
             <CardHeader className="pb-3">
