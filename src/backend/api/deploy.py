@@ -935,7 +935,11 @@ def get_prediction_drift(
                 dispatch_webhooks(
                     deployment_id,
                     EVENT_DRIFT_DETECTED,
-                    {"drift_score": drift_score, "status": status, "explanation": explanation},
+                    {
+                        "drift_score": drift_score,
+                        "status": status,
+                        "explanation": explanation,
+                    },
                 )
             except Exception:
                 pass
@@ -1004,7 +1008,11 @@ def get_prediction_drift(
                 dispatch_webhooks(
                     deployment_id,
                     EVENT_DRIFT_DETECTED,
-                    {"drift_score": drift_score, "status": status, "explanation": explanation},
+                    {
+                        "drift_score": drift_score,
+                        "status": status,
+                        "explanation": explanation,
+                    },
                 )
             except Exception:
                 pass
@@ -2670,7 +2678,9 @@ def create_webhook(
         raise HTTPException(status_code=404, detail="Deployment not found or inactive")
 
     if not body.url.startswith(("http://", "https://")):
-        raise HTTPException(status_code=400, detail="URL must start with http:// or https://")
+        raise HTTPException(
+            status_code=400, detail="URL must start with http:// or https://"
+        )
 
     unknown = set(body.event_types) - ALL_EVENTS
     if unknown:

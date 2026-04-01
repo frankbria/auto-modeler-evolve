@@ -276,9 +276,7 @@ async def test_test_webhook_returns_status(ac, deployment_id):
 
     # Mock _do_dispatch to avoid real HTTP
     with mock.patch("core.webhook._do_dispatch", return_value=200) as mock_dispatch:
-        test_r = await ac.post(
-            f"/api/deploy/{deployment_id}/webhooks/{wh_id}/test"
-        )
+        test_r = await ac.post(f"/api/deploy/{deployment_id}/webhooks/{wh_id}/test")
     assert test_r.status_code == 200
     data = test_r.json()
     assert data["status_code"] == 200
@@ -296,9 +294,7 @@ async def test_test_webhook_failure_not_error(ac, deployment_id):
     wh_id = r.json()["id"]
 
     with mock.patch("core.webhook._do_dispatch", return_value=0):
-        test_r = await ac.post(
-            f"/api/deploy/{deployment_id}/webhooks/{wh_id}/test"
-        )
+        test_r = await ac.post(f"/api/deploy/{deployment_id}/webhooks/{wh_id}/test")
     data = test_r.json()
     assert data["success"] is False
     assert data["status_code"] == 0
@@ -390,7 +386,12 @@ def test_dispatch_webhooks_handles_db_error_gracefully():
 
 
 def test_all_events_constant_has_three_entries():
-    from core.webhook import ALL_EVENTS, EVENT_BATCH_COMPLETE, EVENT_DRIFT_DETECTED, EVENT_HEALTH_DEGRADED
+    from core.webhook import (
+        ALL_EVENTS,
+        EVENT_BATCH_COMPLETE,
+        EVENT_DRIFT_DETECTED,
+        EVENT_HEALTH_DEGRADED,
+    )
 
     assert EVENT_BATCH_COMPLETE in ALL_EVENTS
     assert EVENT_DRIFT_DETECTED in ALL_EVENTS

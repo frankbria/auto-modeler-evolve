@@ -27,7 +27,9 @@ class WebhookConfig(SQLModel, table=True):
     # Random 32-byte hex secret for HMAC-SHA256 signing; shown once at registration
     secret: str = Field(default_factory=lambda: secrets_token())
     # JSON-serialised list of event type strings
-    event_types: str = Field(default='["batch_complete","drift_detected","health_degraded"]')
+    event_types: str = Field(
+        default='["batch_complete","drift_detected","health_degraded"]'
+    )
     is_active: bool = True
     created_at: datetime = Field(default_factory=_utcnow)
     last_fired_at: Optional[datetime] = None
