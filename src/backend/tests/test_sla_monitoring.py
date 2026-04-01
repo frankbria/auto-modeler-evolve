@@ -197,7 +197,9 @@ async def test_sla_after_predictions(ac, deployment_id):
     # Make a prediction to populate response_ms
     r = await ac.get(f"/api/deploy/{deployment_id}")
     schema = r.json()["feature_schema"]
-    payload = {col["name"]: (1.0 if col["type"] == "numeric" else "East") for col in schema}
+    payload = {
+        col["name"]: (1.0 if col["type"] == "numeric" else "East") for col in schema
+    }
 
     pred_r = await ac.post(f"/api/predict/{deployment_id}", json=payload)
     assert pred_r.status_code == 200
@@ -222,7 +224,9 @@ async def test_sla_percentiles_multiple_predictions(ac, deployment_id):
     """With multiple predictions, p50/p95/p99 should be well-ordered."""
     r = await ac.get(f"/api/deploy/{deployment_id}")
     schema = r.json()["feature_schema"]
-    payload = {col["name"]: (1.0 if col["type"] == "numeric" else "East") for col in schema}
+    payload = {
+        col["name"]: (1.0 if col["type"] == "numeric" else "East") for col in schema
+    }
 
     for _ in range(5):
         await ac.post(f"/api/predict/{deployment_id}", json=payload)
@@ -240,7 +244,9 @@ async def test_sla_no_alert_for_fast_predictions(ac, deployment_id):
     """Predictions under 500ms p95 should not trigger alert."""
     r = await ac.get(f"/api/deploy/{deployment_id}")
     schema = r.json()["feature_schema"]
-    payload = {col["name"]: (1.0 if col["type"] == "numeric" else "East") for col in schema}
+    payload = {
+        col["name"]: (1.0 if col["type"] == "numeric" else "East") for col in schema
+    }
 
     await ac.post(f"/api/predict/{deployment_id}", json=payload)
 
@@ -259,12 +265,14 @@ async def test_sla_alert_when_p95_exceeds_500ms(ac, deployment_id):
 
     with Session(db_module.engine) as sess:
         for ms in [600.0, 700.0, 800.0, 900.0, 1000.0, 1100.0]:
-            sess.add(PredictionLog(
-                deployment_id=deployment_id,
-                input_features="{}",
-                prediction='"1.0"',
-                response_ms=ms,
-            ))
+            sess.add(
+                PredictionLog(
+                    deployment_id=deployment_id,
+                    input_features="{}",
+                    prediction='"1.0"',
+                    response_ms=ms,
+                )
+            )
         sess.commit()
 
     sla_r = await ac.get(f"/api/deploy/{deployment_id}/sla")
@@ -284,21 +292,25 @@ async def test_sla_latency_by_day_aggregation(ac, deployment_id):
     with Session(db_module.engine) as sess:
         # Two entries on the same day
         for ms in [100.0, 200.0]:
-            sess.add(PredictionLog(
+            sess.add(
+                PredictionLog(
+                    deployment_id=deployment_id,
+                    input_features="{}",
+                    prediction='"1.0"',
+                    response_ms=ms,
+                    created_at=datetime(2025, 1, 15, 12, 0, 0),
+                )
+            )
+        # One entry on a different day
+        sess.add(
+            PredictionLog(
                 deployment_id=deployment_id,
                 input_features="{}",
                 prediction='"1.0"',
-                response_ms=ms,
-                created_at=datetime(2025, 1, 15, 12, 0, 0),
-            ))
-        # One entry on a different day
-        sess.add(PredictionLog(
-            deployment_id=deployment_id,
-            input_features="{}",
-            prediction='"1.0"',
-            response_ms=300.0,
-            created_at=datetime(2025, 1, 16, 12, 0, 0),
-        ))
+                response_ms=300.0,
+                created_at=datetime(2025, 1, 16, 12, 0, 0),
+            )
+        )
         sess.commit()
 
     sla_r = await ac.get(f"/api/deploy/{deployment_id}/sla")
@@ -316,19 +328,23 @@ async def test_sla_excludes_null_response_ms(ac, deployment_id):
 
     with Session(db_module.engine) as sess:
         # Old-style log with no timing data
-        sess.add(PredictionLog(
-            deployment_id=deployment_id,
-            input_features="{}",
-            prediction='"1.0"',
-            response_ms=None,
-        ))
+        sess.add(
+            PredictionLog(
+                deployment_id=deployment_id,
+                input_features="{}",
+                prediction='"1.0"',
+                response_ms=None,
+            )
+        )
         # New-style log with timing
-        sess.add(PredictionLog(
-            deployment_id=deployment_id,
-            input_features="{}",
-            prediction='"2.0"',
-            response_ms=50.0,
-        ))
+        sess.add(
+            PredictionLog(
+                deployment_id=deployment_id,
+                input_features="{}",
+                prediction='"2.0"',
+                response_ms=50.0,
+            )
+        )
         sess.commit()
 
     sla_r = await ac.get(f"/api/deploy/{deployment_id}/sla")
