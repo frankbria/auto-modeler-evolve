@@ -21,6 +21,7 @@ def _apply_migrations():
         ("deployment", "api_key_enabled", "INTEGER NOT NULL DEFAULT 0"),
         ("deployment", "api_key_hash", "TEXT"),
         ("deployment", "api_key_salt", "TEXT"),
+        ("deployment", "current_version_number", "INTEGER NOT NULL DEFAULT 1"),
     ]
     with engine.connect() as conn:
         for table, col, definition in migrations:

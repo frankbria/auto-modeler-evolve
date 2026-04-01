@@ -10,6 +10,7 @@ from models.prediction_log import PredictionLog
 from models.feedback_record import FeedbackRecord
 from models.dataset_filter import DatasetFilter
 from models.batch_schedule import BatchJobRun, BatchSchedule
+from models.deployment_version import DeploymentVersion
 
 __all__ = [
     "Project",
@@ -23,4 +24,5 @@ __all__ = [
     "DatasetFilter",
     "BatchSchedule",
     "BatchJobRun",
+    "DeploymentVersion",
 ]

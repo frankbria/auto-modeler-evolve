@@ -22,7 +22,6 @@ from collections import defaultdict
 from datetime import UTC, datetime
 from pathlib import Path
 
-import pandas as pd
 from fastapi import APIRouter, Depends, File, HTTPException, Header, Query, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel
@@ -40,6 +39,7 @@ from core.feature_engine import apply_transformations
 from db import get_session
 from models.dataset import Dataset
 from models.deployment import Deployment
+from models.deployment_version import DeploymentVersion
 from models.feature_set import FeatureSet
 from models.model_run import ModelRun
 from models.feedback_record import FeedbackRecord
@@ -90,26 +90,16 @@ def _load_deploy_context(model_run_id: str, session: Session):
 # ---------------------------------------------------------------------------
 
 
-def execute_deployment(model_run_id: str, session: Session) -> dict:
-    """Build and register a deployment for a completed model run.
+def _build_pipeline_for_run(
+    run: "ModelRun",
+    feature_set: "FeatureSet",
+    file_path,
+    session: "Session",
+) -> tuple:
+    """Build a PredictionPipeline for a model run. Returns (pipeline, pipeline_path)."""
+    import pandas as _pd
 
-    Returns the deployment response dict. Idempotent — returns the existing
-    deployment if one is already active for this run.
-    """
-    # Check if already deployed
-    existing = session.exec(
-        select(Deployment).where(
-            Deployment.model_run_id == model_run_id,
-            Deployment.is_active == True,  # noqa: E712
-        )
-    ).first()
-    if existing:
-        return _deployment_response(existing)
-
-    run, feature_set, dataset, file_path = _load_deploy_context(model_run_id, session)
-
-    # Build prediction pipeline from training data
-    df = pd.read_csv(file_path)
+    df = _pd.read_csv(file_path)
     transforms = json.loads(feature_set.transformations or "[]")
     if transforms:
         df, _ = apply_transformations(df, transforms)
@@ -136,15 +126,109 @@ def execute_deployment(model_run_id: str, session: Session) -> dict:
         except Exception:
             pipeline.residual_std = 0.0
 
-    # Persist pipeline
-    pipeline_path = DEPLOY_DIR / f"{model_run_id}_pipeline.joblib"
+    pipeline_path = DEPLOY_DIR / f"{run.id}_pipeline.joblib"
     save_pipeline(pipeline, pipeline_path)
+    return pipeline, pipeline_path, feature_names, target_col, problem_type
 
-    # Create Deployment record
+
+def _archive_current_version(deployment, session) -> None:
+    """Mark all current versions of a deployment as not-current (archive them).
+
+    Called before updating the deployment to a new model. The new current version
+    record is created by the caller after this function returns.
+    """
+    current_versions = session.exec(
+        select(DeploymentVersion).where(
+            DeploymentVersion.deployment_id == deployment.id,
+            DeploymentVersion.is_current == True,  # noqa: E712
+        )
+    ).all()
+    for v in current_versions:
+        v.is_current = False
+        session.add(v)
+
+
+def execute_deployment(model_run_id: str, session: Session) -> dict:
+    """Build and register a deployment for a completed model run.
+
+    Returns the deployment response dict. On first deploy, creates a new Deployment
+    record and saves DeploymentVersion v1. On re-deploy (same project, different run),
+    archives the current version and updates the Deployment in-place so the endpoint
+    URL stays stable. Idempotent — returns the existing deployment if same run is
+    already active.
+    """
+    run, feature_set, dataset, file_path = _load_deploy_context(model_run_id, session)
+
+    # Check if this exact run is already deployed (idempotent path)
+    existing_same_run = session.exec(
+        select(Deployment).where(
+            Deployment.model_run_id == model_run_id,
+            Deployment.is_active == True,  # noqa: E712
+        )
+    ).first()
+    if existing_same_run:
+        return _deployment_response(existing_same_run)
+
+    _, pipeline_path, feature_names, target_col, problem_type = _build_pipeline_for_run(
+        run, feature_set, file_path, session
+    )
+
+    # Check if there's already an active deployment for this project
+    existing_for_project = session.exec(
+        select(Deployment).where(
+            Deployment.project_id == run.project_id,
+            Deployment.is_active == True,  # noqa: E712
+        )
+    ).first()
+
+    if existing_for_project:
+        # Re-deploy: archive current state, increment version, update deployment in-place
+        _archive_current_version(existing_for_project, session)
+
+        new_version_number = getattr(existing_for_project, "current_version_number", 1) + 1
+
+        # Update deployment to point at new model
+        existing_for_project.model_run_id = model_run_id
+        existing_for_project.pipeline_path = str(pipeline_path)
+        existing_for_project.algorithm = run.algorithm
+        existing_for_project.problem_type = problem_type
+        existing_for_project.feature_names = json.dumps(feature_names)
+        existing_for_project.target_column = target_col
+        existing_for_project.metrics = run.metrics
+        existing_for_project.current_version_number = new_version_number
+        session.add(existing_for_project)
+
+        # Save the new (current) version snapshot
+        new_version = DeploymentVersion(
+            deployment_id=existing_for_project.id,
+            version_number=new_version_number,
+            model_run_id=model_run_id,
+            algorithm=run.algorithm,
+            problem_type=problem_type,
+            target_column=target_col,
+            metrics=run.metrics,
+            pipeline_path=str(pipeline_path),
+            is_current=True,
+        )
+        session.add(new_version)
+
+        # Mark old run as not deployed, new run as deployed
+        old_run = session.get(ModelRun, existing_for_project.model_run_id)
+        if old_run and old_run.id != model_run_id:
+            old_run.is_deployed = False
+            session.add(old_run)
+        run.is_deployed = True
+        session.add(run)
+
+        session.commit()
+        session.refresh(existing_for_project)
+        return _deployment_response(existing_for_project)
+
+    # First deployment for this project
     deployment = Deployment(
         model_run_id=model_run_id,
         project_id=run.project_id,
-        endpoint_path="/api/predict/{id}",  # filled at serve time
+        endpoint_path="/api/predict/{id}",  # filled below
         dashboard_url="/predict/{id}",
         pipeline_path=str(pipeline_path),
         algorithm=run.algorithm,
@@ -152,12 +236,29 @@ def execute_deployment(model_run_id: str, session: Session) -> dict:
         feature_names=json.dumps(feature_names),
         target_column=target_col,
         metrics=run.metrics,
+        current_version_number=1,
     )
     session.add(deployment)
+    # Flush to get the deployment.id
+    session.flush()
 
     # Fix URLs now that we have the ID
     deployment.endpoint_path = f"/api/predict/{deployment.id}"
     deployment.dashboard_url = f"/predict/{deployment.id}"
+
+    # Save initial version snapshot (v1)
+    v1 = DeploymentVersion(
+        deployment_id=deployment.id,
+        version_number=1,
+        model_run_id=model_run_id,
+        algorithm=run.algorithm,
+        problem_type=problem_type,
+        target_column=target_col,
+        metrics=run.metrics,
+        pipeline_path=str(pipeline_path),
+        is_current=True,
+    )
+    session.add(v1)
 
     # Mark model run as deployed
     run.is_deployed = True
@@ -2016,3 +2117,143 @@ def download_batch_output(filename: str):
         media_type="text/csv",
         filename=filename,
     )
+
+
+# ---------------------------------------------------------------------------
+# Deployment versioning endpoints
+# ---------------------------------------------------------------------------
+
+
+def _version_response(v: DeploymentVersion) -> dict:
+    return {
+        "id": v.id,
+        "deployment_id": v.deployment_id,
+        "version_number": v.version_number,
+        "model_run_id": v.model_run_id,
+        "algorithm": v.algorithm,
+        "problem_type": v.problem_type,
+        "target_column": v.target_column,
+        "metrics": json.loads(v.metrics) if v.metrics else {},
+        "pipeline_path": v.pipeline_path,
+        "deployed_at": v.deployed_at.isoformat() if v.deployed_at else None,
+        "is_current": v.is_current,
+    }
+
+
+@router.get("/api/deploy/{deployment_id}/versions")
+def list_deployment_versions(
+    deployment_id: str,
+    session: Session = Depends(get_session),
+):
+    """Return all versions of a deployment, ordered newest-first.
+
+    Each entry represents a point-in-time snapshot of what algorithm/model was
+    actively serving predictions. Useful for auditing retraining history.
+    """
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment:
+        raise HTTPException(status_code=404, detail="Deployment not found")
+
+    versions = session.exec(
+        select(DeploymentVersion)
+        .where(DeploymentVersion.deployment_id == deployment_id)
+        .order_by(DeploymentVersion.version_number.desc())
+    ).all()
+
+    return {
+        "deployment_id": deployment_id,
+        "current_version_number": getattr(deployment, "current_version_number", 1),
+        "versions": [_version_response(v) for v in versions],
+    }
+
+
+@router.post("/api/deploy/{deployment_id}/rollback/{version_number}", status_code=200)
+def rollback_deployment(
+    deployment_id: str,
+    version_number: int,
+    session: Session = Depends(get_session),
+):
+    """Restore a deployment to a previous version.
+
+    Finds the specified version snapshot, restores the Deployment record's
+    model/pipeline data from that snapshot, archives the previous state, and
+    saves a new version entry (so the history is always append-only).
+    Returns the updated deployment response.
+    """
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment or not deployment.is_active:
+        raise HTTPException(status_code=404, detail="Deployment not found or inactive")
+
+    # Find the target version
+    target = session.exec(
+        select(DeploymentVersion).where(
+            DeploymentVersion.deployment_id == deployment_id,
+            DeploymentVersion.version_number == version_number,
+        )
+    ).first()
+    if not target:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Version {version_number} not found for this deployment",
+        )
+
+    # Validate the pipeline file still exists on disk
+    if not target.pipeline_path or not Path(target.pipeline_path).exists():
+        raise HTTPException(
+            status_code=400,
+            detail=f"Pipeline file for version {version_number} is no longer available on disk",
+        )
+
+    # Validate the model run still has its model file
+    target_run = session.get(ModelRun, target.model_run_id)
+    if not target_run or not target_run.model_path or not Path(target_run.model_path).exists():
+        raise HTTPException(
+            status_code=400,
+            detail=f"Model file for version {version_number} is no longer available on disk",
+        )
+
+    # Archive current state (mark all current versions as not current)
+    current_versions = session.exec(
+        select(DeploymentVersion).where(
+            DeploymentVersion.deployment_id == deployment_id,
+            DeploymentVersion.is_current == True,  # noqa: E712
+        )
+    ).all()
+    for v in current_versions:
+        v.is_current = False
+        session.add(v)
+
+    new_version_number = getattr(deployment, "current_version_number", 1) + 1
+
+    # Restore deployment from the target version snapshot
+    deployment.model_run_id = target.model_run_id
+    deployment.pipeline_path = target.pipeline_path
+    deployment.algorithm = target.algorithm
+    deployment.problem_type = target.problem_type
+    deployment.target_column = target.target_column
+    deployment.metrics = target.metrics
+    deployment.current_version_number = new_version_number
+    session.add(deployment)
+
+    # Save new version entry for the rollback (append-only history)
+    rollback_version = DeploymentVersion(
+        deployment_id=deployment_id,
+        version_number=new_version_number,
+        model_run_id=target.model_run_id,
+        algorithm=target.algorithm,
+        problem_type=target.problem_type,
+        target_column=target.target_column,
+        metrics=target.metrics,
+        pipeline_path=target.pipeline_path,
+        is_current=True,
+    )
+    session.add(rollback_version)
+
+    session.commit()
+    session.refresh(deployment)
+
+    return {
+        **_deployment_response(deployment),
+        "rolled_back_to_version": version_number,
+        "new_version_number": new_version_number,
+    }
