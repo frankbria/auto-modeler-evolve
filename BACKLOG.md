@@ -49,6 +49,9 @@ the time is better spent on real features.
 
 ## Currently Working On
 
+## Day 21 (20:00) — Done
+Champion-challenger A/B testing — `ABTest` SQLModel table (auto-created). `ab_variant` added to `PredictionLog` (inline SQLite migration). `make_prediction()` routes via `random.random()` vs `champion_split_pct/100`; logs `ab_variant="champion"/"challenger"` keyed to champion's deployment_id. Four REST endpoints: POST/GET/DELETE `/api/deploy/{id}/ab-test` + POST `.../promote` (copies challenger model into champion deployment, archives version, records winner). `_ab_significance()` uses Mann-Whitney U (scipy). `ABTestCard` (purple border) in DeploymentPanel: idle + create form (challenger ID + split slider 50–99%) + active test view (split bar, per-variant metrics, significance badge, Promote/End/Refresh). 27 backend + 19 frontend = 46 new tests. Total: 2227 backend + 1036 frontend = 3263.
+
 ## Day 21 (04:00) — Done
 Webhook notifications — `WebhookConfig` SQLModel table (auto-created). `core/webhook.py` provides `dispatch_webhooks(deployment_id, event_type, payload)` — HMAC-SHA256 signed `X-AutoModeler-Signature` header, daemon threads, `except Exception: pass` guard. Three event triggers: `batch_complete` in scheduler, `drift_detected` when score >= 50, `health_degraded` when score < 60. Four endpoints: POST/GET/DELETE webhooks + POST test. `WebhookCard` (sky-blue border) in DeploymentPanel: URL input, event-type checkboxes, list with Test/Remove per entry, test result inline, secret-once amber callout. 18 backend + 13 frontend = 31 new tests. Total: 2188 backend + 1006 frontend = 3194.
 
