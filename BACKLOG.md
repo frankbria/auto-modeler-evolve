@@ -49,6 +49,9 @@ the time is better spent on real features.
 
 ## Currently Working On
 
+## Day 22 (04:00) — Done
+Class imbalance handling (Track C) — `detect_class_imbalance(y)` in `trainer.py` (minority < 20% threshold). Three strategies: class_weight (param injection for LogReg/RF/LGBM, sample_weight for GBC/XGB), SMOTE (training split only, imblearn 0.14.1), threshold tuning (sweep 0.05–0.95, best F1, records optimal_threshold in metrics). `GET /api/models/{project_id}/imbalance` endpoint. `TrainRequest.imbalance_strategy`. `ImbalanceCard` (rose border) in ModelTrainingPanel: distribution bar, explanation, 3 strategy buttons with aria-pressed. 28 backend + 15 frontend = 43 new tests. Total: 2264 backend + 1060 frontend = 3324.
+
 ## Day 21 (20:00) — Done
 Champion-challenger A/B testing — `ABTest` SQLModel table (auto-created). `ab_variant` added to `PredictionLog` (inline SQLite migration). `make_prediction()` routes via `random.random()` vs `champion_split_pct/100`; logs `ab_variant="champion"/"challenger"` keyed to champion's deployment_id. Four REST endpoints: POST/GET/DELETE `/api/deploy/{id}/ab-test` + POST `.../promote` (copies challenger model into champion deployment, archives version, records winner). `_ab_significance()` uses Mann-Whitney U (scipy). `ABTestCard` (purple border) in DeploymentPanel: idle + create form (challenger ID + split slider 50–99%) + active test view (split bar, per-variant metrics, significance badge, Promote/End/Refresh). 27 backend + 19 frontend = 46 new tests. Total: 2227 backend + 1036 frontend = 3263.
 
