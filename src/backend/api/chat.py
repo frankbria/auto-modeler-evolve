@@ -3829,7 +3829,9 @@ def send_message(
             if _file_sp.exists():
                 _df_sp = _load_working_df(_file_sp, _active_filter_conditions)
                 _time_cols = _dtc(_df_sp)
-                _wants_random = bool(re.search(r"random\s+split", body.message, re.IGNORECASE))
+                _wants_random = bool(
+                    re.search(r"random\s+split", body.message, re.IGNORECASE)
+                )
                 if _wants_random:
                     split_strategy_event = {
                         "split_strategy": "random",

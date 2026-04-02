@@ -177,8 +177,13 @@ def test_train_single_model_records_split_strategy_random(tmp_path):
     y = np.random.default_rng(42).random(20)
 
     result = train_single_model(
-        X, y, "linear_regression", "regression",
-        tmp_path, "run-random", split_strategy="random"
+        X,
+        y,
+        "linear_regression",
+        "regression",
+        tmp_path,
+        "run-random",
+        split_strategy="random",
     )
     assert result["metrics"]["split_strategy"] == "random"
     assert "date_col_used" not in result["metrics"]
@@ -195,8 +200,12 @@ def test_train_single_model_records_split_strategy_chronological(tmp_path):
     y = np.arange(20).astype(float)
 
     result = train_single_model(
-        X, y, "linear_regression", "regression",
-        tmp_path, "run-chrono",
+        X,
+        y,
+        "linear_regression",
+        "regression",
+        tmp_path,
+        "run-chrono",
         split_strategy="chronological",
         date_col_used="sale_date",
     )
@@ -217,10 +226,17 @@ def test_train_single_model_chronological_vs_random_sizes(tmp_path):
     X = np.random.default_rng(0).random((20, 2))
     y = np.random.default_rng(0).random(20)
 
-    r_random = train_single_model(X, y, "linear_regression", "regression", tmp_path, "run-a")
+    r_random = train_single_model(
+        X, y, "linear_regression", "regression", tmp_path, "run-a"
+    )
     r_chrono = train_single_model(
-        X, y, "linear_regression", "regression", tmp_path, "run-b",
-        split_strategy="chronological"
+        X,
+        y,
+        "linear_regression",
+        "regression",
+        tmp_path,
+        "run-b",
+        split_strategy="chronological",
     )
     assert r_random["metrics"]["train_size"] == r_chrono["metrics"]["train_size"]
     assert r_random["metrics"]["test_size"] == r_chrono["metrics"]["test_size"]
@@ -347,4 +363,6 @@ def test_time_split_patterns_no_false_positives():
         "how does my model perform",
     ]
     for phrase in should_not_match:
-        assert not _TIME_SPLIT_PATTERNS.search(phrase), f"Pattern falsely matched: {phrase!r}"
+        assert not _TIME_SPLIT_PATTERNS.search(phrase), (
+            f"Pattern falsely matched: {phrase!r}"
+        )
