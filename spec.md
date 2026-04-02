@@ -709,12 +709,13 @@ guides them forward through the natural flow.
 > Right now, model training works but lacks sophistication. These improvements make models
 > meaningfully better — and help analysts understand *why* one approach beats another.
 
-- [ ] **Class imbalance handling** — When target class distribution is skewed (e.g., 95% no-churn / 5% churn),
+- [x] **Class imbalance handling** — When target class distribution is skewed (e.g., 95% no-churn / 5% churn),
       auto-detect imbalance (minority class < 20% of total) and offer three strategies: class weighting
       (`class_weight="balanced"`), SMOTE oversampling (via `imbalanced-learn`), and threshold tuning
       (optimize decision threshold by F1 score). Show the analyst the class distribution before training,
       explain what imbalance means in plain English, and recommend a strategy. Include before/after
       comparison in the model metrics.
+      *Day 22 (04:00): `detect_class_imbalance(y)` pure function in `trainer.py` (minority < 20% threshold; returns class_distribution, minority_class, minority_ratio, recommended_strategy, plain-English explanation; recommends "smote" for severe imbalance ≥100 rows with <5% minority, "class_weight" otherwise). `train_single_model()` gains optional `imbalance_strategy` param: "class_weight" injects `class_weight="balanced"` param for LogReg/RF/LGBM and uses `compute_sample_weight` in `fit()` for GBC/XGB; "smote" applies SMOTE to training split only (falls back gracefully if imblearn unavailable); "threshold" sweeps 0.05–0.95 to maximise binary F1 (`_tune_threshold()` helper, records `optimal_threshold` in metrics). `imbalance_strategy` echoed in metrics for UI display. `imbalanced-learn 0.14.1` added to `pyproject.toml`. `GET /api/models/{project_id}/imbalance` endpoint returns detection result + project_id + problem_type (returns is_imbalanced=False with explanation for regression). `TrainRequest.imbalance_strategy` optional field; `POST .../train` validates against {"class_weight","smote","threshold",null}. `ImbalanceCard` (rose border on imbalance, emerald on balanced) in ModelTrainingPanel: distribution bar (minority bars rose-colored), plain-English explanation, three clickable strategy buttons (recommended badge, selected badge, aria-pressed, toggle-on/off). `ClassImbalanceResult`/`ClassDistributionEntry` TypeScript types; `api.models.classImbalance()` client method; `imbalance_strategy` state threaded through `handleTrain()`. `model-training-panel` updated to fetch imbalance on mount for classification problems and pass strategy to train call. 28 backend + 15 frontend = 43 new tests. Total: 2264 backend + 1060 frontend = 3324, all passing. Backend lint: clean. Frontend build + lint: clean.*
 
 - [ ] **Ensemble methods** — Add `VotingClassifier` / `VotingRegressor` (soft voting across the
       best 2-3 base models from the comparison run) and `StackingRegressor` / `StackingClassifier`
