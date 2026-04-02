@@ -512,6 +512,23 @@ def prepare_features(
 # ---------------------------------------------------------------------------
 
 
+def chronological_split(
+    n_rows: int,
+    test_size: float = 0.2,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return (train_indices, test_indices) for a chronological split.
+
+    Assumes the data is pre-sorted by date ascending.  The oldest
+    (1 - test_size) fraction becomes training data; the newest test_size
+    fraction becomes the held-out test set.
+    """
+    n_test = max(1, int(n_rows * test_size))
+    n_train = n_rows - n_test
+    train_idx = np.arange(n_train)
+    test_idx = np.arange(n_train, n_rows)
+    return train_idx, test_idx
+
+
 def train_single_model(
     X: np.ndarray,
     y: np.ndarray,
@@ -520,11 +537,18 @@ def train_single_model(
     model_dir: Path,
     model_run_id: str,
     imbalance_strategy: Optional[str] = None,
+    split_strategy: str = "random",
+    date_col_used: Optional[str] = None,
 ) -> dict:
     """Train one sklearn model, compute held-out metrics, and save to disk.
 
     imbalance_strategy: "class_weight" | "smote" | "threshold" | None
         Only applied for classification problems.
+    split_strategy: "random" | "chronological"
+        "chronological" assumes X/y are pre-sorted oldest-first; the last 20%
+        of rows are used as the test set.  Only meaningful when the training
+        DataFrame was sorted by a date column before prepare_features().
+    date_col_used: the name of the date column used for sorting (metadata only).
 
     Returns:
         {metrics, model_path, training_duration_ms, summary}
@@ -543,12 +567,17 @@ def train_single_model(
     model_class = info["class"]
     params = dict(info["params"])  # copy so we don't mutate the registry
 
-    # Train/test split — use 20% for test when we have enough rows
+    # Train/test split
     n = len(X)
     if n >= 10:
-        X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=0.2, random_state=42
-        )
+        if split_strategy == "chronological":
+            train_idx, test_idx = chronological_split(n)
+            X_train, X_test = X[train_idx], X[test_idx]
+            y_train, y_test = y[train_idx], y[test_idx]
+        else:
+            X_train, X_test, y_train, y_test = train_test_split(
+                X, y, test_size=0.2, random_state=42
+            )
     else:
         # Too few rows — train/eval on same data (metrics will be optimistic)
         X_train = X_test = X
@@ -602,6 +631,14 @@ def train_single_model(
 
     metrics["train_size"] = len(X_train)
     metrics["test_size"] = len(X_test)
+    metrics["split_strategy"] = split_strategy
+    if split_strategy == "chronological" and date_col_used:
+        metrics["date_col_used"] = date_col_used
+        metrics["split_explanation"] = (
+            f"Used time-based splitting on '{date_col_used}' — training on older data "
+            "and testing on more recent data gives a more honest picture of how the "
+            "model will perform on future data."
+        )
 
     # Persist model
     model_dir.mkdir(parents=True, exist_ok=True)

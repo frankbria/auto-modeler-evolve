@@ -714,6 +714,20 @@ _TRAIN_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+_TIME_SPLIT_PATTERNS = re.compile(
+    r"(?:"
+    r"(?:use|enable|switch\s+to|apply)\s+(?:a\s+)?(?:time.?based|chronological|temporal|date.?based)\s+split|"
+    r"(?:time.?based|chronological|temporal)\s+(?:train.?test\s+)?split|"
+    r"split\s+(?:by|on|using)\s+(?:date|time|chronolog)|"
+    r"train\s+on\s+(?:older|historical|past|earlier)\s+data|"
+    r"test\s+on\s+(?:newer|recent|future|later)\s+data|"
+    r"(?:respect|preserve|use)\s+(?:the\s+)?(?:date|time|temporal)\s+order|"
+    r"time\s+series\s+split|"
+    r"(?:use\s+)?random\s+split"
+    r")",
+    re.IGNORECASE,
+)
+
 # Extract "predict X" / "target is X" / "model for X" — scan against known columns
 _TRAIN_TARGET_EXTRACT = re.compile(
     r"(?:"
@@ -3804,6 +3818,61 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Filter clear is nice-to-have; never crash chat
 
+    # Check if user wants to change the train/test split strategy
+    split_strategy_event: dict | None = None
+    if _TIME_SPLIT_PATTERNS.search(body.message) and ctx["dataset"]:
+        try:
+            from core.analyzer import detect_time_columns as _dtc
+
+            _ds_sp = ctx["dataset"]
+            _file_sp = Path(_ds_sp.file_path)
+            if _file_sp.exists():
+                _df_sp = _load_working_df(_file_sp, _active_filter_conditions)
+                _time_cols = _dtc(_df_sp)
+                _wants_random = bool(re.search(r"random\s+split", body.message, re.IGNORECASE))
+                if _wants_random:
+                    split_strategy_event = {
+                        "split_strategy": "random",
+                        "date_col": None,
+                        "explanation": (
+                            "Switched to random split — rows will be shuffled and "
+                            "20% held out at random for testing."
+                        ),
+                    }
+                    system_prompt += (
+                        "\n\n## Split Strategy\n"
+                        "The user wants to use random (shuffled) train/test splitting. "
+                        "Acknowledge that random split will be used and explain that rows "
+                        "are shuffled before splitting, which is standard for non-time-series data."
+                    )
+                elif _time_cols:
+                    split_strategy_event = {
+                        "split_strategy": "chronological",
+                        "date_col": _time_cols[0],
+                        "explanation": (
+                            f"Switched to time-based splitting on '{_time_cols[0]}' — "
+                            "the model will train on older data and be tested on more recent data, "
+                            "giving a more honest picture of future performance."
+                        ),
+                    }
+                    system_prompt += (
+                        f"\n\n## Split Strategy\n"
+                        f"The user wants time-based splitting. The dataset has a date column "
+                        f"('{_time_cols[0]}'). Explain that we'll train on the oldest 80% of "
+                        f"data and test on the most recent 20% — this gives more realistic "
+                        f"performance estimates for time-series forecasting than random shuffling."
+                    )
+                else:
+                    # User asked for chronological but no date col — explain
+                    system_prompt += (
+                        "\n\n## Split Strategy — No Date Column\n"
+                        "The user wants time-based splitting but no date column was detected. "
+                        "Explain this politely and suggest using random split, or ask them to "
+                        "identify which column represents dates."
+                    )
+        except Exception:  # noqa: BLE001
+            pass
+
     # Check if user wants to train a model through conversation
     training_started_event: dict | None = None
     if _TRAIN_PATTERNS.search(body.message) and ctx["dataset"]:
@@ -4811,6 +4880,10 @@ def send_message(
         # Emit refresh prompt — guides user to upload new data
         if refresh_prompt_event:
             yield f"data: {json.dumps({'type': 'refresh_prompt', 'refresh': refresh_prompt_event})}\n\n"
+
+        # Emit split strategy event — user changed split method preference
+        if split_strategy_event:
+            yield f"data: {json.dumps({'type': 'split_strategy', 'split_strategy': split_strategy_event})}\n\n"
 
         # Emit training started event — backend has already launched training threads
         if training_started_event:

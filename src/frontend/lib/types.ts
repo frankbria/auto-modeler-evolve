@@ -438,6 +438,7 @@ export interface ChatMessage {
   pair_correlation?: PairCorrelationResult
   stat_query?: StatQueryResult
   group_trends?: GroupTrendResult
+  split_strategy?: SplitStrategyResult
 }
 
 export interface SegmentPerformanceSegment {
@@ -542,6 +543,18 @@ export interface ClassImbalanceResult {
   minority_class: string | null
   minority_ratio: number | null
   recommended_strategy: "class_weight" | "smote" | "threshold" | "none"
+  explanation: string
+}
+
+export interface SplitStrategyInfo {
+  recommended: "chronological" | "random"
+  date_col: string | null
+  explanation: string
+}
+
+export interface SplitStrategyResult {
+  split_strategy: "chronological" | "random"
+  date_col: string | null
   explanation: string
 }
 

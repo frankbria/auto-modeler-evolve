@@ -28,6 +28,7 @@ from chat.narration import (
 from core.feature_engine import apply_transformations
 from core.report_generator import generate_model_report
 from core.chart_builder import build_model_comparison_radar
+from core.analyzer import detect_time_columns
 from core.trainer import (
     CLASSIFICATION_ALGORITHMS,
     REGRESSION_ALGORITHMS,
@@ -208,6 +209,7 @@ def _train_in_background(
     problem_type: str,
     model_dir: Path,
     imbalance_strategy: str | None = None,
+    split_strategy: str = "random",
 ) -> None:
     """Runs in a daemon thread. Updates ModelRun status in DB and pushes SSE events."""
     # Mark as training
@@ -231,6 +233,18 @@ def _train_in_background(
     )
 
     try:
+        # For chronological split, sort df by detected date column before prepare_features
+        date_col_used: str | None = None
+        effective_split = split_strategy
+        if split_strategy == "chronological":
+            _time_cols = detect_time_columns(df)
+            if _time_cols:
+                date_col_used = _time_cols[0]
+                df = df.sort_values(date_col_used).reset_index(drop=True)
+            else:
+                # No date column found — fall back to random split silently
+                effective_split = "random"
+
         X, y, _ = prepare_features(df, feature_cols, target_col, problem_type)
         result = train_single_model(
             X,
@@ -240,6 +254,8 @@ def _train_in_background(
             model_dir,
             model_run_id,
             imbalance_strategy=imbalance_strategy,
+            split_strategy=effective_split,
+            date_col_used=date_col_used,
         )
 
         with Session(_db.engine) as session:
@@ -373,6 +389,7 @@ def get_class_imbalance(project_id: str, session: Session = Depends(get_session)
 class TrainRequest(BaseModel):
     algorithms: list[str]
     imbalance_strategy: str | None = None
+    split_strategy: str | None = None
 
 
 @router.post("/api/models/{project_id}/train", status_code=202)
@@ -409,6 +426,14 @@ def start_training(
             status_code=400,
             detail=f"Invalid imbalance_strategy '{body.imbalance_strategy}'. "
             "Valid choices: class_weight, smote, threshold",
+        )
+
+    valid_split_strategies = {None, "random", "chronological"}
+    if body.split_strategy not in valid_split_strategies:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid split_strategy '{body.split_strategy}'. "
+            "Valid choices: random, chronological",
         )
 
     # Load and transform dataset
@@ -455,7 +480,10 @@ def start_training(
                 problem_type,
                 model_dir,
             ),
-            kwargs={"imbalance_strategy": body.imbalance_strategy},
+            kwargs={
+                "imbalance_strategy": body.imbalance_strategy,
+                "split_strategy": body.split_strategy or "random",
+            },
             daemon=True,
         )
         t.start()
@@ -468,6 +496,50 @@ def start_training(
         "message": (
             f"Training {len(run_ids)} model(s) in the background. "
             "Poll GET /api/models/{project_id}/runs for status updates."
+        ),
+    }
+
+
+# ---------------------------------------------------------------------------
+# 2b. Detect recommended split strategy for a project's dataset
+# ---------------------------------------------------------------------------
+
+
+@router.get("/api/models/{project_id}/split-strategy")
+def get_split_strategy(project_id: str, session: Session = Depends(get_session)):
+    """Detect whether the project's dataset has a date column.
+
+    Returns:
+        {
+          "recommended": "chronological" | "random",
+          "date_col": str | None,  # name of the detected date column
+          "explanation": str
+        }
+    """
+    _, dataset, _ = _get_project_context(project_id, session)
+    file_path = Path(dataset.file_path)
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Dataset file not found on disk")
+
+    df = pd.read_csv(file_path, nrows=50)  # only need to detect column types
+    time_cols = detect_time_columns(df)
+
+    if time_cols:
+        return {
+            "recommended": "chronological",
+            "date_col": time_cols[0],
+            "explanation": (
+                f"Your dataset has a date column ('{time_cols[0]}'). "
+                "Time-based splitting trains on older data and tests on more recent data, "
+                "giving a more honest estimate of how your model will perform on future data."
+            ),
+        }
+    return {
+        "recommended": "random",
+        "date_col": None,
+        "explanation": (
+            "No date column detected. Random splitting is the standard approach — "
+            "the model learns from a representative sample of all your data."
         ),
     }
 

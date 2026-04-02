@@ -48,6 +48,7 @@ import { RecordTableCard } from "@/components/data/record-table-card"
 import { DataExportCard } from "@/components/data/data-export-card"
 import { NullMapCard } from "@/components/data/null-map-card"
 import { GroupTrendCard } from "@/components/data/group-trend-card"
+import { SplitStrategyCard } from "@/components/models/split-strategy-card"
 import { PairCorrelationCard } from "@/components/data/pair-correlation-card"
 import { StatQueryCard } from "@/components/data/stat-query-card"
 import { SummaryStatsCard } from "@/components/data/summary-stats-card"
@@ -179,6 +180,7 @@ export default function ProjectWorkspace() {
     attachPairCorrelationToLastMessage,
     attachStatQueryToLastMessage,
     attachGroupTrendsToLastMessage,
+    attachSplitStrategyToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -471,6 +473,8 @@ export default function ProjectWorkspace() {
                 attachStatQueryToLastMessage(json.stat_query as import("@/lib/types").StatQueryResult)
               } else if (json.type === "group_trends" && json.group_trends) {
                 attachGroupTrendsToLastMessage(json.group_trends as import("@/lib/types").GroupTrendResult)
+              } else if (json.type === "split_strategy" && json.split_strategy) {
+                attachSplitStrategyToLastMessage(json.split_strategy as import("@/lib/types").SplitStrategyResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -525,6 +529,7 @@ export default function ProjectWorkspace() {
     attachPairCorrelationToLastMessage,
     attachStatQueryToLastMessage,
     attachGroupTrendsToLastMessage,
+    attachSplitStrategyToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -852,6 +857,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.group_trends && (
                       <GroupTrendCard result={msg.group_trends} />
+                    )}
+                    {msg.split_strategy && (
+                      <SplitStrategyCard result={msg.split_strategy} />
                     )}
                   </div>
                 </div>

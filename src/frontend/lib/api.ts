@@ -626,15 +626,25 @@ export const api = {
     ): Promise<import("./types").ClassImbalanceResult> =>
       fetch(`${API_URL}/api/models/${projectId}/imbalance`).then((r) => r.json()),
 
+    splitStrategy: (
+      projectId: string
+    ): Promise<import("./types").SplitStrategyInfo> =>
+      fetch(`${API_URL}/api/models/${projectId}/split-strategy`).then((r) => r.json()),
+
     train: (
       projectId: string,
       algorithms: string[],
-      imbalanceStrategy?: string | null
+      imbalanceStrategy?: string | null,
+      splitStrategy?: string | null
     ): Promise<TrainingStatus> =>
       fetch(`${API_URL}/api/models/${projectId}/train`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ algorithms, imbalance_strategy: imbalanceStrategy ?? null }),
+        body: JSON.stringify({
+          algorithms,
+          imbalance_strategy: imbalanceStrategy ?? null,
+          split_strategy: splitStrategy ?? null,
+        }),
       }).then((r) => r.json()),
 
     runs: (projectId: string): Promise<{ project_id: string; runs: ModelRun[] }> =>

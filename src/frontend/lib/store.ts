@@ -81,6 +81,7 @@ interface AppState {
   attachPairCorrelationToLastMessage: (pair_correlation: import("./types").PairCorrelationResult) => void
   attachStatQueryToLastMessage: (stat_query: import("./types").StatQueryResult) => void
   attachGroupTrendsToLastMessage: (group_trends: import("./types").GroupTrendResult) => void
+  attachSplitStrategyToLastMessage: (split_strategy: import("./types").SplitStrategyResult) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -441,6 +442,16 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, group_trends }
+      }
+      return { messages }
+    }),
+
+  attachSplitStrategyToLastMessage: (split_strategy) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, split_strategy }
       }
       return { messages }
     }),

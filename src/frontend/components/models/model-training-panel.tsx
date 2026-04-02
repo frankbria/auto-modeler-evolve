@@ -55,6 +55,8 @@ export function ModelTrainingPanel({ projectId, onModelSelected, onModelDownload
   const [confirmTrainMore, setConfirmTrainMore] = useState(false)
   const [imbalanceData, setImbalanceData] = useState<ClassImbalanceResult | null>(null)
   const [imbalanceStrategy, setImbalanceStrategy] = useState<string | null>(null)
+  const [splitStrategy, setSplitStrategy] = useState<"random" | "chronological">("random")
+  const [splitStrategyInfo, setSplitStrategyInfo] = useState<import("@/lib/types").SplitStrategyInfo | null>(null)
 
   // Load recommendations and any existing runs on mount
   useEffect(() => {
@@ -92,6 +94,11 @@ export function ModelTrainingPanel({ projectId, onModelSelected, onModelDownload
         if (recData.problem_type === "classification") {
           api.models.classImbalance(projectId).then(setImbalanceData).catch(() => {})
         }
+        // Auto-detect split strategy recommendation
+        api.models.splitStrategy(projectId).then((info) => {
+          setSplitStrategyInfo(info)
+          if (info.recommended === "chronological") setSplitStrategy("chronological")
+        }).catch(() => {})
       })
       .catch((e) => setError(e?.message ?? "Could not load recommendations"))
       .finally(() => setLoading(false))
@@ -165,7 +172,7 @@ export function ModelTrainingPanel({ projectId, onModelSelected, onModelDownload
     setTraining(true)
     setError(null)
     try {
-      await api.models.train(projectId, Array.from(selectedAlgos), imbalanceStrategy)
+      await api.models.train(projectId, Array.from(selectedAlgos), imbalanceStrategy, splitStrategy)
       const data = await api.models.runs(projectId)
       setRuns(data.runs)
     } catch (e: unknown) {
@@ -173,7 +180,7 @@ export function ModelTrainingPanel({ projectId, onModelSelected, onModelDownload
     } finally {
       setTraining(false)
     }
-  }, [projectId, selectedAlgos, imbalanceStrategy])
+  }, [projectId, selectedAlgos, imbalanceStrategy, splitStrategy])
 
   const handleSelect = useCallback(
     async (runId: string, algorithm: string) => {
@@ -239,6 +246,60 @@ export function ModelTrainingPanel({ projectId, onModelSelected, onModelDownload
       {/* Algorithm selection */}
       {runs.length === 0 && (
         <div>
+          {/* Train/test split strategy */}
+          {splitStrategyInfo && (
+            <div
+              data-testid="split-strategy-toggle"
+              className={`rounded-lg border p-3 mb-3 ${
+                splitStrategy === "chronological"
+                  ? "border-sky-300 bg-sky-50"
+                  : "border-slate-200 bg-slate-50"
+              }`}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center gap-1.5">
+                  <span aria-hidden="true">{splitStrategy === "chronological" ? "🗓️" : "🔀"}</span>
+                  <span className="text-xs font-semibold">Train/test split</span>
+                  {splitStrategyInfo.recommended === "chronological" && splitStrategy === "chronological" && (
+                    <Badge variant="outline" className="text-xs bg-sky-100 text-sky-700 border-sky-200">
+                      Recommended
+                    </Badge>
+                  )}
+                </div>
+                <div className="flex gap-1">
+                  <button
+                    className={`text-xs px-2 py-0.5 rounded border transition-all ${
+                      splitStrategy === "random"
+                        ? "bg-white border-slate-400 font-medium"
+                        : "border-transparent text-muted-foreground hover:border-slate-200"
+                    }`}
+                    onClick={() => setSplitStrategy("random")}
+                    aria-pressed={splitStrategy === "random"}
+                  >
+                    Random
+                  </button>
+                  <button
+                    className={`text-xs px-2 py-0.5 rounded border transition-all ${
+                      splitStrategy === "chronological"
+                        ? "bg-sky-100 border-sky-400 font-medium text-sky-800"
+                        : "border-transparent text-muted-foreground hover:border-slate-200"
+                    }`}
+                    onClick={() => setSplitStrategy("chronological")}
+                    aria-pressed={splitStrategy === "chronological"}
+                    disabled={splitStrategyInfo.date_col === null}
+                  >
+                    Time-based
+                  </button>
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {splitStrategy === "chronological"
+                  ? `Training on older data, testing on recent ${splitStrategyInfo.date_col ? `(sorted by '${splitStrategyInfo.date_col}')` : ""} — more honest for forecasting.`
+                  : "Rows shuffled randomly before splitting — standard for non-time-series data."}
+              </p>
+            </div>
+          )}
+
           {imbalanceData && (
             <ImbalanceCard
               data={imbalanceData}
@@ -509,6 +570,20 @@ function RunCard({
             {run.training_duration_ms != null && (
               <p className="text-[10px] text-muted-foreground/60">
                 Trained in {(run.training_duration_ms / 1000).toFixed(1)}s
+                {(run.metrics as ModelMetrics & { split_strategy?: string; date_col_used?: string })?.split_strategy === "chronological" && (
+                  <span
+                    className="ml-2 inline-flex items-center gap-0.5 text-sky-600"
+                    title={(run.metrics as ModelMetrics & { split_explanation?: string })?.split_explanation}
+                  >
+                    <span aria-hidden="true">🗓️</span>
+                    {" "}Time-based split
+                    {(run.metrics as ModelMetrics & { date_col_used?: string })?.date_col_used && (
+                      <span className="text-sky-400">
+                        {" "}({(run.metrics as ModelMetrics & { date_col_used?: string }).date_col_used})
+                      </span>
+                    )}
+                  </span>
+                )}
               </p>
             )}
             <div className="mt-2 flex flex-wrap gap-2">

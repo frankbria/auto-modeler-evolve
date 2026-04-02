@@ -42,6 +42,7 @@ jest.mock("../lib/api", () => ({
       tune: jest.fn(),
       retrain: jest.fn(),
       classImbalance: jest.fn().mockRejectedValue(new Error("no classification")),
+      splitStrategy: jest.fn().mockResolvedValue({ recommended: "random", date_col: null, explanation: "No date column." }),
     },
   },
 }))
@@ -198,7 +199,8 @@ describe("ModelTrainingPanel — training", () => {
       expect(mockTrain).toHaveBeenCalledWith(
         "proj-1",
         expect.arrayContaining(["linear_regression"]),
-        null
+        null,
+        expect.any(String)
       )
     )
   })
