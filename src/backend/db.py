@@ -22,6 +22,7 @@ def _apply_migrations():
         ("deployment", "api_key_hash", "TEXT"),
         ("deployment", "api_key_salt", "TEXT"),
         ("deployment", "current_version_number", "INTEGER NOT NULL DEFAULT 1"),
+        ("deployment", "environment", "TEXT NOT NULL DEFAULT 'staging'"),
         ("predictionlog", "response_ms", "REAL"),
         ("predictionlog", "ab_variant", "TEXT"),
     ]

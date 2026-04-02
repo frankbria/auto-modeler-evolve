@@ -700,6 +700,131 @@ export function AlertsCard({
   )
 }
 
+function EnvironmentCard({
+  deployment,
+  onUpdated,
+}: {
+  deployment: Deployment
+  onUpdated: (d: Deployment) => void
+}) {
+  const isProduction = (deployment.environment ?? "staging") === "production"
+  const [loading, setLoading] = useState(false)
+  const [confirmPromote, setConfirmPromote] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const handlePromote = async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const result = await api.deploy.promoteToProduction(deployment.id)
+      onUpdated(result.deployment)
+      setConfirmPromote(false)
+    } catch {
+      setError("Promotion failed. Please try again.")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleDemote = async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const result = await api.deploy.demoteToStaging(deployment.id)
+      onUpdated(result.deployment)
+    } catch {
+      setError("Demotion failed. Please try again.")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <Card className={isProduction ? "border-green-300" : "border-amber-200"}>
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <span aria-hidden="true">{isProduction ? "🟢" : "🔶"}</span>{" "}
+            Deployment Environment
+          </CardTitle>
+          <Badge
+            className={
+              isProduction
+                ? "bg-green-100 text-green-800 border-green-200"
+                : "bg-amber-100 text-amber-800 border-amber-200"
+            }
+          >
+            {isProduction ? "Production" : "Staging"}
+          </Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {isProduction ? (
+          <div className="space-y-2">
+            <p className="text-xs text-muted-foreground">
+              This is your <strong>production</strong> deployment — the one your team
+              uses in live systems. The staging URL is still available for testing.
+            </p>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="text-xs text-muted-foreground"
+              onClick={handleDemote}
+              disabled={loading}
+            >
+              {loading ? "Demoting…" : "Demote to staging"}
+            </Button>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <p className="text-xs text-muted-foreground">
+              This is a <strong>staging</strong> deployment — safe to test and share
+              internally. Promote to production when you are confident it is ready for
+              your team and live systems.
+            </p>
+            {confirmPromote ? (
+              <div className="rounded border border-amber-200 bg-amber-50 p-3 space-y-2">
+                <p className="text-xs font-medium text-amber-800">
+                  Promoting will make this the production deployment. Any existing
+                  production deployment will become staging.
+                </p>
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    className="bg-green-600 hover:bg-green-700 text-white"
+                    onClick={handlePromote}
+                    disabled={loading}
+                  >
+                    {loading ? "Promoting…" : "Yes, promote to production"}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setConfirmPromote(false)}
+                    disabled={loading}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <Button
+                size="sm"
+                className="bg-green-600 hover:bg-green-700 text-white"
+                onClick={() => setConfirmPromote(true)}
+                disabled={loading}
+              >
+                Promote to Production
+              </Button>
+            )}
+          </div>
+        )}
+        {error && <p className="text-xs text-destructive">{error}</p>}
+      </CardContent>
+    </Card>
+  )
+}
+
 function ApiKeyCard({ deployment, onUpdated }: { deployment: Deployment; onUpdated: (d: Deployment) => void }) {
   const [generatedKey, setGeneratedKey] = useState<string | null>(null)
   const [keyCopied, setKeyCopied] = useState(false)
@@ -903,6 +1028,7 @@ export function DeploymentPanel({
 
   if (deployment) {
     const dashboardUrl = `${typeof window !== "undefined" ? window.location.origin : ""}${deployment.dashboard_url}`
+    const isProduction = (deployment.environment ?? "staging") === "production"
     return (
       <div className="space-y-4">
         <div className="flex items-center gap-2">
@@ -910,6 +1036,15 @@ export function DeploymentPanel({
           <span className="text-sm font-medium text-green-700 dark:text-green-400">
             Model deployed
           </span>
+          <Badge
+            className={
+              isProduction
+                ? "bg-green-100 text-green-800 border-green-200"
+                : "bg-amber-100 text-amber-800 border-amber-200"
+            }
+          >
+            {isProduction ? "Production" : "Staging"}
+          </Badge>
           <Badge variant="outline" className="ml-auto">
             {deployment.algorithm ?? "Unknown"}
           </Badge>
@@ -974,6 +1109,7 @@ export function DeploymentPanel({
         {deployment && <ModelHealthCard deploymentId={deployment.id} projectId={projectId} />}
         <AlertsCard projectId={projectId} />
         {deployment && <ApiKeyCard deployment={deployment} onUpdated={setDeployment} />}
+        {deployment && <EnvironmentCard deployment={deployment} onUpdated={setDeployment} />}
         {deployment && <IntegrationCard deploymentId={deployment.id} />}
         {deployment && (
           <ExportServiceCard

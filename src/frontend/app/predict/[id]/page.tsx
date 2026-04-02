@@ -424,9 +424,21 @@ export default function PredictionDashboard() {
       <div className="mx-auto max-w-xl space-y-6">
         {/* Header */}
         <div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <h1 className="text-xl font-semibold">Prediction Dashboard</h1>
             <Badge variant="outline">{deployment.algorithm}</Badge>
+            {deployment.environment && (
+              <Badge
+                className={
+                  deployment.environment === "production"
+                    ? "bg-green-100 text-green-800 border-green-200"
+                    : "bg-amber-100 text-amber-800 border-amber-200"
+                }
+                data-testid="environment-badge"
+              >
+                {deployment.environment === "production" ? "Production" : "Staging"}
+              </Badge>
+            )}
             <Badge
               variant="secondary"
               className="ml-auto capitalize"

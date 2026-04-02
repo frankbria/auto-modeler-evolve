@@ -693,6 +693,7 @@ export interface Deployment {
   last_predicted_at: string | null
   feature_schema?: FeatureSchemaEntry[]
   api_key_enabled: boolean
+  environment?: "staging" | "production"
 }
 
 export interface ApiKeyResult {
@@ -1618,6 +1619,11 @@ export interface RollbackResult {
   algorithm: string | null
   metrics: Record<string, number>
   api_key_enabled: boolean
+}
+
+export interface EnvironmentPromotionResult {
+  message: string
+  deployment: Deployment
 }
 
 export interface WebhookConfig {

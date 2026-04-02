@@ -32,3 +32,5 @@ class Deployment(SQLModel, table=True):
     api_key_salt: Optional[str] = None  # random hex salt
     # Versioning — monotonically incremented each time the deployment is updated
     current_version_number: int = Field(default=1)
+    # Environment: "staging" (default) or "production"
+    environment: str = Field(default="staging")

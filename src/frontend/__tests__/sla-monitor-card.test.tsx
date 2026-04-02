@@ -46,6 +46,8 @@ jest.mock("../lib/api", () => ({
       createAbTest: jest.fn(),
       endAbTest: jest.fn(),
       promoteChallenger: jest.fn(),
+      promoteToProduction: jest.fn().mockRejectedValue(new Error("no env")),
+      demoteToStaging: jest.fn().mockRejectedValue(new Error("no env")),
       createWebhook: jest.fn(),
       deleteWebhook: jest.fn(),
       testWebhook: jest.fn(),

@@ -43,6 +43,8 @@ jest.mock("../lib/api", () => ({
       createAbTest: jest.fn(),
       endAbTest: jest.fn(),
       promoteChallenger: jest.fn(),
+      promoteToProduction: jest.fn().mockRejectedValue(new Error("no env")),
+      demoteToStaging: jest.fn().mockRejectedValue(new Error("no env")),
       sla: jest.fn().mockResolvedValue({
         deployment_id: "dep-1",
         sample_count: 0,

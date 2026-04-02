@@ -976,5 +976,25 @@ export const api = {
         if (!r.ok) throw new Error(`HTTP ${r.status}`)
         return r.json()
       }),
+
+    promoteToProduction: (
+      deploymentId: string
+    ): Promise<import("./types").EnvironmentPromotionResult> =>
+      fetch(`${API_URL}/api/deploy/${deploymentId}/promote-to-production`, {
+        method: "POST",
+      }).then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        return r.json()
+      }),
+
+    demoteToStaging: (
+      deploymentId: string
+    ): Promise<import("./types").EnvironmentPromotionResult> =>
+      fetch(`${API_URL}/api/deploy/${deploymentId}/demote-to-staging`, {
+        method: "POST",
+      }).then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        return r.json()
+      }),
   },
 }

@@ -2081,6 +2081,7 @@ def _deployment_response(d: Deployment) -> dict:
             d.last_predicted_at.isoformat() if d.last_predicted_at else None
         ),
         "api_key_enabled": bool(getattr(d, "api_key_enabled", False)),
+        "environment": getattr(d, "environment", "staging"),
     }
 
 
@@ -3203,4 +3204,77 @@ def promote_challenger(
     return {
         "message": "Challenger promoted to champion. Prediction endpoint URL is unchanged.",
         "deployment": _deployment_response(champion),
+    }
+
+
+# ---------------------------------------------------------------------------
+# 20. Deployment environment promotion (staging → production)
+# ---------------------------------------------------------------------------
+
+
+@router.post("/api/deploy/{deployment_id}/promote-to-production")
+def promote_to_production(
+    deployment_id: str,
+    session: Session = Depends(get_session),
+):
+    """Promote a staging deployment to production.
+
+    - Marks this deployment's environment as "production"
+    - Demotes any existing production deployment for the same project back to "staging"
+      (so it can still be used as a test endpoint)
+    - The staging URL is preserved — analysts can still share/test the staging link
+    """
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment or not deployment.is_active:
+        raise HTTPException(status_code=404, detail="Deployment not found or inactive")
+
+    if getattr(deployment, "environment", "staging") == "production":
+        # Already production — idempotent, return as-is
+        return {
+            "message": "Deployment is already tagged as production.",
+            "deployment": _deployment_response(deployment),
+        }
+
+    # Demote any existing production deployment for this project
+    existing_production = session.exec(
+        select(Deployment).where(
+            Deployment.project_id == deployment.project_id,
+            Deployment.is_active == True,  # noqa: E712
+        )
+    ).all()
+    for dep in existing_production:
+        if dep.id != deployment_id and getattr(dep, "environment", "staging") == "production":
+            dep.environment = "staging"
+            session.add(dep)
+
+    # Promote this deployment to production
+    deployment.environment = "production"
+    session.add(deployment)
+    session.commit()
+    session.refresh(deployment)
+
+    return {
+        "message": "Deployment promoted to production. Staging URL is preserved for testing.",
+        "deployment": _deployment_response(deployment),
+    }
+
+
+@router.post("/api/deploy/{deployment_id}/demote-to-staging")
+def demote_to_staging(
+    deployment_id: str,
+    session: Session = Depends(get_session),
+):
+    """Demote a production deployment back to staging."""
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment or not deployment.is_active:
+        raise HTTPException(status_code=404, detail="Deployment not found or inactive")
+
+    deployment.environment = "staging"
+    session.add(deployment)
+    session.commit()
+    session.refresh(deployment)
+
+    return {
+        "message": "Deployment demoted back to staging.",
+        "deployment": _deployment_response(deployment),
     }
