@@ -456,7 +456,9 @@ async def test_ab_routing_records_variant_in_logs(ac, champion_id, challenger_id
     assert ab_data["challenger_metrics"]["request_count"] == 0
 
 
-async def test_ab_challenger_requests_tracked_separately(ac, champion_id, challenger_id):
+async def test_ab_challenger_requests_tracked_separately(
+    ac, champion_id, challenger_id
+):
     """Challenger predictions are tracked separately from champion predictions."""
     await ac.post(
         f"/api/deploy/{champion_id}/ab-test",
@@ -511,4 +513,6 @@ def test_percentile_sorted_edge_cases():
     assert _percentile_sorted([], 95) == 0.0
     assert _percentile_sorted([42.0], 95) == 42.0
     assert _percentile_sorted([10.0, 20.0], 50) == pytest.approx(15.0, abs=0.1)
-    assert _percentile_sorted([1.0, 2.0, 3.0, 4.0, 5.0], 100) == pytest.approx(5.0, abs=0.1)
+    assert _percentile_sorted([1.0, 2.0, 3.0, 4.0, 5.0], 100) == pytest.approx(
+        5.0, abs=0.1
+    )

@@ -19,5 +19,7 @@ class PredictionLog(SQLModel, table=True):
     prediction_numeric: Optional[float] = None  # parsed numeric value for aggregation
     confidence: Optional[float] = None  # probability / confidence score if available
     response_ms: Optional[float] = None  # prediction latency in milliseconds
-    ab_variant: Optional[str] = None  # "champion" | "challenger" when serving an A/B test
+    ab_variant: Optional[str] = (
+        None  # "champion" | "challenger" when serving an A/B test
+    )
     created_at: datetime = Field(default_factory=_utcnow)

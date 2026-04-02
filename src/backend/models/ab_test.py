@@ -21,7 +21,9 @@ class ABTest(SQLModel, table=True):
 
     id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
     champion_id: str = Field(index=True)  # Deployment.id — receives champion traffic
-    challenger_id: str = Field(index=True)  # Deployment.id — receives challenger traffic
+    challenger_id: str = Field(
+        index=True
+    )  # Deployment.id — receives challenger traffic
     champion_split_pct: int = Field(default=80)  # 1–99; % routed to champion
     is_active: bool = Field(default=True)
     auto_promote: bool = Field(default=False)  # future: auto-promote on significance

@@ -2929,11 +2929,17 @@ def _ab_variant_metrics(champion_id: str, variant: str, session: Session) -> dic
 
     request_count = len(logs)
     confidences = [lg.confidence for lg in logs if lg.confidence is not None]
-    avg_confidence = round(sum(confidences) / len(confidences), 4) if confidences else None
+    avg_confidence = (
+        round(sum(confidences) / len(confidences), 4) if confidences else None
+    )
     latencies = sorted([lg.response_ms for lg in logs if lg.response_ms is not None])
     p95_ms = round(_percentile_sorted(latencies, 95), 2) if latencies else None
-    predictions = [lg.prediction_numeric for lg in logs if lg.prediction_numeric is not None]
-    avg_prediction = round(sum(predictions) / len(predictions), 4) if predictions else None
+    predictions = [
+        lg.prediction_numeric for lg in logs if lg.prediction_numeric is not None
+    ]
+    avg_prediction = (
+        round(sum(predictions) / len(predictions), 4) if predictions else None
+    )
 
     return {
         "request_count": request_count,
@@ -2985,7 +2991,11 @@ def _ab_significance(champion_id: str, session: Session) -> dict:
             "note": "Mann-Whitney U test (α=0.05)",
         }
     except Exception:  # noqa: BLE001
-        return {"significant": False, "p_value": None, "note": "Statistical test unavailable"}
+        return {
+            "significant": False,
+            "p_value": None,
+            "note": "Statistical test unavailable",
+        }
 
 
 def _ab_test_response(test: "ABTest", session: Session) -> dict:
@@ -3005,7 +3015,9 @@ def _ab_test_response(test: "ABTest", session: Session) -> dict:
         "ended_at": test.ended_at.isoformat() if test.ended_at else None,
         "winner": test.winner,
         "champion_metrics": _ab_variant_metrics(test.champion_id, "champion", session),
-        "challenger_metrics": _ab_variant_metrics(test.champion_id, "challenger", session),
+        "challenger_metrics": _ab_variant_metrics(
+            test.champion_id, "challenger", session
+        ),
         "significance": _ab_significance(test.champion_id, session),
     }
 
@@ -3029,11 +3041,14 @@ def create_ab_test(
     """
     champion = session.get(Deployment, deployment_id)
     if not champion or not champion.is_active:
-        raise HTTPException(status_code=404, detail="Champion deployment not found or inactive")
+        raise HTTPException(
+            status_code=404, detail="Champion deployment not found or inactive"
+        )
 
     if body.challenger_id == deployment_id:
         raise HTTPException(
-            status_code=400, detail="Champion and challenger must be different deployments"
+            status_code=400,
+            detail="Champion and challenger must be different deployments",
         )
 
     challenger = session.get(Deployment, body.challenger_id)
@@ -3084,7 +3099,9 @@ def get_ab_test(
         )
     ).first()
     if not ab_test:
-        raise HTTPException(status_code=404, detail="No active A/B test for this deployment")
+        raise HTTPException(
+            status_code=404, detail="No active A/B test for this deployment"
+        )
     return _ab_test_response(ab_test, session)
 
 
@@ -3101,7 +3118,9 @@ def end_ab_test(
         )
     ).first()
     if not ab_test:
-        raise HTTPException(status_code=404, detail="No active A/B test for this deployment")
+        raise HTTPException(
+            status_code=404, detail="No active A/B test for this deployment"
+        )
 
     ab_test.is_active = False
     ab_test.ended_at = datetime.now(UTC).replace(tzinfo=None)
@@ -3128,17 +3147,16 @@ def promote_challenger(
         )
     ).first()
     if not ab_test:
-        raise HTTPException(status_code=404, detail="No active A/B test for this deployment")
+        raise HTTPException(
+            status_code=404, detail="No active A/B test for this deployment"
+        )
 
     champion = session.get(Deployment, deployment_id)
     challenger = session.get(Deployment, ab_test.challenger_id)
     if not champion or not challenger:
         raise HTTPException(status_code=404, detail="Deployment not found")
 
-    if not (
-        challenger.pipeline_path
-        and Path(challenger.pipeline_path).exists()
-    ):
+    if not (challenger.pipeline_path and Path(challenger.pipeline_path).exists()):
         raise HTTPException(
             status_code=400,
             detail="Challenger pipeline file not found — cannot promote",
