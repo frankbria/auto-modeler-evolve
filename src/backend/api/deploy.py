@@ -3243,7 +3243,10 @@ def promote_to_production(
         )
     ).all()
     for dep in existing_production:
-        if dep.id != deployment_id and getattr(dep, "environment", "staging") == "production":
+        if (
+            dep.id != deployment_id
+            and getattr(dep, "environment", "staging") == "production"
+        ):
             dep.environment = "staging"
             session.add(dep)
 
