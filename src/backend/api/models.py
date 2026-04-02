@@ -233,7 +233,12 @@ def _train_in_background(
     try:
         X, y, _ = prepare_features(df, feature_cols, target_col, problem_type)
         result = train_single_model(
-            X, y, algorithm, problem_type, model_dir, model_run_id,
+            X,
+            y,
+            algorithm,
+            problem_type,
+            model_dir,
+            model_run_id,
             imbalance_strategy=imbalance_strategy,
         )
 

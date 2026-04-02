@@ -110,7 +110,9 @@ def _setup_classification_project(client, csv_bytes: bytes):
     assert upload.status_code == 201
     dataset_id = upload.json()["dataset_id"]
 
-    apply = client.post(f"/api/features/{dataset_id}/apply", json={"transformations": []})
+    apply = client.post(
+        f"/api/features/{dataset_id}/apply", json={"transformations": []}
+    )
     assert apply.status_code == 201
 
     target = client.post(
@@ -247,8 +249,12 @@ class TestTrainWithImbalanceStrategy:
 
         X, y = imbalanced_xy
         result = train_single_model(
-            X, y, "logistic_regression", "classification",
-            tmp_path / "models", "run_cw_lr",
+            X,
+            y,
+            "logistic_regression",
+            "classification",
+            tmp_path / "models",
+            "run_cw_lr",
             imbalance_strategy="class_weight",
         )
         assert result["metrics"]["imbalance_strategy"] == "class_weight"
@@ -259,8 +265,12 @@ class TestTrainWithImbalanceStrategy:
 
         X, y = imbalanced_xy
         result = train_single_model(
-            X, y, "random_forest_classifier", "classification",
-            tmp_path / "models", "run_cw_rf",
+            X,
+            y,
+            "random_forest_classifier",
+            "classification",
+            tmp_path / "models",
+            "run_cw_rf",
             imbalance_strategy="class_weight",
         )
         assert result["metrics"]["imbalance_strategy"] == "class_weight"
@@ -270,8 +280,12 @@ class TestTrainWithImbalanceStrategy:
 
         X, y = imbalanced_xy
         result = train_single_model(
-            X, y, "gradient_boosting_classifier", "classification",
-            tmp_path / "models", "run_cw_gbc",
+            X,
+            y,
+            "gradient_boosting_classifier",
+            "classification",
+            tmp_path / "models",
+            "run_cw_gbc",
             imbalance_strategy="class_weight",
         )
         assert result["metrics"]["imbalance_strategy"] == "class_weight"
@@ -281,8 +295,12 @@ class TestTrainWithImbalanceStrategy:
 
         X, y = imbalanced_xy
         result = train_single_model(
-            X, y, "random_forest_classifier", "classification",
-            tmp_path / "models", "run_smote",
+            X,
+            y,
+            "random_forest_classifier",
+            "classification",
+            tmp_path / "models",
+            "run_smote",
             imbalance_strategy="smote",
         )
         assert result["metrics"]["imbalance_strategy"] == "smote"
@@ -293,8 +311,12 @@ class TestTrainWithImbalanceStrategy:
 
         X, y = imbalanced_xy
         result = train_single_model(
-            X, y, "logistic_regression", "classification",
-            tmp_path / "models", "run_thresh",
+            X,
+            y,
+            "logistic_regression",
+            "classification",
+            tmp_path / "models",
+            "run_thresh",
             imbalance_strategy="threshold",
         )
         assert result["metrics"]["imbalance_strategy"] == "threshold"
@@ -307,8 +329,12 @@ class TestTrainWithImbalanceStrategy:
 
         X, y = imbalanced_xy
         result = train_single_model(
-            X, y, "logistic_regression", "classification",
-            tmp_path / "models", "run_none",
+            X,
+            y,
+            "logistic_regression",
+            "classification",
+            tmp_path / "models",
+            "run_none",
         )
         assert "imbalance_strategy" not in result["metrics"]
 
@@ -319,8 +345,12 @@ class TestTrainWithImbalanceStrategy:
         X = np.random.randn(30, 2)
         y = np.random.randn(30)
         result = train_single_model(
-            X, y, "linear_regression", "regression",
-            tmp_path / "models", "run_reg",
+            X,
+            y,
+            "linear_regression",
+            "regression",
+            tmp_path / "models",
+            "run_reg",
             imbalance_strategy="class_weight",
         )
         # For regression, strategy is in metrics only if strategy was passed and is non-None
@@ -333,20 +363,30 @@ class TestTrainWithImbalanceStrategy:
 
         X, y = imbalanced_xy
         result = train_single_model(
-            X, y, "gradient_boosting_classifier", "classification",
-            tmp_path / "models", "run_thresh_gbc",
+            X,
+            y,
+            "gradient_boosting_classifier",
+            "classification",
+            tmp_path / "models",
+            "run_thresh_gbc",
             imbalance_strategy="threshold",
         )
         # Should have optimal_threshold since GBC has predict_proba
         assert "optimal_threshold" in result["metrics"]
 
-    def test_threshold_strategy_records_imbalance_in_metrics(self, imbalanced_xy, tmp_path):
+    def test_threshold_strategy_records_imbalance_in_metrics(
+        self, imbalanced_xy, tmp_path
+    ):
         from core.trainer import train_single_model
 
         X, y = imbalanced_xy
         result = train_single_model(
-            X, y, "logistic_regression", "classification",
-            tmp_path / "models", "run_thresh_note",
+            X,
+            y,
+            "logistic_regression",
+            "classification",
+            tmp_path / "models",
+            "run_thresh_note",
             imbalance_strategy="threshold",
         )
         # Strategy is always recorded in metrics when provided
@@ -390,7 +430,10 @@ class TestImbalanceEndpoint:
         project_id, _ = _setup_classification_project(client, IMBALANCED_CSV)
         r = client.post(
             f"/api/models/{project_id}/train",
-            json={"algorithms": ["logistic_regression"], "imbalance_strategy": "class_weight"},
+            json={
+                "algorithms": ["logistic_regression"],
+                "imbalance_strategy": "class_weight",
+            },
         )
         assert r.status_code == 202
         data = r.json()
@@ -408,7 +451,10 @@ class TestImbalanceEndpoint:
         project_id, _ = _setup_classification_project(client, IMBALANCED_CSV)
         r = client.post(
             f"/api/models/{project_id}/train",
-            json={"algorithms": ["logistic_regression"], "imbalance_strategy": "invalid_strategy"},
+            json={
+                "algorithms": ["logistic_regression"],
+                "imbalance_strategy": "invalid_strategy",
+            },
         )
         assert r.status_code == 400
 
@@ -426,7 +472,9 @@ class TestImbalanceEndpoint:
         )
         dataset_id = upload.json()["dataset_id"]
         client.post(f"/api/features/{dataset_id}/apply", json={"transformations": []})
-        client.post(f"/api/features/{dataset_id}/target", json={"target_column": "target"})
+        client.post(
+            f"/api/features/{dataset_id}/target", json={"target_column": "target"}
+        )
 
         r = client.get(f"/api/models/{project_id}/imbalance")
         assert r.status_code == 200
