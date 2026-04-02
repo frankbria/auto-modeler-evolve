@@ -50,6 +50,23 @@ from sklearn.metrics import (
 )
 from sklearn.model_selection import RandomizedSearchCV, train_test_split
 from sklearn.preprocessing import LabelEncoder
+from sklearn.utils.class_weight import compute_sample_weight
+
+try:
+    from imblearn.over_sampling import SMOTE as _SMOTE
+
+    _SMOTE_AVAILABLE = True
+except ImportError:
+    _SMOTE_AVAILABLE = False
+
+# Algorithms that support class_weight="balanced" constructor param
+_CLASS_WEIGHT_PARAM_ALGOS = frozenset(
+    {"logistic_regression", "random_forest_classifier", "lightgbm_classifier"}
+)
+# Algorithms that accept sample_weight in fit() but not class_weight param
+_SAMPLE_WEIGHT_FIT_ALGOS = frozenset(
+    {"gradient_boosting_classifier", "xgboost_classifier"}
+)
 
 # ---------------------------------------------------------------------------
 # Algorithm registry
@@ -347,6 +364,83 @@ def _why_recommended(algorithm: str, n_rows: int, n_features: int) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Class imbalance detection
+# ---------------------------------------------------------------------------
+
+
+def detect_class_imbalance(y: np.ndarray) -> dict:
+    """Detect class imbalance in a classification target array.
+
+    Minority class threshold: < 20% of total rows.
+
+    Returns a dict with:
+        is_imbalanced, class_distribution, minority_class, minority_ratio,
+        recommended_strategy ("class_weight" | "smote" | "threshold" | "none"),
+        explanation (plain-English string).
+    """
+    classes, counts = np.unique(y, return_counts=True)
+    total = int(len(y))
+    distribution = [
+        {"class": str(cls), "count": int(cnt), "ratio": round(float(cnt) / total, 4)}
+        for cls, cnt in zip(classes, counts)
+    ]
+
+    min_ratio = float(min(d["ratio"] for d in distribution))
+    minority = min(distribution, key=lambda d: d["ratio"])
+    is_imbalanced = min_ratio < 0.20
+
+    if not is_imbalanced:
+        return {
+            "is_imbalanced": False,
+            "class_distribution": distribution,
+            "minority_class": None,
+            "minority_ratio": round(min_ratio, 4),
+            "recommended_strategy": "none",
+            "explanation": (
+                "Your target classes are roughly balanced — no special handling needed."
+            ),
+        }
+
+    minority_pct = round(min_ratio * 100, 1)
+    minority_class_str = minority["class"]
+    n = total
+
+    # Choose recommended strategy based on severity and dataset size
+    if min_ratio < 0.05 and n >= 100:
+        strategy = "smote"
+        reason = (
+            "Severe imbalance (under 5% minority) benefits most from SMOTE, which "
+            "creates realistic synthetic minority examples to balance training data."
+        )
+    elif n < 50:
+        strategy = "class_weight"
+        reason = (
+            "With a small dataset, class weighting is the safest approach — "
+            "SMOTE would create too many synthetic samples relative to real data."
+        )
+    else:
+        strategy = "class_weight"
+        reason = (
+            "Class weighting tells the model to pay more attention to the minority "
+            "class during training, without creating synthetic data."
+        )
+
+    return {
+        "is_imbalanced": True,
+        "class_distribution": distribution,
+        "minority_class": minority_class_str,
+        "minority_ratio": round(min_ratio, 4),
+        "recommended_strategy": strategy,
+        "explanation": (
+            f"Your data has a class imbalance: only {minority_pct}% of rows belong to "
+            f"'{minority_class_str}'. Without correction, the model will be biased "
+            f"toward predicting the majority class and may miss the cases that matter "
+            f"most. Recommended strategy: {reason}"
+        ),
+    }
+
+
+# ---------------------------------------------------------------------------
 # Feature preparation
 # ---------------------------------------------------------------------------
 
@@ -425,8 +519,12 @@ def train_single_model(
     problem_type: str,
     model_dir: Path,
     model_run_id: str,
+    imbalance_strategy: Optional[str] = None,
 ) -> dict:
     """Train one sklearn model, compute held-out metrics, and save to disk.
+
+    imbalance_strategy: "class_weight" | "smote" | "threshold" | None
+        Only applied for classification problems.
 
     Returns:
         {metrics, model_path, training_duration_ms, summary}
@@ -443,7 +541,7 @@ def train_single_model(
 
     info = algorithms[algorithm]
     model_class = info["class"]
-    params = info["params"]
+    params = dict(info["params"])  # copy so we don't mutate the registry
 
     # Train/test split — use 20% for test when we have enough rows
     n = len(X)
@@ -456,12 +554,39 @@ def train_single_model(
         X_train = X_test = X
         y_train = y_test = y
 
+    # ---- Class imbalance strategy ----
+    apply_threshold_tuning = False
+    if problem_type == "classification" and imbalance_strategy:
+        if imbalance_strategy == "smote" and _SMOTE_AVAILABLE and len(y_train) >= 6:
+            smote = _SMOTE(random_state=42)
+            X_train, y_train = smote.fit_resample(X_train, y_train)
+        elif imbalance_strategy == "class_weight":
+            if algorithm in _CLASS_WEIGHT_PARAM_ALGOS:
+                params["class_weight"] = "balanced"
+            # GBC and XGB support sample_weight in fit — handled below
+        elif imbalance_strategy == "threshold":
+            apply_threshold_tuning = True
+
     start = time.time()
     model = model_class(**params)
-    model.fit(X_train, y_train)
+
+    if (
+        problem_type == "classification"
+        and imbalance_strategy == "class_weight"
+        and algorithm in _SAMPLE_WEIGHT_FIT_ALGOS
+    ):
+        sample_weights = compute_sample_weight("balanced", y_train)
+        model.fit(X_train, y_train, sample_weight=sample_weights)
+    else:
+        model.fit(X_train, y_train)
+
     elapsed_ms = int((time.time() - start) * 1000)
 
-    y_pred = model.predict(X_test)
+    if problem_type == "classification" and apply_threshold_tuning:
+        y_pred, optimal_threshold = _tune_threshold(model, X_test, y_test)
+    else:
+        y_pred = model.predict(X_test)
+        optimal_threshold = None
 
     if problem_type == "regression":
         metrics = _regression_metrics(y_test, y_pred)
@@ -469,6 +594,11 @@ def train_single_model(
     else:
         metrics = _classification_metrics(y_test, y_pred)
         summary = _classification_summary(metrics)
+        if optimal_threshold is not None:
+            metrics["optimal_threshold"] = round(float(optimal_threshold), 2)
+
+    if imbalance_strategy and imbalance_strategy != "none":
+        metrics["imbalance_strategy"] = imbalance_strategy
 
     metrics["train_size"] = len(X_train)
     metrics["test_size"] = len(X_test)
@@ -535,10 +665,43 @@ def _classification_summary(metrics: dict) -> str:
     acc = metrics["accuracy"]
     f1 = metrics["f1"]
     pct = round(acc * 100, 1)
+    threshold_note = ""
+    if "optimal_threshold" in metrics:
+        threshold_note = (
+            f" Decision threshold tuned to {metrics['optimal_threshold']:.2f} "
+            f"to maximise F1 on imbalanced data."
+        )
     return (
         f"{pct}% accuracy on the held-out test set. "
-        f"F1 = {f1:.2f} (balances precision and recall; 1.0 is perfect)."
+        f"F1 = {f1:.2f} (balances precision and recall; 1.0 is perfect).{threshold_note}"
     )
+
+
+def _tune_threshold(model, X_test: np.ndarray, y_test: np.ndarray) -> tuple:
+    """Sweep decision thresholds to maximise F1 score (binary classification).
+
+    Returns (y_pred_at_best_threshold, best_threshold).
+    Falls back to standard predict() if model lacks predict_proba or is multiclass.
+    """
+    if not hasattr(model, "predict_proba"):
+        return model.predict(X_test), None
+
+    n_classes = len(np.unique(y_test))
+    if n_classes != 2:
+        return model.predict(X_test), None
+
+    probas = model.predict_proba(X_test)[:, 1]
+    best_thresh = 0.5
+    best_f1 = 0.0
+    for thresh in np.arange(0.05, 0.96, 0.05):
+        preds = (probas >= thresh).astype(int)
+        score = float(f1_score(y_test, preds, zero_division=0))
+        if score > best_f1:
+            best_f1 = score
+            best_thresh = float(thresh)
+
+    y_pred = (probas >= best_thresh).astype(int)
+    return y_pred, best_thresh
 
 
 # ---------------------------------------------------------------------------

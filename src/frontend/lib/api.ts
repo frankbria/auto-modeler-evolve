@@ -621,14 +621,20 @@ export const api = {
         r.json()
       ),
 
+    classImbalance: (
+      projectId: string
+    ): Promise<import("./types").ClassImbalanceResult> =>
+      fetch(`${API_URL}/api/models/${projectId}/imbalance`).then((r) => r.json()),
+
     train: (
       projectId: string,
-      algorithms: string[]
+      algorithms: string[],
+      imbalanceStrategy?: string | null
     ): Promise<TrainingStatus> =>
       fetch(`${API_URL}/api/models/${projectId}/train`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ algorithms }),
+        body: JSON.stringify({ algorithms, imbalance_strategy: imbalanceStrategy ?? null }),
       }).then((r) => r.json()),
 
     runs: (projectId: string): Promise<{ project_id: string; runs: ModelRun[] }> =>

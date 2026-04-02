@@ -31,6 +31,7 @@ from core.chart_builder import build_model_comparison_radar
 from core.trainer import (
     CLASSIFICATION_ALGORITHMS,
     REGRESSION_ALGORITHMS,
+    detect_class_imbalance,
     get_tuning_grid,
     pick_best_model,
     prepare_features,
@@ -206,6 +207,7 @@ def _train_in_background(
     algorithm: str,
     problem_type: str,
     model_dir: Path,
+    imbalance_strategy: str | None = None,
 ) -> None:
     """Runs in a daemon thread. Updates ModelRun status in DB and pushes SSE events."""
     # Mark as training
@@ -231,7 +233,8 @@ def _train_in_background(
     try:
         X, y, _ = prepare_features(df, feature_cols, target_col, problem_type)
         result = train_single_model(
-            X, y, algorithm, problem_type, model_dir, model_run_id
+            X, y, algorithm, problem_type, model_dir, model_run_id,
+            imbalance_strategy=imbalance_strategy,
         )
 
         with Session(_db.engine) as session:
@@ -306,12 +309,65 @@ def get_recommendations(project_id: str, session: Session = Depends(get_session)
 
 
 # ---------------------------------------------------------------------------
+# 1b. Class imbalance detection
+# ---------------------------------------------------------------------------
+
+
+@router.get("/api/models/{project_id}/imbalance")
+def get_class_imbalance(project_id: str, session: Session = Depends(get_session)):
+    """Detect class imbalance in the target column (classification only).
+
+    Returns imbalance stats, class distribution, and recommended strategy.
+    Returns 200 with is_imbalanced=False for regression problems.
+    """
+    _, dataset, feature_set = _get_project_context(project_id, session)
+
+    problem_type = feature_set.problem_type or "regression"
+    if problem_type != "classification":
+        return {
+            "project_id": project_id,
+            "problem_type": problem_type,
+            "is_imbalanced": False,
+            "class_distribution": [],
+            "minority_class": None,
+            "minority_ratio": None,
+            "recommended_strategy": "none",
+            "explanation": "Class imbalance only applies to classification problems.",
+        }
+
+    target_col = feature_set.target_column
+    file_path = Path(dataset.file_path)
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Dataset file not found on disk")
+
+    df = pd.read_csv(file_path)
+    transforms = json.loads(feature_set.transformations or "[]")
+    if transforms:
+        df, _ = apply_transformations(df, transforms)
+
+    if target_col not in df.columns:
+        raise HTTPException(
+            status_code=400, detail=f"Target column '{target_col}' not found."
+        )
+
+    y = df[target_col].dropna().values
+    if len(y) == 0:
+        raise HTTPException(
+            status_code=400, detail="Target column has no non-null values."
+        )
+
+    result = detect_class_imbalance(y)
+    return {"project_id": project_id, "problem_type": problem_type, **result}
+
+
+# ---------------------------------------------------------------------------
 # 2. Start training
 # ---------------------------------------------------------------------------
 
 
 class TrainRequest(BaseModel):
     algorithms: list[str]
+    imbalance_strategy: str | None = None
 
 
 @router.post("/api/models/{project_id}/train", status_code=202)
@@ -340,6 +396,14 @@ def start_training(
         raise HTTPException(
             status_code=400,
             detail=f"Unknown algorithms: {invalid}. Valid choices: {sorted(valid_algos)}",
+        )
+
+    valid_strategies = {None, "class_weight", "smote", "threshold"}
+    if body.imbalance_strategy not in valid_strategies:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid imbalance_strategy '{body.imbalance_strategy}'. "
+            "Valid choices: class_weight, smote, threshold",
         )
 
     # Load and transform dataset
@@ -386,6 +450,7 @@ def start_training(
                 problem_type,
                 model_dir,
             ),
+            kwargs={"imbalance_strategy": body.imbalance_strategy},
             daemon=True,
         )
         t.start()

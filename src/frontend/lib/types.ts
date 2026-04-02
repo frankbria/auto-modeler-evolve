@@ -528,6 +528,23 @@ export interface ModelRecommendation {
   recommended_because: string
 }
 
+export interface ClassDistributionEntry {
+  class: string
+  count: number
+  ratio: number
+}
+
+export interface ClassImbalanceResult {
+  project_id: string
+  problem_type: string
+  is_imbalanced: boolean
+  class_distribution: ClassDistributionEntry[]
+  minority_class: string | null
+  minority_ratio: number | null
+  recommended_strategy: "class_weight" | "smote" | "threshold" | "none"
+  explanation: string
+}
+
 export interface ModelMetricsRegression {
   r2: number
   mae: number

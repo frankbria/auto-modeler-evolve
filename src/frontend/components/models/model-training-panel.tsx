@@ -19,7 +19,8 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { api } from "@/lib/api"
-import type { ChartSpec, ModelRecommendation, ModelRun, ModelComparison, ModelMetrics, TuningResult, ModelVersionHistory } from "@/lib/types"
+import type { ChartSpec, ClassImbalanceResult, ModelRecommendation, ModelRun, ModelComparison, ModelMetrics, TuningResult, ModelVersionHistory } from "@/lib/types"
+import { ImbalanceCard } from "@/components/models/imbalance-card"
 
 interface ModelTrainingPanelProps {
   projectId: string
@@ -52,6 +53,8 @@ export function ModelTrainingPanel({ projectId, onModelSelected, onModelDownload
   const [tuningResults, setTuningResults] = useState<Record<string, TuningResult>>({})
   const [versionHistory, setVersionHistory] = useState<ModelVersionHistory | null>(null)
   const [confirmTrainMore, setConfirmTrainMore] = useState(false)
+  const [imbalanceData, setImbalanceData] = useState<ClassImbalanceResult | null>(null)
+  const [imbalanceStrategy, setImbalanceStrategy] = useState<string | null>(null)
 
   // Load recommendations and any existing runs on mount
   useEffect(() => {
@@ -85,6 +88,10 @@ export function ModelTrainingPanel({ projectId, onModelSelected, onModelDownload
           }
         }
         if (histData) setVersionHistory(histData)
+        // Load imbalance data for classification problems
+        if (recData.problem_type === "classification") {
+          api.models.classImbalance(projectId).then(setImbalanceData).catch(() => {})
+        }
       })
       .catch((e) => setError(e?.message ?? "Could not load recommendations"))
       .finally(() => setLoading(false))
@@ -158,7 +165,7 @@ export function ModelTrainingPanel({ projectId, onModelSelected, onModelDownload
     setTraining(true)
     setError(null)
     try {
-      await api.models.train(projectId, Array.from(selectedAlgos))
+      await api.models.train(projectId, Array.from(selectedAlgos), imbalanceStrategy)
       const data = await api.models.runs(projectId)
       setRuns(data.runs)
     } catch (e: unknown) {
@@ -166,7 +173,7 @@ export function ModelTrainingPanel({ projectId, onModelSelected, onModelDownload
     } finally {
       setTraining(false)
     }
-  }, [projectId, selectedAlgos])
+  }, [projectId, selectedAlgos, imbalanceStrategy])
 
   const handleSelect = useCallback(
     async (runId: string, algorithm: string) => {
@@ -232,6 +239,13 @@ export function ModelTrainingPanel({ projectId, onModelSelected, onModelDownload
       {/* Algorithm selection */}
       {runs.length === 0 && (
         <div>
+          {imbalanceData && (
+            <ImbalanceCard
+              data={imbalanceData}
+              selectedStrategy={imbalanceStrategy}
+              onStrategyChange={setImbalanceStrategy}
+            />
+          )}
           <h4 className="text-xs font-semibold mb-2">Select algorithms to train</h4>
           <div className="flex flex-col gap-2">
             {recommendations.map((rec) => (

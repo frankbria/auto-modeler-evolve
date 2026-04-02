@@ -41,6 +41,7 @@ jest.mock("../lib/api", () => ({
       history: jest.fn(),
       tune: jest.fn(),
       retrain: jest.fn(),
+      classImbalance: jest.fn().mockRejectedValue(new Error("no classification")),
     },
   },
 }))
@@ -196,7 +197,8 @@ describe("ModelTrainingPanel — training", () => {
     await waitFor(() =>
       expect(mockTrain).toHaveBeenCalledWith(
         "proj-1",
-        expect.arrayContaining(["linear_regression"])
+        expect.arrayContaining(["linear_regression"]),
+        null
       )
     )
   })
