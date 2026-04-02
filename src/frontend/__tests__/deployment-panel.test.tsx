@@ -39,6 +39,10 @@ jest.mock("../lib/api", () => ({
       createWebhook: jest.fn(),
       deleteWebhook: jest.fn(),
       testWebhook: jest.fn(),
+      getAbTest: jest.fn().mockRejectedValue(new Error("HTTP 404")),
+      createAbTest: jest.fn(),
+      endAbTest: jest.fn(),
+      promoteChallenger: jest.fn(),
       sla: jest.fn().mockResolvedValue({
         deployment_id: "dep-1",
         sample_count: 0,

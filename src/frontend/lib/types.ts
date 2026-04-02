@@ -1639,3 +1639,34 @@ export interface WebhookTestResult {
   status_code: number
   success: boolean
 }
+
+export interface ABVariantMetrics {
+  request_count: number
+  avg_confidence: number | null
+  p95_ms: number | null
+  avg_prediction: number | null
+}
+
+export interface ABSignificance {
+  significant: boolean
+  p_value: number | null
+  note: string
+}
+
+export interface ABTest {
+  id: string
+  champion_id: string
+  challenger_id: string
+  champion_algorithm: string | null
+  challenger_algorithm: string | null
+  champion_split_pct: number
+  challenger_split_pct: number
+  is_active: boolean
+  auto_promote: boolean
+  created_at: string | null
+  ended_at: string | null
+  winner: string | null
+  champion_metrics: ABVariantMetrics
+  challenger_metrics: ABVariantMetrics
+  significance: ABSignificance
+}

@@ -23,6 +23,7 @@ def _apply_migrations():
         ("deployment", "api_key_salt", "TEXT"),
         ("deployment", "current_version_number", "INTEGER NOT NULL DEFAULT 1"),
         ("predictionlog", "response_ms", "REAL"),
+        ("predictionlog", "ab_variant", "TEXT"),
     ]
     with engine.connect() as conn:
         for table, col, definition in migrations:

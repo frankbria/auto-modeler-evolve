@@ -11,6 +11,7 @@ import { ExportServiceCard } from "./export-service-card"
 import { ScheduleCard } from "./schedule-card"
 import { DeploymentVersionCard } from "./deployment-version-card"
 import { WebhookCard } from "./webhook-card"
+import { ABTestCard } from "./ab-test-card"
 
 interface DeploymentPanelProps {
   projectId: string
@@ -1006,6 +1007,17 @@ export function DeploymentPanel({
           />
         )}
         {deployment && <WebhookCard deploymentId={deployment.id} />}
+        {deployment && (
+          <ABTestCard
+            deploymentId={deployment.id}
+            onPromoted={() => {
+              fetch(`${process.env.NEXT_PUBLIC_API_URL ?? ""}/api/deploy/${deployment.id}`)
+                .then((r) => r.json())
+                .then((d) => setDeployment(d))
+                .catch(() => {})
+            }}
+          />
+        )}
 
         <div className="flex justify-end">
           {confirmUndeploy ? (

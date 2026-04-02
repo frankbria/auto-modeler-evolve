@@ -936,5 +936,45 @@ export const api = {
         `${API_URL}/api/deploy/${deploymentId}/webhooks/${webhookId}/test`,
         { method: "POST" }
       ).then((r) => r.json()),
+
+    getAbTest: (
+      deploymentId: string
+    ): Promise<import("./types").ABTest> =>
+      fetch(`${API_URL}/api/deploy/${deploymentId}/ab-test`).then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        return r.json()
+      }),
+
+    createAbTest: (
+      deploymentId: string,
+      challengerId: string,
+      championSplitPct: number
+    ): Promise<import("./types").ABTest> =>
+      fetch(`${API_URL}/api/deploy/${deploymentId}/ab-test`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          challenger_id: challengerId,
+          champion_split_pct: championSplitPct,
+        }),
+      }).then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        return r.json()
+      }),
+
+    endAbTest: (deploymentId: string): Promise<void> =>
+      fetch(`${API_URL}/api/deploy/${deploymentId}/ab-test`, {
+        method: "DELETE",
+      }).then(() => undefined),
+
+    promoteChallenger: (
+      deploymentId: string
+    ): Promise<{ message: string; deployment: import("./types").Deployment }> =>
+      fetch(`${API_URL}/api/deploy/${deploymentId}/ab-test/promote`, {
+        method: "POST",
+      }).then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        return r.json()
+      }),
   },
 }

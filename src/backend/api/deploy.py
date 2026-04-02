@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import random
 import secrets
 import time
 from collections import defaultdict
@@ -43,6 +44,7 @@ from models.deployment import Deployment
 from models.deployment_version import DeploymentVersion
 from models.feature_set import FeatureSet
 from models.model_run import ModelRun
+from models.ab_test import ABTest
 from models.feedback_record import FeedbackRecord
 from models.prediction_log import PredictionLog
 from models.webhook_config import WebhookConfig
@@ -542,16 +544,43 @@ def make_prediction(
     if not run or not run.model_path or not Path(run.model_path).exists():
         raise HTTPException(status_code=500, detail="Model file not found on disk")
 
+    # A/B test routing: check if this deployment has an active champion-challenger test
+    ab_variant: str | None = None
+    serving_pipeline = deployment.pipeline_path
+    serving_model = run.model_path
+
+    active_test = session.exec(
+        select(ABTest).where(
+            ABTest.champion_id == deployment_id,
+            ABTest.is_active == True,  # noqa: E712
+        )
+    ).first()
+    if active_test:
+        ab_variant = "champion"
+        if random.random() >= active_test.champion_split_pct / 100:
+            challenger = session.get(Deployment, active_test.challenger_id)
+            if challenger and challenger.is_active and challenger.pipeline_path:
+                challenger_run = session.get(ModelRun, challenger.model_run_id)
+                if (
+                    challenger_run
+                    and challenger_run.model_path
+                    and Path(challenger.pipeline_path).exists()
+                    and Path(challenger_run.model_path).exists()
+                ):
+                    serving_pipeline = challenger.pipeline_path
+                    serving_model = challenger_run.model_path
+                    ab_variant = "challenger"
+
     _t0 = time.monotonic()
-    result = predict_single(deployment.pipeline_path, run.model_path, input_data)
+    result = predict_single(serving_pipeline, serving_model, input_data)
     response_ms = round((time.monotonic() - _t0) * 1000, 2)
 
-    # Update usage stats
+    # Update usage stats (always on champion endpoint — that's the URL the analyst shared)
     deployment.request_count += 1
     deployment.last_predicted_at = datetime.now(UTC).replace(tzinfo=None)
     session.add(deployment)
 
-    # Log prediction for analytics
+    # Log prediction for analytics (deployment_id = champion; ab_variant tags which model served)
     prediction_value = result.get("prediction")
     numeric_value: float | None = None
     try:
@@ -566,12 +595,14 @@ def make_prediction(
         prediction_numeric=numeric_value,
         confidence=result.get("confidence"),
         response_ms=response_ms,
+        ab_variant=ab_variant,
     )
     session.add(log_entry)
     session.commit()
 
     return {
         "deployment_id": deployment_id,
+        "ab_variant": ab_variant,
         **result,
     }
 
@@ -2866,4 +2897,292 @@ def test_webhook(
         "url": wh.url,
         "status_code": status_code,
         "success": 200 <= status_code < 300,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Champion-challenger A/B testing
+# ---------------------------------------------------------------------------
+
+
+def _percentile_sorted(sorted_vals: list[float], pct: float) -> float:
+    """Linear-interpolation percentile on a pre-sorted list (0 < pct < 100)."""
+    n = len(sorted_vals)
+    if n == 0:
+        return 0.0
+    if n == 1:
+        return sorted_vals[0]
+    idx = (pct / 100) * (n - 1)
+    lo, hi = int(idx), min(int(idx) + 1, n - 1)
+    frac = idx - lo
+    return sorted_vals[lo] + frac * (sorted_vals[hi] - sorted_vals[lo])
+
+
+def _ab_variant_metrics(champion_id: str, variant: str, session: Session) -> dict:
+    """Return aggregate metrics for one A/B variant (all logs keyed to champion endpoint)."""
+    logs = session.exec(
+        select(PredictionLog).where(
+            PredictionLog.deployment_id == champion_id,
+            PredictionLog.ab_variant == variant,
+        )
+    ).all()
+
+    request_count = len(logs)
+    confidences = [lg.confidence for lg in logs if lg.confidence is not None]
+    avg_confidence = round(sum(confidences) / len(confidences), 4) if confidences else None
+    latencies = sorted([lg.response_ms for lg in logs if lg.response_ms is not None])
+    p95_ms = round(_percentile_sorted(latencies, 95), 2) if latencies else None
+    predictions = [lg.prediction_numeric for lg in logs if lg.prediction_numeric is not None]
+    avg_prediction = round(sum(predictions) / len(predictions), 4) if predictions else None
+
+    return {
+        "request_count": request_count,
+        "avg_confidence": avg_confidence,
+        "p95_ms": p95_ms,
+        "avg_prediction": avg_prediction,
+    }
+
+
+def _ab_significance(champion_id: str, session: Session) -> dict:
+    """Mann-Whitney U significance test on champion vs challenger numeric predictions."""
+    champ_preds = [
+        lg.prediction_numeric
+        for lg in session.exec(
+            select(PredictionLog).where(
+                PredictionLog.deployment_id == champion_id,
+                PredictionLog.ab_variant == "champion",
+            )
+        ).all()
+        if lg.prediction_numeric is not None
+    ]
+    chall_preds = [
+        lg.prediction_numeric
+        for lg in session.exec(
+            select(PredictionLog).where(
+                PredictionLog.deployment_id == champion_id,
+                PredictionLog.ab_variant == "challenger",
+            )
+        ).all()
+        if lg.prediction_numeric is not None
+    ]
+
+    min_samples = 5
+    if len(champ_preds) < min_samples or len(chall_preds) < min_samples:
+        needed = min_samples - min(len(champ_preds), len(chall_preds))
+        return {
+            "significant": False,
+            "p_value": None,
+            "note": f"Need {needed} more samples per variant (minimum {min_samples})",
+        }
+
+    try:
+        from scipy.stats import mannwhitneyu
+
+        _, p = mannwhitneyu(champ_preds, chall_preds, alternative="two-sided")
+        return {
+            "significant": bool(p < 0.05),
+            "p_value": round(float(p), 4),
+            "note": "Mann-Whitney U test (α=0.05)",
+        }
+    except Exception:  # noqa: BLE001
+        return {"significant": False, "p_value": None, "note": "Statistical test unavailable"}
+
+
+def _ab_test_response(test: "ABTest", session: Session) -> dict:
+    champion = session.get(Deployment, test.champion_id)
+    challenger = session.get(Deployment, test.challenger_id)
+    return {
+        "id": test.id,
+        "champion_id": test.champion_id,
+        "challenger_id": test.challenger_id,
+        "champion_algorithm": champion.algorithm if champion else None,
+        "challenger_algorithm": challenger.algorithm if challenger else None,
+        "champion_split_pct": test.champion_split_pct,
+        "challenger_split_pct": 100 - test.champion_split_pct,
+        "is_active": test.is_active,
+        "auto_promote": test.auto_promote,
+        "created_at": test.created_at.isoformat() if test.created_at else None,
+        "ended_at": test.ended_at.isoformat() if test.ended_at else None,
+        "winner": test.winner,
+        "champion_metrics": _ab_variant_metrics(test.champion_id, "champion", session),
+        "challenger_metrics": _ab_variant_metrics(test.champion_id, "challenger", session),
+        "significance": _ab_significance(test.champion_id, session),
+    }
+
+
+class ABTestCreate(BaseModel):
+    challenger_id: str
+    champion_split_pct: int = 80  # 1-99
+    auto_promote: bool = False
+
+
+@router.post("/api/deploy/{deployment_id}/ab-test", status_code=201)
+def create_ab_test(
+    deployment_id: str,
+    body: ABTestCreate,
+    session: Session = Depends(get_session),
+):
+    """Start a champion-challenger A/B test.
+
+    Routes (100 - champion_split_pct)% of live prediction traffic to the challenger
+    so analysts can measure real-world performance differences before committing.
+    """
+    champion = session.get(Deployment, deployment_id)
+    if not champion or not champion.is_active:
+        raise HTTPException(status_code=404, detail="Champion deployment not found or inactive")
+
+    if body.challenger_id == deployment_id:
+        raise HTTPException(
+            status_code=400, detail="Champion and challenger must be different deployments"
+        )
+
+    challenger = session.get(Deployment, body.challenger_id)
+    if not challenger or not challenger.is_active:
+        raise HTTPException(
+            status_code=404, detail="Challenger deployment not found or inactive"
+        )
+
+    if not (1 <= body.champion_split_pct <= 99):
+        raise HTTPException(
+            status_code=400, detail="champion_split_pct must be between 1 and 99"
+        )
+
+    # Deactivate any existing A/B test for this champion
+    existing = session.exec(
+        select(ABTest).where(
+            ABTest.champion_id == deployment_id,
+            ABTest.is_active == True,  # noqa: E712
+        )
+    ).first()
+    if existing:
+        existing.is_active = False
+        existing.ended_at = datetime.now(UTC).replace(tzinfo=None)
+        session.add(existing)
+
+    ab_test = ABTest(
+        champion_id=deployment_id,
+        challenger_id=body.challenger_id,
+        champion_split_pct=body.champion_split_pct,
+        auto_promote=body.auto_promote,
+    )
+    session.add(ab_test)
+    session.commit()
+    session.refresh(ab_test)
+    return _ab_test_response(ab_test, session)
+
+
+@router.get("/api/deploy/{deployment_id}/ab-test")
+def get_ab_test(
+    deployment_id: str,
+    session: Session = Depends(get_session),
+):
+    """Return the active A/B test status and per-variant metrics."""
+    ab_test = session.exec(
+        select(ABTest).where(
+            ABTest.champion_id == deployment_id,
+            ABTest.is_active == True,  # noqa: E712
+        )
+    ).first()
+    if not ab_test:
+        raise HTTPException(status_code=404, detail="No active A/B test for this deployment")
+    return _ab_test_response(ab_test, session)
+
+
+@router.delete("/api/deploy/{deployment_id}/ab-test", status_code=204)
+def end_ab_test(
+    deployment_id: str,
+    session: Session = Depends(get_session),
+):
+    """End the current A/B test without promoting the challenger."""
+    ab_test = session.exec(
+        select(ABTest).where(
+            ABTest.champion_id == deployment_id,
+            ABTest.is_active == True,  # noqa: E712
+        )
+    ).first()
+    if not ab_test:
+        raise HTTPException(status_code=404, detail="No active A/B test for this deployment")
+
+    ab_test.is_active = False
+    ab_test.ended_at = datetime.now(UTC).replace(tzinfo=None)
+    session.add(ab_test)
+    session.commit()
+    return None
+
+
+@router.post("/api/deploy/{deployment_id}/ab-test/promote")
+def promote_challenger(
+    deployment_id: str,
+    session: Session = Depends(get_session),
+):
+    """Promote the challenger to champion.
+
+    Copies the challenger's model artifacts into the champion deployment so the
+    prediction endpoint URL stays stable (the link the analyst shared with their VP
+    keeps working).  Archives the current champion as a versioned snapshot.
+    """
+    ab_test = session.exec(
+        select(ABTest).where(
+            ABTest.champion_id == deployment_id,
+            ABTest.is_active == True,  # noqa: E712
+        )
+    ).first()
+    if not ab_test:
+        raise HTTPException(status_code=404, detail="No active A/B test for this deployment")
+
+    champion = session.get(Deployment, deployment_id)
+    challenger = session.get(Deployment, ab_test.challenger_id)
+    if not champion or not challenger:
+        raise HTTPException(status_code=404, detail="Deployment not found")
+
+    if not (
+        challenger.pipeline_path
+        and Path(challenger.pipeline_path).exists()
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Challenger pipeline file not found — cannot promote",
+        )
+
+    # Archive current champion model as a versioned snapshot
+    _archive_current_version(champion, session)
+    new_version_number = getattr(champion, "current_version_number", 1) + 1
+
+    # Copy challenger's model info into the champion deployment
+    champion.model_run_id = challenger.model_run_id
+    champion.pipeline_path = challenger.pipeline_path
+    champion.algorithm = challenger.algorithm
+    champion.problem_type = challenger.problem_type
+    champion.feature_names = challenger.feature_names
+    champion.target_column = challenger.target_column
+    champion.metrics = challenger.metrics
+    champion.current_version_number = new_version_number
+    session.add(champion)
+
+    # Record promoted version in history
+    session.add(
+        DeploymentVersion(
+            deployment_id=deployment_id,
+            version_number=new_version_number,
+            model_run_id=challenger.model_run_id,
+            algorithm=challenger.algorithm,
+            problem_type=challenger.problem_type,
+            target_column=challenger.target_column,
+            metrics=challenger.metrics,
+            pipeline_path=challenger.pipeline_path,
+            is_current=True,
+        )
+    )
+
+    # End the A/B test and record winner
+    ab_test.is_active = False
+    ab_test.ended_at = datetime.now(UTC).replace(tzinfo=None)
+    ab_test.winner = "challenger"
+    session.add(ab_test)
+
+    session.commit()
+    session.refresh(champion)
+    return {
+        "message": "Challenger promoted to champion. Prediction endpoint URL is unchanged.",
+        "deployment": _deployment_response(champion),
     }
