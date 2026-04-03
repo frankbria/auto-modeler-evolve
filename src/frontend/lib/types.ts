@@ -102,6 +102,7 @@ export interface UploadResponse {
   preview: Record<string, unknown>[]
   column_stats: ColumnStat[]
   insights: DataInsight[]
+  suggestions?: string[]
 }
 
 export interface ChartSpec {

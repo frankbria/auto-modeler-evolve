@@ -450,3 +450,119 @@ def generate_suggestions(
             seen.add(s)
             result.append(s)
     return result
+
+
+# ---------------------------------------------------------------------------
+# Data-aware upload suggestions
+# ---------------------------------------------------------------------------
+
+_DATE_DTYPE_HINTS = ("datetime", "date", "time", "period")
+_NUMERIC_DTYPES = ("int", "float", "number")
+
+
+def _col_is_date(col: dict) -> bool:
+    dtype = str(col.get("dtype", "")).lower()
+    name = str(col.get("name", "")).lower()
+    date_name_hints = ("date", "time", "year", "month", "day", "week", "period", "quarter")
+    return any(h in dtype for h in _DATE_DTYPE_HINTS) or any(h in name for h in date_name_hints)
+
+
+def _col_is_numeric(col: dict) -> bool:
+    dtype = str(col.get("dtype", "")).lower()
+    return any(h in dtype for h in _NUMERIC_DTYPES)
+
+
+def generate_upload_suggestions(profile: dict, col_names: list[str]) -> list[str]:
+    """Generate 3-5 data-aware question chips from an uploaded dataset's profile.
+
+    Unlike the generic state-based suggestions, these reference actual column names
+    and profile findings so each chip is immediately relevant to the specific dataset.
+
+    Examples:
+      - "Show me the revenue trend over time"  (date + numeric columns found)
+      - "How does `revenue` relate to `cost`?"  (strong correlation found)
+      - "Show me sales by region"              (categorical + numeric columns found)
+      - "Which columns have missing data?"     (missing values detected)
+
+    Returns up to 5 suggestion strings (never more — avoids overwhelming the user).
+    """
+    suggestions: list[str] = []
+    columns: list[dict] = profile.get("columns", [])
+
+    date_cols = [c["name"] for c in columns if _col_is_date(c)]
+    numeric_cols = [c["name"] for c in columns if _col_is_numeric(c) and not _col_is_date(c)]
+    cat_cols = [
+        c["name"]
+        for c in columns
+        if not _col_is_numeric(c) and not _col_is_date(c)
+    ]
+    missing_cols = [c["name"] for c in columns if c.get("null_pct", 0) > 5]
+
+    # 1. Date + numeric → trend question (most compelling for time-series data)
+    if date_cols and numeric_cols:
+        suggestions.append(f"Show me the {numeric_cols[0]} trend over time")
+
+    # 2. Strong correlation pair → relationship question
+    pairs = profile.get("correlations", {}).get("pairs", [])
+    if pairs and abs(pairs[0].get("correlation", 0)) >= 0.5:
+        col_a = pairs[0]["col_a"]
+        col_b = pairs[0]["col_b"]
+        suggestions.append(f"How does `{col_a}` relate to `{col_b}`?")
+
+    # 3. Categorical + numeric → group-by question
+    if cat_cols and numeric_cols:
+        suggestions.append(f"Show me {numeric_cols[0]} by {cat_cols[0]}")
+
+    # 4. Missing values → cleaning question
+    if missing_cols:
+        suggestions.append("Which columns have the most missing data?")
+
+    # 5. Full overview — always useful if we haven't filled all 5 slots
+    if len(suggestions) < 3:
+        suggestions.append("Walk me through what's interesting in this dataset")
+
+    if len(suggestions) < 4 and len(col_names) >= 4:
+        suggestions.append("Give me a quick summary of all columns")
+
+    if len(suggestions) < 5 and numeric_cols:
+        suggestions.append("Are there any unusual records in the data?")
+
+    return suggestions[:5]
+
+
+# ---------------------------------------------------------------------------
+# Next-step guidance chips for each workflow stage
+# ---------------------------------------------------------------------------
+
+# Action-focused chips shown after completing a stage (not generic "explore" prompts)
+_NEXT_STEP_CHIPS: dict[str, list[str]] = {
+    "explore": [
+        "I'm ready to build a model — what should I predict?",
+        "Help me set up features for modeling",
+        "Show me feature suggestions",
+    ],
+    "shape": [
+        "Train a model to predict my target",
+        "What's the best column to predict?",
+        "Which algorithm should I use?",
+    ],
+    "validate": [
+        "Deploy my model",
+        "Is this model accurate enough to share?",
+        "How do I explain this model to my team?",
+    ],
+    "deploy": [
+        "How do I share this with my team?",
+        "Show me the prediction dashboard link",
+        "How do I connect this API to my reports?",
+    ],
+}
+
+
+def get_next_step_chips(state: str) -> list[str]:
+    """Return 3 action-focused chips guiding the user to the next workflow stage.
+
+    Called after major state transitions so the analyst never has to remember
+    the upload → explore → shape → model → validate → deploy flow themselves.
+    """
+    return list(_NEXT_STEP_CHIPS.get(state, []))[:3]

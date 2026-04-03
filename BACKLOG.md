@@ -49,6 +49,15 @@ the time is better spent on real features.
 
 ## Currently Working On
 
+## Day 23 (12:00) — Done
+**Track E — End-to-End Polish (first two items).** Both complete:
+1. **Proactive data-aware upload suggestions** — `generate_upload_suggestions(profile, col_names)` in `orchestrator.py`. Returned as `suggestions` in upload/sample API response. Frontend sets chatSuggestions with "Try asking:" label. 19 backend + 6 frontend = 25 new tests. Total: 2376 backend + 1128 frontend = 3504.
+2. **"What can I do next?" step guidance** — `get_next_step_chips(state)` in `orchestrator.py`. Emitted as `next_step_chips` in `all_done` training SSE. Chat SSE emits `{type:"next_step"}` after deployed/features_applied. `ModelTrainingPanel.onTrainingComplete` callback. Discovery: TextDecoder not globally available in jest-environment-jsdom — polyfilled in jest.setup.ts.
+
+**What's left** (Track E — End-to-End Polish):
+- "Lunch break" flow audit (run demo.py manually, document friction, fix top 3)
+- Shareable prediction page UX audit (VP-facing dashboard polish)
+
 ## Day 23 (04:00) — Done
 **Track C complete.** All remaining Track C (Model Building Depth) items finished:
 1. **Large dataset sampling** — `sample_large_dataset(df, max_rows=20_000, threshold=50_000)` pure function in `trainer.py`. Called in `_train_in_background()` before `prepare_features()`. Adds `sample_size`, `original_dataset_size`, `sample_note` to metrics when sampling occurs. 8 new backend tests.

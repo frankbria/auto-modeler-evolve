@@ -1,5 +1,12 @@
 import "@testing-library/jest-dom"
 
+// jest-environment-jsdom doesn't expose TextDecoder/TextEncoder as globals.
+// Polyfill from Node.js 'util' so SSE stream decoding works in tests.
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { TextDecoder: NodeTextDecoder, TextEncoder: NodeTextEncoder } = require("util")
+global.TextDecoder = NodeTextDecoder
+global.TextEncoder = NodeTextEncoder
+
 // Recharts uses ResizeObserver internally (via ResponsiveContainer).
 // jsdom doesn't implement it, so we stub it out.
 global.ResizeObserver = class ResizeObserver {

@@ -28,6 +28,7 @@ interface ModelTrainingPanelProps {
   onModelSelected?: (runId: string, algorithm: string) => void
   onModelDownload?: (runId: string) => void
   onModelReport?: (runId: string) => void
+  onTrainingComplete?: (nextStepChips: string[]) => void
 }
 
 const ALGORITHM_DISPLAY: Record<string, string> = {
@@ -39,7 +40,7 @@ const ALGORITHM_DISPLAY: Record<string, string> = {
   gradient_boosting_classifier: "Gradient Boosting",
 }
 
-export function ModelTrainingPanel({ projectId, onModelSelected, onModelDownload, onModelReport }: ModelTrainingPanelProps) {
+export function ModelTrainingPanel({ projectId, onModelSelected, onModelDownload, onModelReport, onTrainingComplete }: ModelTrainingPanelProps) {
   const [recommendations, setRecommendations] = useState<ModelRecommendation[]>([])
   const [problemType, setProblemType] = useState("")
   const [targetColumn, setTargetColumn] = useState("")
@@ -138,6 +139,10 @@ export function ModelTrainingPanel({ projectId, onModelSelected, onModelDownload
           const bestDone = data.runs.find((r: ModelRun) => r.status === "done")
           if (bestDone) {
             api.models.featureSelection(bestDone.id).then(setFeatureSelectionData).catch(() => {})
+          }
+          // Surface next-step guidance chips in the chat
+          if (onTrainingComplete && Array.isArray(event.next_step_chips)) {
+            onTrainingComplete(event.next_step_chips)
           }
         } else if (event.type === "status" || event.type === "done" || event.type === "failed") {
           setRuns((prev) =>

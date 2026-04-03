@@ -825,18 +825,20 @@ guides them forward through the natural flow.
       missing affordance, or required domain knowledge. Fix the top 3 friction points found.
       Journal findings honestly.
 
-- [ ] **Proactive insights after upload** — The system calls `narrate_data_insights_ai()` after
+- [x] **Proactive insights after upload** — The system calls `narrate_data_insights_ai()` after
       upload but the analyst still has to know to ask questions. Expand proactive suggestions:
       after upload, the AI should offer 3-5 specific, data-aware questions in suggestion chips
       (not generic "ask me anything" prompts). E.g., "I see a `date` column and a `revenue` column
       — want me to show you the revenue trend over time?" These should be generated from the
       actual profile, not hardcoded templates.
+      *Day 23 (12:00): `generate_upload_suggestions(profile, col_names)` in `orchestrator.py` — generates 3-5 data-aware chips from actual column types, correlations, and missing-value profile. Upload and sample-load endpoints return `suggestions` list in response body. Frontend sets `chatSuggestions` from response, rendering chip buttons with "Try asking:" label. 9 backend unit tests + 3 API integration tests + 3 frontend tests.*
 
-- [ ] **"What can I do next?" guidance at every step** — At the end of each major action
+- [x] **"What can I do next?" guidance at every step** — At the end of each major action
       (upload complete, features applied, model trained, model deployed), the AI should proactively
       say what the logical next step is and offer it as a clickable suggestion. This replaces the
       current state where the analyst has to remember the workflow. Tie this to the conversation
       state machine stages.
+      *Day 23 (12:00): `get_next_step_chips(state)` in `orchestrator.py` — returns 3 action-focused chips for each workflow stage (explore/shape/validate/deploy). Training stream `all_done` event includes `next_step_chips`. Chat SSE emits `{type:"next_step"}` after `deployed` and `features_applied` events. `ModelTrainingPanel.onTrainingComplete(chips)` callback bubbles chips to page. 6 backend unit tests + 1 backend training-stream test + 3 frontend tests.*
 
 - [ ] **The shareable prediction page UX** — The `predict/[id]` page is what the analyst
       shares with their VP. Run it with a fresh eye: Is it immediately obvious what to do?

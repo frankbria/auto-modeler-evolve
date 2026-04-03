@@ -25,6 +25,7 @@ from chat.narration import (
     append_bot_message_to_conversation,
     narrate_training_with_ai,
 )
+from chat.orchestrator import get_next_step_chips
 from core.feature_engine import apply_transformations
 from core.report_generator import generate_model_report
 from core.chart_builder import build_model_comparison_radar
@@ -987,10 +988,12 @@ def training_stream(project_id: str):
     with _lock:
         q = _training_queues.get(project_id)
 
+    _validate_chips = get_next_step_chips("validate")
+
     def event_generator():
         # If no queue, training already completed — emit done and close
         if q is None:
-            yield f"data: {json.dumps({'type': 'all_done'})}\n\n"
+            yield f"data: {json.dumps({'type': 'all_done', 'next_step_chips': _validate_chips})}\n\n"
             return
 
         while True:
@@ -1006,7 +1009,7 @@ def training_stream(project_id: str):
                 with _lock:
                     _training_queues.pop(project_id, None)
                     _training_counters.pop(project_id, None)
-                yield f"data: {json.dumps({'type': 'all_done'})}\n\n"
+                yield f"data: {json.dumps({'type': 'all_done', 'next_step_chips': _validate_chips})}\n\n"
                 return
 
             yield f"data: {json.dumps(event)}\n\n"

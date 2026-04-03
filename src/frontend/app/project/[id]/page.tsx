@@ -393,6 +393,8 @@ export default function ProjectWorkspace() {
                 attachCrosstabToLastMessage(json.crosstab as CrosstabResult)
               } else if (json.type === "suggestions" && Array.isArray(json.suggestions)) {
                 setChatSuggestions(json.suggestions)
+              } else if (json.type === "next_step" && Array.isArray(json.chips)) {
+                setChatSuggestions(json.chips)
               } else if (json.type === "anomalies" && json.anomalies) {
                 setAnomalyResult(json.anomalies as AnomalyResult)
                 setActiveTab("data")
@@ -567,6 +569,10 @@ export default function ProjectWorkspace() {
             timestamp: new Date().toISOString(),
           })
         }
+        // Surface data-aware suggestion chips immediately after upload
+        if (result.suggestions && result.suggestions.length > 0) {
+          setChatSuggestions(result.suggestions)
+        }
         // Show right panel on upload if hidden
         setRightPanelVisible(true)
       } catch {
@@ -614,6 +620,9 @@ export default function ProjectWorkspace() {
         content: `I've loaded the sample sales dataset — **${result.row_count} rows** across 5 product lines and 4 regions. This data contains monthly sales figures with date, product, region, revenue, and units sold.\n\nYou can use this to try predicting **revenue** using the other columns. Ask me anything about the data, or jump to the **Features** tab to get started.`,
         timestamp: new Date().toISOString(),
       })
+      if (result.suggestions && result.suggestions.length > 0) {
+        setChatSuggestions(result.suggestions)
+      }
     } catch {
       addMessage({
         role: "assistant",
@@ -1212,6 +1221,9 @@ export default function ProjectWorkspace() {
                         }}
                         onModelReport={(runId) => {
                           window.open(api.models.reportUrl(runId), "_blank")
+                        }}
+                        onTrainingComplete={(chips) => {
+                          if (chips.length > 0) setChatSuggestions(chips)
                         }}
                       />
                     </div>

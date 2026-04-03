@@ -19,6 +19,7 @@ from chat.narration import (
     narrate_data_insights_ai,
     narrate_upload,
 )
+from chat.orchestrator import generate_upload_suggestions
 from core.analyzer import (
     analyze_target_correlations,
     compare_segments,
@@ -201,6 +202,8 @@ def upload_csv(
     except Exception:  # noqa: BLE001
         pass  # Narration is nice-to-have; never block the upload response
 
+    suggestions = generate_upload_suggestions(profile, col_names)
+
     return {
         "dataset_id": dataset.id,
         "filename": dataset.filename,
@@ -209,6 +212,7 @@ def upload_csv(
         "preview": preview_rows,
         "column_stats": profile["columns"],
         "insights": profile.get("insights", []),
+        "suggestions": suggestions,
     }
 
 
@@ -418,6 +422,11 @@ def load_sample_dataset(
     except Exception:  # noqa: BLE001
         pass  # Narration is nice-to-have; never block the response
 
+    col_names_for_suggestions = (
+        [c["name"] for c in profile["columns"]] if profile.get("columns") else list(df.columns)
+    )
+    sample_suggestions = generate_upload_suggestions(profile, col_names_for_suggestions)
+
     return {
         "dataset_id": dataset.id,
         "filename": dataset.filename,
@@ -426,6 +435,7 @@ def load_sample_dataset(
         "preview": preview_rows,
         "column_stats": profile["columns"],
         "insights": profile.get("insights", []),
+        "suggestions": sample_suggestions,
         "already_existed": False,
     }
 
