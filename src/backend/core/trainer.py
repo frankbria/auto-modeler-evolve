@@ -869,14 +869,24 @@ def sample_large_dataset(
     """
     original_rows = len(df)
     if original_rows <= threshold:
-        return df, {"was_sampled": False, "original_rows": original_rows, "sample_rows": original_rows, "note": ""}
+        return df, {
+            "was_sampled": False,
+            "original_rows": original_rows,
+            "sample_rows": original_rows,
+            "note": "",
+        }
 
     sampled = df.sample(n=max_rows, random_state=random_state)
     note = (
         f"Trained on {max_rows:,} of {original_rows:,} rows (random sample — "
         "full dataset is too large for in-memory training)."
     )
-    return sampled, {"was_sampled": True, "original_rows": original_rows, "sample_rows": max_rows, "note": note}
+    return sampled, {
+        "was_sampled": True,
+        "original_rows": original_rows,
+        "sample_rows": max_rows,
+        "note": note,
+    }
 
 
 def chronological_split(
@@ -1097,9 +1107,11 @@ def _add_calibration_metrics(
                 for mp, fp in zip(mean_pred, fraction_pos)
             ]
             # Calibration quality summary
-            max_deviation = float(
-                np.max(np.abs(fraction_pos - mean_pred))
-            ) if len(fraction_pos) > 0 else 1.0
+            max_deviation = (
+                float(np.max(np.abs(fraction_pos - mean_pred)))
+                if len(fraction_pos) > 0
+                else 1.0
+            )
             if max_deviation < 0.05:
                 cal_quality = "well-calibrated"
             elif max_deviation < 0.15:

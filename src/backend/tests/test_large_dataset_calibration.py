@@ -309,7 +309,12 @@ class TestTrainSingleModelCalibration:
         X = rng.standard_normal((60, 3))
         y = X[:, 0] * 2 + 1
         result = train_single_model(
-            X, y.astype(np.float64), "linear_regression", "regression", tmp_path, "run_cal_3"
+            X,
+            y.astype(np.float64),
+            "linear_regression",
+            "regression",
+            tmp_path,
+            "run_cal_3",
         )
         assert "is_calibrated" not in result["metrics"]
 
@@ -509,7 +514,9 @@ class TestSampleLargeDatasetWiring:
 
         from core.trainer import prepare_features
 
-        X, y, _ = prepare_features(sampled, ["a", "b", "c", "d"], "label", "classification")
+        X, y, _ = prepare_features(
+            sampled, ["a", "b", "c", "d"], "label", "classification"
+        )
         result = train_single_model(
             X, y, "logistic_regression", "classification", tmp_path, "run_wiring_1"
         )
