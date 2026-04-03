@@ -187,7 +187,12 @@ def test_ensemble_vote_explanation_classification(cls_Xy):
         est.fit(X, y)
     classes = [0, 1]
     votes = _ensemble_vote_explanation(
-        ["lr", "rf"], [e for _, e in estimators], X, y, "classification", classes=classes
+        ["lr", "rf"],
+        [e for _, e in estimators],
+        X,
+        y,
+        "classification",
+        classes=classes,
     )
     assert "lr" in votes
     assert "rf" in votes
@@ -216,6 +221,7 @@ def test_stacking_weight_explanation_sums_to_one():
 
 def test_stacking_weight_explanation_no_coef():
     from sklearn.linear_model import LinearRegression
+
     meta = LinearRegression()  # not fitted — no coef_
     weights = _stacking_weight_explanation(["lr", "rf"], meta)
     assert weights == {}
@@ -228,7 +234,9 @@ def test_stacking_weight_explanation_no_coef():
 
 def test_train_voting_regressor(tmp_path, reg_Xy):
     X, y = reg_Xy
-    result = train_single_model(X, y, "voting_regressor", "regression", tmp_path, "run1")
+    result = train_single_model(
+        X, y, "voting_regressor", "regression", tmp_path, "run1"
+    )
     assert "metrics" in result
     assert "r2" in result["metrics"]
     assert "model_path" in result
@@ -240,7 +248,9 @@ def test_train_voting_regressor(tmp_path, reg_Xy):
 
 def test_train_stacking_regressor(tmp_path, reg_Xy):
     X, y = reg_Xy
-    result = train_single_model(X, y, "stacking_regressor", "regression", tmp_path, "run2")
+    result = train_single_model(
+        X, y, "stacking_regressor", "regression", tmp_path, "run2"
+    )
     assert "metrics" in result
     assert "r2" in result["metrics"]
     assert result["metrics"]["ensemble_type"] == "stacking"
@@ -250,7 +260,9 @@ def test_train_stacking_regressor(tmp_path, reg_Xy):
 
 def test_train_voting_classifier(tmp_path, cls_Xy):
     X, y = cls_Xy
-    result = train_single_model(X, y, "voting_classifier", "classification", tmp_path, "run3")
+    result = train_single_model(
+        X, y, "voting_classifier", "classification", tmp_path, "run3"
+    )
     assert "metrics" in result
     assert "accuracy" in result["metrics"]
     assert result["metrics"]["ensemble_type"] == "voting"
@@ -260,7 +272,9 @@ def test_train_voting_classifier(tmp_path, cls_Xy):
 
 def test_train_stacking_classifier(tmp_path, cls_Xy):
     X, y = cls_Xy
-    result = train_single_model(X, y, "stacking_classifier", "classification", tmp_path, "run4")
+    result = train_single_model(
+        X, y, "stacking_classifier", "classification", tmp_path, "run4"
+    )
     assert "metrics" in result
     assert "accuracy" in result["metrics"]
     assert result["metrics"]["ensemble_type"] == "stacking"
@@ -269,14 +283,18 @@ def test_train_stacking_classifier(tmp_path, cls_Xy):
 
 def test_ensemble_summary_in_summary_string(tmp_path, reg_Xy):
     X, y = reg_Xy
-    result = train_single_model(X, y, "voting_regressor", "regression", tmp_path, "run5")
+    result = train_single_model(
+        X, y, "voting_regressor", "regression", tmp_path, "run5"
+    )
     # summary should mention the base models
     assert "Combines" in result["summary"] or "voting" in result["summary"].lower()
 
 
 def test_ensemble_classifier_has_ensemble_summary(tmp_path, cls_Xy):
     X, y = cls_Xy
-    result = train_single_model(X, y, "voting_classifier", "classification", tmp_path, "run6")
+    result = train_single_model(
+        X, y, "voting_classifier", "classification", tmp_path, "run6"
+    )
     # ensemble_summary field should be set for classification voting
     if "ensemble_summary" in result["metrics"]:
         assert "voted" in result["metrics"]["ensemble_summary"].lower()
@@ -284,7 +302,9 @@ def test_ensemble_classifier_has_ensemble_summary(tmp_path, cls_Xy):
 
 def test_voting_regressor_metrics_include_train_test_size(tmp_path, reg_Xy):
     X, y = reg_Xy
-    result = train_single_model(X, y, "voting_regressor", "regression", tmp_path, "run7")
+    result = train_single_model(
+        X, y, "voting_regressor", "regression", tmp_path, "run7"
+    )
     assert "train_size" in result["metrics"]
     assert "test_size" in result["metrics"]
     assert result["metrics"]["train_size"] > 0
@@ -362,12 +382,15 @@ def client(tmp_path):
     SQLModel.metadata.create_all(db_module.engine)
 
     import api.data as data_module
+
     data_module.UPLOAD_DIR = tmp_path / "uploads"
 
     import api.models as models_api_module
+
     models_api_module.MODELS_DIR = tmp_path / "models"
 
     from main import app
+
     with TestClient(app) as c:
         yield c
 
@@ -431,7 +454,9 @@ def test_api_train_voting_regressor(client, project_with_feature_set):
         time.sleep(0.2)
 
     assert final_run is not None
-    assert final_run["status"] == "done", f"Training failed: {final_run.get('error_message')}"
+    assert final_run["status"] == "done", (
+        f"Training failed: {final_run.get('error_message')}"
+    )
     assert final_run["metrics"] is not None
     assert "r2" in final_run["metrics"]
     assert final_run["metrics"].get("ensemble_type") == "voting"
@@ -457,5 +482,7 @@ def test_api_train_stacking_regressor(client, project_with_feature_set):
         time.sleep(0.2)
 
     assert final_run is not None
-    assert final_run["status"] == "done", f"Training failed: {final_run.get('error_message')}"
+    assert final_run["status"] == "done", (
+        f"Training failed: {final_run.get('error_message')}"
+    )
     assert final_run["metrics"].get("ensemble_type") == "stacking"

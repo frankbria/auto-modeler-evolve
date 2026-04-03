@@ -702,7 +702,9 @@ def _train_ensemble_model(
     Returns the same dict format as train_single_model.
     """
     algorithms = (
-        REGRESSION_ALGORITHMS if problem_type == "regression" else CLASSIFICATION_ALGORITHMS
+        REGRESSION_ALGORITHMS
+        if problem_type == "regression"
+        else CLASSIFICATION_ALGORITHMS
     )
     base_keys: list[str] = info["base_algorithms"]
     ensemble_type: str = info["ensemble_type"]
@@ -780,7 +782,11 @@ def _train_ensemble_model(
     if ensemble_type == "voting" and fitted_estimators:
         classes = getattr(model, "classes_", None)
         metrics["ensemble_votes"] = _ensemble_vote_explanation(
-            base_names, fitted_estimators, X_test, y_test, problem_type,
+            base_names,
+            fitted_estimators,
+            X_test,
+            y_test,
+            problem_type,
             classes=list(classes) if classes is not None else None,
         )
         # Plain-English vote summary for classification
@@ -791,7 +797,8 @@ def _train_ensemble_model(
 
             top_class = _Counter(str(p) for p in y_test_pred).most_common(1)[0][0]
             agreeing = sum(
-                1 for v in metrics["ensemble_votes"].values()
+                1
+                for v in metrics["ensemble_votes"].values()
                 if isinstance(v, dict) and max(v, key=v.get, default="") == top_class  # type: ignore[arg-type]
             )
             metrics["ensemble_summary"] = (
@@ -803,7 +810,9 @@ def _train_ensemble_model(
             base_names, model.final_estimator_
         )
         if metrics["stacking_weights"]:
-            top_base = max(metrics["stacking_weights"], key=metrics["stacking_weights"].get)  # type: ignore[arg-type]
+            top_base = max(
+                metrics["stacking_weights"], key=metrics["stacking_weights"].get
+            )  # type: ignore[arg-type]
             top_pct = round(metrics["stacking_weights"][top_base] * 100)
             metrics["ensemble_summary"] = (
                 f"Meta-learner trusted '{top_base}' most "
@@ -894,8 +903,15 @@ def train_single_model(
     # Dispatch ensemble algorithms to the ensemble trainer
     if info.get("is_ensemble"):
         return _train_ensemble_model(
-            X, y, algorithm, problem_type, model_dir, model_run_id,
-            split_strategy, date_col_used, info,
+            X,
+            y,
+            algorithm,
+            problem_type,
+            model_dir,
+            model_run_id,
+            split_strategy,
+            date_col_used,
+            info,
         )
 
     model_class = info["class"]
