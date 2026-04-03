@@ -49,6 +49,9 @@ the time is better spent on real features.
 
 ## Currently Working On
 
+## Day 23 (04:52) — In Progress
+Feature Selection Automation (Track C) — After training, identify bottom-20%-importance features and offer retrain-without. `identify_weak_features(model_run, df)` in `core/trainer.py` reads feature importances from trained model (tree-based: `.feature_importances_`, linear: `|coef_|`). Returns features below the 20th percentile threshold. `GET /api/models/{run_id}/feature-selection` endpoint. `POST /api/models/{project_id}/train` already accepts `excluded_features` in TrainRequest. Chat pattern `_FEATURE_SEL_PATTERNS` detects "are all columns useful?", "remove unimportant features", "drop weak features" etc. `FeatureSelectionCard` (amber border, 🎯 icon) in ModelTrainingPanel: shows weak features list with importance bars, "Retrain without X features" button, before/after comparison when retrain completes.
+
 ## Day 22 (04:00) — Done
 Class imbalance handling (Track C) — `detect_class_imbalance(y)` in `trainer.py` (minority < 20% threshold). Three strategies: class_weight (param injection for LogReg/RF/LGBM, sample_weight for GBC/XGB), SMOTE (training split only, imblearn 0.14.1), threshold tuning (sweep 0.05–0.95, best F1, records optimal_threshold in metrics). `GET /api/models/{project_id}/imbalance` endpoint. `TrainRequest.imbalance_strategy`. `ImbalanceCard` (rose border) in ModelTrainingPanel: distribution bar, explanation, 3 strategy buttons with aria-pressed. 28 backend + 15 frontend = 43 new tests. Total: 2264 backend + 1060 frontend = 3324.
 

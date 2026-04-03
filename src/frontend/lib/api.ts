@@ -631,11 +631,17 @@ export const api = {
     ): Promise<import("./types").SplitStrategyInfo> =>
       fetch(`${API_URL}/api/models/${projectId}/split-strategy`).then((r) => r.json()),
 
+    featureSelection: (
+      runId: string
+    ): Promise<import("./types").FeatureSelectionResult> =>
+      fetch(`${API_URL}/api/models/${runId}/feature-selection`).then((r) => r.json()),
+
     train: (
       projectId: string,
       algorithms: string[],
       imbalanceStrategy?: string | null,
-      splitStrategy?: string | null
+      splitStrategy?: string | null,
+      excludedFeatures?: string[] | null
     ): Promise<TrainingStatus> =>
       fetch(`${API_URL}/api/models/${projectId}/train`, {
         method: "POST",
@@ -644,6 +650,7 @@ export const api = {
           algorithms,
           imbalance_strategy: imbalanceStrategy ?? null,
           split_strategy: splitStrategy ?? null,
+          excluded_features: excludedFeatures ?? null,
         }),
       }).then((r) => r.json()),
 

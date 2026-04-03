@@ -200,7 +200,8 @@ describe("ModelTrainingPanel — training", () => {
         "proj-1",
         expect.arrayContaining(["linear_regression"]),
         null,
-        expect.any(String)
+        expect.any(String),
+        null
       )
     )
   })

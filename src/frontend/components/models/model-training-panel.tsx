@@ -19,8 +19,9 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { api } from "@/lib/api"
-import type { ChartSpec, ClassImbalanceResult, EnsembleMetricsExtra, ModelRecommendation, ModelRun, ModelComparison, ModelMetrics, TuningResult, ModelVersionHistory } from "@/lib/types"
+import type { ChartSpec, ClassImbalanceResult, EnsembleMetricsExtra, FeatureSelectionResult, ModelRecommendation, ModelRun, ModelComparison, ModelMetrics, TuningResult, ModelVersionHistory } from "@/lib/types"
 import { ImbalanceCard } from "@/components/models/imbalance-card"
+import { FeatureSelectionCard } from "@/components/models/feature-selection-card"
 
 interface ModelTrainingPanelProps {
   projectId: string
@@ -57,6 +58,8 @@ export function ModelTrainingPanel({ projectId, onModelSelected, onModelDownload
   const [imbalanceStrategy, setImbalanceStrategy] = useState<string | null>(null)
   const [splitStrategy, setSplitStrategy] = useState<"random" | "chronological">("random")
   const [splitStrategyInfo, setSplitStrategyInfo] = useState<import("@/lib/types").SplitStrategyInfo | null>(null)
+  const [featureSelectionData, setFeatureSelectionData] = useState<FeatureSelectionResult | null>(null)
+  const [excludedFeatures, setExcludedFeatures] = useState<string[]>([])
 
   // Load recommendations and any existing runs on mount
   useEffect(() => {
@@ -94,6 +97,11 @@ export function ModelTrainingPanel({ projectId, onModelSelected, onModelDownload
         if (recData.problem_type === "classification") {
           api.models.classImbalance(projectId).then(setImbalanceData).catch(() => {})
         }
+        // Load feature selection for the best done run (if any)
+        const bestRun = runsData.runs?.find((r: ModelRun) => r.status === "done")
+        if (bestRun) {
+          api.models.featureSelection(bestRun.id).then(setFeatureSelectionData).catch(() => {})
+        }
         // Auto-detect split strategy recommendation
         api.models.splitStrategy(projectId).then((info) => {
           setSplitStrategyInfo(info)
@@ -126,6 +134,11 @@ export function ModelTrainingPanel({ projectId, onModelSelected, onModelDownload
           setComparison(cmp)
           setRadarChart(radar?.chart ?? null)
           if (hist) setVersionHistory(hist)
+          // Load feature selection for the best new run
+          const bestDone = data.runs.find((r: ModelRun) => r.status === "done")
+          if (bestDone) {
+            api.models.featureSelection(bestDone.id).then(setFeatureSelectionData).catch(() => {})
+          }
         } else if (event.type === "status" || event.type === "done" || event.type === "failed") {
           setRuns((prev) =>
             prev.map((r) =>
@@ -172,7 +185,7 @@ export function ModelTrainingPanel({ projectId, onModelSelected, onModelDownload
     setTraining(true)
     setError(null)
     try {
-      await api.models.train(projectId, Array.from(selectedAlgos), imbalanceStrategy, splitStrategy)
+      await api.models.train(projectId, Array.from(selectedAlgos), imbalanceStrategy, splitStrategy, excludedFeatures.length > 0 ? excludedFeatures : null)
       const data = await api.models.runs(projectId)
       setRuns(data.runs)
     } catch (e: unknown) {
@@ -180,7 +193,7 @@ export function ModelTrainingPanel({ projectId, onModelSelected, onModelDownload
     } finally {
       setTraining(false)
     }
-  }, [projectId, selectedAlgos, imbalanceStrategy, splitStrategy])
+  }, [projectId, selectedAlgos, imbalanceStrategy, splitStrategy, excludedFeatures])
 
   const handleSelect = useCallback(
     async (runId: string, algorithm: string) => {
@@ -413,6 +426,16 @@ export function ModelTrainingPanel({ projectId, onModelSelected, onModelDownload
       {/* Version history timeline — shown when 2+ completed runs exist */}
       {versionHistory && versionHistory.runs.filter((r) => r.status === "done").length >= 2 && (
         <VersionHistoryCard history={versionHistory} />
+      )}
+
+      {/* Feature selection: show when training is done and we have importances */}
+      {featureSelectionData && featureSelectionData.has_importances && runs.some((r) => r.status === "done") && (
+        <FeatureSelectionCard
+          data={featureSelectionData}
+          excludedFeatures={excludedFeatures}
+          onExcludedFeaturesChange={setExcludedFeatures}
+          projectId={projectId}
+        />
       )}
     </div>
   )

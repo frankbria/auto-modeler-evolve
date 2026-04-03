@@ -1282,6 +1282,134 @@ def tune_model(
 
 
 # ---------------------------------------------------------------------------
+# Feature selection automation
+# ---------------------------------------------------------------------------
+
+
+def identify_weak_features(
+    model,
+    feature_cols: list[str],
+    threshold_percentile: float = 20.0,
+) -> dict:
+    """Identify features with near-zero importance after training.
+
+    Supports:
+    - Tree-based models (RandomForest, GBT, XGB, LGB): uses `feature_importances_`
+    - Linear models (LinearRegression, LogisticRegression, Ridge): uses `|coef_|`
+    - MLP and ensembles: returns `has_importances=False`
+
+    Returns:
+        {
+            "feature_importances": [
+                {"name": str, "importance": float | None, "rank": int, "is_weak": bool},
+                ...
+            ],  # sorted by importance descending
+            "weak_features": [str, ...],  # bottom threshold_percentile% by importance
+            "threshold": float | None,
+            "method": "feature_importances" | "coefficients" | "not_available",
+            "has_importances": bool,
+            "n_weak": int,
+            "explanation": str,
+        }
+    """
+    importances: np.ndarray | None = None
+    method = "not_available"
+    n_features = len(feature_cols)
+
+    if hasattr(model, "feature_importances_"):
+        raw = np.array(model.feature_importances_)
+        if len(raw) == n_features:
+            importances = raw
+            method = "feature_importances"
+    elif hasattr(model, "coef_"):
+        coef = np.array(model.coef_)
+        if coef.ndim == 1 and len(coef) == n_features:
+            importances = np.abs(coef)
+            method = "coefficients"
+        elif coef.ndim == 2 and coef.shape[1] == n_features:
+            # Multiclass: take max absolute coefficient per feature
+            importances = np.max(np.abs(coef), axis=0)
+            method = "coefficients"
+
+    if importances is None:
+        return {
+            "feature_importances": [
+                {"name": col, "importance": None, "rank": i + 1, "is_weak": False}
+                for i, col in enumerate(feature_cols)
+            ],
+            "weak_features": [],
+            "threshold": None,
+            "method": "not_available",
+            "has_importances": False,
+            "n_weak": 0,
+            "explanation": (
+                "Feature importances are not available for this model type. "
+                "Try Random Forest or Gradient Boosting for built-in feature selection."
+            ),
+        }
+
+    # Normalize to sum=1 (relative importance)
+    total = float(importances.sum())
+    normalized = importances / total if total > 0 else importances.copy()
+
+    # Rank features (rank 1 = most important)
+    ranked_indices = np.argsort(normalized)[::-1]
+    ranks = np.empty(n_features, dtype=int)
+    for rank_pos, idx in enumerate(ranked_indices):
+        ranks[idx] = rank_pos + 1
+
+    # Threshold at bottom threshold_percentile (e.g., bottom 20%)
+    threshold = float(np.percentile(normalized, threshold_percentile))
+
+    feature_data = []
+    weak_features = []
+    for i, col in enumerate(feature_cols):
+        imp = float(normalized[i])
+        is_weak = imp <= threshold
+        feature_data.append(
+            {
+                "name": col,
+                "importance": round(imp, 6),
+                "rank": int(ranks[i]),
+                "is_weak": is_weak,
+            }
+        )
+        if is_weak:
+            weak_features.append(col)
+
+    # Sort by importance descending for display
+    feature_data.sort(key=lambda x: x["importance"], reverse=True)
+
+    n_weak = len(weak_features)
+    method_label = (
+        "SHAP-equivalent importance" if method == "feature_importances" else "coefficient magnitude"
+    )
+    if n_weak == 0:
+        explanation = "All features are contributing meaningfully to the model. No features need to be removed."
+    elif n_weak == 1:
+        explanation = (
+            f"1 feature has near-zero {method_label} (bottom {int(threshold_percentile)}%). "
+            "Removing it may reduce noise without hurting accuracy."
+        )
+    else:
+        explanation = (
+            f"{n_weak} features have near-zero {method_label} (bottom {int(threshold_percentile)}%). "
+            "Removing them may reduce noise and improve predictions on new data. "
+            "Try retraining without these features and compare the metrics."
+        )
+
+    return {
+        "feature_importances": feature_data,
+        "weak_features": weak_features,
+        "threshold": round(threshold, 6),
+        "method": method,
+        "has_importances": True,
+        "n_weak": n_weak,
+        "explanation": explanation,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Best model selection
 # ---------------------------------------------------------------------------
 

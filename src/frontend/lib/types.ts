@@ -439,6 +439,7 @@ export interface ChatMessage {
   stat_query?: StatQueryResult
   group_trends?: GroupTrendResult
   split_strategy?: SplitStrategyResult
+  feature_selection?: FeatureSelectionResult
 }
 
 export interface SegmentPerformanceSegment {
@@ -549,6 +550,27 @@ export interface ClassImbalanceResult {
 export interface SplitStrategyInfo {
   recommended: "chronological" | "random"
   date_col: string | null
+  explanation: string
+}
+
+export interface FeatureImportanceRow {
+  name: string
+  importance: number | null
+  rank: number
+  is_weak: boolean
+}
+
+export interface FeatureSelectionResult {
+  run_id: string
+  algorithm: string
+  target_column: string
+  n_features: number
+  feature_importances: FeatureImportanceRow[]
+  weak_features: string[]
+  threshold: number | null
+  method: "feature_importances" | "coefficients" | "not_available"
+  has_importances: boolean
+  n_weak: number
   explanation: string
 }
 

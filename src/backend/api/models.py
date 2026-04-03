@@ -34,6 +34,7 @@ from core.trainer import (
     REGRESSION_ALGORITHMS,
     detect_class_imbalance,
     get_tuning_grid,
+    identify_weak_features,
     pick_best_model,
     prepare_features,
     recommend_models,
@@ -390,6 +391,7 @@ class TrainRequest(BaseModel):
     algorithms: list[str]
     imbalance_strategy: str | None = None
     split_strategy: str | None = None
+    excluded_features: list[str] | None = None
 
 
 @router.post("/api/models/{project_id}/train", status_code=202)
@@ -447,6 +449,14 @@ def start_training(
         df, _ = apply_transformations(df, transforms)
 
     feature_cols = [c for c in df.columns if c != target_col]
+    if body.excluded_features:
+        excluded = set(body.excluded_features)
+        feature_cols = [c for c in feature_cols if c not in excluded]
+    if not feature_cols:
+        raise HTTPException(
+            status_code=400,
+            detail="No feature columns remaining after exclusions. Reduce the excluded_features list.",
+        )
     model_dir = MODELS_DIR / project_id
 
     # Set up SSE event queue for this training batch
@@ -541,6 +551,77 @@ def get_split_strategy(project_id: str, session: Session = Depends(get_session))
             "No date column detected. Random splitting is the standard approach — "
             "the model learns from a representative sample of all your data."
         ),
+    }
+
+
+# ---------------------------------------------------------------------------
+# 2c. Feature selection: identify low-importance features after training
+# ---------------------------------------------------------------------------
+
+
+@router.get("/api/models/{run_id}/feature-selection")
+def get_feature_selection(run_id: str, session: Session = Depends(get_session)):
+    """Identify features with near-zero importance from a trained model run.
+
+    Supports tree-based models (feature_importances_) and linear models (|coef_|).
+    Returns a ranked list of all features and the recommended set to drop (bottom 20%).
+    """
+    run = session.get(ModelRun, run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Model run not found")
+    if run.status != "done":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Model is not done (status: {run.status}). Train the model first.",
+        )
+    if not run.model_path:
+        raise HTTPException(status_code=404, detail="Model file path not recorded")
+
+    model_file = Path(run.model_path)
+    if not model_file.exists():
+        raise HTTPException(
+            status_code=404, detail="Model file not found on disk"
+        )
+
+    # Get feature columns from the project's active feature set
+    project_id = run.project_id
+    dataset = session.exec(
+        select(Dataset).where(Dataset.project_id == project_id)
+    ).first()
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    feature_set = session.exec(
+        select(FeatureSet).where(
+            FeatureSet.dataset_id == dataset.id,
+            FeatureSet.is_active == True,  # noqa: E712
+        )
+    ).first()
+    if not feature_set or not feature_set.target_column:
+        raise HTTPException(status_code=400, detail="No active feature set with target column")
+
+    file_path = Path(dataset.file_path)
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Dataset file not found on disk")
+
+    df = pd.read_csv(file_path)
+    transforms = json.loads(feature_set.transformations or "[]")
+    if transforms:
+        df, _ = apply_transformations(df, transforms)
+
+    target_col = feature_set.target_column
+    feature_cols = [c for c in df.columns if c in df.columns and c != target_col]
+
+    model = joblib.load(model_file)
+    result = identify_weak_features(model, feature_cols)
+
+    return {
+        "run_id": run_id,
+        "project_id": project_id,
+        "algorithm": run.algorithm,
+        "target_column": target_col,
+        "n_features": len(feature_cols),
+        **result,
     }
 
 

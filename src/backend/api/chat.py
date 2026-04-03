@@ -1782,6 +1782,20 @@ _GROUP_TREND_PATTERNS = re.compile(
 )
 
 
+_FEATURE_SEL_PATTERNS = re.compile(
+    r"(?:"
+    r"(?:are\s+)?(?:all|my)\s+(?:columns?|features?)\s+(?:useful|important|helpful|contributing|relevant)\b|"
+    r"(?:which|what)\s+(?:columns?|features?)\s+(?:(?:are|is)\s+)?(?:not\s+)?(?:useful|important|helpful|needed|contributing)\b|"
+    r"(?:remove|drop|exclude|eliminate)\s+(?:unimportant|weak|useless|low.importance|low.value|irrelevant)\s+(?:columns?|features?)\b|"
+    r"feature\s+selection\b|"
+    r"(?:identify|find)\s+(?:weak|useless|unimportant|low.importance)\s+(?:columns?|features?)\b|"
+    r"(?:reduce|trim|prune)\s+(?:my\s+)?(?:features?|columns?)\b|"
+    r"(?:which|what)\s+(?:columns?|features?)\s+should\s+I\s+(?:remove|drop|exclude|keep)\b"
+    r")",
+    re.IGNORECASE,
+)
+
+
 def _detect_group_trend_request(message: str, df: "pd.DataFrame") -> dict | None:
     """Extract date_col, group_col, value_col from a group-trend message.
 
@@ -3818,6 +3832,77 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Filter clear is nice-to-have; never crash chat
 
+    # Check if user wants feature selection analysis (are all columns useful?)
+    feature_sel_event: dict | None = None
+    if _FEATURE_SEL_PATTERNS.search(body.message) and ctx["project"]:
+        try:
+            from sqlmodel import select as _sel_fs
+
+            from core.feature_engine import apply_transformations as _apply_fs
+            from core.trainer import identify_weak_features as _iwf
+
+            _proj_fs = ctx["project"]
+            _ds_fs = ctx["dataset"]
+            if _ds_fs:
+                # Find the most recently completed model run for this project
+                _done_runs = list(
+                    session.exec(
+                        _sel_fs(ModelRun)
+                        .where(
+                            ModelRun.project_id == _proj_fs.id,
+                            ModelRun.status == "done",
+                        )
+                        .order_by(ModelRun.created_at.desc())  # type: ignore[attr-defined]
+                    ).all()
+                )
+                _best_run: ModelRun | None = None
+                for _r in _done_runs:
+                    if _r.model_path and Path(_r.model_path).exists():
+                        _best_run = _r
+                        break
+
+                if _best_run:
+                    _fset_fs = session.exec(
+                        _sel_fs(FeatureSet).where(
+                            FeatureSet.dataset_id == _ds_fs.id,
+                            FeatureSet.is_active == True,  # noqa: E712
+                        )
+                    ).first()
+                    if _fset_fs and _fset_fs.target_column:
+                        _fp_fs = Path(_ds_fs.file_path)
+                        if _fp_fs.exists():
+                            import pandas as _pd_fs
+
+                            _df_fs = _pd_fs.read_csv(_fp_fs)
+                            _tfms_fs = __import__("json").loads(_fset_fs.transformations or "[]")
+                            if _tfms_fs:
+                                _df_fs, _ = _apply_fs(_df_fs, _tfms_fs)
+                            _feat_cols_fs = [
+                                c for c in _df_fs.columns if c != _fset_fs.target_column
+                            ]
+                            import joblib as _jl_fs
+
+                            _model_fs = _jl_fs.load(_best_run.model_path)
+                            _fs_result = _iwf(_model_fs, _feat_cols_fs)
+                            feature_sel_event = {
+                                "run_id": _best_run.id,
+                                "algorithm": _best_run.algorithm,
+                                "target_column": _fset_fs.target_column,
+                                "n_features": len(_feat_cols_fs),
+                                **_fs_result,
+                            }
+                            system_prompt += (
+                                f"\n\n## Feature Selection Analysis\n"
+                                f"Algorithm: {_best_run.algorithm}. "
+                                f"Found {_fs_result['n_weak']} potentially weak features "
+                                f"(bottom 20% by importance). "
+                                f"Explanation: {_fs_result['explanation']} "
+                                "Tell the user this and explain the feature selection results. "
+                                "Suggest retraining without the weak features if any were found."
+                            )
+        except Exception:  # noqa: BLE001
+            pass  # Feature selection is nice-to-have; never crash chat
+
     # Check if user wants to change the train/test split strategy
     split_strategy_event: dict | None = None
     if _TIME_SPLIT_PATTERNS.search(body.message) and ctx["dataset"]:
@@ -4882,6 +4967,10 @@ def send_message(
         # Emit refresh prompt — guides user to upload new data
         if refresh_prompt_event:
             yield f"data: {json.dumps({'type': 'refresh_prompt', 'refresh': refresh_prompt_event})}\n\n"
+
+        # Emit feature selection analysis — ranked importances + list of weak features
+        if feature_sel_event:
+            yield f"data: {json.dumps({'type': 'feature_selection', 'feature_selection': feature_sel_event})}\n\n"
 
         # Emit split strategy event — user changed split method preference
         if split_strategy_event:
