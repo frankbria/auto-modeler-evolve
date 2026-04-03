@@ -49,10 +49,16 @@ the time is better spent on real features.
 
 ## Currently Working On
 
-## Day 23 (04:00) — In Progress
-Track C remaining items:
-1. **Large dataset sampling** — when >50k rows, sample 20k for training; report "trained on 20,000 rows (random sample)". Prevents OOM on real-world datasets.
-2. **Calibration for classifiers** — `CalibratedClassifierCV` wraps all classifiers so `predict_proba` outputs are well-calibrated. Reliability diagram in validation panel.
+## Day 23 (04:00) — Done
+**Track C complete.** All remaining Track C (Model Building Depth) items finished:
+1. **Large dataset sampling** — `sample_large_dataset(df, max_rows=20_000, threshold=50_000)` pure function in `trainer.py`. Called in `_train_in_background()` before `prepare_features()`. Adds `sample_size`, `original_dataset_size`, `sample_note` to metrics when sampling occurs. 8 new backend tests.
+2. **Calibration for classifiers** — `CalibratedClassifierCV(model_class(**params), cv=3, method="sigmoid")` wraps all classifiers in `train_single_model()` (skipped for threshold tuning, SMOTE, sample_weight algos, <30 rows). `_add_calibration_metrics()` computes calibration curve + Brier score. `GET /api/models/{run_id}/calibration` endpoint. `ReliabilityDiagramView` in ValidationPanel's new Calibration sub-tab. `identify_weak_features()` unwraps CalibratedClassifierCV. 20 backend + 11 frontend = 31 new tests. Total: 2357 backend + 1122 frontend = 3479.
+
+**What's left** (Track E — End-to-End Polish):
+- "Lunch break" flow audit (run demo.py, document friction points, fix top 3)
+- Proactive insights after upload (data-aware chips, not generic)
+- "What can I do next?" guidance at each step transition
+- Shareable prediction page UX audit
 
 ## Day 23 (04:52) — Done
 Feature Selection Automation (Track C) — `identify_weak_features(model, feature_cols, threshold_percentile=20.0)` in `core/trainer.py`: tree-based uses `.feature_importances_`, linear uses `|coef_|`, MLP/ensemble returns `has_importances=False`. Bottom-20th-percentile threshold, normalised to sum=1. `GET /api/models/{run_id}/feature-selection` endpoint. `TrainRequest.excluded_features: list[str] | None` added (HTTP 400 if all excluded). `_FEATURE_SEL_PATTERNS` (8 NL variants) in `chat.py`. `FeatureSelectionCard` (amber border, 🎯): chat card (read-only importance bars) + panel card (interactive checkboxes + "Exclude N weak features on retrain" button + Clear). Auto-loaded by `ModelTrainingPanel` after training completes. 21 backend + 21 frontend = 42 new tests. Total: 2329 backend + 1111 frontend = 3440.
