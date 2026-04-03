@@ -1382,7 +1382,9 @@ def identify_weak_features(
 
     n_weak = len(weak_features)
     method_label = (
-        "SHAP-equivalent importance" if method == "feature_importances" else "coefficient magnitude"
+        "SHAP-equivalent importance"
+        if method == "feature_importances"
+        else "coefficient magnitude"
     )
     if n_weak == 0:
         explanation = "All features are contributing meaningfully to the model. No features need to be removed."

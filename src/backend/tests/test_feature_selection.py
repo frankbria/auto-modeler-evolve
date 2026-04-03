@@ -108,7 +108,9 @@ def _setup_regression_project(client):
     return project_id, dataset_id
 
 
-def _train_and_wait(client, project_id: str, algorithm: str = "random_forest_regressor") -> str:
+def _train_and_wait(
+    client, project_id: str, algorithm: str = "random_forest_regressor"
+) -> str:
     """Train a model and poll until done. Returns the run_id."""
     resp = client.post(
         f"/api/models/{project_id}/train",
@@ -218,7 +220,9 @@ class TestIdentifyWeakFeatures:
 
         assert result["has_importances"] is True
         # The zero-variance feature should appear as weak
-        importances = {f["name"]: f["importance"] for f in result["feature_importances"]}
+        importances = {
+            f["name"]: f["importance"] for f in result["feature_importances"]
+        }
         assert importances["f4"] < importances["f1"]
 
     def test_sorted_descending_by_importance(self):
@@ -454,4 +458,6 @@ class TestFeatureSelectionChatPattern:
             "what is the accuracy",
         ]
         for phrase in non_matches:
-            assert not _FEATURE_SEL_PATTERNS.search(phrase), f"Should NOT match: {phrase!r}"
+            assert not _FEATURE_SEL_PATTERNS.search(phrase), (
+                f"Should NOT match: {phrase!r}"
+            )

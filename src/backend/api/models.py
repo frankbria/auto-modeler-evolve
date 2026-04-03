@@ -579,9 +579,7 @@ def get_feature_selection(run_id: str, session: Session = Depends(get_session)):
 
     model_file = Path(run.model_path)
     if not model_file.exists():
-        raise HTTPException(
-            status_code=404, detail="Model file not found on disk"
-        )
+        raise HTTPException(status_code=404, detail="Model file not found on disk")
 
     # Get feature columns from the project's active feature set
     project_id = run.project_id
@@ -598,7 +596,9 @@ def get_feature_selection(run_id: str, session: Session = Depends(get_session)):
         )
     ).first()
     if not feature_set or not feature_set.target_column:
-        raise HTTPException(status_code=400, detail="No active feature set with target column")
+        raise HTTPException(
+            status_code=400, detail="No active feature set with target column"
+        )
 
     file_path = Path(dataset.file_path)
     if not file_path.exists():

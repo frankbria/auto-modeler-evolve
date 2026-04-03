@@ -3874,7 +3874,9 @@ def send_message(
                             import pandas as _pd_fs
 
                             _df_fs = _pd_fs.read_csv(_fp_fs)
-                            _tfms_fs = __import__("json").loads(_fset_fs.transformations or "[]")
+                            _tfms_fs = __import__("json").loads(
+                                _fset_fs.transformations or "[]"
+                            )
                             if _tfms_fs:
                                 _df_fs, _ = _apply_fs(_df_fs, _tfms_fs)
                             _feat_cols_fs = [
