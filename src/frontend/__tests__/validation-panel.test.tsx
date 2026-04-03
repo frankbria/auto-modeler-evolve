@@ -15,6 +15,9 @@ jest.mock("../lib/api", () => ({
       explain: jest.fn(),
       explainRow: jest.fn(),
     },
+    models: {
+      calibration: jest.fn().mockRejectedValue(new Error("HTTP 400")),
+    },
   },
 }))
 
@@ -99,7 +102,7 @@ describe("ValidationPanel — no model selected", () => {
 })
 
 describe("ValidationPanel — sub-tab navigation", () => {
-  it("shows the four sub-tabs", () => {
+  it("shows all five sub-tabs including Calibration", () => {
     render(
       <ValidationPanel
         projectId="proj-1"
@@ -111,6 +114,7 @@ describe("ValidationPanel — sub-tab navigation", () => {
     expect(screen.getByText("Error Analysis")).toBeInTheDocument()
     expect(screen.getByText("Feature Importance")).toBeInTheDocument()
     expect(screen.getByText("Explain Row")).toBeInTheDocument()
+    expect(screen.getByText("Calibration")).toBeInTheDocument()
   })
 
   it("calls api.validation.metrics when CV tab is clicked", async () => {

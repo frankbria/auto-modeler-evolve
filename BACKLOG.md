@@ -49,6 +49,11 @@ the time is better spent on real features.
 
 ## Currently Working On
 
+## Day 23 (04:00) — In Progress
+Track C remaining items:
+1. **Large dataset sampling** — when >50k rows, sample 20k for training; report "trained on 20,000 rows (random sample)". Prevents OOM on real-world datasets.
+2. **Calibration for classifiers** — `CalibratedClassifierCV` wraps all classifiers so `predict_proba` outputs are well-calibrated. Reliability diagram in validation panel.
+
 ## Day 23 (04:52) — Done
 Feature Selection Automation (Track C) — `identify_weak_features(model, feature_cols, threshold_percentile=20.0)` in `core/trainer.py`: tree-based uses `.feature_importances_`, linear uses `|coef_|`, MLP/ensemble returns `has_importances=False`. Bottom-20th-percentile threshold, normalised to sum=1. `GET /api/models/{run_id}/feature-selection` endpoint. `TrainRequest.excluded_features: list[str] | None` added (HTTP 400 if all excluded). `_FEATURE_SEL_PATTERNS` (8 NL variants) in `chat.py`. `FeatureSelectionCard` (amber border, 🎯): chat card (read-only importance bars) + panel card (interactive checkboxes + "Exclude N weak features on retrain" button + Clear). Auto-loaded by `ModelTrainingPanel` after training completes. 21 backend + 21 frontend = 42 new tests. Total: 2329 backend + 1111 frontend = 3440.
 

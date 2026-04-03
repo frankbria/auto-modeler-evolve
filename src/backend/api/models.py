@@ -38,6 +38,7 @@ from core.trainer import (
     pick_best_model,
     prepare_features,
     recommend_models,
+    sample_large_dataset,
     train_single_model,
     tune_model,
 )
@@ -234,6 +235,9 @@ def _train_in_background(
     )
 
     try:
+        # Sub-sample large datasets to prevent OOM; preserve sample metadata for metrics
+        df, _sample_info = sample_large_dataset(df)
+
         # For chronological split, sort df by detected date column before prepare_features
         date_col_used: str | None = None
         effective_split = split_strategy
@@ -258,6 +262,12 @@ def _train_in_background(
             split_strategy=effective_split,
             date_col_used=date_col_used,
         )
+
+        # Augment metrics with sampling info (if dataset was sub-sampled)
+        if _sample_info["was_sampled"]:
+            result["metrics"]["sample_size"] = _sample_info["sample_rows"]
+            result["metrics"]["original_dataset_size"] = _sample_info["original_rows"]
+            result["metrics"]["sample_note"] = _sample_info["note"]
 
         with Session(_db.engine) as session:
             run = session.get(ModelRun, model_run_id)
@@ -622,6 +632,46 @@ def get_feature_selection(run_id: str, session: Session = Depends(get_session)):
         "target_column": target_col,
         "n_features": len(feature_cols),
         **result,
+    }
+
+
+@router.get("/api/models/{run_id}/calibration")
+def get_calibration(run_id: str, session: Session = Depends(get_session)):
+    """Return calibration curve data and Brier score for a trained classifier.
+
+    The calibration curve shows how well the model's confidence scores match
+    real-world frequencies — a well-calibrated model's bars follow the diagonal.
+    Returns 400 for regression models or classifiers where calibration data
+    was not computed (e.g. threshold tuning, SMOTE, or too little data).
+    """
+    run = session.get(ModelRun, run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Model run not found")
+    if run.status != "done":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Model is not done (status: {run.status})",
+        )
+
+    metrics = json.loads(run.metrics or "{}")
+
+    if not metrics.get("is_calibrated"):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Calibration data is not available for this model run. "
+                "Calibration is applied to classifiers only, and is skipped when "
+                "threshold tuning, SMOTE, or too few training rows are used."
+            ),
+        )
+
+    return {
+        "run_id": run_id,
+        "algorithm": run.algorithm,
+        "brier_score": metrics.get("brier_score"),
+        "calibration_curve": metrics.get("calibration_curve", []),
+        "calibration_note": metrics.get("calibration_note", ""),
+        "is_calibrated": True,
     }
 
 

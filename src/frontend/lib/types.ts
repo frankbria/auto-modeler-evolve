@@ -1735,3 +1735,17 @@ export interface ABTest {
   challenger_metrics: ABVariantMetrics
   significance: ABSignificance
 }
+
+export interface CalibrationPoint {
+  predicted: number
+  actual: number
+}
+
+export interface CalibrationData {
+  run_id: string
+  algorithm: string
+  brier_score: number | null
+  calibration_curve: CalibrationPoint[]
+  calibration_note: string
+  is_calibrated: boolean
+}

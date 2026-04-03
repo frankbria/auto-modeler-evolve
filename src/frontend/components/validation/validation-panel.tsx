@@ -25,6 +25,7 @@ import type {
   RowExplanationResponse,
   ResidualsResult,
   ConfusionMatrixResult,
+  CalibrationData,
 } from "@/lib/types"
 
 interface Props {
@@ -35,7 +36,7 @@ interface Props {
   onValidationComplete?: () => void
 }
 
-type SubTab = "cv" | "error" | "importance" | "explain"
+type SubTab = "cv" | "error" | "importance" | "explain" | "calibration"
 
 export function ValidationPanel({ selectedRunId, algorithmName, onNavigateToModels, onValidationComplete }: Props) {
   const [subTab, setSubTab] = useState<SubTab>("cv")
@@ -45,6 +46,8 @@ export function ValidationPanel({ selectedRunId, algorithmName, onNavigateToMode
   const [rowExplain, setRowExplain] = useState<RowExplanationResponse | null>(null)
   const [rowIndex, setRowIndex] = useState("0")
   const [error, setError] = useState<string | null>(null)
+  const [calibration, setCalibration] = useState<CalibrationData | null>(null)
+  const [calibrationUnavailable, setCalibrationUnavailable] = useState(false)
 
   async function loadMetrics() {
     if (!selectedRunId) return
@@ -91,11 +94,27 @@ export function ValidationPanel({ selectedRunId, algorithmName, onNavigateToMode
     }
   }
 
+  async function loadCalibration() {
+    if (!selectedRunId) return
+    setLoading(true)
+    setError(null)
+    try {
+      const result = await api.models.calibration(selectedRunId)
+      setCalibration(result)
+    } catch {
+      // 400 means calibration not available for this model type/config — not an error
+      setCalibrationUnavailable(true)
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const handleTabChange = (tab: SubTab) => {
     setSubTab(tab)
     if (tab === "cv" && !metrics) loadMetrics()
     if (tab === "error" && !metrics) loadMetrics()
     if (tab === "importance" && !globalExplain) loadExplain()
+    if (tab === "calibration" && !calibration && !calibrationUnavailable) loadCalibration()
   }
 
   if (!selectedRunId) {
@@ -140,12 +159,13 @@ export function ValidationPanel({ selectedRunId, algorithmName, onNavigateToMode
 
         {/* Sub-tabs */}
         <div role="tablist" aria-label="Validation sections" className="mb-4 flex gap-1 border-b">
-          {(["cv", "error", "importance", "explain"] as SubTab[]).map((tab) => {
+          {(["cv", "error", "importance", "explain", "calibration"] as SubTab[]).map((tab) => {
             const labels: Record<SubTab, string> = {
               cv: "Cross-Validation",
               error: "Error Analysis",
               importance: "Feature Importance",
               explain: "Explain Row",
+              calibration: "Calibration",
             }
             return (
               <button
@@ -235,6 +255,27 @@ export function ValidationPanel({ selectedRunId, algorithmName, onNavigateToMode
               <RowExplainView data={rowExplain} />
             )}
           </div>
+        )}
+
+        {/* Calibration tab */}
+        {subTab === "calibration" && !loading && (
+          <>
+            {calibration && <ReliabilityDiagramView data={calibration} />}
+            {calibrationUnavailable && (
+              <div className="rounded-md border border-muted bg-muted/30 p-4 text-xs text-muted-foreground">
+                <p className="font-medium">Calibration not available</p>
+                <p className="mt-1">
+                  Calibration data is computed for classifiers only. It is skipped when threshold
+                  tuning or SMOTE is selected, or when the training set is very small (&lt;30 rows).
+                </p>
+              </div>
+            )}
+            {!calibration && !calibrationUnavailable && (
+              <Button size="sm" onClick={loadCalibration}>
+                Load Calibration Data
+              </Button>
+            )}
+          </>
         )}
       </div>
     </ScrollArea>
@@ -547,6 +588,95 @@ function RowExplainView({ data }: { data: RowExplanationResponse }) {
           })}
         </div>
       </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Reliability diagram (calibration)
+// ---------------------------------------------------------------------------
+
+function ReliabilityDiagramView({ data }: { data: CalibrationData }) {
+  const { calibration_curve, brier_score, calibration_note } = data
+
+  // Build data for the bar chart: predicted probability bins vs actual frequency
+  // Diagonal "perfect calibration" reference line runs from (0,0) to (1,1)
+  const diagonalPoints = [
+    { predicted: 0, actual: 0 },
+    { predicted: 1, actual: 1 },
+  ]
+
+  const brierscore = brier_score !== null ? brier_score.toFixed(3) : "—"
+  const briersocreColor =
+    brier_score === null ? "text-muted-foreground"
+      : brier_score < 0.1 ? "text-green-700"
+      : brier_score < 0.2 ? "text-amber-700"
+      : "text-red-700"
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-sm">Reliability Diagram</CardTitle>
+            <Badge variant="outline" className={`text-xs ${briersocreColor}`}>
+              Brier score: {brierscore}
+            </Badge>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {calibration_note && (
+            <p className="mb-3 text-xs text-muted-foreground">{calibration_note}</p>
+          )}
+          <p className="mb-2 text-xs text-muted-foreground">
+            A well-calibrated model&apos;s bars follow the diagonal line. If bars are
+            above the diagonal, the model is underconfident; below means overconfident.
+          </p>
+          {calibration_curve.length > 0 ? (
+            <figure aria-label="Reliability diagram: predicted probability vs actual frequency">
+              <figcaption className="sr-only">
+                Bar chart showing the model&apos;s predicted confidence on the X-axis versus
+                how often predictions at that confidence were correct on the Y-axis.
+                The diagonal line represents perfect calibration.
+              </figcaption>
+              <ResponsiveContainer width="100%" height={200}>
+                <BarChart data={calibration_curve} margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  <XAxis
+                    dataKey="predicted"
+                    tickFormatter={(v) => `${(v * 100).toFixed(0)}%`}
+                    tick={{ fontSize: 10 }}
+                    label={{ value: "Predicted probability", position: "insideBottom", offset: -2, fontSize: 10 }}
+                  />
+                  <YAxis
+                    domain={[0, 1]}
+                    tickFormatter={(v) => `${(v * 100).toFixed(0)}%`}
+                    tick={{ fontSize: 10 }}
+                    label={{ value: "Actual frequency", angle: -90, position: "insideLeft", offset: 10, fontSize: 10 }}
+                  />
+                  <Tooltip
+                    formatter={(value) => [`${(Number(value) * 100).toFixed(1)}%`]}
+                    labelFormatter={(label) => `Predicted: ${(Number(label) * 100).toFixed(0)}%`}
+                  />
+                  <Bar dataKey="actual" fill="hsl(var(--primary))" opacity={0.8} name="Actual frequency" radius={[2, 2, 0, 0]} />
+                  {/* Diagonal reference (perfect calibration) */}
+                  <ReferenceLine
+                    segment={[{ x: 0, y: 0 }, { x: 1, y: 1 }]}
+                    stroke="hsl(var(--destructive))"
+                    strokeDasharray="4 2"
+                    strokeWidth={1.5}
+                    label={{ value: "Perfect", position: "insideTopRight", fontSize: 9 }}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            </figure>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              No calibration curve data (not enough test samples in each bin).
+            </p>
+          )}
+        </CardContent>
+      </Card>
     </div>
   )
 }

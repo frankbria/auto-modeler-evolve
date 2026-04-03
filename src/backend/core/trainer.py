@@ -43,8 +43,10 @@ try:
     _LIGHTGBM_AVAILABLE = True
 except ImportError:
     _LIGHTGBM_AVAILABLE = False
+from sklearn.calibration import CalibratedClassifierCV, calibration_curve
 from sklearn.metrics import (
     accuracy_score,
+    brier_score_loss,
     f1_score,
     mean_absolute_error,
     mean_squared_error,
@@ -847,6 +849,36 @@ def _train_ensemble_model(
 # ---------------------------------------------------------------------------
 
 
+_LARGE_DATASET_THRESHOLD = 50_000
+_LARGE_DATASET_SAMPLE_SIZE = 20_000
+
+
+def sample_large_dataset(
+    df: pd.DataFrame,
+    max_rows: int = _LARGE_DATASET_SAMPLE_SIZE,
+    threshold: int = _LARGE_DATASET_THRESHOLD,
+    random_state: int = 42,
+) -> tuple[pd.DataFrame, dict]:
+    """Sub-sample a large DataFrame to prevent OOM during training.
+
+    Returns (sampled_df, sample_info) where sample_info has:
+      - was_sampled: bool
+      - original_rows: int
+      - sample_rows: int
+      - note: str  (plain-English message for the analyst)
+    """
+    original_rows = len(df)
+    if original_rows <= threshold:
+        return df, {"was_sampled": False, "original_rows": original_rows, "sample_rows": original_rows, "note": ""}
+
+    sampled = df.sample(n=max_rows, random_state=random_state)
+    note = (
+        f"Trained on {max_rows:,} of {original_rows:,} rows (random sample — "
+        "full dataset is too large for in-memory training)."
+    )
+    return sampled, {"was_sampled": True, "original_rows": original_rows, "sample_rows": max_rows, "note": note}
+
+
 def chronological_split(
     n_rows: int,
     test_size: float = 0.2,
@@ -946,6 +978,21 @@ def train_single_model(
         elif imbalance_strategy == "threshold":
             apply_threshold_tuning = True
 
+    # Calibration is applied for classifiers unless threshold tuning or SMOTE is
+    # selected (those strategies already manipulate probabilities / training distribution).
+    # Also skip for sample_weight algorithms (GBC, XGB with class_weight) because
+    # CalibratedClassifierCV can't pass sample_weight through its internal CV.
+    _skip_calibration = (
+        problem_type != "classification"
+        or apply_threshold_tuning
+        or imbalance_strategy == "smote"
+        or (
+            imbalance_strategy == "class_weight"
+            and algorithm in _SAMPLE_WEIGHT_FIT_ALGOS
+        )
+        or len(X_train) < 30
+    )
+
     start = time.time()
     model = model_class(**params)
 
@@ -958,6 +1005,19 @@ def train_single_model(
         model.fit(X_train, y_train, sample_weight=sample_weights)
     else:
         model.fit(X_train, y_train)
+
+    # Apply CalibratedClassifierCV for well-calibrated predict_proba outputs.
+    # Uses 3-fold CV internally so the training data is not double-used.
+    model_to_save = model
+    if not _skip_calibration:
+        try:
+            calibrated = CalibratedClassifierCV(
+                model_class(**params), cv=3, method="sigmoid"
+            )
+            calibrated.fit(X_train, y_train)
+            model_to_save = calibrated
+        except Exception:  # noqa: BLE001
+            pass  # Fall back to uncalibrated model
 
     elapsed_ms = int((time.time() - start) * 1000)
 
@@ -975,6 +1035,9 @@ def train_single_model(
         summary = _classification_summary(metrics)
         if optimal_threshold is not None:
             metrics["optimal_threshold"] = round(float(optimal_threshold), 2)
+        # Compute reliability diagram data from calibrated model
+        if not _skip_calibration and model_to_save is not model:
+            _add_calibration_metrics(metrics, model_to_save, X_test, y_test)
 
     if imbalance_strategy and imbalance_strategy != "none":
         metrics["imbalance_strategy"] = imbalance_strategy
@@ -990,10 +1053,10 @@ def train_single_model(
             "model will perform on future data."
         )
 
-    # Persist model
+    # Persist model (calibrated when applicable)
     model_dir.mkdir(parents=True, exist_ok=True)
     model_path = str(model_dir / f"{model_run_id}.joblib")
-    joblib.dump(model, model_path)
+    joblib.dump(model_to_save, model_path)
 
     return {
         "metrics": metrics,
@@ -1001,6 +1064,54 @@ def train_single_model(
         "training_duration_ms": elapsed_ms,
         "summary": summary,
     }
+
+
+# ---------------------------------------------------------------------------
+# Calibration helpers
+# ---------------------------------------------------------------------------
+
+
+def _add_calibration_metrics(
+    metrics: dict,
+    calibrated_model,
+    X_test: np.ndarray,
+    y_test: np.ndarray,
+) -> None:
+    """Compute reliability diagram data and Brier score; mutate metrics in-place.
+
+    Only runs for binary classification (calibration_curve is most meaningful there).
+    Multiclass results in a ``is_calibrated=True`` flag without curve data.
+    """
+    try:
+        n_classes = len(np.unique(y_test))
+        metrics["is_calibrated"] = True
+        if n_classes == 2:
+            y_prob = calibrated_model.predict_proba(X_test)[:, 1]
+            brier = float(brier_score_loss(y_test, y_prob))
+            fraction_pos, mean_pred = calibration_curve(
+                y_test, y_prob, n_bins=10, strategy="uniform"
+            )
+            metrics["brier_score"] = round(brier, 4)
+            metrics["calibration_curve"] = [
+                {"predicted": round(float(mp), 3), "actual": round(float(fp), 3)}
+                for mp, fp in zip(mean_pred, fraction_pos)
+            ]
+            # Calibration quality summary
+            max_deviation = float(
+                np.max(np.abs(fraction_pos - mean_pred))
+            ) if len(fraction_pos) > 0 else 1.0
+            if max_deviation < 0.05:
+                cal_quality = "well-calibrated"
+            elif max_deviation < 0.15:
+                cal_quality = "reasonably calibrated"
+            else:
+                cal_quality = "moderately calibrated"
+            metrics["calibration_note"] = (
+                f"Model is {cal_quality} (Brier score: {brier:.3f}). "
+                "Bars close to the diagonal line mean confidence scores are trustworthy."
+            )
+    except Exception:  # noqa: BLE001
+        pass  # Never crash training over a calibration display issue
 
 
 # ---------------------------------------------------------------------------
@@ -1315,6 +1426,13 @@ def identify_weak_features(
     importances: np.ndarray | None = None
     method = "not_available"
     n_features = len(feature_cols)
+
+    # Unwrap CalibratedClassifierCV to access the base estimator
+    if hasattr(model, "calibrated_classifiers_"):
+        try:
+            model = model.calibrated_classifiers_[0].estimator
+        except (AttributeError, IndexError):
+            pass
 
     if hasattr(model, "feature_importances_"):
         raw = np.array(model.feature_importances_)
