@@ -423,7 +423,9 @@ def load_sample_dataset(
         pass  # Narration is nice-to-have; never block the response
 
     col_names_for_suggestions = (
-        [c["name"] for c in profile["columns"]] if profile.get("columns") else list(df.columns)
+        [c["name"] for c in profile["columns"]]
+        if profile.get("columns")
+        else list(df.columns)
     )
     sample_suggestions = generate_upload_suggestions(profile, col_names_for_suggestions)
 

@@ -463,8 +463,19 @@ _NUMERIC_DTYPES = ("int", "float", "number")
 def _col_is_date(col: dict) -> bool:
     dtype = str(col.get("dtype", "")).lower()
     name = str(col.get("name", "")).lower()
-    date_name_hints = ("date", "time", "year", "month", "day", "week", "period", "quarter")
-    return any(h in dtype for h in _DATE_DTYPE_HINTS) or any(h in name for h in date_name_hints)
+    date_name_hints = (
+        "date",
+        "time",
+        "year",
+        "month",
+        "day",
+        "week",
+        "period",
+        "quarter",
+    )
+    return any(h in dtype for h in _DATE_DTYPE_HINTS) or any(
+        h in name for h in date_name_hints
+    )
 
 
 def _col_is_numeric(col: dict) -> bool:
@@ -490,11 +501,11 @@ def generate_upload_suggestions(profile: dict, col_names: list[str]) -> list[str
     columns: list[dict] = profile.get("columns", [])
 
     date_cols = [c["name"] for c in columns if _col_is_date(c)]
-    numeric_cols = [c["name"] for c in columns if _col_is_numeric(c) and not _col_is_date(c)]
+    numeric_cols = [
+        c["name"] for c in columns if _col_is_numeric(c) and not _col_is_date(c)
+    ]
     cat_cols = [
-        c["name"]
-        for c in columns
-        if not _col_is_numeric(c) and not _col_is_date(c)
+        c["name"] for c in columns if not _col_is_numeric(c) and not _col_is_date(c)
     ]
     missing_cols = [c["name"] for c in columns if c.get("null_pct", 0) > 5]
 

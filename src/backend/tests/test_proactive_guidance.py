@@ -210,9 +210,7 @@ def test_upload_suggestions_name_hint_date_detection():
 
 def test_upload_suggestions_returns_list_of_strings():
     """Return value is always a list of non-empty strings."""
-    profile = _make_profile(
-        columns=[{"name": "x", "dtype": "float64", "null_pct": 0}]
-    )
+    profile = _make_profile(columns=[{"name": "x", "dtype": "float64", "null_pct": 0}])
     result = generate_upload_suggestions(profile, ["x"])
     assert isinstance(result, list)
     assert all(isinstance(s, str) and len(s) > 0 for s in result)

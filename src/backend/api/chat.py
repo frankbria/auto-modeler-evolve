@@ -10,7 +10,12 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
-from chat.orchestrator import build_system_prompt, detect_state, generate_suggestions, get_next_step_chips
+from chat.orchestrator import (
+    build_system_prompt,
+    detect_state,
+    generate_suggestions,
+    get_next_step_chips,
+)
 from core.query_engine import generate_chart_for_message
 from db import get_session
 from models.conversation import Conversation
