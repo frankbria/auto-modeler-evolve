@@ -22,8 +22,12 @@ from sklearn.ensemble import (
     GradientBoostingRegressor,
     RandomForestClassifier,
     RandomForestRegressor,
+    StackingClassifier,
+    StackingRegressor,
+    VotingClassifier,
+    VotingRegressor,
 )
-from sklearn.linear_model import LinearRegression, LogisticRegression
+from sklearn.linear_model import LinearRegression, LogisticRegression, Ridge
 from sklearn.neural_network import MLPClassifier, MLPRegressor
 
 try:
@@ -161,6 +165,44 @@ def _build_regression_algorithms() -> dict[str, dict]:
             "validation_fraction": 0.1,
         },
     }
+    algos["voting_regressor"] = {
+        "name": "Voting Ensemble",
+        "description": "Averages predictions from Linear Regression, Random Forest, and Gradient Boosting.",
+        "plain_english": (
+            "Gets a second opinion from three different models and averages their answers. "
+            "Like consulting multiple experts — the combined wisdom is often more accurate "
+            "than any single model."
+        ),
+        "best_for": "When you want the best possible accuracy; often beats any single model",
+        "class": None,  # built dynamically in _train_ensemble_model
+        "params": {},
+        "is_ensemble": True,
+        "ensemble_type": "voting",
+        "base_algorithms": [
+            "linear_regression",
+            "random_forest_regressor",
+            "gradient_boosting_regressor",
+        ],
+    }
+    algos["stacking_regressor"] = {
+        "name": "Stacking Ensemble",
+        "description": "Uses a meta-learner to weight Linear Regression, Random Forest, and Gradient Boosting.",
+        "plain_english": (
+            "Trains three models, then trains a fourth model to learn the optimal combination. "
+            "More sophisticated than simple averaging — the meta-learner figures out which "
+            "base model to trust most for different patterns in the data."
+        ),
+        "best_for": "Medium-to-large datasets where squeezing out the last bit of accuracy matters",
+        "class": None,
+        "params": {},
+        "is_ensemble": True,
+        "ensemble_type": "stacking",
+        "base_algorithms": [
+            "linear_regression",
+            "random_forest_regressor",
+            "gradient_boosting_regressor",
+        ],
+    }
     return algos
 
 
@@ -253,6 +295,44 @@ def _build_classification_algorithms() -> dict[str, dict]:
             "validation_fraction": 0.1,
         },
     }
+    algos["voting_classifier"] = {
+        "name": "Voting Ensemble",
+        "description": "Combines Logistic Regression, Random Forest, and Gradient Boosting through probability averaging.",
+        "plain_english": (
+            "Asks three different models for their best guess (as probabilities) and averages "
+            "the votes. Like a panel of judges — 3 out of 3 agreeing is more reliable than "
+            "a single expert. Uses soft voting for maximum accuracy."
+        ),
+        "best_for": "When you want the most reliable predictions; often the best overall accuracy",
+        "class": None,
+        "params": {},
+        "is_ensemble": True,
+        "ensemble_type": "voting",
+        "base_algorithms": [
+            "logistic_regression",
+            "random_forest_classifier",
+            "gradient_boosting_classifier",
+        ],
+    }
+    algos["stacking_classifier"] = {
+        "name": "Stacking Ensemble",
+        "description": "Trains a meta-learner on top of Logistic Regression, Random Forest, and Gradient Boosting.",
+        "plain_english": (
+            "Trains three models, then trains a fourth model to learn the optimal way to "
+            "combine their predictions. More nuanced than simple voting — the meta-learner "
+            "learns which base model to trust for which patterns."
+        ),
+        "best_for": "Medium-to-large datasets; often the highest accuracy of all ensemble types",
+        "class": None,
+        "params": {},
+        "is_ensemble": True,
+        "ensemble_type": "stacking",
+        "base_algorithms": [
+            "logistic_regression",
+            "random_forest_classifier",
+            "gradient_boosting_classifier",
+        ],
+    }
     return algos
 
 
@@ -297,6 +377,16 @@ def recommend_models(
 
 
 def _why_recommended(algorithm: str, n_rows: int, n_features: int) -> str:
+    if "voting" in algorithm or "stacking" in algorithm:
+        if n_rows < 200:
+            return (
+                f"With only {n_rows} rows, individual models may outperform ensembles — "
+                "but worth trying alongside simpler algorithms for comparison."
+            )
+        return (
+            f"With {n_rows} rows, combining multiple models often produces better "
+            "predictions than any single model. A great default when accuracy matters most."
+        )
     if "neural_network" in algorithm:
         if n_rows < 500:
             return (
@@ -508,6 +598,242 @@ def prepare_features(
 
 
 # ---------------------------------------------------------------------------
+# Ensemble helpers
+# ---------------------------------------------------------------------------
+
+
+def _build_ensemble_estimators(
+    base_algorithm_keys: list[str],
+    algorithms: dict[str, dict],
+) -> list[tuple[str, object]]:
+    """Build (name, estimator) tuples for VotingClassifier/Regressor or Stacking.
+
+    Only includes algorithms that are present in the registry (skips optional ones
+    like xgboost/lightgbm if not installed).
+    """
+    estimators = []
+    for key in base_algorithm_keys:
+        if key in algorithms and algorithms[key].get("class") is not None:
+            info = algorithms[key]
+            estimators.append((key, info["class"](**dict(info["params"]))))
+    return estimators
+
+
+def _ensemble_vote_explanation(
+    base_names: list[str],
+    estimators_fitted: list,
+    X_test: np.ndarray,
+    y_test: np.ndarray,
+    problem_type: str,
+    classes: list | None = None,
+) -> dict:
+    """Build per-base-model vote/prediction data for ensemble explainability.
+
+    Returns a dict suitable for storing in metrics["ensemble_votes"].
+    """
+    votes: dict[str, object] = {}
+    for name, est in zip(base_names, estimators_fitted):
+        try:
+            if problem_type == "regression":
+                preds = est.predict(X_test)
+                votes[name] = round(float(np.mean(preds)), 4)
+            else:
+                # Classification: record per-class vote counts
+                preds = est.predict(X_test)
+                from collections import Counter
+
+                cnt = Counter(int(p) for p in preds)
+                if classes is not None:
+                    votes[name] = {str(classes[k]): v for k, v in cnt.items()}
+                else:
+                    votes[name] = {str(k): v for k, v in cnt.items()}
+        except Exception:  # noqa: BLE001
+            pass
+    return votes
+
+
+def _stacking_weight_explanation(
+    base_names: list[str],
+    final_estimator,
+) -> dict[str, float]:
+    """Extract normalized meta-learner weights from a fitted stacking model.
+
+    Returns {base_name: weight_fraction} where fractions sum to ~1.
+    For binary classification (coef_ shape [1, n_estimators]) and multiclass
+    (shape [n_classes, n_estimators]) both handled.
+    """
+    if not hasattr(final_estimator, "coef_"):
+        return {}
+
+    coef = np.array(final_estimator.coef_)
+    if coef.ndim == 2:
+        # Take mean absolute coefficient across classes for multiclass
+        magnitudes = np.abs(coef).mean(axis=0)
+    else:
+        magnitudes = np.abs(coef)
+
+    # Keep only one value per base estimator (stacking may passthrough features)
+    n_bases = len(base_names)
+    magnitudes = magnitudes[:n_bases]
+
+    total = float(magnitudes.sum())
+    if total == 0:
+        return {name: round(1.0 / n_bases, 4) for name in base_names}
+
+    return {
+        name: round(float(magnitudes[i]) / total, 4)
+        for i, name in enumerate(base_names)
+    }
+
+
+def _train_ensemble_model(
+    X: np.ndarray,
+    y: np.ndarray,
+    algorithm: str,
+    problem_type: str,
+    model_dir: "Path",
+    model_run_id: str,
+    split_strategy: str,
+    date_col_used: Optional[str],
+    info: dict,
+) -> dict:
+    """Build and train a VotingClassifier/Regressor or StackingClassifier/Regressor.
+
+    Returns the same dict format as train_single_model.
+    """
+    algorithms = (
+        REGRESSION_ALGORITHMS if problem_type == "regression" else CLASSIFICATION_ALGORITHMS
+    )
+    base_keys: list[str] = info["base_algorithms"]
+    ensemble_type: str = info["ensemble_type"]
+
+    estimators = _build_ensemble_estimators(base_keys, algorithms)
+    if len(estimators) < 2:
+        raise ValueError(
+            "Ensemble requires at least 2 base algorithms. "
+            "Install scikit-learn base algorithms or check the registry."
+        )
+
+    # Train/test split (same logic as train_single_model)
+    n = len(X)
+    if n >= 10:
+        if split_strategy == "chronological":
+            train_idx, test_idx = chronological_split(n)
+            X_train, X_test = X[train_idx], X[test_idx]
+            y_train, y_test = y[train_idx], y[test_idx]
+        else:
+            X_train, X_test, y_train, y_test = train_test_split(
+                X, y, test_size=0.2, random_state=42
+            )
+    else:
+        X_train = X_test = X
+        y_train = y_test = y
+
+    # Build the ensemble model
+    if ensemble_type == "voting":
+        if problem_type == "regression":
+            model = VotingRegressor(estimators=estimators)
+        else:
+            model = VotingClassifier(estimators=estimators, voting="soft")
+    else:  # stacking
+        if problem_type == "regression":
+            model = StackingRegressor(
+                estimators=estimators,
+                final_estimator=Ridge(alpha=1.0),
+                cv=min(5, max(2, n // 4)),
+            )
+        else:
+            model = StackingClassifier(
+                estimators=estimators,
+                final_estimator=LogisticRegression(max_iter=1000, random_state=42),
+                cv=min(5, max(2, n // 4)),
+            )
+
+    start = time.time()
+    model.fit(X_train, y_train)
+    elapsed_ms = int((time.time() - start) * 1000)
+
+    y_pred = model.predict(X_test)
+
+    if problem_type == "regression":
+        metrics = _regression_metrics(y_test, y_pred)
+        summary = _regression_summary(metrics)
+    else:
+        metrics = _classification_metrics(y_test, y_pred)
+        summary = _classification_summary(metrics)
+
+    metrics["train_size"] = len(X_train)
+    metrics["test_size"] = len(X_test)
+    metrics["split_strategy"] = split_strategy
+    if split_strategy == "chronological" and date_col_used:
+        metrics["date_col_used"] = date_col_used
+        metrics["split_explanation"] = (
+            f"Used time-based splitting on '{date_col_used}' — training on older data "
+            "and testing on more recent data."
+        )
+
+    # Ensemble explainability
+    base_names = [e[0] for e in estimators]
+    fitted_estimators = getattr(model, "estimators_", [])
+    metrics["ensemble_type"] = ensemble_type
+
+    if ensemble_type == "voting" and fitted_estimators:
+        classes = getattr(model, "classes_", None)
+        metrics["ensemble_votes"] = _ensemble_vote_explanation(
+            base_names, fitted_estimators, X_test, y_test, problem_type,
+            classes=list(classes) if classes is not None else None,
+        )
+        # Plain-English vote summary for classification
+        if problem_type == "classification" and metrics["ensemble_votes"]:
+            n_models = len(metrics["ensemble_votes"])
+            y_test_pred = model.predict(X_test)
+            from collections import Counter as _Counter
+
+            top_class = _Counter(str(p) for p in y_test_pred).most_common(1)[0][0]
+            agreeing = sum(
+                1 for v in metrics["ensemble_votes"].values()
+                if isinstance(v, dict) and max(v, key=v.get, default="") == top_class  # type: ignore[arg-type]
+            )
+            metrics["ensemble_summary"] = (
+                f"{agreeing} out of {n_models} models voted for '{top_class}' "
+                f"(majority class on held-out test set)."
+            )
+    elif ensemble_type == "stacking" and hasattr(model, "final_estimator_"):
+        metrics["stacking_weights"] = _stacking_weight_explanation(
+            base_names, model.final_estimator_
+        )
+        if metrics["stacking_weights"]:
+            top_base = max(metrics["stacking_weights"], key=metrics["stacking_weights"].get)  # type: ignore[arg-type]
+            top_pct = round(metrics["stacking_weights"][top_base] * 100)
+            metrics["ensemble_summary"] = (
+                f"Meta-learner trusted '{top_base}' most "
+                f"({top_pct}% of weight) when combining predictions."
+            )
+
+    # Plain-English addendum to summary
+    n_bases = len(base_names)
+    base_display = ", ".join(
+        algorithms[k]["name"] for k in base_names if k in algorithms
+    )
+    if ensemble_type == "voting":
+        suffix = f" Combines {n_bases} models ({base_display}) via soft voting."
+    else:
+        suffix = f" Stacks {n_bases} models ({base_display}) through a meta-learner."
+    summary = summary + suffix
+
+    model_dir.mkdir(parents=True, exist_ok=True)
+    model_path = str(model_dir / f"{model_run_id}.joblib")
+    joblib.dump(model, model_path)
+
+    return {
+        "metrics": metrics,
+        "model_path": model_path,
+        "training_duration_ms": elapsed_ms,
+        "summary": summary,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Train a single model
 # ---------------------------------------------------------------------------
 
@@ -564,6 +890,14 @@ def train_single_model(
         )
 
     info = algorithms[algorithm]
+
+    # Dispatch ensemble algorithms to the ensemble trainer
+    if info.get("is_ensemble"):
+        return _train_ensemble_model(
+            X, y, algorithm, problem_type, model_dir, model_run_id,
+            split_strategy, date_col_used, info,
+        )
+
     model_class = info["class"]
     params = dict(info["params"])  # copy so we don't mutate the registry
 

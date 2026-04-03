@@ -19,7 +19,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { api } from "@/lib/api"
-import type { ChartSpec, ClassImbalanceResult, ModelRecommendation, ModelRun, ModelComparison, ModelMetrics, TuningResult, ModelVersionHistory } from "@/lib/types"
+import type { ChartSpec, ClassImbalanceResult, EnsembleMetricsExtra, ModelRecommendation, ModelRun, ModelComparison, ModelMetrics, TuningResult, ModelVersionHistory } from "@/lib/types"
 import { ImbalanceCard } from "@/components/models/imbalance-card"
 
 interface ModelTrainingPanelProps {
@@ -567,6 +567,7 @@ function RunCard({
               <p className="text-xs text-muted-foreground">{run.summary}</p>
             )}
             <MetricsRow metrics={run.metrics} problemType={problemType} />
+            <EnsembleVoteRow metrics={run.metrics} />
             {run.training_duration_ms != null && (
               <p className="text-[10px] text-muted-foreground/60">
                 Trained in {(run.training_duration_ms / 1000).toFixed(1)}s
@@ -690,6 +691,85 @@ function MetricsRow({ metrics, problemType }: { metrics: ModelMetrics; problemTy
         value={m.precision?.toFixed(3) ?? "—"}
         tooltip="Precision — of all positive predictions, what fraction were correct. Closer to 1.0 is better."
       />
+    </div>
+  )
+}
+
+
+function EnsembleVoteRow({ metrics }: { metrics: ModelMetrics }) {
+  const em = metrics as EnsembleMetricsExtra
+  if (!em.ensemble_type) return null
+
+  const isVoting = em.ensemble_type === "voting"
+  const isStacking = em.ensemble_type === "stacking"
+
+  return (
+    <div
+      data-testid="ensemble-vote-row"
+      className="mt-1 rounded border border-violet-200 bg-violet-50 px-3 py-2 text-xs dark:border-violet-900 dark:bg-violet-950"
+    >
+      <div className="mb-1 flex items-center gap-1.5">
+        <span aria-hidden="true">🧩</span>
+        <span className="font-medium text-violet-800 dark:text-violet-300">
+          {isVoting ? "Ensemble — Soft Voting" : "Ensemble — Stacking"}
+        </span>
+        <Badge className="text-[10px] bg-violet-100 text-violet-800 border-violet-200">
+          {isVoting ? "3 models combined" : "Meta-learner"}
+        </Badge>
+      </div>
+
+      {isVoting && em.ensemble_votes && (
+        <div className="space-y-0.5">
+          {Object.entries(em.ensemble_votes).map(([name, val]) => {
+            const displayName = name.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
+            const displayVal =
+              typeof val === "number"
+                ? val.toFixed(2)
+                : Object.entries(val as Record<string, number>)
+                    .sort(([, a], [, b]) => b - a)
+                    .map(([cls, cnt]) => `${cls}: ${cnt}`)
+                    .join(", ")
+            return (
+              <div key={name} className="flex items-center justify-between gap-2">
+                <span className="text-muted-foreground">{displayName}</span>
+                <span className="font-mono text-violet-700 dark:text-violet-400">{displayVal}</span>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {isStacking && em.stacking_weights && (
+        <div className="space-y-0.5">
+          {Object.entries(em.stacking_weights)
+            .sort(([, a], [, b]) => b - a)
+            .map(([name, weight]) => {
+              const displayName = name.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
+              const pct = Math.round(weight * 100)
+              return (
+                <div key={name} className="flex items-center gap-2">
+                  <span className="w-32 shrink-0 text-muted-foreground">{displayName}</span>
+                  <div className="h-1.5 flex-1 rounded-full bg-violet-100">
+                    <div
+                      className="h-full rounded-full bg-violet-500"
+                      style={{ width: `${pct}%` }}
+                      aria-label={`${displayName}: ${pct}% weight`}
+                    />
+                  </div>
+                  <span className="w-8 text-right font-mono text-violet-700 dark:text-violet-400">
+                    {pct}%
+                  </span>
+                </div>
+              )
+            })}
+        </div>
+      )}
+
+      {em.ensemble_summary && (
+        <p className="mt-1 text-[10px] text-violet-600 dark:text-violet-400">
+          {em.ensemble_summary}
+        </p>
+      )}
     </div>
   )
 }

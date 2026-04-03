@@ -575,7 +575,14 @@ export interface ModelMetricsClassification {
   test_size: number
 }
 
-export type ModelMetrics = ModelMetricsRegression | ModelMetricsClassification
+export interface EnsembleMetricsExtra {
+  ensemble_type?: "voting" | "stacking"
+  ensemble_votes?: Record<string, number | Record<string, number>>
+  stacking_weights?: Record<string, number>
+  ensemble_summary?: string
+}
+
+export type ModelMetrics = (ModelMetricsRegression | ModelMetricsClassification) & EnsembleMetricsExtra
 
 export interface ModelRun {
   id: string
