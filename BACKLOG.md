@@ -49,15 +49,23 @@ the time is better spent on real features.
 
 ## Currently Working On
 
-## Day 24 (04:00) — Done
-**Track B — Smart Model Selection Advisor.** Complements the Model Improvement Advisor with "which model to use" rather than "how to improve it".
-- **Smart Model Selection Advisor** — `compute_model_selection(runs, criteria)` pure function scores all completed runs on 5 criteria: accuracy/explainability/stability/speed/balanced. `GET /api/models/{project_id}/model-selection?criteria=` endpoint. `_MODEL_SELECT_PATTERNS` (15 NL variants) + `_detect_selection_criteria()` in `chat.py`. `ModelSelectionCard` (indigo border, 🏆) in chat: winner highlight + component score bars + ranked list. 42 backend + 18 frontend = 60 new tests. Total: 2461 backend + 1165 frontend = 3626.
+## Day 24 (12:00) — Done
+**Track B — Conversation Export as HTML Report.** Closes the "share full analysis journey" use case.
+- **Conversation Export** — `_CONV_EXPORT_PATTERNS` (13 NL variants). `_build_export_html()` pure function generates self-contained HTML (header, dataset info, model results, conversation transcript, embedded CSS). `GET /api/chat/{project_id}/export` → HTML attachment. `ConversationExportCard` (emerald border, 📄) in chat: message count badge, dataset badge, download link. 14 backend + 10 frontend = 24 new tests. Total: 2475 backend + 1195 frontend = 3670.
 
 **What's next:**
 - Continue Track B — remaining opportunities:
-  - Auto-retrain scheduling (schedule model retrain on new data upload or cron)
   - "Model drift → retrain" proactive notification (webhook + chat alert)
   - Multi-dataset comparison (upload v2 dataset, compare model performance pre/post)
+  - Guided onboarding wizard (step-by-step first-use flow for new analysts)
+
+## Day 24 (05:30) — Done
+**Track B — Auto-Retrain on Upload.** Model stays current whenever new data is uploaded.
+- **Auto-Retrain** — `Project.auto_retrain` bool. `GET/PUT /api/projects/{id}/auto-retrain`. `core/retrain.py` `trigger_auto_retrain()`. Upload handler fires it when enabled. `_AUTO_RETRAIN_PATTERNS` + `AutoRetrainCard` (teal). 14 backend + 10 frontend = 24 new tests.
+
+## Day 24 (04:00) — Done
+**Track B — Smart Model Selection Advisor.** Complements the Model Improvement Advisor with "which model to use" rather than "how to improve it".
+- **Smart Model Selection Advisor** — `compute_model_selection(runs, criteria)` pure function scores all completed runs on 5 criteria: accuracy/explainability/stability/speed/balanced. `GET /api/models/{project_id}/model-selection?criteria=` endpoint. `_MODEL_SELECT_PATTERNS` (15 NL variants) + `_detect_selection_criteria()` in `chat.py`. `ModelSelectionCard` (indigo border, 🏆) in chat: winner highlight + component score bars + ranked list. 42 backend + 18 frontend = 60 new tests. Total: 2461 backend + 1165 frontend = 3626.
   - Conversation export as HTML report (share entire analysis journey with VP)
 
 ## Day 24 (04:41) — Done

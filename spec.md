@@ -595,6 +595,36 @@ guides them forward through the natural flow.
       explainability, use the linear model; for accuracy, use XGBoost."
       *Day 24 (04:00): 42 backend + 18 frontend = 60 new tests. Total: 2461 backend + 1165 frontend = 3626, all passing. Backend lint: clean. Frontend build + lint: clean.*
 
+- [x] **Auto-Retrain on Upload** — When enabled, uploading new data automatically triggers a background
+      retrain using the project's currently selected model and algorithm — so the model stays current
+      without the analyst having to remember to do it. `Project.auto_retrain` bool field (default `False`).
+      `GET/PUT /api/projects/{project_id}/auto-retrain` endpoints. `core/retrain.py` provides
+      `trigger_auto_retrain(project_id, dataset_id, session)` — finds the selected model run, updates the
+      active feature set to point at the new dataset, and fires `_train_in_background()` as a daemon thread.
+      `data.py` upload handler calls `trigger_auto_retrain()` after creating the dataset when the flag is on.
+      `_AUTO_RETRAIN_PATTERNS` (14 NL variants: "enable auto-retrain", "turn on auto retrain", "keep model
+      fresh", "retrain when I upload new data") + chat handler in `chat.py` detects enable/disable intent,
+      toggles the DB flag, and emits `{type:"auto_retrain"}` SSE event. `AutoRetrainCard` (teal border, 🔄
+      icon) shows Enabled/Disabled badge, selected algorithm label, toggle button, and explains that the
+      model will retrain on each upload when enabled.
+      *Day 24 (05:30): 14 backend + 10 frontend = 24 new tests.*
+
+- [x] **Conversation Export as HTML Report** — Analysts can say "export this conversation", "download the
+      analysis report", or "share this report" and receive a `ConversationExportCard` in the chat with a
+      direct download link. `_CONV_EXPORT_PATTERNS` (13 NL variants) in `chat.py` detects the intent and
+      emits `{type:"conversation_export"}` SSE event carrying the download URL, message count, and dataset
+      name. `GET /api/chat/{project_id}/export` endpoint calls `_build_export_html()` — a pure function that
+      assembles a fully self-contained HTML document (no external CSS/JS dependencies) from project metadata,
+      dataset info (filename, row/column counts), best model results (algorithm + primary metric + summary),
+      and the full conversation transcript (user/assistant messages, HTML-escaped, chronological). The HTML
+      is returned as `Content-Disposition: attachment` with a project-name-based filename. `ConversationExportCard`
+      (emerald border, 📄 icon) renders in chat: message count badge, dataset name badge, download description,
+      and a "Download HTML Report" `<a>` link that triggers the browser download. `ConversationExportInfo`
+      TypeScript type; `attachConversationExportToLastMessage` Zustand action. Directly closes the vision's
+      "share the analysis journey with your VP" use case — a permanent, offline artifact of the analyst's
+      full data exploration, model building, and validation work.
+      *Day 24 (12:00): 14 backend + 10 frontend = 24 new tests. Total: 2489 backend + 1195 frontend = 3684, all passing. Backend lint: clean. Frontend build: clean.*
+
 - [x] **AI-powered data dictionary** — When a dataset is uploaded (or on demand via POST), auto-generate
       plain-English descriptions for every column. `core/dictionary.py` classifies each column as
       id/metric/dimension/date/flag/text via heuristics (name hints + dtype + cardinality), then uses
