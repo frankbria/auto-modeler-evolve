@@ -677,3 +677,61 @@ def get_project_alerts(
         "warning_count": sum(1 for a in alerts if a["severity"] == "warning"),
         "alerts": alerts,
     }
+
+
+# ---------------------------------------------------------------------------
+# Auto-Retrain Toggle
+# ---------------------------------------------------------------------------
+
+
+class AutoRetrainUpdate(BaseModel):
+    enabled: bool
+
+
+@router.get("/{project_id}/auto-retrain")
+def get_auto_retrain(project_id: str, session: Session = Depends(get_session)):
+    """Return the auto-retrain configuration for the project."""
+    project = session.get(Project, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    selected_run = session.exec(
+        select(ModelRun).where(
+            ModelRun.project_id == project_id,
+            ModelRun.is_selected == True,  # noqa: E712
+            ModelRun.status == "done",
+        )
+    ).first()
+
+    return {
+        "project_id": project_id,
+        "enabled": project.auto_retrain,
+        "selected_algorithm": selected_run.algorithm if selected_run else None,
+        "has_selected_model": selected_run is not None,
+    }
+
+
+@router.put("/{project_id}/auto-retrain")
+def set_auto_retrain(
+    project_id: str,
+    body: AutoRetrainUpdate,
+    session: Session = Depends(get_session),
+):
+    """Enable or disable auto-retrain for the project."""
+    project = session.get(Project, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    project.auto_retrain = body.enabled
+    session.add(project)
+    session.commit()
+
+    return {
+        "project_id": project_id,
+        "enabled": project.auto_retrain,
+        "message": (
+            "Auto-retrain enabled. The selected model will retrain automatically when new data is uploaded."
+            if body.enabled
+            else "Auto-retrain disabled."
+        ),
+    }

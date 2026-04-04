@@ -17,3 +17,4 @@ class Project(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=_utcnow)
     status: str = Field(default="exploring")
     settings: Optional[str] = None  # JSON string for preferences
+    auto_retrain: bool = Field(default=False)

@@ -204,6 +204,17 @@ def upload_csv(
 
     suggestions = generate_upload_suggestions(profile, col_names)
 
+    # Auto-retrain: trigger background training if project has it enabled
+    auto_retrain_info: dict | None = None
+    try:
+        project = session.get(Project, project_id)
+        if project and project.auto_retrain:
+            from core.retrain import trigger_auto_retrain
+
+            auto_retrain_info = trigger_auto_retrain(project_id, dataset.id)
+    except Exception:  # noqa: BLE001
+        pass  # Never block the upload response
+
     return {
         "dataset_id": dataset.id,
         "filename": dataset.filename,
@@ -213,6 +224,7 @@ def upload_csv(
         "column_stats": profile["columns"],
         "insights": profile.get("insights", []),
         "suggestions": suggestions,
+        "auto_retrain": auto_retrain_info,
     }
 
 

@@ -1884,6 +1884,18 @@ _GROUP_TREND_PATTERNS = re.compile(
 )
 
 
+# Keywords that trigger the auto-retrain status/toggle card
+_AUTO_RETRAIN_PATTERNS = re.compile(
+    r"\b(auto.?retrain|automatic.*retrain|retrain.*automatic|"
+    r"retrain.*new.*data|new.*data.*retrain|retrain.*upload|upload.*retrain|"
+    r"retrain.*schedul|schedul.*retrain|keep.*model.*fresh|keep.*model.*current|"
+    r"auto.*train.*new|train.*new.*data.*auto|"
+    r"enable.*auto|disable.*auto|turn.*on.*retrain|turn.*off.*retrain|"
+    r"auto.?retrain.*status|status.*auto.?retrain|"
+    r"retrain.*when.*upload|automatically.*when.*upload)\b",
+    re.IGNORECASE,
+)
+
 _FEATURE_SEL_PATTERNS = re.compile(
     r"(?:"
     r"(?:are\s+)?(?:all|my)\s+(?:columns?|features?)\s+(?:useful|important|helpful|contributing|relevant)\b|"
@@ -2747,6 +2759,67 @@ def send_message(
                 )
             except Exception:  # noqa: BLE001
                 pass  # Nice-to-have; never crash chat
+
+    # Check if this is an auto-retrain status/toggle request
+    auto_retrain_event: dict | None = None
+    if _AUTO_RETRAIN_PATTERNS.search(body.message) and ctx["project"]:
+        try:
+            from db import get_session as _gs
+
+            _project = ctx["project"]
+            _enabled = _project.auto_retrain
+
+            # Detect enable/disable intent
+            _msg_lower = body.message.lower()
+            _enable_words = {"enable", "turn on", "activate", "start", "keep"}
+            _disable_words = {"disable", "turn off", "deactivate", "stop"}
+            _want_enable = any(w in _msg_lower for w in _enable_words)
+            _want_disable = any(w in _msg_lower for w in _disable_words)
+
+            if _want_enable or _want_disable:
+                _new_state = _want_enable and not _want_disable
+                with next(_gs()) as _s:
+                    from models.project import Project as _Proj
+
+                    _p = _s.get(_Proj, body.project_id)
+                    if _p:
+                        _p.auto_retrain = _new_state
+                        _s.add(_p)
+                        _s.commit()
+                        _enabled = _new_state
+
+            # Find selected model for display
+            _sel_run_algo = None
+            if ctx["model_runs"]:
+                _sel_run = next(
+                    (mr for mr in ctx["model_runs"] if mr.is_selected and mr.status == "done"),
+                    None,
+                )
+                _sel_run_algo = _sel_run.algorithm if _sel_run else None
+
+            auto_retrain_event = {
+                "project_id": body.project_id,
+                "enabled": _enabled,
+                "selected_algorithm": _sel_run_algo,
+                "has_selected_model": _sel_run_algo is not None,
+            }
+
+            _status = "enabled" if _enabled else "disabled"
+            _algo_msg = (
+                f" Will use **{_sel_run_algo}** algorithm."
+                if _sel_run_algo and _enabled
+                else ""
+            )
+            system_prompt += (
+                f"\n\n## Auto-Retrain Status\n"
+                f"Auto-retrain is currently **{_status}**.\n"
+                f"{_algo_msg}\n"
+                "Tell the user the current auto-retrain status. If enabled, explain that the model "
+                "will automatically retrain whenever new data is uploaded. If disabled, explain how "
+                "to enable it or that they can ask you to turn it on. Keep it brief and friendly."
+            )
+        except Exception:  # noqa: BLE001
+            pass  # Nice-to-have; never crash chat
 
     # Check if this is a tune/optimize request
     tune_data: dict | None = None
@@ -5178,6 +5251,9 @@ def send_message(
         # Emit model selection recommendation if computed
         if model_select_event:
             yield f"data: {json.dumps({'type': 'model_selection', 'model_selection': model_select_event})}\n\n"
+
+        if auto_retrain_event:
+            yield f"data: {json.dumps({'type': 'auto_retrain', 'auto_retrain': auto_retrain_event})}\n\n"
 
         # Emit model health card if computed
         if health_data:

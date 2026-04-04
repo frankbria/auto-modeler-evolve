@@ -52,6 +52,7 @@ import { SplitStrategyCard } from "@/components/models/split-strategy-card"
 import { FeatureSelectionCard } from "@/components/models/feature-selection-card"
 import { ModelImprovementCard } from "@/components/models/model-improvement-card"
 import { ModelSelectionCard } from "@/components/models/model-selection-card"
+import { AutoRetrainCard } from "@/components/models/auto-retrain-card"
 import { PairCorrelationCard } from "@/components/data/pair-correlation-card"
 import { StatQueryCard } from "@/components/data/stat-query-card"
 import { SummaryStatsCard } from "@/components/data/summary-stats-card"
@@ -187,6 +188,7 @@ export default function ProjectWorkspace() {
     attachFeatureSelectionToLastMessage,
     attachModelImprovementToLastMessage,
     attachModelSelectionToLastMessage,
+    attachAutoRetrainToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -489,6 +491,8 @@ export default function ProjectWorkspace() {
                 attachModelImprovementToLastMessage(json.model_improvement as import("@/lib/types").ModelImprovementResult)
               } else if (json.type === "model_selection" && json.model_selection) {
                 attachModelSelectionToLastMessage(json.model_selection as import("@/lib/types").ModelSelectionResult)
+              } else if (json.type === "auto_retrain" && json.auto_retrain) {
+                attachAutoRetrainToLastMessage(json.auto_retrain as import("@/lib/types").AutoRetrainResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -547,6 +551,7 @@ export default function ProjectWorkspace() {
     attachFeatureSelectionToLastMessage,
     attachModelImprovementToLastMessage,
     attachModelSelectionToLastMessage,
+    attachAutoRetrainToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -893,6 +898,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.model_selection && (
                       <ModelSelectionCard result={msg.model_selection} />
+                    )}
+                    {msg.auto_retrain && (
+                      <AutoRetrainCard result={msg.auto_retrain} />
                     )}
                   </div>
                 </div>

@@ -443,6 +443,7 @@ export interface ChatMessage {
   feature_selection?: FeatureSelectionResult
   model_improvement?: ModelImprovementResult
   model_selection?: ModelSelectionResult
+  auto_retrain?: AutoRetrainResult
 }
 
 export interface SegmentPerformanceSegment {
@@ -1825,4 +1826,11 @@ export interface ModelSelectionResult {
   ranked_runs: ModelSelectionRun[]
   summary: string
   n_runs: number
+}
+
+export interface AutoRetrainResult {
+  project_id: string
+  enabled: boolean
+  selected_algorithm: string | null
+  has_selected_model: boolean
 }
