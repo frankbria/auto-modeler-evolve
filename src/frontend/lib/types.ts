@@ -444,6 +444,7 @@ export interface ChatMessage {
   model_improvement?: ModelImprovementResult
   model_selection?: ModelSelectionResult
   auto_retrain?: AutoRetrainResult
+  conversation_export?: ConversationExportInfo
 }
 
 export interface SegmentPerformanceSegment {
@@ -1833,4 +1834,11 @@ export interface AutoRetrainResult {
   enabled: boolean
   selected_algorithm: string | null
   has_selected_model: boolean
+}
+
+export interface ConversationExportInfo {
+  project_id: string
+  download_url: string
+  message_count: number
+  dataset_name: string | null
 }

@@ -53,6 +53,7 @@ import { FeatureSelectionCard } from "@/components/models/feature-selection-card
 import { ModelImprovementCard } from "@/components/models/model-improvement-card"
 import { ModelSelectionCard } from "@/components/models/model-selection-card"
 import { AutoRetrainCard } from "@/components/models/auto-retrain-card"
+import { ConversationExportCard } from "@/components/chat/conversation-export-card"
 import { PairCorrelationCard } from "@/components/data/pair-correlation-card"
 import { StatQueryCard } from "@/components/data/stat-query-card"
 import { SummaryStatsCard } from "@/components/data/summary-stats-card"
@@ -189,6 +190,7 @@ export default function ProjectWorkspace() {
     attachModelImprovementToLastMessage,
     attachModelSelectionToLastMessage,
     attachAutoRetrainToLastMessage,
+    attachConversationExportToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -493,6 +495,8 @@ export default function ProjectWorkspace() {
                 attachModelSelectionToLastMessage(json.model_selection as import("@/lib/types").ModelSelectionResult)
               } else if (json.type === "auto_retrain" && json.auto_retrain) {
                 attachAutoRetrainToLastMessage(json.auto_retrain as import("@/lib/types").AutoRetrainResult)
+              } else if (json.type === "conversation_export" && json.conversation_export) {
+                attachConversationExportToLastMessage(json.conversation_export as import("@/lib/types").ConversationExportInfo)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -552,6 +556,7 @@ export default function ProjectWorkspace() {
     attachModelImprovementToLastMessage,
     attachModelSelectionToLastMessage,
     attachAutoRetrainToLastMessage,
+    attachConversationExportToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -901,6 +906,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.auto_retrain && (
                       <AutoRetrainCard result={msg.auto_retrain} />
+                    )}
+                    {msg.conversation_export && (
+                      <ConversationExportCard info={msg.conversation_export} />
                     )}
                   </div>
                 </div>

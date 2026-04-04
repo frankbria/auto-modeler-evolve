@@ -86,6 +86,7 @@ interface AppState {
   attachModelImprovementToLastMessage: (model_improvement: import("./types").ModelImprovementResult) => void
   attachModelSelectionToLastMessage: (model_selection: import("./types").ModelSelectionResult) => void
   attachAutoRetrainToLastMessage: (auto_retrain: import("./types").AutoRetrainResult) => void
+  attachConversationExportToLastMessage: (conversation_export: import("./types").ConversationExportInfo) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -495,6 +496,15 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, auto_retrain }
+      }
+      return { messages }
+    }),
+  attachConversationExportToLastMessage: (conversation_export) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, conversation_export }
       }
       return { messages }
     }),

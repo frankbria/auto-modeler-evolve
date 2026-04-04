@@ -6,7 +6,7 @@ from pathlib import Path
 import anthropic
 import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
@@ -1884,6 +1884,18 @@ _GROUP_TREND_PATTERNS = re.compile(
 )
 
 
+# Keywords that trigger conversation export / analysis report download
+_CONV_EXPORT_PATTERNS = re.compile(
+    r"\b(?:export|download|save|share|send)\b.*\b(?:conversation|analysis|report|summary|chat|transcript|journey|story)\b"
+    r"|\bsave this analysis\b|\bshare this analysis\b|\bshare this report\b"
+    r"|\bexport this\b|\bdownload this\b"
+    r"|\bgenerate a report\b|\bcreate a report\b|\bmake a report\b"
+    r"|\bshare my findings\b|\bexport my findings\b"
+    r"|\bdownload the chat\b|\bshare the conversation\b|\bexport the conversation\b",
+    re.IGNORECASE,
+)
+
+
 # Keywords that trigger the auto-retrain status/toggle card
 _AUTO_RETRAIN_PATTERNS = re.compile(
     r"\b(auto.?retrain|automatic.*retrain|retrain.*automatic|"
@@ -2757,6 +2769,33 @@ def send_message(
                 pass  # Nice-to-have; never crash chat
 
     # Check if this is an auto-retrain status/toggle request
+    conv_export_event: dict | None = None
+    if _CONV_EXPORT_PATTERNS.search(body.message) and ctx["project"]:
+        try:
+            _msg_count = 0
+            _conv_stmt = select(Conversation).where(
+                Conversation.project_id == body.project_id
+            )
+            _conv = session.exec(_conv_stmt).first()
+            if _conv:
+                _msgs = json.loads(_conv.messages)
+                _msg_count = len([m for m in _msgs if m.get("role") == "assistant"])
+            conv_export_event = {
+                "project_id": body.project_id,
+                "download_url": f"/api/chat/{body.project_id}/export",
+                "message_count": _msg_count,
+                "dataset_name": ctx["dataset"].filename if ctx["dataset"] else None,
+            }
+            system_prompt += (
+                "\n\n## Conversation Export\n"
+                f"The user wants to export/download this analysis as an HTML report. "
+                f"The export is ready and contains {_msg_count} messages. "
+                "Tell them their analysis report is ready to download. "
+                "Keep it brief — the download button will appear automatically."
+            )
+        except Exception:  # noqa: BLE001
+            pass
+
     auto_retrain_event: dict | None = None
     if _AUTO_RETRAIN_PATTERNS.search(body.message) and ctx["project"]:
         try:
@@ -5255,6 +5294,9 @@ def send_message(
         if auto_retrain_event:
             yield f"data: {json.dumps({'type': 'auto_retrain', 'auto_retrain': auto_retrain_event})}\n\n"
 
+        if conv_export_event:
+            yield f"data: {json.dumps({'type': 'conversation_export', 'conversation_export': conv_export_event})}\n\n"
+
         # Emit model health card if computed
         if health_data:
             yield f"data: {json.dumps({'type': 'health', 'health': health_data})}\n\n"
@@ -5491,3 +5533,166 @@ def get_history(
         return {"messages": []}
 
     return {"messages": json.loads(conversation.messages)}
+
+
+def _build_export_html(
+    project: "Project",
+    dataset: "Dataset | None",
+    best_run: "ModelRun | None",
+    messages: list[dict],
+) -> str:
+    """Generate a self-contained HTML analysis report from conversation history."""
+    generated_at = datetime.now(UTC).strftime("%B %d, %Y at %H:%M UTC")
+    dataset_info = ""
+    if dataset:
+        dataset_info = (
+            f"<p><strong>Dataset:</strong> {dataset.filename} &nbsp;·&nbsp; "
+            f"{dataset.row_count:,} rows, {dataset.column_count} columns</p>"
+        )
+
+    model_section = ""
+    if best_run and best_run.status == "done":
+        metrics = json.loads(best_run.metrics or "{}")
+        primary_metric_key = next(
+            (k for k in ("r2", "accuracy") if k in metrics), None
+        )
+        metric_str = ""
+        if primary_metric_key:
+            val = metrics[primary_metric_key]
+            label = "R²" if primary_metric_key == "r2" else "Accuracy"
+            metric_str = f" &nbsp;·&nbsp; {label}: {val:.3f}"
+        model_section = f"""
+        <div class="model-box">
+          <h2>Model Results</h2>
+          <p><strong>Algorithm:</strong> {best_run.algorithm.replace("_", " ").title()}{metric_str}</p>
+          {f'<p class="summary">{best_run.summary}</p>' if best_run.summary else ""}
+        </div>"""
+
+    # Render messages — skip empty content
+    msg_html_parts = []
+    for msg in messages:
+        role = msg.get("role", "user")
+        content = msg.get("content", "").strip()
+        if not content:
+            continue
+        ts = msg.get("timestamp", "")
+        ts_str = f'<span class="ts">{ts[:16].replace("T", " ") if ts else ""}</span>' if ts else ""
+        css_class = "user-msg" if role == "user" else "assistant-msg"
+        label = "You" if role == "user" else "AutoModeler"
+        # Escape HTML in message content
+        safe_content = (
+            content.replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace("\n", "<br>")
+        )
+        msg_html_parts.append(
+            f'<div class="{css_class}"><div class="msg-header"><strong>{label}</strong>{ts_str}</div>'
+            f'<div class="msg-body">{safe_content}</div></div>'
+        )
+
+    msgs_html = "\n".join(msg_html_parts) if msg_html_parts else "<p><em>No messages in this conversation.</em></p>"
+    msg_count = len([m for m in messages if m.get("role") == "assistant"])
+
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AutoModeler Analysis: {project.name}</title>
+  <style>
+    *, *::before, *::after {{ box-sizing: border-box; margin: 0; padding: 0; }}
+    body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: #f9fafb; color: #111827; line-height: 1.6; padding: 2rem; }}
+    .container {{ max-width: 800px; margin: 0 auto; }}
+    h1 {{ font-size: 1.75rem; font-weight: 700; color: #111827; margin-bottom: 0.25rem; }}
+    h2 {{ font-size: 1.1rem; font-weight: 600; color: #374151; margin-bottom: 0.75rem; }}
+    .meta {{ color: #6b7280; font-size: 0.875rem; margin-bottom: 1.5rem; }}
+    .meta p {{ margin-bottom: 0.25rem; }}
+    .model-box {{ background: #f0fdf4; border: 1px solid #86efac; border-radius: 0.5rem;
+                  padding: 1rem 1.25rem; margin-bottom: 1.5rem; }}
+    .model-box .summary {{ color: #374151; margin-top: 0.5rem; font-size: 0.9rem; }}
+    .section-label {{ font-size: 0.75rem; font-weight: 600; text-transform: uppercase;
+                      letter-spacing: 0.05em; color: #6b7280; margin-bottom: 0.75rem; }}
+    .conversation {{ display: flex; flex-direction: column; gap: 0.75rem; }}
+    .user-msg, .assistant-msg {{ border-radius: 0.5rem; padding: 0.875rem 1rem; }}
+    .user-msg {{ background: #eff6ff; border: 1px solid #bfdbfe; margin-left: 2rem; }}
+    .assistant-msg {{ background: #fff; border: 1px solid #e5e7eb; margin-right: 2rem; }}
+    .msg-header {{ display: flex; justify-content: space-between; align-items: center;
+                   margin-bottom: 0.35rem; }}
+    .msg-header strong {{ font-size: 0.8rem; font-weight: 600; color: #374151; }}
+    .ts {{ font-size: 0.7rem; color: #9ca3af; }}
+    .msg-body {{ font-size: 0.9rem; color: #1f2937; }}
+    .footer {{ margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #e5e7eb;
+               text-align: center; font-size: 0.75rem; color: #9ca3af; }}
+    @media print {{
+      body {{ background: #fff; padding: 1rem; }}
+      .user-msg {{ background: #f0f7ff; }}
+    }}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Analysis Report: {project.name}</h1>
+    <div class="meta">
+      <p>Generated {generated_at}</p>
+      {dataset_info}
+      <p>{msg_count} AI response{'' if msg_count == 1 else 's'} in this conversation</p>
+    </div>
+    {model_section}
+    <p class="section-label">Conversation Transcript</p>
+    <div class="conversation">
+      {msgs_html}
+    </div>
+    <div class="footer">Generated by <strong>AutoModeler</strong> — AI-powered data modeling for business analysts</div>
+  </div>
+</body>
+</html>"""
+
+
+@router.get("/{project_id}/export")
+def export_conversation(
+    project_id: str,
+    session: Session = Depends(get_session),
+):
+    """Return conversation history as a downloadable self-contained HTML report."""
+    project = session.get(Project, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    # Load conversation messages
+    conv_stmt = select(Conversation).where(Conversation.project_id == project_id)
+    conversation = session.exec(conv_stmt).first()
+    messages: list[dict] = json.loads(conversation.messages) if conversation else []
+
+    # Load dataset (most recent for this project)
+    ds_stmt = select(Dataset).where(Dataset.project_id == project_id)
+    dataset = session.exec(ds_stmt).first()
+
+    # Load best completed model run
+    runs_stmt = (
+        select(ModelRun)
+        .where(ModelRun.project_id == project_id)
+        .where(ModelRun.status == "done")
+    )
+    runs = session.exec(runs_stmt).all()
+    best_run: ModelRun | None = None
+    if runs:
+        # Prefer selected, then highest primary metric
+        selected = [r for r in runs if r.is_selected]
+        if selected:
+            best_run = selected[0]
+        else:
+            def _primary(r: ModelRun) -> float:
+                m = json.loads(r.metrics or "{}")
+                return float(m.get("r2", m.get("accuracy", 0)))
+
+            best_run = max(runs, key=_primary)
+
+    html_content = _build_export_html(project, dataset, best_run, messages)
+    safe_name = project.name.replace(" ", "_").replace("/", "-")[:40]
+    filename = f"automodeler_{safe_name}_analysis.html"
+    return HTMLResponse(
+        content=html_content,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
