@@ -5553,9 +5553,7 @@ def _build_export_html(
     model_section = ""
     if best_run and best_run.status == "done":
         metrics = json.loads(best_run.metrics or "{}")
-        primary_metric_key = next(
-            (k for k in ("r2", "accuracy") if k in metrics), None
-        )
+        primary_metric_key = next((k for k in ("r2", "accuracy") if k in metrics), None)
         metric_str = ""
         if primary_metric_key:
             val = metrics[primary_metric_key]
@@ -5576,7 +5574,11 @@ def _build_export_html(
         if not content:
             continue
         ts = msg.get("timestamp", "")
-        ts_str = f'<span class="ts">{ts[:16].replace("T", " ") if ts else ""}</span>' if ts else ""
+        ts_str = (
+            f'<span class="ts">{ts[:16].replace("T", " ") if ts else ""}</span>'
+            if ts
+            else ""
+        )
         css_class = "user-msg" if role == "user" else "assistant-msg"
         label = "You" if role == "user" else "AutoModeler"
         # Escape HTML in message content
@@ -5591,7 +5593,11 @@ def _build_export_html(
             f'<div class="msg-body">{safe_content}</div></div>'
         )
 
-    msgs_html = "\n".join(msg_html_parts) if msg_html_parts else "<p><em>No messages in this conversation.</em></p>"
+    msgs_html = (
+        "\n".join(msg_html_parts)
+        if msg_html_parts
+        else "<p><em>No messages in this conversation.</em></p>"
+    )
     msg_count = len([m for m in messages if m.get("role") == "assistant"])
 
     return f"""<!DOCTYPE html>
@@ -5637,7 +5643,7 @@ def _build_export_html(
     <div class="meta">
       <p>Generated {generated_at}</p>
       {dataset_info}
-      <p>{msg_count} AI response{'' if msg_count == 1 else 's'} in this conversation</p>
+      <p>{msg_count} AI response{"" if msg_count == 1 else "s"} in this conversation</p>
     </div>
     {model_section}
     <p class="section-label">Conversation Transcript</p>
@@ -5683,6 +5689,7 @@ def export_conversation(
         if selected:
             best_run = selected[0]
         else:
+
             def _primary(r: ModelRun) -> float:
                 m = json.loads(r.metrics or "{}")
                 return float(m.get("r2", m.get("accuracy", 0)))

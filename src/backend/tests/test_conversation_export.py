@@ -187,10 +187,12 @@ async def test_export_returns_html(tmp_path, set_test_env):
     project_id = "exp-html-1"
     with next(db.get_session()) as session:
         session.merge(Project(id=project_id, name="Revenue Analysis"))
-        msgs = json.dumps([
-            {"role": "user", "content": "Show me the trend"},
-            {"role": "assistant", "content": "The trend is upward."},
-        ])
+        msgs = json.dumps(
+            [
+                {"role": "user", "content": "Show me the trend"},
+                {"role": "assistant", "content": "The trend is upward."},
+            ]
+        )
         session.merge(Conversation(id="conv-1", project_id=project_id, messages=msgs))
         session.commit()
 
