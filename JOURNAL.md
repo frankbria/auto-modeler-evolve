@@ -1,5 +1,21 @@
 # Journal
 
+## Day 23 — 20:00 — VP-Quality Prediction Page UX: 5 Friction Fixes (2378 backend + 1134 frontend = 3512 tests)
+
+This session closes the final two Track E (End-to-End Polish) items: the "lunch break flow audit" and the "shareable prediction page UX." A code audit of the full analyst journey (upload → explore → train → deploy → share) identified 5 friction points concentrated in the VP-facing `predict/[id]` page — the link the analyst emails to their boss.
+
+**Friction point 1 — Generic title**: "Prediction Dashboard" tells a VP nothing. Fixed: page title now dynamically reads `"{Target Column} Predictor"` (e.g., "Revenue Predictor") from `deployment.target_column`. The VP immediately knows what the model predicts before scrolling.
+
+**Friction point 2 — No model trust context**: The predict page had algorithm and problem-type badges but no plain-English context. Fixed: new `ModelContextCard` shows algorithm in plain English via `algoName()` mapping ("random_forest_regressor" → "Random Forest"), accuracy phrased as "Explains 84% of variation (good)" for regression or "92% accuracy on training data" for classification, and deployment date. This gives a VP the three questions they ask before trusting any number: what method was used, how accurate is it, and how fresh is it.
+
+**Friction point 3 — Cryptic feature labels and missing hints**: Numeric fields showed "(numeric)" but no guidance. Fixed: form heading changed to "Your Scenario" with a "pre-filled with training averages" sub-label; numeric labels now show "(avg: X)" using a new `mean` field added to `get_feature_schema()` in `core/deployer.py` (which already stored means in the pipeline — just wasn't exposing them). Placeholder text is "Default: X" with formatted numbers (k/M suffixes).
+
+**Friction point 4 — Raw algorithm IDs in comparison table**: `CompareModelsCard` was rendering "linear_regression" and "random_forest_regressor" as-is. Fixed: `algoName()` helper applied to all algorithm display in the comparison table.
+
+**Friction point 5 — Session history showed prediction only**: A VP trying "what if region = East?" vs "what if region = West?" had no way to see which inputs produced which result. Fixed: history table now has a "Key Inputs" column showing the first 3 feature values for each prediction row (e.g., "Units: 100 · Region: East · Product: A").
+
+**Backend**: `get_feature_schema()` extended with `mean` and `std` fields for numeric entries. `FeatureSchemaEntry` TypeScript type updated. 2 new backend tests confirm the fields are present and median is unchanged. 1 updated compare-models test corrects "linear_regression" → "Linear Regression" (plain English now). **8 total new tests. Total: 2378 backend + 1134 frontend = 3512, all passing. Backend lint: clean. Frontend build + lint: clean.**
+
 ## Day 23 — 12:00 — Proactive Data-Aware Upload Suggestions + "What Can I Do Next?" Guidance Chips (2376 backend + 1128 frontend = 3504 tests)
 
 This session implements two Track E (End-to-End Polish) items that close the gap between "the AI did something" and "the analyst knows what to do next." Both features share a single design principle: **never make the analyst guess**.
