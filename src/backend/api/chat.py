@@ -2770,7 +2770,7 @@ def send_message(
 
     # Check if this is an auto-retrain status/toggle request
     conv_export_event: dict | None = None
-    if _CONV_EXPORT_PATTERNS.search(body.message) and ctx["project"]:
+    if _CONV_EXPORT_PATTERNS.search(body.message) and project:
         try:
             _msg_count = 0
             _conv_stmt = select(Conversation).where(
