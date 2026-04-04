@@ -547,6 +547,29 @@ guides them forward through the natural flow.
       the "not a black box" vision promise for the shareable analyst dashboard.
       *Day 9 (00:05): 14 backend + 6 frontend = 20 new tests. Total: 1053 backend + 401 frontend = 1454.*
 
+- [x] **Model Improvement Advisor** — When an analyst asks "how do I improve my model?" or "make my
+      predictions better", AutoModeler analyses the current trained model's metrics, feature set, and
+      training choices, then returns ranked, plain-English improvement suggestions ordered by expected
+      impact. `core/advisor.py` provides `compute_improvement_suggestions()` — a pure function that runs
+      9 independent checks: weak features (call feature selection), ensemble potential (R² < 0.80),
+      date features unused, small training dataset, class imbalance unhandled, calibration missing,
+      hyperparameter tuning available, too few features, linear model on nonlinear data. Each suggestion
+      carries `difficulty` (easy/medium/hard) and `expected_impact` (low/moderate/high), sorted
+      high-impact-first then by ease of action. `GET /api/models/{project_id}/improvement-suggestions`
+      endpoint loads the selected (or best) run, derives context (dataset size, date col, weak features,
+      calibration flags), and returns the ranked list. `_IMPROVEMENT_PATTERNS` (14 NL variants: "how do
+      I improve my model", "make my predictions better", "increase accuracy", "give me suggestions",
+      "what's wrong with my model") in `chat.py` — distinct from `_TUNE_PATTERNS` (hyperparameter-only).
+      Handler injects top suggestions into the system prompt with metric context so Claude can present
+      them naturally. `{type:"model_improvement"}` SSE event. `ModelImprovementCard` (violet border, 💡
+      icon) in chat: suggestion count + metric badges in header, per-suggestion rows with category icon
+      (🎯/🤖/📊/⚖️), title + impact badge + difficulty badge, explanation text, legend row.
+      `ModelImprovementResult`/`ImprovementSuggestion`/`ImprovementDifficulty`/`ImprovementImpact`/
+      `ImprovementAction` TypeScript types; `api.models.improvementSuggestions()` client method;
+      `attachModelImprovementToLastMessage` Zustand action. Directly implements the vision's "smart
+      colleague" promise — a colleague who proactively tells you how to get better results.
+      *Day 24 (04:41): 41 backend + 13 frontend = 54 new tests. Total: 2419 backend + 1147 frontend = 3566, all passing. Backend lint: clean. Frontend build + lint: clean.*
+
 - [x] **AI-powered data dictionary** — When a dataset is uploaded (or on demand via POST), auto-generate
       plain-English descriptions for every column. `core/dictionary.py` classifies each column as
       id/metric/dimension/date/flag/text via heuristics (name hints + dtype + cardinality), then uses
