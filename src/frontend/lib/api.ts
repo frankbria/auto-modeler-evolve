@@ -652,6 +652,17 @@ export const api = {
         return r.json()
       }),
 
+    modelSelection: (
+      projectId: string,
+      criteria: import("./types").SelectionCriteria = "balanced"
+    ): Promise<import("./types").ModelSelectionResult> =>
+      fetch(
+        `${API_URL}/api/models/${projectId}/model-selection?criteria=${encodeURIComponent(criteria)}`
+      ).then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        return r.json()
+      }),
+
     train: (
       projectId: string,
       algorithms: string[],

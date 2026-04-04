@@ -51,6 +51,7 @@ import { GroupTrendCard } from "@/components/data/group-trend-card"
 import { SplitStrategyCard } from "@/components/models/split-strategy-card"
 import { FeatureSelectionCard } from "@/components/models/feature-selection-card"
 import { ModelImprovementCard } from "@/components/models/model-improvement-card"
+import { ModelSelectionCard } from "@/components/models/model-selection-card"
 import { PairCorrelationCard } from "@/components/data/pair-correlation-card"
 import { StatQueryCard } from "@/components/data/stat-query-card"
 import { SummaryStatsCard } from "@/components/data/summary-stats-card"
@@ -185,6 +186,7 @@ export default function ProjectWorkspace() {
     attachSplitStrategyToLastMessage,
     attachFeatureSelectionToLastMessage,
     attachModelImprovementToLastMessage,
+    attachModelSelectionToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -485,6 +487,8 @@ export default function ProjectWorkspace() {
                 attachFeatureSelectionToLastMessage(json.feature_selection as import("@/lib/types").FeatureSelectionResult)
               } else if (json.type === "model_improvement" && json.model_improvement) {
                 attachModelImprovementToLastMessage(json.model_improvement as import("@/lib/types").ModelImprovementResult)
+              } else if (json.type === "model_selection" && json.model_selection) {
+                attachModelSelectionToLastMessage(json.model_selection as import("@/lib/types").ModelSelectionResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -542,6 +546,7 @@ export default function ProjectWorkspace() {
     attachSplitStrategyToLastMessage,
     attachFeatureSelectionToLastMessage,
     attachModelImprovementToLastMessage,
+    attachModelSelectionToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -885,6 +890,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.model_improvement && (
                       <ModelImprovementCard result={msg.model_improvement} />
+                    )}
+                    {msg.model_selection && (
+                      <ModelSelectionCard result={msg.model_selection} />
                     )}
                   </div>
                 </div>

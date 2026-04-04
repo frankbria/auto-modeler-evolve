@@ -1,13 +1,16 @@
 """advisor.py
 
-Model Improvement Advisor — analyses a trained model's metrics and context,
-then generates ranked, plain-English improvement suggestions for business analysts.
+Model Advisor — two capabilities:
+1. Improvement Advisor: analyses a trained model and returns ranked plain-English
+   suggestions for making it better.
+2. Model Selection Advisor: given multiple completed runs, scores each one against
+   an analyst-chosen criteria (accuracy, explainability, stability, speed, balanced)
+   and returns a ranked recommendation.
 
 Design:
-- Pure function with no database dependencies (accepts pre-loaded dicts)
-- Each suggestion is an independent check; if a check fails it is skipped
-- Returns structured dict suitable for SSE + frontend card rendering
-- Difficulty: "easy" = chat command or one click | "medium" = retrain | "hard" = new data/design
+- Pure functions with no database dependencies (accepts pre-loaded dicts)
+- Each check / scoring pass is independent
+- Returns structured dicts suitable for SSE + frontend card rendering
 """
 
 from __future__ import annotations
@@ -392,4 +395,345 @@ def _build_summary(
         + f" Top suggestion: {top['title'].lower()} — "
         + top["explanation"].split(".")[0].lower()
         + "."
+    )
+
+
+# ===========================================================================
+# Model Selection Advisor
+# ===========================================================================
+
+# Explainability rank: lower = more explainable (1 = most transparent)
+_EXPLAINABILITY_RANK: dict[str, int] = {
+    "linear_regression": 1,
+    "ridge_regression": 2,
+    "logistic_regression": 3,
+    "decision_tree_classifier": 4,
+    "decision_tree_regressor": 4,
+    "knn_classifier": 5,
+    "knn_regressor": 5,
+    "random_forest_classifier": 6,
+    "random_forest_regressor": 6,
+    "gradient_boosting_classifier": 7,
+    "gradient_boosting_regressor": 7,
+    "xgboost_classifier": 8,
+    "xgboost_regressor": 8,
+    "lgbm_classifier": 8,
+    "lgbm_regressor": 8,
+    "mlp_classifier": 9,
+    "mlp_regressor": 9,
+    "voting_classifier": 10,
+    "voting_regressor": 10,
+    "stacking_classifier": 10,
+    "stacking_regressor": 10,
+}
+
+# Speed rank: lower = faster (1 = fastest)
+_SPEED_RANK: dict[str, int] = {
+    "linear_regression": 1,
+    "ridge_regression": 1,
+    "logistic_regression": 2,
+    "decision_tree_classifier": 3,
+    "decision_tree_regressor": 3,
+    "knn_classifier": 4,
+    "knn_regressor": 4,
+    "random_forest_classifier": 5,
+    "random_forest_regressor": 5,
+    "gradient_boosting_classifier": 6,
+    "gradient_boosting_regressor": 6,
+    "xgboost_classifier": 7,
+    "xgboost_regressor": 7,
+    "lgbm_classifier": 6,
+    "lgbm_regressor": 6,
+    "mlp_classifier": 8,
+    "mlp_regressor": 8,
+    "voting_classifier": 9,
+    "voting_regressor": 9,
+    "stacking_classifier": 10,
+    "stacking_regressor": 10,
+}
+
+# Plain-English algorithm names
+_ALGO_PLAIN: dict[str, str] = {
+    "linear_regression": "Linear Regression",
+    "ridge_regression": "Ridge Regression",
+    "logistic_regression": "Logistic Regression",
+    "decision_tree_classifier": "Decision Tree",
+    "decision_tree_regressor": "Decision Tree",
+    "knn_classifier": "K-Nearest Neighbours",
+    "knn_regressor": "K-Nearest Neighbours",
+    "random_forest_classifier": "Random Forest",
+    "random_forest_regressor": "Random Forest",
+    "gradient_boosting_classifier": "Gradient Boosting",
+    "gradient_boosting_regressor": "Gradient Boosting",
+    "xgboost_classifier": "XGBoost",
+    "xgboost_regressor": "XGBoost",
+    "lgbm_classifier": "LightGBM",
+    "lgbm_regressor": "LightGBM",
+    "mlp_classifier": "Neural Network (MLP)",
+    "mlp_regressor": "Neural Network (MLP)",
+    "voting_classifier": "Voting Ensemble",
+    "voting_regressor": "Voting Ensemble",
+    "stacking_classifier": "Stacking Ensemble",
+    "stacking_regressor": "Stacking Ensemble",
+}
+
+# Explainability descriptions for the winner card
+_EXPLAIN_WHY: dict[str, str] = {
+    "linear_regression": (
+        "Linear Regression is fully transparent — each prediction is a simple "
+        "weighted sum of your inputs. You can explain it in one sentence to any stakeholder."
+    ),
+    "ridge_regression": (
+        "Ridge Regression is highly transparent — like Linear Regression but robust to "
+        "correlated features. Coefficients directly show each input's influence."
+    ),
+    "logistic_regression": (
+        "Logistic Regression is easy to explain — it outputs a probability and its "
+        "coefficients show exactly which features push predictions up or down."
+    ),
+    "decision_tree_classifier": (
+        "Decision Trees can be drawn as a flowchart: 'If region = East AND revenue > 100, "
+        "predict churn.' Even non-technical stakeholders can follow the logic."
+    ),
+    "decision_tree_regressor": (
+        "Decision Trees can be drawn as a flowchart. Even non-technical stakeholders "
+        "can follow the logic — great for internal audits and regulatory reviews."
+    ),
+    "knn_classifier": (
+        "K-Nearest Neighbours makes predictions by finding similar historical cases. "
+        "You can always show a stakeholder 'these are the most similar past examples.'"
+    ),
+    "knn_regressor": (
+        "K-Nearest Neighbours predicts by averaging similar historical records — "
+        "intuitive to explain as 'average of the N most similar cases.'"
+    ),
+    "random_forest_classifier": (
+        "Random Forest combines many Decision Trees. You can say: 'we asked 100 experts "
+        "and the majority voted for this prediction.' Less transparent than a single tree."
+    ),
+    "random_forest_regressor": (
+        "Random Forest averages many Decision Trees. Relatively interpretable — "
+        "you can show feature importance charts to explain what drives predictions."
+    ),
+    "gradient_boosting_classifier": (
+        "Gradient Boosting builds trees in sequence, each correcting the last. "
+        "Feature importance charts show what matters, but the internal logic is complex."
+    ),
+    "gradient_boosting_regressor": (
+        "Gradient Boosting builds trees in sequence. Feature importance charts help "
+        "explain what drives predictions, but the full logic is hard to expose simply."
+    ),
+    "xgboost_classifier": (
+        "XGBoost is a highly optimised boosting method. Very accurate but its internal "
+        "logic is complex — use SHAP explanations to justify individual predictions."
+    ),
+    "xgboost_regressor": (
+        "XGBoost is a highly optimised boosting method. Very accurate but its internal "
+        "logic is complex — use SHAP explanations to justify individual predictions."
+    ),
+    "lgbm_classifier": (
+        "LightGBM is fast and accurate but complex internally. Feature importance and "
+        "SHAP values can explain what the model learned, though not in simple terms."
+    ),
+    "lgbm_regressor": (
+        "LightGBM is fast and accurate but complex internally. Feature importance and "
+        "SHAP values can help explain its behaviour to technical audiences."
+    ),
+    "mlp_classifier": (
+        "Neural Networks (MLP) are the least transparent option — they learn abstract "
+        "representations with no simple rules to show. Use explanation tools for audits."
+    ),
+    "mlp_regressor": (
+        "Neural Networks (MLP) are the least transparent option — they learn abstract "
+        "representations with no simple rules to show. Use explanation tools for audits."
+    ),
+    "voting_classifier": (
+        "A Voting Ensemble combines multiple models. You can say 'N out of M models "
+        "agreed on this prediction', but each base model has its own complexity."
+    ),
+    "voting_regressor": (
+        "A Voting Ensemble averages multiple models. Relatively intuitive at a high "
+        "level ('all models agreed'), but the individual components are complex."
+    ),
+    "stacking_classifier": (
+        "Stacking layers models on top of each other — the most complex architecture "
+        "here. Maximises accuracy but requires SHAP or LIME for any explanation."
+    ),
+    "stacking_regressor": (
+        "Stacking layers models on top of each other — the most complex architecture "
+        "here. Maximises accuracy but requires SHAP or LIME for any explanation."
+    ),
+}
+
+_CRITERIA_DESCRIPTIONS: dict[str, str] = {
+    "accuracy": "Highest accuracy — the most predictively powerful model",
+    "explainability": "Most explainable — easiest to explain to stakeholders",
+    "stability": "Most stable — consistent across data splits, not just lucky",
+    "speed": "Fastest — lowest latency for real-time or high-volume predictions",
+    "balanced": "Best overall — balances accuracy, explainability, and stability",
+}
+
+_MAX_EXPLAINABILITY_RANK = max(_EXPLAINABILITY_RANK.values())
+_MAX_SPEED_RANK = max(_SPEED_RANK.values())
+
+
+def compute_model_selection(
+    runs: list[dict[str, Any]],
+    criteria: str = "balanced",
+) -> dict[str, Any]:
+    """Score and rank completed model runs by the given analyst criteria.
+
+    Parameters
+    ----------
+    runs:
+        List of run dicts, each with keys:
+        run_id, algorithm, metrics (dict), problem_type.
+    criteria:
+        One of "accuracy" | "explainability" | "stability" | "speed" | "balanced".
+
+    Returns
+    -------
+    dict with winner, ranked_runs, criteria, summary, etc.
+    """
+    if not runs:
+        return {
+            "criteria": criteria,
+            "criteria_description": _CRITERIA_DESCRIPTIONS.get(criteria, criteria),
+            "winner": None,
+            "ranked_runs": [],
+            "summary": "No completed model runs to compare.",
+            "n_runs": 0,
+        }
+
+    criteria = criteria if criteria in _CRITERIA_DESCRIPTIONS else "balanced"
+    scored = [_score_run(r, criteria) for r in runs]
+    scored.sort(key=lambda x: x["score"], reverse=True)
+
+    # Assign ranks (1-based)
+    for i, s in enumerate(scored):
+        s["rank"] = i + 1
+
+    winner = scored[0]
+
+    return {
+        "criteria": criteria,
+        "criteria_description": _CRITERIA_DESCRIPTIONS[criteria],
+        "winner": winner,
+        "ranked_runs": scored,
+        "summary": _selection_summary(winner, criteria),
+        "n_runs": len(scored),
+    }
+
+
+def _score_run(run: dict[str, Any], criteria: str) -> dict[str, Any]:
+    """Return a scored + annotated version of a single run."""
+    algo = run.get("algorithm", "")
+    metrics = run.get("metrics") or {}
+    problem_type = run.get("problem_type", "")
+
+    primary_metric, metric_name = _primary_metric(metrics, problem_type)
+
+    # Component scores (0.0–1.0, higher = better)
+    acc_score = _accuracy_score(primary_metric)
+    expl_score = _explainability_score(algo)
+    stab_score = _stability_score(metrics)
+    speed_score = _speed_score(algo)
+
+    if criteria == "accuracy":
+        score = acc_score
+    elif criteria == "explainability":
+        score = expl_score
+    elif criteria == "stability":
+        score = stab_score
+    elif criteria == "speed":
+        score = speed_score
+    else:  # balanced
+        score = 0.40 * acc_score + 0.30 * expl_score + 0.30 * stab_score
+
+    algo_plain = _ALGO_PLAIN.get(algo, algo.replace("_", " ").title())
+    explain_why = _EXPLAIN_WHY.get(algo, f"{algo_plain} is a capable model for this task.")
+
+    return {
+        "run_id": run.get("run_id", run.get("id", "")),
+        "algorithm": algo,
+        "algorithm_plain": algo_plain,
+        "score": round(score, 4),
+        "primary_metric": round(primary_metric, 4),
+        "primary_metric_name": metric_name,
+        "component_scores": {
+            "accuracy": round(acc_score, 3),
+            "explainability": round(expl_score, 3),
+            "stability": round(stab_score, 3),
+            "speed": round(speed_score, 3),
+        },
+        "why": explain_why,
+        "is_selected": run.get("is_selected", False),
+        "is_deployed": run.get("is_deployed", False),
+    }
+
+
+def _accuracy_score(primary_metric: float) -> float:
+    """Normalise primary metric to 0-1 (already 0-1 for R² and accuracy)."""
+    return max(0.0, min(1.0, float(primary_metric)))
+
+
+def _explainability_score(algo: str) -> float:
+    """Convert explainability rank to a 0-1 score (1 = most explainable)."""
+    rank = _EXPLAINABILITY_RANK.get(algo, _MAX_EXPLAINABILITY_RANK)
+    # Invert: rank 1 → score 1.0; rank _MAX → score close to 0
+    return 1.0 - (rank - 1) / _MAX_EXPLAINABILITY_RANK
+
+
+def _stability_score(metrics: dict) -> float:
+    """Score based on cross-validation coefficient of variation (lower cv = more stable)."""
+    cv_mean = metrics.get("cv_mean")
+    cv_std = metrics.get("cv_std")
+    if cv_mean is None or cv_std is None:
+        return 0.5  # no CV data — neutral
+    if float(cv_mean) <= 0:
+        return 0.5
+    # Coefficient of variation: lower → more stable → higher score
+    cov = float(cv_std) / float(cv_mean)
+    # Map: cov=0 → 1.0, cov=0.5+ → 0.0
+    return max(0.0, 1.0 - cov * 2.0)
+
+
+def _speed_score(algo: str) -> float:
+    """Convert speed rank to a 0-1 score (1 = fastest)."""
+    rank = _SPEED_RANK.get(algo, _MAX_SPEED_RANK)
+    return 1.0 - (rank - 1) / _MAX_SPEED_RANK
+
+
+def _selection_summary(winner: dict[str, Any], criteria: str) -> str:
+    """Return a one-sentence plain-English summary of the recommendation."""
+    name = winner["algorithm_plain"]
+    metric_val = round(winner["primary_metric"] * 100)
+    metric_name = winner["primary_metric_name"]
+    score_pct = round(winner["score"] * 100)
+
+    if criteria == "accuracy":
+        return (
+            f"{name} achieves the highest {metric_name} of {metric_val}% "
+            f"— it is the most predictively powerful model in this comparison."
+        )
+    if criteria == "explainability":
+        return (
+            f"{name} is the most transparent algorithm here — "
+            f"ideal for situations where you need to explain predictions to stakeholders."
+        )
+    if criteria == "stability":
+        return (
+            f"{name} is the most consistent performer across data splits, "
+            f"with the lowest variance in cross-validation results."
+        )
+    if criteria == "speed":
+        return (
+            f"{name} is the fastest option — ideal for real-time APIs "
+            f"or high-volume batch prediction scenarios."
+        )
+    # balanced
+    return (
+        f"{name} scores best overall ({score_pct}/100) — "
+        f"a strong balance of accuracy ({metric_val}% {metric_name}), "
+        f"explainability, and stability."
     )

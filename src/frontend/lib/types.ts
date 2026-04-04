@@ -442,6 +442,7 @@ export interface ChatMessage {
   split_strategy?: SplitStrategyResult
   feature_selection?: FeatureSelectionResult
   model_improvement?: ModelImprovementResult
+  model_selection?: ModelSelectionResult
 }
 
 export interface SegmentPerformanceSegment {
@@ -1787,4 +1788,41 @@ export interface ModelImprovementResult {
   suggestions: ImprovementSuggestion[]
   summary: string
   n_suggestions: number
+}
+
+// ---------------------------------------------------------------------------
+// Model Selection Advisor
+// ---------------------------------------------------------------------------
+
+export type SelectionCriteria = "accuracy" | "explainability" | "stability" | "speed" | "balanced"
+
+export interface ModelSelectionComponentScores {
+  accuracy: number
+  explainability: number
+  stability: number
+  speed: number
+}
+
+export interface ModelSelectionRun {
+  run_id: string
+  algorithm: string
+  algorithm_plain: string
+  score: number
+  primary_metric: number
+  primary_metric_name: string
+  component_scores: ModelSelectionComponentScores
+  why: string
+  is_selected: boolean
+  is_deployed: boolean
+  rank: number
+}
+
+export interface ModelSelectionResult {
+  project_id: string
+  criteria: SelectionCriteria
+  criteria_description: string
+  winner: ModelSelectionRun | null
+  ranked_runs: ModelSelectionRun[]
+  summary: string
+  n_runs: number
 }

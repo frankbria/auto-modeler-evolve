@@ -2032,3 +2032,66 @@ def get_improvement_suggestions(
     result["run_id"] = selected.id
     result["project_id"] = project_id
     return result
+
+
+@router.get("/api/models/{project_id}/model-selection")
+def get_model_selection(
+    project_id: str,
+    criteria: str = "balanced",
+    session: Session = Depends(get_session),
+):
+    """Return runs ranked by analyst-chosen criteria.
+
+    criteria: accuracy | explainability | stability | speed | balanced
+    """
+    from core.advisor import compute_model_selection
+
+    project = session.get(Project, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    valid_criteria = {"accuracy", "explainability", "stability", "speed", "balanced"}
+    if criteria not in valid_criteria:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid criteria '{criteria}'. Choose from: {', '.join(sorted(valid_criteria))}",
+        )
+
+    completed_runs = session.exec(
+        select(ModelRun).where(
+            ModelRun.project_id == project_id,
+            ModelRun.status == "done",
+        )
+    ).all()
+
+    if not completed_runs:
+        raise HTTPException(status_code=404, detail="No completed model runs found")
+
+    # Determine problem_type from metrics of first completed run
+    def _detect_problem_type(run: ModelRun) -> str:
+        if run.metrics:
+            m = json.loads(run.metrics)
+            if "r2" in m or "mae" in m:
+                return "regression"
+            if "accuracy" in m or "f1" in m:
+                return "classification"
+        return "regression"
+
+    runs_data = []
+    for run in completed_runs:
+        metrics = json.loads(run.metrics) if run.metrics else {}
+        pt = _detect_problem_type(run)
+        runs_data.append(
+            {
+                "run_id": run.id,
+                "algorithm": run.algorithm,
+                "metrics": metrics,
+                "problem_type": pt,
+                "is_selected": run.is_selected,
+                "is_deployed": run.is_deployed,
+            }
+        )
+
+    result = compute_model_selection(runs_data, criteria=criteria)
+    result["project_id"] = project_id
+    return result

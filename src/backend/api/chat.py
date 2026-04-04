@@ -78,6 +78,20 @@ _IMPROVEMENT_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# Keywords that trigger model selection advisor
+# Distinct from _IMPROVEMENT_PATTERNS (improve existing) — these ask "which model to use"
+_MODEL_SELECT_PATTERNS = re.compile(
+    r"\b(which model.*use|what model.*use|pick.*best.*model|pick.*model|"
+    r"recommend.*model|which model.*best|best model.*me|"
+    r"most.*explain|explain.*model|easy.*explain|"
+    r"most.*accurate.*model|highest.*accuracy.*model|"
+    r"most.*stable|most.*consistent.*model|"
+    r"fastest.*model|quickest.*model|low.*latency.*model|"
+    r"model.*my.*goal|choose.*model|select.*model.*for|compare.*model.*criteria|"
+    r"which.*algorithm.*use|what.*algorithm.*best)\b",
+    re.IGNORECASE,
+)
+
 # Keywords that trigger a cross-deployment alerts scan
 # Note: no trailing \b — patterns use .* wildcards so plurals ("alerts") work fine
 _ALERTS_PATTERNS = re.compile(
@@ -755,6 +769,76 @@ _TRAIN_TARGET_EXTRACT = re.compile(
     r")",
     re.IGNORECASE,
 )
+
+
+def _detect_selection_criteria(message: str) -> str:
+    """Detect analyst criteria intent from a model selection message.
+
+    Returns one of: accuracy | explainability | stability | speed | balanced
+    """
+    msg = message.lower()
+
+    # Explainability keywords
+    if any(
+        kw in msg
+        for kw in [
+            "explain",
+            "transparent",
+            "interpretable",
+            "understand",
+            "stakeholder",
+            "simple",
+            "easy to",
+        ]
+    ):
+        return "explainability"
+
+    # Accuracy keywords
+    if any(
+        kw in msg
+        for kw in [
+            "accurate",
+            "accuracy",
+            "precise",
+            "best performance",
+            "highest",
+            "best metric",
+            "most predict",
+        ]
+    ):
+        return "accuracy"
+
+    # Speed / latency keywords
+    if any(
+        kw in msg
+        for kw in [
+            "fast",
+            "quick",
+            "speed",
+            "latency",
+            "real-time",
+            "real time",
+            "low latency",
+            "high volume",
+        ]
+    ):
+        return "speed"
+
+    # Stability / consistency keywords
+    if any(
+        kw in msg
+        for kw in [
+            "stable",
+            "consistent",
+            "reliable",
+            "trust",
+            "robust",
+        ]
+    ):
+        return "stability"
+
+    # Default: balanced
+    return "balanced"
 
 
 def _detect_train_target(message: str, df_columns: list[str]) -> str | None:
@@ -2598,6 +2682,64 @@ def send_message(
                     + "\n\nPresent the top 2-3 suggestions to the user in a helpful, "
                     "encouraging tone. Each suggestion should explain what to do and why "
                     "it will help — reference the specific metric values above."
+                )
+            except Exception:  # noqa: BLE001
+                pass  # Nice-to-have; never crash chat
+
+    # Check if this is a model selection / criteria-comparison request
+    model_select_event: dict | None = None
+    if _MODEL_SELECT_PATTERNS.search(body.message) and ctx["model_runs"]:
+        completed_runs = [mr for mr in ctx["model_runs"] if mr.status == "done"]
+        if len(completed_runs) >= 1:
+            try:
+                from core.advisor import compute_model_selection as _cms
+
+                _criteria = _detect_selection_criteria(body.message)
+
+                _runs_data = []
+                for _mr in completed_runs:
+                    _m = json.loads(_mr.metrics or "{}")
+                    _pt = (
+                        "classification"
+                        if _mr.algorithm.endswith("_classifier")
+                        or _mr.algorithm in {"logistic_regression"}
+                        else "regression"
+                    )
+                    _runs_data.append(
+                        {
+                            "run_id": _mr.id,
+                            "algorithm": _mr.algorithm,
+                            "metrics": _m,
+                            "problem_type": _pt,
+                            "is_selected": _mr.is_selected,
+                            "is_deployed": _mr.is_deployed,
+                        }
+                    )
+
+                model_select_event = _cms(_runs_data, criteria=_criteria)
+                model_select_event["project_id"] = body.project_id
+
+                _winner = model_select_event.get("winner") or {}
+                _crit_desc = model_select_event.get("criteria_description", _criteria)
+                _n = model_select_event.get("n_runs", 0)
+                _ranked = model_select_event.get("ranked_runs", [])
+                system_prompt += (
+                    f"\n\n## Model Selection Recommendation (criteria: {_criteria})\n"
+                    f"Criteria: {_crit_desc}\n"
+                    f"Winner: {_winner.get('algorithm_plain', '')} "
+                    f"({_winner.get('primary_metric_name', '')}: "
+                    f"{round((_winner.get('primary_metric', 0) or 0) * 100)}%)\n"
+                    f"Compared {_n} completed model run{'s' if _n != 1 else ''}.\n"
+                    + "\n".join(
+                        f"{r['rank']}. {r['algorithm_plain']} "
+                        f"(score: {round(r['score'] * 100)}%)"
+                        for r in _ranked
+                    )
+                    + f"\n\nExplain to the user why {_winner.get('algorithm_plain', 'this model')} "
+                    "is the best choice for their criteria. Use the criteria description and the "
+                    "winner's 'why' field to narrate the recommendation. Keep it encouraging and "
+                    "non-technical. If there's only one model, tell them it's the best available "
+                    "and suggest training others for comparison."
                 )
             except Exception:  # noqa: BLE001
                 pass  # Nice-to-have; never crash chat
@@ -5028,6 +5170,10 @@ def send_message(
         # Emit model improvement suggestions if computed
         if improvement_event:
             yield f"data: {json.dumps({'type': 'model_improvement', 'model_improvement': improvement_event})}\n\n"
+
+        # Emit model selection recommendation if computed
+        if model_select_event:
+            yield f"data: {json.dumps({'type': 'model_selection', 'model_selection': model_select_event})}\n\n"
 
         # Emit model health card if computed
         if health_data:
