@@ -570,6 +570,31 @@ guides them forward through the natural flow.
       colleague" promise — a colleague who proactively tells you how to get better results.
       *Day 24 (04:41): 41 backend + 13 frontend = 54 new tests. Total: 2419 backend + 1147 frontend = 3566, all passing. Backend lint: clean. Frontend build + lint: clean.*
 
+- [x] **Smart Model Selection Advisor** — When an analyst asks "which model should I use?", "pick the
+      most explainable model", "I need the most accurate model", or "fastest model for real-time API",
+      AutoModeler scores all completed runs against an analyst-chosen criteria and returns a ranked
+      recommendation in plain English. `compute_model_selection(runs, criteria)` pure function in
+      `core/advisor.py` supports five criteria: **accuracy** (primary metric wins), **explainability**
+      (linear > logistic > decision_tree > RF > XGB > MLP > ensemble rank-inverted to 0-1),
+      **stability** (cross-validation coefficient of variation — lower CoV = more stable), **speed**
+      (algorithm complexity rank), and **balanced** (0.40×accuracy + 0.30×explainability + 0.30×stability).
+      Each run gets per-component scores (0-1 each) plus a composite `score` for sorting. Returns winner
+      (with `algorithm_plain`, `why` plain-English justification, component score bars) + all runs ranked
+      1-N + one-sentence `summary`. `GET /api/models/{project_id}/model-selection?criteria=` endpoint
+      (validates criteria; 400 on unknown). `_MODEL_SELECT_PATTERNS` (15 NL variants: "which model should
+      I use", "pick the best model", "most explainable model", "which model is most accurate", "fastest
+      model", "low latency model") + `_detect_selection_criteria()` helper in `chat.py` (extracts criteria
+      from message: explainability/accuracy/speed/stability keywords, defaults to balanced). System prompt
+      injection names winner + ranked list; `{type:"model_selection"}` SSE event.
+      `ModelSelectionCard` (indigo border, 🏆 icon) in chat: criteria badge + N-models badge, winner
+      highlight box (algorithm name + `why` justification), four component score mini-bars (accuracy/
+      explainability/stability/speed), ranked run list (trophy for rank 1, selected/deployed badges),
+      summary sentence. `ModelSelectionResult`/`ModelSelectionRun`/`SelectionCriteria` TypeScript types;
+      `api.models.modelSelection()` client method; `attachModelSelectionToLastMessage()` Zustand action.
+      Closes the "I don't know which model to choose" analyst gap — a smart colleague would say "for
+      explainability, use the linear model; for accuracy, use XGBoost."
+      *Day 24 (04:00): 42 backend + 18 frontend = 60 new tests. Total: 2461 backend + 1165 frontend = 3626, all passing. Backend lint: clean. Frontend build + lint: clean.*
+
 - [x] **AI-powered data dictionary** — When a dataset is uploaded (or on demand via POST), auto-generate
       plain-English descriptions for every column. `core/dictionary.py` classifies each column as
       id/metric/dimension/date/flag/text via heuristics (name hints + dtype + cardinality), then uses
