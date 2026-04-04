@@ -7,7 +7,6 @@ Covers:
 - Upload endpoint response includes auto_retrain field
 """
 
-import json
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlmodel import SQLModel
