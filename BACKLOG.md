@@ -49,13 +49,20 @@ the time is better spent on real features.
 
 ## Currently Working On
 
+## Day 24 (04:00) — Done
+**Track B — Smart Model Selection Advisor.** Complements the Model Improvement Advisor with "which model to use" rather than "how to improve it".
+- **Smart Model Selection Advisor** — `compute_model_selection(runs, criteria)` pure function scores all completed runs on 5 criteria: accuracy/explainability/stability/speed/balanced. `GET /api/models/{project_id}/model-selection?criteria=` endpoint. `_MODEL_SELECT_PATTERNS` (15 NL variants) + `_detect_selection_criteria()` in `chat.py`. `ModelSelectionCard` (indigo border, 🏆) in chat: winner highlight + component score bars + ranked list. 42 backend + 18 frontend = 60 new tests. Total: 2461 backend + 1165 frontend = 3626.
+
+**What's next:**
+- Continue Track B — remaining opportunities:
+  - Auto-retrain scheduling (schedule model retrain on new data upload or cron)
+  - "Model drift → retrain" proactive notification (webhook + chat alert)
+  - Multi-dataset comparison (upload v2 dataset, compare model performance pre/post)
+  - Conversation export as HTML report (share entire analysis journey with VP)
+
 ## Day 24 (04:41) — Done
 **Track B — Model Improvement Advisor.** All spec tracks done; moved to Track B.
 - **Model Improvement Advisor** — `core/advisor.py` `compute_improvement_suggestions()` pure function runs 9 ranked checks (weak features, ensemble potential, date features unused, small dataset, class imbalance, calibration, hyperparameter tuning, too few features, linear on nonlinear data). Each suggestion has `difficulty`+`expected_impact`. `GET /api/models/{project_id}/improvement-suggestions` endpoint. `_IMPROVEMENT_PATTERNS` (14 NL variants) + chat SSE emit. `ModelImprovementCard` (violet border) in chat. 41 backend + 13 frontend = 54 new tests. Total: 2419 backend + 1147 frontend = 3566.
-
-**What's next:**
-- More Track B innovations — natural language scenario comparison, auto-retrain scheduling, or model comparison by analyst criteria ("pick the most explainable model")
-- Continue the "lunch break" criterion: measure end-to-end UX quality with fresh eyes
 
 ## Day 23 (20:00) — Done
 **Track E — End-to-End Polish (final two items).** All Track E items are now complete:
