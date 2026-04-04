@@ -196,9 +196,9 @@ describe("CompareModelsCard — interaction", () => {
     })
 
     await waitFor(() => {
-      // linear_regression appears in both the page badge AND the table
-      expect(screen.getAllByText("linear_regression").length).toBeGreaterThanOrEqual(1)
-      expect(screen.getAllByText("random_forest_regressor").length).toBeGreaterThanOrEqual(1)
+      // Algorithm names are shown in plain English in the comparison table
+      expect(screen.getAllByText("Linear Regression").length).toBeGreaterThanOrEqual(1)
+      expect(screen.getAllByText("Random Forest").length).toBeGreaterThanOrEqual(1)
     })
   })
 

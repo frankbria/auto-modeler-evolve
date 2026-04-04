@@ -734,6 +734,8 @@ export interface FeatureSchemaEntry {
   type: "numeric" | "categorical"
   options?: string[]   // categorical choices
   median?: number      // numeric default
+  mean?: number        // training average (for hints)
+  std?: number         // training std dev (for hints)
 }
 
 export interface Deployment {

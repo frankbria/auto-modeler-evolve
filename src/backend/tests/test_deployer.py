@@ -317,6 +317,28 @@ class TestPredictFunctions:
         for entry in schema:
             assert "type" in entry
 
+    def test_get_feature_schema_includes_mean_and_std(self, trained_pipeline_and_model):
+        from core.deployer import get_feature_schema
+
+        pl_path, _ = trained_pipeline_and_model
+        schema = get_feature_schema(pl_path)
+        numeric_entries = [s for s in schema if s["type"] == "numeric"]
+        assert len(numeric_entries) > 0
+        for entry in numeric_entries:
+            assert "mean" in entry, "mean should be included in numeric schema entry"
+            assert "std" in entry, "std should be included in numeric schema entry"
+            assert entry["mean"] is not None
+            assert entry["std"] is not None
+
+    def test_get_feature_schema_median_unchanged(self, trained_pipeline_and_model):
+        from core.deployer import get_feature_schema
+
+        pl_path, _ = trained_pipeline_and_model
+        schema = get_feature_schema(pl_path)
+        numeric_entries = [s for s in schema if s["type"] == "numeric"]
+        for entry in numeric_entries:
+            assert "median" in entry, "median should still be present for backwards compat"
+
 
 # ---------------------------------------------------------------------------
 # API integration tests

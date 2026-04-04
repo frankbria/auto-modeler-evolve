@@ -10,6 +10,70 @@ import { api } from "@/lib/api"
 import type { Deployment, FeatureSchemaEntry, PredictionResult, PredictionExplanation, FeatureContribution, ConfidenceInterval, ModelComparisonResult, ComparisonResponse } from "@/lib/types"
 
 // ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/** Convert snake_case / underscored algorithm ID to plain English. */
+function algoName(raw: string | null): string {
+  if (!raw) return "Unknown"
+  const map: Record<string, string> = {
+    linear_regression: "Linear Regression",
+    ridge_regression: "Ridge Regression",
+    lasso_regression: "Lasso Regression",
+    random_forest_regressor: "Random Forest",
+    gradient_boosting_regressor: "Gradient Boosting",
+    xgboost_regressor: "XGBoost",
+    lightgbm_regressor: "LightGBM",
+    mlp_regressor: "Neural Network",
+    voting_regressor: "Ensemble (Voting)",
+    stacking_regressor: "Ensemble (Stacking)",
+    logistic_regression: "Logistic Regression",
+    random_forest_classifier: "Random Forest",
+    gradient_boosting_classifier: "Gradient Boosting",
+    xgboost_classifier: "XGBoost",
+    lightgbm_classifier: "LightGBM",
+    mlp_classifier: "Neural Network",
+    voting_classifier: "Ensemble (Voting)",
+    stacking_classifier: "Ensemble (Stacking)",
+  }
+  return map[raw] ?? raw.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
+}
+
+/** Format a column name for display. */
+function colLabel(name: string): string {
+  return name.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
+}
+
+/** Pick the primary accuracy metric and render it in plain English. */
+function primaryMetricSummary(metrics: Record<string, number>, problemType: string | null): string {
+  if (problemType === "regression") {
+    const r2 = metrics.r2
+    if (r2 !== undefined) {
+      const pct = Math.round(r2 * 100)
+      if (pct >= 90) return `Explains ${pct}% of variation (excellent)`
+      if (pct >= 75) return `Explains ${pct}% of variation (good)`
+      if (pct >= 50) return `Explains ${pct}% of variation (moderate)`
+      return `Explains ${pct}% of variation`
+    }
+  }
+  if (problemType === "classification") {
+    const acc = metrics.accuracy
+    if (acc !== undefined) {
+      const pct = Math.round(acc * 100)
+      return `${pct}% accuracy on training data`
+    }
+  }
+  return ""
+}
+
+/** Format a number with k/M suffix. */
+function fmtNum(n: number, decimals = 2): string {
+  if (Math.abs(n) >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
+  if (Math.abs(n) >= 1_000) return `${(n / 1_000).toFixed(1)}k`
+  return n.toLocaleString(undefined, { maximumFractionDigits: decimals })
+}
+
+// ---------------------------------------------------------------------------
 // Feature contribution waterfall (horizontal bar chart)
 // ---------------------------------------------------------------------------
 
@@ -27,7 +91,7 @@ function ContributionBar({
   return (
     <div className="flex items-center gap-2 text-xs">
       <div className="w-32 shrink-0 truncate text-right text-muted-foreground" title={item.feature}>
-        {item.feature.replace(/_/g, " ")}
+        {colLabel(item.feature)}
       </div>
       <div className="flex flex-1 items-center gap-1">
         {/* Left (negative) side */}
@@ -104,7 +168,7 @@ function ExplanationCard({ explanation }: { explanation: PredictionExplanation }
 // ---------------------------------------------------------------------------
 
 function CompareResultRow({ result }: { result: ModelComparisonResult }) {
-  const algo = result.algorithm ?? "Unknown"
+  const algo = result.algorithm ? algoName(result.algorithm) : "Unknown"
   const date = result.trained_at
     ? new Date(result.trained_at).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })
     : "—"
@@ -204,7 +268,7 @@ function CompareModelsCard({ currentDeploymentId, projectId, features }: Compare
             >
               {otherDeployments.map((d) => (
                 <option key={d.id} value={d.id}>
-                  {d.algorithm ?? "Unknown"} — {d.created_at ? new Date(d.created_at).toLocaleDateString() : "Unknown date"}
+                  {algoName(d.algorithm ?? null)} — {d.created_at ? new Date(d.created_at).toLocaleDateString() : "Unknown date"}
                 </option>
               ))}
             </select>
@@ -279,6 +343,50 @@ function ConfidenceIntervalBadge({ interval }: { interval: ConfidenceInterval })
 }
 
 // ---------------------------------------------------------------------------
+// Model context card (for VP trust)
+// ---------------------------------------------------------------------------
+
+interface ModelContextCardProps {
+  deployment: Deployment
+}
+
+function ModelContextCard({ deployment }: ModelContextCardProps) {
+  const accuracy = primaryMetricSummary(deployment.metrics ?? {}, deployment.problem_type)
+  const deployedDate = deployment.created_at
+    ? new Date(deployment.created_at).toLocaleDateString(undefined, {
+        month: "long",
+        day: "numeric",
+        year: "numeric",
+      })
+    : null
+
+  return (
+    <Card className="border-muted bg-muted/30" data-testid="model-context-card">
+      <CardContent className="pt-4 pb-3">
+        <div className="flex flex-wrap items-start gap-x-4 gap-y-1 text-sm">
+          <span className="text-muted-foreground">
+            <span className="font-medium text-foreground">Algorithm:</span>{" "}
+            {algoName(deployment.algorithm ?? null)}
+          </span>
+          {accuracy && (
+            <span className="text-muted-foreground">
+              <span className="font-medium text-foreground">Accuracy:</span>{" "}
+              {accuracy}
+            </span>
+          )}
+          {deployedDate && (
+            <span className="text-muted-foreground">
+              <span className="font-medium text-foreground">Deployed:</span>{" "}
+              {deployedDate}
+            </span>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Main prediction dashboard
 // ---------------------------------------------------------------------------
 
@@ -313,7 +421,7 @@ export default function PredictionDashboard() {
       .get(deploymentId)
       .then((d) => {
         setDeployment(d)
-        // Pre-fill inputs with default values
+        // Pre-fill inputs with training-average defaults
         const defaults: Record<string, string> = {}
         for (const entry of d.feature_schema ?? []) {
           if (entry.type === "numeric") {
@@ -397,8 +505,13 @@ export default function PredictionDashboard() {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <p className="text-sm text-muted-foreground">Loading prediction service...</p>
+      <div className="min-h-screen bg-background px-4 py-8">
+        <div className="mx-auto max-w-xl space-y-4 animate-pulse">
+          <div className="h-8 w-3/4 rounded-md bg-muted" />
+          <div className="h-4 w-1/2 rounded-md bg-muted" />
+          <div className="h-32 rounded-lg bg-muted" />
+          <div className="h-64 rounded-lg bg-muted" />
+        </div>
       </div>
     )
   }
@@ -418,6 +531,8 @@ export default function PredictionDashboard() {
   }
 
   const schema = deployment.feature_schema ?? []
+  const targetLabel = colLabel(deployment.target_column ?? "Output")
+  const pageTitle = `${targetLabel} Predictor`
 
   return (
     <div className="min-h-screen bg-background px-4 py-8">
@@ -425,8 +540,7 @@ export default function PredictionDashboard() {
         {/* Header */}
         <div>
           <div className="flex items-center gap-2 flex-wrap">
-            <h1 className="text-xl font-semibold">Prediction Dashboard</h1>
-            <Badge variant="outline">{deployment.algorithm}</Badge>
+            <h1 className="text-2xl font-bold" data-testid="page-title">{pageTitle}</h1>
             {deployment.environment && (
               <Badge
                 className={
@@ -439,25 +553,25 @@ export default function PredictionDashboard() {
                 {deployment.environment === "production" ? "Production" : "Staging"}
               </Badge>
             )}
-            <Badge
-              variant="secondary"
-              className="ml-auto capitalize"
-            >
-              {deployment.problem_type}
-            </Badge>
           </div>
           <p className="mt-1 text-sm text-muted-foreground">
-            Fill in the values below to get a prediction for{" "}
-            <strong>{deployment.target_column}</strong>.
+            Enter your data below to get a predicted{" "}
+            <strong>{deployment.target_column}</strong> value.
           </p>
         </div>
+
+        {/* Model context (trust panel) */}
+        <ModelContextCard deployment={deployment} />
 
         {/* Input form */}
         <Card>
           <CardHeader>
-            <CardTitle>Input Features</CardTitle>
+            <CardTitle>Your Scenario</CardTitle>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Fields are pre-filled with training averages — adjust them for your specific situation.
+            </p>
           </CardHeader>
-          <CardContent className="space-y-3">
+          <CardContent className="space-y-4">
             {schema.length === 0 && (
               <p className="text-xs text-muted-foreground">
                 No feature schema available for this deployment.
@@ -465,19 +579,22 @@ export default function PredictionDashboard() {
             )}
             {schema.map((entry: FeatureSchemaEntry) => (
               <div key={entry.name}>
-                <label className="mb-1 block text-xs font-medium capitalize">
-                  {entry.name.replace(/_/g, " ")}
-                  <span className="ml-1 font-normal text-muted-foreground">
-                    ({entry.type})
-                  </span>
+                <label className="mb-1 block text-sm font-medium">
+                  {colLabel(entry.name)}
+                  {entry.type === "numeric" && entry.mean !== undefined && entry.mean !== null && (
+                    <span className="ml-1.5 text-xs font-normal text-muted-foreground">
+                      (avg: {fmtNum(entry.mean)})
+                    </span>
+                  )}
                 </label>
                 {entry.type === "categorical" && entry.options ? (
                   <select
-                    className="w-full rounded-md border bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                    className="w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                     value={inputs[entry.name] ?? ""}
                     onChange={(e) =>
                       setInputs((prev) => ({ ...prev, [entry.name]: e.target.value }))
                     }
+                    aria-label={colLabel(entry.name)}
                   >
                     {entry.options.map((opt) => (
                       <option key={opt} value={opt}>
@@ -489,12 +606,13 @@ export default function PredictionDashboard() {
                   <Input
                     type="number"
                     step="any"
-                    placeholder={entry.median != null ? `default: ${entry.median}` : ""}
+                    placeholder={entry.median != null ? `Default: ${fmtNum(entry.median)}` : "Enter a value"}
                     value={inputs[entry.name] ?? ""}
                     onChange={(e) =>
                       setInputs((prev) => ({ ...prev, [entry.name]: e.target.value }))
                     }
                     className="text-sm"
+                    aria-label={colLabel(entry.name)}
                   />
                 )}
               </div>
@@ -507,8 +625,9 @@ export default function PredictionDashboard() {
           disabled={predicting}
           className="w-full"
           size="lg"
+          data-testid="predict-button"
         >
-          {predicting ? "Predicting..." : "Get Prediction"}
+          {predicting ? "Calculating..." : `Get ${targetLabel} Prediction`}
         </Button>
 
         {predError && (
@@ -519,13 +638,13 @@ export default function PredictionDashboard() {
         {result && (
           <Card className="border-primary/30 bg-primary/5">
             <CardHeader>
-              <CardTitle className="text-base">
-                Prediction for <em>{result.target_column}</em>
+              <CardTitle className="text-base" data-testid="result-title">
+                Predicted {result.target_column}
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              <div className="rounded-lg bg-background p-4 text-center">
-                <p className="text-3xl font-bold tabular-nums">
+              <div className="rounded-lg bg-background p-4 text-center" data-testid="prediction-value">
+                <p className="text-4xl font-bold tabular-nums">
                   {typeof result.prediction === "number"
                     ? result.prediction.toLocaleString(undefined, {
                         maximumFractionDigits: 4,
@@ -555,7 +674,7 @@ export default function PredictionDashboard() {
 
               {result.probabilities && (
                 <div>
-                  <p className="mb-2 text-xs font-medium">Class Probabilities</p>
+                  <p className="mb-2 text-xs font-medium">Probability per outcome</p>
                   <div className="space-y-1">
                     {Object.entries(result.probabilities)
                       .sort(([, a], [, b]) => b - a)
@@ -584,6 +703,7 @@ export default function PredictionDashboard() {
                 className="w-full"
                 onClick={handleExplain}
                 disabled={fetchingExplanation}
+                data-testid="explain-button"
               >
                 {fetchingExplanation
                   ? "Analyzing..."
@@ -622,8 +742,8 @@ export default function PredictionDashboard() {
                     const headers = [
                       "#",
                       "Time",
-                      ...schema.map((e) => e.name),
-                      "Prediction",
+                      ...schema.map((e) => colLabel(e.name)),
+                      `Predicted ${deployment.target_column}`,
                     ]
                     const rows = [...history].reverse().map((rec) => [
                       rec.id,
@@ -638,7 +758,7 @@ export default function PredictionDashboard() {
                     const url = URL.createObjectURL(blob)
                     const a = document.createElement("a")
                     a.href = url
-                    a.download = `predictions-session.csv`
+                    a.download = `${deployment.target_column ?? "predictions"}-session.csv`
                     a.click()
                     URL.revokeObjectURL(url)
                   }}
@@ -654,21 +774,32 @@ export default function PredictionDashboard() {
                     <tr className="border-b bg-muted/40">
                       <th className="px-3 py-1.5 text-left font-medium text-muted-foreground">#</th>
                       <th className="px-3 py-1.5 text-left font-medium text-muted-foreground">Time</th>
+                      <th className="px-3 py-1.5 text-left font-medium text-muted-foreground">Key Inputs</th>
                       <th className="px-3 py-1.5 text-right font-medium text-muted-foreground">Prediction</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {history.map((rec) => (
-                      <tr key={rec.id} className="border-b last:border-0 hover:bg-muted/20">
-                        <td className="px-3 py-1.5 tabular-nums text-muted-foreground">{rec.id}</td>
-                        <td className="px-3 py-1.5 text-muted-foreground">{rec.timestamp}</td>
-                        <td className="px-3 py-1.5 text-right font-medium tabular-nums">
-                          {typeof rec.prediction === "number"
-                            ? rec.prediction.toLocaleString(undefined, { maximumFractionDigits: 4 })
-                            : String(rec.prediction)}
-                        </td>
-                      </tr>
-                    ))}
+                    {history.map((rec) => {
+                      // Show up to 3 key inputs (prefer those with non-default values, or just first 3)
+                      const schemaItems = deployment.feature_schema ?? []
+                      const keyInputs = schemaItems
+                        .slice(0, 3)
+                        .map((e) => `${colLabel(e.name)}: ${rec.inputs[e.name] ?? "—"}`)
+                        .join(" · ")
+
+                      return (
+                        <tr key={rec.id} className="border-b last:border-0 hover:bg-muted/20">
+                          <td className="px-3 py-1.5 tabular-nums text-muted-foreground">{rec.id}</td>
+                          <td className="px-3 py-1.5 text-muted-foreground">{rec.timestamp}</td>
+                          <td className="px-3 py-1.5 text-muted-foreground truncate max-w-[140px]" title={keyInputs}>{keyInputs}</td>
+                          <td className="px-3 py-1.5 text-right font-medium tabular-nums">
+                            {typeof rec.prediction === "number"
+                              ? rec.prediction.toLocaleString(undefined, { maximumFractionDigits: 4 })
+                              : String(rec.prediction)}
+                          </td>
+                        </tr>
+                      )
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -685,7 +816,7 @@ export default function PredictionDashboard() {
         )}
 
         <p className="text-center text-xs text-muted-foreground">
-          Powered by AutoModeler · {deployment.request_count} predictions served
+          Powered by AutoModeler &middot; {deployment.request_count.toLocaleString()} predictions served
         </p>
       </div>
     </div>

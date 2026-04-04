@@ -263,6 +263,8 @@ def get_feature_schema(pipeline_path: str) -> list[dict]:
             entry["options"] = list(le.classes_) if le is not None else []
         else:
             entry["median"] = pipeline.medians.get(col, 0.0)
+            entry["mean"] = pipeline.feature_means.get(col, None)
+            entry["std"] = pipeline.feature_stds.get(col, None)
         schema.append(entry)
     return schema
 

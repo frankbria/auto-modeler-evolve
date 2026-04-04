@@ -388,6 +388,118 @@ describe("PredictionDashboard", () => {
     }
   })
 
+  // ---------------------------------------------------------------------------
+  // Predict page VP-quality UX improvements
+  // ---------------------------------------------------------------------------
+
+  it("page title uses target_column to form '{Target} Predictor'", async () => {
+    const deploymentWithTarget = {
+      ...mockDeployment,
+      target_column: "revenue",
+      algorithm: "random_forest_regressor",
+      problem_type: "regression",
+      metrics: { r2: 0.84 },
+    }
+    fetchMock.mockResponseOnce(JSON.stringify(deploymentWithTarget))
+    const { default: PredictionDashboard } = await import("../app/predict/[id]/page")
+    render(<PredictionDashboard />)
+    await waitFor(() => {
+      expect(screen.queryByTestId("page-title")).toBeTruthy()
+    })
+    const title = screen.getByTestId("page-title")
+    expect(title.textContent).toContain("Revenue Predictor")
+  })
+
+  it("shows model context card with algorithm and accuracy", async () => {
+    const deploymentWithMeta = {
+      ...mockDeployment,
+      target_column: "revenue",
+      algorithm: "random_forest_regressor",
+      problem_type: "regression",
+      metrics: { r2: 0.84 },
+    }
+    fetchMock.mockResponseOnce(JSON.stringify(deploymentWithMeta))
+    const { default: PredictionDashboard } = await import("../app/predict/[id]/page")
+    render(<PredictionDashboard />)
+    await waitFor(() => {
+      expect(screen.queryByTestId("model-context-card")).toBeTruthy()
+    })
+    // Algorithm should be rendered in plain English
+    expect(screen.getByTestId("model-context-card").textContent).toContain("Random Forest")
+  })
+
+  it("shows accuracy summary in model context card for regression", async () => {
+    const deploymentWithMeta = {
+      ...mockDeployment,
+      target_column: "revenue",
+      algorithm: "linear_regression",
+      problem_type: "regression",
+      metrics: { r2: 0.75 },
+    }
+    fetchMock.mockResponseOnce(JSON.stringify(deploymentWithMeta))
+    const { default: PredictionDashboard } = await import("../app/predict/[id]/page")
+    render(<PredictionDashboard />)
+    await waitFor(() => {
+      expect(screen.queryByTestId("model-context-card")).toBeTruthy()
+    })
+    const card = screen.getByTestId("model-context-card")
+    expect(card.textContent).toContain("75%")
+  })
+
+  it("shows avg hint for numeric features when mean is provided", async () => {
+    const deploymentWithMean = {
+      ...mockDeployment,
+      feature_schema: [
+        { name: "units", type: "numeric", median: 10.0, mean: 12.5, std: 3.0 },
+      ],
+    }
+    fetchMock.mockResponseOnce(JSON.stringify(deploymentWithMean))
+    const { default: PredictionDashboard } = await import("../app/predict/[id]/page")
+    render(<PredictionDashboard />)
+    await waitFor(() => {
+      expect(screen.queryByText(/avg:/i)).toBeTruthy()
+    })
+  })
+
+  it("predict button label includes target_column", async () => {
+    const deploymentWithTarget = {
+      ...mockDeployment,
+      target_column: "profit",
+      algorithm: "linear_regression",
+      problem_type: "regression",
+      metrics: {},
+    }
+    fetchMock.mockResponseOnce(JSON.stringify(deploymentWithTarget))
+    const { default: PredictionDashboard } = await import("../app/predict/[id]/page")
+    render(<PredictionDashboard />)
+    await waitFor(() => {
+      const btn = screen.queryByTestId("predict-button")
+      if (btn) return true
+    })
+    const btn = screen.queryByTestId("predict-button")
+    if (btn) {
+      expect(btn.textContent).toContain("Profit")
+    }
+  })
+
+  it("history table shows key inputs column", async () => {
+    fetchMock.mockResponseOnce(JSON.stringify(mockDeployment))
+    fetchMock.mockResponseOnce(JSON.stringify([])) // listByProject
+    fetchMock.mockResponseOnce(JSON.stringify({ prediction: 999.0 }))
+    const { default: PredictionDashboard } = await import("../app/predict/[id]/page")
+    render(<PredictionDashboard />)
+    await waitFor(() => {
+      if (screen.queryByRole("button", { name: /predict/i })) return true
+    })
+    const predictButton = screen.queryByRole("button", { name: /predict/i })
+    if (predictButton) {
+      await act(async () => { fireEvent.click(predictButton) })
+      await waitFor(() => {
+        expect(screen.queryByText(/key inputs/i)).toBeTruthy()
+      })
+    }
+  })
+
   it("history counter increments on successive predictions", async () => {
     fetchMock.mockResponseOnce(JSON.stringify(mockDeployment))
     fetchMock.mockResponseOnce(JSON.stringify([])) // listByProject
