@@ -337,7 +337,9 @@ class TestPredictFunctions:
         schema = get_feature_schema(pl_path)
         numeric_entries = [s for s in schema if s["type"] == "numeric"]
         for entry in numeric_entries:
-            assert "median" in entry, "median should still be present for backwards compat"
+            assert "median" in entry, (
+                "median should still be present for backwards compat"
+            )
 
 
 # ---------------------------------------------------------------------------
