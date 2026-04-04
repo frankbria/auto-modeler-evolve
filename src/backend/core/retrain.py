@@ -122,7 +122,16 @@ def _do_trigger(project_id: str, new_dataset_id: str) -> dict | None:
 
     t = threading.Thread(
         target=_train_in_background,
-        args=(new_run_id, project_id, df, feature_cols, target_col, algorithm, problem_type, model_dir),
+        args=(
+            new_run_id,
+            project_id,
+            df,
+            feature_cols,
+            target_col,
+            algorithm,
+            problem_type,
+            model_dir,
+        ),
         daemon=True,
         name=f"AutoRetrain-{project_id}",
     )
