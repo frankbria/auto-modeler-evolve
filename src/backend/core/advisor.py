@@ -17,7 +17,6 @@ from __future__ import annotations
 
 from typing import Any
 
-
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -363,11 +362,7 @@ def _build_summary(
         quality = (
             "excellent"
             if pct >= 85
-            else "good"
-            if pct >= 70
-            else "moderate"
-            if pct >= 55
-            else "limited"
+            else "good" if pct >= 70 else "moderate" if pct >= 55 else "limited"
         )
         base = f"Your model explains {pct}% of variation in the target — {quality} predictive power."
     else:
@@ -375,11 +370,7 @@ def _build_summary(
         quality = (
             "excellent"
             if pct >= 90
-            else "good"
-            if pct >= 80
-            else "moderate"
-            if pct >= 70
-            else "limited"
+            else "good" if pct >= 80 else "moderate" if pct >= 70 else "limited"
         )
         base = f"Your model achieves {pct}% accuracy — {quality} performance."
 
@@ -651,7 +642,9 @@ def _score_run(run: dict[str, Any], criteria: str) -> dict[str, Any]:
         score = 0.40 * acc_score + 0.30 * expl_score + 0.30 * stab_score
 
     algo_plain = _ALGO_PLAIN.get(algo, algo.replace("_", " ").title())
-    explain_why = _EXPLAIN_WHY.get(algo, f"{algo_plain} is a capable model for this task.")
+    explain_why = _EXPLAIN_WHY.get(
+        algo, f"{algo_plain} is a capable model for this task."
+    )
 
     return {
         "run_id": run.get("run_id", run.get("id", "")),

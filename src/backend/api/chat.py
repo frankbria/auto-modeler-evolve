@@ -2464,7 +2464,9 @@ def _load_project_context(project_id: str, session: Session) -> dict:
     if dataset:
         feature_set = session.exec(
             select(FeatureSet)
-            .where(FeatureSet.dataset_id == dataset.id, FeatureSet.is_active == True)  # noqa: E712
+            .where(
+                FeatureSet.dataset_id == dataset.id, FeatureSet.is_active == True
+            )  # noqa: E712
             .order_by(FeatureSet.created_at.desc())  # type: ignore[arg-type]
         ).first()
 
@@ -2475,7 +2477,9 @@ def _load_project_context(project_id: str, session: Session) -> dict:
     # Latest active deployment
     deployment = session.exec(
         select(Deployment)
-        .where(Deployment.project_id == project_id, Deployment.is_active == True)  # noqa: E712
+        .where(
+            Deployment.project_id == project_id, Deployment.is_active == True
+        )  # noqa: E712
         .order_by(Deployment.created_at.desc())  # type: ignore[arg-type]
     ).first()
 

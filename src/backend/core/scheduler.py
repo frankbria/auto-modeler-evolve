@@ -218,9 +218,9 @@ def _run_job(schedule_id: str) -> None:
                 "status": job_run.status,
                 "row_count": job_run.row_count,
                 "error": job_run.error,
-                "completed_at": job_run.completed_at.isoformat()
-                if job_run.completed_at
-                else None,
+                "completed_at": (
+                    job_run.completed_at.isoformat() if job_run.completed_at else None
+                ),
             },
         )
     except Exception:
