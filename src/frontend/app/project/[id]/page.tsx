@@ -50,6 +50,7 @@ import { NullMapCard } from "@/components/data/null-map-card"
 import { GroupTrendCard } from "@/components/data/group-trend-card"
 import { SplitStrategyCard } from "@/components/models/split-strategy-card"
 import { FeatureSelectionCard } from "@/components/models/feature-selection-card"
+import { ModelImprovementCard } from "@/components/models/model-improvement-card"
 import { PairCorrelationCard } from "@/components/data/pair-correlation-card"
 import { StatQueryCard } from "@/components/data/stat-query-card"
 import { SummaryStatsCard } from "@/components/data/summary-stats-card"
@@ -183,6 +184,7 @@ export default function ProjectWorkspace() {
     attachGroupTrendsToLastMessage,
     attachSplitStrategyToLastMessage,
     attachFeatureSelectionToLastMessage,
+    attachModelImprovementToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -481,6 +483,8 @@ export default function ProjectWorkspace() {
                 attachSplitStrategyToLastMessage(json.split_strategy as import("@/lib/types").SplitStrategyResult)
               } else if (json.type === "feature_selection" && json.feature_selection) {
                 attachFeatureSelectionToLastMessage(json.feature_selection as import("@/lib/types").FeatureSelectionResult)
+              } else if (json.type === "model_improvement" && json.model_improvement) {
+                attachModelImprovementToLastMessage(json.model_improvement as import("@/lib/types").ModelImprovementResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -537,6 +541,7 @@ export default function ProjectWorkspace() {
     attachGroupTrendsToLastMessage,
     attachSplitStrategyToLastMessage,
     attachFeatureSelectionToLastMessage,
+    attachModelImprovementToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -877,6 +882,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.feature_selection && (
                       <FeatureSelectionCard result={msg.feature_selection} projectId={projectId} />
+                    )}
+                    {msg.model_improvement && (
+                      <ModelImprovementCard result={msg.model_improvement} />
                     )}
                   </div>
                 </div>

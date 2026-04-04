@@ -83,6 +83,7 @@ interface AppState {
   attachGroupTrendsToLastMessage: (group_trends: import("./types").GroupTrendResult) => void
   attachSplitStrategyToLastMessage: (split_strategy: import("./types").SplitStrategyResult) => void
   attachFeatureSelectionToLastMessage: (feature_selection: import("./types").FeatureSelectionResult) => void
+  attachModelImprovementToLastMessage: (model_improvement: import("./types").ModelImprovementResult) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -463,6 +464,16 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, feature_selection }
+      }
+      return { messages }
+    }),
+
+  attachModelImprovementToLastMessage: (model_improvement) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, model_improvement }
       }
       return { messages }
     }),

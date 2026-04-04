@@ -65,6 +65,19 @@ _TUNE_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# Keywords that trigger the model improvement advisor card
+# Distinct from _TUNE_PATTERNS (hyperparameter-only) — these ask for broad advice
+_IMPROVEMENT_PATTERNS = re.compile(
+    r"\b(how.*improve.*model|what.*improve|improve.*prediction|"
+    r"how.*make.*model.*better|how.*get.*better.*result|suggestion.*model|"
+    r"model.*suggestion|advice.*model|model.*advice|"
+    r"what.*wrong.*model|why.*model.*poor|model.*not.*good|"
+    r"how.*increase.*r2|how.*increase.*accuracy|how.*boost|"
+    r"what.*should.*do.*model|next.*step.*model|model.*improvement|"
+    r"improvement.*suggestion|any.*suggestion|give.*suggestion)\b",
+    re.IGNORECASE,
+)
+
 # Keywords that trigger a cross-deployment alerts scan
 # Note: no trailing \b — patterns use .* wildcards so plurals ("alerts") work fine
 _ALERTS_PATTERNS = re.compile(
@@ -2496,6 +2509,89 @@ def send_message(
             except Exception:  # noqa: BLE001
                 pass  # Readiness check is nice-to-have; never crash chat
 
+    # Check if this is a model improvement advice request
+    improvement_event: dict | None = None
+    if _IMPROVEMENT_PATTERNS.search(body.message) and ctx["model_runs"]:
+        completed_runs = [mr for mr in ctx["model_runs"] if mr.status == "done"]
+        if completed_runs:
+            try:
+                from core.advisor import compute_improvement_suggestions as _compute_improve
+                from core.trainer import detect_time_columns as _dtc
+
+                selected_run = next((mr for mr in completed_runs if mr.is_selected), None)
+                target_run = selected_run or completed_runs[-1]
+                _metrics = json.loads(target_run.metrics or "{}")
+                _algo = target_run.algorithm
+                _problem_type = (
+                    "classification"
+                    if _algo in ctx.get("classification_algos", [])
+                    else "regression"
+                )
+                # Detect problem_type from algorithm name
+                if _algo.endswith("_classifier") or _algo in {
+                    "logistic_regression",
+                    "voting_classifier",
+                    "stacking_classifier",
+                }:
+                    _problem_type = "classification"
+                else:
+                    _problem_type = "regression"
+
+                _n_rows = ctx.get("dataset_row_count", 0) if ctx.get("dataset") else 0
+                if hasattr(ctx.get("dataset"), "row_count"):
+                    _n_rows = ctx["dataset"].row_count or 0
+
+                _has_date = False
+                if ctx.get("dataset") and ctx["dataset"].file_path:
+                    try:
+                        import pandas as _pd
+                        _df_s = _pd.read_csv(ctx["dataset"].file_path, nrows=50)
+                        _has_date = bool(_dtc(_df_s))
+                    except Exception:  # noqa: BLE001
+                        pass
+
+                _n_features = 0
+                if ctx.get("feature_set") and ctx["feature_set"].target_column and ctx.get("dataset"):
+                    try:
+                        import json as _json
+                        _cols = _json.loads(ctx["dataset"].columns or "[]")
+                        _n_features = max(0, len(_cols) - 1)
+                    except Exception:  # noqa: BLE001
+                        pass
+
+                improvement_event = _compute_improve(
+                    metrics=_metrics,
+                    algorithm=_algo,
+                    problem_type=_problem_type,
+                    n_features=_n_features,
+                    n_rows=_n_rows,
+                    has_date_col=_has_date,
+                    date_col_used=bool(_metrics.get("date_col_used")),
+                    n_weak_features=0,  # skip expensive model load in chat
+                    is_ensemble=bool(_metrics.get("ensemble_type")),
+                    is_calibrated=bool(_metrics.get("is_calibrated")),
+                    imbalance_strategy=_metrics.get("imbalance_strategy"),
+                    class_is_imbalanced=False,
+                )
+                improvement_event["run_id"] = target_run.id
+                improvement_event["project_id"] = body.project_id
+                _n = improvement_event["n_suggestions"]
+                system_prompt += (
+                    f"\n\n## Model Improvement Suggestions (just computed)\n"
+                    f"Algorithm: {_algo} | {improvement_event['primary_metric_name']}: "
+                    f"{round(improvement_event['primary_metric'], 2)}\n"
+                    f"Found {_n} ranked improvement suggestion{'s' if _n != 1 else ''}:\n"
+                    + "\n".join(
+                        f"{s['rank']}. {s['title']}: {s['explanation']}"
+                        for s in improvement_event["suggestions"]
+                    )
+                    + "\n\nPresent the top 2-3 suggestions to the user in a helpful, "
+                    "encouraging tone. Each suggestion should explain what to do and why "
+                    "it will help — reference the specific metric values above."
+                )
+            except Exception:  # noqa: BLE001
+                pass  # Nice-to-have; never crash chat
+
     # Check if this is a tune/optimize request
     tune_data: dict | None = None
     if _TUNE_PATTERNS.search(body.message):
@@ -4918,6 +5014,10 @@ def send_message(
         # Emit tune suggestion if detected
         if tune_data:
             yield f"data: {json.dumps({'type': 'tune', 'tune': tune_data})}\n\n"
+
+        # Emit model improvement suggestions if computed
+        if improvement_event:
+            yield f"data: {json.dumps({'type': 'model_improvement', 'model_improvement': improvement_event})}\n\n"
 
         # Emit model health card if computed
         if health_data:

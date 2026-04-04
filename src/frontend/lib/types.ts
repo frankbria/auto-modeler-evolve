@@ -441,6 +441,7 @@ export interface ChatMessage {
   group_trends?: GroupTrendResult
   split_strategy?: SplitStrategyResult
   feature_selection?: FeatureSelectionResult
+  model_improvement?: ModelImprovementResult
 }
 
 export interface SegmentPerformanceSegment {
@@ -1751,4 +1752,39 @@ export interface CalibrationData {
   calibration_curve: CalibrationPoint[]
   calibration_note: string
   is_calibrated: boolean
+}
+
+export type ImprovementDifficulty = "easy" | "medium" | "hard"
+export type ImprovementImpact = "low" | "moderate" | "high"
+export type ImprovementAction =
+  | "feature_selection"
+  | "train_ensemble"
+  | "feature_engineering"
+  | "add_data"
+  | "class_imbalance"
+  | "calibration"
+  | "hyperparameter_tuning"
+  | "add_features"
+  | "train_nonlinear"
+
+export interface ImprovementSuggestion {
+  rank: number
+  category: string
+  title: string
+  explanation: string
+  action: ImprovementAction
+  difficulty: ImprovementDifficulty
+  expected_impact: ImprovementImpact
+}
+
+export interface ModelImprovementResult {
+  run_id: string
+  project_id: string
+  algorithm: string
+  problem_type: "regression" | "classification"
+  primary_metric: number
+  primary_metric_name: string
+  suggestions: ImprovementSuggestion[]
+  summary: string
+  n_suggestions: number
 }

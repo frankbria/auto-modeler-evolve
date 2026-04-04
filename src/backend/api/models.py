@@ -26,6 +26,7 @@ from chat.narration import (
     narrate_training_with_ai,
 )
 from chat.orchestrator import get_next_step_chips
+from core.advisor import compute_improvement_suggestions
 from core.feature_engine import apply_transformations
 from core.report_generator import generate_model_report
 from core.chart_builder import build_model_comparison_radar
@@ -1887,3 +1888,137 @@ def get_model_card(project_id: str, session: Session = Depends(get_session)):
         "is_selected": selected.is_selected,
         "is_deployed": selected.is_deployed,
     }
+
+
+@router.get("/api/models/{project_id}/improvement-suggestions")
+def get_improvement_suggestions(project_id: str, session: Session = Depends(get_session)):
+    """Return ranked model improvement suggestions for the best completed run.
+
+    Analyses metrics, feature set, dataset context, and training choices to
+    surface plain-English suggestions ordered by expected impact.
+    """
+    project = session.get(Project, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    completed_runs = session.exec(
+        select(ModelRun).where(
+            ModelRun.project_id == project_id,
+            ModelRun.status == "done",
+        )
+    ).all()
+
+    if not completed_runs:
+        raise HTTPException(status_code=404, detail="No completed model runs found")
+
+    # Prefer selected model; otherwise best by primary metric
+    selected = next((r for r in completed_runs if r.is_selected), None)
+    if not selected:
+        reg_runs = [r for r in completed_runs if r.algorithm in REGRESSION_ALGORITHMS]
+        cls_runs = [r for r in completed_runs if r.algorithm in CLASSIFICATION_ALGORITHMS]
+        if reg_runs:
+            selected = max(
+                reg_runs,
+                key=lambda r: json.loads(r.metrics or "{}").get("r2", 0),
+            )
+        elif cls_runs:
+            selected = max(
+                cls_runs,
+                key=lambda r: json.loads(r.metrics or "{}").get("accuracy", 0),
+            )
+        else:
+            selected = completed_runs[-1]
+
+    metrics = json.loads(selected.metrics or "{}")
+    problem_type = (
+        "classification" if selected.algorithm in CLASSIFICATION_ALGORITHMS else "regression"
+    )
+
+    # --- Dataset context ---
+    dataset = session.exec(
+        select(Dataset).where(Dataset.project_id == project_id)
+    ).first()
+
+    n_rows = dataset.row_count if dataset else 0
+    has_date_col = False
+    if dataset and dataset.file_path and Path(dataset.file_path).exists():
+        try:
+            df_sample = pd.read_csv(dataset.file_path, nrows=50)
+            has_date_col = bool(detect_time_columns(df_sample))
+        except Exception:  # noqa: BLE001
+            pass
+
+    # --- Feature set context ---
+    feature_set = None
+    n_features = 0
+    if dataset:
+        feature_set = session.exec(
+            select(FeatureSet).where(
+                FeatureSet.dataset_id == dataset.id,
+                FeatureSet.is_active == True,  # noqa: E712
+            )
+        ).first()
+        if feature_set and feature_set.target_column and dataset.columns:
+            try:
+                all_cols = json.loads(dataset.columns)
+                n_features = max(0, len(all_cols) - 1)  # exclude target
+            except Exception:  # noqa: BLE001
+                n_features = 0
+
+    # Actual feature count from metrics if available (more accurate)
+    if "train_size" in metrics and n_features == 0:
+        n_features = max(1, int(metrics.get("train_size", 1)))
+
+    # --- Derived flags from metrics ---
+    is_ensemble = bool(metrics.get("ensemble_type"))
+    is_calibrated = bool(metrics.get("is_calibrated"))
+    imbalance_strategy: str | None = metrics.get("imbalance_strategy")
+    date_col_used = bool(metrics.get("date_col_used"))
+
+    # --- Weak features (run feature selection if model file exists) ---
+    n_weak = 0
+    if selected.model_path and Path(selected.model_path).exists() and feature_set:
+        try:
+            import joblib as _jl
+            from core.trainer import identify_weak_features as _iwf
+            _model = _jl.load(selected.model_path)
+            _df_full = pd.read_csv(dataset.file_path)
+            transforms = json.loads(feature_set.transformations or "[]")
+            if transforms:
+                _df_full, _ = apply_transformations(_df_full, transforms)
+            _feature_cols = [c for c in _df_full.columns if c != feature_set.target_column]
+            _wf_result = _iwf(_model, _feature_cols)
+            n_weak = _wf_result.get("n_weak", 0)
+        except Exception:  # noqa: BLE001
+            pass
+
+    # --- Class imbalance flag ---
+    class_is_imbalanced = False
+    if problem_type == "classification" and dataset and dataset.file_path:
+        try:
+            if feature_set and feature_set.target_column:
+                _df_imb = pd.read_csv(dataset.file_path)
+                _y = _df_imb[feature_set.target_column].dropna()
+                from core.trainer import detect_class_imbalance as _dci
+                _imb = _dci(_y)
+                class_is_imbalanced = _imb.get("is_imbalanced", False)
+        except Exception:  # noqa: BLE001
+            pass
+
+    result = compute_improvement_suggestions(
+        metrics=metrics,
+        algorithm=selected.algorithm,
+        problem_type=problem_type,
+        n_features=n_features,
+        n_rows=n_rows,
+        has_date_col=has_date_col,
+        date_col_used=date_col_used,
+        n_weak_features=n_weak,
+        is_ensemble=is_ensemble,
+        is_calibrated=is_calibrated,
+        imbalance_strategy=imbalance_strategy,
+        class_is_imbalanced=class_is_imbalanced,
+    )
+    result["run_id"] = selected.id
+    result["project_id"] = project_id
+    return result

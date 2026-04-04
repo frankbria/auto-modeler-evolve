@@ -644,6 +644,14 @@ export const api = {
         return r.json()
       }),
 
+    improvementSuggestions: (
+      projectId: string
+    ): Promise<import("./types").ModelImprovementResult> =>
+      fetch(`${API_URL}/api/models/${projectId}/improvement-suggestions`).then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        return r.json()
+      }),
+
     train: (
       projectId: string,
       algorithms: string[],
