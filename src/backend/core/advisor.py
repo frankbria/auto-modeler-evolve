@@ -19,6 +19,7 @@ from typing import Any
 # Public API
 # ---------------------------------------------------------------------------
 
+
 def compute_improvement_suggestions(
     metrics: dict[str, Any],
     algorithm: str,
@@ -110,9 +111,8 @@ def compute_improvement_suggestions(
 # Individual checks
 # ---------------------------------------------------------------------------
 
-def _check_weak_features(
-    out: list[dict], n_weak: int
-) -> None:
+
+def _check_weak_features(out: list[dict], n_weak: int) -> None:
     if n_weak <= 0:
         return
     noun = "feature" if n_weak == 1 else "features"
@@ -339,9 +339,8 @@ def _check_linear_vs_nonlinear(
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _primary_metric(
-    metrics: dict[str, Any], problem_type: str
-) -> tuple[float, str]:
+
+def _primary_metric(metrics: dict[str, Any], problem_type: str) -> tuple[float, str]:
     """Return (value, name) for the most important metric."""
     if problem_type == "regression":
         return float(metrics.get("r2", 0.0)), "R²"
@@ -359,26 +358,33 @@ def _build_summary(
     if problem_type == "regression":
         pct = round(primary_metric * 100)
         quality = (
-            "excellent" if pct >= 85
-            else "good" if pct >= 70
-            else "moderate" if pct >= 55
+            "excellent"
+            if pct >= 85
+            else "good"
+            if pct >= 70
+            else "moderate"
+            if pct >= 55
             else "limited"
         )
-        base = (
-            f"Your model explains {pct}% of variation in the target — {quality} predictive power."
-        )
+        base = f"Your model explains {pct}% of variation in the target — {quality} predictive power."
     else:
         pct = round(primary_metric * 100)
         quality = (
-            "excellent" if pct >= 90
-            else "good" if pct >= 80
-            else "moderate" if pct >= 70
+            "excellent"
+            if pct >= 90
+            else "good"
+            if pct >= 80
+            else "moderate"
+            if pct >= 70
             else "limited"
         )
         base = f"Your model achieves {pct}% accuracy — {quality} performance."
 
     if not suggestions:
-        return base + " No obvious improvements detected — your model looks well-optimised."
+        return (
+            base
+            + " No obvious improvements detected — your model looks well-optimised."
+        )
 
     top = suggestions[0]
     return (

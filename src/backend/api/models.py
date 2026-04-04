@@ -1891,7 +1891,9 @@ def get_model_card(project_id: str, session: Session = Depends(get_session)):
 
 
 @router.get("/api/models/{project_id}/improvement-suggestions")
-def get_improvement_suggestions(project_id: str, session: Session = Depends(get_session)):
+def get_improvement_suggestions(
+    project_id: str, session: Session = Depends(get_session)
+):
     """Return ranked model improvement suggestions for the best completed run.
 
     Analyses metrics, feature set, dataset context, and training choices to
@@ -1915,7 +1917,9 @@ def get_improvement_suggestions(project_id: str, session: Session = Depends(get_
     selected = next((r for r in completed_runs if r.is_selected), None)
     if not selected:
         reg_runs = [r for r in completed_runs if r.algorithm in REGRESSION_ALGORITHMS]
-        cls_runs = [r for r in completed_runs if r.algorithm in CLASSIFICATION_ALGORITHMS]
+        cls_runs = [
+            r for r in completed_runs if r.algorithm in CLASSIFICATION_ALGORITHMS
+        ]
         if reg_runs:
             selected = max(
                 reg_runs,
@@ -1931,7 +1935,9 @@ def get_improvement_suggestions(project_id: str, session: Session = Depends(get_
 
     metrics = json.loads(selected.metrics or "{}")
     problem_type = (
-        "classification" if selected.algorithm in CLASSIFICATION_ALGORITHMS else "regression"
+        "classification"
+        if selected.algorithm in CLASSIFICATION_ALGORITHMS
+        else "regression"
     )
 
     # --- Dataset context ---
@@ -1981,12 +1987,15 @@ def get_improvement_suggestions(project_id: str, session: Session = Depends(get_
         try:
             import joblib as _jl
             from core.trainer import identify_weak_features as _iwf
+
             _model = _jl.load(selected.model_path)
             _df_full = pd.read_csv(dataset.file_path)
             transforms = json.loads(feature_set.transformations or "[]")
             if transforms:
                 _df_full, _ = apply_transformations(_df_full, transforms)
-            _feature_cols = [c for c in _df_full.columns if c != feature_set.target_column]
+            _feature_cols = [
+                c for c in _df_full.columns if c != feature_set.target_column
+            ]
             _wf_result = _iwf(_model, _feature_cols)
             n_weak = _wf_result.get("n_weak", 0)
         except Exception:  # noqa: BLE001
@@ -2000,6 +2009,7 @@ def get_improvement_suggestions(project_id: str, session: Session = Depends(get_
                 _df_imb = pd.read_csv(dataset.file_path)
                 _y = _df_imb[feature_set.target_column].dropna()
                 from core.trainer import detect_class_imbalance as _dci
+
                 _imb = _dci(_y)
                 class_is_imbalanced = _imb.get("is_imbalanced", False)
         except Exception:  # noqa: BLE001

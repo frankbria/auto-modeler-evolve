@@ -2515,10 +2515,14 @@ def send_message(
         completed_runs = [mr for mr in ctx["model_runs"] if mr.status == "done"]
         if completed_runs:
             try:
-                from core.advisor import compute_improvement_suggestions as _compute_improve
+                from core.advisor import (
+                    compute_improvement_suggestions as _compute_improve,
+                )
                 from core.trainer import detect_time_columns as _dtc
 
-                selected_run = next((mr for mr in completed_runs if mr.is_selected), None)
+                selected_run = next(
+                    (mr for mr in completed_runs if mr.is_selected), None
+                )
                 target_run = selected_run or completed_runs[-1]
                 _metrics = json.loads(target_run.metrics or "{}")
                 _algo = target_run.algorithm
@@ -2545,15 +2549,21 @@ def send_message(
                 if ctx.get("dataset") and ctx["dataset"].file_path:
                     try:
                         import pandas as _pd
+
                         _df_s = _pd.read_csv(ctx["dataset"].file_path, nrows=50)
                         _has_date = bool(_dtc(_df_s))
                     except Exception:  # noqa: BLE001
                         pass
 
                 _n_features = 0
-                if ctx.get("feature_set") and ctx["feature_set"].target_column and ctx.get("dataset"):
+                if (
+                    ctx.get("feature_set")
+                    and ctx["feature_set"].target_column
+                    and ctx.get("dataset")
+                ):
                     try:
                         import json as _json
+
                         _cols = _json.loads(ctx["dataset"].columns or "[]")
                         _n_features = max(0, len(_cols) - 1)
                     except Exception:  # noqa: BLE001

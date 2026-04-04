@@ -21,6 +21,7 @@ from core.advisor import (
 # _primary_metric
 # ---------------------------------------------------------------------------
 
+
 def test_primary_metric_regression():
     metrics = {"r2": 0.75, "mae": 120.0}
     val, name = _primary_metric(metrics, "regression")
@@ -50,6 +51,7 @@ def test_primary_metric_missing_returns_zero():
 # Individual checks
 # ---------------------------------------------------------------------------
 
+
 def test_check_weak_features_adds_suggestion():
     out: list = []
     _check_weak_features(out, n_weak=3)
@@ -75,7 +77,9 @@ def test_check_weak_features_zero_no_suggestion():
 
 def test_check_ensemble_adds_for_low_regression():
     out: list = []
-    _check_ensemble(out, is_ensemble=False, primary_metric=0.60, problem_type="regression")
+    _check_ensemble(
+        out, is_ensemble=False, primary_metric=0.60, problem_type="regression"
+    )
     assert len(out) == 1
     assert out[0]["action"] == "train_ensemble"
     assert out[0]["expected_impact"] == "high"
@@ -83,26 +87,34 @@ def test_check_ensemble_adds_for_low_regression():
 
 def test_check_ensemble_skipped_for_already_ensemble():
     out: list = []
-    _check_ensemble(out, is_ensemble=True, primary_metric=0.50, problem_type="regression")
+    _check_ensemble(
+        out, is_ensemble=True, primary_metric=0.50, problem_type="regression"
+    )
     assert len(out) == 0
 
 
 def test_check_ensemble_skipped_when_high_r2():
     out: list = []
-    _check_ensemble(out, is_ensemble=False, primary_metric=0.85, problem_type="regression")
+    _check_ensemble(
+        out, is_ensemble=False, primary_metric=0.85, problem_type="regression"
+    )
     assert len(out) == 0
 
 
 def test_check_ensemble_classification_threshold():
     out: list = []
-    _check_ensemble(out, is_ensemble=False, primary_metric=0.80, problem_type="classification")
+    _check_ensemble(
+        out, is_ensemble=False, primary_metric=0.80, problem_type="classification"
+    )
     # 0.80 < 0.85 threshold → should add
     assert len(out) == 1
 
 
 def test_check_date_features_adds_when_unused():
     out: list = []
-    _check_date_features(out, has_date_col=True, date_col_used=False, algorithm="random_forest_regressor")
+    _check_date_features(
+        out, has_date_col=True, date_col_used=False, algorithm="random_forest_regressor"
+    )
     assert len(out) == 1
     assert out[0]["action"] == "feature_engineering"
     assert out[0]["difficulty"] == "easy"
@@ -110,13 +122,17 @@ def test_check_date_features_adds_when_unused():
 
 def test_check_date_features_skipped_when_already_used():
     out: list = []
-    _check_date_features(out, has_date_col=True, date_col_used=True, algorithm="random_forest_regressor")
+    _check_date_features(
+        out, has_date_col=True, date_col_used=True, algorithm="random_forest_regressor"
+    )
     assert len(out) == 0
 
 
 def test_check_date_features_skipped_when_no_date():
     out: list = []
-    _check_date_features(out, has_date_col=False, date_col_used=False, algorithm="linear_regression")
+    _check_date_features(
+        out, has_date_col=False, date_col_used=False, algorithm="linear_regression"
+    )
     assert len(out) == 0
 
 
@@ -152,25 +168,42 @@ def test_check_imbalance_adds_for_unhandled_classification():
 
 def test_check_imbalance_skipped_for_regression():
     out: list = []
-    _check_imbalance(out, class_is_imbalanced=True, imbalance_strategy=None, problem_type="regression")
+    _check_imbalance(
+        out,
+        class_is_imbalanced=True,
+        imbalance_strategy=None,
+        problem_type="regression",
+    )
     assert len(out) == 0
 
 
 def test_check_imbalance_skipped_when_strategy_already_applied():
     out: list = []
-    _check_imbalance(out, class_is_imbalanced=True, imbalance_strategy="smote", problem_type="classification")
+    _check_imbalance(
+        out,
+        class_is_imbalanced=True,
+        imbalance_strategy="smote",
+        problem_type="classification",
+    )
     assert len(out) == 0
 
 
 def test_check_imbalance_skipped_when_not_imbalanced():
     out: list = []
-    _check_imbalance(out, class_is_imbalanced=False, imbalance_strategy=None, problem_type="classification")
+    _check_imbalance(
+        out,
+        class_is_imbalanced=False,
+        imbalance_strategy=None,
+        problem_type="classification",
+    )
     assert len(out) == 0
 
 
 def test_check_calibration_adds_for_uncalibrated_classifier():
     out: list = []
-    _check_calibration(out, is_calibrated=False, problem_type="classification", metrics={})
+    _check_calibration(
+        out, is_calibrated=False, problem_type="classification", metrics={}
+    )
     assert len(out) == 1
     assert out[0]["action"] == "calibration"
 
@@ -183,19 +216,32 @@ def test_check_calibration_skipped_for_regression():
 
 def test_check_calibration_skipped_if_already_calibrated():
     out: list = []
-    _check_calibration(out, is_calibrated=True, problem_type="classification", metrics={})
+    _check_calibration(
+        out, is_calibrated=True, problem_type="classification", metrics={}
+    )
     assert len(out) == 0
 
 
 def test_check_calibration_skipped_for_low_brier():
     out: list = []
-    _check_calibration(out, is_calibrated=False, problem_type="classification", metrics={"brier_score": 0.05})
+    _check_calibration(
+        out,
+        is_calibrated=False,
+        problem_type="classification",
+        metrics={"brier_score": 0.05},
+    )
     assert len(out) == 0
 
 
 def test_check_tuning_adds_for_nonlinear_underperformer():
     out: list = []
-    _check_tuning(out, algorithm="random_forest_regressor", is_ensemble=False, primary_metric=0.70, problem_type="regression")
+    _check_tuning(
+        out,
+        algorithm="random_forest_regressor",
+        is_ensemble=False,
+        primary_metric=0.70,
+        problem_type="regression",
+    )
     assert len(out) == 1
     assert out[0]["action"] == "hyperparameter_tuning"
     assert out[0]["difficulty"] == "easy"
@@ -203,19 +249,37 @@ def test_check_tuning_adds_for_nonlinear_underperformer():
 
 def test_check_tuning_skipped_for_linear_regression():
     out: list = []
-    _check_tuning(out, algorithm="linear_regression", is_ensemble=False, primary_metric=0.60, problem_type="regression")
+    _check_tuning(
+        out,
+        algorithm="linear_regression",
+        is_ensemble=False,
+        primary_metric=0.60,
+        problem_type="regression",
+    )
     assert len(out) == 0
 
 
 def test_check_tuning_skipped_for_high_performance():
     out: list = []
-    _check_tuning(out, algorithm="random_forest_regressor", is_ensemble=False, primary_metric=0.90, problem_type="regression")
+    _check_tuning(
+        out,
+        algorithm="random_forest_regressor",
+        is_ensemble=False,
+        primary_metric=0.90,
+        problem_type="regression",
+    )
     assert len(out) == 0
 
 
 def test_check_tuning_skipped_for_ensemble():
     out: list = []
-    _check_tuning(out, algorithm="voting_regressor", is_ensemble=True, primary_metric=0.65, problem_type="regression")
+    _check_tuning(
+        out,
+        algorithm="voting_regressor",
+        is_ensemble=True,
+        primary_metric=0.65,
+        problem_type="regression",
+    )
     assert len(out) == 0
 
 
@@ -235,7 +299,12 @@ def test_check_feature_count_skipped_for_sufficient():
 
 def test_check_linear_vs_nonlinear_adds_for_weak_linear():
     out: list = []
-    _check_linear_vs_nonlinear(out, algorithm="linear_regression", primary_metric=0.50, problem_type="regression")
+    _check_linear_vs_nonlinear(
+        out,
+        algorithm="linear_regression",
+        primary_metric=0.50,
+        problem_type="regression",
+    )
     assert len(out) == 1
     assert out[0]["action"] == "train_nonlinear"
     assert out[0]["expected_impact"] == "high"
@@ -243,19 +312,30 @@ def test_check_linear_vs_nonlinear_adds_for_weak_linear():
 
 def test_check_linear_vs_nonlinear_skipped_for_nonlinear_algo():
     out: list = []
-    _check_linear_vs_nonlinear(out, algorithm="random_forest_regressor", primary_metric=0.50, problem_type="regression")
+    _check_linear_vs_nonlinear(
+        out,
+        algorithm="random_forest_regressor",
+        primary_metric=0.50,
+        problem_type="regression",
+    )
     assert len(out) == 0
 
 
 def test_check_linear_vs_nonlinear_skipped_when_good():
     out: list = []
-    _check_linear_vs_nonlinear(out, algorithm="linear_regression", primary_metric=0.75, problem_type="regression")
+    _check_linear_vs_nonlinear(
+        out,
+        algorithm="linear_regression",
+        primary_metric=0.75,
+        problem_type="regression",
+    )
     assert len(out) == 0
 
 
 # ---------------------------------------------------------------------------
 # Full function
 # ---------------------------------------------------------------------------
+
 
 def test_compute_improvement_suggestions_returns_structure():
     result = compute_improvement_suggestions(
@@ -365,7 +445,15 @@ def test_compute_improvement_all_fields_present_in_each_suggestion():
         n_features=3,
         n_rows=400,
     )
-    required_keys = {"rank", "category", "title", "explanation", "action", "difficulty", "expected_impact"}
+    required_keys = {
+        "rank",
+        "category",
+        "title",
+        "explanation",
+        "action",
+        "difficulty",
+        "expected_impact",
+    }
     for s in result["suggestions"]:
         assert required_keys.issubset(s.keys()), f"Missing keys in {s}"
 
