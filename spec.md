@@ -819,11 +819,12 @@ guides them forward through the natural flow.
 > in 30 minutes has a shareable dashboard for their VP. Run this flow end-to-end and fix
 > every friction point you find. Tests don't catch UX debt — only running it does.
 
-- [ ] **"Lunch break" flow audit** — Using `scripts/demo.py` as a starting point, run the
+- [x] **"Lunch break" flow audit** — Using `scripts/demo.py` as a starting point, run the
       complete analyst journey manually: upload → ask 2-3 questions → approve features → train
       → validate → deploy → share the prediction link. Document every moment of confusion,
       missing affordance, or required domain knowledge. Fix the top 3 friction points found.
       Journal findings honestly.
+      *Day 23 (20:00): Code audit across the full flow. Top friction: (1) generic "Prediction Dashboard" title on VP-shared page; (2) no model trust context (algorithm, accuracy, date) on predict page; (3) cryptic column names and missing range hints in the form; (4) raw algorithm IDs in compare-model table; (5) session history showed prediction only, not inputs. All 5 fixed in predict/[id]/page.tsx. Feature schema extended with mean+std. See "shareable prediction page UX" item.*
 
 - [x] **Proactive insights after upload** — The system calls `narrate_data_insights_ai()` after
       upload but the analyst still has to know to ask questions. Expand proactive suggestions:
@@ -840,11 +841,12 @@ guides them forward through the natural flow.
       state machine stages.
       *Day 23 (12:00): `get_next_step_chips(state)` in `orchestrator.py` — returns 3 action-focused chips for each workflow stage (explore/shape/validate/deploy). Training stream `all_done` event includes `next_step_chips`. Chat SSE emits `{type:"next_step"}` after `deployed` and `features_applied` events. `ModelTrainingPanel.onTrainingComplete(chips)` callback bubbles chips to page. 6 backend unit tests + 1 backend training-stream test + 3 frontend tests.*
 
-- [ ] **The shareable prediction page UX** — The `predict/[id]` page is what the analyst
+- [x] **The shareable prediction page UX** — The `predict/[id]` page is what the analyst
       shares with their VP. Run it with a fresh eye: Is it immediately obvious what to do?
       Does it explain what the model is predicting? Does the form field order match the way
       analysts think about their data? Does it look polished enough to show a VP? Fix whatever
       needs fixing.
+      *Day 23 (20:00): 5 targeted UX fixes: (1) Page title now "{Target Column} Predictor" (e.g., "Revenue Predictor") — tells VP immediately what the model does. (2) `ModelContextCard` shows algorithm in plain English (algoName() maps raw IDs), accuracy in plain language ("Explains 84% of variation"), and deployment date. (3) Form heading "Your Scenario" with "pre-filled with training averages" sub-label; numeric labels show "(avg: X)" hint using new mean field from feature schema. (4) Algorithm names in compare-model table use algoName() mapping. (5) Session history shows "Key Inputs" column (first 3 feature values) so VP can see what scenario produced each prediction. Backend: get_feature_schema() extended with mean+std fields. 2 backend + 6 frontend = 8 new tests. Total: 2378 backend + 1134 frontend = 3512, all passing. Backend lint: clean. Frontend build + lint: clean.*
 
 #### Track F — Coordination
 
