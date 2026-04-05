@@ -2879,8 +2879,6 @@ def send_message(
     health_summary_event: dict | None = None
     if _HEALTH_SUMMARY_PATTERNS.search(body.message):
         try:
-            from datetime import UTC, datetime as _dt
-
             from core.analyzer import compute_project_health_summary as _chs
             from models.deployment import Deployment as _Dep
 
@@ -2892,7 +2890,7 @@ def send_message(
                     )
                 ).all()
             )
-            _now = _dt.now(UTC).replace(tzinfo=None)
+            _now = datetime.now(UTC).replace(tzinfo=None)
             _dep_dicts = [
                 {
                     "deployment_id": d.id,
@@ -3031,8 +3029,15 @@ def send_message(
 
     # Check for cross-deployment alerts request
     alerts_data: dict | None = None
+    import sys
+
+    print(
+        f"DEBUG: Checking alerts pattern: {_ALERTS_PATTERNS.search(body.message)}",
+        file=sys.stderr,
+    )
     if _ALERTS_PATTERNS.search(body.message):
         try:
+            print(f"DEBUG: Entering alerts try block", file=sys.stderr)
             active_deployments = list(
                 session.exec(
                     select(Deployment).where(
@@ -3040,6 +3045,10 @@ def send_message(
                         Deployment.is_active == True,  # noqa: E712
                     )
                 ).all()
+            )
+            print(
+                f"DEBUG: Found {len(active_deployments)} active deployments",
+                file=sys.stderr,
             )
             alert_list: list[dict] = []
             now_ts = datetime.now(UTC).replace(tzinfo=None)
@@ -3086,6 +3095,9 @@ def send_message(
                 ),
                 "alerts": alert_list,
             }
+            print(
+                f"DEBUG: Set alerts_data with {len(alert_list)} alerts", file=sys.stderr
+            )
             alert_summary = (
                 f"{len(alert_list)} alert(s) found: "
                 f"{alerts_data['critical_count']} critical, {alerts_data['warning_count']} warning."
@@ -3097,7 +3109,8 @@ def send_message(
                 "Summarise the alert status for the user. If there are critical alerts, "
                 "guide them on what to do. If everything is healthy, reassure them."
             )
-        except Exception:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001
+            print(f"DEBUG: Exception in alerts block: {e}", file=sys.stderr)
             pass  # Alerts are nice-to-have; never crash chat
 
     # Check for model version history request
