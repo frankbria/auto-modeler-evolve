@@ -517,6 +517,13 @@ export const api = {
         `${API_URL}/api/data/${datasetId}/group-trends?${params.toString()}`
       ).then((r) => r.json())
     },
+
+    predictionOpportunities: (
+      datasetId: string
+    ): Promise<import("./types").PredictionOpportunitiesResult> =>
+      fetch(`${API_URL}/api/data/${datasetId}/prediction-opportunities`).then(
+        (r) => r.json()
+      ),
   },
 
   chat: {

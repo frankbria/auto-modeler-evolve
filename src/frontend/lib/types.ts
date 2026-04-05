@@ -446,6 +446,7 @@ export interface ChatMessage {
   auto_retrain?: AutoRetrainResult
   conversation_export?: ConversationExportInfo
   health_summary?: ProjectHealthSummary
+  prediction_opportunities?: PredictionOpportunitiesResult
 }
 
 export interface SegmentPerformanceSegment {
@@ -1868,4 +1869,20 @@ export interface ProjectHealthSummary {
   all_items: DeploymentHealthItem[]
   overall_status: "healthy" | "warning" | "critical"
   summary: string
+}
+
+export interface PredictionOpportunity {
+  target_col: string
+  problem_type: "regression" | "classification"
+  feasibility_score: number
+  reason: string
+  business_value: "high" | "medium" | "low"
+  example_question: string
+  predictor_count: number
+}
+
+export interface PredictionOpportunitiesResult {
+  dataset_id: string
+  opportunities: PredictionOpportunity[]
+  total: number
 }

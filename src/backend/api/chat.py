@@ -1908,6 +1908,21 @@ _AUTO_RETRAIN_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+_PREDICT_OPP_PATTERNS = re.compile(
+    r"(?i)\b("
+    r"what\s+can\s+I\s+predict\b|"
+    r"what\s+should\s+I\s+(?:model|predict)\b|"
+    r"suggest\s+(?:a\s+)?(?:prediction\s+)?target\b|"
+    r"what\s+(?:can\s+I\s+|would\s+be\s+good\s+to\s+|is\s+worth\s+)?predict(?:ing)?\b|"
+    r"help\s+me\s+choose\s+(?:a\s+)?(?:prediction\s+)?target\b|"
+    r"what\s+(?:columns?|variables?)\s+(?:can|should)\s+I\s+(?:predict|model)\b|"
+    r"what\s+(?:can\s+this\s+data|can\s+my\s+data|is\s+good\s+to)\s+predict\b|"
+    r"prediction\s+opportunities?\b|"
+    r"what\s+(?:models?|predictions?)\s+(?:are\s+)?(?:possible|worth\s+building)\b"
+    r")",
+    re.IGNORECASE,
+)
+
 _HEALTH_SUMMARY_PATTERNS = re.compile(
     r"\b("
     r"how\s+(?:are|is)\s+(?:my\s+)?(?:model|models|deployment|deployments)\s+(?:doing|performing|holding up)\b|"
@@ -2872,6 +2887,48 @@ def send_message(
                 "will automatically retrain whenever new data is uploaded. If disabled, explain how "
                 "to enable it or that they can ask you to turn it on. Keep it brief and friendly."
             )
+        except Exception:  # noqa: BLE001
+            pass  # Nice-to-have; never crash chat
+
+    # Check if this is a prediction opportunity discovery request
+    predict_opp_event: dict | None = None
+    if _PREDICT_OPP_PATTERNS.search(body.message) and ctx["dataset"]:
+        try:
+            from core.analyzer import analyze_dataframe as _adf
+            from core.analyzer import compute_prediction_opportunities as _cpo
+            from pathlib import Path as _Path
+
+            _ds = ctx["dataset"]
+            _fpath = _Path(_ds.file_path)
+            if _fpath.exists():
+                import pandas as _pd2
+
+                _df2 = _pd2.read_csv(_fpath)
+                _profile2 = _adf(_df2)
+                _opps = _cpo(
+                    col_stats=_profile2["columns"],
+                    row_count=_profile2["row_count"],
+                )
+                predict_opp_event = {
+                    "dataset_id": _ds.id,
+                    "opportunities": _opps,
+                    "total": len(_opps),
+                }
+                if _opps:
+                    _top = _opps[0]
+                    _top_col = _top["target_col"]
+                    _top_type = _top["problem_type"]
+                    _top_score = _top["feasibility_score"]
+                    system_prompt += (
+                        f"\n\n## Prediction Opportunities\n"
+                        f"Top suggestion: predict **{_top_col}** ({_top_type}, "
+                        f"feasibility {_top_score}/100). Total {len(_opps)} opportunities found.\n"
+                        f"Opportunities: {', '.join(o['target_col'] for o in _opps)}.\n"
+                        "Walk the analyst through these prediction opportunities in plain English. "
+                        "Explain the top suggestion and why it would be valuable. "
+                        "Mention they can click a card option to set any column as their prediction target. "
+                        "Keep it conversational and encouraging."
+                    )
         except Exception:  # noqa: BLE001
             pass  # Nice-to-have; never crash chat
 
@@ -5384,6 +5441,9 @@ def send_message(
 
         if health_summary_event:
             yield f"data: {json.dumps({'type': 'health_summary', 'health_summary': health_summary_event})}\n\n"
+
+        if predict_opp_event:
+            yield f"data: {json.dumps({'type': 'prediction_opportunities', 'prediction_opportunities': predict_opp_event})}\n\n"
 
         # Emit model health card if computed
         if health_data:

@@ -55,6 +55,7 @@ import { ModelSelectionCard } from "@/components/models/model-selection-card"
 import { AutoRetrainCard } from "@/components/models/auto-retrain-card"
 import { ConversationExportCard } from "@/components/chat/conversation-export-card"
 import { ProjectHealthCard } from "@/components/chat/project-health-card"
+import { PredictionOpportunitiesCard } from "@/components/models/prediction-opportunities-card"
 import { PairCorrelationCard } from "@/components/data/pair-correlation-card"
 import { StatQueryCard } from "@/components/data/stat-query-card"
 import { SummaryStatsCard } from "@/components/data/summary-stats-card"
@@ -193,6 +194,7 @@ export default function ProjectWorkspace() {
     attachAutoRetrainToLastMessage,
     attachConversationExportToLastMessage,
     attachHealthSummaryToLastMessage,
+    attachPredictionOpportunitiesToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -514,6 +516,8 @@ export default function ProjectWorkspace() {
                 attachConversationExportToLastMessage(json.conversation_export as import("@/lib/types").ConversationExportInfo)
               } else if (json.type === "health_summary" && json.health_summary) {
                 attachHealthSummaryToLastMessage(json.health_summary as import("@/lib/types").ProjectHealthSummary)
+              } else if (json.type === "prediction_opportunities" && json.prediction_opportunities) {
+                attachPredictionOpportunitiesToLastMessage(json.prediction_opportunities as import("@/lib/types").PredictionOpportunitiesResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -575,6 +579,7 @@ export default function ProjectWorkspace() {
     attachAutoRetrainToLastMessage,
     attachConversationExportToLastMessage,
     attachHealthSummaryToLastMessage,
+    attachPredictionOpportunitiesToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -932,6 +937,11 @@ export default function ProjectWorkspace() {
                       <ProjectHealthCard
                         summary={msg.health_summary}
                         onSwitchTab={setActiveTab}
+                      />
+                    )}
+                    {msg.prediction_opportunities && (
+                      <PredictionOpportunitiesCard
+                        result={msg.prediction_opportunities}
                       />
                     )}
                   </div>

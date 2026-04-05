@@ -30,6 +30,7 @@ from core.analyzer import (
     compute_group_stats,
     compute_group_trends,
     compute_pair_correlation,
+    compute_prediction_opportunities,
     compute_stat_query,
     compute_summary_stats,
     compute_top_n,
@@ -2654,3 +2655,38 @@ def get_group_trends(
     if "error" in result:
         raise HTTPException(status_code=400, detail=result["error"])
     return result
+
+
+@router.get("/{dataset_id}/prediction-opportunities")
+def get_prediction_opportunities(
+    dataset_id: str,
+    session: Session = Depends(get_session),
+):
+    """Return ranked prediction target suggestions for this dataset.
+
+    Analyzes column types, names, and completeness to identify the best
+    candidates for ML prediction targets, ranked by feasibility score.
+    Returns up to 5 opportunities with problem type, reason, business
+    value, and an example question to ask the AI.
+    """
+    from core.analyzer import analyze_dataframe
+
+    dataset = session.get(Dataset, dataset_id)
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    file_path = Path(dataset.file_path)
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Dataset file not found")
+
+    df = pd.read_csv(file_path)
+    profile = analyze_dataframe(df)
+    opportunities = compute_prediction_opportunities(
+        col_stats=profile["columns"],
+        row_count=profile["row_count"],
+    )
+    return {
+        "dataset_id": dataset_id,
+        "opportunities": opportunities,
+        "total": len(opportunities),
+    }

@@ -88,6 +88,7 @@ interface AppState {
   attachAutoRetrainToLastMessage: (auto_retrain: import("./types").AutoRetrainResult) => void
   attachConversationExportToLastMessage: (conversation_export: import("./types").ConversationExportInfo) => void
   attachHealthSummaryToLastMessage: (health_summary: import("./types").ProjectHealthSummary) => void
+  attachPredictionOpportunitiesToLastMessage: (prediction_opportunities: import("./types").PredictionOpportunitiesResult) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -515,6 +516,15 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, health_summary }
+      }
+      return { messages }
+    }),
+  attachPredictionOpportunitiesToLastMessage: (prediction_opportunities) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, prediction_opportunities }
       }
       return { messages }
     }),

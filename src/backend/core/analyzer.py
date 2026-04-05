@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 from typing import Any
 
@@ -2323,3 +2324,178 @@ def compute_project_health_summary(
         "overall_status": overall_status,
         "summary": summary,
     }
+
+
+# ---------------------------------------------------------------------------
+# Prediction opportunity discovery
+# ---------------------------------------------------------------------------
+
+# Column name patterns that suggest high business value as a prediction target
+_HIGH_VALUE_NAMES = re.compile(
+    r"(?i)\b(revenue|sales|profit|churn|conversion|return|target|outcome|label|"
+    r"y|loss|gain|win|default|fraud|cancellation|renewal|subscribe|purchase|buy)\b"
+)
+_MEDIUM_VALUE_NAMES = re.compile(
+    r"(?i)\b(price|cost|quantity|volume|count|rate|score|demand|margin|spend|"
+    r"clicks|visits|duration|tenure|amount|value|total|gross|net|units)\b"
+)
+
+# Column name patterns that indicate poor prediction targets (IDs, timestamps)
+# Matches: standalone "id", columns ending with "_id"/"_key"/etc., or starting with "id_"/"pk_"
+_ID_LIKE_NAMES = re.compile(
+    r"(?i)(\bid\b|_id$|^id_|_uuid|_guid|_key$|^pk$|^pk_|_hash$|_token$|_index$|_ref$)"
+)
+
+
+def _business_value(col_name: str) -> str:
+    """Classify business value of predicting a column as 'high', 'medium', or 'low'."""
+    if _HIGH_VALUE_NAMES.search(col_name):
+        return "high"
+    if _MEDIUM_VALUE_NAMES.search(col_name):
+        return "medium"
+    return "low"
+
+
+def _example_question(col_name: str, problem_type: str, business_value: str) -> str:
+    """Generate a plain-English prediction question for this target."""
+    col_display = col_name.replace("_", " ").title()
+    if problem_type == "regression":
+        if business_value == "high":
+            return f"Can you predict the {col_display} for each record in my next dataset?"
+        return f"What will the {col_display} be for new records?"
+    else:  # classification
+        if business_value == "high":
+            return f"Which records are most likely to have a specific {col_display} outcome?"
+        return f"Can you classify each record by {col_display}?"
+
+
+def compute_prediction_opportunities(
+    col_stats: list[dict],
+    row_count: int,
+) -> list[dict]:
+    """Analyze dataset columns and return ranked prediction opportunities.
+
+    Each opportunity represents a column that could serve as a good prediction
+    target, with a feasibility score, business value rating, and an example
+    question the analyst could answer with this model.
+
+    Args:
+        col_stats: List of column stat dicts from analyze_dataframe().
+            Each dict must have: name, dtype, null_pct, unique_count,
+            and optionally min/max/mean/std for numeric columns.
+        row_count: Total number of rows in the dataset.
+
+    Returns:
+        List of opportunity dicts, ranked by feasibility_score descending.
+        Each dict has: target_col, problem_type, feasibility_score,
+        reason, business_value, example_question, predictor_count.
+    """
+    if not col_stats or row_count < 10:
+        return []
+
+    opportunities = []
+
+    for stat in col_stats:
+        col = stat["name"]
+        dtype = stat.get("dtype", "object")
+        null_pct = stat.get("null_pct", 0.0)
+        unique_count = stat.get("unique_count", 0)
+
+        is_numeric = "int" in dtype.lower() or "float" in dtype.lower()
+
+        # Skip ID-like columns: name pattern or high uniqueness for categoricals
+        # (numeric columns naturally have many unique values — don't filter them)
+        if not is_numeric and row_count > 0 and unique_count / row_count > 0.8:
+            continue
+        if _ID_LIKE_NAMES.search(col):
+            continue
+
+        # Skip columns with too much missing data
+        if null_pct > 30:
+            continue
+
+        # Determine problem type
+        n_unique = unique_count
+
+        if is_numeric:
+            mean_val = stat.get("mean", 0) or 0
+            std_val = stat.get("std", 0) or 0
+            # Skip constant columns (no variation)
+            if mean_val != 0 and std_val / abs(mean_val) < 0.001:
+                continue
+            if std_val == 0:
+                continue
+            problem_type = "regression"
+        elif n_unique <= 20 and n_unique >= 2:
+            problem_type = "classification"
+        else:
+            # Too many categories → bad target
+            continue
+
+        # Count predictor columns (other non-target columns)
+        predictor_count = sum(
+            1
+            for s in col_stats
+            if s["name"] != col and s.get("null_pct", 0) <= 50
+        )
+
+        # Feasibility score (0-100)
+        score = 55  # base
+
+        # Reward: low missing data
+        if null_pct < 5:
+            score += 20
+        elif null_pct < 15:
+            score += 10
+
+        # Reward: enough predictors
+        if predictor_count >= 5:
+            score += 15
+        elif predictor_count >= 3:
+            score += 8
+
+        # Reward: named like a good target
+        bv = _business_value(col)
+        if bv == "high":
+            score += 10
+        elif bv == "medium":
+            score += 5
+
+        # Penalize: near-unique categorical (poor grouping)
+        if not is_numeric and row_count > 0 and n_unique / row_count > 0.4:
+            score -= 20
+
+        score = max(0, min(100, score))
+
+        # Build plain-English reason
+        if problem_type == "regression":
+            reason = (
+                f"'{col}' is a numeric column with {100 - null_pct:.0f}% "
+                f"complete data and real variation — a natural regression target."
+            )
+        else:
+            reason = (
+                f"'{col}' has {n_unique} distinct categories and "
+                f"{100 - null_pct:.0f}% complete data — a good classification target."
+            )
+
+        opportunities.append(
+            {
+                "target_col": col,
+                "problem_type": problem_type,
+                "feasibility_score": score,
+                "reason": reason,
+                "business_value": bv,
+                "example_question": _example_question(col, problem_type, bv),
+                "predictor_count": predictor_count,
+            }
+        )
+
+    # Sort by feasibility descending, then business value as tiebreaker
+    _bv_rank = {"high": 2, "medium": 1, "low": 0}
+    opportunities.sort(
+        key=lambda o: (o["feasibility_score"], _bv_rank[o["business_value"]]),
+        reverse=True,
+    )
+
+    return opportunities[:5]
