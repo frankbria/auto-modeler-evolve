@@ -2361,7 +2361,9 @@ def _example_question(col_name: str, problem_type: str, business_value: str) -> 
     col_display = col_name.replace("_", " ").title()
     if problem_type == "regression":
         if business_value == "high":
-            return f"Can you predict the {col_display} for each record in my next dataset?"
+            return (
+                f"Can you predict the {col_display} for each record in my next dataset?"
+            )
         return f"What will the {col_display} be for new records?"
     else:  # classification
         if business_value == "high":
@@ -2434,9 +2436,7 @@ def compute_prediction_opportunities(
 
         # Count predictor columns (other non-target columns)
         predictor_count = sum(
-            1
-            for s in col_stats
-            if s["name"] != col and s.get("null_pct", 0) <= 50
+            1 for s in col_stats if s["name"] != col and s.get("null_pct", 0) <= 50
         )
 
         # Feasibility score (0-100)

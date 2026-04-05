@@ -66,7 +66,9 @@ def test_pattern_no_match_unrelated():
 # ---------------------------------------------------------------------------
 
 
-def _make_col(name, dtype, null_pct=0.0, unique_count=None, mean=None, std=None, sample_count=100):
+def _make_col(
+    name, dtype, null_pct=0.0, unique_count=None, mean=None, std=None, sample_count=100
+):
     """Helper to build a col_stats dict for testing."""
     stat: dict = {
         "name": name,
@@ -157,8 +159,17 @@ def test_high_missing_data_excluded():
     from core.analyzer import compute_prediction_opportunities
 
     cols = [
-        _make_col("sparse_col", "float64", null_pct=50.0, unique_count=40, mean=100.0, std=20.0),
-        _make_col("revenue", "float64", null_pct=2.0, unique_count=80, mean=1000.0, std=200.0),
+        _make_col(
+            "sparse_col",
+            "float64",
+            null_pct=50.0,
+            unique_count=40,
+            mean=100.0,
+            std=20.0,
+        ),
+        _make_col(
+            "revenue", "float64", null_pct=2.0, unique_count=80, mean=1000.0, std=200.0
+        ),
         _make_col("region", "object", unique_count=4),
     ]
     result = compute_prediction_opportunities(cols, row_count=100)
@@ -197,7 +208,13 @@ def test_max_five_results():
 
     # Create many eligible columns
     cols = [
-        _make_col(f"metric_{i}", "float64", mean=float(100 + i), std=float(10 + i), unique_count=80)
+        _make_col(
+            f"metric_{i}",
+            "float64",
+            mean=float(100 + i),
+            std=float(10 + i),
+            unique_count=80,
+        )
         for i in range(10)
     ] + [_make_col("region", "object", unique_count=4)]
     result = compute_prediction_opportunities(cols, row_count=100)
@@ -256,7 +273,9 @@ def test_business_value_high_for_revenue():
     from core.analyzer import compute_prediction_opportunities
 
     cols = [
-        _make_col("revenue", "float64", null_pct=0.0, mean=1000.0, std=200.0, unique_count=80),
+        _make_col(
+            "revenue", "float64", null_pct=0.0, mean=1000.0, std=200.0, unique_count=80
+        ),
         _make_col("region", "object", unique_count=4),
     ]
     result = compute_prediction_opportunities(cols, row_count=100)
