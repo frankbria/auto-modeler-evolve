@@ -1,3 +1,6 @@
+from __future__ import annotations
+
+from datetime import UTC, datetime
 from typing import Any
 
 import numpy as np
@@ -2090,5 +2093,223 @@ def compute_stat_query(
         "n_valid": len(series),
         "formatted_value": formatted,
         "label": label,
+        "summary": summary,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Project health summary (proactive model drift alerts)
+# ---------------------------------------------------------------------------
+
+_ALGO_SHORT: dict[str, str] = {
+    "linear_regression": "Linear Regression",
+    "ridge": "Ridge",
+    "logistic_regression": "Logistic Regression",
+    "random_forest_regressor": "Random Forest",
+    "random_forest_classifier": "Random Forest",
+    "gradient_boosting_regressor": "Gradient Boosting",
+    "gradient_boosting_classifier": "Gradient Boosting",
+    "decision_tree_regressor": "Decision Tree",
+    "decision_tree_classifier": "Decision Tree",
+    "xgboost_regressor": "XGBoost",
+    "xgboost_classifier": "XGBoost",
+    "lightgbm_regressor": "LightGBM",
+    "lightgbm_classifier": "LightGBM",
+    "mlp_regressor": "Neural Network",
+    "mlp_classifier": "Neural Network",
+}
+
+
+def _deployment_age_score(created_at: datetime, now: datetime) -> int:
+    """Return 0-100 age score — higher means fresher model."""
+    try:
+        age_days = (now - created_at.replace(tzinfo=None)).days
+    except Exception:  # noqa: BLE001
+        return 100  # unknown age = assume fresh
+    if age_days < 30:
+        return 100
+    if age_days < 60:
+        return 80
+    if age_days < 90:
+        return 60
+    if age_days < 180:
+        return 40
+    return 20
+
+
+def _deployment_usage_score(request_count: int, last_predicted_at: datetime | None, now: datetime) -> int:
+    """Return 0-100 usage score — higher means actively used."""
+    if request_count == 0:
+        return 30  # never used — note but don't flag harshly
+    if last_predicted_at is None:
+        return 70
+    try:
+        idle_days = (now - last_predicted_at.replace(tzinfo=None)).days
+    except Exception:  # noqa: BLE001
+        return 70
+    if idle_days < 7:
+        return 100
+    if idle_days < 30:
+        return 80
+    if idle_days < 90:
+        return 60
+    return 40
+
+
+def compute_deployment_health_item(
+    deployment_id: str,
+    algorithm: str | None,
+    target_column: str | None,
+    created_at: datetime,
+    request_count: int,
+    last_predicted_at: datetime | None,
+    environment: str,
+    now: datetime | None = None,
+) -> dict:
+    """Return a health item dict for one deployment.
+
+    Pure function — no database or filesystem access.
+
+    Args:
+        deployment_id: UUID of the deployment.
+        algorithm: sklearn algorithm key (e.g. "random_forest_regressor").
+        target_column: Column name being predicted.
+        created_at: When the deployment was created.
+        request_count: Total number of predictions served.
+        last_predicted_at: Timestamp of the most recent prediction (or None).
+        environment: "staging" or "production".
+        now: Reference timestamp (defaults to UTC now).
+
+    Returns:
+        Dict with keys: deployment_id, name, algorithm_plain, target_column,
+        environment, health_score, status, top_issue, recommendation,
+        age_score, usage_score.
+    """
+    if now is None:
+        now = datetime.now(UTC).replace(tzinfo=None)
+
+    age_score = _deployment_age_score(created_at, now)
+    usage_score = _deployment_usage_score(request_count, last_predicted_at, now)
+    health_score = int(age_score * 0.55 + usage_score * 0.45)
+
+    # Determine status
+    if health_score >= 75:
+        status = "healthy"
+    elif health_score >= 50:
+        status = "warning"
+    else:
+        status = "critical"
+
+    # Determine top issue and recommendation
+    algo_plain = _ALGO_SHORT.get(algorithm or "", algorithm or "Model")
+    target_label = target_column or "target"
+    name = f"{algo_plain} → {target_label}"
+
+    try:
+        age_days = (now - created_at.replace(tzinfo=None)).days
+    except Exception:  # noqa: BLE001
+        age_days = 0
+
+    top_issue: str | None = None
+    recommendation: str | None = None
+
+    if age_days >= 90:
+        top_issue = f"Model is {age_days} days old — patterns in your data may have changed."
+        recommendation = "Retrain with your most recent data to keep predictions accurate."
+    elif age_days >= 30 and request_count == 0:
+        top_issue = "Model has not received any predictions yet."
+        recommendation = "Share the prediction dashboard link or API endpoint with your team."
+    elif last_predicted_at is not None:
+        try:
+            idle_days = (now - last_predicted_at.replace(tzinfo=None)).days
+        except Exception:  # noqa: BLE001
+            idle_days = 0
+        if idle_days >= 30:
+            top_issue = f"No predictions in the last {idle_days} days."
+            recommendation = "Check if the prediction URL is still being used by your team."
+
+    return {
+        "deployment_id": deployment_id,
+        "name": name,
+        "algorithm_plain": algo_plain,
+        "target_column": target_label,
+        "environment": environment,
+        "health_score": health_score,
+        "status": status,
+        "top_issue": top_issue,
+        "recommendation": recommendation,
+        "age_score": age_score,
+        "usage_score": usage_score,
+    }
+
+
+def compute_project_health_summary(
+    deployment_dicts: list[dict],
+    now: datetime | None = None,
+) -> dict:
+    """Aggregate health items for all active deployments in a project.
+
+    Args:
+        deployment_dicts: List of dicts, each with the same keys as
+            compute_deployment_health_item's parameters.
+        now: Reference timestamp for age/usage calculations.
+
+    Returns:
+        Dict with keys: total, healthy, warning, critical, alerts (only
+        warning/critical items), overall_status, summary.
+    """
+    if now is None:
+        now = datetime.now(UTC).replace(tzinfo=None)
+
+    items = [
+        compute_deployment_health_item(
+            deployment_id=d["deployment_id"],
+            algorithm=d.get("algorithm"),
+            target_column=d.get("target_column"),
+            created_at=d["created_at"],
+            request_count=d.get("request_count", 0),
+            last_predicted_at=d.get("last_predicted_at"),
+            environment=d.get("environment", "staging"),
+            now=now,
+        )
+        for d in deployment_dicts
+    ]
+
+    healthy = [i for i in items if i["status"] == "healthy"]
+    warning = [i for i in items if i["status"] == "warning"]
+    critical = [i for i in items if i["status"] == "critical"]
+
+    # Overall project status: worst single deployment wins
+    if critical:
+        overall_status = "critical"
+    elif warning:
+        overall_status = "warning"
+    else:
+        overall_status = "healthy"
+
+    # Build plain-English project summary
+    total = len(items)
+    if total == 0:
+        summary = "No active deployments found for this project."
+    elif overall_status == "healthy":
+        summary = (
+            f"All {total} deployed model{'s' if total > 1 else ''} "
+            f"{'are' if total > 1 else 'is'} healthy."
+        )
+    else:
+        n_issues = len(warning) + len(critical)
+        summary = (
+            f"{n_issues} of {total} deployed model{'s' if total > 1 else ''} "
+            f"{'need' if n_issues > 1 else 'needs'} attention."
+        )
+
+    return {
+        "total": total,
+        "healthy": len(healthy),
+        "warning": len(warning),
+        "critical": len(critical),
+        "alerts": warning + critical,  # non-healthy items only
+        "all_items": items,
+        "overall_status": overall_status,
         "summary": summary,
     }

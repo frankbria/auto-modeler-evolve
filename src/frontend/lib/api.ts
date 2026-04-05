@@ -32,6 +32,7 @@ import type {
   ForecastResult,
   DataReadinessResult,
   TargetCorrelationResult,
+  ProjectHealthSummary,
 } from "./types"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
@@ -76,6 +77,9 @@ export const api = {
 
     alerts: (id: string): Promise<ProjectAlerts> =>
       fetch(`${API_URL}/api/projects/${id}/alerts`).then((r) => r.json()),
+
+    healthSummary: (id: string): Promise<ProjectHealthSummary> =>
+      fetch(`${API_URL}/api/projects/${id}/health-summary`).then((r) => r.json()),
   },
 
   data: {

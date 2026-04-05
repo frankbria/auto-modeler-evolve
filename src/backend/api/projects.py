@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
+from core.analyzer import compute_project_health_summary
 from db import get_session
 from models.dataset import Dataset
 from models.deployment import Deployment
@@ -737,3 +738,53 @@ def set_auto_retrain(
             else "Auto-retrain disabled."
         ),
     }
+
+
+# ---------------------------------------------------------------------------
+# Project health summary — proactive model drift alerts
+# ---------------------------------------------------------------------------
+
+
+@router.get("/{project_id}/health-summary")
+def get_project_health_summary(
+    project_id: str,
+    session: Session = Depends(get_session),
+):
+    """Return a health summary for all active deployments in a project.
+
+    Computes an age-and-usage health score (0-100) for every active deployment,
+    returns a list of alerts (deployments with status "warning" or "critical"),
+    and provides a plain-English overall summary.  Designed to be called on
+    project load so the frontend can surface proactive drift alerts in chat.
+    """
+    project = session.get(Project, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    # Load all active deployments for this project
+    deployments = session.exec(
+        select(Deployment).where(
+            Deployment.project_id == project_id,
+            Deployment.is_active == True,  # noqa: E712
+        )
+    ).all()
+
+    now = datetime.now(UTC).replace(tzinfo=None)
+
+    # Convert ORM objects to plain dicts for the pure function
+    deployment_dicts = [
+        {
+            "deployment_id": d.id,
+            "algorithm": d.algorithm,
+            "target_column": d.target_column,
+            "created_at": d.created_at,
+            "request_count": d.request_count,
+            "last_predicted_at": d.last_predicted_at,
+            "environment": d.environment,
+        }
+        for d in deployments
+    ]
+
+    summary = compute_project_health_summary(deployment_dicts, now=now)
+    summary["project_id"] = project_id
+    return summary

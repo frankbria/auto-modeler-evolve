@@ -1908,6 +1908,21 @@ _AUTO_RETRAIN_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+_HEALTH_SUMMARY_PATTERNS = re.compile(
+    r"\b("
+    r"how\s+(?:are|is)\s+(?:my\s+)?(?:model|models|deployment|deployments)\s+(?:doing|performing|holding up)\b|"
+    r"(?:any\s+)?(?:issues?|problems?|alerts?)\s+(?:with\s+)?(?:my\s+)?(?:model|models|deployment|deployments)\b|"
+    r"(?:model|deployment)\s+(?:health|status|check)\b|"
+    r"check\s+(?:my\s+)?(?:model|models|deployment|deployments)\b|"
+    r"(?:are|is)\s+(?:my\s+)?(?:model|models|deployment|deployments)\s+(?:ok|okay|healthy|still good|up to date|still accurate|still working)\b|"
+    r"(?:model|deployment|prediction)\s+drift\b|"
+    r"(?:are|is)\s+(?:my\s+)?(?:model|prediction)\s+(?:still\s+)?(?:accurate|current|fresh|working)\b|"
+    r"(?:stale|outdated|old)\s+(?:model|models|deployment)\b|"
+    r"(?:do\s+I\s+need\s+to\s+retrain|should\s+I\s+retrain|time\s+to\s+retrain)\b"
+    r")",
+    re.IGNORECASE,
+)
+
 _FEATURE_SEL_PATTERNS = re.compile(
     r"(?:"
     r"(?:are\s+)?(?:all|my)\s+(?:columns?|features?)\s+(?:useful|important|helpful|contributing|relevant)\b|"
@@ -2856,6 +2871,63 @@ def send_message(
                 "Tell the user the current auto-retrain status. If enabled, explain that the model "
                 "will automatically retrain whenever new data is uploaded. If disabled, explain how "
                 "to enable it or that they can ask you to turn it on. Keep it brief and friendly."
+            )
+        except Exception:  # noqa: BLE001
+            pass  # Nice-to-have; never crash chat
+
+    # Check if this is a model health / project health summary request
+    health_summary_event: dict | None = None
+    if _HEALTH_SUMMARY_PATTERNS.search(body.message):
+        try:
+            from datetime import UTC, datetime as _dt
+
+            from core.analyzer import compute_project_health_summary as _chs
+            from models.deployment import Deployment as _Dep
+
+            _deployments = list(
+                session.exec(
+                    select(_Dep).where(
+                        _Dep.project_id == body.project_id,
+                        _Dep.is_active == True,  # noqa: E712
+                    )
+                ).all()
+            )
+            _now = _dt.now(UTC).replace(tzinfo=None)
+            _dep_dicts = [
+                {
+                    "deployment_id": d.id,
+                    "algorithm": d.algorithm,
+                    "target_column": d.target_column,
+                    "created_at": d.created_at,
+                    "request_count": d.request_count,
+                    "last_predicted_at": d.last_predicted_at,
+                    "environment": d.environment,
+                }
+                for d in _deployments
+            ]
+            health_summary_event = _chs(_dep_dicts, now=_now)
+            health_summary_event["project_id"] = body.project_id
+
+            _n_alerts = len(health_summary_event["alerts"])
+            _overall = health_summary_event["overall_status"]
+            _summary_text = health_summary_event["summary"]
+            system_prompt += (
+                f"\n\n## Project Model Health\n"
+                f"Overall status: **{_overall}**. {_summary_text}\n"
+                + (
+                    f"There {'are' if _n_alerts > 1 else 'is'} {_n_alerts} deployment{'s' if _n_alerts > 1 else ''} "
+                    f"needing attention. Top issues: "
+                    + "; ".join(
+                        f"{a['name']}: {a['top_issue']}"
+                        for a in health_summary_event["alerts"]
+                        if a.get("top_issue")
+                    )
+                    if _n_alerts > 0
+                    else "All deployed models look healthy."
+                )
+                + "\nTell the user their model health status in plain English. "
+                "If there are issues, name each affected model and suggest the most important action. "
+                "If everything is healthy, reassure them."
             )
         except Exception:  # noqa: BLE001
             pass  # Nice-to-have; never crash chat
@@ -5296,6 +5368,9 @@ def send_message(
 
         if conv_export_event:
             yield f"data: {json.dumps({'type': 'conversation_export', 'conversation_export': conv_export_event})}\n\n"
+
+        if health_summary_event:
+            yield f"data: {json.dumps({'type': 'health_summary', 'health_summary': health_summary_event})}\n\n"
 
         # Emit model health card if computed
         if health_data:

@@ -445,6 +445,7 @@ export interface ChatMessage {
   model_selection?: ModelSelectionResult
   auto_retrain?: AutoRetrainResult
   conversation_export?: ConversationExportInfo
+  health_summary?: ProjectHealthSummary
 }
 
 export interface SegmentPerformanceSegment {
@@ -1841,4 +1842,30 @@ export interface ConversationExportInfo {
   download_url: string
   message_count: number
   dataset_name: string | null
+}
+
+export interface DeploymentHealthItem {
+  deployment_id: string
+  name: string
+  algorithm_plain: string
+  target_column: string
+  environment: string
+  health_score: number
+  status: "healthy" | "warning" | "critical"
+  top_issue: string | null
+  recommendation: string | null
+  age_score: number
+  usage_score: number
+}
+
+export interface ProjectHealthSummary {
+  project_id: string
+  total: number
+  healthy: number
+  warning: number
+  critical: number
+  alerts: DeploymentHealthItem[]
+  all_items: DeploymentHealthItem[]
+  overall_status: "healthy" | "warning" | "critical"
+  summary: string
 }

@@ -54,6 +54,7 @@ import { ModelImprovementCard } from "@/components/models/model-improvement-card
 import { ModelSelectionCard } from "@/components/models/model-selection-card"
 import { AutoRetrainCard } from "@/components/models/auto-retrain-card"
 import { ConversationExportCard } from "@/components/chat/conversation-export-card"
+import { ProjectHealthCard } from "@/components/chat/project-health-card"
 import { PairCorrelationCard } from "@/components/data/pair-correlation-card"
 import { StatQueryCard } from "@/components/data/stat-query-card"
 import { SummaryStatsCard } from "@/components/data/summary-stats-card"
@@ -191,6 +192,7 @@ export default function ProjectWorkspace() {
     attachModelSelectionToLastMessage,
     attachAutoRetrainToLastMessage,
     attachConversationExportToLastMessage,
+    attachHealthSummaryToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -279,12 +281,25 @@ export default function ProjectWorkspace() {
           // (history has real conversation, not just the initial greeting)
           const hasConversation = msgs.some((m) => m.role === "user")
           if (hasConversation) {
+            // Build the welcome-back message, then check model health proactively
             const welcomeBack: ChatMsg = {
               role: "assistant",
               content: buildWelcomeBackMessage(project.name, msgs),
               timestamp: new Date().toISOString(),
             }
-            setMessages([...msgs, welcomeBack])
+            // Proactively surface model health alerts on returning visits
+            let healthSummary: import("@/lib/types").ProjectHealthSummary | undefined
+            if (project.has_deployment) {
+              try {
+                const hs = await api.projects.healthSummary(projectId)
+                if (hs.alerts && hs.alerts.length > 0) {
+                  healthSummary = hs
+                }
+              } catch {
+                // Non-critical — never block the welcome message
+              }
+            }
+            setMessages([...msgs, { ...welcomeBack, health_summary: healthSummary }])
           } else {
             setMessages(msgs)
           }
@@ -497,6 +512,8 @@ export default function ProjectWorkspace() {
                 attachAutoRetrainToLastMessage(json.auto_retrain as import("@/lib/types").AutoRetrainResult)
               } else if (json.type === "conversation_export" && json.conversation_export) {
                 attachConversationExportToLastMessage(json.conversation_export as import("@/lib/types").ConversationExportInfo)
+              } else if (json.type === "health_summary" && json.health_summary) {
+                attachHealthSummaryToLastMessage(json.health_summary as import("@/lib/types").ProjectHealthSummary)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -557,6 +574,7 @@ export default function ProjectWorkspace() {
     attachModelSelectionToLastMessage,
     attachAutoRetrainToLastMessage,
     attachConversationExportToLastMessage,
+    attachHealthSummaryToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -909,6 +927,12 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.conversation_export && (
                       <ConversationExportCard info={msg.conversation_export} />
+                    )}
+                    {msg.health_summary && (
+                      <ProjectHealthCard
+                        summary={msg.health_summary}
+                        onSwitchTab={setActiveTab}
+                      />
                     )}
                   </div>
                 </div>
