@@ -2583,7 +2583,9 @@ def compute_dataset_comparison(
             severity = _col_drift_severity(pct_change)
 
             # Only report columns that actually shifted meaningfully
-            if severity != "low" or (new_std > 0 and abs(new_std - old_std) / (old_std + 1e-9) > 0.20):
+            if severity != "low" or (
+                new_std > 0 and abs(new_std - old_std) / (old_std + 1e-9) > 0.20
+            ):
                 numeric_drifts.append(
                     {
                         "col": col,
@@ -2616,7 +2618,15 @@ def compute_dataset_comparison(
                 top_shift_pct = 0.0
 
             if added_cats or removed_cats or top_shift_pct >= 10.0:
-                severity = "high" if (len(added_cats) > 2 or len(removed_cats) > 2 or top_shift_pct >= 20) else "medium"
+                severity = (
+                    "high"
+                    if (
+                        len(added_cats) > 2
+                        or len(removed_cats) > 2
+                        or top_shift_pct >= 20
+                    )
+                    else "medium"
+                )
                 categorical_drifts.append(
                     {
                         "col": col,
@@ -2651,7 +2661,12 @@ def compute_dataset_comparison(
     drift_score = int(min(100, sum(drift_components)))
 
     # ---- Plain-English summary ----
-    total_issues = len(numeric_drifts) + len(categorical_drifts) + len(new_columns) + len(dropped_columns)
+    total_issues = (
+        len(numeric_drifts)
+        + len(categorical_drifts)
+        + len(new_columns)
+        + len(dropped_columns)
+    )
 
     if drift_score == 0 and total_issues == 0:
         summary = "The new dataset looks very similar to the original — distributions match closely."

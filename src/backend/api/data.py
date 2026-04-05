@@ -2729,9 +2729,13 @@ def compare_datasets(
     new_path = Path(new_ds.file_path)
 
     if not baseline_path.exists():
-        raise HTTPException(status_code=404, detail="Baseline dataset file not found on disk")
+        raise HTTPException(
+            status_code=404, detail="Baseline dataset file not found on disk"
+        )
     if not new_path.exists():
-        raise HTTPException(status_code=404, detail="New dataset file not found on disk")
+        raise HTTPException(
+            status_code=404, detail="New dataset file not found on disk"
+        )
 
     old_df = pd.read_csv(baseline_path)
     new_df = pd.read_csv(new_path)

@@ -15,6 +15,7 @@ import pandas as pd
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_df(**cols) -> pd.DataFrame:
     return pd.DataFrame(cols)
 
@@ -35,7 +36,9 @@ def test_identical_datasets_zero_drift():
     assert result["categorical_drifts"] == []
     assert result["new_columns"] == []
     assert result["dropped_columns"] == []
-    assert "similar" in result["summary"].lower() or "match" in result["summary"].lower()
+    assert (
+        "similar" in result["summary"].lower() or "match" in result["summary"].lower()
+    )
 
 
 def test_large_numeric_mean_shift_detected():
@@ -149,7 +152,10 @@ def test_summary_mentions_significant_for_high_drift():
     new_df = _make_df(revenue=[1000.0, 2000.0, 3000.0])
     result = compute_dataset_comparison(old_df, new_df)
 
-    assert "significant" in result["summary"].lower() or "moderate" in result["summary"].lower()
+    assert (
+        "significant" in result["summary"].lower()
+        or "moderate" in result["summary"].lower()
+    )
 
 
 def test_col_count_fields_present():
@@ -263,7 +269,9 @@ def test_pattern_matches_what_changed():
 def test_pattern_matches_how_does_compare():
     from api.chat import _DATASET_COMPARE_PATTERNS
 
-    assert _DATASET_COMPARE_PATTERNS.search("How does my new dataset compare to the original?")
+    assert _DATASET_COMPARE_PATTERNS.search(
+        "How does my new dataset compare to the original?"
+    )
 
 
 def test_pattern_matches_distribution_shift():
@@ -287,7 +295,9 @@ def test_pattern_matches_new_vs_old():
 def test_pattern_matches_is_new_data_different():
     from api.chat import _DATASET_COMPARE_PATTERNS
 
-    assert _DATASET_COMPARE_PATTERNS.search("Is my new data different from what you trained on?")
+    assert _DATASET_COMPARE_PATTERNS.search(
+        "Is my new data different from what you trained on?"
+    )
 
 
 def test_pattern_does_not_match_unrelated():
