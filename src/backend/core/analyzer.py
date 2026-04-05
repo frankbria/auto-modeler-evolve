@@ -2137,7 +2137,9 @@ def _deployment_age_score(created_at: datetime, now: datetime) -> int:
     return 20
 
 
-def _deployment_usage_score(request_count: int, last_predicted_at: datetime | None, now: datetime) -> int:
+def _deployment_usage_score(
+    request_count: int, last_predicted_at: datetime | None, now: datetime
+) -> int:
     """Return 0-100 usage score — higher means actively used."""
     if request_count == 0:
         return 30  # never used — note but don't flag harshly
@@ -2214,11 +2216,17 @@ def compute_deployment_health_item(
     recommendation: str | None = None
 
     if age_days >= 90:
-        top_issue = f"Model is {age_days} days old — patterns in your data may have changed."
-        recommendation = "Retrain with your most recent data to keep predictions accurate."
+        top_issue = (
+            f"Model is {age_days} days old — patterns in your data may have changed."
+        )
+        recommendation = (
+            "Retrain with your most recent data to keep predictions accurate."
+        )
     elif age_days >= 30 and request_count == 0:
         top_issue = "Model has not received any predictions yet."
-        recommendation = "Share the prediction dashboard link or API endpoint with your team."
+        recommendation = (
+            "Share the prediction dashboard link or API endpoint with your team."
+        )
     elif last_predicted_at is not None:
         try:
             idle_days = (now - last_predicted_at.replace(tzinfo=None)).days
@@ -2226,7 +2234,9 @@ def compute_deployment_health_item(
             idle_days = 0
         if idle_days >= 30:
             top_issue = f"No predictions in the last {idle_days} days."
-            recommendation = "Check if the prediction URL is still being used by your team."
+            recommendation = (
+                "Check if the prediction URL is still being used by your team."
+            )
 
     return {
         "deployment_id": deployment_id,

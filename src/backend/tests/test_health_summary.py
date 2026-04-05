@@ -126,7 +126,9 @@ def test_unused_deployment_top_issue():
         now=now,
     )
     assert item["top_issue"] is not None
-    assert "prediction" in item["top_issue"].lower() or "used" in item["top_issue"].lower()
+    assert (
+        "prediction" in item["top_issue"].lower() or "used" in item["top_issue"].lower()
+    )
 
 
 def test_idle_deployment_top_issue():
