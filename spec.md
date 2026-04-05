@@ -671,6 +671,28 @@ guides them forward through the natural flow.
       analyst who knows their data but doesn't know what to model" cold-start gap from the vision.
       *Day 25 (04:00): 24 backend + 19 frontend = 43 new tests. Total: 2529 backend + 1228 frontend = 3757, all passing. Backend lint: clean. Frontend build + lint: clean.*
 
+- [x] **Dataset Distribution Comparison** — When an analyst asks "what changed in my data?", "how does my
+      new dataset compare?", "are there distribution shifts?", or "has my data changed?", AutoModeler
+      compares the two most recent datasets for the project and surfaces a structured drift report.
+      `compute_dataset_comparison(old_df, new_df)` is a pure function in `core/analyzer.py` that
+      computes: row count changes (with ± % change), schema changes (new/dropped columns), per-column
+      numeric distribution shifts (mean before/after, % change, severity low/medium/high — high if >30%
+      mean shift), categorical changes (new categories, dropped categories, frequency shifts — reported
+      when top frequency shift ≥10%), an overall drift score (0–100) weighting row changes, schema
+      changes, and per-column severity, and a plain-English summary. `GET /api/data/compare?baseline_id=&new_id=`
+      endpoint compares two datasets by ID and returns the full report. `_DATASET_COMPARE_PATTERNS` (9
+      NL variants: "what changed in my data", "how does my new data compare", "distribution shift",
+      "has my data changed", "new vs old data", "differences between datasets", "is my new data different")
+      detects intent in chat, queries the two most-recent datasets for the project, injects drift score +
+      column highlights into the system prompt, and emits `{type:"dataset_comparison"}` SSE event.
+      `DatasetComparisonCard` (orange border, 📊 icon): drift score badge (green/yellow/red), change count
+      badge, baseline vs new filenames with row/column counts, row-change %, schema change section
+      (new/dropped column lists), numeric drift table (old avg → new avg, % change direction arrow, severity
+      badge), categorical drift rows (new categories in green, dropped in red, frequency shift %).
+      Closes the "I uploaded new data — what changed?" analyst gap: the smart colleague who says "I noticed
+      your revenue average jumped 150% and two new product categories appeared — you should probably retrain."
+      *Day 25 (12:00): 23 backend + 18 frontend = 41 new tests. Total: 2552 backend + 1246 frontend = 3798, all passing. Backend lint: clean. Frontend build + lint: clean.*
+
 - [x] **AI-powered data dictionary** — When a dataset is uploaded (or on demand via POST), auto-generate
       plain-English descriptions for every column. `core/dictionary.py` classifies each column as
       id/metric/dimension/date/flag/text via heuristics (name hints + dtype + cardinality), then uses
