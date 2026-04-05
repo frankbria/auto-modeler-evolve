@@ -49,15 +49,19 @@ the time is better spent on real features.
 
 ## Currently Working On
 
-## Day 24 (20:00) — Done
-**Track B — Proactive Model Health Alerts.** Smart-colleague proactive notification when deployed models are aging or idle.
-- **Proactive Health Alerts** — `compute_deployment_health_item()` + `compute_project_health_summary()` pure functions in `core/analyzer.py`. Age (0–100) + usage (0–100) scores → combined health score → healthy/warning/critical status. `GET /api/projects/{id}/health-summary` endpoint. `_HEALTH_SUMMARY_PATTERNS` (9 NL variants) + `{type:"health_summary"}` SSE event. `ProjectHealthCard` (adaptive border) in chat with per-alert rows, health bars, CTA buttons. **Proactive injection**: on project load, welcome-back message automatically includes alerts if any deployment is degraded. 16 backend + 14 frontend = 30 new tests. Total: 2505 backend + 1209 frontend = 3714.
+## Day 25 (04:00) — Done
+**Track B — Prediction Opportunity Discovery.** Closes the "I have data but don't know what to model" cold-start gap.
+- **Prediction Opportunities** — `compute_prediction_opportunities()` pure function in `core/analyzer.py`. Exclusion filters (ID names, high-cardinality categoricals, >30% missing, constant). Regression for numeric, classification for 2-20 category cols. Feasibility score rewards completeness + predictors + business-value name patterns. `_PREDICT_OPP_PATTERNS` (9 NL variants) + system prompt injection + `{type:"prediction_opportunities"}` SSE. `PredictionOpportunitiesCard` (purple border, 🎯) with ranked rows, feasibility bars, problem-type + business-value badges. 24 backend + 19 frontend = 43 new tests. Total: 2529 backend + 1228 frontend = 3757.
 
 **What's next:**
 - Continue Track B — remaining opportunities:
   - Multi-dataset comparison (upload v2 dataset, compare model performance pre/post)
   - Guided onboarding wizard (step-by-step first-use flow for new analysts)
   - Data version history (show data changes over time as new uploads are made)
+
+## Day 24 (20:00) — Done
+**Track B — Proactive Model Health Alerts.** Smart-colleague proactive notification when deployed models are aging or idle.
+- **Proactive Health Alerts** — `compute_deployment_health_item()` + `compute_project_health_summary()` pure functions in `core/analyzer.py`. Age (0–100) + usage (0–100) scores → combined health score → healthy/warning/critical status. `GET /api/projects/{id}/health-summary` endpoint. `_HEALTH_SUMMARY_PATTERNS` (9 NL variants) + `{type:"health_summary"}` SSE event. `ProjectHealthCard` (adaptive border) in chat with per-alert rows, health bars, CTA buttons. **Proactive injection**: on project load, welcome-back message automatically includes alerts if any deployment is degraded. 16 backend + 14 frontend = 30 new tests. Total: 2505 backend + 1209 frontend = 3714.
 
 ## Day 24 (12:00) — Done
 **Track B — Conversation Export as HTML Report.** Closes the "share full analysis journey" use case.

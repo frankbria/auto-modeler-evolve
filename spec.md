@@ -648,6 +648,29 @@ guides them forward through the natural flow.
       me to retrain it?"
       *Day 24 (20:00): 16 backend + 14 frontend = 30 new tests. Total: 2505 backend + 1209 frontend = 3714, all passing. Backend lint: clean. Frontend build + lint: clean.*
 
+- [x] **Prediction Opportunity Discovery** — When an analyst doesn't know what to predict, they can ask
+      "what can I predict?", "what should I model?", "suggest a target", or "what prediction opportunities
+      are there?" and AutoModeler analyzes the dataset columns to suggest the best prediction targets.
+      `compute_prediction_opportunities(col_stats, row_count)` pure function in `core/analyzer.py` scores
+      every eligible column: numeric columns become regression candidates; categoricals with 2–20 unique
+      values become classification candidates; ID-like columns (name pattern `_id`, `_key`, `pk`, etc.)
+      and near-unique categoricals are excluded; columns with >30% missing data are excluded; constant
+      columns (zero std/variance) are excluded. Feasibility score (0-100) rewards: low missing data (+20),
+      enough predictors (+15), high business value (+10). Business value is classified by column name:
+      `revenue`/`sales`/`profit`/`churn` → "high"; `price`/`cost`/`quantity`/`rate` → "medium"; otherwise
+      "low". Results ranked by feasibility then business value, capped at 5. `_HIGH_VALUE_NAMES` and
+      `_MEDIUM_VALUE_NAMES` regex constants drive the classification. `_example_question()` generates a
+      domain-appropriate natural-language question for each opportunity. `GET /api/data/{id}/prediction-
+      opportunities` endpoint returns opportunities with `total` count. `_PREDICT_OPP_PATTERNS` (9 NL
+      variants: "what can I predict", "what should I model", "suggest a target", "what columns can I
+      predict", "prediction opportunities") + system prompt injection (top suggestion + full list) +
+      `{type:"prediction_opportunities"}` SSE event. `PredictionOpportunitiesCard` (purple border, 🎯 icon)
+      in chat: count + high-value badges, ranked opportunity rows with problem-type badge (violet=regression,
+      amber=classification), business-value badge, reason text, example question in quotes, feasibility
+      score bar, optional "Set target" button per row via `onSelectTarget` callback. Closes the "business
+      analyst who knows their data but doesn't know what to model" cold-start gap from the vision.
+      *Day 25 (04:00): 24 backend + 19 frontend = 43 new tests. Total: 2529 backend + 1228 frontend = 3757, all passing. Backend lint: clean. Frontend build + lint: clean.*
+
 - [x] **AI-powered data dictionary** — When a dataset is uploaded (or on demand via POST), auto-generate
       plain-English descriptions for every column. `core/dictionary.py` classifies each column as
       id/metric/dimension/date/flag/text via heuristics (name hints + dtype + cardinality), then uses
