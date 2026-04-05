@@ -447,6 +447,7 @@ export interface ChatMessage {
   conversation_export?: ConversationExportInfo
   health_summary?: ProjectHealthSummary
   prediction_opportunities?: PredictionOpportunitiesResult
+  dataset_comparison?: DatasetComparisonResult
 }
 
 export interface SegmentPerformanceSegment {
@@ -1885,4 +1886,40 @@ export interface PredictionOpportunitiesResult {
   dataset_id: string
   opportunities: PredictionOpportunity[]
   total: number
+}
+
+export interface NumericDrift {
+  col: string
+  old_mean: number
+  new_mean: number
+  old_std: number
+  new_std: number
+  pct_change: number
+  severity: "low" | "medium" | "high"
+}
+
+export interface CategoricalDrift {
+  col: string
+  new_categories: string[]
+  dropped_categories: string[]
+  top_shift_pct: number
+  severity: "medium" | "high"
+}
+
+export interface DatasetComparisonResult {
+  baseline_id: string
+  new_id: string
+  baseline_name: string
+  new_name: string
+  row_count_old: number
+  row_count_new: number
+  row_count_change_pct: number
+  col_count_old: number
+  col_count_new: number
+  new_columns: string[]
+  dropped_columns: string[]
+  numeric_drifts: NumericDrift[]
+  categorical_drifts: CategoricalDrift[]
+  drift_score: number
+  summary: string
 }

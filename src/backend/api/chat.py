@@ -1923,6 +1923,21 @@ _PREDICT_OPP_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+_DATASET_COMPARE_PATTERNS = re.compile(
+    r"(?i)("
+    r"(?:what\s+)?(?:changed|different|change[ds]?)\s+(?:in|with|about)\s+(?:my\s+)?(?:new\s+)?data|"
+    r"how\s+(?:does|is)\s+(?:my\s+)?(?:new\s+data|new\s+dataset|this\s+data)\s+(?:compare|different|look)|"
+    r"(?:compare|comparison)\s+(?:the\s+)?(?:datasets?|data\s+files?|uploads?)|"
+    r"distribution\s+(?:shift|change|drift|comparison)|"
+    r"(?:what|any)\s+(?:distribution|data)\s+changes|"
+    r"(?:has|have)\s+(?:the\s+)?(?:my\s+)?data\s+(?:changed|shifted|drifted)|"
+    r"new\s+vs\.?\s+old\s+data|"
+    r"(?:differences?|changes?)\s+between\s+(?:my\s+)?(?:datasets?|uploads?|files?)|"
+    r"is\s+my\s+new\s+data\s+(?:different|similar|compatible)"
+    r")",
+    re.IGNORECASE,
+)
+
 _HEALTH_SUMMARY_PATTERNS = re.compile(
     r"\b("
     r"how\s+(?:are|is)\s+(?:my\s+)?(?:model|models|deployment|deployments)\s+(?:doing|performing|holding up)\b|"
@@ -2928,6 +2943,57 @@ def send_message(
                         "Explain the top suggestion and why it would be valuable. "
                         "Mention they can click a card option to set any column as their prediction target. "
                         "Keep it conversational and encouraging."
+                    )
+        except Exception:  # noqa: BLE001
+            pass  # Nice-to-have; never crash chat
+
+    # Check if this is a dataset distribution comparison request
+    dataset_compare_event: dict | None = None
+    if _DATASET_COMPARE_PATTERNS.search(body.message) and ctx["dataset"]:
+        try:
+            from core.analyzer import compute_dataset_comparison as _cdc
+            from pathlib import Path as _PathC
+
+            import pandas as _pdc
+
+            # Find the two most recent datasets for this project
+            from models.dataset import Dataset as _Dataset
+
+            _all_ds = (
+                session.query(_Dataset)
+                .filter(_Dataset.project_id == body.project_id)
+                .order_by(_Dataset.created_at.asc())
+                .all()
+            )
+            if len(_all_ds) >= 2:
+                _baseline_ds = _all_ds[0]
+                _new_ds = _all_ds[-1]
+                _bp = _PathC(_baseline_ds.file_path)
+                _np = _PathC(_new_ds.file_path)
+                if _bp.exists() and _np.exists():
+                    _old_df = _pdc.read_csv(_bp)
+                    _new_df_c = _pdc.read_csv(_np)
+                    _drift = _cdc(_old_df, _new_df_c)
+                    dataset_compare_event = {
+                        "baseline_id": _baseline_ds.id,
+                        "new_id": _new_ds.id,
+                        "baseline_name": _baseline_ds.filename,
+                        "new_name": _new_ds.filename,
+                        **_drift,
+                    }
+                    _score = _drift["drift_score"]
+                    _summary_c = _drift["summary"]
+                    _n_numeric = len(_drift["numeric_drifts"])
+                    _n_cat = len(_drift["categorical_drifts"])
+                    system_prompt += (
+                        f"\n\n## Dataset Comparison\n"
+                        f"Comparing '{_baseline_ds.filename}' (baseline) vs '{_new_ds.filename}' (new).\n"
+                        f"Overall drift score: {_score}/100. {_summary_c}\n"
+                        f"Numeric shifts: {_n_numeric} columns. Categorical changes: {_n_cat} columns.\n"
+                        f"New columns: {_drift['new_columns']}. Dropped columns: {_drift['dropped_columns']}.\n"
+                        "Explain the distribution comparison to the analyst in plain English. "
+                        "Highlight which columns changed most and what it means for model predictions. "
+                        "Advise whether retraining is recommended based on the drift score."
                     )
         except Exception:  # noqa: BLE001
             pass  # Nice-to-have; never crash chat
@@ -5444,6 +5510,9 @@ def send_message(
 
         if predict_opp_event:
             yield f"data: {json.dumps({'type': 'prediction_opportunities', 'prediction_opportunities': predict_opp_event})}\n\n"
+
+        if dataset_compare_event:
+            yield f"data: {json.dumps({'type': 'dataset_comparison', 'dataset_comparison': dataset_compare_event})}\n\n"
 
         # Emit model health card if computed
         if health_data:

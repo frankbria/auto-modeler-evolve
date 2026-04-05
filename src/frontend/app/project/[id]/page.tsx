@@ -56,6 +56,7 @@ import { AutoRetrainCard } from "@/components/models/auto-retrain-card"
 import { ConversationExportCard } from "@/components/chat/conversation-export-card"
 import { ProjectHealthCard } from "@/components/chat/project-health-card"
 import { PredictionOpportunitiesCard } from "@/components/models/prediction-opportunities-card"
+import { DatasetComparisonCard } from "@/components/data/dataset-comparison-card"
 import { PairCorrelationCard } from "@/components/data/pair-correlation-card"
 import { StatQueryCard } from "@/components/data/stat-query-card"
 import { SummaryStatsCard } from "@/components/data/summary-stats-card"
@@ -195,6 +196,7 @@ export default function ProjectWorkspace() {
     attachConversationExportToLastMessage,
     attachHealthSummaryToLastMessage,
     attachPredictionOpportunitiesToLastMessage,
+    attachDatasetComparisonToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -518,6 +520,8 @@ export default function ProjectWorkspace() {
                 attachHealthSummaryToLastMessage(json.health_summary as import("@/lib/types").ProjectHealthSummary)
               } else if (json.type === "prediction_opportunities" && json.prediction_opportunities) {
                 attachPredictionOpportunitiesToLastMessage(json.prediction_opportunities as import("@/lib/types").PredictionOpportunitiesResult)
+              } else if (json.type === "dataset_comparison" && json.dataset_comparison) {
+                attachDatasetComparisonToLastMessage(json.dataset_comparison as import("@/lib/types").DatasetComparisonResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -580,6 +584,7 @@ export default function ProjectWorkspace() {
     attachConversationExportToLastMessage,
     attachHealthSummaryToLastMessage,
     attachPredictionOpportunitiesToLastMessage,
+    attachDatasetComparisonToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -943,6 +948,9 @@ export default function ProjectWorkspace() {
                       <PredictionOpportunitiesCard
                         result={msg.prediction_opportunities}
                       />
+                    )}
+                    {msg.dataset_comparison && (
+                      <DatasetComparisonCard result={msg.dataset_comparison} />
                     )}
                   </div>
                 </div>

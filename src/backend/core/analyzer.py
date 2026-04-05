@@ -2499,3 +2499,188 @@ def compute_prediction_opportunities(
     )
 
     return opportunities[:5]
+
+
+# ---------------------------------------------------------------------------
+# Dataset distribution comparison (detect meaningful changes between uploads)
+# ---------------------------------------------------------------------------
+
+_SHIFT_HIGH = 0.30  # >30% mean shift → high severity
+_SHIFT_MEDIUM = 0.10  # 10–30% mean shift → medium severity
+
+
+def _col_drift_severity(pct_change: float) -> str:
+    """Classify percentage change into low / medium / high severity."""
+    abs_change = abs(pct_change)
+    if abs_change >= _SHIFT_HIGH:
+        return "high"
+    if abs_change >= _SHIFT_MEDIUM:
+        return "medium"
+    return "low"
+
+
+def compute_dataset_comparison(
+    old_df: "pd.DataFrame",
+    new_df: "pd.DataFrame",
+) -> dict:
+    """Compare two DataFrames and return a structured distribution drift report.
+
+    Pure function — no database access, no side effects.
+
+    Args:
+        old_df: The baseline (training / previously uploaded) DataFrame.
+        new_df: The new (recently uploaded) DataFrame to compare against.
+
+    Returns:
+        {
+            row_count_old, row_count_new, row_count_change_pct,
+            col_count_old, col_count_new,
+            new_columns: [str, ...],
+            dropped_columns: [str, ...],
+            numeric_drifts: [{col, old_mean, new_mean, pct_change, severity}, ...],
+            categorical_drifts: [{col, new_categories, dropped_categories,
+                                   top_shift_pct, severity}, ...],
+            drift_score: 0-100,
+            summary: str,
+        }
+    """
+    old_cols = set(old_df.columns)
+    new_cols = set(new_df.columns)
+    new_columns = sorted(new_cols - old_cols)
+    dropped_columns = sorted(old_cols - new_cols)
+    common_cols = old_cols & new_cols
+
+    # ---- Row count change ----
+    n_old = len(old_df)
+    n_new = len(new_df)
+    if n_old > 0:
+        row_count_change_pct = round((n_new - n_old) / n_old * 100, 1)
+    else:
+        row_count_change_pct = 0.0
+
+    # ---- Per-column comparisons ----
+    numeric_drifts = []
+    categorical_drifts = []
+
+    for col in sorted(common_cols):
+        old_ser = old_df[col].dropna()
+        new_ser = new_df[col].dropna()
+
+        if len(old_ser) == 0 or len(new_ser) == 0:
+            continue
+
+        if pd.api.types.is_numeric_dtype(old_ser):
+            old_mean = float(old_ser.mean())
+            new_mean = float(new_ser.mean())
+            old_std = float(old_ser.std())
+            new_std = float(new_ser.std())
+
+            if abs(old_mean) > 1e-9:
+                pct_change = (new_mean - old_mean) / abs(old_mean)
+            else:
+                pct_change = 0.0
+
+            severity = _col_drift_severity(pct_change)
+
+            # Only report columns that actually shifted meaningfully
+            if severity != "low" or (new_std > 0 and abs(new_std - old_std) / (old_std + 1e-9) > 0.20):
+                numeric_drifts.append(
+                    {
+                        "col": col,
+                        "old_mean": round(old_mean, 4),
+                        "new_mean": round(new_mean, 4),
+                        "old_std": round(old_std, 4),
+                        "new_std": round(new_std, 4),
+                        "pct_change": round(pct_change * 100, 1),
+                        "severity": severity,
+                    }
+                )
+        else:
+            # Categorical column
+            old_cats = set(old_ser.astype(str).unique())
+            new_cats = set(new_ser.astype(str).unique())
+            added_cats = sorted(new_cats - old_cats)[:10]
+            removed_cats = sorted(old_cats - new_cats)[:10]
+
+            # Frequency shift: compare top category share
+            old_freq = old_ser.astype(str).value_counts(normalize=True)
+            new_freq = new_ser.astype(str).value_counts(normalize=True)
+            common_cats = set(old_freq.index) & set(new_freq.index)
+
+            if common_cats:
+                max_shift = max(
+                    abs(new_freq.get(c, 0) - old_freq.get(c, 0)) for c in common_cats
+                )
+                top_shift_pct = round(float(max_shift) * 100, 1)
+            else:
+                top_shift_pct = 0.0
+
+            if added_cats or removed_cats or top_shift_pct >= 10.0:
+                severity = "high" if (len(added_cats) > 2 or len(removed_cats) > 2 or top_shift_pct >= 20) else "medium"
+                categorical_drifts.append(
+                    {
+                        "col": col,
+                        "new_categories": added_cats,
+                        "dropped_categories": removed_cats,
+                        "top_shift_pct": top_shift_pct,
+                        "severity": severity,
+                    }
+                )
+
+    # ---- Overall drift score (0-100) ----
+    # Higher score = more drift = more caution warranted
+    drift_components: list[float] = []
+
+    # Row count component (up to 15 points)
+    drift_components.append(min(15.0, abs(row_count_change_pct) / 2))
+
+    # Schema change component (up to 15 points)
+    schema_changes = len(new_columns) + len(dropped_columns)
+    drift_components.append(min(15.0, schema_changes * 5.0))
+
+    # Numeric drift component (up to 40 points)
+    high_numeric = sum(1 for d in numeric_drifts if d["severity"] == "high")
+    med_numeric = sum(1 for d in numeric_drifts if d["severity"] == "medium")
+    drift_components.append(min(40.0, high_numeric * 15.0 + med_numeric * 6.0))
+
+    # Categorical drift component (up to 30 points)
+    high_cat = sum(1 for d in categorical_drifts if d["severity"] == "high")
+    med_cat = sum(1 for d in categorical_drifts if d["severity"] == "medium")
+    drift_components.append(min(30.0, high_cat * 15.0 + med_cat * 6.0))
+
+    drift_score = int(min(100, sum(drift_components)))
+
+    # ---- Plain-English summary ----
+    total_issues = len(numeric_drifts) + len(categorical_drifts) + len(new_columns) + len(dropped_columns)
+
+    if drift_score == 0 and total_issues == 0:
+        summary = "The new dataset looks very similar to the original — distributions match closely."
+    elif drift_score < 15:
+        summary = (
+            f"Minor differences detected ({total_issues} column{'s' if total_issues != 1 else ''}). "
+            "The datasets are broadly compatible."
+        )
+    elif drift_score < 35:
+        summary = (
+            f"Moderate changes detected in {total_issues} column{'s' if total_issues != 1 else ''}. "
+            "Review highlighted columns before retraining."
+        )
+    else:
+        summary = (
+            f"Significant distribution shifts detected ({total_issues} column{'s' if total_issues != 1 else ''} affected). "
+            "Consider whether the model needs retraining to reflect the new data patterns."
+        )
+
+    return {
+        "row_count_old": n_old,
+        "row_count_new": n_new,
+        "row_count_change_pct": row_count_change_pct,
+        "col_count_old": len(old_cols),
+        "col_count_new": len(new_cols),
+        "new_columns": new_columns,
+        "dropped_columns": dropped_columns,
+        "numeric_drifts": numeric_drifts,
+        "categorical_drifts": categorical_drifts,
+        "drift_score": drift_score,
+        "summary": summary,
+    }

@@ -30,6 +30,7 @@ from core.analyzer import (
     compute_group_stats,
     compute_group_trends,
     compute_pair_correlation,
+    compute_dataset_comparison,
     compute_prediction_opportunities,
     compute_stat_query,
     compute_summary_stats,
@@ -2689,4 +2690,57 @@ def get_prediction_opportunities(
         "dataset_id": dataset_id,
         "opportunities": opportunities,
         "total": len(opportunities),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Dataset comparison — distribution drift between two uploads
+# ---------------------------------------------------------------------------
+
+
+@router.get("/compare")
+def compare_datasets(
+    baseline_id: str,
+    new_id: str,
+    session: Session = Depends(get_session),
+) -> dict:
+    """Compare two datasets and return a structured drift report.
+
+    Useful for understanding how a newly uploaded dataset differs from the
+    original training data, before deciding whether to retrain.
+
+    Args:
+        baseline_id: The reference (baseline / training) dataset ID.
+        new_id:      The new dataset to compare against the baseline.
+
+    Returns:
+        Drift report with row/column counts, numeric distribution shifts,
+        categorical changes, overall drift_score, and a plain-English summary.
+    """
+    baseline = session.get(Dataset, baseline_id)
+    if not baseline:
+        raise HTTPException(status_code=404, detail="Baseline dataset not found")
+
+    new_ds = session.get(Dataset, new_id)
+    if not new_ds:
+        raise HTTPException(status_code=404, detail="New dataset not found")
+
+    baseline_path = Path(baseline.file_path)
+    new_path = Path(new_ds.file_path)
+
+    if not baseline_path.exists():
+        raise HTTPException(status_code=404, detail="Baseline dataset file not found on disk")
+    if not new_path.exists():
+        raise HTTPException(status_code=404, detail="New dataset file not found on disk")
+
+    old_df = pd.read_csv(baseline_path)
+    new_df = pd.read_csv(new_path)
+
+    result = compute_dataset_comparison(old_df, new_df)
+    return {
+        "baseline_id": baseline_id,
+        "new_id": new_id,
+        "baseline_name": baseline.filename,
+        "new_name": new_ds.filename,
+        **result,
     }

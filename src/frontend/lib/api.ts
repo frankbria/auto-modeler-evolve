@@ -524,6 +524,14 @@ export const api = {
       fetch(`${API_URL}/api/data/${datasetId}/prediction-opportunities`).then(
         (r) => r.json()
       ),
+
+    compareDatasets: (
+      baselineId: string,
+      newId: string
+    ): Promise<import("./types").DatasetComparisonResult> =>
+      fetch(
+        `${API_URL}/api/data/compare?baseline_id=${encodeURIComponent(baselineId)}&new_id=${encodeURIComponent(newId)}`
+      ).then((r) => r.json()),
   },
 
   chat: {
