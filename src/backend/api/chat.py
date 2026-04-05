@@ -3037,7 +3037,7 @@ def send_message(
     )
     if _ALERTS_PATTERNS.search(body.message):
         try:
-            print(f"DEBUG: Entering alerts try block", file=sys.stderr)
+            print("DEBUG: Entering alerts try block", file=sys.stderr)
             active_deployments = list(
                 session.exec(
                     select(Deployment).where(
