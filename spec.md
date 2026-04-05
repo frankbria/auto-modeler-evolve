@@ -625,6 +625,29 @@ guides them forward through the natural flow.
       full data exploration, model building, and validation work.
       *Day 24 (12:00): 14 backend + 10 frontend = 24 new tests. Total: 2489 backend + 1195 frontend = 3684, all passing. Backend lint: clean. Frontend build: clean.*
 
+- [x] **Proactive Model Health Alerts** — When an analyst returns to a project that has deployed models
+      showing signs of degradation (stale age, low usage), AutoModeler proactively surfaces health alerts
+      directly in the chat — no dashboard-hunting required. `compute_deployment_health_item()` pure function
+      in `core/analyzer.py` scores each deployment across two signals: **age** (0–100 based on days since
+      deploy: 100 if <30 days, 20 if >180 days) and **usage** (0–100 based on request count and idle time).
+      Combined score: `age × 0.55 + usage × 0.45`. Status: **healthy** (≥75), **warning** (50–74),
+      **critical** (<50). Per-item `top_issue` and `recommendation` are in plain English. `compute_project_health_summary()`
+      aggregates all active deployment items for a project: total/healthy/warning/critical counts, alerts list
+      (warning + critical items only), overall status (worst-case escalation), and a one-sentence summary.
+      `GET /api/projects/{project_id}/health-summary` endpoint returns this for all active deployments in a
+      project. `_HEALTH_SUMMARY_PATTERNS` (9 NL variants: "how are my models doing?", "any issues with my
+      deployments?", "model health check", "do I need to retrain?", "model drift") triggers a `{type:"health_summary"}`
+      SSE event from chat. **Proactive injection**: on project load, if the project has deployments and the
+      analyst is on a returning visit, `page.tsx` calls `api.projects.healthSummary()` and injects a
+      `health_summary` field into the welcome-back message — so the `ProjectHealthCard` appears automatically
+      without the analyst asking. `ProjectHealthCard` (status-adaptive border: emerald/amber/red): overall
+      status heading, plain-English summary, count badges (total/healthy/warning/critical), per-alert rows
+      with model name, health score progress bar, top issue, recommendation, "View Deployment" and "Retrain
+      Model" CTA buttons that switch the right panel tab. Direct implementation of the "smart colleague"
+      vision promise: a colleague who taps you on the shoulder and says "Hey, your model is aging — want
+      me to retrain it?"
+      *Day 24 (20:00): 16 backend + 14 frontend = 30 new tests. Total: 2505 backend + 1209 frontend = 3714, all passing. Backend lint: clean. Frontend build + lint: clean.*
+
 - [x] **AI-powered data dictionary** — When a dataset is uploaded (or on demand via POST), auto-generate
       plain-English descriptions for every column. `core/dictionary.py` classifies each column as
       id/metric/dimension/date/flag/text via heuristics (name hints + dtype + cardinality), then uses
