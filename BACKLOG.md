@@ -49,15 +49,19 @@ the time is better spent on real features.
 
 ## Currently Working On
 
-## Day 24 (12:00) — Done
-**Track B — Conversation Export as HTML Report.** Closes the "share full analysis journey" use case.
-- **Conversation Export** — `_CONV_EXPORT_PATTERNS` (13 NL variants). `_build_export_html()` pure function generates self-contained HTML (header, dataset info, model results, conversation transcript, embedded CSS). `GET /api/chat/{project_id}/export` → HTML attachment. `ConversationExportCard` (emerald border, 📄) in chat: message count badge, dataset badge, download link. 14 backend + 10 frontend = 24 new tests. Total: 2475 backend + 1195 frontend = 3670.
+## Day 24 (20:00) — Done
+**Track B — Proactive Model Health Alerts.** Smart-colleague proactive notification when deployed models are aging or idle.
+- **Proactive Health Alerts** — `compute_deployment_health_item()` + `compute_project_health_summary()` pure functions in `core/analyzer.py`. Age (0–100) + usage (0–100) scores → combined health score → healthy/warning/critical status. `GET /api/projects/{id}/health-summary` endpoint. `_HEALTH_SUMMARY_PATTERNS` (9 NL variants) + `{type:"health_summary"}` SSE event. `ProjectHealthCard` (adaptive border) in chat with per-alert rows, health bars, CTA buttons. **Proactive injection**: on project load, welcome-back message automatically includes alerts if any deployment is degraded. 16 backend + 14 frontend = 30 new tests. Total: 2505 backend + 1209 frontend = 3714.
 
 **What's next:**
 - Continue Track B — remaining opportunities:
-  - "Model drift → retrain" proactive notification (webhook + chat alert)
   - Multi-dataset comparison (upload v2 dataset, compare model performance pre/post)
   - Guided onboarding wizard (step-by-step first-use flow for new analysts)
+  - Data version history (show data changes over time as new uploads are made)
+
+## Day 24 (12:00) — Done
+**Track B — Conversation Export as HTML Report.** Closes the "share full analysis journey" use case.
+- **Conversation Export** — `_CONV_EXPORT_PATTERNS` (13 NL variants). `_build_export_html()` pure function generates self-contained HTML (header, dataset info, model results, conversation transcript, embedded CSS). `GET /api/chat/{project_id}/export` → HTML attachment. `ConversationExportCard` (emerald border, 📄) in chat: message count badge, dataset badge, download link. 14 backend + 10 frontend = 24 new tests. Total: 2475 backend + 1195 frontend = 3670.
 
 ## Day 24 (05:30) — Done
 **Track B — Auto-Retrain on Upload.** Model stays current whenever new data is uploaded.
