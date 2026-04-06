@@ -49,6 +49,17 @@ the time is better spent on real features.
 
 ## Currently Working On
 
+## Day 26 (04:00) — Done
+**Track B — Goal-Driven Training.** Closes the "I need X% accuracy — just find me an algorithm that works" gap.
+- **Goal-Driven Training** — `_GOAL_TRAIN_PATTERNS` (8 NL variants) + `_extract_goal_target()` in `chat.py`. `run_goal_driven_training()` pure function in `core/trainer.py`: tries linear/RF/GBoost in order, stops early on success, falls back to tuning on best. Sub-samples >5,000 rows for speed. `GoalTrainingCard` (emerald/amber, 🎯) with winner box, trials table ✓/✗, tuning note, summary. 26 backend + 16 frontend = 42 new tests. Total: 2595 backend + 1268 frontend = 3863.
+
+**What's next:**
+- Continue Track B — remaining opportunities:
+  - Guided onboarding wizard (step-by-step first-use flow for new analysts)
+  - Data version history (show data changes over time as new uploads are made)
+  - Natural language column transformations ("create a new column: revenue per unit = revenue / units")
+  - Saved analysis templates (re-run the same analysis flow on new data)
+
 ## Day 25 (20:00) — Done
 **Track B — Inline Multi-Feature Prediction via Chat.** Closes the "Conversation over configuration" vision gap — analysts can now get predictions without leaving the chat.
 - **Inline Prediction** — `_INLINE_PRED_PATTERNS` (8 NL variants: "run a prediction for", "make a prediction with", "give me a prediction", "what would X be if", "score this record", "run the model on", "model output for", "what does the model predict"). `_KV_PAIR_RE` + `_extract_multi_feature_prediction()` parse `key=value` pairs from natural language, normalise keys case-insensitively, cast numerics to float, fill missing from training means. `{type:"inline_prediction"}` SSE event. `InlinePredictionCard` (blue, 🔮): regression shows prediction + CI; classification shows probability bars. 17 backend + 15 frontend = 32 new tests. Total: 2569 backend + 1252 frontend = 3821.
