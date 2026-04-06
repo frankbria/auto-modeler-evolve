@@ -92,6 +92,7 @@ interface AppState {
   attachDatasetComparisonToLastMessage: (dataset_comparison: import("./types").DatasetComparisonResult) => void
   attachInlinePredictionToLastMessage: (inline_prediction: import("./types").InlinePredictionResult) => void
   attachGoalTrainingToLastMessage: (goal_training: import("./types").GoalTrainingResult) => void
+  attachSensitivityToLastMessage: (sensitivity: import("./types").SensitivityResult) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -558,4 +559,14 @@ export const useAppStore = create<AppState>((set) => ({
       }
       return { messages }
     }),
-}))
+  attachSensitivityToLastMessage: (sensitivity) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, sensitivity }
+      }
+      return { messages }
+    }),
+})
+)

@@ -359,3 +359,110 @@ def explain_prediction(
         "summary": summary,
         "top_drivers": drivers[:3],
     }
+
+
+def run_sensitivity_analysis(
+    pipeline_path: str,
+    model_path: str,
+    feature_name: str,
+    sweep_values: list[float],
+    base_features: dict,
+) -> dict:
+    """Sweep a single feature across a range of values and collect predictions.
+
+    All other features are held at their training-data means (base_features).
+
+    Returns:
+        {
+          feature, target_column, problem_type,
+          values: [float],
+          predictions: [float | str],   # numeric for regression, top class for classification
+          confidences: [float | None],   # max class probability for classification
+          min_pred, max_pred, change_pct,
+          summary
+        }
+    """
+    import joblib as _jl
+
+    pipeline = load_pipeline(pipeline_path)
+    model = _jl.load(model_path)
+
+    if feature_name not in pipeline.feature_names:
+        raise ValueError(f"Feature '{feature_name}' not found in model.")
+
+    results: list = []
+    for v in sweep_values:
+        inputs = {**base_features, feature_name: float(v)}
+        x = pipeline.transform(inputs)
+        raw = model.predict(x)[0]
+        decoded = pipeline.decode_prediction(raw)
+        results.append(decoded)
+
+    # Confidences (classification only)
+    confidences: list = []
+    if pipeline.problem_type == "classification" and hasattr(model, "predict_proba"):
+        for v in sweep_values:
+            inputs = {**base_features, feature_name: float(v)}
+            x = pipeline.transform(inputs)
+            proba = model.predict_proba(x)[0]
+            confidences.append(round(float(proba.max()), 4))
+    else:
+        confidences = [None] * len(sweep_values)
+
+    # Stats (regression only — predictions are numeric)
+    min_pred: float | None = None
+    max_pred: float | None = None
+    change_pct: float | None = None
+    if pipeline.problem_type == "regression":
+        try:
+            numeric_preds = [float(r) for r in results]
+            min_pred = round(min(numeric_preds), 4)
+            max_pred = round(max(numeric_preds), 4)
+            first = numeric_preds[0]
+            last = numeric_preds[-1]
+            if first != 0:
+                change_pct = round((last - first) / abs(first) * 100, 1)
+        except (TypeError, ValueError):
+            pass
+
+    # Plain-English summary
+    feat_display = feature_name.replace("_", " ")
+    target_display = pipeline.target_column.replace("_", " ") if pipeline.target_column else "prediction"
+    n = len(sweep_values)
+    if pipeline.problem_type == "regression" and change_pct is not None:
+        direction = "increases" if change_pct > 0 else "decreases"
+        summary = (
+            f"As {feat_display} varies from {sweep_values[0]:g} to {sweep_values[-1]:g} "
+            f"across {n} steps, {target_display} {direction} by {abs(change_pct):.1f}% "
+            f"(from {min_pred:,.4g} to {max_pred:,.4g})."
+        )
+    elif pipeline.problem_type == "classification":
+        unique_classes = list(dict.fromkeys(str(r) for r in results))
+        if len(unique_classes) == 1:
+            summary = (
+                f"As {feat_display} varies from {sweep_values[0]:g} to {sweep_values[-1]:g}, "
+                f"the predicted class remains '{unique_classes[0]}' across all {n} steps."
+            )
+        else:
+            summary = (
+                f"As {feat_display} varies from {sweep_values[0]:g} to {sweep_values[-1]:g}, "
+                f"the predicted class switches between: {', '.join(unique_classes[:4])}."
+            )
+    else:
+        summary = (
+            f"Sensitivity sweep of {feat_display} from {sweep_values[0]:g} "
+            f"to {sweep_values[-1]:g} ({n} steps) complete."
+        )
+
+    return {
+        "feature": feature_name,
+        "target_column": pipeline.target_column,
+        "problem_type": pipeline.problem_type,
+        "values": [float(v) for v in sweep_values],
+        "predictions": results,
+        "confidences": confidences,
+        "min_pred": min_pred,
+        "max_pred": max_pred,
+        "change_pct": change_pct,
+        "summary": summary,
+    }

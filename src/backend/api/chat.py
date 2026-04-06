@@ -2049,6 +2049,77 @@ _INLINE_PRED_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# Keywords that trigger a sensitivity / sweep analysis:
+# "how sensitive is revenue to units", "sensitivity analysis on price",
+# "sweep price from 10 to 100", "how does prediction change as units varies"
+_SENSITIVITY_PATTERNS = re.compile(
+    r"(?i)"
+    r"sensitivity\s+(?:analysis\s+(?:on|for|of)\s+|(?:of|for)\s+)?\w|"
+    r"how\s+sensitive\s+is\b|"
+    r"(?:sweep|vary|range)\s+\w+\s+from\b|"
+    r"how\s+does\s+(?:the\s+)?(?:prediction|model|output|result|forecast)\s+change\s+as\b|"
+    r"effect\s+of\s+\w+\s+on\s+(?:the\s+)?(?:prediction|model|output|result)\b|"
+    r"(?:show|plot|chart)\s+(?:me\s+)?(?:how|the\s+effect\s+of)\s+\w+\s+(?:affects?|changes?|impacts?)\b|"
+    r"what\s+happens?\s+(?:to\s+)?(?:the\s+)?(?:prediction|result|output)\s+as\s+\w+\s+(?:varies?|increases?|decreases?)\b|"
+    r"run\s+a\s+sensitivity\b",
+    re.IGNORECASE,
+)
+
+
+def _detect_sensitivity_request(
+    message: str, feature_names: list[str], feature_means: dict
+) -> dict | None:
+    """Extract feature name and sweep range from a sensitivity message.
+
+    Returns {"feature": str, "min_val": float, "max_val": float, "n_steps": int}
+    or None if no numeric feature can be resolved.
+    """
+    msg_lower = message.lower()
+
+    # Longest-match scan for a mentioned feature
+    feature: str | None = None
+    for cand in sorted(feature_names, key=len, reverse=True):
+        c_low = cand.lower()
+        c_ns = cand.lower().replace("_", " ")
+        if c_low in msg_lower or c_ns in msg_lower:
+            feature = cand
+            break
+    if feature is None:
+        # Fall back to the first numeric-looking feature
+        for f in feature_names:
+            if f in feature_means and isinstance(feature_means[f], (int, float)):
+                feature = f
+                break
+    if feature is None:
+        return None
+
+    # Extract explicit range "from X to Y" or "between X and Y" or "X to Y"
+    range_match = re.search(
+        r"\b(?:from\s+)?(-?\d+(?:\.\d+)?)\s*(?:to|-)\s*(-?\d+(?:\.\d+)?)\b",
+        message,
+        re.IGNORECASE,
+    )
+    if range_match:
+        min_val = float(range_match.group(1))
+        max_val = float(range_match.group(2))
+    else:
+        # Default: ± 50% around the training mean for this feature
+        mean_val = float(feature_means.get(feature, 1.0))
+        half = abs(mean_val) * 0.5 or 1.0
+        min_val = max(0.0, round(mean_val - half, 4))
+        max_val = round(mean_val + half, 4)
+
+    # Extract step count "in N steps" or "N steps"; default 10
+    n_steps = 10
+    step_match = re.search(r"\b(\d+)\s*steps?\b", message, re.IGNORECASE)
+    if step_match:
+        n = int(step_match.group(1))
+        if 3 <= n <= 50:
+            n_steps = n
+
+    return {"feature": feature, "min_val": min_val, "max_val": max_val, "n_steps": n_steps}
+
+
 # Matches "Key = Value", "Key: Value", "Key is Value" patterns in a message
 _KV_PAIR_RE = re.compile(
     r"\b([A-Za-z_][\w\s]{0,30}?)\s*(?:=|:|\s+is\s+|\s+equals?\s+|\s+of\s+)\s*"
@@ -5660,6 +5731,71 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Inline prediction is nice-to-have; never crash chat
 
+    # Sensitivity analysis: sweep one feature across a range → prediction curve
+    sensitivity_event: dict | None = None
+    if (
+        _SENSITIVITY_PATTERNS.search(body.message)
+        and ctx["deployment"]
+        and not whatif_chat_event
+        and not inline_pred_event
+    ):
+        try:
+            _sa_deployment = ctx["deployment"]
+            if (
+                _sa_deployment.pipeline_path
+                and Path(_sa_deployment.pipeline_path).exists()
+            ):
+                from core.deployer import load_pipeline as _load_pipeline_sa
+                from core.deployer import run_sensitivity_analysis as _run_sa
+
+                _sa_pipeline = _load_pipeline_sa(_sa_deployment.pipeline_path)
+                _sa_feature_names = _sa_pipeline.feature_names
+                _sa_means = dict(_sa_pipeline.feature_means)
+                _sa_params = _detect_sensitivity_request(
+                    body.message, _sa_feature_names, _sa_means
+                )
+                if _sa_params:
+                    _sa_run = next(
+                        (
+                            mr
+                            for mr in ctx["model_runs"]
+                            if mr.id == _sa_deployment.model_run_id
+                        ),
+                        None,
+                    )
+                    if (
+                        _sa_run
+                        and _sa_run.model_path
+                        and Path(_sa_run.model_path).exists()
+                    ):
+                        import numpy as np
+
+                        _sa_sweep = list(
+                            np.linspace(
+                                _sa_params["min_val"],
+                                _sa_params["max_val"],
+                                _sa_params["n_steps"],
+                            )
+                        )
+                        _sa_result = _run_sa(
+                            _sa_deployment.pipeline_path,
+                            _sa_run.model_path,
+                            _sa_params["feature"],
+                            _sa_sweep,
+                            _sa_means,
+                        )
+                        sensitivity_event = _sa_result
+                        system_prompt += (
+                            f"\n\n## Sensitivity Analysis Result\n"
+                            f"{_sa_result['summary']}\n"
+                            f"A SensitivityCard is shown in the chat. "
+                            f"Narrate the key finding in plain English — "
+                            f"tell the analyst what this means for their business "
+                            f"and whether the model is highly or weakly sensitive to this feature."
+                        )
+        except Exception:  # noqa: BLE001
+            pass  # Sensitivity analysis is nice-to-have; never crash chat
+
     # Check for "show me the data" / record table viewer
     records_event: dict | None = None
     if _RECORDS_PATTERNS.search(body.message) and ctx["dataset"]:
@@ -5952,6 +6088,10 @@ def send_message(
         # Emit inline multi-feature prediction result
         if inline_pred_event:
             yield f"data: {json.dumps({'type': 'inline_prediction', 'inline_prediction': inline_pred_event})}\n\n"
+
+        # Emit sensitivity analysis result
+        if sensitivity_event:
+            yield f"data: {json.dumps({'type': 'sensitivity', 'sensitivity': sensitivity_event})}\n\n"
 
         # Emit time-period comparison result
         if time_window_event:

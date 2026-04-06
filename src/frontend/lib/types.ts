@@ -450,6 +450,7 @@ export interface ChatMessage {
   dataset_comparison?: DatasetComparisonResult
   inline_prediction?: InlinePredictionResult
   goal_training?: GoalTrainingResult
+  sensitivity?: SensitivityResult
 }
 
 export interface SegmentPerformanceSegment {
@@ -1962,5 +1963,19 @@ export interface GoalTrainingResult {
   winner_score: number
   trials: GoalTrainingTrial[]
   tried_tuning: boolean
+  summary: string
+}
+
+
+export interface SensitivityResult {
+  feature: string
+  target_column: string
+  problem_type: string
+  values: number[]
+  predictions: (number | string)[]
+  confidences: (number | null)[]
+  min_pred: number | null
+  max_pred: number | null
+  change_pct: number | null
   summary: string
 }
