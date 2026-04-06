@@ -5468,7 +5468,9 @@ def send_message(
                         _ip_conf = _ip_result.get("confidence")
                         # Build plain-English summary
                         _ip_used_features = list(_ip_extracted.keys())
-                        _ip_defaults_count = len(_ip_feature_names) - len(_ip_used_features)
+                        _ip_defaults_count = len(_ip_feature_names) - len(
+                            _ip_used_features
+                        )
                         if _ip_prob:
                             # Classification: top class + probability
                             _ip_top_class = max(_ip_prob, key=lambda k: _ip_prob[k])  # type: ignore[arg-type]
@@ -5480,9 +5482,7 @@ def send_message(
                         elif isinstance(_ip_pred, (int, float)):
                             _ip_summary = f"Predicted {_ip_target}: {_ip_pred:,.4g}"
                             if _ip_ci:
-                                _ip_summary += (
-                                    f" (95% interval: {_ip_ci['lower']:,.4g} – {_ip_ci['upper']:,.4g})"
-                                )
+                                _ip_summary += f" (95% interval: {_ip_ci['lower']:,.4g} – {_ip_ci['upper']:,.4g})"
                         else:
                             _ip_summary = f"Predicted {_ip_target}: {_ip_pred}"
                         if _ip_defaults_count > 0:

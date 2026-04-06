@@ -43,9 +43,7 @@ def test_pattern_give_me_prediction():
 def test_pattern_what_would_be():
     from api.chat import _INLINE_PRED_PATTERNS
 
-    assert _INLINE_PRED_PATTERNS.search(
-        "what would my revenue be if Region=East"
-    )
+    assert _INLINE_PRED_PATTERNS.search("what would my revenue be if Region=East")
 
 
 def test_pattern_model_output():
