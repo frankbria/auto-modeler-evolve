@@ -91,6 +91,7 @@ interface AppState {
   attachPredictionOpportunitiesToLastMessage: (prediction_opportunities: import("./types").PredictionOpportunitiesResult) => void
   attachDatasetComparisonToLastMessage: (dataset_comparison: import("./types").DatasetComparisonResult) => void
   attachInlinePredictionToLastMessage: (inline_prediction: import("./types").InlinePredictionResult) => void
+  attachGoalTrainingToLastMessage: (goal_training: import("./types").GoalTrainingResult) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -545,6 +546,15 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, inline_prediction }
+      }
+      return { messages }
+    }),
+  attachGoalTrainingToLastMessage: (goal_training) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, goal_training }
       }
       return { messages }
     }),

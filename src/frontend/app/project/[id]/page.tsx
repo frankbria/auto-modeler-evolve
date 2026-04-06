@@ -58,6 +58,7 @@ import { ProjectHealthCard } from "@/components/chat/project-health-card"
 import { PredictionOpportunitiesCard } from "@/components/models/prediction-opportunities-card"
 import { DatasetComparisonCard } from "@/components/data/dataset-comparison-card"
 import { InlinePredictionCard } from "@/components/models/inline-prediction-card"
+import { GoalTrainingCard } from "@/components/models/goal-training-card"
 import { PairCorrelationCard } from "@/components/data/pair-correlation-card"
 import { StatQueryCard } from "@/components/data/stat-query-card"
 import { SummaryStatsCard } from "@/components/data/summary-stats-card"
@@ -199,6 +200,7 @@ export default function ProjectWorkspace() {
     attachPredictionOpportunitiesToLastMessage,
     attachDatasetComparisonToLastMessage,
     attachInlinePredictionToLastMessage,
+    attachGoalTrainingToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -526,6 +528,8 @@ export default function ProjectWorkspace() {
                 attachDatasetComparisonToLastMessage(json.dataset_comparison as import("@/lib/types").DatasetComparisonResult)
               } else if (json.type === "inline_prediction" && json.inline_prediction) {
                 attachInlinePredictionToLastMessage(json.inline_prediction as import("@/lib/types").InlinePredictionResult)
+              } else if (json.type === "goal_training" && json.goal_training) {
+                attachGoalTrainingToLastMessage(json.goal_training as import("@/lib/types").GoalTrainingResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -590,6 +594,7 @@ export default function ProjectWorkspace() {
     attachPredictionOpportunitiesToLastMessage,
     attachDatasetComparisonToLastMessage,
     attachInlinePredictionToLastMessage,
+    attachGoalTrainingToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -959,6 +964,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.inline_prediction && (
                       <InlinePredictionCard result={msg.inline_prediction} />
+                    )}
+                    {msg.goal_training && (
+                      <GoalTrainingCard result={msg.goal_training} />
                     )}
                   </div>
                 </div>

@@ -78,6 +78,73 @@ _IMPROVEMENT_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# Goal-driven training: analyst sets a target metric and AutoModeler tries algorithms
+_GOAL_TRAIN_PATTERNS = re.compile(
+    r"(?:"
+    r"(?:i\s+need|i\s+want|we\s+need|we\s+want)\s+(?:at\s+least\s+)?(?:\d+(?:\.\d+)?%|\d*\.\d+)\s+(?:accuracy|f1|r.?2|r-squared|precision)\b|"
+    r"(?:reach|hit|achieve|get\s+to|target|aim\s+for)\s+(?:\d+(?:\.\d+)?%|\d*\.\d+)\s+(?:accuracy|f1|r.?2|r-squared|precision)\b|"
+    r"train\s+(?:a\s+)?model\s+(?:until|to)\s+(?:it\s+)?(?:reach(?:es)?|hits?|gets?|achieves?)\b|"
+    r"keep\s+trying\s+(?:different\s+)?(?:models?|algorithms?)\s+(?:until|to)\b|"
+    r"(?:try|test)\s+(?:different|all|multiple|various)\s+(?:models?|algorithms?)\s+(?:to\s+)?(?:find|reach|hit|get)\s+\d+\b|"
+    r"goal.driven\s+training\b|"
+    r"(?:train|build)\s+(?:a\s+)?model\s+(?:that\s+)?(?:reaches?|hits?|achieves?)\s+\d+\b|"
+    r"automatic(?:ally)?\s+(?:find|train|try)\s+(?:the\s+)?best\s+(?:model|algorithm)\s+(?:to|for|that)\b"
+    r")",
+    re.IGNORECASE,
+)
+
+_GOAL_METRIC_RE = re.compile(
+    r"\b(accuracy|f1(?:\s+score)?|r.?2|r-squared|r\s+squared|precision|recall)\b",
+    re.IGNORECASE,
+)
+
+
+def _extract_goal_target(
+    message: str, problem_type: str
+) -> tuple[str, float] | None:
+    """Extract (goal_metric, goal_target) from a natural-language message.
+
+    Examples handled:
+        "I need 85% accuracy"  → ("accuracy", 0.85)
+        "reach 0.90 R²"        → ("r2", 0.90)
+        "hit 80% F1"           → ("f1", 0.80)
+
+    Returns None if no numeric threshold is found.
+    """
+    # Determine metric
+    metric_match = _GOAL_METRIC_RE.search(message)
+    if metric_match:
+        raw = metric_match.group(1).lower().replace(" ", "_")
+        if "r" in raw and ("2" in raw or "squared" in raw):
+            metric = "r2"
+        elif "f1" in raw:
+            metric = "f1"
+        elif "precision" in raw:
+            metric = "precision"
+        elif "recall" in raw:
+            metric = "recall"
+        else:
+            metric = "accuracy"
+    else:
+        metric = "r2" if problem_type == "regression" else "accuracy"
+
+    # Try percentage (e.g. "85%")
+    pct_match = re.search(r"(\d+(?:\.\d+)?)\s*%", message)
+    if pct_match:
+        val = float(pct_match.group(1)) / 100.0
+        if 0 < val <= 1.0:
+            return metric, round(val, 4)
+
+    # Try plain decimal (e.g. "0.85")
+    dec_match = re.search(r"\b(0\.\d{1,4})\b", message)
+    if dec_match:
+        val = float(dec_match.group(1))
+        if 0 < val <= 1.0:
+            return metric, round(val, 4)
+
+    return None
+
+
 # Keywords that trigger model selection advisor
 # Distinct from _IMPROVEMENT_PATTERNS (improve existing) — these ask "which model to use"
 _MODEL_SELECT_PATTERNS = re.compile(
@@ -2870,6 +2937,86 @@ def send_message(
             except Exception:  # noqa: BLE001
                 pass  # Nice-to-have; never crash chat
 
+    # Goal-driven training: analyst specifies a target metric and AutoModeler tries algorithms
+    goal_train_event: dict | None = None
+    if _GOAL_TRAIN_PATTERNS.search(body.message) and ctx["feature_set"]:
+        _fs = ctx["feature_set"]
+        if (
+            _fs.target_column
+            and ctx["dataset"]
+            and ctx["dataset"].file_path
+        ):
+            _goal_info = _extract_goal_target(
+                body.message,
+                _fs.problem_type or "regression",
+            )
+            if _goal_info:
+                _goal_metric, _goal_target = _goal_info
+                try:
+                    from pathlib import Path as _Path
+
+                    import pandas as _pd
+
+                    from core.trainer import (
+                        prepare_features as _prepare_features,
+                    )
+                    from core.trainer import (
+                        run_goal_driven_training as _run_goal,
+                    )
+
+                    _df_goal = _pd.read_csv(ctx["dataset"].file_path)
+                    _tfms = json.loads(_fs.transformations or "[]")
+                    if _tfms:
+                        from core.feature_engine import apply_transformations as _apply_tfms
+                        _df_goal, _ = _apply_tfms(_df_goal, _tfms)
+                    _target_col = _fs.target_column
+                    _feat_cols = [c for c in _df_goal.columns if c != _target_col]
+                    _problem_type = _fs.problem_type or "regression"
+                    _X, _y, _le = _prepare_features(
+                        _df_goal, _feat_cols, _target_col, _problem_type
+                    )
+                    import uuid as _uuid
+
+                    _gbase = f"goal_{_uuid.uuid4().hex[:8]}"
+                    _mdir = _Path("data/deployments")
+                    _mdir.mkdir(parents=True, exist_ok=True)
+                    goal_train_event = _run_goal(
+                        _X, _y, _problem_type, _goal_metric, _goal_target, _mdir, _gbase
+                    )
+                    goal_train_event["project_id"] = body.project_id
+                    goal_train_event["target_col"] = _target_col
+
+                    _metric_label = {
+                        "r2": "R²",
+                        "accuracy": "accuracy",
+                        "f1": "F1 score",
+                        "precision": "precision",
+                        "recall": "recall",
+                    }.get(_goal_metric, _goal_metric.upper())
+                    _tgt_str = (
+                        f"{_goal_target:.2f}"
+                        if _goal_metric == "r2"
+                        else f"{_goal_target * 100:.0f}%"
+                    )
+                    system_prompt += (
+                        f"\n\n## Goal-Driven Training Result\n"
+                        f"Goal: {_metric_label} ≥ {_tgt_str} on '{_target_col}'\n"
+                        f"Achieved: {'Yes' if goal_train_event['achieved'] else 'No'}\n"
+                        f"Best algorithm: {goal_train_event['winner_algorithm_name']} "
+                        f"({_metric_label} = {goal_train_event['winner_score']:.3f})\n"
+                        "Trials: "
+                        + ", ".join(
+                            t["algorithm_name"] + f" ({t['score']:.3f})"
+                            for t in goal_train_event["trials"]
+                        )
+                        + "\n"
+                        "Summarise the result briefly: was the goal met, which algorithm "
+                        "performed best, and what should the user do next (e.g. train that "
+                        "algorithm fully, upload more data, or adjust the target)."
+                    )
+                except Exception:  # noqa: BLE001
+                    pass  # Nice-to-have; never crash chat
+
     # Check if this is an auto-retrain status/toggle request
     conv_export_event: dict | None = None
     if _CONV_EXPORT_PATTERNS.search(body.message) and project:
@@ -5655,6 +5802,10 @@ def send_message(
         # Emit model selection recommendation if computed
         if model_select_event:
             yield f"data: {json.dumps({'type': 'model_selection', 'model_selection': model_select_event})}\n\n"
+
+        # Emit goal-driven training result if computed
+        if goal_train_event:
+            yield f"data: {json.dumps({'type': 'goal_training', 'goal_training': goal_train_event})}\n\n"
 
         if auto_retrain_event:
             yield f"data: {json.dumps({'type': 'auto_retrain', 'auto_retrain': auto_retrain_event})}\n\n"

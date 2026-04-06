@@ -449,6 +449,7 @@ export interface ChatMessage {
   prediction_opportunities?: PredictionOpportunitiesResult
   dataset_comparison?: DatasetComparisonResult
   inline_prediction?: InlinePredictionResult
+  goal_training?: GoalTrainingResult
 }
 
 export interface SegmentPerformanceSegment {
@@ -1941,4 +1942,25 @@ export interface InlinePredictionResult {
   total_features: number
   summary: string
   problem_type: string | null
+}
+
+export interface GoalTrainingTrial {
+  algorithm: string
+  algorithm_name: string
+  score: number
+  achieved_goal: boolean
+}
+
+export interface GoalTrainingResult {
+  project_id: string
+  target_col: string
+  goal_metric: string
+  goal_target: number
+  achieved: boolean
+  winner_algorithm: string
+  winner_algorithm_name: string
+  winner_score: number
+  trials: GoalTrainingTrial[]
+  tried_tuning: boolean
+  summary: string
 }

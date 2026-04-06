@@ -1564,3 +1564,202 @@ def pick_best_model(models: list[dict], problem_type: str) -> dict | None:
         "algorithm": best["algorithm"],
         "reason": (f"Highest {metric_name} among trained models ({score(best):.3f})."),
     }
+
+
+# ---------------------------------------------------------------------------
+# Goal-driven training
+# ---------------------------------------------------------------------------
+
+# Algorithms tried in priority order (fast → accurate)
+_GOAL_TRIAL_ALGORITHMS: dict[str, list[str]] = {
+    "regression": [
+        "linear_regression",
+        "random_forest_regressor",
+        "gradient_boosting_regressor",
+    ],
+    "classification": [
+        "logistic_regression",
+        "random_forest_classifier",
+        "gradient_boosting_classifier",
+    ],
+}
+
+# Maximum rows to use for goal-driven trial runs (keeps latency acceptable)
+_GOAL_MAX_ROWS = 5_000
+
+
+def _goal_score(metrics: dict, goal_metric: str) -> float:
+    """Return the numeric value for *goal_metric* from a metrics dict."""
+    key_map: dict[str, str] = {
+        "r2": "r2",
+        "accuracy": "accuracy",
+        "f1": "f1",
+        "f1_score": "f1",
+        "precision": "precision",
+        "recall": "recall",
+    }
+    key = key_map.get(goal_metric.lower().replace("-", "_").replace(" ", "_"), goal_metric)
+    val = metrics.get(key)
+    return float(val) if val is not None else -999.0
+
+
+def run_goal_driven_training(
+    X: np.ndarray,
+    y: np.ndarray,
+    problem_type: str,
+    goal_metric: str,
+    goal_target: float,
+    model_dir: Path,
+    base_id: str,
+) -> dict:
+    """Try algorithms in priority order until the target metric is achieved.
+
+    Samples the dataset to *_GOAL_MAX_ROWS* rows for speed (trial mode).
+    If the goal is not achieved after all algorithms, tries hyperparameter
+    tuning on the best-performing algorithm.
+
+    Returns:
+        {
+            goal_metric: str,
+            goal_target: float,
+            achieved: bool,
+            winner_algorithm: str,
+            winner_algorithm_name: str,
+            winner_score: float,
+            trials: list[{algorithm, algorithm_name, score, achieved_goal}],
+            tried_tuning: bool,
+            summary: str,
+        }
+    """
+    all_algos = (
+        REGRESSION_ALGORITHMS if problem_type == "regression" else CLASSIFICATION_ALGORITHMS
+    )
+    algorithms_to_try = [
+        a for a in _GOAL_TRIAL_ALGORITHMS.get(problem_type, []) if a in all_algos
+    ]
+
+    # Sub-sample for speed
+    if len(X) > _GOAL_MAX_ROWS:
+        rng = np.random.default_rng(42)
+        idx = rng.choice(len(X), size=_GOAL_MAX_ROWS, replace=False)
+        X_trial, y_trial = X[idx], y[idx]
+    else:
+        X_trial, y_trial = X, y
+
+    trials: list[dict] = []
+    best_score = -999.0
+    best_algo: str | None = None
+    achieved = False
+
+    for algo_key in algorithms_to_try:
+        trial_id = f"{base_id}_goal_{algo_key}"
+        try:
+            result = train_single_model(
+                X_trial, y_trial, algo_key, problem_type, model_dir, trial_id
+            )
+            score = _goal_score(result["metrics"], goal_metric)
+            algo_name = all_algos[algo_key]["name"]
+            hit = score >= goal_target
+            trials.append(
+                {
+                    "algorithm": algo_key,
+                    "algorithm_name": algo_name,
+                    "score": round(score, 4),
+                    "achieved_goal": hit,
+                }
+            )
+            if score > best_score:
+                best_score = score
+                best_algo = algo_key
+            if hit:
+                achieved = True
+                break  # Stop early — goal met
+        except Exception:  # noqa: BLE001
+            pass  # Skip failed algorithms; continue trying others
+
+    # If still not achieved, try tuning the best algorithm
+    tried_tuning = False
+    if not achieved and best_algo and get_tuning_grid(best_algo):
+        tried_tuning = True
+        try:
+            tune_result = tune_model(
+                X_trial,
+                y_trial,
+                best_algo,
+                problem_type,
+                model_dir,
+                f"{base_id}_goal_tuned",
+                n_iter=10,
+                cv=3,
+            )
+            if tune_result.get("metrics"):
+                tuned_score = _goal_score(tune_result["metrics"], goal_metric)
+                algo_name = all_algos[best_algo]["name"]
+                hit = tuned_score >= goal_target
+                trials.append(
+                    {
+                        "algorithm": best_algo,
+                        "algorithm_name": f"{algo_name} (tuned)",
+                        "score": round(tuned_score, 4),
+                        "achieved_goal": hit,
+                    }
+                )
+                if tuned_score > best_score:
+                    best_score = tuned_score
+                if hit:
+                    achieved = True
+        except Exception:  # noqa: BLE001
+            pass
+
+    # Pick the winner — highest score across all trials
+    winner = max(trials, key=lambda t: t["score"]) if trials else None
+    winner_algo = winner["algorithm"] if winner else (best_algo or "")
+    winner_name = winner["algorithm_name"] if winner else ""
+    winner_score = winner["score"] if winner else round(best_score, 4)
+
+    # Plain-English summary
+    _metric_labels: dict[str, str] = {
+        "r2": "R²",
+        "accuracy": "accuracy",
+        "f1": "F1 score",
+        "precision": "precision",
+        "recall": "recall",
+    }
+    metric_label = _metric_labels.get(goal_metric.lower(), goal_metric.upper())
+    if goal_metric.lower() == "r2":
+        target_str = f"{goal_target:.2f}"
+        score_str = f"{winner_score:.3f}"
+    else:
+        target_str = f"{goal_target * 100:.0f}%"
+        score_str = f"{winner_score * 100:.0f}%"
+
+    n_tried = len(trials)
+    algo_word = "algorithm" if n_tried == 1 else "algorithms"
+    if achieved:
+        summary = (
+            f"Goal achieved! {winner_name} reached {metric_label} = {score_str} "
+            f"(target: {target_str}). Tried {n_tried} {algo_word}."
+        )
+    else:
+        gap = goal_target - winner_score
+        hint = (
+            " Consider adding more data or engineering better features."
+            if gap > 0.10
+            else " The gap is small — try uploading more data or enabling hyperparameter tuning."
+        )
+        summary = (
+            f"Best result: {winner_name} reached {metric_label} = {score_str} "
+            f"(target was {target_str}). Tried {n_tried} {algo_word}.{hint}"
+        )
+
+    return {
+        "goal_metric": goal_metric,
+        "goal_target": goal_target,
+        "achieved": achieved,
+        "winner_algorithm": winner_algo,
+        "winner_algorithm_name": winner_name,
+        "winner_score": winner_score,
+        "trials": trials,
+        "tried_tuning": tried_tuning,
+        "summary": summary,
+    }
