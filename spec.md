@@ -714,6 +714,24 @@ guides them forward through the natural flow.
       "Conversation over configuration" principle — analysts never need to leave the chat to run a quick prediction.
       *Day 25 (20:00): 17 backend + 15 frontend = 32 new tests. Total: 2569 backend + 1252 frontend = 3821, all passing. Backend lint: clean. Frontend build + lint: clean.*
 
+- [x] **Goal-Driven Training** — Analysts can say "I need 85% accuracy", "reach 0.85 R² for revenue prediction",
+      "hit 80% F1 score", or "train a model until it reaches 90% accuracy" and AutoModeler autonomously tries
+      algorithms in order (fast → accurate: linear/logistic, Random Forest, Gradient Boosting) until the target
+      is achieved — then stops early. If no algorithm hits the goal, hyperparameter tuning is attempted on the best
+      candidate. `_GOAL_TRAIN_PATTERNS` (8 NL variants) in `chat.py` detects intent. `_extract_goal_target()` helper
+      extracts (metric, threshold) from the message: `85%` → `("accuracy", 0.85)`, `0.85 R²` → `("r2", 0.85)`.
+      `run_goal_driven_training(X, y, problem_type, goal_metric, goal_target, model_dir, base_id)` pure function
+      in `core/trainer.py` sub-samples datasets >5,000 rows for speed (trial mode), trains each algorithm via
+      `train_single_model()`, stops on first success, falls back to `tune_model()` on best if goal not met.
+      Returns `{goal_metric, goal_target, achieved, winner_algorithm, winner_algorithm_name, winner_score, trials,
+      tried_tuning, summary}` — each trial records `{algorithm_name, score, achieved_goal}`. `{type:"goal_training"}`
+      SSE event. `GoalTrainingCard` (emerald border if achieved, amber if not, 🎯 icon): "Goal Achieved ✓" or "Best
+      Effort" badge, goal-target badge ("R² ≥ 0.75"), winner highlight box with score, trials table (algorithm, score,
+      ✓/✗), tuning note, plain-English summary. `GoalTrainingResult`/`GoalTrainingTrial` TypeScript types;
+      `attachGoalTrainingToLastMessage` Zustand action; SSE wired in page.tsx. Directly closes the vision gap: analysts
+      who say "I need at least 80% accuracy" get an autonomous answer instead of manually comparing runs.
+      *Day 26 (04:00): 26 backend + 16 frontend = 42 new tests. Total: 2595 backend + 1268 frontend = 3863, all passing. Backend lint: clean. Frontend build + lint: clean.*
+
 - [x] **AI-powered data dictionary** — When a dataset is uploaded (or on demand via POST), auto-generate
       plain-English descriptions for every column. `core/dictionary.py` classifies each column as
       id/metric/dimension/date/flag/text via heuristics (name hints + dtype + cardinality), then uses
