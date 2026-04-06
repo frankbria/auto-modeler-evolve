@@ -57,7 +57,9 @@ def test_pattern_run_sensitivity():
 def test_pattern_how_does_change_as():
     from api.chat import _SENSITIVITY_PATTERNS
 
-    assert _SENSITIVITY_PATTERNS.search("how does the prediction change as units varies?")
+    assert _SENSITIVITY_PATTERNS.search(
+        "how does the prediction change as units varies?"
+    )
 
 
 def test_pattern_effect_of_on():
@@ -204,9 +206,7 @@ def test_sensitivity_regression_predictions_increase_with_units(tmp_path):
 
     pipeline_path, model_path, means = _make_regression_deployment(tmp_path)
     sweep = list(np.linspace(1.0, 20.0, 10))
-    result = run_sensitivity_analysis(
-        pipeline_path, model_path, "units", sweep, means
-    )
+    result = run_sensitivity_analysis(pipeline_path, model_path, "units", sweep, means)
 
     preds = [float(p) for p in result["predictions"]]
     assert preds[-1] > preds[0], "Predictions should increase as units increase"
@@ -354,7 +354,9 @@ def _chat_events(client, project_id: str, message: str) -> list[dict]:
         mock_stream = MagicMock()
         mock_stream.__enter__ = MagicMock(return_value=mock_stream)
         mock_stream.__exit__ = MagicMock(return_value=False)
-        mock_stream.text_stream = iter(["The sensitivity analysis shows how revenue changes."])
+        mock_stream.text_stream = iter(
+            ["The sensitivity analysis shows how revenue changes."]
+        )
         mock_c.messages.stream.return_value = mock_stream
 
         response = client.post(
@@ -385,9 +387,7 @@ def test_chat_sensitivity_event_emitted(client, deployed_project):
 def test_chat_sensitivity_event_required_fields(client, deployed_project):
     """The sensitivity event payload should have all required fields."""
     project_id = deployed_project["project_id"]
-    events = _chat_events(
-        client, project_id, "run a sensitivity analysis on units"
-    )
+    events = _chat_events(client, project_id, "run a sensitivity analysis on units")
     sens_events = [e for e in events if e.get("type") == "sensitivity"]
     assert sens_events, "No sensitivity event found"
     payload = sens_events[0]["sensitivity"]
@@ -403,9 +403,7 @@ def test_chat_sensitivity_event_required_fields(client, deployed_project):
 def test_chat_sensitivity_has_multiple_data_points(client, deployed_project):
     """Sensitivity sweep should produce multiple prediction points."""
     project_id = deployed_project["project_id"]
-    events = _chat_events(
-        client, project_id, "sweep units from 5 to 20"
-    )
+    events = _chat_events(client, project_id, "sweep units from 5 to 20")
     sens_events = [e for e in events if e.get("type") == "sensitivity"]
     if sens_events:
         payload = sens_events[0]["sensitivity"]

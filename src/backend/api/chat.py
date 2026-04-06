@@ -2117,7 +2117,12 @@ def _detect_sensitivity_request(
         if 3 <= n <= 50:
             n_steps = n
 
-    return {"feature": feature, "min_val": min_val, "max_val": max_val, "n_steps": n_steps}
+    return {
+        "feature": feature,
+        "min_val": min_val,
+        "max_val": max_val,
+        "n_steps": n_steps,
+    }
 
 
 # Matches "Key = Value", "Key: Value", "Key is Value" patterns in a message

@@ -427,7 +427,11 @@ def run_sensitivity_analysis(
 
     # Plain-English summary
     feat_display = feature_name.replace("_", " ")
-    target_display = pipeline.target_column.replace("_", " ") if pipeline.target_column else "prediction"
+    target_display = (
+        pipeline.target_column.replace("_", " ")
+        if pipeline.target_column
+        else "prediction"
+    )
     n = len(sweep_values)
     if pipeline.problem_type == "regression" and change_pct is not None:
         direction = "increases" if change_pct > 0 else "decreases"
