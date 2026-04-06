@@ -732,6 +732,32 @@ guides them forward through the natural flow.
       who say "I need at least 80% accuracy" get an autonomous answer instead of manually comparing runs.
       *Day 26 (04:00): 26 backend + 16 frontend = 42 new tests. Total: 2595 backend + 1268 frontend = 3863, all passing. Backend lint: clean. Frontend build + lint: clean.*
 
+- [x] **Prediction Sensitivity Analysis** — Analysts can ask "how sensitive is revenue to units?",
+      "sweep price from 10 to 100", "run a sensitivity analysis on quantity", or "show me how the
+      prediction changes as units varies" and receive a `SensitivityCard` with a line chart showing
+      predicted output as a single feature sweeps through a range of values. `_SENSITIVITY_PATTERNS`
+      (8 NL variants: "sensitivity analysis on/for", "how sensitive is X to Y", "sweep X from A to B",
+      "vary X from A to B", "run a sensitivity", "how does prediction change as X varies", "effect of X
+      on prediction", "show how X affects prediction") in `chat.py`. `_detect_sensitivity_request()`
+      extracts feature name (longest-match scan against feature list), range (explicit "from X to Y"
+      or ±50% around training mean), and step count (default 10, explicit "N steps"). Handler is
+      guarded to fire only when a deployment exists and neither what-if nor inline prediction already
+      fired (avoiding duplicate prediction cards). `run_sensitivity_analysis(pipeline_path, model_path,
+      feature_name, sweep_values, base_features)` pure function in `core/deployer.py` sweeps one
+      feature across supplied values, holds all others at training means, collects regression predictions
+      (or top-class confidence for classification), computes min/max/change_pct, and builds a
+      plain-English summary ("As units varies from 5 to 20, revenue increases by 300% (500 → 2000)").
+      `{type:"sensitivity"}` SSE event. `SensitivityCard` (teal border, 🎚️ icon): feature → target
+      heading, Regression/Classification badge, change % badge (↑ emerald / ↓ rose), min/max prediction
+      boxes, Recharts line chart (feature value X axis, prediction Y axis) for regression or confidence
+      curve for classification, fallback table of (feature value, predicted class) when no numeric curve.
+      `SensitivityResult` TypeScript type; `attachSensitivityToLastMessage` Zustand action; SSE handler
+      wired in workspace page. Directly closes the "how much does my prediction move if this input
+      changes?" analyst question — complementary to what-if (single value) and inline prediction (explicit
+      multi-feature inputs). A business analyst presenting to a VP can now say "here's the curve showing
+      exactly how revenue responds to changes in units sold."
+      *Day 26 (12:00): 24 backend + 17 frontend = 41 new tests. Total: 2619 backend + 1285 frontend = 3904, all passing. Backend lint: clean. Frontend build + lint: clean.*
+
 - [x] **AI-powered data dictionary** — When a dataset is uploaded (or on demand via POST), auto-generate
       plain-English descriptions for every column. `core/dictionary.py` classifies each column as
       id/metric/dimension/date/flag/text via heuristics (name hints + dtype + cardinality), then uses
