@@ -49,6 +49,16 @@ the time is better spent on real features.
 
 ## Currently Working On
 
+## Day 26 (12:00) — Done
+**Track B — Prediction Sensitivity Analysis.** Closes the "how much does my prediction change as X varies?" gap.
+- **Sensitivity Analysis** — `_SENSITIVITY_PATTERNS` (8 NL variants) + `_detect_sensitivity_request()` in `chat.py`. `run_sensitivity_analysis()` pure function in `core/deployer.py`: sweeps one feature across a range, holds all others at training means, collects predictions. `SensitivityCard` (teal, 🎚️): Recharts line chart + change % badge + min/max boxes. 24 backend + 17 frontend = 41 new tests. Total: 2619 backend + 1285 frontend = 3904.
+
+**What's next:**
+- Continue Track B — remaining opportunities:
+  - Guided onboarding wizard (step-by-step first-use flow for new analysts)
+  - Data version history (show data changes over time as new uploads are made)
+  - Saved analysis templates (re-run the same analysis flow on new data)
+
 ## Day 26 (04:00) — Done
 **Track B — Goal-Driven Training.** Closes the "I need X% accuracy — just find me an algorithm that works" gap.
 - **Goal-Driven Training** — `_GOAL_TRAIN_PATTERNS` (8 NL variants) + `_extract_goal_target()` in `chat.py`. `run_goal_driven_training()` pure function in `core/trainer.py`: tries linear/RF/GBoost in order, stops early on success, falls back to tuning on best. Sub-samples >5,000 rows for speed. `GoalTrainingCard` (emerald/amber, 🎯) with winner box, trials table ✓/✗, tuning note, summary. 26 backend + 16 frontend = 42 new tests. Total: 2595 backend + 1268 frontend = 3863.
