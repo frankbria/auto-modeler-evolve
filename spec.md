@@ -693,6 +693,27 @@ guides them forward through the natural flow.
       your revenue average jumped 150% and two new product categories appeared — you should probably retrain."
       *Day 25 (12:00): 23 backend + 18 frontend = 41 new tests. Total: 2552 backend + 1246 frontend = 3798, all passing. Backend lint: clean. Frontend build + lint: clean.*
 
+- [x] **Inline Multi-Feature Prediction via Chat** — Analysts can say "run a prediction for Region=East, Units=150",
+      "make a prediction with product=Widget, quantity=100", or "calculate what the revenue would be given units=300"
+      and receive an `InlinePredictionCard` directly in the conversation — no navigation to the deployment dashboard
+      required. `_INLINE_PRED_PATTERNS` (8 NL variants: "run/make/give me a prediction for/with", "what would X be
+      if", "score/classify this record", "run the model on", "model output for") detects the intent. The handler is
+      guarded to fire only when a deployment exists and `whatif_chat_event` did not already fire (avoiding double-prediction).
+      `_extract_multi_feature_prediction(message, feature_names)` parses `key=value`, `key: value`, and `key is value`
+      patterns from the message using `_KV_PAIR_RE`, normalising keys case-insensitively and via underscore→space
+      mapping against known feature names; numeric strings are cast to float. Features not extracted from the message
+      are filled with training-data means (`pipeline.feature_means`). `predict_single()` runs the full prediction.
+      The `{type:"inline_prediction"}` SSE event carries: `prediction`, `probabilities` (classification), `confidence_interval`
+      (regression), `confidence` (classification), `provided_features` (the values parsed from the message),
+      `defaults_used_count`, `total_features`, `summary` (plain English), `target_column`, `problem_type`. Claude's system
+      prompt is injected with the result so it can narrate naturally. `InlinePredictionCard` (blue border, 🔮 icon): for
+      regression — large prediction value + 95% CI or confidence %; for classification — probability bars per class
+      (sorted descending); in both cases: feature badges showing `key=value` for provided inputs, italic "N features
+      used training-data averages" note when defaults were applied. `InlinePredictionResult` TypeScript type;
+      `attachInlinePredictionToLastMessage` Zustand action; SSE wired in page.tsx. Directly implements the vision's
+      "Conversation over configuration" principle — analysts never need to leave the chat to run a quick prediction.
+      *Day 25 (20:00): 17 backend + 15 frontend = 32 new tests. Total: 2569 backend + 1252 frontend = 3821, all passing. Backend lint: clean. Frontend build + lint: clean.*
+
 - [x] **AI-powered data dictionary** — When a dataset is uploaded (or on demand via POST), auto-generate
       plain-English descriptions for every column. `core/dictionary.py` classifies each column as
       id/metric/dimension/date/flag/text via heuristics (name hints + dtype + cardinality), then uses
