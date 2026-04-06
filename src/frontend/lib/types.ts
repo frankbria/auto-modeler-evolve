@@ -448,6 +448,7 @@ export interface ChatMessage {
   health_summary?: ProjectHealthSummary
   prediction_opportunities?: PredictionOpportunitiesResult
   dataset_comparison?: DatasetComparisonResult
+  inline_prediction?: InlinePredictionResult
 }
 
 export interface SegmentPerformanceSegment {
@@ -1922,4 +1923,22 @@ export interface DatasetComparisonResult {
   categorical_drifts: CategoricalDrift[]
   drift_score: number
   summary: string
+}
+
+// ---------------------------------------------------------------------------
+// Inline Multi-Feature Prediction via Chat (Day 25)
+// ---------------------------------------------------------------------------
+
+export interface InlinePredictionResult {
+  deployment_id: string
+  target_column: string
+  prediction: number | string
+  probabilities?: Record<string, number>
+  confidence_interval?: { lower: number; upper: number } | null
+  confidence?: number | null
+  provided_features: Record<string, number | string>
+  defaults_used_count: number
+  total_features: number
+  summary: string
+  problem_type: string | null
 }

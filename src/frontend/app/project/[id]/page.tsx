@@ -57,6 +57,7 @@ import { ConversationExportCard } from "@/components/chat/conversation-export-ca
 import { ProjectHealthCard } from "@/components/chat/project-health-card"
 import { PredictionOpportunitiesCard } from "@/components/models/prediction-opportunities-card"
 import { DatasetComparisonCard } from "@/components/data/dataset-comparison-card"
+import { InlinePredictionCard } from "@/components/models/inline-prediction-card"
 import { PairCorrelationCard } from "@/components/data/pair-correlation-card"
 import { StatQueryCard } from "@/components/data/stat-query-card"
 import { SummaryStatsCard } from "@/components/data/summary-stats-card"
@@ -197,6 +198,7 @@ export default function ProjectWorkspace() {
     attachHealthSummaryToLastMessage,
     attachPredictionOpportunitiesToLastMessage,
     attachDatasetComparisonToLastMessage,
+    attachInlinePredictionToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -522,6 +524,8 @@ export default function ProjectWorkspace() {
                 attachPredictionOpportunitiesToLastMessage(json.prediction_opportunities as import("@/lib/types").PredictionOpportunitiesResult)
               } else if (json.type === "dataset_comparison" && json.dataset_comparison) {
                 attachDatasetComparisonToLastMessage(json.dataset_comparison as import("@/lib/types").DatasetComparisonResult)
+              } else if (json.type === "inline_prediction" && json.inline_prediction) {
+                attachInlinePredictionToLastMessage(json.inline_prediction as import("@/lib/types").InlinePredictionResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -585,6 +589,7 @@ export default function ProjectWorkspace() {
     attachHealthSummaryToLastMessage,
     attachPredictionOpportunitiesToLastMessage,
     attachDatasetComparisonToLastMessage,
+    attachInlinePredictionToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -951,6 +956,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.dataset_comparison && (
                       <DatasetComparisonCard result={msg.dataset_comparison} />
+                    )}
+                    {msg.inline_prediction && (
+                      <InlinePredictionCard result={msg.inline_prediction} />
                     )}
                   </div>
                 </div>

@@ -1966,6 +1966,63 @@ _FEATURE_SEL_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# ---------------------------------------------------------------------------
+# Inline multi-feature prediction via chat (distinct from what-if which changes
+# ONE feature; this accepts MULTIPLE explicit feature values from the message)
+# ---------------------------------------------------------------------------
+_INLINE_PRED_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"(?:run|make|give\s+me|calculate|compute|get)\s+a?\s*prediction\s+(?:for|with|where|using|given)\b|"
+    r"predict\s+(?:for\s+(?:me\s+)?)?(?:these|the\s+following|my)\s+(?:values?|inputs?|numbers?|data|scenario)\b|"
+    r"(?:what|estimate)\s+(?:would|will|is)\s+(?:my\s+)?(?:\w+\s+)?(?:be|equal|come\s+to)\s+(?:if|for|with|when|given)\b|"
+    r"(?:score|classify|evaluate)\s+(?:this|these|my)\s+(?:record|example|instance|scenario|case|data)\b|"
+    r"(?:run|apply|use)\s+(?:the\s+)?model\s+(?:on|with|for|to|given)\b|"
+    r"(?:plug|put|input|enter)\s+(?:these|the\s+following|these\s+values?)\s+into\s+the\s+model\b|"
+    r"model\s+output\s+(?:for|with|given|when)\b|"
+    r"what\s+does\s+(?:the\s+)?model\s+(?:say|predict|give|output)\s+(?:for|with|when|if|given)\b"
+    r")",
+    re.IGNORECASE,
+)
+
+# Matches "Key = Value", "Key: Value", "Key is Value" patterns in a message
+_KV_PAIR_RE = re.compile(
+    r"\b([A-Za-z_][\w\s]{0,30}?)\s*(?:=|:|\s+is\s+|\s+equals?\s+|\s+of\s+)\s*"
+    r"(['\"]?)([A-Za-z0-9_][\w\.\-]*)\2",
+    re.IGNORECASE,
+)
+
+
+def _extract_multi_feature_prediction(
+    message: str, feature_names: list[str]
+) -> dict[str, object]:
+    """Extract explicit feature=value pairs from a natural-language message.
+
+    Returns a dict mapping feature name (as known in the model) to a typed value.
+    Numeric strings are converted to float; everything else stays as str.
+    Only features that are in *feature_names* are returned.
+    """
+    extracted: dict[str, object] = {}
+    name_lower = {f.lower(): f for f in feature_names}
+    name_nospace = {f.lower().replace("_", " "): f for f in feature_names}
+
+    for m in _KV_PAIR_RE.finditer(message):
+        raw_key = m.group(1).strip().lower()
+        raw_val = m.group(3).strip()
+        # Try exact match, then underscore→space variant
+        canon = name_lower.get(raw_key) or name_nospace.get(raw_key)
+        if canon is None:
+            # Fuzzy: check if raw_key is a sub-word of any feature name
+            for feat_lower, feat_orig in name_lower.items():
+                if raw_key in feat_lower or feat_lower in raw_key:
+                    canon = feat_orig
+                    break
+        if canon and canon not in extracted:
+            try:
+                extracted[canon] = float(raw_val)
+            except ValueError:
+                extracted[canon] = raw_val
+    return extracted
+
 
 def _detect_group_trend_request(message: str, df: "pd.DataFrame") -> dict | None:
     """Extract date_col, group_col, value_col from a group-trend message.
@@ -5359,6 +5416,106 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # What-if analysis is nice-to-have; never crash chat
 
+    # Check for inline multi-feature prediction ("predict for Region=East, Units=100, ...")
+    # Distinct from what-if (single-feature): this accepts a full explicit feature set.
+    inline_pred_event: dict | None = None
+    if (
+        _INLINE_PRED_PATTERNS.search(body.message)
+        and ctx["deployment"]
+        and not whatif_chat_event  # avoid double-predicting when what-if also fires
+    ):
+        try:
+            _ip_deployment = ctx["deployment"]
+            if (
+                _ip_deployment.pipeline_path
+                and Path(_ip_deployment.pipeline_path).exists()
+            ):
+                from core.deployer import load_pipeline as _load_pipeline_ip
+                from core.deployer import predict_single as _predict_single_ip
+
+                _ip_pipeline = _load_pipeline_ip(_ip_deployment.pipeline_path)
+                _ip_feature_names = _ip_pipeline.feature_names
+                _ip_extracted = _extract_multi_feature_prediction(
+                    body.message, _ip_feature_names
+                )
+                # Need at least one explicitly provided feature value to proceed
+                if _ip_extracted:
+                    # Fill missing features with training means
+                    _ip_inputs: dict[str, object] = dict(_ip_pipeline.feature_means)
+                    _ip_inputs.update(_ip_extracted)
+                    _ip_run = next(
+                        (
+                            mr
+                            for mr in ctx["model_runs"]
+                            if mr.id == _ip_deployment.model_run_id
+                        ),
+                        None,
+                    )
+                    if (
+                        _ip_run
+                        and _ip_run.model_path
+                        and Path(_ip_run.model_path).exists()
+                    ):
+                        _ip_result = _predict_single_ip(
+                            _ip_deployment.pipeline_path,
+                            _ip_run.model_path,
+                            _ip_inputs,
+                        )
+                        _ip_target = _ip_deployment.target_column or "output"
+                        _ip_pred = _ip_result["prediction"]
+                        _ip_prob = _ip_result.get("probabilities")
+                        _ip_ci = _ip_result.get("confidence_interval")
+                        _ip_conf = _ip_result.get("confidence")
+                        # Build plain-English summary
+                        _ip_used_features = list(_ip_extracted.keys())
+                        _ip_defaults_count = len(_ip_feature_names) - len(_ip_used_features)
+                        if _ip_prob:
+                            # Classification: top class + probability
+                            _ip_top_class = max(_ip_prob, key=lambda k: _ip_prob[k])  # type: ignore[arg-type]
+                            _ip_top_pct = round(_ip_prob[_ip_top_class] * 100)  # type: ignore[index]
+                            _ip_summary = (
+                                f"Predicted {_ip_target}: {_ip_top_class} "
+                                f"({_ip_top_pct}% probability)"
+                            )
+                        elif isinstance(_ip_pred, (int, float)):
+                            _ip_summary = f"Predicted {_ip_target}: {_ip_pred:,.4g}"
+                            if _ip_ci:
+                                _ip_summary += (
+                                    f" (95% interval: {_ip_ci['lower']:,.4g} – {_ip_ci['upper']:,.4g})"
+                                )
+                        else:
+                            _ip_summary = f"Predicted {_ip_target}: {_ip_pred}"
+                        if _ip_defaults_count > 0:
+                            _ip_summary += (
+                                f". {_ip_defaults_count} feature"
+                                + ("s" if _ip_defaults_count > 1 else "")
+                                + " used training-data averages."
+                            )
+                        inline_pred_event = {
+                            "deployment_id": str(_ip_deployment.id),
+                            "target_column": _ip_target,
+                            "prediction": _ip_pred,
+                            "probabilities": _ip_prob,
+                            "confidence_interval": _ip_ci,
+                            "confidence": _ip_conf,
+                            "provided_features": _ip_extracted,
+                            "defaults_used_count": _ip_defaults_count,
+                            "total_features": len(_ip_feature_names),
+                            "summary": _ip_summary,
+                            "problem_type": _ip_deployment.problem_type,
+                        }
+                        system_prompt += (
+                            f"\n\n## Inline Prediction Result\n"
+                            f"{_ip_summary}\n"
+                            f"Features provided by the analyst: "
+                            f"{', '.join(f'{k}={v}' for k, v in _ip_extracted.items())}.\n"
+                            f"An InlinePredictionCard is shown in the chat. "
+                            f"Narrate the prediction in plain English — tell the analyst "
+                            f"what it means in their domain context and what they might do next."
+                        )
+        except Exception:  # noqa: BLE001
+            pass  # Inline prediction is nice-to-have; never crash chat
+
     # Check for "show me the data" / record table viewer
     records_event: dict | None = None
     if _RECORDS_PATTERNS.search(body.message) and ctx["dataset"]:
@@ -5643,6 +5800,10 @@ def send_message(
         # Emit what-if prediction result
         if whatif_chat_event:
             yield f"data: {json.dumps({'type': 'whatif_result', 'whatif': whatif_chat_event})}\n\n"
+
+        # Emit inline multi-feature prediction result
+        if inline_pred_event:
+            yield f"data: {json.dumps({'type': 'inline_prediction', 'inline_prediction': inline_pred_event})}\n\n"
 
         # Emit time-period comparison result
         if time_window_event:
