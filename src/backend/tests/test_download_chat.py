@@ -149,9 +149,9 @@ def test_download_chat_emits_data_export_event(client, project_and_dataset):
         except json.JSONDecodeError:
             pass
 
-    assert "data_export" in event_types, (
-        f"Expected data_export event. Got: {event_types}"
-    )
+    assert (
+        "data_export" in event_types
+    ), f"Expected data_export event. Got: {event_types}"
 
 
 def test_download_chat_event_has_correct_fields(client, project_and_dataset):

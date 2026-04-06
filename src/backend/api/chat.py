@@ -99,9 +99,7 @@ _GOAL_METRIC_RE = re.compile(
 )
 
 
-def _extract_goal_target(
-    message: str, problem_type: str
-) -> tuple[str, float] | None:
+def _extract_goal_target(message: str, problem_type: str) -> tuple[str, float] | None:
     """Extract (goal_metric, goal_target) from a natural-language message.
 
     Examples handled:
@@ -2657,7 +2655,9 @@ def _load_project_context(project_id: str, session: Session) -> dict:
     if dataset:
         feature_set = session.exec(
             select(FeatureSet)
-            .where(FeatureSet.dataset_id == dataset.id, FeatureSet.is_active == True)  # noqa: E712
+            .where(
+                FeatureSet.dataset_id == dataset.id, FeatureSet.is_active == True
+            )  # noqa: E712
             .order_by(FeatureSet.created_at.desc())  # type: ignore[arg-type]
         ).first()
 
@@ -2668,7 +2668,9 @@ def _load_project_context(project_id: str, session: Session) -> dict:
     # Latest active deployment
     deployment = session.exec(
         select(Deployment)
-        .where(Deployment.project_id == project_id, Deployment.is_active == True)  # noqa: E712
+        .where(
+            Deployment.project_id == project_id, Deployment.is_active == True
+        )  # noqa: E712
         .order_by(Deployment.created_at.desc())  # type: ignore[arg-type]
     ).first()
 
@@ -2941,11 +2943,7 @@ def send_message(
     goal_train_event: dict | None = None
     if _GOAL_TRAIN_PATTERNS.search(body.message) and ctx["feature_set"]:
         _fs = ctx["feature_set"]
-        if (
-            _fs.target_column
-            and ctx["dataset"]
-            and ctx["dataset"].file_path
-        ):
+        if _fs.target_column and ctx["dataset"] and ctx["dataset"].file_path:
             _goal_info = _extract_goal_target(
                 body.message,
                 _fs.problem_type or "regression",
@@ -2967,7 +2965,10 @@ def send_message(
                     _df_goal = _pd.read_csv(ctx["dataset"].file_path)
                     _tfms = json.loads(_fs.transformations or "[]")
                     if _tfms:
-                        from core.feature_engine import apply_transformations as _apply_tfms
+                        from core.feature_engine import (
+                            apply_transformations as _apply_tfms,
+                        )
+
                         _df_goal, _ = _apply_tfms(_df_goal, _tfms)
                     _target_col = _fs.target_column
                     _feat_cols = [c for c in _df_goal.columns if c != _target_col]

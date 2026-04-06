@@ -19,7 +19,6 @@ from sqlmodel import SQLModel, create_engine
 
 import db as db_module
 
-
 # ---------------------------------------------------------------------------
 # Pattern detection
 # ---------------------------------------------------------------------------
@@ -52,7 +51,9 @@ def test_pattern_train_until():
 def test_pattern_keep_trying():
     from api.chat import _GOAL_TRAIN_PATTERNS
 
-    assert _GOAL_TRAIN_PATTERNS.search("keep trying different models until accuracy is good")
+    assert _GOAL_TRAIN_PATTERNS.search(
+        "keep trying different models until accuracy is good"
+    )
 
 
 def test_pattern_we_want_precision():

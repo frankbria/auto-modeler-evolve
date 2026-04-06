@@ -1598,7 +1598,9 @@ def _goal_score(metrics: dict, goal_metric: str) -> float:
         "precision": "precision",
         "recall": "recall",
     }
-    key = key_map.get(goal_metric.lower().replace("-", "_").replace(" ", "_"), goal_metric)
+    key = key_map.get(
+        goal_metric.lower().replace("-", "_").replace(" ", "_"), goal_metric
+    )
     val = metrics.get(key)
     return float(val) if val is not None else -999.0
 
@@ -1632,7 +1634,9 @@ def run_goal_driven_training(
         }
     """
     all_algos = (
-        REGRESSION_ALGORITHMS if problem_type == "regression" else CLASSIFICATION_ALGORITHMS
+        REGRESSION_ALGORITHMS
+        if problem_type == "regression"
+        else CLASSIFICATION_ALGORITHMS
     )
     algorithms_to_try = [
         a for a in _GOAL_TRIAL_ALGORITHMS.get(problem_type, []) if a in all_algos

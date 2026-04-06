@@ -11,7 +11,6 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlmodel import SQLModel
 
-
 # ---------------------------------------------------------------------------
 # Pattern detection
 # ---------------------------------------------------------------------------

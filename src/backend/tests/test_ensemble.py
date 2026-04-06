@@ -453,9 +453,9 @@ def test_api_train_voting_regressor(client, project_with_feature_set):
         time.sleep(0.2)
 
     assert final_run is not None
-    assert final_run["status"] == "done", (
-        f"Training failed: {final_run.get('error_message')}"
-    )
+    assert (
+        final_run["status"] == "done"
+    ), f"Training failed: {final_run.get('error_message')}"
     assert final_run["metrics"] is not None
     assert "r2" in final_run["metrics"]
     assert final_run["metrics"].get("ensemble_type") == "voting"
@@ -481,7 +481,7 @@ def test_api_train_stacking_regressor(client, project_with_feature_set):
         time.sleep(0.2)
 
     assert final_run is not None
-    assert final_run["status"] == "done", (
-        f"Training failed: {final_run.get('error_message')}"
-    )
+    assert (
+        final_run["status"] == "done"
+    ), f"Training failed: {final_run.get('error_message')}"
     assert final_run["metrics"].get("ensemble_type") == "stacking"
