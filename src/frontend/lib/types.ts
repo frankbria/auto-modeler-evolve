@@ -451,6 +451,7 @@ export interface ChatMessage {
   inline_prediction?: InlinePredictionResult
   goal_training?: GoalTrainingResult
   sensitivity?: SensitivityResult
+  onboarding_guide?: OnboardingGuideResult
 }
 
 export interface SegmentPerformanceSegment {
@@ -1978,4 +1979,27 @@ export interface SensitivityResult {
   max_pred: number | null
   change_pct: number | null
   summary: string
+}
+
+export interface OnboardingStep {
+  name: string
+  title: string
+  description: string
+  hint: string
+  suggested_action: string
+  suggested_tab: string | null
+  icon: string
+  is_done: boolean
+  is_current: boolean
+}
+
+export interface OnboardingGuideResult {
+  step_index: number
+  total_steps: number
+  completion_pct: number
+  steps: OnboardingStep[]
+  current_step: OnboardingStep | null
+  is_complete: boolean
+  summary: string
+  project_id?: string
 }

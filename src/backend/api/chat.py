@@ -2052,6 +2052,22 @@ _INLINE_PRED_PATTERNS = re.compile(
 # Keywords that trigger a sensitivity / sweep analysis:
 # "how sensitive is revenue to units", "sensitivity analysis on price",
 # "sweep price from 10 to 100", "how does prediction change as units varies"
+# Keywords that trigger the guided onboarding wizard card
+_ONBOARDING_PATTERNS = re.compile(
+    r"(?:"
+    r"(?:guide|help|walk)\s+me\s+(?:through|along|step|get\s+started)\b|"
+    r"(?:get|getting)\s+started\b|"
+    r"(?:how\s+do\s+I|where\s+do\s+I)\s+(?:start|begin|use\s+this|get\s+started)\b|"
+    r"(?:show|give)\s+me\s+(?:the\s+)?(?:steps?|guide|tutorial|walkthrough|wizard|onboard)\b|"
+    r"\bonboarding\b|"
+    r"what\s+(?:should|do)\s+I\s+do\s+(?:first|next|now)\b|"
+    r"(?:first|next)\s+steps?\b|"
+    r"(?:new|first.time)\s+(?:user|analyst|here)\b"
+    r")",
+    re.IGNORECASE,
+)
+
+
 _SENSITIVITY_PATTERNS = re.compile(
     r"(?i)"
     r"sensitivity\s+(?:analysis\s+(?:on|for|of)\s+|(?:of|for)\s+)?\w|"
@@ -5801,6 +5817,54 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Sensitivity analysis is nice-to-have; never crash chat
 
+    # Guided onboarding wizard — responds to "guide me", "first steps", etc.
+    onboarding_event: dict | None = None
+    if _ONBOARDING_PATTERNS.search(body.message):
+        try:
+            from core.onboarding import compute_onboarding_state as _cos
+
+            _ob_has_dataset = ctx["dataset"] is not None
+            _ob_messages: list = []
+            if ctx.get("conversation"):
+                import json as _json_ob
+
+                _ob_messages = _json_ob.loads(ctx["conversation"].messages or "[]")
+            _ob_msg_count = len(_ob_messages)
+            _ob_fs = ctx.get("feature_set")
+            _ob_has_target = bool(_ob_fs and _ob_fs.target_column)
+            _ob_runs = ctx.get("model_runs") or []
+            _ob_done_runs = [r for r in _ob_runs if r.status == "done"]
+            _ob_has_run = len(_ob_done_runs) > 0
+            _ob_has_cv = any(
+                (
+                    json.loads(r.metrics or "{}").get("cv_r2_mean") is not None
+                    or json.loads(r.metrics or "{}").get("cv_accuracy_mean")
+                    is not None
+                )
+                for r in _ob_done_runs
+            )
+            _ob_has_deploy = ctx["deployment"] is not None
+            onboarding_event = _cos(
+                has_dataset=_ob_has_dataset,
+                message_count=_ob_msg_count,
+                has_target=_ob_has_target,
+                has_model_run=_ob_has_run,
+                has_cross_val=_ob_has_cv,
+                has_deployment=_ob_has_deploy,
+            )
+            system_prompt += (
+                f"\n\n## Analyst Onboarding State\n"
+                f"Step {onboarding_event['step_index'] + 1} of "
+                f"{onboarding_event['total_steps']}: "
+                f"{onboarding_event['summary']}\n"
+                f"An OnboardingGuideCard is shown with the step list. "
+                f"Acknowledge their progress warmly, name the current step, "
+                f"and give one concrete tip for completing it — no bullet lists, "
+                f"one natural paragraph."
+            )
+        except Exception:  # noqa: BLE001
+            pass  # Onboarding card is nice-to-have; never crash chat
+
     # Check for "show me the data" / record table viewer
     records_event: dict | None = None
     if _RECORDS_PATTERNS.search(body.message) and ctx["dataset"]:
@@ -6081,6 +6145,10 @@ def send_message(
         # Emit prediction error analysis result
         if pred_error_event:
             yield f"data: {json.dumps({'type': 'prediction_errors', 'pred_errors': pred_error_event})}\n\n"
+
+        # Emit onboarding wizard card
+        if onboarding_event:
+            yield f"data: {json.dumps({'type': 'onboarding_guide', 'onboarding_guide': onboarding_event})}\n\n"
 
         # Emit record table viewer result
         if records_event:

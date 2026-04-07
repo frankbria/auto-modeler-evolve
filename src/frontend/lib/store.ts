@@ -93,6 +93,7 @@ interface AppState {
   attachInlinePredictionToLastMessage: (inline_prediction: import("./types").InlinePredictionResult) => void
   attachGoalTrainingToLastMessage: (goal_training: import("./types").GoalTrainingResult) => void
   attachSensitivityToLastMessage: (sensitivity: import("./types").SensitivityResult) => void
+  attachOnboardingGuideToLastMessage: (onboarding_guide: import("./types").OnboardingGuideResult) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -565,6 +566,15 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, sensitivity }
+      }
+      return { messages }
+    }),
+  attachOnboardingGuideToLastMessage: (onboarding_guide) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, onboarding_guide }
       }
       return { messages }
     }),

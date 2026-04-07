@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from core.analyzer import compute_project_health_summary
+from core.onboarding import compute_onboarding_state
 from db import get_session
 from models.dataset import Dataset
 from models.deployment import Deployment
@@ -788,3 +789,86 @@ def get_project_health_summary(
     summary = compute_project_health_summary(deployment_dicts, now=now)
     summary["project_id"] = project_id
     return summary
+
+
+# ---------------------------------------------------------------------------
+# Guided onboarding state
+# ---------------------------------------------------------------------------
+
+
+@router.get("/{project_id}/onboarding")
+def get_onboarding_state(
+    project_id: str,
+    session: Session = Depends(get_session),
+):
+    """Return the analyst's onboarding progress for this project.
+
+    Derives step completion from actual project state (dataset, conversation,
+    feature set, model runs, deployment) and returns a structured guide the
+    frontend can render as a step-by-step wizard.
+    """
+    project = session.get(Project, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    # Dataset
+    dataset = session.exec(
+        select(Dataset).where(Dataset.project_id == project_id)
+    ).first()
+    has_dataset = dataset is not None
+
+    # Conversation message count (proxy for "has explored data")
+    from models.conversation import Conversation  # local import avoids circularity
+
+    conv = session.exec(
+        select(Conversation).where(Conversation.project_id == project_id)
+    ).first()
+    messages: list[dict] = json.loads(conv.messages) if conv else []
+    message_count = len(messages)
+
+    # Active FeatureSet with target column set — query through dataset_id
+    feature_set = None
+    if dataset:
+        feature_set = session.exec(
+            select(FeatureSet).where(
+                FeatureSet.dataset_id == dataset.id,
+                FeatureSet.is_active == True,  # noqa: E712
+            )
+        ).first()
+    has_target = bool(feature_set and feature_set.target_column)
+
+    # Completed model run
+    runs = session.exec(
+        select(ModelRun).where(
+            ModelRun.project_id == project_id,
+            ModelRun.status == "done",
+        )
+    ).all()
+    has_model_run = len(runs) > 0
+
+    # Cross-validation results (any completed run with cv metrics)
+    has_cross_val = any(
+        json.loads(r.metrics or "{}").get("cv_r2_mean") is not None
+        or json.loads(r.metrics or "{}").get("cv_accuracy_mean") is not None
+        for r in runs
+    )
+
+    # Active deployment
+    deployment = session.exec(
+        select(Deployment).where(
+            Deployment.project_id == project_id,
+            Deployment.is_active == True,  # noqa: E712
+        )
+    ).first()
+    has_deployment = deployment is not None
+
+    state = compute_onboarding_state(
+        has_dataset=has_dataset,
+        message_count=message_count,
+        has_target=has_target,
+        has_model_run=has_model_run,
+        has_cross_val=has_cross_val,
+        has_deployment=has_deployment,
+    )
+    state["project_id"] = project_id
+    return state

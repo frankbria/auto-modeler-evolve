@@ -60,6 +60,7 @@ import { DatasetComparisonCard } from "@/components/data/dataset-comparison-card
 import { InlinePredictionCard } from "@/components/models/inline-prediction-card"
 import { GoalTrainingCard } from "@/components/models/goal-training-card"
 import { SensitivityCard } from "@/components/deploy/sensitivity-card"
+import { OnboardingGuideCard } from "@/components/chat/onboarding-guide-card"
 import { PairCorrelationCard } from "@/components/data/pair-correlation-card"
 import { StatQueryCard } from "@/components/data/stat-query-card"
 import { SummaryStatsCard } from "@/components/data/summary-stats-card"
@@ -203,6 +204,7 @@ export default function ProjectWorkspace() {
     attachInlinePredictionToLastMessage,
     attachGoalTrainingToLastMessage,
     attachSensitivityToLastMessage,
+    attachOnboardingGuideToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -534,6 +536,8 @@ export default function ProjectWorkspace() {
                 attachGoalTrainingToLastMessage(json.goal_training as import("@/lib/types").GoalTrainingResult)
               } else if (json.type === "sensitivity" && json.sensitivity) {
                 attachSensitivityToLastMessage(json.sensitivity as import("@/lib/types").SensitivityResult)
+              } else if (json.type === "onboarding_guide" && json.onboarding_guide) {
+                attachOnboardingGuideToLastMessage(json.onboarding_guide as import("@/lib/types").OnboardingGuideResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -600,6 +604,7 @@ export default function ProjectWorkspace() {
     attachInlinePredictionToLastMessage,
     attachGoalTrainingToLastMessage,
     attachSensitivityToLastMessage,
+    attachOnboardingGuideToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -975,6 +980,12 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.sensitivity && (
                       <SensitivityCard result={msg.sensitivity} />
+                    )}
+                    {msg.onboarding_guide && (
+                      <OnboardingGuideCard
+                        guide={msg.onboarding_guide}
+                        onSwitchTab={(tab) => setActiveTab(tab as RightTab)}
+                      />
                     )}
                   </div>
                 </div>
