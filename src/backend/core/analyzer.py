@@ -2699,3 +2699,107 @@ def compute_dataset_comparison(
         "drift_score": drift_score,
         "summary": summary,
     }
+
+
+def compute_version_history(
+    datasets: list[dict],
+    dataframes: list["pd.DataFrame"],
+) -> dict:
+    """Build a version history timeline from multiple dataset uploads.
+
+    For each consecutive pair, computes drift using compute_dataset_comparison().
+    Returns a timeline with per-version metadata and drift info between versions.
+
+    Pure function — no database access, no side effects.
+
+    Args:
+        datasets: list of dicts with {id, filename, row_count, column_count,
+                  uploaded_at, size_bytes}, sorted by uploaded_at ascending.
+        dataframes: corresponding DataFrames loaded from disk (same order).
+
+    Returns:
+        {
+            version_count: int,
+            versions: [{version, dataset_id, filename, row_count, column_count,
+                        uploaded_at, size_bytes,
+                        drift_from_previous: {...} | None}, ...],
+            overall_stability: "stable" | "moderate" | "high",
+            summary: str,
+        }
+    """
+    if not datasets or not dataframes:
+        return {
+            "version_count": 0,
+            "versions": [],
+            "overall_stability": "stable",
+            "summary": "No dataset uploads found for this project.",
+        }
+
+    versions = []
+    max_drift = 0
+
+    for i, (ds, df) in enumerate(zip(datasets, dataframes)):
+        version_entry: dict = {
+            "version": i + 1,
+            "dataset_id": ds.get("id", ""),
+            "filename": ds.get("filename", ""),
+            "row_count": ds.get("row_count", 0),
+            "column_count": ds.get("column_count", 0),
+            "uploaded_at": ds.get("uploaded_at", ""),
+            "size_bytes": ds.get("size_bytes", 0),
+            "drift_from_previous": None,
+        }
+
+        if i > 0:
+            prev_df = dataframes[i - 1]
+            try:
+                comparison = compute_dataset_comparison(prev_df, df)
+                drift_score = comparison["drift_score"]
+                max_drift = max(max_drift, drift_score)
+                n_changed = len(comparison["numeric_drifts"]) + len(
+                    comparison["categorical_drifts"]
+                )
+                version_entry["drift_from_previous"] = {
+                    "drift_score": drift_score,
+                    "summary": comparison["summary"],
+                    "changed_columns": n_changed,
+                    "new_columns": comparison["new_columns"],
+                    "dropped_columns": comparison["dropped_columns"],
+                    "row_count_change_pct": comparison["row_count_change_pct"],
+                }
+            except Exception:  # noqa: BLE001
+                version_entry["drift_from_previous"] = None
+
+        versions.append(version_entry)
+
+    # Overall stability from max drift seen across all transitions
+    if max_drift >= 50:
+        overall_stability = "high"
+        stability_label = "significant"
+    elif max_drift >= 20:
+        overall_stability = "moderate"
+        stability_label = "moderate"
+    else:
+        overall_stability = "stable"
+        stability_label = "minimal"
+
+    n = len(datasets)
+    if n == 1:
+        summary = "One dataset upload on record. No drift comparison available yet."
+    else:
+        summary = (
+            f"{n} dataset versions uploaded. "
+            f"Distribution changes across versions are {stability_label}. "
+            + (
+                "Data appears stable — retraining may not be necessary."
+                if overall_stability == "stable"
+                else "Consider retraining your model on the latest data."
+            )
+        )
+
+    return {
+        "version_count": n,
+        "versions": versions,
+        "overall_stability": overall_stability,
+        "summary": summary,
+    }

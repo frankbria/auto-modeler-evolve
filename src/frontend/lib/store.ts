@@ -94,6 +94,7 @@ interface AppState {
   attachGoalTrainingToLastMessage: (goal_training: import("./types").GoalTrainingResult) => void
   attachSensitivityToLastMessage: (sensitivity: import("./types").SensitivityResult) => void
   attachOnboardingGuideToLastMessage: (onboarding_guide: import("./types").OnboardingGuideResult) => void
+  attachVersionHistoryToLastMessage: (version_history: import("./types").DataVersionHistoryResult) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -575,6 +576,15 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, onboarding_guide }
+      }
+      return { messages }
+    }),
+  attachVersionHistoryToLastMessage: (version_history) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, version_history }
       }
       return { messages }
     }),

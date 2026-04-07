@@ -2003,6 +2003,20 @@ _DATASET_COMPARE_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+_VERSION_HISTORY_PATTERNS = re.compile(
+    r"(?i)("
+    r"(?:show|view|see|display)\s+(?:my\s+)?(?:data\s+)?(?:version|upload|dataset)\s+(?:history|timeline|log|versions)\b|"
+    r"(?:how\s+(?:many|much)|list|what)\s+(?:versions?|uploads?|datasets?)\s+(?:do\s+I\s+have|have\s+I\s+uploaded|are\s+there)\b|"
+    r"(?:data|dataset)\s+version\s+history\b|"
+    r"(?:upload|data)\s+(?:history|timeline|log)\b|"
+    r"(?:history|timeline)\s+of\s+(?:my\s+)?(?:uploads?|datasets?)\b|"
+    r"(?:how\s+(?:has|have)\s+(?:my\s+)?data\s+(?:evolved|changed|progressed)\s+over\s+(?:time|versions?))\b|"
+    r"(?:track|show)\s+(?:my\s+)?(?:data\s+)?changes\s+over\s+(?:time|versions?)\b|"
+    r"(?:all\s+)?(?:my\s+)?(?:previous|past)\s+(?:uploads?|datasets?|versions?)\b"
+    r")",
+    re.IGNORECASE,
+)
+
 _HEALTH_SUMMARY_PATTERNS = re.compile(
     r"\b("
     r"how\s+(?:are|is)\s+(?:my\s+)?(?:model|models|deployment|deployments)\s+(?:doing|performing|holding up)\b|"
@@ -3288,6 +3302,54 @@ def send_message(
                         "Highlight which columns changed most and what it means for model predictions. "
                         "Advise whether retraining is recommended based on the drift score."
                     )
+        except Exception:  # noqa: BLE001
+            pass  # Nice-to-have; never crash chat
+
+    # Check for data version history request
+    version_history_event: dict | None = None
+    if _VERSION_HISTORY_PATTERNS.search(body.message):
+        try:
+            from pathlib import Path as _PathV
+
+            import pandas as _pdv
+
+            from core.analyzer import compute_version_history as _cvh
+            from models.dataset import Dataset as _DatasetV
+
+            _all_ds_v = (
+                session.query(_DatasetV)
+                .filter(_DatasetV.project_id == body.project_id)
+                .order_by(_DatasetV.uploaded_at.asc())
+                .all()
+            )
+            _ds_dicts = [
+                {
+                    "id": ds.id,
+                    "filename": ds.filename,
+                    "row_count": ds.row_count,
+                    "column_count": ds.column_count,
+                    "uploaded_at": ds.uploaded_at.isoformat() if ds.uploaded_at else "",
+                    "size_bytes": ds.size_bytes,
+                }
+                for ds in _all_ds_v
+            ]
+            _dfs_v = []
+            for ds in _all_ds_v:
+                _p = _PathV(ds.file_path)
+                _dfs_v.append(_pdv.read_csv(_p) if _p.exists() else _pdv.DataFrame())
+
+            _vh = _cvh(_ds_dicts, _dfs_v)
+            version_history_event = _vh
+            _n_versions = _vh["version_count"]
+            _stability = _vh["overall_stability"]
+            _vh_summary = _vh["summary"]
+            system_prompt += (
+                f"\n\n## Data Version History\n"
+                f"{_n_versions} dataset version{'s' if _n_versions != 1 else ''} on record. "
+                f"Overall stability: {_stability}. {_vh_summary}\n"
+                "Present the upload timeline to the analyst in plain English. "
+                "For each version transition, mention how much the data changed and whether retraining is advised."
+            )
         except Exception:  # noqa: BLE001
             pass  # Nice-to-have; never crash chat
 
@@ -6022,6 +6084,9 @@ def send_message(
 
         if dataset_compare_event:
             yield f"data: {json.dumps({'type': 'dataset_comparison', 'dataset_comparison': dataset_compare_event})}\n\n"
+
+        if version_history_event:
+            yield f"data: {json.dumps({'type': 'version_history', 'version_history': version_history_event})}\n\n"
 
         # Emit model health card if computed
         if health_data:

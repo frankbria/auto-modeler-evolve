@@ -61,6 +61,7 @@ import { InlinePredictionCard } from "@/components/models/inline-prediction-card
 import { GoalTrainingCard } from "@/components/models/goal-training-card"
 import { SensitivityCard } from "@/components/deploy/sensitivity-card"
 import { OnboardingGuideCard } from "@/components/chat/onboarding-guide-card"
+import { DataVersionHistoryCard } from "@/components/chat/data-version-history-card"
 import { PairCorrelationCard } from "@/components/data/pair-correlation-card"
 import { StatQueryCard } from "@/components/data/stat-query-card"
 import { SummaryStatsCard } from "@/components/data/summary-stats-card"
@@ -205,6 +206,7 @@ export default function ProjectWorkspace() {
     attachGoalTrainingToLastMessage,
     attachSensitivityToLastMessage,
     attachOnboardingGuideToLastMessage,
+    attachVersionHistoryToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -538,6 +540,8 @@ export default function ProjectWorkspace() {
                 attachSensitivityToLastMessage(json.sensitivity as import("@/lib/types").SensitivityResult)
               } else if (json.type === "onboarding_guide" && json.onboarding_guide) {
                 attachOnboardingGuideToLastMessage(json.onboarding_guide as import("@/lib/types").OnboardingGuideResult)
+              } else if (json.type === "version_history" && json.version_history) {
+                attachVersionHistoryToLastMessage(json.version_history as import("@/lib/types").DataVersionHistoryResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -605,6 +609,7 @@ export default function ProjectWorkspace() {
     attachGoalTrainingToLastMessage,
     attachSensitivityToLastMessage,
     attachOnboardingGuideToLastMessage,
+    attachVersionHistoryToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -986,6 +991,9 @@ export default function ProjectWorkspace() {
                         guide={msg.onboarding_guide}
                         onSwitchTab={(tab) => setActiveTab(tab as RightTab)}
                       />
+                    )}
+                    {msg.version_history && (
+                      <DataVersionHistoryCard history={msg.version_history} />
                     )}
                   </div>
                 </div>

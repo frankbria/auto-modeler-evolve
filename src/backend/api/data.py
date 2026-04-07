@@ -36,6 +36,7 @@ from core.analyzer import (
     compute_summary_stats,
     compute_top_n,
     compute_value_counts,
+    compute_version_history,
     detect_time_columns,
     sample_records,
 )
@@ -2748,3 +2749,49 @@ def compare_datasets(
         "new_name": new_ds.filename,
         **result,
     }
+
+
+@router.get("/{project_id}/version-history")
+def get_version_history(
+    project_id: str,
+    session: Session = Depends(get_session),
+) -> dict:
+    """Return the upload timeline for all datasets in a project.
+
+    For each consecutive pair of uploads, computes a drift score and summary
+    so analysts can see how their data has changed over time.
+
+    Returns:
+        version_count, versions list with per-version metadata and
+        drift_from_previous (for v2+), overall_stability, summary.
+    """
+    project = session.get(Project, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    datasets = list(
+        session.exec(
+            select(Dataset)
+            .where(Dataset.project_id == project_id)
+            .order_by(Dataset.uploaded_at.asc())
+        ).all()
+    )
+
+    ds_dicts = [
+        {
+            "id": ds.id,
+            "filename": ds.filename,
+            "row_count": ds.row_count,
+            "column_count": ds.column_count,
+            "uploaded_at": ds.uploaded_at.isoformat() if ds.uploaded_at else "",
+            "size_bytes": ds.size_bytes,
+        }
+        for ds in datasets
+    ]
+
+    dfs: list[pd.DataFrame] = []
+    for ds in datasets:
+        p = Path(ds.file_path)
+        dfs.append(pd.read_csv(p) if p.exists() else pd.DataFrame())
+
+    return compute_version_history(ds_dicts, dfs)

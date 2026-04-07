@@ -452,6 +452,7 @@ export interface ChatMessage {
   goal_training?: GoalTrainingResult
   sensitivity?: SensitivityResult
   onboarding_guide?: OnboardingGuideResult
+  version_history?: DataVersionHistoryResult
 }
 
 export interface SegmentPerformanceSegment {
@@ -2002,4 +2003,31 @@ export interface OnboardingGuideResult {
   is_complete: boolean
   summary: string
   project_id?: string
+}
+
+export interface DataVersionDrift {
+  drift_score: number
+  summary: string
+  changed_columns: number
+  new_columns: string[]
+  dropped_columns: string[]
+  row_count_change_pct: number
+}
+
+export interface DataVersionEntry {
+  version: number
+  dataset_id: string
+  filename: string
+  row_count: number
+  column_count: number
+  uploaded_at: string
+  size_bytes: number
+  drift_from_previous: DataVersionDrift | null
+}
+
+export interface DataVersionHistoryResult {
+  version_count: number
+  versions: DataVersionEntry[]
+  overall_stability: "stable" | "moderate" | "high"
+  summary: string
 }
