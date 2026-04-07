@@ -1767,3 +1767,180 @@ def run_goal_driven_training(
         "tried_tuning": tried_tuning,
         "summary": summary,
     }
+
+
+# ---------------------------------------------------------------------------
+# Learning Curve Analysis
+# ---------------------------------------------------------------------------
+
+# Friendly labels for primary metrics
+_METRIC_LABELS: dict[str, str] = {
+    "r2": "R²",
+    "accuracy": "accuracy",
+    "f1": "F1 score",
+    "precision": "precision",
+    "recall": "recall",
+}
+
+
+def compute_learning_curve(
+    X: pd.DataFrame,
+    y: pd.Series,
+    algorithm: str,
+    problem_type: str,
+    n_sizes: int = 5,
+    cv_folds: int = 3,
+) -> dict:
+    """Compute train/validation scores at increasing dataset sizes.
+
+    Trains *algorithm* at n_sizes fractions of the training data (evenly spaced
+    from min_fraction to 1.0) using cross-validation, and returns the learning
+    curve data.  Convergence is detected when the validation score improvement
+    over the last two steps is below 1% of the full-data score.
+
+    Args:
+        X: Feature matrix (already preprocessed — no NaNs).
+        y: Target vector.
+        algorithm: Key from the algorithm registry (e.g. "random_forest_regressor").
+        problem_type: "regression" or "classification".
+        n_sizes: Number of training-size checkpoints (default 5).
+        cv_folds: Number of cross-validation folds (default 3).
+
+    Returns:
+        dict with keys:
+            sizes_pct       – list[int]: training sizes as % of full data
+            train_scores    – list[float]: mean train score at each size
+            val_scores      – list[float]: mean CV val score at each size
+            converged       – bool: True when adding more data shows < 1% gain
+            plateau_pct     – int | None: size (%) where convergence first detected
+            best_val_score  – float: highest validation score achieved
+            metric_label    – str: human-friendly metric name
+            metric_key      – str: internal metric identifier
+            n_total         – int: total number of training rows
+            algorithm       – str: algorithm key used
+            algorithm_name  – str: human-friendly algorithm name
+            recommendation  – str: plain-English advice
+            summary         – str: one-sentence overview
+    """
+    from sklearn.model_selection import learning_curve as _lc
+
+    min_rows = max(cv_folds * 5, 20)
+    if len(X) < min_rows:
+        raise ValueError(
+            f"Dataset has only {len(X)} rows — need at least {min_rows} for "
+            "learning curve analysis."
+        )
+
+    # Build algorithm registry for the right problem type
+    all_algos = (
+        _build_regression_algorithms()
+        if problem_type == "regression"
+        else _build_classification_algorithms()
+    )
+
+    # Fall back to a sensible default if algorithm not found
+    if algorithm not in all_algos:
+        algorithm = (
+            "linear_regression"
+            if problem_type == "regression"
+            else "logistic_regression"
+        )
+
+    algo_info = all_algos[algorithm]
+    estimator = algo_info["class"](**algo_info["params"])
+
+    # Determine scoring metric
+    metric_key = "r2" if problem_type == "regression" else "accuracy"
+    scoring = "r2" if metric_key == "r2" else "accuracy"
+
+    # Fractional training sizes — sklearn learning_curve accepts floats in (0, 1]
+    n_total = len(X)
+    # Smallest valid fraction: enough rows for each fold
+    min_fraction = max(cv_folds * 4 / n_total, 0.15)
+    fractions = np.unique(np.linspace(min_fraction, 1.0, n_sizes).round(3))
+    # Keep only fractions that are <= 1.0 and != duplicate
+    fractions = fractions[fractions <= 1.0]
+
+    # LabelEncode target for classification
+    y_fit = y
+    if problem_type == "classification":
+        le = LabelEncoder()
+        y_fit = pd.Series(le.fit_transform(y), index=y.index)
+
+    try:
+        train_sizes_out, train_scores_raw, val_scores_raw = _lc(
+            estimator,
+            X,
+            y_fit,
+            train_sizes=fractions,
+            cv=cv_folds,
+            scoring=scoring,
+            n_jobs=-1,
+        )
+    except Exception as exc:
+        raise ValueError(f"Learning curve computation failed: {exc}") from exc
+
+    train_means = [round(float(s.mean()), 4) for s in train_scores_raw]
+    val_means = [round(float(s.mean()), 4) for s in val_scores_raw]
+    sizes_pct = [round(int(s) / n_total * 100) for s in train_sizes_out]
+
+    # Convergence detection: val score gain over last 2 steps < 1% of full-data val score
+    best_val = max(val_means) if val_means else 0.0
+    converged = False
+    plateau_pct = None
+    if len(val_means) >= 3:
+        for i in range(2, len(val_means)):
+            gain = val_means[i] - val_means[i - 1]
+            if best_val != 0 and abs(gain) < 0.01 * abs(best_val):
+                converged = True
+                plateau_pct = sizes_pct[i - 1]
+                break
+
+    metric_label = _METRIC_LABELS.get(metric_key, metric_key.upper())
+
+    if converged:
+        recommendation = (
+            f"Your model appears to have converged around {plateau_pct}% of your data. "
+            f"Collecting more data is unlikely to significantly improve {metric_label}. "
+            "Focus on better features or a more powerful algorithm instead."
+        )
+    else:
+        gain = (val_means[-1] - val_means[0]) if len(val_means) > 1 else 0
+        if gain > 0.02:
+            recommendation = (
+                f"The validation {metric_label} is still climbing — more training data "
+                "would likely improve your model's accuracy. Try collecting 2-3× more rows."
+            )
+        else:
+            recommendation = (
+                "The validation score is relatively flat. More data may not help much — "
+                "consider engineering better features or trying a different algorithm."
+            )
+
+    # One-sentence summary
+    full_val = val_means[-1] if val_means else 0.0
+    score_str = f"{full_val:.3f}" if metric_key == "r2" else f"{full_val * 100:.0f}%"
+    converge_note = (
+        "Model has converged — more data won't help much."
+        if converged
+        else "More data would likely improve accuracy."
+    )
+    summary = (
+        f"With {n_total} training rows, {metric_label} = {score_str}. {converge_note}"
+    )
+
+    return {
+        "sizes_pct": sizes_pct,
+        "train_scores": train_means,
+        "val_scores": val_means,
+        "converged": converged,
+        "plateau_pct": plateau_pct,
+        "best_val_score": round(best_val, 4),
+        "metric_label": metric_label,
+        "metric_key": metric_key,
+        "n_total": n_total,
+        "algorithm": algorithm,
+        "algorithm_name": algo_info["name"],
+        "recommendation": recommendation,
+        "summary": summary,
+    }

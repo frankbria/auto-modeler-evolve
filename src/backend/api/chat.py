@@ -2096,6 +2096,21 @@ _SENSITIVITY_PATTERNS = re.compile(
 )
 
 
+_LEARNING_CURVE_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"(?:would|will|does?)\s+(?:more|additional|extra)\s+(?:data|rows?|training)\s+(?:help|improve|boost)\b|"
+    r"learning\s+curve\b|"
+    r"how\s+(?:much|many)\s+(?:more\s+)?(?:data|rows?)\s+(?:do\s+I\s+need|should\s+I\s+(?:get|collect|add))\b|"
+    r"(?:do|does?|did)\s+(?:I|my\s+model)\s+(?:need|have enough)\s+(?:data|rows?)\b|"
+    r"(?:is|are)\s+my\s+(?:training\s+)?(?:data|dataset)\s+(?:big\s+enough|sufficient|enough)\b|"
+    r"(?:would|will)\s+(?:collecting|adding|getting|having|gathering)\s+more\s+(?:data|rows?)\b|"
+    r"model.*(?:converge|converged|plateau|saturate)\b|"
+    r"(?:data|training)\s+size\s+(?:analysis|curve|impact|effect)\b"
+    r")",
+    re.IGNORECASE,
+)
+
+
 def _detect_sensitivity_request(
     message: str, feature_names: list[str], feature_means: dict
 ) -> dict | None:
@@ -5926,6 +5941,84 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Onboarding card is nice-to-have; never crash chat
 
+    # Learning curve analysis — "would more data help?", "learning curve"
+    learning_curve_event: dict | None = None
+    if _LEARNING_CURVE_PATTERNS.search(body.message) and ctx.get("model_runs"):
+        try:
+            _lc_runs = [r for r in (ctx.get("model_runs") or []) if r.status == "done"]
+            if _lc_runs:
+                # Prefer selected; else best by primary metric
+                _lc_run = next((r for r in _lc_runs if r.is_selected), None)
+                if not _lc_run:
+                    from api.models import REGRESSION_ALGORITHMS as _REG_ALGOS
+                    from api.models import CLASSIFICATION_ALGORITHMS as _CLS_ALGOS
+
+                    _lc_reg = [r for r in _lc_runs if r.algorithm in _REG_ALGOS]
+                    _lc_cls = [r for r in _lc_runs if r.algorithm in _CLS_ALGOS]
+                    if _lc_reg:
+                        _lc_run = max(
+                            _lc_reg,
+                            key=lambda r: json.loads(r.metrics or "{}").get("r2", 0),
+                        )
+                    elif _lc_cls:
+                        _lc_run = max(
+                            _lc_cls,
+                            key=lambda r: json.loads(r.metrics or "{}").get(
+                                "accuracy", 0
+                            ),
+                        )
+                    else:
+                        _lc_run = _lc_runs[-1]
+
+                _lc_ds = ctx["dataset"]
+                if _lc_ds and _lc_ds.file_path and Path(_lc_ds.file_path).exists():
+                    _lc_df = pd.read_csv(_lc_ds.file_path)
+                    _lc_fs = ctx.get("feature_set")
+                    if _lc_fs:
+                        _lc_transforms = json.loads(_lc_fs.transformations or "[]")
+                        if _lc_transforms:
+                            from core.feature_engine import (
+                                apply_transformations as _lc_at,
+                            )
+
+                            _lc_df, _ = _lc_at(_lc_df, _lc_transforms)
+                        _lc_target = _lc_fs.target_column
+                    else:
+                        _lc_target = _lc_df.columns[-1]
+
+                    if _lc_target and _lc_target in _lc_df.columns:
+                        from api.models import (
+                            CLASSIFICATION_ALGORITHMS as _LC_CLS_ALGOS,
+                        )
+
+                        _lc_problem = (
+                            "classification"
+                            if _lc_run.algorithm in _LC_CLS_ALGOS
+                            else "regression"
+                        )
+                        _lc_feat_cols = [c for c in _lc_df.columns if c != _lc_target]
+                        from core.trainer import (
+                            compute_learning_curve as _clc,
+                            prepare_features as _lc_pf,
+                        )
+
+                        _lc_X, _lc_y, _ = _lc_pf(
+                            _lc_df, _lc_feat_cols, _lc_target, _lc_problem
+                        )
+                        _lc_result = _clc(_lc_X, _lc_y, _lc_run.algorithm, _lc_problem)
+                        learning_curve_event = _lc_result
+                        system_prompt += (
+                            f"\n\n## Learning Curve Analysis\n"
+                            f"{_lc_result['summary']}\n"
+                            f"Recommendation: {_lc_result['recommendation']}\n"
+                            f"A LearningCurveCard is shown in the chat with a chart. "
+                            f"Narrate the key insight in plain English — "
+                            f"should the analyst collect more data or focus on better features? "
+                            f"Be specific and actionable."
+                        )
+        except Exception:  # noqa: BLE001
+            pass  # Learning curve is nice-to-have; never crash chat
+
     # Check for "show me the data" / record table viewer
     records_event: dict | None = None
     if _RECORDS_PATTERNS.search(body.message) and ctx["dataset"]:
@@ -6229,6 +6322,10 @@ def send_message(
         # Emit sensitivity analysis result
         if sensitivity_event:
             yield f"data: {json.dumps({'type': 'sensitivity', 'sensitivity': sensitivity_event})}\n\n"
+
+        # Emit learning curve analysis result
+        if learning_curve_event:
+            yield f"data: {json.dumps({'type': 'learning_curve', 'learning_curve': learning_curve_event})}\n\n"
 
         # Emit time-period comparison result
         if time_window_event:

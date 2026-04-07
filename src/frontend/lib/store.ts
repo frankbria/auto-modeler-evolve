@@ -95,6 +95,7 @@ interface AppState {
   attachSensitivityToLastMessage: (sensitivity: import("./types").SensitivityResult) => void
   attachOnboardingGuideToLastMessage: (onboarding_guide: import("./types").OnboardingGuideResult) => void
   attachVersionHistoryToLastMessage: (version_history: import("./types").DataVersionHistoryResult) => void
+  attachLearningCurveToLastMessage: (learning_curve: import("./types").LearningCurveResult) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -585,6 +586,15 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, version_history }
+      }
+      return { messages }
+    }),
+  attachLearningCurveToLastMessage: (learning_curve) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, learning_curve }
       }
       return { messages }
     }),

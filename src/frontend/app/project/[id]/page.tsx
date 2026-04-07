@@ -62,6 +62,7 @@ import { GoalTrainingCard } from "@/components/models/goal-training-card"
 import { SensitivityCard } from "@/components/deploy/sensitivity-card"
 import { OnboardingGuideCard } from "@/components/chat/onboarding-guide-card"
 import { DataVersionHistoryCard } from "@/components/chat/data-version-history-card"
+import { LearningCurveCard } from "@/components/chat/learning-curve-card"
 import { PairCorrelationCard } from "@/components/data/pair-correlation-card"
 import { StatQueryCard } from "@/components/data/stat-query-card"
 import { SummaryStatsCard } from "@/components/data/summary-stats-card"
@@ -207,6 +208,7 @@ export default function ProjectWorkspace() {
     attachSensitivityToLastMessage,
     attachOnboardingGuideToLastMessage,
     attachVersionHistoryToLastMessage,
+    attachLearningCurveToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -542,6 +544,8 @@ export default function ProjectWorkspace() {
                 attachOnboardingGuideToLastMessage(json.onboarding_guide as import("@/lib/types").OnboardingGuideResult)
               } else if (json.type === "version_history" && json.version_history) {
                 attachVersionHistoryToLastMessage(json.version_history as import("@/lib/types").DataVersionHistoryResult)
+              } else if (json.type === "learning_curve" && json.learning_curve) {
+                attachLearningCurveToLastMessage(json.learning_curve as import("@/lib/types").LearningCurveResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -610,6 +614,7 @@ export default function ProjectWorkspace() {
     attachSensitivityToLastMessage,
     attachOnboardingGuideToLastMessage,
     attachVersionHistoryToLastMessage,
+    attachLearningCurveToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -994,6 +999,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.version_history && (
                       <DataVersionHistoryCard history={msg.version_history} />
+                    )}
+                    {msg.learning_curve && (
+                      <LearningCurveCard result={msg.learning_curve} />
                     )}
                   </div>
                 </div>

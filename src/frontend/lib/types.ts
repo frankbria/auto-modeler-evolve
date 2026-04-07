@@ -453,6 +453,7 @@ export interface ChatMessage {
   sensitivity?: SensitivityResult
   onboarding_guide?: OnboardingGuideResult
   version_history?: DataVersionHistoryResult
+  learning_curve?: LearningCurveResult
 }
 
 export interface SegmentPerformanceSegment {
@@ -2029,5 +2030,22 @@ export interface DataVersionHistoryResult {
   version_count: number
   versions: DataVersionEntry[]
   overall_stability: "stable" | "moderate" | "high"
+  summary: string
+}
+
+// Learning Curve Analysis
+export interface LearningCurveResult {
+  sizes_pct: number[]
+  train_scores: number[]
+  val_scores: number[]
+  converged: boolean
+  plateau_pct: number | null
+  best_val_score: number
+  metric_label: string
+  metric_key: string
+  n_total: number
+  algorithm: string
+  algorithm_name: string
+  recommendation: string
   summary: string
 }

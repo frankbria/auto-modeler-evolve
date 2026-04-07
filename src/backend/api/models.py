@@ -34,6 +34,7 @@ from core.analyzer import detect_time_columns
 from core.trainer import (
     CLASSIFICATION_ALGORITHMS,
     REGRESSION_ALGORITHMS,
+    compute_learning_curve,
     detect_class_imbalance,
     get_tuning_grid,
     identify_weak_features,
@@ -2093,5 +2094,106 @@ def get_model_selection(
         )
 
     result = compute_model_selection(runs_data, criteria=criteria)
+    result["project_id"] = project_id
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Learning Curve Analysis
+# ---------------------------------------------------------------------------
+
+
+@router.get("/api/models/{project_id}/learning-curve")
+def get_learning_curve(project_id: str, session: Session = Depends(get_session)):
+    """Return learning curve data for the best/selected model run.
+
+    Trains the algorithm at 5 data-size checkpoints (20–100% of data) using
+    3-fold cross-validation and returns train/val scores plus a plain-English
+    recommendation on whether collecting more data would help.
+    """
+    project = session.get(Project, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    completed_runs = session.exec(
+        select(ModelRun).where(
+            ModelRun.project_id == project_id,
+            ModelRun.status == "done",
+        )
+    ).all()
+
+    if not completed_runs:
+        raise HTTPException(status_code=404, detail="No completed model runs found")
+
+    # Prefer selected model; otherwise best by primary metric
+    selected = next((r for r in completed_runs if r.is_selected), None)
+    if not selected:
+        reg_runs = [r for r in completed_runs if r.algorithm in REGRESSION_ALGORITHMS]
+        cls_runs = [
+            r for r in completed_runs if r.algorithm in CLASSIFICATION_ALGORITHMS
+        ]
+        if reg_runs:
+            selected = max(
+                reg_runs, key=lambda r: json.loads(r.metrics or "{}").get("r2", 0)
+            )
+        elif cls_runs:
+            selected = max(
+                cls_runs, key=lambda r: json.loads(r.metrics or "{}").get("accuracy", 0)
+            )
+        else:
+            selected = completed_runs[-1]
+
+    problem_type = (
+        "classification"
+        if selected.algorithm in CLASSIFICATION_ALGORITHMS
+        else "regression"
+    )
+
+    # Load dataset
+    dataset = session.exec(
+        select(Dataset).where(Dataset.project_id == project_id)
+    ).first()
+    if not dataset or not dataset.file_path or not Path(dataset.file_path).exists():
+        raise HTTPException(status_code=404, detail="Dataset file not found")
+
+    # Load and transform data
+    df = pd.read_csv(dataset.file_path)
+    feature_set = None
+    if dataset:
+        feature_set = session.exec(
+            select(FeatureSet).where(
+                FeatureSet.dataset_id == dataset.id,
+                FeatureSet.is_active == True,  # noqa: E712
+            )
+        ).first()
+
+    if feature_set:
+        transforms = json.loads(feature_set.transformations or "[]")
+        if transforms:
+            df, _ = apply_transformations(df, transforms)
+        target_col = feature_set.target_column
+    else:
+        # Fallback: guess target from run metrics
+        metrics = json.loads(selected.metrics or "{}")
+        target_col = metrics.get("target_column") or df.columns[-1]
+
+    if not target_col or target_col not in df.columns:
+        raise HTTPException(
+            status_code=422, detail="Target column not found in dataset"
+        )
+
+    feature_cols = [c for c in df.columns if c != target_col]
+    try:
+        X, y, _ = prepare_features(df, feature_cols, target_col, problem_type)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=422, detail=f"Feature preparation failed: {exc}"
+        ) from exc
+
+    try:
+        result = compute_learning_curve(X, y, selected.algorithm, problem_type)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
     result["project_id"] = project_id
     return result
