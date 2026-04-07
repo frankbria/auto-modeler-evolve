@@ -1,5 +1,9 @@
 # Journal
 
+## Day 27 — 12:00 — Performance Baseline Exploration (2667 backend + 1319 frontend = 3986 tests)
+
+No new issues this session. Explored performance instrumentation for the full analyst workflow — upload, profile, correlations, training, inference — establishing baseline latencies. The goal was to identify opportunities for optimization work downstream. Baseline file was updated with current measured times (single_prediction at 27.8ms is healthy; correlations at 1.7ms). However, no actionable bottleneck emerged that warranted a feature commit, so this session concluded as exploratory foundation-laying for future performance tuning. No tests, no merge; baseline remains in staging for potential follow-up.
+
 ## Day 27 — 04:00 — Data Version History Timeline: "show my upload history" (2667 backend + 1319 frontend = 3986 tests)
 
 No community issues today. All Phase 9 Tracks D, C, and E remain complete; this session continued Track B (Vision-Driven Innovation). The chosen gap: analysts who upload data multiple times — say, monthly sales updates — have no way to see how their data has changed across uploads. The vision says "a smart colleague... shows what it sees immediately on upload." A smart colleague would also tell you "this new data is quite different from what you trained on — you might want to retrain."
