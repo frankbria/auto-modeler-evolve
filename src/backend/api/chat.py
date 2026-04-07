@@ -5838,8 +5838,7 @@ def send_message(
             _ob_has_cv = any(
                 (
                     json.loads(r.metrics or "{}").get("cv_r2_mean") is not None
-                    or json.loads(r.metrics or "{}").get("cv_accuracy_mean")
-                    is not None
+                    or json.loads(r.metrics or "{}").get("cv_accuracy_mean") is not None
                 )
                 for r in _ob_done_runs
             )

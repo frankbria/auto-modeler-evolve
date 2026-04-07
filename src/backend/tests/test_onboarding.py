@@ -150,7 +150,9 @@ class TestComputeOnboardingState:
         assert state["is_complete"] is True
         assert state["completion_pct"] == 100
         assert state["current_step"] is None
-        assert "complete" in state["summary"].lower() or "set" in state["summary"].lower()
+        assert (
+            "complete" in state["summary"].lower() or "set" in state["summary"].lower()
+        )
 
     def test_total_steps_is_six(self):
         state = compute_onboarding_state(False, 0, False, False, False, False)
@@ -201,7 +203,10 @@ class TestComputeOnboardingState:
             has_cross_val=False,
             has_deployment=False,
         )
-        assert "prediction target" in state["summary"].lower() or "target" in state["summary"].lower()
+        assert (
+            "prediction target" in state["summary"].lower()
+            or "target" in state["summary"].lower()
+        )
 
 
 # ---------------------------------------------------------------------------
