@@ -91,7 +91,9 @@ class TestComputeVersionHistory:
         from core.analyzer import compute_version_history
 
         ds = [_make_ds(1), _make_ds(2)]
-        df1 = pd.DataFrame({"revenue": [100.0, 200.0, 300.0], "region": ["East", "West", "East"]})
+        df1 = pd.DataFrame(
+            {"revenue": [100.0, 200.0, 300.0], "region": ["East", "West", "East"]}
+        )
         df2 = df1.copy()
         result = compute_version_history(ds, [df1, df2])
         assert result["version_count"] == 2
@@ -235,7 +237,9 @@ class TestVersionHistoryAPI:
         assert resp.status_code == 201
         return resp.json()["id"]
 
-    def _upload_csv(self, client, project_id: str, rows: list[dict], filename: str) -> dict:
+    def _upload_csv(
+        self, client, project_id: str, rows: list[dict], filename: str
+    ) -> dict:
         import csv
         import io
 
