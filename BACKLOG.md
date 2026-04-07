@@ -49,6 +49,15 @@ the time is better spent on real features.
 
 ## Currently Working On
 
+## Day 27 (04:00) — Done
+**Track B — Data Version History Timeline.** Closes the "how has my data changed across uploads?" gap.
+- **Version History** — `_VERSION_HISTORY_PATTERNS` (8 NL variants: "show my upload history", "data version timeline", "upload history", "history of my datasets", etc.) in `chat.py`. `compute_version_history()` pure function in `core/analyzer.py`: builds upload timeline from all project datasets, computes drift between consecutive pairs via `compute_dataset_comparison()`. `GET /api/data/{project_id}/version-history` endpoint. Chat handler emits `{type:"version_history"}` SSE. `DataVersionHistoryCard` (adaptive border: emerald=stable / amber=moderate / rose=high, 📂 icon): stability badge, version count, timeline rendered latest-first with version rows + drift connectors. 22 backend + 18 frontend = 40 new tests. Total: 2667 backend + 1319 frontend = 3986.
+
+**What's next:**
+- Continue Track B — remaining opportunities:
+  - Saved analysis templates (replay a custom chat flow on new data)
+  - Natural language column transformations ("create a column: revenue per unit = revenue / units")
+
 ## Day 26 (20:00) — Done
 **Track B — Guided Onboarding Wizard.** Closes the "I don't know where to start" first-time-user gap.
 - **Onboarding Wizard** — `_ONBOARDING_PATTERNS` (8 NL variants: "guide me through", "help me get started", "walk me through the steps", "show me the guide", "what should I do first", "first steps", "onboarding", "how do I use this") in `chat.py`. `compute_onboarding_state()` pure function in `core/onboarding.py`: maps 6 progress flags (has_dataset, message_count, has_target, has_model_run, has_cross_val, has_deployment) to a step-by-step state dict. `GET /api/projects/{id}/onboarding` endpoint. Chat handler emits `{type:"onboarding_guide"}` SSE event with current step, completion %, steps list, hint, and CTA action. `OnboardingGuideCard` (blue border, 🧭): progress bar, step list (checkmarks for done, icon for current, ○ for pending), current step description + hint + CTA tab-switch button. 26 backend + 16 frontend = 42 new tests. Total: 2645 backend + 1301 frontend = 3946.
