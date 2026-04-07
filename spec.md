@@ -758,6 +758,26 @@ guides them forward through the natural flow.
       exactly how revenue responds to changes in units sold."
       *Day 26 (12:00): 24 backend + 17 frontend = 41 new tests. Total: 2619 backend + 1285 frontend = 3904, all passing. Backend lint: clean. Frontend build + lint: clean.*
 
+- [x] **Guided Onboarding Wizard** — When a first-time analyst says "guide me", "help me get started",
+      "walk me through the steps", "what should I do first?", or "onboarding", AutoModeler responds with
+      an `OnboardingGuideCard` showing their exact progress through the 6-step workflow. `_ONBOARDING_PATTERNS`
+      (8 NL variants) in `chat.py` detects the intent. `compute_onboarding_state(has_dataset, message_count,
+      has_target, has_model_run, has_cross_val, has_deployment)` pure function in `core/onboarding.py` maps
+      progress flags to a structured state: `step_index`, `total_steps`, `completion_pct`, `steps` (each with
+      `title`, `description`, `hint`, `suggested_action`, `suggested_tab`, `icon`, `is_done`, `is_current`),
+      `current_step`, `is_complete`, `summary`. Six steps: Upload → Explore → Set target → Train → Validate
+      → Deploy. `GET /api/projects/{project_id}/onboarding` endpoint derives state from project records
+      (dataset, conversation count, feature set, model runs with cross-val, deployment). Chat handler emits
+      `{type:"onboarding_guide"}` SSE event with full state; Claude's system prompt is injected with step
+      context for natural narration. `OnboardingGuideCard` (blue border, 🧭 icon): "Getting Started Guide"
+      heading, completion % badge, progress bar (aria-valuenow), step list (✓ for done steps, current-step
+      icon for active, ○ for upcoming), current step description + italic hint tip, CTA button that fires
+      `onSwitchTab` callback to navigate to the relevant panel tab. Complete state shows celebration message.
+      `OnboardingGuideResult`/`OnboardingStep` TypeScript types; `attachOnboardingGuideToLastMessage` Zustand
+      action; SSE wired in page.tsx. Directly closes the "I just uploaded data but don't know what to do
+      next" cold-start gap — the single biggest barrier for business analysts adopting new tools.
+      *Day 26 (20:00): 26 backend + 16 frontend = 42 new tests. Total: 2645 backend + 1301 frontend = 3946, all passing. Backend lint: clean. Frontend build + lint: clean.*
+
 - [x] **AI-powered data dictionary** — When a dataset is uploaded (or on demand via POST), auto-generate
       plain-English descriptions for every column. `core/dictionary.py` classifies each column as
       id/metric/dimension/date/flag/text via heuristics (name hints + dtype + cardinality), then uses

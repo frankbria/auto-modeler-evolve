@@ -49,6 +49,15 @@ the time is better spent on real features.
 
 ## Currently Working On
 
+## Day 26 (20:00) — Done
+**Track B — Guided Onboarding Wizard.** Closes the "I don't know where to start" first-time-user gap.
+- **Onboarding Wizard** — `_ONBOARDING_PATTERNS` (8 NL variants: "guide me through", "help me get started", "walk me through the steps", "show me the guide", "what should I do first", "first steps", "onboarding", "how do I use this") in `chat.py`. `compute_onboarding_state()` pure function in `core/onboarding.py`: maps 6 progress flags (has_dataset, message_count, has_target, has_model_run, has_cross_val, has_deployment) to a step-by-step state dict. `GET /api/projects/{id}/onboarding` endpoint. Chat handler emits `{type:"onboarding_guide"}` SSE event with current step, completion %, steps list, hint, and CTA action. `OnboardingGuideCard` (blue border, 🧭): progress bar, step list (checkmarks for done, icon for current, ○ for pending), current step description + hint + CTA tab-switch button. 26 backend + 16 frontend = 42 new tests. Total: 2645 backend + 1301 frontend = 3946.
+
+**What's next:**
+- Continue Track B — remaining opportunities:
+  - Data version history (timeline of dataset uploads with comparison)
+  - Saved analysis templates (replay a custom chat flow on new data)
+
 ## Day 26 (12:00) — Done
 **Track B — Prediction Sensitivity Analysis.** Closes the "how much does my prediction change as X varies?" gap.
 - **Sensitivity Analysis** — `_SENSITIVITY_PATTERNS` (8 NL variants) + `_detect_sensitivity_request()` in `chat.py`. `run_sensitivity_analysis()` pure function in `core/deployer.py`: sweeps one feature across a range, holds all others at training means, collects predictions. `SensitivityCard` (teal, 🎚️): Recharts line chart + change % badge + min/max boxes. 24 backend + 17 frontend = 41 new tests. Total: 2619 backend + 1285 frontend = 3904.
