@@ -778,6 +778,29 @@ guides them forward through the natural flow.
       next" cold-start gap — the single biggest barrier for business analysts adopting new tools.
       *Day 26 (20:00): 26 backend + 16 frontend = 42 new tests. Total: 2645 backend + 1301 frontend = 3946, all passing. Backend lint: clean. Frontend build + lint: clean.*
 
+- [x] **Data Version History Timeline** — Analysts can ask "show my upload history", "data version timeline",
+      "how has my data changed over time", or "what datasets do I have?" and receive a `DataVersionHistoryCard`
+      in chat showing a timeline of every dataset upload for the project. `_VERSION_HISTORY_PATTERNS` (8 NL
+      variants) in `chat.py` detects intent. `compute_version_history(datasets, dataframes)` pure function in
+      `core/analyzer.py` builds the timeline: for each consecutive upload pair it calls the existing
+      `compute_dataset_comparison()` and extracts a `drift_from_previous` dict with `drift_score`, `summary`,
+      `changed_columns`, `new_columns`, `dropped_columns`, and `row_count_change_pct`. Returns `version_count`,
+      `versions` list (each with `version`, `dataset_id`, `filename`, `row_count`, `column_count`, `uploaded_at`,
+      `size_bytes`, `drift_from_previous`), `overall_stability` (stable/moderate/high, from max drift across
+      transitions), and plain-English `summary`. `GET /api/data/{project_id}/version-history` REST endpoint
+      orders datasets by `uploaded_at` ascending, builds dicts and DataFrames, returns the history. Chat
+      handler injects stability + summary into the system prompt so Claude narrates the timeline naturally.
+      `{type:"version_history"}` SSE event. `DataVersionHistoryCard` (adaptive border, 📂 icon): stability
+      badge (Stable/Moderate Drift/High Drift) + version count header; timeline rendered latest-first with
+      version number badge (blue for latest), filename, upload date, row/column/size info, and "Latest" label
+      on newest; between each pair a drift connector shows drift score, changed column count, and row % change
+      with color coding (green <20, amber 20–49, red ≥50). `DataVersionDrift`, `DataVersionEntry`,
+      `DataVersionHistoryResult` TypeScript types; `attachVersionHistoryToLastMessage` Zustand action; SSE
+      handler and render wired in page.tsx. Closes the "how has my data evolved across uploads?" gap — a
+      business analyst who uploads Q2 data needs to immediately know how different it is from Q1 before
+      deciding whether to retrain their model.
+      *Day 27 (04:00): 22 backend + 18 frontend = 40 new tests. Total: 2667 backend + 1319 frontend = 3986, all passing. Backend lint: clean. Frontend build + lint: clean.*
+
 - [x] **AI-powered data dictionary** — When a dataset is uploaded (or on demand via POST), auto-generate
       plain-English descriptions for every column. `core/dictionary.py` classifies each column as
       id/metric/dimension/date/flag/text via heuristics (name hints + dtype + cardinality), then uses
