@@ -63,6 +63,11 @@ import { SensitivityCard } from "@/components/deploy/sensitivity-card"
 import { OnboardingGuideCard } from "@/components/chat/onboarding-guide-card"
 import { DataVersionHistoryCard } from "@/components/chat/data-version-history-card"
 import { LearningCurveCard } from "@/components/chat/learning-curve-card"
+import {
+  TemplateSavedCard,
+  TemplateListCard,
+  TemplateReplayCard,
+} from "@/components/data/analysis-template-card"
 import { PairCorrelationCard } from "@/components/data/pair-correlation-card"
 import { StatQueryCard } from "@/components/data/stat-query-card"
 import { SummaryStatsCard } from "@/components/data/summary-stats-card"
@@ -209,6 +214,9 @@ export default function ProjectWorkspace() {
     attachOnboardingGuideToLastMessage,
     attachVersionHistoryToLastMessage,
     attachLearningCurveToLastMessage,
+    attachTemplateSavedToLastMessage,
+    attachTemplateListToLastMessage,
+    attachTemplateReplayToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -546,6 +554,12 @@ export default function ProjectWorkspace() {
                 attachVersionHistoryToLastMessage(json.version_history as import("@/lib/types").DataVersionHistoryResult)
               } else if (json.type === "learning_curve" && json.learning_curve) {
                 attachLearningCurveToLastMessage(json.learning_curve as import("@/lib/types").LearningCurveResult)
+              } else if (json.type === "template_saved" && json.template) {
+                attachTemplateSavedToLastMessage(json.template as import("@/lib/types").TemplateSavedInfo)
+              } else if (json.type === "template_list" && json.template_list) {
+                attachTemplateListToLastMessage(json.template_list as import("@/lib/types").TemplateListInfo)
+              } else if (json.type === "template_replay" && json.template_replay) {
+                attachTemplateReplayToLastMessage(json.template_replay as import("@/lib/types").TemplateReplayInfo)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -615,6 +629,9 @@ export default function ProjectWorkspace() {
     attachOnboardingGuideToLastMessage,
     attachVersionHistoryToLastMessage,
     attachLearningCurveToLastMessage,
+    attachTemplateSavedToLastMessage,
+    attachTemplateListToLastMessage,
+    attachTemplateReplayToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -1002,6 +1019,21 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.learning_curve && (
                       <LearningCurveCard result={msg.learning_curve} />
+                    )}
+                    {msg.template_saved && (
+                      <TemplateSavedCard info={msg.template_saved} />
+                    )}
+                    {msg.template_list && (
+                      <TemplateListCard
+                        info={msg.template_list}
+                        onReplay={(name) => setChatInput(`replay my "${name}" template`)}
+                      />
+                    )}
+                    {msg.template_replay && (
+                      <TemplateReplayCard
+                        info={msg.template_replay}
+                        onQueryClick={(q) => setChatInput(q)}
+                      />
                     )}
                   </div>
                 </div>

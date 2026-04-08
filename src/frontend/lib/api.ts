@@ -80,6 +80,28 @@ export const api = {
 
     healthSummary: (id: string): Promise<ProjectHealthSummary> =>
       fetch(`${API_URL}/api/projects/${id}/health-summary`).then((r) => r.json()),
+
+    analysisTemplates: (id: string): Promise<import("./types").AnalysisTemplate[]> =>
+      fetch(`${API_URL}/api/projects/${id}/analysis-templates`).then((r) => r.json()),
+
+    createAnalysisTemplate: (
+      id: string,
+      name: string,
+      queries: string[]
+    ): Promise<import("./types").AnalysisTemplate> =>
+      fetch(`${API_URL}/api/projects/${id}/analysis-templates`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, queries }),
+      }).then((r) => r.json()),
+
+    deleteAnalysisTemplate: (
+      projectId: string,
+      templateId: string
+    ): Promise<void> =>
+      fetch(`${API_URL}/api/projects/${projectId}/analysis-templates/${templateId}`, {
+        method: "DELETE",
+      }).then(() => undefined),
   },
 
   data: {

@@ -454,6 +454,9 @@ export interface ChatMessage {
   onboarding_guide?: OnboardingGuideResult
   version_history?: DataVersionHistoryResult
   learning_curve?: LearningCurveResult
+  template_saved?: TemplateSavedInfo
+  template_list?: TemplateListInfo
+  template_replay?: TemplateReplayInfo
 }
 
 export interface SegmentPerformanceSegment {
@@ -2048,4 +2051,39 @@ export interface LearningCurveResult {
   algorithm_name: string
   recommendation: string
   summary: string
+}
+
+// Analysis Templates
+export interface AnalysisTemplate {
+  id: string
+  project_id: string
+  name: string
+  queries: string[]
+  description?: string
+  created_at: string
+}
+
+export interface TemplateSavedInfo {
+  id: string
+  name: string
+  queries: string[]
+  query_count: number
+}
+
+export interface TemplateListInfo {
+  templates: Array<{
+    id: string
+    name: string
+    queries: string[]
+    query_count: number
+    created_at: string
+  }>
+  count: number
+}
+
+export interface TemplateReplayInfo {
+  id: string
+  name: string
+  queries: string[]
+  query_count: number
 }

@@ -96,6 +96,9 @@ interface AppState {
   attachOnboardingGuideToLastMessage: (onboarding_guide: import("./types").OnboardingGuideResult) => void
   attachVersionHistoryToLastMessage: (version_history: import("./types").DataVersionHistoryResult) => void
   attachLearningCurveToLastMessage: (learning_curve: import("./types").LearningCurveResult) => void
+  attachTemplateSavedToLastMessage: (template: import("./types").TemplateSavedInfo) => void
+  attachTemplateListToLastMessage: (template_list: import("./types").TemplateListInfo) => void
+  attachTemplateReplayToLastMessage: (template_replay: import("./types").TemplateReplayInfo) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -595,6 +598,33 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, learning_curve }
+      }
+      return { messages }
+    }),
+  attachTemplateSavedToLastMessage: (template) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, template_saved: template }
+      }
+      return { messages }
+    }),
+  attachTemplateListToLastMessage: (template_list) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, template_list }
+      }
+      return { messages }
+    }),
+  attachTemplateReplayToLastMessage: (template_replay) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, template_replay }
       }
       return { messages }
     }),

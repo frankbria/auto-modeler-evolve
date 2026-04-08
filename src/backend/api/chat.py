@@ -2111,6 +2111,68 @@ _LEARNING_CURVE_PATTERNS = re.compile(
 )
 
 
+# ---------------------------------------------------------------------------
+# Analysis Template patterns
+# ---------------------------------------------------------------------------
+
+_SAVE_TEMPLATE_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"save\s+(?:this\s+)?(?:analysis|queries|questions|session|conversation)\s+as\s+(?:a\s+)?(?:template|script)\b|"
+    r"create\s+(?:a\s+)?(?:analysis\s+)?template\s+(?:called|named|for)\b|"
+    r"(?:bookmark|save)\s+(?:these\s+)?(?:queries|questions|steps)\s+as\b|"
+    r"save\s+(?:as|this\s+as)\s+(?:a\s+)?template\b|"
+    r"make\s+(?:this\s+)?(?:a\s+)?(?:reusable\s+)?template\b|"
+    r"save\s+(?:my|this)\s+(?:analysis\s+)?(?:workflow|flow|sequence)\b"
+    r")",
+    re.IGNORECASE,
+)
+
+_LIST_TEMPLATES_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"(?:show|list|what\s+are|see)\s+(?:my\s+)?(?:saved\s+)?(?:analysis\s+)?templates?\b|"
+    r"(?:do\s+I\s+have|have\s+I\s+saved)\s+(?:any\s+)?(?:analysis\s+)?templates?\b|"
+    r"(?:my\s+)?(?:analysis\s+)?templates?\s+(?:list|saved)\b|"
+    r"what\s+templates?\s+(?:do\s+I\s+have|have\s+I\s+saved)\b"
+    r")",
+    re.IGNORECASE,
+)
+
+_REPLAY_TEMPLATE_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"replay\s+(?:my\s+)?(?:the\s+)?['\"]?[\w\s]+['\"]?\s+template\b|"
+    r"run\s+(?:my\s+)?(?:the\s+)?['\"]?[\w\s]+['\"]?\s+(?:template|analysis\s+again)\b|"
+    r"apply\s+(?:my\s+)?(?:the\s+)?['\"]?[\w\s]+['\"]?\s+template\b|"
+    r"use\s+(?:my\s+)?(?:the\s+)?['\"]?[\w\s]+['\"]?\s+template\b|"
+    r"re.?run\s+(?:my\s+)?(?:the\s+)?['\"]?[\w\s]+['\"]?\s+(?:template|analysis)\b|"
+    r"replay\s+(?:my\s+)?(?:last|saved|previous)\s+(?:analysis|queries|questions|template)\b"
+    r")",
+    re.IGNORECASE,
+)
+
+# Extract template name from save/replay messages
+_TEMPLATE_NAME_RE = re.compile(
+    r"""(?:called|named|as|for)\s+['\"]?([\w][\w\s\-]*?)['\"]?(?:\s*$|\s*[,.])|"""
+    r"""template\s+['\"]?([\w][\w\s\-]*?)['\"]?(?:\s*$|\s+(?:on|for|to|and))|"""
+    r"""['\"]([^'"]+)['\"]""",
+    re.IGNORECASE,
+)
+
+
+def _extract_template_name(message: str) -> str | None:
+    """Extract the template name from a save/replay message.
+
+    Handles:
+      "save this as a template called 'Monthly Sales Review'"
+      "replay my 'Q4 Analysis' template"
+      "create a template named customer segments"
+    """
+    m = _TEMPLATE_NAME_RE.search(message)
+    if not m:
+        return None
+    name = next((g for g in m.groups() if g), None)
+    return name.strip() if name else None
+
+
 def _detect_sensitivity_request(
     message: str, feature_names: list[str], feature_means: dict
 ) -> dict | None:
@@ -6093,6 +6155,132 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Time-window comparison is nice-to-have; never crash chat
 
+    # Check if user wants to save an analysis template
+    template_saved_event: dict | None = None
+    if _SAVE_TEMPLATE_PATTERNS.search(body.message) and project:
+        try:
+            from models.analysis_template import AnalysisTemplate as _AT_Model
+
+            _tpl_name = _extract_template_name(body.message) or "My Analysis"
+            # Load recent user queries from conversation history (last 8, skip the save msg)
+            _conv_save = session.exec(
+                select(Conversation).where(Conversation.project_id == body.project_id)
+            ).first()
+            _user_queries: list[str] = []
+            if _conv_save:
+                _all_msgs = json.loads(_conv_save.messages)
+                _user_queries = [
+                    m["content"]
+                    for m in _all_msgs
+                    if m.get("role") == "user"
+                    and not _SAVE_TEMPLATE_PATTERNS.search(m.get("content", ""))
+                ][-8:]
+            if _user_queries:
+                _new_tpl = _AT_Model(
+                    project_id=body.project_id,
+                    name=_tpl_name,
+                    queries=json.dumps(_user_queries),
+                )
+                with Session(session.bind) as _tpl_sess:
+                    _tpl_sess.add(_new_tpl)
+                    _tpl_sess.commit()
+                    _tpl_sess.refresh(_new_tpl)
+                template_saved_event = {
+                    "id": _new_tpl.id,
+                    "name": _tpl_name,
+                    "queries": _user_queries,
+                    "query_count": len(_user_queries),
+                }
+                system_prompt += (
+                    f"\n\n## Analysis Template Saved\n"
+                    f"Saved {len(_user_queries)} queries as template '{_tpl_name}'. "
+                    "Confirm this to the user. Tell them they can replay this template "
+                    "anytime by saying 'replay my [template name] template'."
+                )
+        except Exception:  # noqa: BLE001
+            pass  # Template saving is nice-to-have; never crash chat
+
+    # Check if user wants to list their saved templates
+    template_list_event: dict | None = None
+    if _LIST_TEMPLATES_PATTERNS.search(body.message) and project:
+        try:
+            from models.analysis_template import AnalysisTemplate as _AT_List
+
+            _templates = session.exec(
+                select(_AT_List)
+                .where(_AT_List.project_id == body.project_id)
+                .order_by(_AT_List.created_at.desc())
+            ).all()
+            _tpl_list = [
+                {
+                    "id": t.id,
+                    "name": t.name,
+                    "queries": json.loads(t.queries) if t.queries else [],
+                    "query_count": len(json.loads(t.queries)) if t.queries else 0,
+                    "created_at": t.created_at.isoformat(),
+                }
+                for t in _templates
+            ]
+            template_list_event = {
+                "templates": _tpl_list,
+                "count": len(_tpl_list),
+            }
+            if _tpl_list:
+                _names = ", ".join(f"'{t['name']}'" for t in _tpl_list[:3])
+                system_prompt += (
+                    f"\n\n## Saved Analysis Templates\n"
+                    f"{len(_tpl_list)} template(s) saved: {_names}. "
+                    "Show the list to the user and tell them they can replay any template "
+                    "by saying 'replay my [name] template'."
+                )
+            else:
+                system_prompt += (
+                    "\n\n## Saved Analysis Templates\n"
+                    "No templates saved yet. "
+                    "Tell the user they can save their analysis queries as a template by "
+                    "saying 'save this analysis as a template called [name]'."
+                )
+        except Exception:  # noqa: BLE001
+            pass  # Template listing is nice-to-have; never crash chat
+
+    # Check if user wants to replay a saved template
+    template_replay_event: dict | None = None
+    if _REPLAY_TEMPLATE_PATTERNS.search(body.message) and project:
+        try:
+            from models.analysis_template import AnalysisTemplate as _AT_Replay
+
+            _replay_name = _extract_template_name(body.message)
+            _all_tpls = session.exec(
+                select(_AT_Replay)
+                .where(_AT_Replay.project_id == body.project_id)
+                .order_by(_AT_Replay.created_at.desc())
+            ).all()
+            _matched_tpl: "_AT_Replay | None" = None
+            if _replay_name:
+                _replay_lower = _replay_name.lower()
+                for _t in _all_tpls:
+                    if _replay_lower in _t.name.lower():
+                        _matched_tpl = _t
+                        break
+            if _matched_tpl is None and _all_tpls:
+                _matched_tpl = _all_tpls[0]  # Fall back to most recent
+            if _matched_tpl:
+                _replay_queries = json.loads(_matched_tpl.queries) if _matched_tpl.queries else []
+                template_replay_event = {
+                    "id": _matched_tpl.id,
+                    "name": _matched_tpl.name,
+                    "queries": _replay_queries,
+                    "query_count": len(_replay_queries),
+                }
+                system_prompt += (
+                    f"\n\n## Template Replay\n"
+                    f"Replaying template '{_matched_tpl.name}' with {len(_replay_queries)} queries. "
+                    "Tell the user their template queries are shown as clickable buttons — "
+                    "they can click each query to re-run it on their current data."
+                )
+        except Exception:  # noqa: BLE001
+            pass  # Template replay is nice-to-have; never crash chat
+
     # Pre-compute follow-up suggestions (based on state + current message)
     current_state = detect_state(
         ctx["dataset"], ctx["feature_set"], ctx["model_runs"], ctx["deployment"]
@@ -6394,6 +6582,18 @@ def send_message(
         # Emit column rename result if executed
         if rename_result:
             yield f"data: {json.dumps({'type': 'rename_result', 'rename': rename_result})}\n\n"
+
+        # Emit analysis template saved confirmation
+        if template_saved_event:
+            yield f"data: {json.dumps({'type': 'template_saved', 'template': template_saved_event})}\n\n"
+
+        # Emit analysis template list
+        if template_list_event:
+            yield f"data: {json.dumps({'type': 'template_list', 'template_list': template_list_event})}\n\n"
+
+        # Emit analysis template replay — queries shown as clickable chips
+        if template_replay_event:
+            yield f"data: {json.dumps({'type': 'template_replay', 'template_replay': template_replay_event})}\n\n"
 
         # After text stream, opportunistically generate a chart if the
         # message is about data and we have a dataset loaded
