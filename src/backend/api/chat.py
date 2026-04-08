@@ -2211,6 +2211,55 @@ def _extract_template_name(message: str) -> str | None:
     return name.strip() if name else None
 
 
+# ---------------------------------------------------------------------------
+# Dataset ranking patterns — "which customers are most likely to churn?"
+# ---------------------------------------------------------------------------
+
+_RANKED_PRED_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"which\s+\w+(?:\s+\w+)?\s+(?:are|is|have|has)\s+(?:the\s+)?(?:most|highest|lowest|least)\s+(?:likely|predicted|probable|expected)\b|"
+    r"(?:rank|sort|prioritize|order)\s+(?:by|the|my|all)?\s*(?:predicted|prediction|model|probability)\b|"
+    r"(?:show|find|get)\s+(?:me\s+)?(?:the\s+)?(?:top|bottom)\s+\d+\b|"
+    r"(?:top|bottom)\s+\d+\s+(?:by\s+)?(?:prediction|predicted|probability|confidence|score)\b|"
+    r"(?:most|least)\s+(?:at\s+risk|likely\s+to|probable|confident)\b|"
+    r"(?:who|which)\s+(?:is|are)\s+(?:most|least|at\s+high|at\s+low)\s+(?:risk|likely)\b|"
+    r"(?:best|worst|highest|lowest)\s+(?:\d+\s+)?(?:opportunities?|predictions?|candidates?|accounts?|customers?|records?)\b|"
+    r"apply\s+(?:the\s+)?model\s+to\s+(?:all|the|my|entire)(?:\s+\w+)?\s*(?:data|dataset|rows)\b"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def _detect_ranked_pred_request(message: str) -> dict:
+    """Extract n (number of rows) and direction (highest/lowest) from a ranking request.
+
+    Returns {"n": int, "direction": str}.
+    """
+    # Extract N from "top 20", "bottom 10", "top N"
+    n_match = re.search(r"\b(top|bottom)\s+(\d+)\b", message, re.IGNORECASE)
+    n = int(n_match.group(2)) if n_match else 20
+    n = max(1, min(n, 100))  # Cap at 100 rows
+
+    direction_word = n_match.group(1).lower() if n_match else None
+
+    # Determine direction
+    lowest_hints = re.compile(
+        r"\b(lowest|least|worst|bottom|minimum|min|at\s+lowest)\b", re.IGNORECASE
+    )
+    highest_hints = re.compile(
+        r"\b(highest|most|best|top|maximum|max|at\s+highest)\b", re.IGNORECASE
+    )
+
+    if direction_word == "bottom" or (
+        lowest_hints.search(message) and not highest_hints.search(message)
+    ):
+        direction = "lowest"
+    else:
+        direction = "highest"
+
+    return {"n": n, "direction": direction}
+
+
 def _detect_sensitivity_request(
     message: str, feature_names: list[str], feature_means: dict
 ) -> dict | None:
@@ -6050,6 +6099,59 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Interaction analysis is nice-to-have; never crash chat
 
+    # Dataset ranking — "which customers are most likely to churn?" / "show me top 20"
+    ranked_pred_event: dict | None = None
+    if (
+        _RANKED_PRED_PATTERNS.search(body.message)
+        and ctx["deployment"]
+        and ctx["dataset"]
+        and not interaction_event
+        and not sensitivity_event
+        and not whatif_chat_event
+        and not inline_pred_event
+    ):
+        try:
+            _rp_deployment = ctx["deployment"]
+            _rp_ds = ctx["dataset"]
+            _rp_file = Path(_rp_ds.file_path)
+            if (
+                _rp_deployment.pipeline_path
+                and Path(_rp_deployment.pipeline_path).exists()
+                and _rp_file.exists()
+            ):
+                _rp_run = next(
+                    (
+                        mr
+                        for mr in ctx["model_runs"]
+                        if mr.id == _rp_deployment.model_run_id
+                    ),
+                    None,
+                )
+                if _rp_run and _rp_run.model_path and Path(_rp_run.model_path).exists():
+                    from core.deployer import run_dataset_ranking as _run_ranking
+
+                    _rp_df = _load_working_df(_rp_file, _active_filter_conditions)
+                    _rp_req = _detect_ranked_pred_request(body.message)
+                    _rp_result = _run_ranking(
+                        _rp_deployment.pipeline_path,
+                        _rp_run.model_path,
+                        _rp_df,
+                        n=_rp_req["n"],
+                        direction=_rp_req["direction"],
+                    )
+                    ranked_pred_event = _rp_result
+                    system_prompt += (
+                        f"\n\n## Dataset Ranking Result\n"
+                        f"{_rp_result['summary']}\n"
+                        f"A RankedPredictionsCard is shown in the chat with the top "
+                        f"{_rp_result['n']} rows ranked by predicted "
+                        f"{_rp_result['target_column']} ({_rp_result['direction']} first). "
+                        f"Narrate this in plain English — tell the analyst which rows to "
+                        f"focus on and what the predictions mean for their business."
+                    )
+        except Exception:  # noqa: BLE001
+            pass  # Ranking is nice-to-have; never crash chat
+
     # Guided onboarding wizard — responds to "guide me", "first steps", etc.
     onboarding_event: dict | None = None
     if _ONBOARDING_PATTERNS.search(body.message):
@@ -6610,6 +6712,10 @@ def send_message(
         # Emit feature interaction heatmap result
         if interaction_event:
             yield f"data: {json.dumps({'type': 'interaction', 'interaction': interaction_event})}\n\n"
+
+        # Emit dataset ranking result
+        if ranked_pred_event:
+            yield f"data: {json.dumps({'type': 'ranked_predictions', 'ranked_predictions': ranked_pred_event})}\n\n"
 
         # Emit learning curve analysis result
         if learning_curve_event:

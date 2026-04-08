@@ -601,3 +601,120 @@ def run_feature_interaction(
         "max_val": max_val,
         "summary": summary,
     }
+
+
+# ---------------------------------------------------------------------------
+# Dataset ranking — apply model to all rows, return top N ranked
+# ---------------------------------------------------------------------------
+
+
+def run_dataset_ranking(
+    pipeline_path: str,
+    model_path: str,
+    df: pd.DataFrame,
+    n: int = 20,
+    direction: str = "highest",
+) -> dict:
+    """Apply model to every row of df and return the top N ranked by prediction.
+
+    For regression: ranks by predicted value (direction "highest" or "lowest").
+    For classification: ranks by model confidence (max predicted probability).
+
+    The df should be the working dataset (with target column present — it is
+    ignored during prediction; only pipeline.feature_names are used).
+
+    Returns:
+        {problem_type, target_column, direction, n, total_scored, rows, summary,
+         class_names}
+    """
+    pipeline = load_pipeline(pipeline_path)
+    model = joblib.load(model_path)
+
+    if len(df) == 0:
+        raise ValueError("Dataset is empty — cannot rank predictions.")
+
+    # Score every row
+    X = pipeline.transform_df(df)
+    raw_preds = model.predict(X)
+
+    proba_arr: np.ndarray | None = None
+    class_names: list[str] | None = None
+
+    if pipeline.problem_type == "classification" and hasattr(model, "predict_proba"):
+        proba_arr = model.predict_proba(X)
+        if pipeline.target_encoder is not None:
+            class_names = [str(c) for c in pipeline.target_encoder.classes_]
+        else:
+            class_names = [str(i) for i in range(proba_arr.shape[1])]
+        # Rank by max class probability (overall confidence)
+        scores = [float(proba_arr[i].max()) for i in range(len(proba_arr))]
+    else:
+        scores = [float(pipeline.decode_prediction(p)) for p in raw_preds]
+
+    # Rank and select top N
+    n_capped = min(max(1, n), len(df))
+    reverse = direction == "highest"
+    sorted_indices = sorted(range(len(scores)), key=lambda i: scores[i], reverse=reverse)
+    top_indices = sorted_indices[:n_capped]
+
+    # Build result rows — include up to 4 feature values for display
+    display_cols = pipeline.feature_names[:4]
+    rows = []
+    for rank, row_idx in enumerate(top_indices, 1):
+        row_data = df.iloc[row_idx]
+        feature_values: dict = {}
+        for col in display_cols:
+            val = row_data.get(col) if col in row_data.index else None
+            feature_values[col] = None if (val is not None and isinstance(val, float) and pd.isna(val)) else (
+                val if val is None else (float(val) if isinstance(val, (int, float, np.floating)) else str(val))
+            )
+
+        entry: dict = {
+            "rank": rank,
+            "row_index": int(row_idx),
+            "score": round(scores[row_idx], 4),
+            "feature_values": feature_values,
+        }
+
+        if pipeline.problem_type == "regression":
+            entry["prediction"] = round(scores[row_idx], 4)
+        else:
+            pred_class = str(pipeline.decode_prediction(raw_preds[row_idx]))
+            entry["predicted_class"] = pred_class
+            entry["confidence"] = round(scores[row_idx], 4)
+            if proba_arr is not None and class_names is not None:
+                entry["probabilities"] = {
+                    cls: round(float(proba_arr[row_idx][i]), 4)
+                    for i, cls in enumerate(class_names)
+                }
+
+        rows.append(entry)
+
+    total = len(df)
+    target = pipeline.target_column
+    dir_word = "highest" if direction == "highest" else "lowest"
+
+    if pipeline.problem_type == "regression":
+        top_val = rows[0]["prediction"] if rows else 0
+        summary = (
+            f"Scored all {total:,} rows and ranked by predicted {target}. "
+            f"The {dir_word} predicted value is {top_val:g}."
+        )
+    else:
+        top_class = rows[0].get("predicted_class", "") if rows else ""
+        top_conf = rows[0].get("confidence", 0.0) if rows else 0.0
+        summary = (
+            f"Scored all {total:,} rows by model confidence. "
+            f"Top result: '{top_class}' at {round(top_conf * 100, 1)}% confidence."
+        )
+
+    return {
+        "problem_type": pipeline.problem_type,
+        "target_column": target,
+        "direction": direction,
+        "n": n_capped,
+        "total_scored": total,
+        "rows": rows,
+        "summary": summary,
+        "class_names": class_names,
+    }

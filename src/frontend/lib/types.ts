@@ -452,6 +452,7 @@ export interface ChatMessage {
   goal_training?: GoalTrainingResult
   sensitivity?: SensitivityResult
   interaction?: InteractionResult
+  ranked_predictions?: RankedPredictionsResult
   onboarding_guide?: OnboardingGuideResult
   version_history?: DataVersionHistoryResult
   learning_curve?: LearningCurveResult
@@ -2100,4 +2101,26 @@ export interface InteractionResult {
   min_val: number | null
   max_val: number | null
   summary: string
+}
+
+export interface RankedPredictionRow {
+  rank: number
+  row_index: number
+  score: number
+  feature_values: Record<string, string | number | null>
+  prediction?: number
+  predicted_class?: string
+  confidence?: number
+  probabilities?: Record<string, number>
+}
+
+export interface RankedPredictionsResult {
+  problem_type: string
+  target_column: string
+  direction: string
+  n: number
+  total_scored: number
+  rows: RankedPredictionRow[]
+  summary: string
+  class_names: string[] | null
 }

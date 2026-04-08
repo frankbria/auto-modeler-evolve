@@ -61,6 +61,7 @@ import { InlinePredictionCard } from "@/components/models/inline-prediction-card
 import { GoalTrainingCard } from "@/components/models/goal-training-card"
 import { SensitivityCard } from "@/components/deploy/sensitivity-card"
 import { InteractionCard } from "@/components/deploy/interaction-card"
+import { RankedPredictionsCard } from "@/components/deploy/ranked-predictions-card"
 import { OnboardingGuideCard } from "@/components/chat/onboarding-guide-card"
 import { DataVersionHistoryCard } from "@/components/chat/data-version-history-card"
 import { LearningCurveCard } from "@/components/chat/learning-curve-card"
@@ -219,6 +220,7 @@ export default function ProjectWorkspace() {
     attachTemplateSavedToLastMessage,
     attachTemplateListToLastMessage,
     attachTemplateReplayToLastMessage,
+    attachRankedPredictionsToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -552,6 +554,8 @@ export default function ProjectWorkspace() {
                 attachSensitivityToLastMessage(json.sensitivity as import("@/lib/types").SensitivityResult)
               } else if (json.type === "interaction" && json.interaction) {
                 attachInteractionToLastMessage(json.interaction as import("@/lib/types").InteractionResult)
+              } else if (json.type === "ranked_predictions" && json.ranked_predictions) {
+                attachRankedPredictionsToLastMessage(json.ranked_predictions as import("@/lib/types").RankedPredictionsResult)
               } else if (json.type === "onboarding_guide" && json.onboarding_guide) {
                 attachOnboardingGuideToLastMessage(json.onboarding_guide as import("@/lib/types").OnboardingGuideResult)
               } else if (json.type === "version_history" && json.version_history) {
@@ -637,6 +641,7 @@ export default function ProjectWorkspace() {
     attachTemplateSavedToLastMessage,
     attachTemplateListToLastMessage,
     attachTemplateReplayToLastMessage,
+    attachRankedPredictionsToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -1015,6 +1020,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.interaction && (
                       <InteractionCard result={msg.interaction} />
+                    )}
+                    {msg.ranked_predictions && (
+                      <RankedPredictionsCard result={msg.ranked_predictions} />
                     )}
                     {msg.onboarding_guide && (
                       <OnboardingGuideCard
