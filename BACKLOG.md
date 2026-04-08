@@ -49,13 +49,17 @@ the time is better spent on real features.
 
 ## Currently Working On
 
+## Day 28 (12:00) — Done
+**Track B — Dataset Ranking via Model.** Closes the "which specific rows should I act on?" gap.
+- **Dataset Ranking** — `_RANKED_PRED_PATTERNS` (8 NL variants: "which customers are most likely to churn", "top N predictions", "rank by predicted revenue", "most at risk", etc.) + `_detect_ranked_pred_request()` extracting n (default 20, capped 100) and direction. `run_dataset_ranking()` pure function in `core/deployer.py`: scores all rows via `pipeline.transform_df()` + model; regression uses `predict()` float values; classification ranks by max class probability. `RankedPredictionsCard` (amber border, 🏆): gold/silver/bronze rank badges; `PredictionCell` (regression: compact number; classification: "class (XX%)" with green/amber/red confidence); table with rank + prediction + up to 4 feature columns; summary footer. 24 backend + 17 frontend = 41 new tests. Total: 2758 backend + 1388 frontend = 4146.
+
+**What's next:**
+- All tracks D, C, E complete. Track B now very deep (ranking, interaction, sensitivity, what-if, forecasting, anomaly, templates, version history, onboarding).
+- Consider: cross-project template sharing, multi-project model comparison, prediction export (CSV download of ranked rows), or UX polish on the VP-shared predict page.
+
 ## Day 28 (04:00) — Done
 **Track B — Feature Interaction Analysis.** Closes the "which combination of two variables gives the best outcome?" gap.
 - **Feature Interaction** — `_INTERACTION_PATTERNS` (8 NL variants: "interaction between X and Y", "joint effect", "2D sensitivity", "feature interaction heatmap", etc.) + `_detect_interaction_request()` longest-match extractor in `chat.py`. `run_feature_interaction()` pure function in `core/deployer.py`: sweeps numeric features over [mean ± 2×std]; categorical features use all label encoder classes. Builds n×m prediction grid. `InteractionCard` (violet border, 🔬): color-coded heatmap table (rose=low, emerald=high for regression; violet for classification), min/max boxes, Low/High legend, summary footer. 25 backend + 19 frontend = 44 new tests. Total: 2734 backend + 1371 frontend = 4105.
-
-**What's next:**
-- All tracks D, C, E complete. Track B now very deep.
-- Consider: cross-project template sharing, multi-project model comparison, or UX polish on the VP-shared predict page.
 
 ## Day 27 (20:00) — Done
 **Track B — Saved Analysis Templates.** Closes the "replay my analysis on new data" gap.
