@@ -49,6 +49,14 @@ the time is better spent on real features.
 
 ## Currently Working On
 
+## Day 28 (04:00) — Done
+**Track B — Feature Interaction Analysis.** Closes the "which combination of two variables gives the best outcome?" gap.
+- **Feature Interaction** — `_INTERACTION_PATTERNS` (8 NL variants: "interaction between X and Y", "joint effect", "2D sensitivity", "feature interaction heatmap", etc.) + `_detect_interaction_request()` longest-match extractor in `chat.py`. `run_feature_interaction()` pure function in `core/deployer.py`: sweeps numeric features over [mean ± 2×std]; categorical features use all label encoder classes. Builds n×m prediction grid. `InteractionCard` (violet border, 🔬): color-coded heatmap table (rose=low, emerald=high for regression; violet for classification), min/max boxes, Low/High legend, summary footer. 25 backend + 19 frontend = 44 new tests. Total: 2734 backend + 1371 frontend = 4105.
+
+**What's next:**
+- All tracks D, C, E complete. Track B now very deep.
+- Consider: cross-project template sharing, multi-project model comparison, or UX polish on the VP-shared predict page.
+
 ## Day 27 (20:00) — Done
 **Track B — Saved Analysis Templates.** Closes the "replay my analysis on new data" gap.
 - **Analysis Templates** — `_SAVE_TEMPLATE_PATTERNS` / `_LIST_TEMPLATES_PATTERNS` / `_REPLAY_TEMPLATE_PATTERNS` + `_extract_template_name()` in `chat.py`. `AnalysisTemplate` SQLModel table (`id`, `project_id`, `name`, `queries` JSON, `created_at`). CRUD endpoints: `GET/POST /api/projects/{id}/analysis-templates` + `DELETE /api/projects/{id}/analysis-templates/{tid}`. Chat handler for save: loads last 8 user messages from conversation history, filters out the save command itself, saves as template, emits `{type:"template_saved"}` SSE. Chat handler for list: queries all templates, emits `{type:"template_list"}`. Chat handler for replay: finds template by name match (falls back to most recent), emits `{type:"template_replay"}` with queries as clickable chips. Frontend: `TemplateSavedCard` (emerald border, 💾, shows name + queries + replay hint), `TemplateListCard` (blue, lists templates with Replay buttons), `TemplateReplayCard` (purple, queries as click-to-send buttons that fill chat input). Types, API client, Zustand actions, SSE handlers, page.tsx wiring all complete. 17 backend + 17 frontend = 34 new tests. Total: 2684 backend + 1336 frontend = 4020.
