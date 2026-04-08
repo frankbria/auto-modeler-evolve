@@ -171,7 +171,7 @@ export function ModelTrainingPanel({ projectId, onModelSelected, onModelDownload
     }
 
     return () => es.close()
-  }, [runs, projectId])
+  }, [runs, projectId, onTrainingComplete])
 
   const toggleAlgo = useCallback((algo: string) => {
     setSelectedAlgos((prev) => {

@@ -24,7 +24,7 @@
 import React from "react"
 import { render, screen } from "@testing-library/react"
 import { RankedPredictionsCard } from "@/components/deploy/ranked-predictions-card"
-import type { RankedPredictionsResult } from "@/lib/types"
+import type { RankedPredictionsResult, ChatMessage } from "@/lib/types"
 import { useAppStore } from "@/lib/store"
 
 // ---------------------------------------------------------------------------
@@ -261,7 +261,7 @@ test("store does not attach ranked_predictions to user message", () => {
   ])
   store.attachRankedPredictionsToLastMessage(regressionResult)
   const messages = useAppStore.getState().messages
-  expect((messages[0] as any).ranked_predictions).toBeUndefined()
+  expect((messages[0] as ChatMessage).ranked_predictions).toBeUndefined()
 })
 
 // ---------------------------------------------------------------------------

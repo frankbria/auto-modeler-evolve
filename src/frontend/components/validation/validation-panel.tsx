@@ -599,13 +599,6 @@ function RowExplainView({ data }: { data: RowExplanationResponse }) {
 function ReliabilityDiagramView({ data }: { data: CalibrationData }) {
   const { calibration_curve, brier_score, calibration_note } = data
 
-  // Build data for the bar chart: predicted probability bins vs actual frequency
-  // Diagonal "perfect calibration" reference line runs from (0,0) to (1,1)
-  const diagonalPoints = [
-    { predicted: 0, actual: 0 },
-    { predicted: 1, actual: 1 },
-  ]
-
   const brierscore = brier_score !== null ? brier_score.toFixed(3) : "—"
   const briersocreColor =
     brier_score === null ? "text-muted-foreground"
