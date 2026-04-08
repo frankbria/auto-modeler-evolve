@@ -801,6 +801,27 @@ guides them forward through the natural flow.
       deciding whether to retrain their model.
       *Day 27 (04:00): 22 backend + 18 frontend = 40 new tests. Total: 2667 backend + 1319 frontend = 3986, all passing. Backend lint: clean. Frontend build + lint: clean.*
 
+- [x] **Feature Interaction Analysis** — Analysts can ask "how do units and price interact?", "show me the
+      interaction between region and category", "joint effect of units and price", "feature interaction heatmap",
+      or "2D sensitivity" and receive an `InteractionCard` showing a 2-D prediction grid — how two features
+      jointly affect the model's output. `_INTERACTION_PATTERNS` (8 NL variants) + `_detect_interaction_request()`
+      in `chat.py` — scans the message for the two longest column names present. Handler is guarded to fire only
+      when a deployment exists and neither sensitivity, what-if, nor inline prediction already fired (preventing
+      double-prediction cards). `run_feature_interaction(pipeline_path, model_path, feature1, feature2,
+      base_features, n_steps=7)` pure function in `core/deployer.py`: for numeric features, sweeps
+      `[mean ± 2×std]` in n_steps; for categorical features, uses all known classes from the label encoder.
+      Builds an n×m grid of predictions holding all other features at training means. Returns `{feature1,
+      feature2, target_column, problem_type, row_labels, col_labels, values, min_val, max_val, summary}`.
+      Plain-English summary names the prediction range and suggests looking for the highest-value combination.
+      `{type:"interaction"}` SSE event. `InteractionCard` (violet border, 🔬 icon): Regression/Classification
+      badge, min/max prediction boxes (regression), 2-D heatmap table with color-coded cells (rose=low through
+      emerald=high for regression, violet=class for classification), Low/High legend, corner cell labels both axes,
+      truncated long labels with title tooltip, summary footer. `InteractionResult` TypeScript type;
+      `attachInteractionToLastMessage` Zustand action; SSE handler and render wired in page.tsx. Closes the
+      "which combination of two variables produces the best outcome?" analyst question — a VP-facing insight
+      that goes beyond single-feature sensitivity to show true interaction effects.
+      *Day 28 (04:00): 25 backend + 19 frontend = 44 new tests. Total: 2734 backend + 1371 frontend = 4105, all passing. Backend lint: clean. Frontend build + lint: clean.*
+
 - [x] **AI-powered data dictionary** — When a dataset is uploaded (or on demand via POST), auto-generate
       plain-English descriptions for every column. `core/dictionary.py` classifies each column as
       id/metric/dimension/date/flag/text via heuristics (name hints + dtype + cardinality), then uses
