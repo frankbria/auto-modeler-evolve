@@ -654,7 +654,9 @@ def run_dataset_ranking(
     # Rank and select top N
     n_capped = min(max(1, n), len(df))
     reverse = direction == "highest"
-    sorted_indices = sorted(range(len(scores)), key=lambda i: scores[i], reverse=reverse)
+    sorted_indices = sorted(
+        range(len(scores)), key=lambda i: scores[i], reverse=reverse
+    )
     top_indices = sorted_indices[:n_capped]
 
     # Build result rows — include up to 4 feature values for display
@@ -665,8 +667,18 @@ def run_dataset_ranking(
         feature_values: dict = {}
         for col in display_cols:
             val = row_data.get(col) if col in row_data.index else None
-            feature_values[col] = None if (val is not None and isinstance(val, float) and pd.isna(val)) else (
-                val if val is None else (float(val) if isinstance(val, (int, float, np.floating)) else str(val))
+            feature_values[col] = (
+                None
+                if (val is not None and isinstance(val, float) and pd.isna(val))
+                else (
+                    val
+                    if val is None
+                    else (
+                        float(val)
+                        if isinstance(val, (int, float, np.floating))
+                        else str(val)
+                    )
+                )
             )
 
         entry: dict = {

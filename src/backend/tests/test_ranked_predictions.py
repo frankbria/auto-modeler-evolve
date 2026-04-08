@@ -133,7 +133,9 @@ def _make_regression_pipeline_and_model():
             "revenue": [50, 90, 120, 140, 150],
         }
     )
-    pipeline = build_prediction_pipeline(df, ["units", "price"], "revenue", "regression")
+    pipeline = build_prediction_pipeline(
+        df, ["units", "price"], "revenue", "regression"
+    )
     X = pipeline.transform_df(df)
     y = df["revenue"].values
     model = LinearRegression().fit(X, y)
@@ -152,7 +154,9 @@ def _make_classification_pipeline_and_model():
             "churned": ["no", "no", "yes", "no", "yes", "no", "yes", "no"],
         }
     )
-    pipeline = build_prediction_pipeline(df, ["age", "balance"], "churned", "classification")
+    pipeline = build_prediction_pipeline(
+        df, ["age", "balance"], "churned", "classification"
+    )
     X = pipeline.transform_df(df)
     y = pipeline.target_encoder.transform(df["churned"].astype(str))
     model = LogisticRegression(max_iter=200).fit(X, y)
