@@ -470,3 +470,130 @@ def run_sensitivity_analysis(
         "change_pct": change_pct,
         "summary": summary,
     }
+
+
+def run_feature_interaction(
+    pipeline_path: str,
+    model_path: str,
+    feature1: str,
+    feature2: str,
+    base_features: dict,
+    n_steps: int = 7,
+) -> dict:
+    """Build a 2-D prediction grid by jointly sweeping two features.
+
+    For numeric features: sweep linearly over [mean ± 2*std] (n_steps points).
+    For categorical features: use every known class from the label encoder
+    (capped at n_steps).
+
+    All other features are held at their training-data means (base_features).
+
+    Returns:
+        {
+          feature1, feature2, target_column, problem_type,
+          row_labels: [str],          # display values for feature1 axis
+          col_labels: [str],          # display values for feature2 axis
+          values: [[float|str]],      # 2-D grid: values[i][j] = prediction
+          min_val: float | None,      # numeric min (regression)
+          max_val: float | None,      # numeric max (regression)
+          summary: str
+        }
+    """
+    import joblib as _jl
+    import numpy as _np
+
+    pipeline = load_pipeline(pipeline_path)
+    model = _jl.load(model_path)
+
+    for feat in (feature1, feature2):
+        if feat not in pipeline.feature_names:
+            raise ValueError(f"Feature '{feat}' not found in model.")
+
+    def _sweep_values(feat: str) -> tuple[list, list[str]]:
+        """Return (raw_values, display_labels) for a feature."""
+        if pipeline.column_types.get(feat) == "categorical":
+            le = pipeline.label_encoders.get(feat)
+            if le is not None and len(le.classes_) > 0:
+                classes = list(le.classes_[:n_steps])
+                return classes, [str(c) for c in classes]
+            return [], []
+        else:
+            mean = base_features.get(feat, 0.0)
+            std = pipeline.feature_stds.get(feat, 0.0)
+            half = max(std * 2, abs(mean) * 0.5, 1.0)
+            lo = mean - half
+            hi = mean + half
+            vals = list(_np.linspace(lo, hi, n_steps))
+            labels = [f"{v:g}" for v in vals]
+            return vals, labels
+
+    row_raw, row_labels = _sweep_values(feature1)
+    col_raw, col_labels = _sweep_values(feature2)
+
+    if not row_raw or not col_raw:
+        raise ValueError("Could not generate sweep values for one or both features.")
+
+    # Build prediction grid
+    grid: list[list] = []
+    for r_val in row_raw:
+        row: list = []
+        for c_val in col_raw:
+            inputs = {**base_features, feature1: r_val, feature2: c_val}
+            x = pipeline.transform(inputs)
+            raw = model.predict(x)[0]
+            decoded = pipeline.decode_prediction(raw)
+            row.append(decoded)
+        grid.append(row)
+
+    # Stats for regression
+    min_val: float | None = None
+    max_val: float | None = None
+    if pipeline.problem_type == "regression":
+        try:
+            flat = [float(v) for row in grid for v in row]
+            min_val = round(min(flat), 4)
+            max_val = round(max(flat), 4)
+        except (TypeError, ValueError):
+            pass
+
+    # Plain-English summary
+    target = pipeline.target_column
+    f1_display = feature1.replace("_", " ")
+    f2_display = feature2.replace("_", " ")
+    if pipeline.problem_type == "regression" and min_val is not None and max_val is not None:
+        spread = max_val - min_val
+        pct = round(spread / max(abs(min_val), 1e-9) * 100, 1) if min_val != 0 else 0
+        summary = (
+            f"Across all combinations of {f1_display} and {f2_display}, "
+            f"{target} ranges from {min_val:g} to {max_val:g} "
+            f"(a {pct}% spread). "
+            f"Look for cells with the highest values to find the best-performing combination."
+        )
+    else:
+        # Classification — count distinct predicted classes
+        all_preds = [v for row in grid for v in row]
+        unique_classes = sorted(set(str(p) for p in all_preds))
+        if len(unique_classes) == 1:
+            summary = (
+                f"For all combinations of {f1_display} and {f2_display}, "
+                f"the model always predicts '{unique_classes[0]}'."
+            )
+        else:
+            summary = (
+                f"Across combinations of {f1_display} and {f2_display}, "
+                f"the model predicts {len(unique_classes)} different classes: "
+                f"{', '.join(unique_classes)}."
+            )
+
+    return {
+        "feature1": feature1,
+        "feature2": feature2,
+        "target_column": target,
+        "problem_type": pipeline.problem_type,
+        "row_labels": row_labels,
+        "col_labels": col_labels,
+        "values": grid,
+        "min_val": min_val,
+        "max_val": max_val,
+        "summary": summary,
+    }

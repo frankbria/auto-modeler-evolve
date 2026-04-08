@@ -451,6 +451,7 @@ export interface ChatMessage {
   inline_prediction?: InlinePredictionResult
   goal_training?: GoalTrainingResult
   sensitivity?: SensitivityResult
+  interaction?: InteractionResult
   onboarding_guide?: OnboardingGuideResult
   version_history?: DataVersionHistoryResult
   learning_curve?: LearningCurveResult
@@ -2086,4 +2087,17 @@ export interface TemplateReplayInfo {
   name: string
   queries: string[]
   query_count: number
+}
+
+export interface InteractionResult {
+  feature1: string
+  feature2: string
+  target_column: string
+  problem_type: string
+  row_labels: string[]
+  col_labels: string[]
+  values: (number | string)[][]
+  min_val: number | null
+  max_val: number | null
+  summary: string
 }

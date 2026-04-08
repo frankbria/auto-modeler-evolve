@@ -60,6 +60,7 @@ import { DatasetComparisonCard } from "@/components/data/dataset-comparison-card
 import { InlinePredictionCard } from "@/components/models/inline-prediction-card"
 import { GoalTrainingCard } from "@/components/models/goal-training-card"
 import { SensitivityCard } from "@/components/deploy/sensitivity-card"
+import { InteractionCard } from "@/components/deploy/interaction-card"
 import { OnboardingGuideCard } from "@/components/chat/onboarding-guide-card"
 import { DataVersionHistoryCard } from "@/components/chat/data-version-history-card"
 import { LearningCurveCard } from "@/components/chat/learning-curve-card"
@@ -211,6 +212,7 @@ export default function ProjectWorkspace() {
     attachInlinePredictionToLastMessage,
     attachGoalTrainingToLastMessage,
     attachSensitivityToLastMessage,
+    attachInteractionToLastMessage,
     attachOnboardingGuideToLastMessage,
     attachVersionHistoryToLastMessage,
     attachLearningCurveToLastMessage,
@@ -548,6 +550,8 @@ export default function ProjectWorkspace() {
                 attachGoalTrainingToLastMessage(json.goal_training as import("@/lib/types").GoalTrainingResult)
               } else if (json.type === "sensitivity" && json.sensitivity) {
                 attachSensitivityToLastMessage(json.sensitivity as import("@/lib/types").SensitivityResult)
+              } else if (json.type === "interaction" && json.interaction) {
+                attachInteractionToLastMessage(json.interaction as import("@/lib/types").InteractionResult)
               } else if (json.type === "onboarding_guide" && json.onboarding_guide) {
                 attachOnboardingGuideToLastMessage(json.onboarding_guide as import("@/lib/types").OnboardingGuideResult)
               } else if (json.type === "version_history" && json.version_history) {
@@ -626,6 +630,7 @@ export default function ProjectWorkspace() {
     attachInlinePredictionToLastMessage,
     attachGoalTrainingToLastMessage,
     attachSensitivityToLastMessage,
+    attachInteractionToLastMessage,
     attachOnboardingGuideToLastMessage,
     attachVersionHistoryToLastMessage,
     attachLearningCurveToLastMessage,
@@ -1007,6 +1012,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.sensitivity && (
                       <SensitivityCard result={msg.sensitivity} />
+                    )}
+                    {msg.interaction && (
+                      <InteractionCard result={msg.interaction} />
                     )}
                     {msg.onboarding_guide && (
                       <OnboardingGuideCard

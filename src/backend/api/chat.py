@@ -2110,6 +2110,44 @@ _LEARNING_CURVE_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# Feature interaction — 2-D heatmap sweeping two features jointly
+_INTERACTION_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"interaction\s+(?:between|of)\s+\w+\s+and\s+\w+\b|"
+    r"how\s+do\s+\w+\s+and\s+\w+\s+(?:interact|together|jointly|combine)\b|"
+    r"(?:joint|combined|dual|2d|two.dimensional)\s+(?:effect|sensitivity|analysis|heatmap|plot)\b|"
+    r"(?:show|plot|chart)\s+(?:me\s+)?(?:the\s+)?interaction\s+(?:between|of)\b|"
+    r"how\s+do\s+(?:both\s+)?\w+\s+and\s+\w+\s+(?:affect|impact|influence|change)\s+(?:the\s+)?(?:prediction|model|output|result)\b|"
+    r"effect\s+of\s+\w+\s+and\s+\w+\s+(?:together|jointly|combined)\b|"
+    r"(?:feature\s+)?interaction\s+(?:plot|heatmap|map|analysis|grid)\b|"
+    r"(?:2d|two.way)\s+sensitivity\b"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def _detect_interaction_request(
+    message: str,
+    feature_names: list[str],
+) -> dict | None:
+    """Extract two feature names from an interaction request.
+
+    Scans for the two longest column names that appear in the message.
+    Returns {"feature1": ..., "feature2": ...} or None if fewer than 2 found.
+    """
+    msg_lower = message.lower().replace("-", "_").replace(" ", "_")
+    # Sort longest-first so "unit_cost" is matched before "unit"
+    sorted_feats = sorted(feature_names, key=len, reverse=True)
+    found: list[str] = []
+    for feat in sorted_feats:
+        if feat.lower() in msg_lower and feat not in found:
+            found.append(feat)
+        if len(found) == 2:
+            break
+    if len(found) < 2:
+        return None
+    return {"feature1": found[0], "feature2": found[1]}
+
 
 # ---------------------------------------------------------------------------
 # Analysis Template patterns
@@ -5956,6 +5994,62 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Sensitivity analysis is nice-to-have; never crash chat
 
+    # Feature interaction: 2-D heatmap of two features jointly affecting prediction
+    interaction_event: dict | None = None
+    if (
+        _INTERACTION_PATTERNS.search(body.message)
+        and ctx["deployment"]
+        and not sensitivity_event
+        and not whatif_chat_event
+        and not inline_pred_event
+    ):
+        try:
+            _ia_deployment = ctx["deployment"]
+            if (
+                _ia_deployment.pipeline_path
+                and Path(_ia_deployment.pipeline_path).exists()
+            ):
+                from core.deployer import load_pipeline as _load_pipeline_ia
+                from core.deployer import run_feature_interaction as _run_ia
+
+                _ia_pipeline = _load_pipeline_ia(_ia_deployment.pipeline_path)
+                _ia_feature_names = _ia_pipeline.feature_names
+                _ia_means = dict(_ia_pipeline.feature_means)
+                _ia_req = _detect_interaction_request(body.message, _ia_feature_names)
+                if _ia_req:
+                    _ia_run = next(
+                        (
+                            mr
+                            for mr in ctx["model_runs"]
+                            if mr.id == _ia_deployment.model_run_id
+                        ),
+                        None,
+                    )
+                    if (
+                        _ia_run
+                        and _ia_run.model_path
+                        and Path(_ia_run.model_path).exists()
+                    ):
+                        _ia_result = _run_ia(
+                            _ia_deployment.pipeline_path,
+                            _ia_run.model_path,
+                            _ia_req["feature1"],
+                            _ia_req["feature2"],
+                            _ia_means,
+                        )
+                        interaction_event = _ia_result
+                        system_prompt += (
+                            f"\n\n## Feature Interaction Result\n"
+                            f"{_ia_result['summary']}\n"
+                            f"An InteractionCard (2-D heatmap) is shown in the chat. "
+                            f"Narrate the key finding in plain English — tell the analyst "
+                            f"which combination of {_ia_req['feature1']} and "
+                            f"{_ia_req['feature2']} produces the best (or worst) outcome, "
+                            f"and whether the two features interact or are mostly independent."
+                        )
+        except Exception:  # noqa: BLE001
+            pass  # Interaction analysis is nice-to-have; never crash chat
+
     # Guided onboarding wizard — responds to "guide me", "first steps", etc.
     onboarding_event: dict | None = None
     if _ONBOARDING_PATTERNS.search(body.message):
@@ -6512,6 +6606,10 @@ def send_message(
         # Emit sensitivity analysis result
         if sensitivity_event:
             yield f"data: {json.dumps({'type': 'sensitivity', 'sensitivity': sensitivity_event})}\n\n"
+
+        # Emit feature interaction heatmap result
+        if interaction_event:
+            yield f"data: {json.dumps({'type': 'interaction', 'interaction': interaction_event})}\n\n"
 
         # Emit learning curve analysis result
         if learning_curve_event:
