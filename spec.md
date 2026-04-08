@@ -822,6 +822,32 @@ guides them forward through the natural flow.
       that goes beyond single-feature sensitivity to show true interaction effects.
       *Day 28 (04:00): 25 backend + 19 frontend = 44 new tests. Total: 2734 backend + 1371 frontend = 4105, all passing. Backend lint: clean. Frontend build + lint: clean.*
 
+- [x] **Dataset Ranking via Model** — Analysts can ask "which customers are most likely to churn?", "show me
+      the top 20 predictions", "rank by predicted revenue", "which records are most at risk?", or "apply the
+      model to all my data" and receive a `RankedPredictionsCard` showing the top N rows from the current
+      dataset ranked by model prediction. Closes the gap between "having a model" and "knowing which specific
+      records to act on". `_RANKED_PRED_PATTERNS` (8 NL variants: "which X are most likely to...", "rank by
+      predicted...", "top/bottom N predictions", "most at risk", "best/worst opportunities", "apply the model
+      to all data") + `_detect_ranked_pred_request()` in `chat.py` — extracts n (default 20, capped at 100)
+      and direction (highest/lowest) from the message. Handler fires only when a deployment and dataset both
+      exist and no other prediction card (interaction/sensitivity/whatif/inline-pred) has already fired.
+      `run_dataset_ranking(pipeline_path, model_path, df, n=20, direction="highest")` pure function in
+      `core/deployer.py`: applies `pipeline.transform_df(df)` to all rows, calls `model.predict()` for
+      regression (ranks by value) or `model.predict_proba()` for classification (ranks by max class
+      confidence); returns `{problem_type, target_column, direction, n, total_scored, rows, summary,
+      class_names}` with each row containing `{rank, row_index, score, feature_values, prediction or
+      predicted_class+confidence+probabilities}`. Empty dataset raises `ValueError`. Plain-English summary
+      names total rows scored and the top predicted value/class. `{type:"ranked_predictions"}` SSE event.
+      `RankedPredictionsCard` (amber border, 🏆 icon): gold/silver/bronze rank badges for top 3 rows, n-of-
+      total count badge, Highest/Lowest direction badge, Regression/Classification problem-type badge, sortable
+      table with prediction value (regression: sky formatted number; classification: class + confidence % in
+      color-coded badge), top 4 feature columns with values, summary footer. `RankedPredictionRow` +
+      `RankedPredictionsResult` TypeScript types; `attachRankedPredictionsToLastMessage` Zustand action; SSE
+      handler and render wired in page.tsx. Directly implements the vision's "smart colleague" promise: a
+      colleague who, after building a churn model, immediately says "these are the 20 customers most likely
+      to leave — here's who to call first."
+      *Day 28 (12:00): 24 backend + 17 frontend = 41 new tests. Total: 2758 backend + 1388 frontend = 4146, all passing. Backend lint: clean. Frontend build + lint: clean.*
+
 - [x] **AI-powered data dictionary** — When a dataset is uploaded (or on demand via POST), auto-generate
       plain-English descriptions for every column. `core/dictionary.py` classifies each column as
       id/metric/dimension/date/flag/text via heuristics (name hints + dtype + cardinality), then uses
