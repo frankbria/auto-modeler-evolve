@@ -58,9 +58,7 @@ def test_pattern_feature_interaction_plot():
 def test_pattern_how_do_affect_prediction():
     from api.chat import _INTERACTION_PATTERNS
 
-    assert _INTERACTION_PATTERNS.search(
-        "how do units and price affect the prediction?"
-    )
+    assert _INTERACTION_PATTERNS.search("how do units and price affect the prediction?")
 
 
 def test_pattern_combined_effect():
@@ -191,7 +189,9 @@ def _make_classification_deployment(tmp_path):
     feature_names = ["units", "region"]
     target_col = "churn"
 
-    pipeline = build_prediction_pipeline(df, feature_names, target_col, "classification")
+    pipeline = build_prediction_pipeline(
+        df, feature_names, target_col, "classification"
+    )
     pipeline_path = str(tmp_path / "pipeline_cls.joblib")
     save_pipeline(pipeline, pipeline_path)
 
@@ -282,20 +282,26 @@ def test_interaction_classification_returns_class_labels(tmp_path):
     from core.deployer import run_feature_interaction
 
     pipeline_path, model_path, means = _make_classification_deployment(tmp_path)
-    result = run_feature_interaction(pipeline_path, model_path, "units", "region", means)
+    result = run_feature_interaction(
+        pipeline_path, model_path, "units", "region", means
+    )
 
     assert result["problem_type"] == "classification"
     # Values should be string class labels
     for row in result["values"]:
         for cell in row:
-            assert isinstance(cell, str), f"Expected str class label, got {type(cell)}: {cell}"
+            assert isinstance(cell, str), (
+                f"Expected str class label, got {type(cell)}: {cell}"
+            )
 
 
 def test_interaction_classification_min_max_none(tmp_path):
     from core.deployer import run_feature_interaction
 
     pipeline_path, model_path, means = _make_classification_deployment(tmp_path)
-    result = run_feature_interaction(pipeline_path, model_path, "units", "region", means)
+    result = run_feature_interaction(
+        pipeline_path, model_path, "units", "region", means
+    )
 
     # No numeric min/max for classification
     assert result["min_val"] is None

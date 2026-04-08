@@ -560,7 +560,11 @@ def run_feature_interaction(
     target = pipeline.target_column
     f1_display = feature1.replace("_", " ")
     f2_display = feature2.replace("_", " ")
-    if pipeline.problem_type == "regression" and min_val is not None and max_val is not None:
+    if (
+        pipeline.problem_type == "regression"
+        and min_val is not None
+        and max_val is not None
+    ):
         spread = max_val - min_val
         pct = round(spread / max(abs(min_val), 1e-9) * 100, 1) if min_val != 0 else 0
         summary = (
