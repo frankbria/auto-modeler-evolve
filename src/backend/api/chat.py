@@ -6265,7 +6265,9 @@ def send_message(
             if _matched_tpl is None and _all_tpls:
                 _matched_tpl = _all_tpls[0]  # Fall back to most recent
             if _matched_tpl:
-                _replay_queries = json.loads(_matched_tpl.queries) if _matched_tpl.queries else []
+                _replay_queries = (
+                    json.loads(_matched_tpl.queries) if _matched_tpl.queries else []
+                )
                 template_replay_event = {
                     "id": _matched_tpl.id,
                     "name": _matched_tpl.name,

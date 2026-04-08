@@ -59,7 +59,9 @@ def client(tmp_path):
 def test_save_pattern_matches_basic():
     from api.chat import _SAVE_TEMPLATE_PATTERNS
 
-    assert _SAVE_TEMPLATE_PATTERNS.search("save this analysis as a template called 'Monthly Sales'")
+    assert _SAVE_TEMPLATE_PATTERNS.search(
+        "save this analysis as a template called 'Monthly Sales'"
+    )
     assert _SAVE_TEMPLATE_PATTERNS.search("create a template named Q4 analysis")
     assert _SAVE_TEMPLATE_PATTERNS.search("bookmark these queries as customer segments")
 
@@ -109,7 +111,10 @@ def test_replay_template_pattern_negative():
 def test_extract_name_quoted():
     from api.chat import _extract_template_name
 
-    assert _extract_template_name("save this as a template called 'Monthly Sales'") == "Monthly Sales"
+    assert (
+        _extract_template_name("save this as a template called 'Monthly Sales'")
+        == "Monthly Sales"
+    )
 
 
 def test_extract_name_unquoted():

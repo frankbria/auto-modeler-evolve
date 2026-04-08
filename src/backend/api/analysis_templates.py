@@ -79,7 +79,9 @@ def create_template(
     if not body.name.strip():
         raise HTTPException(status_code=422, detail="Template name cannot be empty.")
     if not body.queries:
-        raise HTTPException(status_code=422, detail="Template must contain at least one query.")
+        raise HTTPException(
+            status_code=422, detail="Template must contain at least one query."
+        )
 
     template = AnalysisTemplate(
         project_id=project_id,
