@@ -49,6 +49,15 @@ the time is better spent on real features.
 
 ## Currently Working On
 
+## Day 27 (20:00) — Done
+**Track B — Saved Analysis Templates.** Closes the "replay my analysis on new data" gap.
+- **Analysis Templates** — `_SAVE_TEMPLATE_PATTERNS` / `_LIST_TEMPLATES_PATTERNS` / `_REPLAY_TEMPLATE_PATTERNS` + `_extract_template_name()` in `chat.py`. `AnalysisTemplate` SQLModel table (`id`, `project_id`, `name`, `queries` JSON, `created_at`). CRUD endpoints: `GET/POST /api/projects/{id}/analysis-templates` + `DELETE /api/projects/{id}/analysis-templates/{tid}`. Chat handler for save: loads last 8 user messages from conversation history, filters out the save command itself, saves as template, emits `{type:"template_saved"}` SSE. Chat handler for list: queries all templates, emits `{type:"template_list"}`. Chat handler for replay: finds template by name match (falls back to most recent), emits `{type:"template_replay"}` with queries as clickable chips. Frontend: `TemplateSavedCard` (emerald border, 💾, shows name + queries + replay hint), `TemplateListCard` (blue, lists templates with Replay buttons), `TemplateReplayCard` (purple, queries as click-to-send buttons that fill chat input). Types, API client, Zustand actions, SSE handlers, page.tsx wiring all complete. 17 backend + 17 frontend = 34 new tests. Total: 2684 backend + 1336 frontend = 4020.
+
+**What's next:**
+- Track B is now essentially saturated — all listed backlog items are complete.
+- Consider deeper collaboration features (sharing templates across projects) or
+  polishing existing features based on observed usage gaps.
+
 ## Day 27 (04:00) — Done
 **Track B — Data Version History Timeline.** Closes the "how has my data changed across uploads?" gap.
 - **Version History** — `_VERSION_HISTORY_PATTERNS` (8 NL variants: "show my upload history", "data version timeline", "upload history", "history of my datasets", etc.) in `chat.py`. `compute_version_history()` pure function in `core/analyzer.py`: builds upload timeline from all project datasets, computes drift between consecutive pairs via `compute_dataset_comparison()`. `GET /api/data/{project_id}/version-history` endpoint. Chat handler emits `{type:"version_history"}` SSE. `DataVersionHistoryCard` (adaptive border: emerald=stable / amber=moderate / rose=high, 📂 icon): stability badge, version count, timeline rendered latest-first with version rows + drift connectors. 22 backend + 18 frontend = 40 new tests. Total: 2667 backend + 1319 frontend = 3986.
