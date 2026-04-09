@@ -3337,7 +3337,9 @@ def create_preset(
     if not name:
         raise HTTPException(status_code=422, detail="Preset name cannot be empty")
     if not body.feature_values:
-        raise HTTPException(status_code=422, detail="Preset must include at least one feature value")
+        raise HTTPException(
+            status_code=422, detail="Preset must include at least one feature value"
+        )
 
     preset = DeploymentPreset(
         deployment_id=deployment_id,

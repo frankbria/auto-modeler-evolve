@@ -6640,7 +6640,9 @@ def send_message(
                     f"\n\n## Prediction Preset Saved\n"
                     f"Saved preset '{_preset_def['name']}' with "
                     f"{len(_preset_def['feature_values'])} feature values: "
-                    + ", ".join(f"{k}={v}" for k, v in _preset_def["feature_values"].items())
+                    + ", ".join(
+                        f"{k}={v}" for k, v in _preset_def["feature_values"].items()
+                    )
                     + ". "
                     "Tell the user this preset now appears as a quick-fill button on the "
                     "shared prediction dashboard. VPs and colleagues can click it to "
