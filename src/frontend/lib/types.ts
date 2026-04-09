@@ -460,8 +460,6 @@ export interface ChatMessage {
   template_saved?: TemplateSavedInfo
   template_list?: TemplateListInfo
   template_replay?: TemplateReplayInfo
-  preset_saved?: PresetSavedInfo
-  preset_list?: PresetListInfo
 }
 
 export interface SegmentPerformanceSegment {
@@ -2159,35 +2157,4 @@ export interface PredictionCohortResult {
   categorical_profile: CohortCategoricalProfile[]
   numeric_profile: CohortNumericProfile[]
   characterization: string
-}
-
-// ---------------------------------------------------------------------------
-// Prediction Presets
-// ---------------------------------------------------------------------------
-
-export interface DeploymentPreset {
-  id: string
-  deployment_id: string
-  name: string
-  feature_values: Record<string, string | number>
-  created_at: string | null
-}
-
-export interface PresetSavedInfo {
-  id: string
-  deployment_id: string
-  name: string
-  feature_values: Record<string, string | number>
-  feature_count: number
-}
-
-export interface PresetListInfo {
-  presets: Array<{
-    id: string
-    name: string
-    feature_values: Record<string, string | number>
-    feature_count: number
-  }>
-  count: number
-  deployment_id: string
 }
