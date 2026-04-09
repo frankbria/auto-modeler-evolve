@@ -1,5 +1,15 @@
 # Journal
 
+## Day 29 — 12:00 — Fix CI: re-implement prediction presets after partial revert (2807 backend + 1426 frontend = 4233 tests)
+
+No community issues today. The 04:00 session implemented prediction presets but hit ruff F821 errors (the test file used `globals()["_PRESET_SAVE_PATTERNS"]` — opaque to static analysis). Unable to fix in time, it reverted the backend and frontend implementation but accidentally left behind the test file referencing the deleted symbols. Result: CI broke with `F821 Undefined name '_PRESET_SAVE_PATTERNS'` in `tests/test_prediction_presets.py`.
+
+**Root cause:** Partial revert — backend/frontend code deleted, test file referencing it retained.
+
+**Fix:** Re-implemented the complete prediction presets feature with proper direct imports in the test file (`from api.chat import _PRESET_LIST_PATTERNS, _PRESET_SAVE_PATTERNS`). Also fixed a frontend test cascade: adding `getPresets` useEffect to `predict/[id]/page.tsx` consumed a fetch mock slot that 13 existing tests didn't account for across `pages.test.tsx`, `confidence-interval.test.tsx`, and `compare-models.test.tsx`. Added `fetchMock.mockResponseOnce(JSON.stringify([]))` (getPresets) in the correct position in each test and updated `toHaveBeenCalledTimes` counts.
+
+**Verification:** Backend lint (ruff): clean. Backend preset tests: 25/25 passing. Frontend tests: 1426/1426 passing (1 skipped). Frontend build + lint: clean. No regressions.
+
 ## Day 29 — 04:00 — Prediction Presets: "save this as a preset called Best Case" (2807 backend + 1426 frontend = 4233 tests)
 
 No community issues today. All Phase 9 Tracks D, C, E, and the vast majority of Track B are complete. This session targeted the "VP doesn't know what to type" cold-start gap on the shared prediction dashboard. When an analyst shares the predict/[id] link, the VP opens a form with feature names like `product_category`, `region_code`, `units_sold` and has no idea what to enter. A smart colleague would have prepared a few realistic starting points — "Best Case", "Average Quarter", "Worst Case" — before handing over the link.
