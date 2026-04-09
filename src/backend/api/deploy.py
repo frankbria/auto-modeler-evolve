@@ -48,6 +48,7 @@ from models.ab_test import ABTest
 from models.feedback_record import FeedbackRecord
 from models.prediction_log import PredictionLog
 from models.webhook_config import WebhookConfig
+from models.deployment_preset import DeploymentPreset
 
 router = APIRouter(tags=["deployment"])
 
@@ -3281,3 +3282,92 @@ def demote_to_staging(
         "message": "Deployment demoted back to staging.",
         "deployment": _deployment_response(deployment),
     }
+
+
+# ---------------------------------------------------------------------------
+# Prediction presets — named scenarios for the VP dashboard
+# ---------------------------------------------------------------------------
+
+
+class PresetBody(BaseModel):
+    name: str
+    feature_values: dict
+
+
+@router.get("/api/deploy/{deployment_id}/presets")
+def list_presets(
+    deployment_id: str,
+    session: Session = Depends(get_session),
+):
+    """List all prediction presets for a deployment."""
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment or not deployment.is_active:
+        raise HTTPException(status_code=404, detail="Deployment not found or inactive")
+
+    presets = session.exec(
+        select(DeploymentPreset)
+        .where(DeploymentPreset.deployment_id == deployment_id)
+        .order_by(DeploymentPreset.created_at)
+    ).all()
+
+    return [
+        {
+            "id": p.id,
+            "deployment_id": p.deployment_id,
+            "name": p.name,
+            "feature_values": json.loads(p.feature_values),
+            "created_at": p.created_at.isoformat() if p.created_at else None,
+        }
+        for p in presets
+    ]
+
+
+@router.post("/api/deploy/{deployment_id}/presets", status_code=201)
+def create_preset(
+    deployment_id: str,
+    body: PresetBody,
+    session: Session = Depends(get_session),
+):
+    """Create a named prediction preset for a deployment."""
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment or not deployment.is_active:
+        raise HTTPException(status_code=404, detail="Deployment not found or inactive")
+
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(status_code=422, detail="Preset name cannot be empty")
+    if not body.feature_values:
+        raise HTTPException(status_code=422, detail="Preset must include at least one feature value")
+
+    preset = DeploymentPreset(
+        deployment_id=deployment_id,
+        name=name,
+        feature_values=json.dumps(body.feature_values),
+    )
+    session.add(preset)
+    session.commit()
+    session.refresh(preset)
+
+    return {
+        "id": preset.id,
+        "deployment_id": preset.deployment_id,
+        "name": preset.name,
+        "feature_values": body.feature_values,
+        "created_at": preset.created_at.isoformat() if preset.created_at else None,
+    }
+
+
+@router.delete("/api/deploy/{deployment_id}/presets/{preset_id}", status_code=204)
+def delete_preset(
+    deployment_id: str,
+    preset_id: str,
+    session: Session = Depends(get_session),
+):
+    """Delete a prediction preset."""
+    preset = session.get(DeploymentPreset, preset_id)
+    if not preset or preset.deployment_id != deployment_id:
+        raise HTTPException(status_code=404, detail="Preset not found")
+
+    session.delete(preset)
+    session.commit()
+    return None

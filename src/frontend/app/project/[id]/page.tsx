@@ -71,6 +71,8 @@ import {
   TemplateListCard,
   TemplateReplayCard,
 } from "@/components/data/analysis-template-card"
+import { PresetSavedCard } from "@/components/deploy/preset-saved-card"
+import { PresetListCard } from "@/components/deploy/preset-list-card"
 import { PairCorrelationCard } from "@/components/data/pair-correlation-card"
 import { StatQueryCard } from "@/components/data/stat-query-card"
 import { SummaryStatsCard } from "@/components/data/summary-stats-card"
@@ -223,6 +225,8 @@ export default function ProjectWorkspace() {
     attachTemplateReplayToLastMessage,
     attachRankedPredictionsToLastMessage,
     attachPredictionCohortToLastMessage,
+    attachPresetSavedToLastMessage,
+    attachPresetListToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -572,6 +576,10 @@ export default function ProjectWorkspace() {
                 attachTemplateListToLastMessage(json.template_list as import("@/lib/types").TemplateListInfo)
               } else if (json.type === "template_replay" && json.template_replay) {
                 attachTemplateReplayToLastMessage(json.template_replay as import("@/lib/types").TemplateReplayInfo)
+              } else if (json.type === "preset_saved" && json.preset) {
+                attachPresetSavedToLastMessage(json.preset as import("@/lib/types").PresetSavedInfo)
+              } else if (json.type === "preset_list" && json.preset_list) {
+                attachPresetListToLastMessage(json.preset_list as import("@/lib/types").PresetListInfo)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -647,6 +655,8 @@ export default function ProjectWorkspace() {
     attachTemplateReplayToLastMessage,
     attachRankedPredictionsToLastMessage,
     attachPredictionCohortToLastMessage,
+    attachPresetSavedToLastMessage,
+    attachPresetListToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -1058,6 +1068,12 @@ export default function ProjectWorkspace() {
                         info={msg.template_replay}
                         onQueryClick={(q) => setChatInput(q)}
                       />
+                    )}
+                    {msg.preset_saved && (
+                      <PresetSavedCard preset={msg.preset_saved} />
+                    )}
+                    {msg.preset_list && (
+                      <PresetListCard preset_list={msg.preset_list} />
                     )}
                   </div>
                 </div>
