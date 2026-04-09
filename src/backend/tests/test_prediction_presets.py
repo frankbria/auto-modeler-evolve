@@ -25,6 +25,7 @@ import db as db_module
 @pytest.fixture(autouse=True)
 def _import_patterns():
     from api.chat import _PRESET_SAVE_PATTERNS, _PRESET_LIST_PATTERNS
+
     globals()["_PRESET_SAVE_PATTERNS"] = _PRESET_SAVE_PATTERNS
     globals()["_PRESET_LIST_PATTERNS"] = _PRESET_LIST_PATTERNS
 
@@ -34,7 +35,9 @@ def test_preset_save_pattern_save():
 
 
 def test_preset_save_pattern_add():
-    assert _PRESET_SAVE_PATTERNS.search("add a preset called Average Quarter with Region=East")
+    assert _PRESET_SAVE_PATTERNS.search(
+        "add a preset called Average Quarter with Region=East"
+    )
 
 
 def test_preset_save_pattern_create():
@@ -42,7 +45,9 @@ def test_preset_save_pattern_create():
 
 
 def test_preset_save_pattern_scenario():
-    assert _PRESET_SAVE_PATTERNS.search("save this as a named scenario called Conservative")
+    assert _PRESET_SAVE_PATTERNS.search(
+        "save this as a named scenario called Conservative"
+    )
 
 
 def test_preset_save_pattern_bookmark():
@@ -50,7 +55,9 @@ def test_preset_save_pattern_bookmark():
 
 
 def test_preset_save_pattern_make():
-    assert _PRESET_SAVE_PATTERNS.search("make a preset called Q1 Forecast: Units=200, Region=East")
+    assert _PRESET_SAVE_PATTERNS.search(
+        "make a preset called Q1 Forecast: Units=200, Region=East"
+    )
 
 
 def test_preset_save_pattern_quick_scenario():
@@ -89,7 +96,9 @@ def test_preset_list_pattern_no_match():
 def test_extract_preset_basic():
     from api.chat import _extract_preset_definition
 
-    result = _extract_preset_definition("add a preset called Best Case: Region=East, Units=500")
+    result = _extract_preset_definition(
+        "add a preset called Best Case: Region=East, Units=500"
+    )
     assert result is not None
     assert result["name"] == "Best Case"
     assert result["feature_values"]["Region"] == "East"
@@ -99,7 +108,9 @@ def test_extract_preset_basic():
 def test_extract_preset_numeric_float():
     from api.chat import _extract_preset_definition
 
-    result = _extract_preset_definition("save preset named High Revenue with Price=9.99, Qty=100")
+    result = _extract_preset_definition(
+        "save preset named High Revenue with Price=9.99, Qty=100"
+    )
     assert result is not None
     assert result["feature_values"]["Price"] == 9.99
 
