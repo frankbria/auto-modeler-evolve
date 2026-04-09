@@ -49,6 +49,16 @@ the time is better spent on real features.
 
 ## Currently Working On
 
+## Day 28 (20:00) — Done
+**Track B — Prediction Cohort Analysis + CSV Export for Ranked Predictions.** Closes the "who ARE the top predictions?" and "download this list" gaps.
+- **Prediction Cohort Analysis** — `_COHORT_PATTERNS` (9 NL variants: "who are the top predictions", "what do they have in common", "profile/characterize/describe the ranked records", "cohort analysis", "tell me about the top N customers") in `chat.py`. Handler fires when deployment + dataset exist and ranked_pred_event hasn't already fired. `compute_prediction_cohort()` pure function in `core/deployer.py`: re-ranks the dataset (same as `run_dataset_ranking`), then profiles the top-N rows vs the full dataset: categorical breakdown (per-category top-N% vs overall%, ratio), numeric comparison (top-N mean vs overall mean, ratio, direction label). Generates plain-English `characterization`: "The 20 highest-scoring revenue predictions: 70% have region = 'East'; units is 80% higher on average." `PredictionCohortCard` (indigo border, 🔍): "Highest/Lowest" badge, count badge, characterization paragraph, "Categorical Breakdown" section with dual-bar chart (indigo=top-N, slate=overall), "Numeric Averages" section with per-column rows showing ratio badge (rose=much higher, amber=moderately higher, sky=lower) + top avg vs overall avg. Handles empty profiles gracefully.
+- **CSV Download for Ranked Predictions** — "⬇ Download CSV" button added to `RankedPredictionsCard` header. Client-side CSV generation from SSE data: includes rank, row_index, all predicted values (class+confidence for classification, value for regression), and ALL feature columns (not just the 4 visible in the table). Filename: `{target_column}_ranked_predictions.csv`. No new backend endpoint needed.
+- 24 backend + 18 frontend = 42 new tests. Total: 2782 backend + 1406 frontend = 4188.
+
+**What's next:**
+- Track B deep — consider: cross-project template sharing, multi-project model comparison, or UX polish on VP-shared predict page.
+- Potential new gap: "smart prediction routing" — when analyst asks "predict for these 10 scenarios" (multi-row inline prediction), batch them as a table result.
+
 ## Day 28 (12:00) — Done
 **Track B — Dataset Ranking via Model.** Closes the "which specific rows should I act on?" gap.
 - **Dataset Ranking** — `_RANKED_PRED_PATTERNS` (8 NL variants: "which customers are most likely to churn", "top N predictions", "rank by predicted revenue", "most at risk", etc.) + `_detect_ranked_pred_request()` extracting n (default 20, capped 100) and direction. `run_dataset_ranking()` pure function in `core/deployer.py`: scores all rows via `pipeline.transform_df()` + model; regression uses `predict()` float values; classification ranks by max class probability. `RankedPredictionsCard` (amber border, 🏆): gold/silver/bronze rank badges; `PredictionCell` (regression: compact number; classification: "class (XX%)" with green/amber/red confidence); table with rank + prediction + up to 4 feature columns; summary footer. 24 backend + 17 frontend = 41 new tests. Total: 2758 backend + 1388 frontend = 4146.
