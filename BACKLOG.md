@@ -49,6 +49,15 @@ the time is better spent on real features.
 
 ## Currently Working On
 
+## Day 29 (04:00) — Done
+**Track B — Prediction Presets on the VP Dashboard.** Closes the "VP doesn't know what to type" cold-start gap.
+- **Prediction Presets** — `DeploymentPreset` SQLModel table. `GET/POST/DELETE /api/deploy/{id}/presets` CRUD endpoints. `_PRESET_SAVE_PATTERNS` (8 NL variants) + `_PRESET_LIST_PATTERNS` (4 NL variants) + `_extract_preset_definition()` helper in `chat.py`. Chat handlers persist presets to DB and emit `{type:"preset_saved"}` + `{type:"preset_list"}` SSE events. `PresetSavedCard` (emerald, 🎯) + `PresetListCard` (indigo, 📋). `predict/[id]/page.tsx`: loads presets on mount, shows "Quick Scenarios" pill buttons above the form. 25 backend + 20 frontend = 45 new tests. Total: 2807 backend + 1426 frontend = 4233.
+
+**What's next:**
+- Further VP dashboard polish: preset delete UI on prediction page, preset order/rename.
+- Multi-row inline prediction table: "predict for: Region=East, Units=100; Region=West, Units=150"
+- Cross-project template sharing or model comparison improvements.
+
 ## Day 28 (20:00) — Done
 **Track B — Prediction Cohort Analysis + CSV Export for Ranked Predictions.** Closes the "who ARE the top predictions?" and "download this list" gaps.
 - **Prediction Cohort Analysis** — `_COHORT_PATTERNS` (9 NL variants: "who are the top predictions", "what do they have in common", "profile/characterize/describe the ranked records", "cohort analysis", "tell me about the top N customers") in `chat.py`. Handler fires when deployment + dataset exist and ranked_pred_event hasn't already fired. `compute_prediction_cohort()` pure function in `core/deployer.py`: re-ranks the dataset (same as `run_dataset_ranking`), then profiles the top-N rows vs the full dataset: categorical breakdown (per-category top-N% vs overall%, ratio), numeric comparison (top-N mean vs overall mean, ratio, direction label). Generates plain-English `characterization`: "The 20 highest-scoring revenue predictions: 70% have region = 'East'; units is 80% higher on average." `PredictionCohortCard` (indigo border, 🔍): "Highest/Lowest" badge, count badge, characterization paragraph, "Categorical Breakdown" section with dual-bar chart (indigo=top-N, slate=overall), "Numeric Averages" section with per-column rows showing ratio badge (rose=much higher, amber=moderately higher, sky=lower) + top avg vs overall avg. Handles empty profiles gracefully.
