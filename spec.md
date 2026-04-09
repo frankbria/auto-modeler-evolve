@@ -851,6 +851,29 @@ guides them forward through the natural flow.
       to leave — here's who to call first."
       *Day 28 (12:00): 24 backend + 17 frontend = 41 new tests. Total: 2758 backend + 1388 frontend = 4146, all passing. Backend lint: clean. Frontend build + lint: clean.*
 
+- [x] **Prediction Presets on the VP Dashboard** — Analysts can define named "quick-fill" scenarios (e.g., "Best Case",
+      "Average Quarter", "Worst Case") via chat and have them appear as one-click buttons on the shared prediction
+      dashboard, so VPs and colleagues can instantly load realistic scenarios without knowing the feature names.
+      `_PRESET_SAVE_PATTERNS` (8 NL variants: "save this as a preset called X", "add a preset called X with Y=Z",
+      "create a prediction preset named X", "save as a named scenario called X", "bookmark this as preset",
+      "quick scenario called X") + `_PRESET_LIST_PATTERNS` (4 NL variants: "show my presets", "list saved scenarios",
+      "what presets do I have", "show existing presets") in `chat.py`. `_extract_preset_definition()` parses the
+      preset name (via `called|named` lookahead regex) and feature `key=value` pairs (using `=` only, excluding
+      `:` to avoid collisions with the name separator). `DeploymentPreset` SQLModel table (`id`, `deployment_id`,
+      `name`, `feature_values` JSON, `created_at`). `GET/POST /api/deploy/{id}/presets` + `DELETE
+      /api/deploy/{id}/presets/{preset_id}` CRUD endpoints (validates non-empty name, non-empty feature_values;
+      returns 422 on either). Chat handlers emit `{type:"preset_saved"}` and `{type:"preset_list"}` SSE events.
+      `PresetSavedCard` (emerald border, 🎯 icon): preset name, feature-count badge, per-feature `key=value` badges.
+      `PresetListCard` (indigo border, 📋 icon): count badge, per-preset rows with feature badges and Load button.
+      `predict/[id]/page.tsx` augmented with `useEffect` loading presets from `GET /api/deploy/{id}/presets`; when
+      any exist, a "Quick Scenarios" row of rounded pill buttons appears above the input form — clicking fills all
+      fields with the preset values and clears the previous result. `DeploymentPreset`/`PresetSavedInfo`/`PresetListInfo`
+      TypeScript types; `api.deploy.getPresets/createPreset/deletePreset()` client methods; `attachPresetSavedToLastMessage`
+      + `attachPresetListToLastMessage` Zustand actions; SSE handlers and renders wired in `page.tsx`. Directly closes
+      the "VP doesn't know what to type" cold-start gap on the shared prediction dashboard — the analyst does the
+      thinking once, the VP clicks "Best Case" or "Conservative" and instantly sees the model's answer.
+      *Day 29 (04:00): 25 backend + 20 frontend = 45 new tests. Total: 2807 backend + 1426 frontend = 4233, all passing. Backend lint: clean. Frontend build + lint: clean.*
+
 - [x] **AI-powered data dictionary** — When a dataset is uploaded (or on demand via POST), auto-generate
       plain-English descriptions for every column. `core/dictionary.py` classifies each column as
       id/metric/dimension/date/flag/text via heuristics (name hints + dtype + cardinality), then uses
