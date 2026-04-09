@@ -1087,5 +1087,32 @@ export const api = {
         if (!r.ok) throw new Error(`HTTP ${r.status}`)
         return r.json()
       }),
+
+    getPresets: (
+      deploymentId: string
+    ): Promise<import("./types").DeploymentPreset[]> =>
+      fetch(`${API_URL}/api/deploy/${deploymentId}/presets`).then((r) => r.json()),
+
+    createPreset: (
+      deploymentId: string,
+      name: string,
+      featureValues: Record<string, string | number>
+    ): Promise<import("./types").DeploymentPreset> =>
+      fetch(`${API_URL}/api/deploy/${deploymentId}/presets`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, feature_values: featureValues }),
+      }).then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        return r.json()
+      }),
+
+    deletePreset: (
+      deploymentId: string,
+      presetId: string
+    ): Promise<void> =>
+      fetch(`${API_URL}/api/deploy/${deploymentId}/presets/${presetId}`, {
+        method: "DELETE",
+      }).then(() => undefined),
   },
 }

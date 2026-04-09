@@ -102,6 +102,8 @@ interface AppState {
   attachTemplateSavedToLastMessage: (template: import("./types").TemplateSavedInfo) => void
   attachTemplateListToLastMessage: (template_list: import("./types").TemplateListInfo) => void
   attachTemplateReplayToLastMessage: (template_replay: import("./types").TemplateReplayInfo) => void
+  attachPresetSavedToLastMessage: (preset: import("./types").PresetSavedInfo) => void
+  attachPresetListToLastMessage: (preset_list: import("./types").PresetListInfo) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -655,6 +657,24 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, template_replay }
+      }
+      return { messages }
+    }),
+  attachPresetSavedToLastMessage: (preset) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, preset_saved: preset }
+      }
+      return { messages }
+    }),
+  attachPresetListToLastMessage: (preset_list) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, preset_list }
       }
       return { messages }
     }),

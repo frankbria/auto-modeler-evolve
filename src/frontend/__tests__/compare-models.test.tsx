@@ -105,6 +105,7 @@ const comparisonResponse = {
 /** Render the predict page, mocking GET /api/deploy/deploy-current and GET /api/deployments?project_id=proj-001 */
 async function renderWithDeployments(projectDeployments: object[]) {
   fetchMock.mockResponseOnce(JSON.stringify(currentDeployment))
+  fetchMock.mockResponseOnce(JSON.stringify([])) // getPresets
   fetchMock.mockResponseOnce(JSON.stringify(projectDeployments))
 
   const { default: PredictionDashboard } = await import("../app/predict/[id]/page")

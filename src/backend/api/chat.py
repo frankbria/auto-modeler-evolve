@@ -2212,6 +2212,73 @@ def _extract_template_name(message: str) -> str | None:
 
 
 # ---------------------------------------------------------------------------
+# Prediction preset patterns — named quick-fill scenarios for VP dashboard
+# ---------------------------------------------------------------------------
+
+_PRESET_SAVE_PATTERNS = re.compile(
+    r"\b("
+    r"save\s+(?:this\s+as\s+a?\s*)?(?:prediction\s+)?preset|"
+    r"add\s+(?:a\s+)?(?:prediction\s+)?preset(?:\s+called|\s+named)?|"
+    r"create\s+(?:a\s+)?(?:prediction\s+)?preset(?:\s+called|\s+named)?|"
+    r"make\s+(?:a\s+)?preset(?:\s+called|\s+named)?|"
+    r"save\s+(?:this\s+as\s+)?(?:a\s+)?(?:named\s+)?scenario(?:\s+called|\s+named)?|"
+    r"add\s+(?:a\s+)?(?:named\s+)?scenario(?:\s+called|\s+named)?|"
+    r"bookmark\s+(?:this\s+)?(?:as\s+(?:a\s+)?)?preset|"
+    r"quick\s+scenario\s+(?:called|named)"
+    r")\b",
+    re.IGNORECASE,
+)
+
+_PRESET_LIST_PATTERNS = re.compile(
+    r"\b("
+    r"(?:show|list|what|view)\s+(?:my\s+)?(?:prediction\s+)?presets?|"
+    r"(?:show|list)\s+(?:saved\s+)?scenarios?|"
+    r"what\s+presets?\s+(?:do\s+I\s+have|are\s+saved)|"
+    r"(?:saved|existing)\s+presets?"
+    r")\b",
+    re.IGNORECASE,
+)
+
+_PRESET_NAME_RE = re.compile(
+    r"(?:called|named)\s+['\"]?([A-Za-z0-9][A-Za-z0-9 _\-]*?)['\"]?\s*"
+    r"(?=\s+with\s+|\s*:\s*[A-Za-z]|\s*,\s*[A-Za-z]|$)",
+    re.IGNORECASE,
+)
+_PRESET_KV_RE = re.compile(
+    r"([A-Za-z_][A-Za-z0-9_]*)\s*=\s*([^\s,;]+)",
+)
+
+
+def _extract_preset_definition(message: str) -> dict | None:
+    """Extract preset name and feature key=value pairs from a natural language message.
+
+    Returns {name, feature_values} or None if not parseable.
+    Examples:
+      "save as a preset called Best Case: Region=East, Units=500"
+      -> {name: "Best Case", feature_values: {"Region": "East", "Units": 500}}
+    """
+    name_m = _PRESET_NAME_RE.search(message)
+    if not name_m:
+        return None
+    name = name_m.group(1).strip().rstrip(":-,")
+    if not name:
+        return None
+
+    kv_pairs = _PRESET_KV_RE.findall(message)
+    if not kv_pairs:
+        return None
+
+    feature_values: dict = {}
+    for key, val in kv_pairs:
+        try:
+            feature_values[key] = float(val) if "." in val else int(val)
+        except ValueError:
+            feature_values[key] = val
+
+    return {"name": name, "feature_values": feature_values}
+
+
+# ---------------------------------------------------------------------------
 # Dataset ranking patterns — "which customers are most likely to churn?"
 # ---------------------------------------------------------------------------
 
@@ -6545,6 +6612,86 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Template replay is nice-to-have; never crash chat
 
+    # Check if user wants to save a prediction preset
+    preset_saved_event: dict | None = None
+    if _PRESET_SAVE_PATTERNS.search(body.message) and ctx["deployment"]:
+        try:
+            _preset_def = _extract_preset_definition(body.message)
+            if _preset_def:
+                from models.deployment_preset import DeploymentPreset as _PresetModel
+
+                _new_preset = _PresetModel(
+                    deployment_id=ctx["deployment"].id,
+                    name=_preset_def["name"],
+                    feature_values=json.dumps(_preset_def["feature_values"]),
+                )
+                with Session(session.bind) as _preset_sess:
+                    _preset_sess.add(_new_preset)
+                    _preset_sess.commit()
+                    _preset_sess.refresh(_new_preset)
+                preset_saved_event = {
+                    "id": _new_preset.id,
+                    "deployment_id": ctx["deployment"].id,
+                    "name": _preset_def["name"],
+                    "feature_values": _preset_def["feature_values"],
+                    "feature_count": len(_preset_def["feature_values"]),
+                }
+                system_prompt += (
+                    f"\n\n## Prediction Preset Saved\n"
+                    f"Saved preset '{_preset_def['name']}' with "
+                    f"{len(_preset_def['feature_values'])} feature values: "
+                    + ", ".join(f"{k}={v}" for k, v in _preset_def["feature_values"].items())
+                    + ". "
+                    "Tell the user this preset now appears as a quick-fill button on the "
+                    "shared prediction dashboard. VPs and colleagues can click it to "
+                    "instantly fill the form with these values."
+                )
+        except Exception:  # noqa: BLE001
+            pass  # Preset saving is nice-to-have; never crash chat
+
+    # Check if user wants to list saved presets
+    preset_list_event: dict | None = None
+    if _PRESET_LIST_PATTERNS.search(body.message) and ctx["deployment"]:
+        try:
+            from models.deployment_preset import DeploymentPreset as _PresetList
+
+            _saved_presets = session.exec(
+                select(_PresetList)
+                .where(_PresetList.deployment_id == ctx["deployment"].id)
+                .order_by(_PresetList.created_at)
+            ).all()
+            _preset_items = [
+                {
+                    "id": p.id,
+                    "name": p.name,
+                    "feature_values": json.loads(p.feature_values),
+                    "feature_count": len(json.loads(p.feature_values)),
+                }
+                for p in _saved_presets
+            ]
+            preset_list_event = {
+                "presets": _preset_items,
+                "count": len(_preset_items),
+                "deployment_id": ctx["deployment"].id,
+            }
+            if _preset_items:
+                _pnames = ", ".join(f"'{p['name']}'" for p in _preset_items[:4])
+                system_prompt += (
+                    f"\n\n## Saved Prediction Presets\n"
+                    f"{len(_preset_items)} preset(s) saved: {_pnames}. "
+                    "Each preset appears as a quick-fill button on the shared prediction dashboard. "
+                    "Show the list to the user."
+                )
+            else:
+                system_prompt += (
+                    "\n\n## Saved Prediction Presets\n"
+                    "No presets saved yet for this deployment. "
+                    "Tell the user they can save a preset by saying: "
+                    "'add a preset called [Name] with [feature=value, ...]'"
+                )
+        except Exception:  # noqa: BLE001
+            pass  # Preset listing is nice-to-have; never crash chat
+
     # Pre-compute follow-up suggestions (based on state + current message)
     current_state = detect_state(
         ctx["dataset"], ctx["feature_set"], ctx["model_runs"], ctx["deployment"]
@@ -6870,6 +7017,14 @@ def send_message(
         # Emit analysis template replay — queries shown as clickable chips
         if template_replay_event:
             yield f"data: {json.dumps({'type': 'template_replay', 'template_replay': template_replay_event})}\n\n"
+
+        # Emit prediction preset saved confirmation
+        if preset_saved_event:
+            yield f"data: {json.dumps({'type': 'preset_saved', 'preset': preset_saved_event})}\n\n"
+
+        # Emit prediction preset list
+        if preset_list_event:
+            yield f"data: {json.dumps({'type': 'preset_list', 'preset_list': preset_list_event})}\n\n"
 
         # After text stream, opportunistically generate a chart if the
         # message is about data and we have a dataset loaded

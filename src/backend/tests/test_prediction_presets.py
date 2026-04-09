@@ -7,27 +7,17 @@ Covers:
 - Integration: SSE events emitted for save/list
 """
 
-import json
-import re
-
 import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import SQLModel, create_engine
 
 import db as db_module
+from api.chat import _PRESET_LIST_PATTERNS, _PRESET_SAVE_PATTERNS
 
 
 # ---------------------------------------------------------------------------
 # Pattern detection tests
 # ---------------------------------------------------------------------------
-
-
-@pytest.fixture(autouse=True)
-def _import_patterns():
-    from api.chat import _PRESET_SAVE_PATTERNS, _PRESET_LIST_PATTERNS
-
-    globals()["_PRESET_SAVE_PATTERNS"] = _PRESET_SAVE_PATTERNS
-    globals()["_PRESET_LIST_PATTERNS"] = _PRESET_LIST_PATTERNS
 
 
 def test_preset_save_pattern_save():

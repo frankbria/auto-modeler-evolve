@@ -415,6 +415,7 @@ export default function PredictionDashboard() {
   const [explanationError, setExplanationError] = useState(false)
   const [history, setHistory] = useState<PredictionHistoryRecord[]>([])
   const [, setHistoryCounter] = useState(0)
+  const [presets, setPresets] = useState<import("@/lib/types").DeploymentPreset[]>([])
 
   useEffect(() => {
     api.deploy
@@ -437,6 +438,21 @@ export default function PredictionDashboard() {
       .catch(() => setError("Prediction service not found or inactive."))
       .finally(() => setLoading(false))
   }, [deploymentId])
+
+  useEffect(() => {
+    api.deploy.getPresets(deploymentId).then(setPresets).catch(() => {})
+  }, [deploymentId])
+
+  const loadPreset = (featureValues: Record<string, string | number>) => {
+    const next = { ...inputs }
+    for (const [key, val] of Object.entries(featureValues)) {
+      next[key] = String(val)
+    }
+    setInputs(next)
+    setResult(null)
+    setExplanation(null)
+    setShowExplanation(false)
+  }
 
   const buildPayload = () => {
     if (!deployment) return {}
@@ -562,6 +578,28 @@ export default function PredictionDashboard() {
 
         {/* Model context (trust panel) */}
         <ModelContextCard deployment={deployment} />
+
+        {/* Quick scenarios (presets) */}
+        {presets.length > 0 && (
+          <div data-testid="preset-section">
+            <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Quick Scenarios
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {presets.map((preset) => (
+                <button
+                  key={preset.id}
+                  onClick={() => loadPreset(preset.feature_values)}
+                  className="rounded-full border px-3 py-1 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  data-testid="preset-button"
+                  aria-label={`Load preset: ${preset.name}`}
+                >
+                  {preset.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Input form */}
         <Card>

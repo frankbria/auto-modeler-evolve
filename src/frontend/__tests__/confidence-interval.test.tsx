@@ -106,6 +106,7 @@ describe("PredictionDashboard — confidence intervals", () => {
 
   it("renders confidence interval badge for regression predictions", async () => {
     fetchMock.mockResponseOnce(JSON.stringify(baseDeployment))
+    fetchMock.mockResponseOnce(JSON.stringify([])) // getPresets
     fetchMock.mockResponseOnce(JSON.stringify([baseDeployment])) // listByProject
     fetchMock.mockResponseOnce(JSON.stringify(regressionResultWithCI))
 
@@ -130,6 +131,7 @@ describe("PredictionDashboard — confidence intervals", () => {
 
   it("shows lower and upper bounds in confidence interval", async () => {
     fetchMock.mockResponseOnce(JSON.stringify(baseDeployment))
+    fetchMock.mockResponseOnce(JSON.stringify([])) // getPresets
     fetchMock.mockResponseOnce(JSON.stringify([baseDeployment])) // listByProject
     fetchMock.mockResponseOnce(JSON.stringify(regressionResultWithCI))
 
@@ -154,6 +156,7 @@ describe("PredictionDashboard — confidence intervals", () => {
 
   it("does not render CI badge when confidence_interval absent", async () => {
     fetchMock.mockResponseOnce(JSON.stringify(baseDeployment))
+    fetchMock.mockResponseOnce(JSON.stringify([])) // getPresets
     fetchMock.mockResponseOnce(JSON.stringify([baseDeployment])) // listByProject
     fetchMock.mockResponseOnce(JSON.stringify(regressionResultNoCI))
 
@@ -168,7 +171,7 @@ describe("PredictionDashboard — confidence intervals", () => {
     if (predictButton) {
       await act(async () => { fireEvent.click(predictButton) })
       await waitFor(() => {
-        expect(fetchMock).toHaveBeenCalledTimes(3)
+        expect(fetchMock).toHaveBeenCalledTimes(4)
       })
       // CI badge should NOT be present
       const ciBadge = document.querySelector("[data-testid='confidence-interval']")
@@ -178,6 +181,7 @@ describe("PredictionDashboard — confidence intervals", () => {
 
   it("renders classification confidence badge", async () => {
     fetchMock.mockResponseOnce(JSON.stringify(classificationDeployment))
+    fetchMock.mockResponseOnce(JSON.stringify([])) // getPresets
     fetchMock.mockResponseOnce(JSON.stringify([classificationDeployment])) // listByProject
     fetchMock.mockResponseOnce(JSON.stringify(classificationResultWithConfidence))
 
@@ -200,6 +204,7 @@ describe("PredictionDashboard — confidence intervals", () => {
 
   it("shows confidence percentage for classification", async () => {
     fetchMock.mockResponseOnce(JSON.stringify(classificationDeployment))
+    fetchMock.mockResponseOnce(JSON.stringify([])) // getPresets
     fetchMock.mockResponseOnce(JSON.stringify([classificationDeployment])) // listByProject
     fetchMock.mockResponseOnce(JSON.stringify(classificationResultWithConfidence))
 
