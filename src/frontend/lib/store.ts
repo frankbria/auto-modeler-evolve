@@ -95,6 +95,7 @@ interface AppState {
   attachSensitivityToLastMessage: (sensitivity: import("./types").SensitivityResult) => void
   attachInteractionToLastMessage: (interaction: import("./types").InteractionResult) => void
   attachRankedPredictionsToLastMessage: (ranked_predictions: import("./types").RankedPredictionsResult) => void
+  attachPredictionCohortToLastMessage: (prediction_cohort: import("./types").PredictionCohortResult) => void
   attachOnboardingGuideToLastMessage: (onboarding_guide: import("./types").OnboardingGuideResult) => void
   attachVersionHistoryToLastMessage: (version_history: import("./types").DataVersionHistoryResult) => void
   attachLearningCurveToLastMessage: (learning_curve: import("./types").LearningCurveResult) => void
@@ -591,6 +592,15 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, ranked_predictions }
+      }
+      return { messages }
+    }),
+  attachPredictionCohortToLastMessage: (prediction_cohort) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, prediction_cohort }
       }
       return { messages }
     }),

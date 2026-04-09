@@ -730,3 +730,123 @@ def run_dataset_ranking(
         "summary": summary,
         "class_names": class_names,
     }
+
+
+def compute_prediction_cohort(
+    pipeline_path: str,
+    model_path: str,
+    df: pd.DataFrame,
+    n: int = 20,
+    direction: str = "highest",
+) -> dict:
+    """Profile the top-N predictions as a cohort vs the full dataset.
+
+    Re-scores the dataset (same as run_dataset_ranking), then compares the
+    top-N rows against the overall population across categorical and numeric
+    features to answer "who are the highest-risk predictions?"
+
+    Returns:
+        {target_column, problem_type, n, direction, total_scored,
+         categorical_profile, numeric_profile, characterization}
+    """
+    ranking = run_dataset_ranking(pipeline_path, model_path, df, n=n, direction=direction)
+    top_indices = [row["row_index"] for row in ranking["rows"]]
+    top_df = df.iloc[top_indices]
+    target_col = ranking["target_column"]
+
+    # --- Categorical profile ---
+    categorical_profile: list[dict] = []
+    for col in df.select_dtypes(include=["str", "object", "category"]).columns:
+        if col == target_col:
+            continue
+        if df[col].nunique() > 20:
+            continue  # skip high-cardinality columns
+        top_counts = top_df[col].value_counts(normalize=True)
+        overall_counts = df[col].value_counts(normalize=True)
+
+        categories = []
+        for val in top_counts.index[:5]:
+            top_pct = float(top_counts.get(val, 0.0)) * 100
+            overall_pct = float(overall_counts.get(val, 0.0)) * 100
+            ratio = top_pct / overall_pct if overall_pct > 0 else 0.0
+            categories.append(
+                {
+                    "value": str(val),
+                    "top_pct": round(top_pct, 1),
+                    "overall_pct": round(overall_pct, 1),
+                    "ratio": round(ratio, 2),
+                }
+            )
+
+        if not categories:
+            continue
+        categorical_profile.append(
+            {
+                "column": col,
+                "categories": categories,
+                "dominant": categories[0]["value"],
+                "dominant_top_pct": categories[0]["top_pct"],
+            }
+        )
+
+    # --- Numeric profile ---
+    numeric_profile: list[dict] = []
+    for col in df.select_dtypes(include=["number"]).columns:
+        if col == target_col:
+            continue
+        top_mean = float(top_df[col].mean()) if len(top_df) > 0 else 0.0
+        overall_mean = float(df[col].mean())
+        if pd.isna(top_mean) or pd.isna(overall_mean):
+            continue
+        ratio: float | None = round(top_mean / overall_mean, 2) if overall_mean != 0 else None
+        direction_label = (
+            "higher" if top_mean > overall_mean else
+            "lower" if top_mean < overall_mean else
+            "similar"
+        )
+        numeric_profile.append(
+            {
+                "column": col,
+                "top_mean": round(top_mean, 3),
+                "overall_mean": round(overall_mean, 3),
+                "ratio": ratio,
+                "direction": direction_label,
+            }
+        )
+
+    # --- Plain-English characterization ---
+    char_parts: list[str] = []
+    # Top 2 most prominent categorical differences
+    for cp in categorical_profile[:2]:
+        if cp["dominant_top_pct"] > 25:
+            char_parts.append(
+                f"{round(cp['dominant_top_pct'])}% have {cp['column'].replace('_', ' ')} = '{cp['dominant']}'"
+            )
+    # Top 2 most extreme numeric differences
+    numeric_sorted = sorted(
+        [r for r in numeric_profile if r["ratio"] is not None],
+        key=lambda r: abs(r["ratio"] - 1),  # type: ignore[operator]
+        reverse=True,
+    )
+    for nr in numeric_sorted[:2]:
+        r = nr["ratio"]
+        if r is not None and abs(r - 1) > 0.1:
+            pct_diff = round(abs(r - 1) * 100)
+            char_parts.append(
+                f"{nr['column'].replace('_', ' ')} is {pct_diff}% {nr['direction']} on average"
+            )
+
+    dir_word = "highest" if direction == "highest" else "lowest"
+    base = f"The {n} {dir_word}-scoring {target_col} predictions"
+    characterization = (base + ": " + "; ".join(char_parts) + ".") if char_parts else base + "."
+
+    return {
+        "target_column": target_col,
+        "problem_type": ranking["problem_type"],
+        "n": ranking["n"],
+        "direction": direction,
+        "total_scored": ranking["total_scored"],
+        "categorical_profile": categorical_profile,
+        "numeric_profile": numeric_profile,
+        "characterization": characterization,
+    }

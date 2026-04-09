@@ -453,6 +453,7 @@ export interface ChatMessage {
   sensitivity?: SensitivityResult
   interaction?: InteractionResult
   ranked_predictions?: RankedPredictionsResult
+  prediction_cohort?: PredictionCohortResult
   onboarding_guide?: OnboardingGuideResult
   version_history?: DataVersionHistoryResult
   learning_curve?: LearningCurveResult
@@ -2123,4 +2124,37 @@ export interface RankedPredictionsResult {
   rows: RankedPredictionRow[]
   summary: string
   class_names: string[] | null
+}
+
+export interface CohortCategoryEntry {
+  value: string
+  top_pct: number
+  overall_pct: number
+  ratio: number
+}
+
+export interface CohortCategoricalProfile {
+  column: string
+  categories: CohortCategoryEntry[]
+  dominant: string
+  dominant_top_pct: number
+}
+
+export interface CohortNumericProfile {
+  column: string
+  top_mean: number
+  overall_mean: number
+  ratio: number | null
+  direction: "higher" | "lower" | "similar"
+}
+
+export interface PredictionCohortResult {
+  target_column: string
+  problem_type: string
+  n: number
+  direction: string
+  total_scored: number
+  categorical_profile: CohortCategoricalProfile[]
+  numeric_profile: CohortNumericProfile[]
+  characterization: string
 }

@@ -1,6 +1,36 @@
 "use client"
 
+import { useCallback } from "react"
 import { RankedPredictionsResult, RankedPredictionRow } from "@/lib/types"
+
+function buildCsv(result: RankedPredictionsResult): string {
+  const allFeatureCols =
+    result.rows.length > 0 ? Object.keys(result.rows[0].feature_values) : []
+  const predictionHeader =
+    result.problem_type === "regression"
+      ? `predicted_${result.target_column}`
+      : `predicted_class,confidence_pct`
+
+  const headers = ["rank", "row_index", predictionHeader, ...allFeatureCols].join(",")
+
+  const escapeCell = (v: string | number | null | undefined): string => {
+    const s = v === null || v === undefined ? "" : String(v)
+    return s.includes(",") || s.includes('"') || s.includes("\n")
+      ? `"${s.replace(/"/g, '""')}"`
+      : s
+  }
+
+  const rows = result.rows.map((row) => {
+    const predCells =
+      result.problem_type === "regression"
+        ? [escapeCell(row.prediction)]
+        : [escapeCell(row.predicted_class), escapeCell(row.confidence !== undefined ? Math.round(row.confidence * 100) : "")]
+    const featureCells = allFeatureCols.map((col) => escapeCell(row.feature_values[col]))
+    return [escapeCell(row.rank), escapeCell(row.row_index), ...predCells, ...featureCells].join(",")
+  })
+
+  return [headers, ...rows].join("\n")
+}
 
 interface RankedPredictionsCardProps {
   result: RankedPredictionsResult
@@ -56,6 +86,17 @@ export function RankedPredictionsCard({ result }: RankedPredictionsCardProps) {
   const dirLabel = result.direction === "highest" ? "Highest" : "Lowest"
   const displayCols = result.rows.length > 0 ? Object.keys(result.rows[0].feature_values) : []
 
+  const handleDownloadCsv = useCallback(() => {
+    const csv = buildCsv(result)
+    const blob = new Blob([csv], { type: "text/csv" })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = `${result.target_column}_ranked_predictions.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }, [result])
+
   return (
     <figure aria-label={`Ranked predictions: top ${result.n} ${result.direction} ${result.target_column}`}>
       <div className="rounded-lg border-2 border-amber-400 bg-white p-4 shadow-sm">
@@ -74,6 +115,13 @@ export function RankedPredictionsCard({ result }: RankedPredictionsCardProps) {
           <span className="rounded bg-sky-100 px-2 py-0.5 text-xs font-medium text-sky-700">
             {result.problem_type === "regression" ? "Regression" : "Classification"}
           </span>
+          <button
+            onClick={handleDownloadCsv}
+            className="ml-auto rounded bg-amber-600 px-2 py-1 text-xs font-medium text-white hover:bg-amber-700"
+            aria-label={`Download ranked predictions as CSV`}
+          >
+            ⬇ Download CSV
+          </button>
         </div>
 
         {/* Ranked table */}

@@ -62,6 +62,7 @@ import { GoalTrainingCard } from "@/components/models/goal-training-card"
 import { SensitivityCard } from "@/components/deploy/sensitivity-card"
 import { InteractionCard } from "@/components/deploy/interaction-card"
 import { RankedPredictionsCard } from "@/components/deploy/ranked-predictions-card"
+import { PredictionCohortCard } from "@/components/deploy/prediction-cohort-card"
 import { OnboardingGuideCard } from "@/components/chat/onboarding-guide-card"
 import { DataVersionHistoryCard } from "@/components/chat/data-version-history-card"
 import { LearningCurveCard } from "@/components/chat/learning-curve-card"
@@ -221,6 +222,7 @@ export default function ProjectWorkspace() {
     attachTemplateListToLastMessage,
     attachTemplateReplayToLastMessage,
     attachRankedPredictionsToLastMessage,
+    attachPredictionCohortToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -556,6 +558,8 @@ export default function ProjectWorkspace() {
                 attachInteractionToLastMessage(json.interaction as import("@/lib/types").InteractionResult)
               } else if (json.type === "ranked_predictions" && json.ranked_predictions) {
                 attachRankedPredictionsToLastMessage(json.ranked_predictions as import("@/lib/types").RankedPredictionsResult)
+              } else if (json.type === "prediction_cohort" && json.prediction_cohort) {
+                attachPredictionCohortToLastMessage(json.prediction_cohort as import("@/lib/types").PredictionCohortResult)
               } else if (json.type === "onboarding_guide" && json.onboarding_guide) {
                 attachOnboardingGuideToLastMessage(json.onboarding_guide as import("@/lib/types").OnboardingGuideResult)
               } else if (json.type === "version_history" && json.version_history) {
@@ -642,6 +646,7 @@ export default function ProjectWorkspace() {
     attachTemplateListToLastMessage,
     attachTemplateReplayToLastMessage,
     attachRankedPredictionsToLastMessage,
+    attachPredictionCohortToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -1023,6 +1028,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.ranked_predictions && (
                       <RankedPredictionsCard result={msg.ranked_predictions} />
+                    )}
+                    {msg.prediction_cohort && (
+                      <PredictionCohortCard result={msg.prediction_cohort} />
                     )}
                     {msg.onboarding_guide && (
                       <OnboardingGuideCard

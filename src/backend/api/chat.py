@@ -2230,6 +2230,21 @@ _RANKED_PRED_PATTERNS = re.compile(
 )
 
 
+_COHORT_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"who\s+(?:are|is)\s+(?:the|these|those|my)?\s*(?:top|highest|at.risk|ranked|predicted)\b|"
+    r"(?:what\s+do|what\s+does)\s+(?:the|these|those|my)?\s*(?:top|ranked|highest|at.risk)\s+(?:\d+\s+)?(?:predictions?|records?|customers?|accounts?|rows?)\s+(?:have\s+in\s+common|look\s+like|share)\b|"
+    r"(?:profile|characterize|describe|segment|group)\s+(?:the|my|these)?\s*(?:top|ranked|highest|at.risk|predicted)(?:\s+(?:\d+|\w+))?\s*(?:predictions?|records?|customers?|accounts?|rows?)\b|"
+    r"(?:common\s+(?:traits?|characteristics?|features?|patterns?)\s+(?:of|among|in)\s+(?:the\s+)?(?:top|ranked|highest|at.risk))\b|"
+    r"(?:what\s+(?:do|does)\s+(?:the|my)\s+)?(?:top|at.risk|highest.scoring)\s+(?:\d+\s+)?(?:predictions?|records?|customers?|accounts?)\s+(?:have\s+in\s+common|look\s+like)\b|"
+    r"(?:cohort|segment)\s+(?:analysis|profile)\s+(?:of|on|for)?\s*(?:the|my)?\s*(?:ranked|top|predicted)\b|"
+    r"(?:tell\s+me\s+about|describe|explain)\s+(?:the|these|those|my)?\s*(?:top|ranked|at.risk)\s+(?:\d+\s+)?(?:predictions?|records?|customers?|accounts?|rows?)\b|"
+    r"(?:are\s+there\s+(?:any\s+)?(?:common|shared|similar)\s+(?:traits?|characteristics?|patterns?)\s+(?:among|in|for))\b"
+    r")",
+    re.IGNORECASE,
+)
+
+
 def _detect_ranked_pred_request(message: str) -> dict:
     """Extract n (number of rows) and direction (highest/lowest) from a ranking request.
 
@@ -6152,6 +6167,57 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Ranking is nice-to-have; never crash chat
 
+    # Prediction cohort analysis — "who are the top predictions?" / "profile at-risk customers"
+    cohort_event: dict | None = None
+    if (
+        _COHORT_PATTERNS.search(body.message)
+        and ctx["deployment"]
+        and ctx["dataset"]
+        and not ranked_pred_event
+    ):
+        try:
+            _co_deployment = ctx["deployment"]
+            _co_ds = ctx["dataset"]
+            _co_file = Path(_co_ds.file_path)
+            if (
+                _co_deployment.pipeline_path
+                and Path(_co_deployment.pipeline_path).exists()
+                and _co_file.exists()
+            ):
+                _co_run = next(
+                    (
+                        mr
+                        for mr in ctx["model_runs"]
+                        if mr.id == _co_deployment.model_run_id
+                    ),
+                    None,
+                )
+                if _co_run and _co_run.model_path and Path(_co_run.model_path).exists():
+                    from core.deployer import compute_prediction_cohort as _cpc
+
+                    _co_df = _load_working_df(_co_file, _active_filter_conditions)
+                    _co_req = _detect_ranked_pred_request(body.message)
+                    _co_result = _cpc(
+                        _co_deployment.pipeline_path,
+                        _co_run.model_path,
+                        _co_df,
+                        n=_co_req["n"],
+                        direction=_co_req["direction"],
+                    )
+                    cohort_event = _co_result
+                    system_prompt += (
+                        f"\n\n## Prediction Cohort Profile\n"
+                        f"{_co_result['characterization']}\n"
+                        f"A PredictionCohortCard is shown in the chat profiling the top "
+                        f"{_co_result['n']} {_co_result['direction']}-scoring "
+                        f"{_co_result['target_column']} predictions. "
+                        f"Narrate the key distinguishing traits of this group — what makes "
+                        f"them different from the overall dataset, and what the analyst should "
+                        f"do with this insight."
+                    )
+        except Exception:  # noqa: BLE001
+            pass  # Cohort profiling is nice-to-have; never crash chat
+
     # Guided onboarding wizard — responds to "guide me", "first steps", etc.
     onboarding_event: dict | None = None
     if _ONBOARDING_PATTERNS.search(body.message):
@@ -6716,6 +6782,10 @@ def send_message(
         # Emit dataset ranking result
         if ranked_pred_event:
             yield f"data: {json.dumps({'type': 'ranked_predictions', 'ranked_predictions': ranked_pred_event})}\n\n"
+
+        # Emit prediction cohort profile result
+        if cohort_event:
+            yield f"data: {json.dumps({'type': 'prediction_cohort', 'prediction_cohort': cohort_event})}\n\n"
 
         # Emit learning curve analysis result
         if learning_curve_event:
