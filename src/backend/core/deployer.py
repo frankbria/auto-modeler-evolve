@@ -749,7 +749,9 @@ def compute_prediction_cohort(
         {target_column, problem_type, n, direction, total_scored,
          categorical_profile, numeric_profile, characterization}
     """
-    ranking = run_dataset_ranking(pipeline_path, model_path, df, n=n, direction=direction)
+    ranking = run_dataset_ranking(
+        pipeline_path, model_path, df, n=n, direction=direction
+    )
     top_indices = [row["row_index"] for row in ranking["rows"]]
     top_df = df.iloc[top_indices]
     target_col = ranking["target_column"]
@@ -798,11 +800,15 @@ def compute_prediction_cohort(
         overall_mean = float(df[col].mean())
         if pd.isna(top_mean) or pd.isna(overall_mean):
             continue
-        ratio: float | None = round(top_mean / overall_mean, 2) if overall_mean != 0 else None
+        ratio: float | None = (
+            round(top_mean / overall_mean, 2) if overall_mean != 0 else None
+        )
         direction_label = (
-            "higher" if top_mean > overall_mean else
-            "lower" if top_mean < overall_mean else
-            "similar"
+            "higher"
+            if top_mean > overall_mean
+            else "lower"
+            if top_mean < overall_mean
+            else "similar"
         )
         numeric_profile.append(
             {
@@ -838,7 +844,9 @@ def compute_prediction_cohort(
 
     dir_word = "highest" if direction == "highest" else "lowest"
     base = f"The {n} {dir_word}-scoring {target_col} predictions"
-    characterization = (base + ": " + "; ".join(char_parts) + ".") if char_parts else base + "."
+    characterization = (
+        (base + ": " + "; ".join(char_parts) + ".") if char_parts else base + "."
+    )
 
     return {
         "target_column": target_col,

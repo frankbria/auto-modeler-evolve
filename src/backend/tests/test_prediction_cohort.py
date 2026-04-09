@@ -93,7 +93,8 @@ def _make_regression_setup():
 
     df = pd.DataFrame(
         {
-            "region": ["East", "West", "East", "North", "East", "West", "North", "East"] * 3,
+            "region": ["East", "West", "East", "North", "East", "West", "North", "East"]
+            * 3,
             "units": [10, 20, 30, 40, 50, 15, 25, 35] * 3,
             "price": [5.0, 4.5, 4.0, 3.5, 3.0, 4.8, 4.2, 3.8] * 3,
             "revenue": [50, 90, 120, 140, 150, 72, 105, 133] * 3,
@@ -115,7 +116,8 @@ def _make_classification_setup():
 
     df = pd.DataFrame(
         {
-            "region": ["East", "West", "East", "North", "East", "West", "North", "East"] * 2,
+            "region": ["East", "West", "East", "North", "East", "West", "North", "East"]
+            * 2,
             "age": [25, 35, 45, 55, 28, 38, 48, 58] * 2,
             "balance": [1000, 5000, 3000, 8000, 500, 6000, 2000, 9000] * 2,
             "churned": ["no", "no", "yes", "no", "yes", "no", "yes", "no"] * 2,
@@ -143,8 +145,14 @@ def test_cohort_returns_required_fields():
         result = compute_prediction_cohort(pp, mp, df, n=5, direction="highest")
 
     required = {
-        "target_column", "problem_type", "n", "direction",
-        "total_scored", "categorical_profile", "numeric_profile", "characterization",
+        "target_column",
+        "problem_type",
+        "n",
+        "direction",
+        "total_scored",
+        "categorical_profile",
+        "numeric_profile",
+        "characterization",
     }
     assert required.issubset(result.keys())
 
@@ -440,7 +448,11 @@ def _chat_events(client, project_id: str, message: str) -> list[dict]:
 def test_cohort_event_emitted(client, deployed_project):
     """Sending a cohort message emits the prediction_cohort SSE event."""
     project_id = deployed_project["project_id"]
-    events = _chat_events(client, project_id, "who are the top predictions and what do they have in common?")
+    events = _chat_events(
+        client,
+        project_id,
+        "who are the top predictions and what do they have in common?",
+    )
     types = [e.get("type") for e in events]
     assert "prediction_cohort" in types, f"Expected prediction_cohort in {types}"
 
@@ -452,7 +464,12 @@ def test_cohort_event_has_required_fields(client, deployed_project):
     cohort_events = [e for e in events if e.get("type") == "prediction_cohort"]
     assert cohort_events, "No prediction_cohort event found"
     data = cohort_events[0]["prediction_cohort"]
-    for field in ("target_column", "characterization", "categorical_profile", "numeric_profile"):
+    for field in (
+        "target_column",
+        "characterization",
+        "categorical_profile",
+        "numeric_profile",
+    ):
         assert field in data, f"Missing field: {field}"
     assert data["target_column"] == "revenue"
 
