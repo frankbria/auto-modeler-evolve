@@ -49,6 +49,14 @@ the time is better spent on real features.
 
 ## Currently Working On
 
+## Day 30 (04:00) — Done
+**Track B — Natural Language Date Range Filtering.** Closes the "show me Q4 data" gap that the existing filter system always promised but never delivered.
+- **NL Date Filter** — `parse_date_filter_request(message, df)` pure function in `core/filter_view.py`. Detects date columns by name-hint (date/time/year/month/period/quarter/week) or string-value sampling. Resolves 6 NL patterns: Q1–Q4 with optional year ("Q4 2023"), quarter word ("third quarter 2023"), year-only ("show 2024 data"), month range ("January through March 2023"), last-N ("last 6 months", "last 2 years", "last 3 weeks"), and relative ("this year", "last year", "this month", "last month"). Returns `date_range` operator with `{start, end}` ISO-date value dict. `apply_active_filter()` extended with `date_range` branch using `pd.to_datetime()` comparison. `build_filter_summary()` formats date_range as "column between START and END". `FilterCondition` TypeScript type gains `date_range` operator + `DateRangeValue` union. `FilterSetCard` renders "between START and END" for date_range conditions. `_FILTER_PATTERNS` regex in `chat.py` extended to catch date-intent phrases; chat filter handler merges date conditions alongside field conditions. 17 backend + 5 frontend = 22 new tests. Total: 2841 backend + 1446 frontend = 4287.
+
+**What's next:**
+- Track B continues deep — remaining ideas: preset delete/reorder UI on predict page, cross-project model comparison.
+- Or branch into a new data input channel: CSV URL monitoring (auto-refresh on cron), direct database connector improvements.
+
 ## Day 29 (20:00) — Done
 **Track B — Multi-Row Batch Prediction.** Closes the "compare multiple independent scenarios at once" gap.
 - **Multi-Row Prediction** — `_MULTI_ROW_PRED_PATTERNS` (6 NL variants) + ";" trigger (any message with semicolons and inline pred pattern) in `chat.py`. `_extract_multi_row_predictions()` with `_trim_preamble()` helper strips leading preamble from each segment before k-v parsing. Handler mutually exclusive with `inline_pred_event` (multi-row takes priority). `MultiPredictionCard` (violet, 📊): scenario comparison table with row# | prediction | feature columns | defaults. 17 backend + 15 frontend = 32 new tests. Total: 2824 backend + 1441 frontend = 4265.
