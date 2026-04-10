@@ -449,6 +449,7 @@ export interface ChatMessage {
   prediction_opportunities?: PredictionOpportunitiesResult
   dataset_comparison?: DatasetComparisonResult
   inline_prediction?: InlinePredictionResult
+  multi_prediction?: MultiPredictionResult
   goal_training?: GoalTrainingResult
   sensitivity?: SensitivityResult
   interaction?: InteractionResult
@@ -1954,6 +1955,24 @@ export interface InlinePredictionResult {
   total_features: number
   summary: string
   problem_type: string | null
+}
+
+export interface MultiPredictionRow {
+  row_index: number
+  provided_features: Record<string, number | string>
+  defaults_used_count: number
+  prediction: number | string
+  probabilities?: Record<string, number>
+  confidence?: number | null
+  confidence_interval?: { lower: number; upper: number } | null
+}
+
+export interface MultiPredictionResult {
+  deployment_id: string
+  target_column: string
+  problem_type: string | null
+  rows: MultiPredictionRow[]
+  summary: string
 }
 
 export interface GoalTrainingTrial {

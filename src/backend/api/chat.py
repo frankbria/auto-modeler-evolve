@@ -2063,6 +2063,63 @@ _INLINE_PRED_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# ---------------------------------------------------------------------------
+# Multi-row batch prediction patterns:
+# "predict for: Region=East, Units=100; Region=West, Units=150"
+# "run predictions for these scenarios: scenario1; scenario2"
+# "batch predict: X=1; X=2; X=3"
+# Key differentiator: presence of ";" separator between rows
+# ---------------------------------------------------------------------------
+_MULTI_ROW_PRED_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"(?:predict|run\s+predictions?|make\s+predictions?|score|get\s+predictions?)\s+"
+    r"(?:for\s+(?:these|multiple|several|the\s+following)\b|"
+    r"(?:these|multiple|several)\s+(?:scenarios?|records?|cases?|inputs?|rows?)\b)|"
+    r"(?:batch|bulk|multiple)\s+(?:predict(?:ion)?s?|scenarios?)\b|"
+    r"predictions?\s+for\s+(?:each|all\s+of\s+)?(?:these|multiple|several)\b|"
+    r"compare\s+(?:these|multiple|several)\s+(?:scenarios?|inputs?|predictions?)\b|"
+    r"run\s+(?:the\s+)?model\s+(?:on|for)\s+(?:multiple|several|these)\b"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def _extract_multi_row_predictions(
+    message: str, feature_names: list[str]
+) -> list[dict[str, object]]:
+    """Parse multiple prediction rows separated by semicolons.
+
+    Each segment is parsed by the existing _extract_multi_feature_prediction helper.
+    Returns a list of feature dicts only when 2+ valid rows are found.
+
+    Leading text (e.g., "predict for:") before the first key=value pair is stripped
+    from each segment to avoid false key-value matches like "for: Region" → key="for".
+    """
+    # Build a regex that finds the start of the first known feature key in a segment
+    # so we can strip any leading non-kv preamble ("predict for:", "scenario 1:", etc.)
+    _name_lower = {f.lower() for f in feature_names}
+
+    def _trim_preamble(segment: str) -> str:
+        """Return segment starting from the first occurrence of a known feature=value."""
+        import re as _re
+        for match in _re.finditer(r"\b([A-Za-z_][\w\s]{0,20}?)\s*=", segment):
+            key_candidate = match.group(1).strip().lower()
+            if key_candidate in _name_lower or key_candidate.replace(" ", "_") in _name_lower:
+                return segment[match.start():]
+        return segment
+
+    # Split by semicolons — the analyst-natural separator for multiple scenarios
+    segments = message.split(";")
+    rows: list[dict[str, object]] = []
+    for segment in segments:
+        trimmed = _trim_preamble(segment.strip())
+        extracted = _extract_multi_feature_prediction(trimmed, feature_names)
+        if extracted:
+            rows.append(extracted)
+    # Require at least 2 rows to distinguish from single inline prediction
+    return rows if len(rows) >= 2 else []
+
+
 # Keywords that trigger a sensitivity / sweep analysis:
 # "how sensitive is revenue to units", "sensitivity analysis on price",
 # "sweep price from 10 to 100", "how does prediction change as units varies"
@@ -5962,11 +6019,112 @@ def send_message(
 
     # Check for inline multi-feature prediction ("predict for Region=East, Units=100, ...")
     # Distinct from what-if (single-feature): this accepts a full explicit feature set.
+    # Multi-row batch prediction: "predict for: Region=East Units=100; Region=West Units=150"
+    # Distinct from inline prediction (single row): uses ";" to separate multiple scenarios.
+    multi_pred_event: dict | None = None
+    if (
+        (
+            _MULTI_ROW_PRED_PATTERNS.search(body.message)
+            or (
+                ";" in body.message
+                and _INLINE_PRED_PATTERNS.search(body.message)
+            )
+        )
+        and ctx["deployment"]
+        and not whatif_chat_event
+    ):
+        try:
+            _mp_deployment = ctx["deployment"]
+            if (
+                _mp_deployment.pipeline_path
+                and Path(_mp_deployment.pipeline_path).exists()
+            ):
+                from core.deployer import load_pipeline as _load_pipeline_mp
+                from core.deployer import predict_single as _predict_single_mp
+
+                _mp_pipeline = _load_pipeline_mp(_mp_deployment.pipeline_path)
+                _mp_feature_names = _mp_pipeline.feature_names
+                _mp_rows = _extract_multi_row_predictions(body.message, _mp_feature_names)
+                if _mp_rows:
+                    _mp_run = next(
+                        (
+                            mr
+                            for mr in ctx["model_runs"]
+                            if mr.id == _mp_deployment.model_run_id
+                        ),
+                        None,
+                    )
+                    if (
+                        _mp_run
+                        and _mp_run.model_path
+                        and Path(_mp_run.model_path).exists()
+                    ):
+                        _mp_target = _mp_deployment.target_column or "output"
+                        _mp_result_rows: list[dict] = []
+                        _mp_preds: list[float | str] = []
+                        for _i, _row_features in enumerate(_mp_rows):
+                            _mp_inputs: dict[str, object] = dict(_mp_pipeline.feature_means)
+                            _mp_inputs.update(_row_features)
+                            _r = _predict_single_mp(
+                                _mp_deployment.pipeline_path,
+                                _mp_run.model_path,
+                                _mp_inputs,
+                            )
+                            _mp_pred = _r["prediction"]
+                            _mp_preds.append(_mp_pred)
+                            _mp_result_rows.append(
+                                {
+                                    "row_index": _i + 1,
+                                    "provided_features": _row_features,
+                                    "defaults_used_count": len(_mp_feature_names) - len(_row_features),
+                                    "prediction": _mp_pred,
+                                    "probabilities": _r.get("probabilities"),
+                                    "confidence": _r.get("confidence"),
+                                    "confidence_interval": _r.get("confidence_interval"),
+                                }
+                            )
+                        # Build plain-English summary
+                        _mp_n = len(_mp_result_rows)
+                        _numeric_preds = [p for p in _mp_preds if isinstance(p, (int, float))]
+                        if _numeric_preds:
+                            _mp_min = min(_numeric_preds)
+                            _mp_max = max(_numeric_preds)
+                            _mp_summary = (
+                                f"{_mp_n} predictions for {_mp_target}: "
+                                f"range {_mp_min:,.4g} – {_mp_max:,.4g}"
+                            )
+                        else:
+                            _mp_counts: dict[str, int] = {}
+                            for p in _mp_preds:
+                                _mp_counts[str(p)] = _mp_counts.get(str(p), 0) + 1
+                            _most_common = max(_mp_counts, key=lambda k: _mp_counts[k])
+                            _mp_summary = (
+                                f"{_mp_n} predictions for {_mp_target}: "
+                                f"most common = {_most_common}"
+                            )
+                        multi_pred_event = {
+                            "deployment_id": str(_mp_deployment.id),
+                            "target_column": _mp_target,
+                            "problem_type": _mp_deployment.problem_type,
+                            "rows": _mp_result_rows,
+                            "summary": _mp_summary,
+                        }
+                        system_prompt += (
+                            f"\n\n## Multi-Row Prediction Results\n"
+                            f"{_mp_summary}\n"
+                            f"A MultiPredictionCard is shown in the chat with {_mp_n} rows. "
+                            f"Narrate the comparison — highlight which scenario produced the "
+                            f"best/worst outcome and what inputs drove the difference."
+                        )
+        except Exception:  # noqa: BLE001
+            pass  # Multi-row prediction is nice-to-have; never crash chat
+
     inline_pred_event: dict | None = None
     if (
         _INLINE_PRED_PATTERNS.search(body.message)
         and ctx["deployment"]
         and not whatif_chat_event  # avoid double-predicting when what-if also fires
+        and not multi_pred_event  # avoid double-predicting when multi-row already fired
     ):
         try:
             _ip_deployment = ctx["deployment"]
@@ -6915,6 +7073,10 @@ def send_message(
         # Emit what-if prediction result
         if whatif_chat_event:
             yield f"data: {json.dumps({'type': 'whatif_result', 'whatif': whatif_chat_event})}\n\n"
+
+        # Emit multi-row batch prediction result (multiple scenarios in one message)
+        if multi_pred_event:
+            yield f"data: {json.dumps({'type': 'multi_prediction', 'multi_prediction': multi_pred_event})}\n\n"
 
         # Emit inline multi-feature prediction result
         if inline_pred_event:

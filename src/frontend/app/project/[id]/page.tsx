@@ -58,6 +58,7 @@ import { ProjectHealthCard } from "@/components/chat/project-health-card"
 import { PredictionOpportunitiesCard } from "@/components/models/prediction-opportunities-card"
 import { DatasetComparisonCard } from "@/components/data/dataset-comparison-card"
 import { InlinePredictionCard } from "@/components/models/inline-prediction-card"
+import { MultiPredictionCard } from "@/components/deploy/multi-prediction-card"
 import { GoalTrainingCard } from "@/components/models/goal-training-card"
 import { SensitivityCard } from "@/components/deploy/sensitivity-card"
 import { InteractionCard } from "@/components/deploy/interaction-card"
@@ -214,6 +215,7 @@ export default function ProjectWorkspace() {
     attachPredictionOpportunitiesToLastMessage,
     attachDatasetComparisonToLastMessage,
     attachInlinePredictionToLastMessage,
+    attachMultiPredictionToLastMessage,
     attachGoalTrainingToLastMessage,
     attachSensitivityToLastMessage,
     attachInteractionToLastMessage,
@@ -554,6 +556,8 @@ export default function ProjectWorkspace() {
                 attachDatasetComparisonToLastMessage(json.dataset_comparison as import("@/lib/types").DatasetComparisonResult)
               } else if (json.type === "inline_prediction" && json.inline_prediction) {
                 attachInlinePredictionToLastMessage(json.inline_prediction as import("@/lib/types").InlinePredictionResult)
+              } else if (json.type === "multi_prediction" && json.multi_prediction) {
+                attachMultiPredictionToLastMessage(json.multi_prediction as import("@/lib/types").MultiPredictionResult)
               } else if (json.type === "goal_training" && json.goal_training) {
                 attachGoalTrainingToLastMessage(json.goal_training as import("@/lib/types").GoalTrainingResult)
               } else if (json.type === "sensitivity" && json.sensitivity) {
@@ -644,6 +648,7 @@ export default function ProjectWorkspace() {
     attachPredictionOpportunitiesToLastMessage,
     attachDatasetComparisonToLastMessage,
     attachInlinePredictionToLastMessage,
+    attachMultiPredictionToLastMessage,
     attachGoalTrainingToLastMessage,
     attachSensitivityToLastMessage,
     attachInteractionToLastMessage,
@@ -1026,6 +1031,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.inline_prediction && (
                       <InlinePredictionCard result={msg.inline_prediction} />
+                    )}
+                    {msg.multi_prediction && (
+                      <MultiPredictionCard result={msg.multi_prediction} />
                     )}
                     {msg.goal_training && (
                       <GoalTrainingCard result={msg.goal_training} />
