@@ -2799,7 +2799,11 @@ def _generate_python_sdk(
         payload_lines.append(f'            "{fname}": {fname},')
 
     params_block = "\n".join(param_lines) if param_lines else "        **features,"
-    args_block = "\n".join(arg_doc_lines) if arg_doc_lines else "            **features: Feature values"
+    args_block = (
+        "\n".join(arg_doc_lines)
+        if arg_doc_lines
+        else "            **features: Feature values"
+    )
     payload_block = (
         "\n".join(payload_lines) if payload_lines else "            **features,"
     )
@@ -2927,17 +2931,17 @@ def _generate_javascript_sdk(
         param_doc_lines.append(f" * @param {{{js_type}}} features.{fname}")
         param_names.append(fname)
 
-    params_doc = "\n".join(param_doc_lines) or " * @param {Object} features - Feature values"
+    params_doc = (
+        "\n".join(param_doc_lines) or " * @param {Object} features - Feature values"
+    )
     feature_list_comment = ", ".join(param_names) or "feature"
 
     if problem_type == "classification":
-        return_doc = (
-            "{{prediction: string, confidence: number, probabilities: Object}}"
-        )
+        return_doc = "{{prediction: string, confidence: number, probabilities: Object}}"
     else:
         return_doc = "{{prediction: number, confidence_interval: {{lower: number, upper: number}}}}"
 
-    sdk = f'''\
+    sdk = f"""\
 /**
  * AutoModeler SDK — {target_column} predictor
  * Generated: {export_date}
@@ -2998,7 +3002,7 @@ export class {class_name} {{
     return Promise.all(rows.map(row => this.predict(row)));
   }}
 }}
-'''
+"""
     return sdk
 
 

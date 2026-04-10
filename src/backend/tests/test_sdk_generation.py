@@ -78,7 +78,10 @@ def test_sdk_class_name_hyphen():
 # _generate_python_sdk helper
 # ---------------------------------------------------------------------------
 
-_FEATURE_SCHEMA_NUM = [{"name": "units", "type": "numeric"}, {"name": "price", "type": "numeric"}]
+_FEATURE_SCHEMA_NUM = [
+    {"name": "units", "type": "numeric"},
+    {"name": "price", "type": "numeric"},
+]
 _FEATURE_SCHEMA_MIXED = [
     {"name": "region", "type": "categorical"},
     {"name": "revenue", "type": "numeric"},
@@ -247,13 +250,17 @@ def test_js_sdk_endpoint_url():
 def client_with_deployment(tmp_path):
     """TestClient with a seeded active deployment (no ML pipeline on disk)."""
     db_path = tmp_path / "test.db"
-    engine = create_engine(f"sqlite:///{db_path}", connect_args={"check_same_thread": False})
+    engine = create_engine(
+        f"sqlite:///{db_path}", connect_args={"check_same_thread": False}
+    )
     SQLModel.metadata.create_all(engine)
     db_module.engine = engine
 
     import api.data as data_module
+
     data_module.UPLOAD_DIR = tmp_path / "uploads"
     import api.models as models_api_module
+
     models_api_module.MODELS_DIR = tmp_path / "models"
 
     from main import app
@@ -290,7 +297,10 @@ def test_sdk_endpoint_python(client_with_deployment):
     client, deployment_id = client_with_deployment
     r = client.get(f"/api/deploy/{deployment_id}/sdk?language=python")
     assert r.status_code == 200
-    assert "text/x-python" in r.headers["content-type"] or "text" in r.headers["content-type"]
+    assert (
+        "text/x-python" in r.headers["content-type"]
+        or "text" in r.headers["content-type"]
+    )
     assert "class" in r.text
     assert "predict" in r.text
 
