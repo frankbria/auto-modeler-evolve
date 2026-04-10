@@ -49,6 +49,15 @@ the time is better spent on real features.
 
 ## Currently Working On
 
+## Day 29 (20:00) — Done
+**Track B — Multi-Row Batch Prediction.** Closes the "compare multiple independent scenarios at once" gap.
+- **Multi-Row Prediction** — `_MULTI_ROW_PRED_PATTERNS` (6 NL variants) + ";" trigger (any message with semicolons and inline pred pattern) in `chat.py`. `_extract_multi_row_predictions()` with `_trim_preamble()` helper strips leading preamble from each segment before k-v parsing. Handler mutually exclusive with `inline_pred_event` (multi-row takes priority). `MultiPredictionCard` (violet, 📊): scenario comparison table with row# | prediction | feature columns | defaults. 17 backend + 15 frontend = 32 new tests. Total: 2824 backend + 1441 frontend = 4265.
+
+**What's next:**
+- All spec items 100% checked. Track B is very deep.
+- Consider: preset delete/reorder UI on predict page, natural language date filtering, or cross-project model comparison.
+- Or deepen an existing feature: richer preset management, template sharing, or UX polish on shared predict page.
+
 ## Day 29 (04:00) — Done
 **Track B — Prediction Presets on the VP Dashboard.** Closes the "VP doesn't know what to type" cold-start gap.
 - **Prediction Presets** — `DeploymentPreset` SQLModel table. `GET/POST/DELETE /api/deploy/{id}/presets` CRUD endpoints. `_PRESET_SAVE_PATTERNS` (8 NL variants) + `_PRESET_LIST_PATTERNS` (4 NL variants) + `_extract_preset_definition()` helper in `chat.py`. Chat handlers persist presets to DB and emit `{type:"preset_saved"}` + `{type:"preset_list"}` SSE events. `PresetSavedCard` (emerald, 🎯) + `PresetListCard` (indigo, 📋). `predict/[id]/page.tsx`: loads presets on mount, shows "Quick Scenarios" pill buttons above the form. 25 backend + 20 frontend = 45 new tests. Total: 2807 backend + 1426 frontend = 4233.
