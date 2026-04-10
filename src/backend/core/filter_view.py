@@ -171,7 +171,17 @@ def validate_filter_conditions(
     """Return list of error strings for invalid conditions (empty = all valid)."""
     errors = []
     col_set = set(df_columns)
-    valid_ops = {"eq", "ne", "gt", "lt", "gte", "lte", "contains", "not_contains", "date_range"}
+    valid_ops = {
+        "eq",
+        "ne",
+        "gt",
+        "lt",
+        "gte",
+        "lte",
+        "contains",
+        "not_contains",
+        "date_range",
+    }
     for i, cond in enumerate(conditions):
         col = cond.get("column")
         op = cond.get("operator")
@@ -188,21 +198,47 @@ def validate_filter_conditions(
 
 # Quarter month bounds: Q1=(1,3), Q2=(4,6), Q3=(7,9), Q4=(10,12)
 _QUARTER_MONTHS: dict[int, tuple[int, int]] = {
-    1: (1, 3), 2: (4, 6), 3: (7, 9), 4: (10, 12)
+    1: (1, 3),
+    2: (4, 6),
+    3: (7, 9),
+    4: (10, 12),
 }
 
 _MONTH_NAMES: dict[str, int] = {
-    "january": 1, "february": 2, "march": 3, "april": 4,
-    "may": 5, "june": 6, "july": 7, "august": 8,
-    "september": 9, "october": 10, "november": 11, "december": 12,
-    "jan": 1, "feb": 2, "mar": 3, "apr": 4,
-    "jun": 6, "jul": 7, "aug": 8, "sep": 9,
-    "oct": 10, "nov": 11, "dec": 12,
+    "january": 1,
+    "february": 2,
+    "march": 3,
+    "april": 4,
+    "may": 5,
+    "june": 6,
+    "july": 7,
+    "august": 8,
+    "september": 9,
+    "october": 10,
+    "november": 11,
+    "december": 12,
+    "jan": 1,
+    "feb": 2,
+    "mar": 3,
+    "apr": 4,
+    "jun": 6,
+    "jul": 7,
+    "aug": 8,
+    "sep": 9,
+    "oct": 10,
+    "nov": 11,
+    "dec": 12,
 }
 
 _QUARTER_WORDS: dict[str, int] = {
-    "first": 1, "second": 2, "third": 3, "fourth": 4,
-    "1st": 1, "2nd": 2, "3rd": 3, "4th": 4,
+    "first": 1,
+    "second": 2,
+    "third": 3,
+    "fourth": 4,
+    "1st": 1,
+    "2nd": 2,
+    "3rd": 3,
+    "4th": 4,
 }
 
 # Patterns (compiled once)
@@ -214,9 +250,7 @@ _RE_QUARTER_WORD = re.compile(
     re.IGNORECASE,
 )
 _RE_YEAR_ONLY = re.compile(r"\b(20\d{2})\s+(?:data|year|records?)?\b", re.IGNORECASE)
-_RE_LAST_N = re.compile(
-    r"\blast\s+(\d+)\s+(day|week|month|year)s?\b", re.IGNORECASE
-)
+_RE_LAST_N = re.compile(r"\blast\s+(\d+)\s+(day|week|month|year)s?\b", re.IGNORECASE)
 _RE_THIS_LAST_PERIOD = re.compile(
     r"\b(this|last)\s+(year|month|quarter)\b", re.IGNORECASE
 )
@@ -245,7 +279,16 @@ def _detect_date_columns(df: pd.DataFrame) -> list[str]:
         # Name hint: common date-related column names
         if any(
             kw in col_lower
-            for kw in ("date", "time", "year", "month", "day", "period", "quarter", "week")
+            for kw in (
+                "date",
+                "time",
+                "year",
+                "month",
+                "day",
+                "period",
+                "quarter",
+                "week",
+            )
         ):
             date_cols.append(col)
             continue
@@ -325,13 +368,17 @@ def parse_date_filter_request(
     m = _RE_THIS_LAST_PERIOD.search(message)
     if m:
         qualifier = m.group(1).lower()  # "this" or "last"
-        period = m.group(2).lower()     # "year", "month", "quarter"
+        period = m.group(2).lower()  # "year", "month", "quarter"
         if period == "year":
             yr = current_year if qualifier == "this" else current_year - 1
             return [_make_date_condition(col, date(yr, 1, 1), date(yr, 12, 31))]
         if period == "month":
             mn = today.month if qualifier == "this" else (today.month - 1 or 12)
-            yr = current_year if qualifier == "this" or today.month > 1 else current_year - 1
+            yr = (
+                current_year
+                if qualifier == "this" or today.month > 1
+                else current_year - 1
+            )
             last_day = _last_day_of_month(yr, mn)
             return [_make_date_condition(col, date(yr, mn, 1), date(yr, mn, last_day))]
         if period == "quarter":
@@ -343,7 +390,11 @@ def parse_date_filter_request(
                 yr = current_year
             start_month, end_month = _QUARTER_MONTHS[q_num]
             last_day = _last_day_of_month(yr, end_month)
-            return [_make_date_condition(col, date(yr, start_month, 1), date(yr, end_month, last_day))]
+            return [
+                _make_date_condition(
+                    col, date(yr, start_month, 1), date(yr, end_month, last_day)
+                )
+            ]
 
     # --- Pattern 3: "Q1", "Q4 2023", "first quarter 2024" ---
     m = _RE_QUARTER_NUM.search(message)
@@ -352,7 +403,11 @@ def parse_date_filter_request(
         yr = int(m.group(2)) if m.group(2) else current_year
         start_month, end_month = _QUARTER_MONTHS[q_num]
         last_day = _last_day_of_month(yr, end_month)
-        return [_make_date_condition(col, date(yr, start_month, 1), date(yr, end_month, last_day))]
+        return [
+            _make_date_condition(
+                col, date(yr, start_month, 1), date(yr, end_month, last_day)
+            )
+        ]
 
     m = _RE_QUARTER_WORD.search(message)
     if m:
@@ -360,7 +415,11 @@ def parse_date_filter_request(
         yr = int(m.group(2)) if m.group(2) else current_year
         start_month, end_month = _QUARTER_MONTHS[q_num]
         last_day = _last_day_of_month(yr, end_month)
-        return [_make_date_condition(col, date(yr, start_month, 1), date(yr, end_month, last_day))]
+        return [
+            _make_date_condition(
+                col, date(yr, start_month, 1), date(yr, end_month, last_day)
+            )
+        ]
 
     # --- Pattern 4: "January through March 2023", "Jan to Mar" ---
     m = _RE_MONTH_RANGE.search(message)
@@ -369,7 +428,11 @@ def parse_date_filter_request(
         end_month = _MONTH_NAMES.get(m.group(2).lower(), 12)
         yr = int(m.group(3)) if m.group(3) else current_year
         last_day = _last_day_of_month(yr, end_month)
-        return [_make_date_condition(col, date(yr, start_month, 1), date(yr, end_month, last_day))]
+        return [
+            _make_date_condition(
+                col, date(yr, start_month, 1), date(yr, end_month, last_day)
+            )
+        ]
 
     # --- Pattern 5: Year only: "2023 data", "show 2024" ---
     m = _RE_YEAR_ONLY.search(message)
@@ -423,7 +486,11 @@ def _apply_one(df: pd.DataFrame, col: str, op: str, val: Any) -> pd.DataFrame:
         try:
             dates = pd.to_datetime(series, errors="coerce")
             start = pd.Timestamp(val["start"])
-            end = pd.Timestamp(val["end"]) + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
+            end = (
+                pd.Timestamp(val["end"])
+                + pd.Timedelta(days=1)
+                - pd.Timedelta(seconds=1)
+            )
             return df[(dates >= start) & (dates <= end)]
         except Exception:
             return df
