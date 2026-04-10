@@ -2102,10 +2102,14 @@ def _extract_multi_row_predictions(
     def _trim_preamble(segment: str) -> str:
         """Return segment starting from the first occurrence of a known feature=value."""
         import re as _re
+
         for match in _re.finditer(r"\b([A-Za-z_][\w\s]{0,20}?)\s*=", segment):
             key_candidate = match.group(1).strip().lower()
-            if key_candidate in _name_lower or key_candidate.replace(" ", "_") in _name_lower:
-                return segment[match.start():]
+            if (
+                key_candidate in _name_lower
+                or key_candidate.replace(" ", "_") in _name_lower
+            ):
+                return segment[match.start() :]
         return segment
 
     # Split by semicolons — the analyst-natural separator for multiple scenarios
@@ -6025,10 +6029,7 @@ def send_message(
     if (
         (
             _MULTI_ROW_PRED_PATTERNS.search(body.message)
-            or (
-                ";" in body.message
-                and _INLINE_PRED_PATTERNS.search(body.message)
-            )
+            or (";" in body.message and _INLINE_PRED_PATTERNS.search(body.message))
         )
         and ctx["deployment"]
         and not whatif_chat_event
@@ -6044,7 +6045,9 @@ def send_message(
 
                 _mp_pipeline = _load_pipeline_mp(_mp_deployment.pipeline_path)
                 _mp_feature_names = _mp_pipeline.feature_names
-                _mp_rows = _extract_multi_row_predictions(body.message, _mp_feature_names)
+                _mp_rows = _extract_multi_row_predictions(
+                    body.message, _mp_feature_names
+                )
                 if _mp_rows:
                     _mp_run = next(
                         (
@@ -6063,7 +6066,9 @@ def send_message(
                         _mp_result_rows: list[dict] = []
                         _mp_preds: list[float | str] = []
                         for _i, _row_features in enumerate(_mp_rows):
-                            _mp_inputs: dict[str, object] = dict(_mp_pipeline.feature_means)
+                            _mp_inputs: dict[str, object] = dict(
+                                _mp_pipeline.feature_means
+                            )
                             _mp_inputs.update(_row_features)
                             _r = _predict_single_mp(
                                 _mp_deployment.pipeline_path,
@@ -6076,16 +6081,21 @@ def send_message(
                                 {
                                     "row_index": _i + 1,
                                     "provided_features": _row_features,
-                                    "defaults_used_count": len(_mp_feature_names) - len(_row_features),
+                                    "defaults_used_count": len(_mp_feature_names)
+                                    - len(_row_features),
                                     "prediction": _mp_pred,
                                     "probabilities": _r.get("probabilities"),
                                     "confidence": _r.get("confidence"),
-                                    "confidence_interval": _r.get("confidence_interval"),
+                                    "confidence_interval": _r.get(
+                                        "confidence_interval"
+                                    ),
                                 }
                             )
                         # Build plain-English summary
                         _mp_n = len(_mp_result_rows)
-                        _numeric_preds = [p for p in _mp_preds if isinstance(p, (int, float))]
+                        _numeric_preds = [
+                            p for p in _mp_preds if isinstance(p, (int, float))
+                        ]
                         if _numeric_preds:
                             _mp_min = min(_numeric_preds)
                             _mp_max = max(_numeric_preds)

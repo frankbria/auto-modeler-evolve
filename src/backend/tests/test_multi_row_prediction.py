@@ -37,9 +37,7 @@ def test_multi_row_pattern_multiple_predictions():
 
 
 def test_multi_row_pattern_run_multiple():
-    assert _MULTI_ROW_PRED_PATTERNS.search(
-        "run predictions for multiple scenarios"
-    )
+    assert _MULTI_ROW_PRED_PATTERNS.search("run predictions for multiple scenarios")
 
 
 def test_multi_row_pattern_score_these():
@@ -53,16 +51,12 @@ def test_multi_row_pattern_compare_scenarios():
 
 
 def test_multi_row_pattern_predict_for_several():
-    assert _MULTI_ROW_PRED_PATTERNS.search(
-        "predict for several inputs: a=1; b=2"
-    )
+    assert _MULTI_ROW_PRED_PATTERNS.search("predict for several inputs: a=1; b=2")
 
 
 def test_multi_row_pattern_no_match_single():
     # Single prediction should NOT match multi-row pattern
-    assert not _MULTI_ROW_PRED_PATTERNS.search(
-        "predict for Region=East Units=100"
-    )
+    assert not _MULTI_ROW_PRED_PATTERNS.search("predict for Region=East Units=100")
 
 
 def test_multi_row_pattern_no_match_unrelated():
@@ -156,12 +150,15 @@ def client(tmp_path):
     SQLModel.metadata.create_all(db_module.engine)
 
     import api.data as data_module
+
     data_module.UPLOAD_DIR = tmp_path / "uploads"
 
     import api.models as models_api_module
+
     models_api_module.MODELS_DIR = tmp_path / "models"
 
     from main import app
+
     with TestClient(app) as c:
         yield c
 
