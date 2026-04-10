@@ -6,6 +6,7 @@ import React from "react"
 import { render, screen } from "@testing-library/react"
 import { SdkDownloadCard } from "@/components/deploy/sdk-download-card"
 import type { SdkDownloadInfo } from "@/lib/types"
+import { useAppStore } from "@/lib/store"
 
 const SDK_INFO: SdkDownloadInfo = {
   deployment_id: "dep-abc",
@@ -100,13 +101,11 @@ describe("SdkDownloadCard", () => {
 
   it("store action attaches sdk_download to last message", () => {
     // Verify the store action signature via type checking (runtime integration)
-    const { useAppStore } = require("@/lib/store")
     const store = useAppStore.getState()
     expect(typeof store.attachSdkDownloadToLastMessage).toBe("function")
   })
 
   it("store action sets sdk_download on last assistant message", () => {
-    const { useAppStore } = require("@/lib/store")
     useAppStore.setState({
       messages: [{ role: "assistant", content: "Hello", timestamp: "" }],
     })
@@ -116,7 +115,6 @@ describe("SdkDownloadCard", () => {
   })
 
   it("store action does not attach when last message is user", () => {
-    const { useAppStore } = require("@/lib/store")
     useAppStore.setState({
       messages: [{ role: "user", content: "Hi", timestamp: "" }],
     })
