@@ -1114,5 +1114,15 @@ export const api = {
       fetch(`${API_URL}/api/deploy/${deploymentId}/presets/${presetId}`, {
         method: "DELETE",
       }).then(() => undefined),
+
+    getSdkUrl: (
+      deploymentId: string,
+      language: "python" | "javascript",
+      baseUrl?: string
+    ): string => {
+      const params = new URLSearchParams({ language })
+      if (baseUrl) params.set("base_url", baseUrl)
+      return `${API_URL}/api/deploy/${deploymentId}/sdk?${params.toString()}`
+    },
   },
 }

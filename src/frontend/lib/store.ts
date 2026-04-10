@@ -105,6 +105,7 @@ interface AppState {
   attachTemplateReplayToLastMessage: (template_replay: import("./types").TemplateReplayInfo) => void
   attachPresetSavedToLastMessage: (preset: import("./types").PresetSavedInfo) => void
   attachPresetListToLastMessage: (preset_list: import("./types").PresetListInfo) => void
+  attachSdkDownloadToLastMessage: (sdk_download: import("./types").SdkDownloadInfo) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -685,6 +686,15 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, preset_list }
+      }
+      return { messages }
+    }),
+  attachSdkDownloadToLastMessage: (sdk_download) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, sdk_download }
       }
       return { messages }
     }),

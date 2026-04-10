@@ -463,6 +463,7 @@ export interface ChatMessage {
   template_replay?: TemplateReplayInfo
   preset_saved?: PresetSavedInfo
   preset_list?: PresetListInfo
+  sdk_download?: SdkDownloadInfo
 }
 
 export interface SegmentPerformanceSegment {
@@ -2214,4 +2215,14 @@ export interface PresetListInfo {
   }>
   count: number
   deployment_id: string
+}
+
+export interface SdkDownloadInfo {
+  deployment_id: string
+  target_column: string
+  algorithm: string
+  problem_type: string
+  python_url: string
+  javascript_url: string
+  class_name: string
 }

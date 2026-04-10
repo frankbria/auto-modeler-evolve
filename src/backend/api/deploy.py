@@ -2757,6 +2757,336 @@ def export_deployment(
 
 
 # ---------------------------------------------------------------------------
+# SDK generation — downloadable Python / JavaScript client library
+# ---------------------------------------------------------------------------
+
+
+def _sdk_class_name(target_column: str, algorithm: str) -> str:
+    """Derive a PascalCase class name from target column + algorithm."""
+    parts = (target_column + "_predictor").replace("-", "_").split("_")
+    return "".join(p.capitalize() for p in parts if p)
+
+
+def _generate_python_sdk(
+    deployment_id: str,
+    target_column: str,
+    algorithm: str,
+    problem_type: str,
+    feature_schema: list[dict],
+    base_url: str,
+    export_date: str,
+) -> str:
+    """Generate a standalone Python SDK module for a deployed model.
+
+    The module contains a single class with predict() and predict_batch()
+    methods, typed signatures, and embedded docstrings.
+    """
+    class_name = _sdk_class_name(target_column, algorithm)
+
+    # Build typed parameter signatures and docstrings
+    param_lines = []
+    arg_doc_lines = []
+    payload_lines = []
+    for field in feature_schema:
+        fname = field.get("name", "feature")
+        ftype = field.get("type", "numeric")
+        py_type = "float" if ftype == "numeric" else "str"
+        default = "0.0" if ftype == "numeric" else '"value"'
+        param_lines.append(f"        {fname}: {py_type} = {default},")
+        arg_doc_lines.append(
+            f"            {fname}: {'Numeric value' if ftype == 'numeric' else 'Category string'}"
+        )
+        payload_lines.append(f'            "{fname}": {fname},')
+
+    params_block = "\n".join(param_lines) if param_lines else "        **features,"
+    args_block = "\n".join(arg_doc_lines) if arg_doc_lines else "            **features: Feature values"
+    payload_block = (
+        "\n".join(payload_lines) if payload_lines else "            **features,"
+    )
+
+    if problem_type == "classification":
+        returns_block = (
+            "- prediction: predicted class label\n"
+            "                - confidence: model confidence (0–1)\n"
+            "                - probabilities: per-class probabilities dict"
+        )
+    else:
+        returns_block = (
+            "- prediction: numeric predicted value\n"
+            "                - confidence_interval: dict with 'lower' and 'upper' (95% CI)"
+        )
+
+    algorithm_plain = algorithm.replace("_", " ").title()
+
+    sdk = f'''\
+"""
+AutoModeler SDK — {target_column} predictor
+Generated: {export_date}
+Algorithm: {algorithm_plain}
+Problem type: {problem_type}
+
+Usage:
+    from {class_name.lower()}_sdk import {class_name}
+
+    predictor = {class_name}(base_url="http://localhost:8000")
+    result = predictor.predict(
+{_indent_lines(params_block, 8)}
+    )
+    print(result["prediction"])
+"""
+
+from __future__ import annotations
+
+from typing import Optional
+
+import requests
+
+
+class {class_name}:
+    """Client for the AutoModeler {target_column} prediction model.
+
+    Algorithm : {algorithm_plain}
+    Target    : {target_column}
+    Problem   : {problem_type}
+    """
+
+    def __init__(
+        self,
+        base_url: str = "http://localhost:8000",
+        api_key: Optional[str] = None,
+    ) -> None:
+        self._endpoint = f"{{base_url}}/api/predict/{deployment_id}"
+        self._api_key = api_key
+        self._session = requests.Session()
+        self._session.headers.update({{"Content-Type": "application/json"}})
+        if api_key:
+            self._session.headers.update({{"Authorization": f"Bearer {{api_key}}"}})
+
+    def predict(
+        self,
+{params_block}
+    ) -> dict:
+        """Run a single prediction.
+
+        Args:
+{args_block}
+
+        Returns:
+            dict with keys:
+                {returns_block}
+
+        Raises:
+            requests.HTTPError: if the prediction endpoint returns an error.
+        """
+        payload = {{
+{payload_block}
+        }}
+        response = self._session.post(self._endpoint, json=payload, timeout=30)
+        response.raise_for_status()
+        return response.json()
+
+    def predict_batch(self, rows: list[dict]) -> list[dict]:
+        """Run predictions for a list of feature dicts.
+
+        Args:
+            rows: list of dicts, each mapping feature name to value.
+
+        Returns:
+            list of prediction result dicts in the same order.
+        """
+        return [self.predict(**row) for row in rows]
+'''
+    return sdk
+
+
+def _indent_lines(text: str, spaces: int) -> str:
+    prefix = " " * spaces
+    return "\n".join(prefix + line for line in text.splitlines())
+
+
+def _generate_javascript_sdk(
+    deployment_id: str,
+    target_column: str,
+    algorithm: str,
+    problem_type: str,
+    feature_schema: list[dict],
+    base_url: str,
+    export_date: str,
+) -> str:
+    """Generate a standalone JavaScript/TypeScript-compatible SDK module."""
+    class_name = _sdk_class_name(target_column, algorithm)
+    algorithm_plain = algorithm.replace("_", " ").title()
+
+    # Build JSDoc @param lines
+    param_doc_lines = []
+    param_names = []
+    for field in feature_schema:
+        fname = field.get("name", "feature")
+        ftype = field.get("type", "numeric")
+        js_type = "number" if ftype == "numeric" else "string"
+        param_doc_lines.append(f" * @param {{{js_type}}} features.{fname}")
+        param_names.append(fname)
+
+    params_doc = "\n".join(param_doc_lines) or " * @param {Object} features - Feature values"
+    feature_list_comment = ", ".join(param_names) or "feature"
+
+    if problem_type == "classification":
+        return_doc = (
+            "{{prediction: string, confidence: number, probabilities: Object}}"
+        )
+    else:
+        return_doc = "{{prediction: number, confidence_interval: {{lower: number, upper: number}}}}"
+
+    sdk = f'''\
+/**
+ * AutoModeler SDK — {target_column} predictor
+ * Generated: {export_date}
+ * Algorithm: {algorithm_plain}
+ * Problem type: {problem_type}
+ *
+ * @example
+ * import {{ {class_name} }} from './{class_name.lower()}_sdk.js';
+ *
+ * const predictor = new {class_name}({{ baseUrl: 'http://localhost:8000' }});
+ * const result = await predictor.predict({{ {feature_list_comment}: ... }});
+ * console.log(result.prediction);
+ */
+export class {class_name} {{
+  /**
+   * @param {{Object}} [options]
+   * @param {{string}} [options.baseUrl='http://localhost:8000'] - API server base URL
+   * @param {{string}} [options.apiKey] - Optional API key for authenticated deployments
+   */
+  constructor(options = {{}}) {{
+    this._endpoint = (options.baseUrl || '{base_url}') + '/api/predict/{deployment_id}';
+    this._apiKey = options.apiKey || null;
+  }}
+
+  /**
+   * Run a single prediction.
+   *
+{params_doc}
+   * @returns {{Promise<{return_doc}>}}
+   */
+  async predict(features = {{}}) {{
+    const headers = {{ 'Content-Type': 'application/json' }};
+    if (this._apiKey) {{
+      headers['Authorization'] = `Bearer ${{this._apiKey}}`;
+    }}
+
+    const response = await fetch(this._endpoint, {{
+      method: 'POST',
+      headers,
+      body: JSON.stringify(features),
+    }});
+
+    if (!response.ok) {{
+      const text = await response.text().catch(() => response.statusText);
+      throw new Error(`Prediction failed (${{response.status}}): ${{text}}`);
+    }}
+
+    return response.json();
+  }}
+
+  /**
+   * Run predictions for multiple rows.
+   *
+   * @param {{Object[]}} rows - Array of feature dicts
+   * @returns {{Promise<Object[]>}}
+   */
+  async predictBatch(rows) {{
+    return Promise.all(rows.map(row => this.predict(row)));
+  }}
+}}
+'''
+    return sdk
+
+
+@router.get("/api/deploy/{deployment_id}/sdk")
+def get_sdk(
+    deployment_id: str,
+    language: str = Query("python", description="SDK language: python or javascript"),
+    base_url: str = Query(
+        "http://localhost:8000", description="Base URL of the prediction API server"
+    ),
+    session: Session = Depends(get_session),
+):
+    """Generate and download a client SDK for a deployed model.
+
+    Supports Python (requests-based class) and JavaScript (ES module class).
+    The generated SDK wraps the prediction API into a typed, documented class
+    so developers can integrate it without manually constructing HTTP requests.
+
+    Returns a downloadable source file (.py or .js).
+    """
+    from datetime import UTC, datetime
+
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment or not deployment.is_active:
+        raise HTTPException(status_code=404, detail="Deployment not found or inactive")
+
+    if language not in ("python", "javascript"):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid language. Supported values: python, javascript",
+        )
+
+    target_column = deployment.target_column or "target"
+    algorithm = deployment.algorithm or "model"
+    problem_type = deployment.problem_type or "regression"
+    export_date = datetime.now(UTC).strftime("%Y-%m-%d")
+
+    # Load feature schema from pipeline (type info: numeric vs categorical)
+    feature_schema: list[dict] = []
+    if deployment.pipeline_path and Path(deployment.pipeline_path).exists():
+        try:
+            feature_schema = get_feature_schema(deployment.pipeline_path)
+        except Exception:
+            feature_names = (
+                json.loads(deployment.feature_names) if deployment.feature_names else []
+            )
+            feature_schema = [{"name": f, "type": "numeric"} for f in feature_names]
+    else:
+        feature_names = (
+            json.loads(deployment.feature_names) if deployment.feature_names else []
+        )
+        feature_schema = [{"name": f, "type": "numeric"} for f in feature_names]
+
+    class_name = _sdk_class_name(target_column, algorithm)
+
+    if language == "python":
+        content = _generate_python_sdk(
+            deployment_id=deployment_id,
+            target_column=target_column,
+            algorithm=algorithm,
+            problem_type=problem_type,
+            feature_schema=feature_schema,
+            base_url=base_url,
+            export_date=export_date,
+        )
+        filename = f"{class_name.lower()}_sdk.py"
+        media_type = "text/x-python"
+    else:
+        content = _generate_javascript_sdk(
+            deployment_id=deployment_id,
+            target_column=target_column,
+            algorithm=algorithm,
+            problem_type=problem_type,
+            feature_schema=feature_schema,
+            base_url=base_url,
+            export_date=export_date,
+        )
+        filename = f"{class_name.lower()}_sdk.js"
+        media_type = "text/javascript"
+
+    return Response(
+        content=content.encode("utf-8"),
+        media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+# ---------------------------------------------------------------------------
 # Webhook notification endpoints
 # ---------------------------------------------------------------------------
 

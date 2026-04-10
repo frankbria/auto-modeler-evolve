@@ -2314,6 +2314,20 @@ _PRESET_KV_RE = re.compile(
     r"([A-Za-z_][A-Za-z0-9_]*)\s*=\s*([^\s,;]+)",
 )
 
+_SDK_PATTERNS = re.compile(
+    r"\b("
+    r"(?:generate|create|download|get|give\s+me|build)\s+(?:a\s+|the\s+)?(?:python|javascript|js)?\s*sdk|"
+    r"(?:python|javascript|js)\s+sdk\s+(?:for|of)\s+(?:my|this)?(?:\s+model)?|"
+    r"(?:generate|download|get)\s+(?:the\s+)?(?:python|javascript|js)\s+(?:client|library|module|sdk)|"
+    r"sdk\s+(?:for|to)\s+(?:call|use|integrate|consume)\s+(?:my|this|the)\s+(?:model|api|prediction)|"
+    r"client\s+library\s+for\s+(?:my|this|the)\s+(?:model|api)|"
+    r"how\s+(?:do\s+(?:I|developers?)|can\s+(?:my\s+)?developers?)\s+(?:use|integrate|consume|call)\s+(?:my|this|the)\s+(?:model|api|prediction\s+api)|"
+    r"(?:make|create)\s+(?:it|this)\s+easy\s+for\s+(?:my\s+)?developers?|"
+    r"developer\s+sdk|developer\s+client\s+library"
+    r")\b",
+    re.IGNORECASE,
+)
+
 
 def _extract_preset_definition(message: str) -> dict | None:
     """Extract preset name and feature key=value pairs from a natural language message.
@@ -6872,6 +6886,41 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Preset listing is nice-to-have; never crash chat
 
+    # SDK download card: generate download links for Python/JS SDK
+    sdk_event: dict | None = None
+    if _SDK_PATTERNS.search(body.message) and ctx["deployment"]:
+        try:
+            _dep = ctx["deployment"]
+            _target = _dep.target_column or "target"
+            _algo = _dep.algorithm or "model"
+            _problem = _dep.problem_type or "regression"
+            # Derive class name the same way the endpoint does
+            _parts = (_target + "_predictor").replace("-", "_").split("_")
+            _class_name = "".join(p.capitalize() for p in _parts if p)
+            _base = f"/api/deploy/{_dep.id}/sdk"
+            sdk_event = {
+                "deployment_id": _dep.id,
+                "target_column": _target,
+                "algorithm": _algo,
+                "problem_type": _problem,
+                "python_url": f"{_base}?language=python",
+                "javascript_url": f"{_base}?language=javascript",
+                "class_name": _class_name,
+            }
+            system_prompt += (
+                f"\n\n## SDK Download Ready\n"
+                f"A downloadable SDK has been generated for the {_target} model "
+                f"({_algo.replace('_', ' ').title()}, {_problem}). "
+                f"The SDK class is called `{_class_name}`. "
+                "It wraps the prediction API in a typed Python or JavaScript class. "
+                "Tell the user they can download the Python SDK or JavaScript SDK "
+                "using the download buttons in the card. "
+                "The SDK lets their developer import the class and call predict() "
+                "without writing HTTP code manually."
+            )
+        except Exception:  # noqa: BLE001
+            pass  # SDK generation is nice-to-have; never crash chat
+
     # Pre-compute follow-up suggestions (based on state + current message)
     current_state = detect_state(
         ctx["dataset"], ctx["feature_set"], ctx["model_runs"], ctx["deployment"]
@@ -7209,6 +7258,10 @@ def send_message(
         # Emit prediction preset list
         if preset_list_event:
             yield f"data: {json.dumps({'type': 'preset_list', 'preset_list': preset_list_event})}\n\n"
+
+        # Emit SDK download card
+        if sdk_event:
+            yield f"data: {json.dumps({'type': 'sdk_download', 'sdk_download': sdk_event})}\n\n"
 
         # After text stream, opportunistically generate a chart if the
         # message is about data and we have a dataset loaded
