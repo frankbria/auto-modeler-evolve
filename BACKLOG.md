@@ -49,6 +49,19 @@ the time is better spent on real features.
 
 ## Currently Working On
 
+## Day 30 (12:00) — Done
+**Track D — SDK Generation.** Closes the developer-handoff gap: a deployed model is a REST API, but developers still had to reverse-engineer the endpoint shape and write HTTP code from scratch. Now a single chat message ("generate a python sdk") triggers downloadable, schema-aware Python and JavaScript client libraries.
+- `GET /api/deploy/{id}/sdk?language=python|javascript` — generates typed client library from deployment's feature schema; `Content-Disposition: attachment` triggers browser download.
+- `_generate_python_sdk()` — full Python module: typed `predict(feature1: float, ...) → dict` and `predict_batch(rows) → list[dict]` methods with docstrings, requests dependency, error handling, regression/classification-aware return docs.
+- `_generate_javascript_sdk()` — ES module class with `async predict()` / `async predictBatch()`, JSDoc, fetch-based HTTP.
+- `_SDK_PATTERNS` — 8 NL variants in chat.py; SDK event → `SdkDownloadCard` via SSE + Zustand + page.tsx.
+- `SdkDownloadCard` — indigo border, badge, two download links (Python .py / JavaScript .js), inline usage previews for both languages.
+- 27 backend + 16 frontend = 43 new tests. Total: 2868 backend + 1462 frontend = 4330, all passing.
+
+**What's next:**
+- Track D still has gaps: API key auth for prediction endpoints (currently open to anyone who knows the URL), scheduled batch prediction jobs, deployment versioning + rollback.
+- Track C: class imbalance detection (SMOTE / class weights), date-aware chronological train/test splits.
+
 ## Day 30 (04:00) — Done
 **Track B — Natural Language Date Range Filtering.** Closes the "show me Q4 data" gap that the existing filter system always promised but never delivered.
 - **NL Date Filter** — `parse_date_filter_request(message, df)` pure function in `core/filter_view.py`. Detects date columns by name-hint (date/time/year/month/period/quarter/week) or string-value sampling. Resolves 6 NL patterns: Q1–Q4 with optional year ("Q4 2023"), quarter word ("third quarter 2023"), year-only ("show 2024 data"), month range ("January through March 2023"), last-N ("last 6 months", "last 2 years", "last 3 weeks"), and relative ("this year", "last year", "this month", "last month"). Returns `date_range` operator with `{start, end}` ISO-date value dict. `apply_active_filter()` extended with `date_range` branch using `pd.to_datetime()` comparison. `build_filter_summary()` formats date_range as "column between START and END". `FilterCondition` TypeScript type gains `date_range` operator + `DateRangeValue` union. `FilterSetCard` renders "between START and END" for date_range conditions. `_FILTER_PATTERNS` regex in `chat.py` extended to catch date-intent phrases; chat filter handler merges date conditions alongside field conditions. 17 backend + 5 frontend = 22 new tests. Total: 2841 backend + 1446 frontend = 4287.
