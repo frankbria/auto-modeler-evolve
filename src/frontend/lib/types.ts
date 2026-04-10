@@ -1450,10 +1450,15 @@ export interface DataStory {
 // Non-destructive data filter (Phase 8)
 // ---------------------------------------------------------------------------
 
+export interface DateRangeValue {
+  start: string
+  end: string
+}
+
 export interface FilterCondition {
   column: string
-  operator: 'eq' | 'ne' | 'gt' | 'lt' | 'gte' | 'lte' | 'contains' | 'not_contains'
-  value: string | number
+  operator: 'eq' | 'ne' | 'gt' | 'lt' | 'gte' | 'lte' | 'contains' | 'not_contains' | 'date_range'
+  value: string | number | DateRangeValue
 }
 
 export interface ActiveFilter {

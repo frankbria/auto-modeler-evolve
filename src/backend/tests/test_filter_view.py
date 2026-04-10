@@ -391,3 +391,218 @@ class TestFilterEndpoints:
         data = resp.json()
         assert data["filtered_rows"] == 1  # Only North + revenue>1500
         assert "AND" in data["filter_summary"]
+
+
+# ---------------------------------------------------------------------------
+# Unit tests — parse_date_filter_request + date_range apply
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def date_df():
+    """DataFrame with a date column spanning 2022–2024."""
+    import pandas as pd
+
+    dates = pd.date_range("2022-01-01", periods=36, freq="MS")  # 36 months
+    return pd.DataFrame(
+        {
+            "sale_date": dates.strftime("%Y-%m-%d"),
+            "revenue": range(36),
+        }
+    )
+
+
+class TestParseDateFilterRequest:
+    def test_quarter_numeric(self, date_df):
+        from core.filter_view import parse_date_filter_request
+
+        result = parse_date_filter_request("show Q1 2023 data", date_df)
+        assert result is not None
+        assert len(result) == 1
+        cond = result[0]
+        assert cond["operator"] == "date_range"
+        assert cond["value"]["start"] == "2023-01-01"
+        assert cond["value"]["end"] == "2023-03-31"
+
+    def test_quarter_q4(self, date_df):
+        from core.filter_view import parse_date_filter_request
+
+        result = parse_date_filter_request("filter to Q4 2022", date_df)
+        assert result is not None
+        assert result[0]["value"]["start"] == "2022-10-01"
+        assert result[0]["value"]["end"] == "2022-12-31"
+
+    def test_quarter_word(self, date_df):
+        from core.filter_view import parse_date_filter_request
+
+        result = parse_date_filter_request("show third quarter 2023", date_df)
+        assert result is not None
+        assert result[0]["value"]["start"] == "2023-07-01"
+        assert result[0]["value"]["end"] == "2023-09-30"
+
+    def test_year_only(self, date_df):
+        from core.filter_view import parse_date_filter_request
+
+        result = parse_date_filter_request("show 2023 data", date_df)
+        assert result is not None
+        assert result[0]["value"]["start"] == "2023-01-01"
+        assert result[0]["value"]["end"] == "2023-12-31"
+
+    def test_month_range(self, date_df):
+        from core.filter_view import parse_date_filter_request
+
+        result = parse_date_filter_request(
+            "filter to January through March 2023", date_df
+        )
+        assert result is not None
+        assert result[0]["value"]["start"] == "2023-01-01"
+        assert result[0]["value"]["end"] == "2023-03-31"
+
+    def test_single_month_with_year(self, date_df):
+        from core.filter_view import parse_date_filter_request
+
+        result = parse_date_filter_request("narrow to June 2023", date_df)
+        assert result is not None
+        assert result[0]["value"]["start"] == "2023-06-01"
+        assert result[0]["value"]["end"] == "2023-06-30"
+
+    def test_last_n_months(self, date_df):
+        from datetime import date
+
+        from core.filter_view import parse_date_filter_request
+
+        result = parse_date_filter_request("show last 3 months", date_df)
+        assert result is not None
+        cond = result[0]
+        assert cond["operator"] == "date_range"
+        # start should be ~90 days ago
+        start = date.fromisoformat(cond["value"]["start"])
+        today = date.today()
+        delta = (today - start).days
+        assert 85 <= delta <= 95  # ~90 days (3 × 30)
+
+    def test_last_n_years(self, date_df):
+        from datetime import date
+
+        from core.filter_view import parse_date_filter_request
+
+        result = parse_date_filter_request("filter to last 2 years", date_df)
+        assert result is not None
+        start = date.fromisoformat(result[0]["value"]["start"])
+        today = date.today()
+        delta = (today - start).days
+        assert 720 <= delta <= 740  # ~730 days
+
+    def test_this_year(self, date_df):
+        from datetime import date
+
+        from core.filter_view import parse_date_filter_request
+
+        result = parse_date_filter_request("show this year", date_df)
+        assert result is not None
+        assert result[0]["value"]["start"] == f"{date.today().year}-01-01"
+        assert result[0]["value"]["end"] == f"{date.today().year}-12-31"
+
+    def test_last_year(self, date_df):
+        from datetime import date
+
+        from core.filter_view import parse_date_filter_request
+
+        result = parse_date_filter_request("filter to last year", date_df)
+        assert result is not None
+        last_yr = date.today().year - 1
+        assert result[0]["value"]["start"] == f"{last_yr}-01-01"
+        assert result[0]["value"]["end"] == f"{last_yr}-12-31"
+
+    def test_no_date_column_returns_none(self):
+        import pandas as pd
+
+        from core.filter_view import parse_date_filter_request
+
+        df = pd.DataFrame({"region": ["North", "South"], "revenue": [100, 200]})
+        result = parse_date_filter_request("show Q1 2023", df)
+        assert result is None
+
+    def test_unrelated_message_returns_none(self, date_df):
+        from core.filter_view import parse_date_filter_request
+
+        result = parse_date_filter_request("what is the average revenue", date_df)
+        assert result is None
+
+    def test_date_range_column_detection_by_value(self):
+        """Column named 'period' (no common date keyword) should still be detected by values."""
+        import pandas as pd
+
+        from core.filter_view import parse_date_filter_request
+
+        df = pd.DataFrame(
+            {
+                "period": ["2023-01-01", "2023-04-01", "2023-07-01"],
+                "revenue": [100, 200, 300],
+            }
+        )
+        result = parse_date_filter_request("show Q2 2023", df)
+        # column 'period' contains date strings → detected; Q2 → filter returned
+        assert result is not None
+        assert result[0]["value"]["start"] == "2023-04-01"
+
+
+class TestApplyDateRangeFilter:
+    def test_date_range_filters_rows(self, date_df):
+        from core.filter_view import apply_active_filter
+
+        conditions = [
+            {
+                "column": "sale_date",
+                "operator": "date_range",
+                "value": {"start": "2023-01-01", "end": "2023-03-31"},
+            }
+        ]
+        result = apply_active_filter(date_df, conditions)
+        assert len(result) == 3
+        assert all(result["sale_date"].str.startswith("2023-0"))
+
+    def test_date_range_full_year(self, date_df):
+        from core.filter_view import apply_active_filter
+
+        conditions = [
+            {
+                "column": "sale_date",
+                "operator": "date_range",
+                "value": {"start": "2023-01-01", "end": "2023-12-31"},
+            }
+        ]
+        result = apply_active_filter(date_df, conditions)
+        assert len(result) == 12
+
+    def test_date_range_empty_result(self, date_df):
+        from core.filter_view import apply_active_filter
+
+        conditions = [
+            {
+                "column": "sale_date",
+                "operator": "date_range",
+                "value": {"start": "2025-01-01", "end": "2025-12-31"},
+            }
+        ]
+        result = apply_active_filter(date_df, conditions)
+        assert len(result) == 0
+
+
+class TestBuildDateRangeSummary:
+    def test_date_range_summary(self):
+        from core.filter_view import build_filter_summary
+
+        summary = build_filter_summary(
+            [
+                {
+                    "column": "sale_date",
+                    "operator": "date_range",
+                    "value": {"start": "2023-01-01", "end": "2023-03-31"},
+                }
+            ]
+        )
+        assert "sale_date" in summary
+        assert "2023-01-01" in summary
+        assert "2023-03-31" in summary
+        assert "between" in summary

@@ -944,7 +944,12 @@ _FILTER_PATTERNS = re.compile(
     r"only\s+(?:consider|include|use)\s+\w|"
     r"where\s+\w+\s+(?:is|=|>|<|>=|<=|contains?)\s+\w|"
     r"for\s+(?:the\s+)?\w+\s+(?:region|segment|category|group|quarter|year)|"
-    r"set\s+(?:a\s+)?filter"
+    r"set\s+(?:a\s+)?filter|"
+    r"last\s+\d+\s+(?:day|week|month|year)s?|"
+    r"(?:this|last)\s+(?:year|month|quarter)|"
+    r"q[1-4](?:\s+20\d{2})?|"
+    r"(?:first|second|third|fourth)\s+quarter|"
+    r"show\s+(?:20\d{2}|(?:january|february|march|april|may|june|july|august|september|october|november|december))\s"
     r")\b",
     re.IGNORECASE,
 )
@@ -4985,6 +4990,7 @@ def send_message(
         try:
             from core.filter_view import (
                 parse_filter_request as _parse_filter,
+                parse_date_filter_request as _parse_date_filter,
                 apply_active_filter as _apply_filter,
                 build_filter_summary as _build_filter_summary,
             )
@@ -4997,6 +5003,10 @@ def send_message(
                 _full_df = pd.read_csv(_file_path)
                 _all_cols = list(_full_df.columns)
                 _conditions = _parse_filter(body.message, _all_cols)
+                # Also try date-range parsing; merge results (date filter supplements field filters)
+                _date_conditions = _parse_date_filter(body.message, _full_df)
+                if _date_conditions:
+                    _conditions = (_conditions or []) + _date_conditions
                 if _conditions:
                     _filtered = _apply_filter(_full_df, _conditions)
                     _summary = _build_filter_summary(_conditions)

@@ -16,6 +16,17 @@ const OP_LABELS: Record<string, string> = {
   lte: "≤",
   contains: "contains",
   not_contains: "doesn't contain",
+  date_range: "between",
+}
+
+function formatConditionValue(
+  op: string,
+  value: string | number | { start: string; end: string }
+): string {
+  if (op === "date_range" && typeof value === "object" && value !== null) {
+    return `${value.start} and ${value.end}`
+  }
+  return String(value)
 }
 
 export function FilterSetCard({ result }: FilterSetCardProps) {
@@ -41,7 +52,7 @@ export function FilterSetCard({ result }: FilterSetCardProps) {
             </code>
             <span className="text-blue-600">{OP_LABELS[cond.operator] ?? cond.operator}</span>
             <code className="rounded bg-blue-100 px-1.5 py-0.5 font-mono text-xs">
-              {String(cond.value)}
+              {formatConditionValue(cond.operator, cond.value)}
             </code>
           </div>
         ))}

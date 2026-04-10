@@ -103,6 +103,50 @@ describe("FilterSetCard", () => {
   })
 })
 
+// --- FilterSetCard date_range tests -----------------------------------
+
+const dateRangeFilter: FilterSetResult = {
+  dataset_id: "ds-2",
+  filter_summary: "sale_date between 2023-01-01 and 2023-03-31",
+  conditions: [
+    {
+      column: "sale_date",
+      operator: "date_range",
+      value: { start: "2023-01-01", end: "2023-03-31" },
+    },
+  ],
+  original_rows: 36,
+  filtered_rows: 3,
+  row_reduction_pct: 91.7,
+}
+
+describe("FilterSetCard date_range", () => {
+  it("shows 'between' label for date_range operator", () => {
+    render(<FilterSetCard result={dateRangeFilter} />)
+    expect(screen.getByText("between")).toBeInTheDocument()
+  })
+
+  it("shows column name for date_range condition", () => {
+    render(<FilterSetCard result={dateRangeFilter} />)
+    expect(screen.getByText("sale_date")).toBeInTheDocument()
+  })
+
+  it("shows start date in value", () => {
+    render(<FilterSetCard result={dateRangeFilter} />)
+    expect(screen.getByText(/2023-01-01/)).toBeInTheDocument()
+  })
+
+  it("shows end date in value", () => {
+    render(<FilterSetCard result={dateRangeFilter} />)
+    expect(screen.getByText(/2023-03-31/)).toBeInTheDocument()
+  })
+
+  it("shows filtered row count", () => {
+    render(<FilterSetCard result={dateRangeFilter} />)
+    expect(screen.getAllByText(/3/).length).toBeGreaterThan(0)
+  })
+})
+
 // --- FilterBadge component tests ---------------------------------------
 
 describe("FilterBadge", () => {
