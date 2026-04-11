@@ -49,6 +49,19 @@ the time is better spent on real features.
 
 ## Currently Working On
 
+## Day 30 (20:00) — Done
+**Track B — Cross-Project Portfolio Overview.** Closes the "I have multiple projects — show me everything at a glance" gap. Analysts managing several prediction models across different projects can now ask "show all my models", "portfolio overview", or "which project is doing best" and receive a `PortfolioCard` SSE card in chat.
+- `compute_portfolio_summary(project_summaries)` pure function in `core/analyzer.py` — aggregates total_projects, active_deployments, total_predictions, best_performer (highest metric), per-project summaries.
+- `GET /api/projects/portfolio` endpoint (registered BEFORE `/{project_id}` to avoid route shadowing) — queries all projects, finds best model run + active deployment + prediction count for each.
+- `_PORTFOLIO_PATTERNS` (10 NL variants: "show all my models", "portfolio overview", "compare all my projects", "which project is doing best", "cross-project view", "all my work", etc.) in `chat.py`; handler cross-queries all projects from session, emits `{type:"portfolio"}` SSE event with full summary + system prompt injection.
+- `PortfolioCard` (purple border, 🗂️ icon): header badges (N projects, N deployed, N predictions total), plain-English summary, 🏆 best performer highlight box (name, algorithm, metric %), per-project rows (name, dataset, target column, metric badge, Live/Trained/No model status badge, prediction count).
+- `PortfolioResult`/`PortfolioProjectSummary`/`PortfolioBestPerformer` TypeScript types; `portfolio?` field on `ChatMessage`; `attachPortfolioToLastMessage` Zustand action; SSE handler + render wired in workspace page.
+- 21 backend + 16 frontend = 37 new tests. Total: 2889 backend + 1478 frontend = 4367, all passing. Backend lint: clean. Frontend build + lint: clean.
+
+**What's next:**
+- Track B: cross-project model comparison API (compare models from different projects side-by-side), cross-project template sharing.
+- Track D: further deployment automation — rate limiting per deployment, usage quota management.
+
 ## Day 30 (12:00) — Done
 **Track D — SDK Generation.** Closes the developer-handoff gap: a deployed model is a REST API, but developers still had to reverse-engineer the endpoint shape and write HTTP code from scratch. Now a single chat message ("generate a python sdk") triggers downloadable, schema-aware Python and JavaScript client libraries.
 - `GET /api/deploy/{id}/sdk?language=python|javascript` — generates typed client library from deployment's feature schema; `Content-Disposition: attachment` triggers browser download.
