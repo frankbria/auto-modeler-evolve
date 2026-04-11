@@ -2342,6 +2342,29 @@ _PORTFOLIO_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+_RATE_LIMIT_PATTERNS = re.compile(
+    r"\b("
+    r"(?:set|add|enable|configure|apply|create)\s+(?:a\s+)?rate\s+(?:limit|limiting)|"
+    r"rate\s+limit(?:ing)?(?:\s+(?:my|the|this))?\s+(?:model|api|endpoint|deployment)?|"
+    r"limit(?:\s+(?:to|the))?\s+(?:\d+\s+)?requests?\s+(?:per|a)\s+minute|"
+    r"(?:requests?\s+per\s+minute|rpm)\s+limit|"
+    r"(?:set|add|apply|configure|enable|create)\s+(?:a\s+)?monthly\s+quota|"
+    r"monthly\s+(?:prediction\s+)?quota|"
+    r"limit\s+(?:to\s+)?\d+\s+predictions?\s+(?:per|a)\s+month|"
+    r"prediction\s+(?:usage\s+)?(?:quota|limit|cap)|"
+    r"usage\s+(?:quota|limit|cap)|"
+    r"quota\s+status|check\s+(?:my\s+)?quota|how\s+many\s+predictions?\s+(?:left|remaining)|"
+    r"disable\s+rate\s+limit|remove\s+rate\s+limit|turn\s+off\s+rate\s+limit|"
+    r"disable\s+(?:monthly\s+)?quota|remove\s+(?:monthly\s+)?quota"
+    r")\b",
+    re.IGNORECASE,
+)
+
+_RATE_LIMIT_NUMBER_RE = re.compile(r"\b(\d+)\s*(?:requests?\s+per\s+minute|rpm)\b", re.IGNORECASE)
+_QUOTA_NUMBER_RE = re.compile(r"\b(\d+)\s+predictions?\s+(?:per|a)\s+month\b", re.IGNORECASE)
+_DISABLE_RATE_RE = re.compile(r"\b(disable|remove|turn\s+off|clear)\s+(?:the\s+)?rate\s+limit", re.IGNORECASE)
+_DISABLE_QUOTA_RE = re.compile(r"\b(disable|remove|turn\s+off|clear)\s+(?:the\s+)?(?:monthly\s+)?quota", re.IGNORECASE)
+
 
 def _extract_preset_definition(message: str) -> dict | None:
     """Extract preset name and feature key=value pairs from a natural language message.
@@ -7032,6 +7055,98 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Portfolio is nice-to-have; never crash chat
 
+    # Rate limit / quota management
+    rate_limit_event: dict | None = None
+    if _RATE_LIMIT_PATTERNS.search(body.message) and ctx["deployment"]:
+        try:
+            _dep = ctx["deployment"]
+            _dep_id = _dep.id if hasattr(_dep, "id") else str(_dep)
+            _rpm: int | None = None
+            _quota: int | None = None
+            _disable_rpm = bool(_DISABLE_RATE_RE.search(body.message))
+            _disable_quota = bool(_DISABLE_QUOTA_RE.search(body.message))
+
+            _rpm_m = _RATE_LIMIT_NUMBER_RE.search(body.message)
+            if _rpm_m:
+                _rpm = int(_rpm_m.group(1))
+            _quota_m = _QUOTA_NUMBER_RE.search(body.message)
+            if _quota_m:
+                _quota = int(_quota_m.group(1))
+
+            # Check if this is just a status check (no set/disable)
+            _status_only = not (_rpm or _quota or _disable_rpm or _disable_quota)
+            # "quota status", "check quota", "how many predictions left"
+            _status_query = bool(re.search(
+                r"\b(quota\s+status|check\s+quota|how\s+many\s+predictions?\s+(?:left|remaining)|usage\s+stats)\b",
+                body.message, re.IGNORECASE
+            ))
+
+            if not _status_only or _status_query:
+                if _disable_rpm:
+                    _rpm = 0  # 0 = remove limit
+                if _disable_quota:
+                    _quota = 0  # 0 = remove quota
+
+                # Apply changes if any were requested
+                if _rpm is not None or _quota is not None:
+                    _dep_obj = session.get(Deployment, _dep_id)
+                    if _dep_obj:
+                        if _rpm is not None:
+                            _dep_obj.rate_limit_rpm = _rpm if _rpm > 0 else None
+                        if _quota is not None:
+                            _dep_obj.monthly_quota = _quota if _quota > 0 else None
+                        session.add(_dep_obj)
+                        session.commit()
+                        session.refresh(_dep_obj)
+                        _dep = _dep_obj
+
+            # Always compute current quota usage for the event
+            _current_rpm = getattr(_dep, "rate_limit_rpm", None)
+            _current_quota = getattr(_dep, "monthly_quota", None)
+
+            from datetime import timedelta as _td
+            from sqlmodel import func as _sqlfunc
+
+            _cutoff = _utcnow() - _td(days=30)
+            _used = session.exec(
+                select(_sqlfunc.count(PredictionLog.id)).where(
+                    PredictionLog.deployment_id == _dep_id,
+                    PredictionLog.created_at >= _cutoff,
+                )
+            ).one()
+
+            _remaining = (_current_quota - _used) if _current_quota else None
+            _pct = round(_used / _current_quota * 100, 1) if _current_quota else None
+
+            rate_limit_event = {
+                "deployment_id": _dep_id,
+                "rate_limit_rpm": _current_rpm,
+                "rate_limit_enabled": _current_rpm is not None,
+                "monthly_quota": _current_quota,
+                "quota_enabled": _current_quota is not None,
+                "used_this_month": _used,
+                "remaining": _remaining,
+                "pct_used": _pct,
+                "summary": (
+                    (f"Rate limit: {_current_rpm} req/min. " if _current_rpm else "No per-minute rate limit. ")
+                    + (
+                        f"Monthly quota: {_used}/{_current_quota} predictions used "
+                        f"({_pct}% — {_remaining} remaining)."
+                        if _current_quota
+                        else "No monthly quota configured."
+                    )
+                ),
+            }
+            system_prompt += (
+                f"\n\n## Rate Limit Configuration\n"
+                f"{rate_limit_event['summary']} "
+                "Tell the analyst the current rate limit and quota status in plain English. "
+                "If limits were just changed, confirm the new settings and explain what they mean. "
+                "If checking status, summarise the quota usage and whether they are close to the limit."
+            )
+        except Exception:  # noqa: BLE001
+            pass  # Rate limit events are nice-to-have; never crash chat
+
     # Pre-compute follow-up suggestions (based on state + current message)
     current_state = detect_state(
         ctx["dataset"], ctx["feature_set"], ctx["model_runs"], ctx["deployment"]
@@ -7377,6 +7492,10 @@ def send_message(
         # Emit cross-project portfolio overview
         if portfolio_event:
             yield f"data: {json.dumps({'type': 'portfolio', 'portfolio': portfolio_event})}\n\n"
+
+        # Emit rate limit / quota status card
+        if rate_limit_event:
+            yield f"data: {json.dumps({'type': 'rate_limit', 'rate_limit': rate_limit_event})}\n\n"
 
         # After text stream, opportunistically generate a chart if the
         # message is about data and we have a dataset loaded

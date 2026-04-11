@@ -76,6 +76,7 @@ import { PresetSavedCard } from "@/components/deploy/preset-saved-card"
 import { PresetListCard } from "@/components/deploy/preset-list-card"
 import { SdkDownloadCard } from "@/components/deploy/sdk-download-card"
 import { PortfolioCard } from "@/components/chat/portfolio-card"
+import { RateLimitCard } from "@/components/deploy/rate-limit-card"
 import { PairCorrelationCard } from "@/components/data/pair-correlation-card"
 import { StatQueryCard } from "@/components/data/stat-query-card"
 import { SummaryStatsCard } from "@/components/data/summary-stats-card"
@@ -233,6 +234,7 @@ export default function ProjectWorkspace() {
     attachPredictionCohortToLastMessage,
     attachSdkDownloadToLastMessage,
     attachPortfolioToLastMessage,
+    attachRateLimitToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -592,6 +594,8 @@ export default function ProjectWorkspace() {
                 attachSdkDownloadToLastMessage(json.sdk_download as import("@/lib/types").SdkDownloadInfo)
               } else if (json.type === "portfolio" && json.portfolio) {
                 attachPortfolioToLastMessage(json.portfolio as import("@/lib/types").PortfolioResult)
+              } else if (json.type === "rate_limit" && json.rate_limit) {
+                attachRateLimitToLastMessage(json.rate_limit as import("@/lib/types").RateLimitInfo)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -672,6 +676,7 @@ export default function ProjectWorkspace() {
     attachPredictionCohortToLastMessage,
     attachSdkDownloadToLastMessage,
     attachPortfolioToLastMessage,
+    attachRateLimitToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -1098,6 +1103,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.portfolio && (
                       <PortfolioCard result={msg.portfolio} />
+                    )}
+                    {msg.rate_limit && (
+                      <RateLimitCard info={msg.rate_limit} />
                     )}
                   </div>
                 </div>

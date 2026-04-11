@@ -30,6 +30,9 @@ class Deployment(SQLModel, table=True):
     api_key_enabled: bool = Field(default=False)
     api_key_hash: Optional[str] = None  # sha256(salt + ":" + key)
     api_key_salt: Optional[str] = None  # random hex salt
+    # Rate limiting (optional — per-minute requests and monthly quota)
+    rate_limit_rpm: Optional[int] = None  # max requests per minute; None = unlimited
+    monthly_quota: Optional[int] = None  # max predictions per rolling 30 days; None = unlimited
     # Versioning — monotonically incremented each time the deployment is updated
     current_version_number: int = Field(default=1)
     # Environment: "staging" (default) or "production"

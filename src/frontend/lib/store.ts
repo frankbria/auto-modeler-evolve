@@ -107,6 +107,7 @@ interface AppState {
   attachPresetListToLastMessage: (preset_list: import("./types").PresetListInfo) => void
   attachSdkDownloadToLastMessage: (sdk_download: import("./types").SdkDownloadInfo) => void
   attachPortfolioToLastMessage: (portfolio: import("./types").PortfolioResult) => void
+  attachRateLimitToLastMessage: (rate_limit: import("./types").RateLimitInfo) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -705,6 +706,15 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, portfolio }
+      }
+      return { messages }
+    }),
+  attachRateLimitToLastMessage: (rate_limit) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, rate_limit }
       }
       return { messages }
     }),

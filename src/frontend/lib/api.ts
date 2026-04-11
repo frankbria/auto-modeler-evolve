@@ -1124,5 +1124,25 @@ export const api = {
       if (baseUrl) params.set("base_url", baseUrl)
       return `${API_URL}/api/deploy/${deploymentId}/sdk?${params.toString()}`
     },
+
+    setRateLimit: async (
+      deploymentId: string,
+      rateLimitRpm: number | null,
+      monthlyQuota: number | null
+    ) => {
+      const res = await fetch(`${API_URL}/api/deploy/${deploymentId}/rate-limit`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rate_limit_rpm: rateLimitRpm, monthly_quota: monthlyQuota }),
+      })
+      if (!res.ok) throw new Error(await res.text())
+      return res.json()
+    },
+
+    quotaStatus: async (deploymentId: string) => {
+      const res = await fetch(`${API_URL}/api/deploy/${deploymentId}/quota-status`)
+      if (!res.ok) throw new Error(await res.text())
+      return res.json()
+    },
   },
 }

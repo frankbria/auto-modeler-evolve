@@ -19,9 +19,10 @@ import hashlib
 import json
 import random
 import secrets
+import threading
 import time
-from collections import defaultdict
-from datetime import UTC, datetime
+from collections import defaultdict, deque
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, Header, Query, UploadFile
@@ -417,6 +418,120 @@ def disable_api_key(
 
 
 # ---------------------------------------------------------------------------
+# 4c. Rate limiting & monthly quota management
+# ---------------------------------------------------------------------------
+
+
+class RateLimitRequest(BaseModel):
+    rate_limit_rpm: int | None = None  # None = remove limit; 0 = remove limit; >0 = set
+    monthly_quota: int | None = None   # None = remove quota; 0 = remove; >0 = set
+
+
+@router.put("/api/deploy/{deployment_id}/rate-limit")
+def set_rate_limit(
+    deployment_id: str,
+    body: RateLimitRequest,
+    session: Session = Depends(get_session),
+):
+    """Set or remove per-minute rate limit and/or monthly prediction quota.
+
+    Pass rate_limit_rpm=N to enforce N requests/minute (sliding window).
+    Pass rate_limit_rpm=0 or null to remove the limit.
+    Pass monthly_quota=N to enforce N predictions per rolling 30 days.
+    Pass monthly_quota=0 or null to remove the quota.
+    """
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment or not deployment.is_active:
+        raise HTTPException(status_code=404, detail="Deployment not found or inactive")
+
+    if body.rate_limit_rpm is not None and body.rate_limit_rpm < 0:
+        raise HTTPException(
+            status_code=422, detail="rate_limit_rpm must be >= 0 (0 = remove limit)"
+        )
+    if body.monthly_quota is not None and body.monthly_quota < 0:
+        raise HTTPException(
+            status_code=422, detail="monthly_quota must be >= 0 (0 = remove quota)"
+        )
+
+    # 0 means "remove" — store as None
+    deployment.rate_limit_rpm = (
+        body.rate_limit_rpm if (body.rate_limit_rpm or 0) > 0 else None
+    )
+    deployment.monthly_quota = (
+        body.monthly_quota if (body.monthly_quota or 0) > 0 else None
+    )
+    session.add(deployment)
+    session.commit()
+
+    return {
+        "deployment_id": deployment_id,
+        "rate_limit_rpm": deployment.rate_limit_rpm,
+        "monthly_quota": deployment.monthly_quota,
+        "message": _rate_limit_summary(deployment.rate_limit_rpm, deployment.monthly_quota),
+    }
+
+
+def _rate_limit_summary(rpm: int | None, quota: int | None) -> str:
+    parts = []
+    if rpm:
+        parts.append(f"{rpm} requests/minute")
+    if quota:
+        parts.append(f"{quota} predictions/month")
+    if parts:
+        return "Rate limits active: " + " and ".join(parts) + "."
+    return "No rate limits configured — endpoint is open access."
+
+
+@router.get("/api/deploy/{deployment_id}/quota-status")
+def get_quota_status(
+    deployment_id: str,
+    session: Session = Depends(get_session),
+):
+    """Return current monthly quota usage for a deployment.
+
+    Returns:
+        quota_enabled: whether a monthly_quota is configured
+        monthly_quota: the configured limit (or None)
+        used_this_month: number of predictions in the last 30 days
+        remaining: quota - used (None if no quota)
+        pct_used: percentage of quota used (None if no quota)
+        rate_limit_rpm: configured per-minute limit (or None)
+    """
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment or not deployment.is_active:
+        raise HTTPException(status_code=404, detail="Deployment not found or inactive")
+
+    quota = getattr(deployment, "monthly_quota", None)
+    rpm = getattr(deployment, "rate_limit_rpm", None)
+
+    # Count predictions in last 30 days
+    cutoff = datetime.now(UTC).replace(tzinfo=None) - timedelta(days=30)
+    from sqlmodel import func as _func
+
+    used = session.exec(
+        select(_func.count(PredictionLog.id)).where(
+            PredictionLog.deployment_id == deployment_id,
+            PredictionLog.created_at >= cutoff,
+        )
+    ).one()
+
+    remaining = (quota - used) if quota else None
+    pct_used = round((used / quota * 100), 1) if quota else None
+
+    return {
+        "deployment_id": deployment_id,
+        "quota_enabled": quota is not None,
+        "monthly_quota": quota,
+        "used_this_month": used,
+        "remaining": remaining,
+        "pct_used": pct_used,
+        "rate_limit_rpm": rpm,
+        "rate_limit_enabled": rpm is not None,
+        "summary": _rate_limit_summary(rpm, quota),
+    }
+
+
+# ---------------------------------------------------------------------------
 # 5a. Cross-deployment model comparison (must appear before parameterised routes)
 # ---------------------------------------------------------------------------
 
@@ -535,6 +650,29 @@ def make_prediction(
         raise HTTPException(status_code=404, detail="Deployment not found or inactive")
 
     _verify_api_key(deployment, authorization)
+
+    # Rate limiting — per-minute sliding window
+    rpm = getattr(deployment, "rate_limit_rpm", None)
+    if rpm:
+        if not _check_rate_limit(deployment_id, rpm):
+            raise HTTPException(
+                status_code=429,
+                detail=(
+                    f"Rate limit exceeded. This deployment allows {rpm} "
+                    "requests per minute. Please slow down or contact the model owner."
+                ),
+            )
+
+    # Monthly quota — rolling 30-day cap
+    allowed, used, quota = _check_monthly_quota(deployment, session)
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail=(
+                f"Monthly prediction quota exceeded ({used}/{quota} predictions used "
+                "in the last 30 days). Contact the model owner to increase the limit."
+            ),
+        )
 
     if not deployment.pipeline_path or not Path(deployment.pipeline_path).exists():
         raise HTTPException(
@@ -2083,6 +2221,8 @@ def _deployment_response(d: Deployment) -> dict:
         ),
         "api_key_enabled": bool(getattr(d, "api_key_enabled", False)),
         "environment": getattr(d, "environment", "staging"),
+        "rate_limit_rpm": getattr(d, "rate_limit_rpm", None),
+        "monthly_quota": getattr(d, "monthly_quota", None),
     }
 
 
@@ -2105,6 +2245,56 @@ def _verify_api_key(deployment: Deployment, authorization: str | None) -> None:
 
     if not secrets.compare_digest(expected_hash, stored_hash):
         raise HTTPException(status_code=401, detail="Invalid API key.")
+
+
+# ---------------------------------------------------------------------------
+# Rate-limit helpers (in-memory sliding window)
+# ---------------------------------------------------------------------------
+
+_rate_windows: dict[str, deque] = {}  # deployment_id → deque of timestamps (monotonic)
+_rate_windows_lock = threading.Lock()
+
+
+def _check_rate_limit(deployment_id: str, rpm: int) -> bool:
+    """Sliding-window rate limit check.  Returns True when the request is allowed.
+
+    Maintains a per-deployment deque of request timestamps.  On each call we
+    evict entries older than 60 seconds and compare the remaining count to rpm.
+    Thread-safe via a module-level lock.
+    """
+    now = time.monotonic()
+    cutoff = now - 60.0
+    with _rate_windows_lock:
+        if deployment_id not in _rate_windows:
+            _rate_windows[deployment_id] = deque()
+        window = _rate_windows[deployment_id]
+        # Evict stale entries
+        while window and window[0] < cutoff:
+            window.popleft()
+        if len(window) >= rpm:
+            return False  # quota exceeded
+        window.append(now)
+        return True
+
+
+def _check_monthly_quota(deployment: Deployment, session: Session) -> tuple[bool, int, int]:
+    """Check whether the rolling-30-day prediction count is under the monthly quota.
+
+    Returns (allowed, used_this_month, quota).  When quota is None/0 always allows.
+    """
+    quota = getattr(deployment, "monthly_quota", None)
+    if not quota:
+        return True, 0, 0
+    cutoff = datetime.now(UTC).replace(tzinfo=None) - timedelta(days=30)
+    from sqlmodel import func as _func
+
+    used = session.exec(
+        select(_func.count(PredictionLog.id)).where(
+            PredictionLog.deployment_id == deployment.id,
+            PredictionLog.created_at >= cutoff,
+        )
+    ).one()
+    return used < quota, used, quota
 
 
 # ---------------------------------------------------------------------------

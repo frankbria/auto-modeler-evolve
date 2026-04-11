@@ -465,6 +465,7 @@ export interface ChatMessage {
   preset_list?: PresetListInfo
   sdk_download?: SdkDownloadInfo
   portfolio?: PortfolioResult
+  rate_limit?: RateLimitInfo
 }
 
 export interface SegmentPerformanceSegment {
@@ -2264,5 +2265,29 @@ export interface PortfolioResult {
   total_predictions: number
   best_performer: PortfolioBestPerformer | null
   projects: PortfolioProjectSummary[]
+  summary: string
+}
+
+export interface RateLimitInfo {
+  deployment_id: string
+  rate_limit_rpm: number | null
+  rate_limit_enabled: boolean
+  monthly_quota: number | null
+  quota_enabled: boolean
+  used_this_month: number
+  remaining: number | null
+  pct_used: number | null
+  summary: string
+}
+
+export interface QuotaStatus {
+  deployment_id: string
+  quota_enabled: boolean
+  monthly_quota: number | null
+  used_this_month: number
+  remaining: number | null
+  pct_used: number | null
+  rate_limit_rpm: number | null
+  rate_limit_enabled: boolean
   summary: string
 }
