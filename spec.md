@@ -1143,6 +1143,18 @@ guides them forward through the natural flow.
       before wiring the API into production systems.
       *Day 21 (12:00): `response_ms` added to `PredictionLog` (Optional[float], inline SQLite migration) and populated via `time.monotonic()` around `predict_single()` in `make_prediction()`. `GET /api/deploy/{id}/sla` endpoint returns `p50_ms`/`p95_ms`/`p99_ms`/`avg_ms`/`sample_count`/`alert`/`alert_message`/`latency_by_day` — `_percentile()` helper uses linear interpolation on sorted list. `alert=True` when `p95 > 500ms`; `alert_message` names the threshold and suggests remediation. `latency_by_day` groups by day and averages ms for the sparkbar. `SlaData` TypeScript type; `api.deploy.sla()` client method. `SlaMonitorCard` (sky-blue border when healthy, red border on alert) in `DeploymentPanel`: p50/p95/p99 grid, Healthy/`p95 > 500ms` badge, `LatencySparkbar` (bars colored red when > 500ms), avg ms + sample count, red alert message callout. Logs with NULL `response_ms` (legacy rows) excluded from sample_count. 12 backend + 11 frontend = 23 new tests.*
 
+- [x] **Per-deployment rate limiting and monthly quotas** — Allow operators to cap how
+      many requests a deployed prediction endpoint can serve: per-minute RPM via a sliding
+      window (in-memory deque per deployment), and a rolling 30-day prediction count from
+      `PredictionLog`. `PUT /api/deploy/{id}/rate-limit` sets/removes both limits (0 = remove,
+      null = remove). `GET /api/deploy/{id}/quota-status` returns used/remaining/pct_used.
+      `POST /api/predict/{id}` raises HTTP 429 when either limit is exceeded. Chat understands
+      "set rate limit to 100 requests per minute", "add a monthly quota of 500 predictions",
+      "check my quota", "disable rate limit" — emits a `rate_limit` SSE event rendered as a
+      `RateLimitCard` with an amber-bordered card, per-minute limit, quota usage fraction,
+      color-coded progress bar (green/amber/red at 70%/90%), and percentage used.
+      *Day 31 (04:00): `rate_limit_rpm` + `monthly_quota` fields on `Deployment` (inline SQLite migration). `_check_rate_limit()` sliding-window helper + `_check_monthly_quota()` rolling-count helper in `api/deploy.py`. `_RATE_LIMIT_PATTERNS` + 4 extraction regexes in `api/chat.py`; handler applies set/disable/status intent without crashing chat. `RateLimitCard` frontend component with `UsageBar` sub-component. Zustand `attachRateLimitToLastMessage` action. 26 backend + 17 frontend = 43 new tests; total 2915 backend + 1495 frontend = 4410.*
+
 #### Track E — End-to-End Polish
 
 > The "lunch break" success criterion: a business analyst uploads quarterly sales data and
