@@ -1155,6 +1155,29 @@ guides them forward through the natural flow.
       color-coded progress bar (green/amber/red at 70%/90%), and percentage used.
       *Day 31 (04:00): `rate_limit_rpm` + `monthly_quota` fields on `Deployment` (inline SQLite migration). `_check_rate_limit()` sliding-window helper + `_check_monthly_quota()` rolling-count helper in `api/deploy.py`. `_RATE_LIMIT_PATTERNS` + 4 extraction regexes in `api/chat.py`; handler applies set/disable/status intent without crashing chat. `RateLimitCard` frontend component with `UsageBar` sub-component. Zustand `attachRateLimitToLastMessage` action. 26 backend + 17 frontend = 43 new tests; total 2915 backend + 1495 frontend = 4410.*
 
+- [x] **Prediction input guard rails** — When a user supplies a feature value that is outside
+      the model's training-data range (numeric) or is an unseen category, the prediction response
+      now includes a `guard_rail_warnings` list describing exactly what was out of bounds and why
+      confidence may be lower. `feature_ranges` field added to `PredictionPipeline` (backward-compatible
+      default; stored at build time): numeric features store `{p5, p95, min, max}`; categorical
+      features store `{known_categories: [...]}`. `validate_prediction_inputs(provided_features,
+      pipeline)` pure function in `core/deployer.py` checks only user-supplied values (not defaults).
+      `predict_single()` accepts optional `provided_features` kwarg and calls the validator when
+      supplied; `guard_rail_warnings` omitted from the result when empty. `make_prediction()` in
+      `api/deploy.py` passes `provided_features=input_data` (the user's request body). Chat inline
+      prediction handler passes `_ip_extracted` (pre-default features) as `provided_features` and
+      injects a warning summary into the Claude system prompt addendum. `GuardRailWarning` TypeScript
+      interface added to `types.ts`; `InlinePredictionResult.guard_rail_warnings?` + `PredictionResult.
+      guard_rail_warnings?` fields added. `InlinePredictionCard` shows amber-bordered warning rows when
+      warnings are present: severity label (Out of range / Extreme outlier / Unknown category), message,
+      typical range for numeric or known values for categorical, `role="alert"` per row, aria-label on
+      the warnings section. Card border shifts from blue to amber when warnings are present. Public
+      `predict/[id]/page.tsx` result section renders a warning callout block. Directly implements the
+      vision's "Not a black box" and "Fail gracefully — always suggest next steps" principles: analysts
+      sharing a VP dashboard now get an honest "heads up, that revenue figure is 50× the training max —
+      this prediction is extrapolating, not interpolating."
+      *Day 31 (12:00): 17 backend + 17 frontend = 34 new tests; total 2932 backend + 1512 frontend = 4444. Backend lint: clean. Frontend build + lint: clean.*
+
 #### Track E — End-to-End Polish
 
 > The "lunch break" success criterion: a business analyst uploads quarterly sales data and
