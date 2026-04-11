@@ -42,6 +42,10 @@ class PredictionPipeline:
     feature_stds: dict[str, float] = field(default_factory=dict)
     # Residual std for regression prediction intervals (stored at deploy time)
     residual_std: float = 0.0
+    # Per-feature ranges for input validation (stored at build time)
+    # numeric: {"p5": float, "p95": float, "min": float, "max": float}
+    # categorical: {"known_categories": list[str]}
+    feature_ranges: dict[str, dict] = field(default_factory=dict)
 
     def transform(self, input_dict: dict) -> np.ndarray:
         """Transform a single row dict into a feature vector for prediction."""
@@ -119,11 +123,23 @@ def build_prediction_pipeline(
             pipeline.medians[col] = float(series.median())
             pipeline.feature_means[col] = float(series.mean())
             pipeline.feature_stds[col] = float(series.std()) if len(series) > 1 else 1.0
+            s_clean = series.dropna()
+            if len(s_clean) >= 2:
+                pipeline.feature_ranges[col] = {
+                    "p5": float(s_clean.quantile(0.05)),
+                    "p95": float(s_clean.quantile(0.95)),
+                    "min": float(s_clean.min()),
+                    "max": float(s_clean.max()),
+                }
         else:
             pipeline.column_types[col] = "categorical"
             le = LabelEncoder()
             le.fit(series.fillna("MISSING").astype(str))
             pipeline.label_encoders[col] = le
+            known = [
+                c for c in series.dropna().astype(str).unique() if c != "MISSING"
+            ]
+            pipeline.feature_ranges[col] = {"known_categories": sorted(known)}
 
     # Target encoder (classification with string labels)
     y_series = df_clean[target_col]
@@ -150,6 +166,97 @@ def load_pipeline(path: str | Path) -> PredictionPipeline:
 
 
 # ---------------------------------------------------------------------------
+# Input validation
+# ---------------------------------------------------------------------------
+
+
+def validate_prediction_inputs(
+    provided_features: dict,
+    pipeline: PredictionPipeline,
+) -> list[dict]:
+    """Check provided feature values against training-data ranges.
+
+    Returns a list of warning dicts for out-of-range or unknown-category inputs.
+    Only features present in ``provided_features`` are checked (defaults are not
+    validated — they are by definition in-range from training data).
+
+    Each warning dict contains:
+        feature, provided_value, severity, message
+    Numeric warnings also include: expected_min, expected_max, training_min, training_max
+    Categorical warnings also include: known_categories (up to 10 examples)
+    """
+    warnings: list[dict] = []
+    feature_ranges = getattr(pipeline, "feature_ranges", {})
+    if not feature_ranges:
+        return warnings
+
+    for feat, value in provided_features.items():
+        if feat not in feature_ranges or value is None:
+            continue
+        ranges = feature_ranges[feat]
+        col_type = pipeline.column_types.get(feat, "numeric")
+
+        if col_type == "numeric":
+            try:
+                v = float(value)
+            except (TypeError, ValueError):
+                continue
+            p5 = ranges.get("p5")
+            p95 = ranges.get("p95")
+            vmin = ranges.get("min")
+            vmax = ranges.get("max")
+
+            if vmin is not None and vmax is not None and (v < vmin or v > vmax):
+                severity = "extreme_outlier"
+                msg = (
+                    f"{feat}: {v:.4g} is outside the training range "
+                    f"({vmin:.4g}–{vmax:.4g}); predictions may be unreliable"
+                )
+            elif p5 is not None and p95 is not None and (v < p5 or v > p95):
+                severity = "out_of_range"
+                msg = (
+                    f"{feat}: {v:.4g} is outside the typical range "
+                    f"({p5:.4g}–{p95:.4g}); confidence may be lower"
+                )
+            else:
+                continue
+
+            warnings.append(
+                {
+                    "feature": feat,
+                    "provided_value": v,
+                    "severity": severity,
+                    "expected_min": p5,
+                    "expected_max": p95,
+                    "training_min": vmin,
+                    "training_max": vmax,
+                    "message": msg,
+                }
+            )
+
+        else:  # categorical
+            known = ranges.get("known_categories", [])
+            if not known:
+                continue
+            str_val = str(value)
+            if str_val not in known:
+                warnings.append(
+                    {
+                        "feature": feat,
+                        "provided_value": str_val,
+                        "severity": "unknown_category",
+                        "known_categories": known[:10],
+                        "message": (
+                            f"{feat}: '{str_val}' was not seen during training; "
+                            f"model will use a fallback encoding"
+                        ),
+                    }
+                )
+
+    return warnings
+
+
+# ---------------------------------------------------------------------------
 # Single prediction
 # ---------------------------------------------------------------------------
 
@@ -158,11 +265,21 @@ def predict_single(
     pipeline_path: str,
     model_path: str,
     input_data: dict,
+    provided_features: dict | None = None,
 ) -> dict:
     """Make a single prediction from a dict of feature values.
 
+    Args:
+        pipeline_path: Path to the saved PredictionPipeline joblib file.
+        model_path: Path to the saved sklearn model joblib file.
+        input_data: Full feature dict (user inputs + any defaults already filled).
+        provided_features: Optional subset of input_data that came from the user
+            (not filled-in defaults). Used to validate only user-supplied inputs
+            against training ranges. When None, no guard-rail warnings are emitted.
+
     Returns:
-        {prediction, decoded_prediction, problem_type, feature_names}
+        dict with prediction, problem_type, target_column, feature_names, and
+        optionally: probabilities, confidence, confidence_interval, guard_rail_warnings.
     """
     pipeline = load_pipeline(pipeline_path)
     model = joblib.load(model_path)
@@ -203,6 +320,12 @@ def predict_single(
                 "level": 0.95,
                 "label": "95% prediction interval",
             }
+
+    # Guard-rail input validation: only check user-provided values (not defaults)
+    if provided_features is not None:
+        warnings = validate_prediction_inputs(provided_features, pipeline)
+        if warnings:
+            result["guard_rail_warnings"] = warnings
 
     return result
 

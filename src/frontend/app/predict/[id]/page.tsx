@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { api } from "@/lib/api"
-import type { Deployment, FeatureSchemaEntry, PredictionResult, PredictionExplanation, FeatureContribution, ConfidenceInterval, ModelComparisonResult, ComparisonResponse } from "@/lib/types"
+import type { Deployment, FeatureSchemaEntry, PredictionResult, PredictionExplanation, FeatureContribution, ConfidenceInterval, ModelComparisonResult, ComparisonResponse, GuardRailWarning } from "@/lib/types"
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -731,6 +731,25 @@ export default function PredictionDashboard() {
                         </div>
                       ))}
                   </div>
+                </div>
+              )}
+
+              {/* Guard-rail input warnings */}
+              {result.guard_rail_warnings && result.guard_rail_warnings.length > 0 && (
+                <div
+                  className="rounded-lg border border-amber-300 bg-amber-50 p-3 space-y-1"
+                  aria-label="Input validation warnings"
+                  data-testid="guard-rail-warnings"
+                >
+                  <p className="text-xs font-semibold text-amber-800 flex items-center gap-1">
+                    <span aria-hidden="true">⚠️</span>
+                    Input warnings ({result.guard_rail_warnings.length})
+                  </p>
+                  {result.guard_rail_warnings.map((w: GuardRailWarning, i: number) => (
+                    <p key={i} className="text-xs text-amber-700">
+                      {w.message}
+                    </p>
+                  ))}
                 </div>
               )}
 

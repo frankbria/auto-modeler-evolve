@@ -713,7 +713,7 @@ def make_prediction(
                     ab_variant = "challenger"
 
     _t0 = time.monotonic()
-    result = predict_single(serving_pipeline, serving_model, input_data)
+    result = predict_single(serving_pipeline, serving_model, input_data, provided_features=input_data)
     response_ms = round((time.monotonic() - _t0) * 1000, 2)
 
     # Update usage stats (always on champion endpoint — that's the URL the analyst shared)

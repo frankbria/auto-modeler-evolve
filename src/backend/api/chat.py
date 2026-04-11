@@ -6242,12 +6242,14 @@ def send_message(
                             _ip_deployment.pipeline_path,
                             _ip_run.model_path,
                             _ip_inputs,
+                            provided_features=_ip_extracted,
                         )
                         _ip_target = _ip_deployment.target_column or "output"
                         _ip_pred = _ip_result["prediction"]
                         _ip_prob = _ip_result.get("probabilities")
                         _ip_ci = _ip_result.get("confidence_interval")
                         _ip_conf = _ip_result.get("confidence")
+                        _ip_warnings = _ip_result.get("guard_rail_warnings", [])
                         # Build plain-English summary
                         _ip_used_features = list(_ip_extracted.keys())
                         _ip_defaults_count = len(_ip_feature_names) - len(
@@ -6285,12 +6287,21 @@ def send_message(
                             "total_features": len(_ip_feature_names),
                             "summary": _ip_summary,
                             "problem_type": _ip_deployment.problem_type,
+                            "guard_rail_warnings": _ip_warnings,
                         }
+                        _ip_warn_note = ""
+                        if _ip_warnings:
+                            _ip_warn_note = (
+                                f"\n⚠ Guard-rail warnings ({len(_ip_warnings)}): "
+                                + "; ".join(w["message"] for w in _ip_warnings[:3])
+                                + ". Mention these caveats when narrating."
+                            )
                         system_prompt += (
                             f"\n\n## Inline Prediction Result\n"
                             f"{_ip_summary}\n"
                             f"Features provided by the analyst: "
                             f"{', '.join(f'{k}={v}' for k, v in _ip_extracted.items())}.\n"
+                            f"{_ip_warn_note}\n"
                             f"An InlinePredictionCard is shown in the chat. "
                             f"Narrate the prediction in plain English — tell the analyst "
                             f"what it means in their domain context and what they might do next."

@@ -805,6 +805,7 @@ export interface PredictionResult {
   probabilities?: Record<string, number>
   confidence?: number
   confidence_interval?: ConfidenceInterval
+  guard_rail_warnings?: GuardRailWarning[]
 }
 
 // ---------------------------------------------------------------------------
@@ -1951,6 +1952,18 @@ export interface DatasetComparisonResult {
 // Inline Multi-Feature Prediction via Chat (Day 25)
 // ---------------------------------------------------------------------------
 
+export interface GuardRailWarning {
+  feature: string
+  provided_value: number | string
+  severity: "out_of_range" | "extreme_outlier" | "unknown_category"
+  message: string
+  expected_min?: number | null
+  expected_max?: number | null
+  training_min?: number | null
+  training_max?: number | null
+  known_categories?: string[]
+}
+
 export interface InlinePredictionResult {
   deployment_id: string
   target_column: string
@@ -1963,6 +1976,7 @@ export interface InlinePredictionResult {
   total_features: number
   summary: string
   problem_type: string | null
+  guard_rail_warnings?: GuardRailWarning[]
 }
 
 export interface MultiPredictionRow {
