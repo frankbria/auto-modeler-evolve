@@ -128,7 +128,9 @@ def _make_pipeline():
             "revenue": [100.0 * i for i in range(1, 12)],
         }
     )
-    pipeline = build_prediction_pipeline(df, ["units", "region"], "revenue", "regression")
+    pipeline = build_prediction_pipeline(
+        df, ["units", "region"], "revenue", "regression"
+    )
     return pipeline
 
 
@@ -263,7 +265,8 @@ def test_predict_single_returns_guard_rail_warnings():
 
         # In-range: no warnings
         result_ok = predict_single(
-            str(pipeline_path), str(model_path),
+            str(pipeline_path),
+            str(model_path),
             {"units": 15.0},
             provided_features={"units": 15.0},
         )
@@ -271,7 +274,8 @@ def test_predict_single_returns_guard_rail_warnings():
 
         # Out-of-range: warnings
         result_warn = predict_single(
-            str(pipeline_path), str(model_path),
+            str(pipeline_path),
+            str(model_path),
             {"units": 9999.0},
             provided_features={"units": 9999.0},
         )
@@ -307,7 +311,8 @@ def test_predict_single_no_warnings_when_provided_features_none():
 
         # No provided_features (default=None) → no validation → no warnings even for extreme value
         result = predict_single(
-            str(pipeline_path), str(model_path),
+            str(pipeline_path),
+            str(model_path),
             {"units": 99999.0},
         )
         assert "guard_rail_warnings" not in result
@@ -330,7 +335,9 @@ def test_predict_in_range_no_warnings(client, deployed):
 
 def test_predict_extreme_units_returns_warnings(client, deployed):
     dep_id = deployed["deployment_id"]
-    resp = client.post(f"/api/predict/{dep_id}", json={"units": 99999, "region": "North"})
+    resp = client.post(
+        f"/api/predict/{dep_id}", json={"units": 99999, "region": "North"}
+    )
     assert resp.status_code == 200
     data = resp.json()
     warnings = data.get("guard_rail_warnings", [])
@@ -341,7 +348,9 @@ def test_predict_extreme_units_returns_warnings(client, deployed):
 
 def test_predict_unknown_region_returns_warning(client, deployed):
     dep_id = deployed["deployment_id"]
-    resp = client.post(f"/api/predict/{dep_id}", json={"units": 12, "region": "Atlantis"})
+    resp = client.post(
+        f"/api/predict/{dep_id}", json={"units": 12, "region": "Atlantis"}
+    )
     assert resp.status_code == 200
     data = resp.json()
     warnings = data.get("guard_rail_warnings", [])
@@ -353,7 +362,9 @@ def test_predict_unknown_region_returns_warning(client, deployed):
 
 def test_predict_warnings_include_message(client, deployed):
     dep_id = deployed["deployment_id"]
-    resp = client.post(f"/api/predict/{dep_id}", json={"units": 99999, "region": "North"})
+    resp = client.post(
+        f"/api/predict/{dep_id}", json={"units": 99999, "region": "North"}
+    )
     assert resp.status_code == 200
     warnings = resp.json().get("guard_rail_warnings", [])
     assert len(warnings) >= 1

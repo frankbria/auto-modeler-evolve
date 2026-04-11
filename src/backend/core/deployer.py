@@ -136,9 +136,7 @@ def build_prediction_pipeline(
             le = LabelEncoder()
             le.fit(series.fillna("MISSING").astype(str))
             pipeline.label_encoders[col] = le
-            known = [
-                c for c in series.dropna().astype(str).unique() if c != "MISSING"
-            ]
+            known = [c for c in series.dropna().astype(str).unique() if c != "MISSING"]
             pipeline.feature_ranges[col] = {"known_categories": sorted(known)}
 
     # Target encoder (classification with string labels)
