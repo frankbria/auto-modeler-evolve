@@ -464,6 +464,7 @@ export interface ChatMessage {
   preset_saved?: PresetSavedInfo
   preset_list?: PresetListInfo
   sdk_download?: SdkDownloadInfo
+  portfolio?: PortfolioResult
 }
 
 export interface SegmentPerformanceSegment {
@@ -2225,4 +2226,43 @@ export interface SdkDownloadInfo {
   python_url: string
   javascript_url: string
   class_name: string
+}
+
+// ---------------------------------------------------------------------------
+// Cross-Project Portfolio Overview
+// ---------------------------------------------------------------------------
+
+export interface PortfolioProjectSummary {
+  project_id: string
+  name: string
+  dataset_filename: string | null
+  row_count: number | null
+  model_count: number
+  best_algorithm: string | null
+  best_metric_name: string | null
+  best_metric_value: number | null
+  best_problem_type: string | null
+  best_target_column: string | null
+  has_deployment: boolean
+  prediction_count: number
+  last_activity_at: string | null
+}
+
+export interface PortfolioBestPerformer {
+  project_id: string
+  name: string
+  metric_name: string
+  metric_value: number
+  algorithm: string
+  problem_type: string
+  target_column: string
+}
+
+export interface PortfolioResult {
+  total_projects: number
+  active_deployments: number
+  total_predictions: number
+  best_performer: PortfolioBestPerformer | null
+  projects: PortfolioProjectSummary[]
+  summary: string
 }

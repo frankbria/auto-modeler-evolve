@@ -2803,3 +2803,84 @@ def compute_version_history(
         "overall_stability": overall_stability,
         "summary": summary,
     }
+
+
+def compute_portfolio_summary(project_summaries: list[dict]) -> dict:
+    """Aggregate all projects into a cross-project portfolio overview.
+
+    Args:
+        project_summaries: List of dicts with keys:
+            project_id, name, dataset_filename, row_count,
+            model_count, best_algorithm, best_metric_name,
+            best_metric_value, best_problem_type, best_target_column,
+            has_deployment, prediction_count, last_activity_at.
+
+    Returns:
+        Dict with: total_projects, active_deployments, total_predictions,
+        best_performer (or None), projects (list), summary (plain English).
+    """
+    total = len(project_summaries)
+    if total == 0:
+        return {
+            "total_projects": 0,
+            "active_deployments": 0,
+            "total_predictions": 0,
+            "best_performer": None,
+            "projects": [],
+            "summary": "No projects found. Create a project and upload some data to get started.",
+        }
+
+    active_deployments = sum(1 for p in project_summaries if p.get("has_deployment"))
+    total_predictions = sum(p.get("prediction_count", 0) for p in project_summaries)
+
+    # Find best performer: project with highest metric value that has a model
+    modeled = [
+        p
+        for p in project_summaries
+        if p.get("best_metric_value") is not None and p.get("model_count", 0) > 0
+    ]
+    best_performer = None
+    if modeled:
+        # For R² (regression) higher is better; for accuracy/f1 higher is better too.
+        # Sort by metric value descending.
+        modeled_sorted = sorted(
+            modeled, key=lambda p: p.get("best_metric_value", 0), reverse=True
+        )
+        bp = modeled_sorted[0]
+        best_performer = {
+            "project_id": bp["project_id"],
+            "name": bp["name"],
+            "metric_name": bp.get("best_metric_name", "score"),
+            "metric_value": bp.get("best_metric_value"),
+            "algorithm": bp.get("best_algorithm", ""),
+            "problem_type": bp.get("best_problem_type", ""),
+            "target_column": bp.get("best_target_column", ""),
+        }
+
+    # Build plain-English summary
+    parts = []
+    parts.append(f"You have {total} project{'s' if total > 1 else ''}")
+    if active_deployments > 0:
+        parts.append(
+            f"{active_deployments} live prediction "
+            f"API{'s' if active_deployments > 1 else ''}"
+        )
+    if total_predictions > 0:
+        parts.append(f"{total_predictions:,} total prediction{'s' if total_predictions != 1 else ''} made")
+    if best_performer:
+        metric_pct = int(best_performer["metric_value"] * 100) if best_performer["metric_value"] is not None else 0
+        parts.append(
+            f"best model: {best_performer['name']} "
+            f"({best_performer['algorithm'].replace('_', ' ').title()}, "
+            f"{metric_pct}% {best_performer['metric_name']})"
+        )
+    summary = ". ".join(parts) + "."
+
+    return {
+        "total_projects": total,
+        "active_deployments": active_deployments,
+        "total_predictions": total_predictions,
+        "best_performer": best_performer,
+        "projects": project_summaries,
+        "summary": summary,
+    }

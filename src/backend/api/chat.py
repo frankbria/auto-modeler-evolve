@@ -2328,6 +2328,20 @@ _SDK_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+_PORTFOLIO_PATTERNS = re.compile(
+    r"\b("
+    r"(?:show|list|give\s+me|display)\s+(?:all\s+(?:my\s+)?|my\s+)?(?:models|projects|deployments|predictions)|"
+    r"portfolio(?:\s+overview|\s+summary|\s+view)?|"
+    r"(?:all|my)\s+(?:my\s+)?(?:prediction\s+)?(?:projects|models)\s+(?:overview|summary|status)|"
+    r"(?:compare|overview)\s+(?:all\s+)?(?:my\s+)?(?:projects|models|deployments)|"
+    r"which\s+(?:project|model)\s+is\s+(?:doing\s+)?best|"
+    r"cross[\s-]project\s+(?:view|overview|summary|comparison)|"
+    r"how\s+(?:many|are)\s+(?:my\s+)?(?:all\s+)?(?:projects|models|deployments)|"
+    r"all\s+my\s+(?:prediction\s+)?work"
+    r")\b",
+    re.IGNORECASE,
+)
+
 
 def _extract_preset_definition(message: str) -> dict | None:
     """Extract preset name and feature key=value pairs from a natural language message.
@@ -6921,6 +6935,95 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # SDK generation is nice-to-have; never crash chat
 
+    # Cross-project portfolio overview
+    portfolio_event: dict | None = None
+    if _PORTFOLIO_PATTERNS.search(body.message):
+        try:
+            from core.analyzer import compute_portfolio_summary as _cps
+
+            _all_projects = list(session.exec(select(Project)).all())
+            _project_summaries: list[dict] = []
+            for _proj in _all_projects:
+                _ds = session.exec(
+                    select(Dataset).where(Dataset.project_id == _proj.id)
+                ).first()
+                _runs = list(
+                    session.exec(
+                        select(ModelRun).where(
+                            ModelRun.project_id == _proj.id,
+                            ModelRun.status == "done",
+                        )
+                    ).all()
+                )
+                _dep = session.exec(
+                    select(Deployment).where(
+                        Deployment.project_id == _proj.id,
+                        Deployment.is_active == True,  # noqa: E712
+                    )
+                ).first()
+                _pred_count = 0
+                if _dep:
+                    _pred_count = len(
+                        list(
+                            session.exec(
+                                select(PredictionLog).where(
+                                    PredictionLog.deployment_id == _dep.id
+                                )
+                            ).all()
+                        )
+                    )
+                _best_run = None
+                _best_val: float | None = None
+                _best_metric: str | None = None
+                for _run in _runs:
+                    _m = json.loads(_run.metrics or "{}")
+                    _v = _m.get("r2") or _m.get("accuracy")
+                    _mn = "r2" if "r2" in _m else ("accuracy" if "accuracy" in _m else None)
+                    if _v is not None and (_best_val is None or _v > _best_val):
+                        _best_val = _v
+                        _best_metric = _mn
+                        _best_run = _run
+                _project_summaries.append(
+                    {
+                        "project_id": _proj.id,
+                        "name": _proj.name,
+                        "dataset_filename": _ds.filename if _ds else None,
+                        "row_count": _ds.row_count if _ds else None,
+                        "model_count": len(_runs),
+                        "best_algorithm": _best_run.algorithm if _best_run else None,
+                        "best_metric_name": _best_metric,
+                        "best_metric_value": _best_val,
+                        "best_problem_type": _best_run.problem_type if _best_run else None,
+                        "best_target_column": _best_run.target_column if _best_run else None,
+                        "has_deployment": _dep is not None,
+                        "prediction_count": _pred_count,
+                        "last_activity_at": _proj.updated_at.isoformat()
+                        if _proj.updated_at
+                        else None,
+                    }
+                )
+            portfolio_event = _cps(_project_summaries)
+            system_prompt += (
+                f"\n\n## Portfolio Overview\n"
+                f"{portfolio_event['summary']}\n"
+                f"Total projects: {portfolio_event['total_projects']}. "
+                f"Active deployments: {portfolio_event['active_deployments']}. "
+                f"Total predictions served: {portfolio_event['total_predictions']}. "
+                + (
+                    f"Best performing project: {portfolio_event['best_performer']['name']} "
+                    f"({portfolio_event['best_performer']['algorithm']}, "
+                    f"{int((portfolio_event['best_performer']['metric_value'] or 0) * 100)}% "
+                    f"{portfolio_event['best_performer']['metric_name']})."
+                    if portfolio_event.get("best_performer")
+                    else "No trained models yet."
+                )
+                + " Present the portfolio overview from the card. "
+                "Help the analyst understand which projects are performing best "
+                "and what actions they might take next."
+            )
+        except Exception:  # noqa: BLE001
+            pass  # Portfolio is nice-to-have; never crash chat
+
     # Pre-compute follow-up suggestions (based on state + current message)
     current_state = detect_state(
         ctx["dataset"], ctx["feature_set"], ctx["model_runs"], ctx["deployment"]
@@ -7262,6 +7365,10 @@ def send_message(
         # Emit SDK download card
         if sdk_event:
             yield f"data: {json.dumps({'type': 'sdk_download', 'sdk_download': sdk_event})}\n\n"
+
+        # Emit cross-project portfolio overview
+        if portfolio_event:
+            yield f"data: {json.dumps({'type': 'portfolio', 'portfolio': portfolio_event})}\n\n"
 
         # After text stream, opportunistically generate a chart if the
         # message is about data and we have a dataset loaded

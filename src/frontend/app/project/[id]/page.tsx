@@ -75,6 +75,7 @@ import {
 import { PresetSavedCard } from "@/components/deploy/preset-saved-card"
 import { PresetListCard } from "@/components/deploy/preset-list-card"
 import { SdkDownloadCard } from "@/components/deploy/sdk-download-card"
+import { PortfolioCard } from "@/components/chat/portfolio-card"
 import { PairCorrelationCard } from "@/components/data/pair-correlation-card"
 import { StatQueryCard } from "@/components/data/stat-query-card"
 import { SummaryStatsCard } from "@/components/data/summary-stats-card"
@@ -231,6 +232,7 @@ export default function ProjectWorkspace() {
     attachRankedPredictionsToLastMessage,
     attachPredictionCohortToLastMessage,
     attachSdkDownloadToLastMessage,
+    attachPortfolioToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -588,6 +590,8 @@ export default function ProjectWorkspace() {
                 attachPresetListToLastMessage(json.preset_list as import("@/lib/types").PresetListInfo)
               } else if (json.type === "sdk_download" && json.sdk_download) {
                 attachSdkDownloadToLastMessage(json.sdk_download as import("@/lib/types").SdkDownloadInfo)
+              } else if (json.type === "portfolio" && json.portfolio) {
+                attachPortfolioToLastMessage(json.portfolio as import("@/lib/types").PortfolioResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -667,6 +671,7 @@ export default function ProjectWorkspace() {
     attachRankedPredictionsToLastMessage,
     attachPredictionCohortToLastMessage,
     attachSdkDownloadToLastMessage,
+    attachPortfolioToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -1090,6 +1095,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.sdk_download && (
                       <SdkDownloadCard info={msg.sdk_download} />
+                    )}
+                    {msg.portfolio && (
+                      <PortfolioCard result={msg.portfolio} />
                     )}
                   </div>
                 </div>
