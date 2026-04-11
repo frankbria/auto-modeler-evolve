@@ -424,7 +424,7 @@ def disable_api_key(
 
 class RateLimitRequest(BaseModel):
     rate_limit_rpm: int | None = None  # None = remove limit; 0 = remove limit; >0 = set
-    monthly_quota: int | None = None   # None = remove quota; 0 = remove; >0 = set
+    monthly_quota: int | None = None  # None = remove quota; 0 = remove; >0 = set
 
 
 @router.put("/api/deploy/{deployment_id}/rate-limit")
@@ -467,7 +467,9 @@ def set_rate_limit(
         "deployment_id": deployment_id,
         "rate_limit_rpm": deployment.rate_limit_rpm,
         "monthly_quota": deployment.monthly_quota,
-        "message": _rate_limit_summary(deployment.rate_limit_rpm, deployment.monthly_quota),
+        "message": _rate_limit_summary(
+            deployment.rate_limit_rpm, deployment.monthly_quota
+        ),
     }
 
 
@@ -2277,7 +2279,9 @@ def _check_rate_limit(deployment_id: str, rpm: int) -> bool:
         return True
 
 
-def _check_monthly_quota(deployment: Deployment, session: Session) -> tuple[bool, int, int]:
+def _check_monthly_quota(
+    deployment: Deployment, session: Session
+) -> tuple[bool, int, int]:
     """Check whether the rolling-30-day prediction count is under the monthly quota.
 
     Returns (allowed, used_this_month, quota).  When quota is None/0 always allows.

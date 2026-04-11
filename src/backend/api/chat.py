@@ -2360,10 +2360,19 @@ _RATE_LIMIT_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
-_RATE_LIMIT_NUMBER_RE = re.compile(r"\b(\d+)\s*(?:requests?\s+per\s+minute|rpm)\b", re.IGNORECASE)
-_QUOTA_NUMBER_RE = re.compile(r"\b(\d+)\s+predictions?\s+(?:per|a)\s+month\b", re.IGNORECASE)
-_DISABLE_RATE_RE = re.compile(r"\b(disable|remove|turn\s+off|clear)\s+(?:the\s+)?rate\s+limit", re.IGNORECASE)
-_DISABLE_QUOTA_RE = re.compile(r"\b(disable|remove|turn\s+off|clear)\s+(?:the\s+)?(?:monthly\s+)?quota", re.IGNORECASE)
+_RATE_LIMIT_NUMBER_RE = re.compile(
+    r"\b(\d+)\s*(?:requests?\s+per\s+minute|rpm)\b", re.IGNORECASE
+)
+_QUOTA_NUMBER_RE = re.compile(
+    r"\b(\d+)\s+predictions?\s+(?:per|a)\s+month\b", re.IGNORECASE
+)
+_DISABLE_RATE_RE = re.compile(
+    r"\b(disable|remove|turn\s+off|clear)\s+(?:the\s+)?rate\s+limit", re.IGNORECASE
+)
+_DISABLE_QUOTA_RE = re.compile(
+    r"\b(disable|remove|turn\s+off|clear)\s+(?:the\s+)?(?:monthly\s+)?quota",
+    re.IGNORECASE,
+)
 
 
 def _extract_preset_definition(message: str) -> dict | None:
@@ -7076,10 +7085,13 @@ def send_message(
             # Check if this is just a status check (no set/disable)
             _status_only = not (_rpm or _quota or _disable_rpm or _disable_quota)
             # "quota status", "check quota", "how many predictions left"
-            _status_query = bool(re.search(
-                r"\b(quota\s+status|check\s+quota|how\s+many\s+predictions?\s+(?:left|remaining)|usage\s+stats)\b",
-                body.message, re.IGNORECASE
-            ))
+            _status_query = bool(
+                re.search(
+                    r"\b(quota\s+status|check\s+quota|how\s+many\s+predictions?\s+(?:left|remaining)|usage\s+stats)\b",
+                    body.message,
+                    re.IGNORECASE,
+                )
+            )
 
             if not _status_only or _status_query:
                 if _disable_rpm:
@@ -7128,7 +7140,11 @@ def send_message(
                 "remaining": _remaining,
                 "pct_used": _pct,
                 "summary": (
-                    (f"Rate limit: {_current_rpm} req/min. " if _current_rpm else "No per-minute rate limit. ")
+                    (
+                        f"Rate limit: {_current_rpm} req/min. "
+                        if _current_rpm
+                        else "No per-minute rate limit. "
+                    )
                     + (
                         f"Monthly quota: {_used}/{_current_quota} predictions used "
                         f"({_pct}% — {_remaining} remaining)."

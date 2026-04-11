@@ -381,7 +381,9 @@ def test_rate_limit_patterns_enable():
 def test_rate_limit_patterns_monthly_quota():
     from api.chat import _RATE_LIMIT_PATTERNS
 
-    assert _RATE_LIMIT_PATTERNS.search("add a monthly quota of 500 predictions per month")
+    assert _RATE_LIMIT_PATTERNS.search(
+        "add a monthly quota of 500 predictions per month"
+    )
 
 
 def test_rate_limit_patterns_quota_status():
