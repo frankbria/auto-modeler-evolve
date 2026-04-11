@@ -154,27 +154,39 @@ def get_portfolio(session: Session = Depends(get_session)):
             metrics = json.loads(run.metrics or "{}")
             # Primary metric: r2 for regression, accuracy for classification
             metric_val = metrics.get("r2") or metrics.get("accuracy")
-            metric_name = "r2" if "r2" in metrics else "accuracy" if "accuracy" in metrics else None
-            if metric_val is not None and (best_metric_value is None or metric_val > best_metric_value):
+            metric_name = (
+                "r2"
+                if "r2" in metrics
+                else "accuracy"
+                if "accuracy" in metrics
+                else None
+            )
+            if metric_val is not None and (
+                best_metric_value is None or metric_val > best_metric_value
+            ):
                 best_metric_value = metric_val
                 best_metric_name = metric_name
                 best_run = run
 
-        project_summaries.append({
-            "project_id": project.id,
-            "name": project.name,
-            "dataset_filename": dataset.filename if dataset else None,
-            "row_count": dataset.row_count if dataset else None,
-            "model_count": len(list(completed_runs)),
-            "best_algorithm": best_run.algorithm if best_run else None,
-            "best_metric_name": best_metric_name,
-            "best_metric_value": best_metric_value,
-            "best_problem_type": best_run.problem_type if best_run else None,
-            "best_target_column": best_run.target_column if best_run else None,
-            "has_deployment": deployment is not None,
-            "prediction_count": prediction_count,
-            "last_activity_at": project.updated_at.isoformat() if project.updated_at else None,
-        })
+        project_summaries.append(
+            {
+                "project_id": project.id,
+                "name": project.name,
+                "dataset_filename": dataset.filename if dataset else None,
+                "row_count": dataset.row_count if dataset else None,
+                "model_count": len(list(completed_runs)),
+                "best_algorithm": best_run.algorithm if best_run else None,
+                "best_metric_name": best_metric_name,
+                "best_metric_value": best_metric_value,
+                "best_problem_type": best_run.problem_type if best_run else None,
+                "best_target_column": best_run.target_column if best_run else None,
+                "has_deployment": deployment is not None,
+                "prediction_count": prediction_count,
+                "last_activity_at": project.updated_at.isoformat()
+                if project.updated_at
+                else None,
+            }
+        )
 
     return compute_portfolio_summary(project_summaries)
 

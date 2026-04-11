@@ -2866,9 +2866,15 @@ def compute_portfolio_summary(project_summaries: list[dict]) -> dict:
             f"API{'s' if active_deployments > 1 else ''}"
         )
     if total_predictions > 0:
-        parts.append(f"{total_predictions:,} total prediction{'s' if total_predictions != 1 else ''} made")
+        parts.append(
+            f"{total_predictions:,} total prediction{'s' if total_predictions != 1 else ''} made"
+        )
     if best_performer:
-        metric_pct = int(best_performer["metric_value"] * 100) if best_performer["metric_value"] is not None else 0
+        metric_pct = (
+            int(best_performer["metric_value"] * 100)
+            if best_performer["metric_value"] is not None
+            else 0
+        )
         parts.append(
             f"best model: {best_performer['name']} "
             f"({best_performer['algorithm'].replace('_', ' ').title()}, "

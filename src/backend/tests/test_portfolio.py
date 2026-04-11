@@ -142,7 +142,9 @@ def test_portfolio_best_performer_none_when_no_models():
 
 def test_portfolio_summary_text():
     summaries = [
-        _make_project("A", model_count=2, best_metric=0.80, has_deployment=True, preds=100),
+        _make_project(
+            "A", model_count=2, best_metric=0.80, has_deployment=True, preds=100
+        ),
     ]
     result = compute_portfolio_summary(summaries)
     assert "1 project" in result["summary"]
@@ -171,11 +173,14 @@ def client(tmp_path):
     db_module.engine = engine
 
     import api.data as data_module
+
     data_module.UPLOAD_DIR = tmp_path / "uploads"
     import api.models as models_api_module
+
     models_api_module.MODELS_DIR = tmp_path / "models"
 
     from main import app
+
     with TestClient(app) as c:
         yield c
 

@@ -6978,7 +6978,11 @@ def send_message(
                 for _run in _runs:
                     _m = json.loads(_run.metrics or "{}")
                     _v = _m.get("r2") or _m.get("accuracy")
-                    _mn = "r2" if "r2" in _m else ("accuracy" if "accuracy" in _m else None)
+                    _mn = (
+                        "r2"
+                        if "r2" in _m
+                        else ("accuracy" if "accuracy" in _m else None)
+                    )
                     if _v is not None and (_best_val is None or _v > _best_val):
                         _best_val = _v
                         _best_metric = _mn
@@ -6993,8 +6997,12 @@ def send_message(
                         "best_algorithm": _best_run.algorithm if _best_run else None,
                         "best_metric_name": _best_metric,
                         "best_metric_value": _best_val,
-                        "best_problem_type": _best_run.problem_type if _best_run else None,
-                        "best_target_column": _best_run.target_column if _best_run else None,
+                        "best_problem_type": _best_run.problem_type
+                        if _best_run
+                        else None,
+                        "best_target_column": _best_run.target_column
+                        if _best_run
+                        else None,
                         "has_deployment": _dep is not None,
                         "prediction_count": _pred_count,
                         "last_activity_at": _proj.updated_at.isoformat()
