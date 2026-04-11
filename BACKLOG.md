@@ -49,6 +49,20 @@ the time is better spent on real features.
 
 ## Currently Working On
 
+## Day 31 (04:00) — Done
+**Track D — Per-Deployment Rate Limiting + Monthly Quotas.** Closes the production-readiness gap: analysts sharing deployed prediction endpoints can now cap per-minute request rates and rolling 30-day prediction counts via chat ("set rate limit to 60 requests per minute", "add a monthly quota of 1000 predictions").
+- `rate_limit_rpm` + `monthly_quota` fields on `Deployment` (inline SQLite migration). `_check_rate_limit()` sliding-window (in-memory deque + threading.Lock). `_check_monthly_quota()` rolling 30-day PredictionLog count. HTTP 429 on violation.
+- `PUT /api/deploy/{id}/rate-limit`, `GET /api/deploy/{id}/quota-status` endpoints. `GET /api/deploy/{id}` now exposes both fields.
+- `_RATE_LIMIT_PATTERNS` + 4 extraction regexes in `chat.py`; handler applies set/disable/status without crashing chat; emits `{type:"rate_limit"}` SSE event.
+- `RateLimitCard` (amber border, ⚡ icon): Active/No limits badge, RPM or "Unlimited", quota fraction + color-coded `UsageBar` (green/amber/red), percentage used, remaining, help text footer.
+- `RateLimitInfo` + `QuotaStatus` TypeScript types; `attachRateLimitToLastMessage` Zustand action; `setRateLimit()` + `quotaStatus()` API methods.
+- 26 backend + 17 frontend = 43 new tests. Total: 2915 backend + 1495 frontend = 4410, all passing. Backend lint: clean. Frontend build + lint: clean.
+
+**What's next:**
+- Track D: prediction confidence intervals surfaced in the prediction response ("your model predicts $42k revenue ± $3.2k"), deployment health scoring (composite "deployment health" metric from SLA + drift + error rate).
+- Track B: cross-project model comparison API, cross-project template sharing.
+- Track C: SHAP explanation caching (avoid recomputing on every chat ask), automated feature recommendation based on correlation analysis.
+
 ## Day 30 (20:00) — Done
 **Track B — Cross-Project Portfolio Overview.** Closes the "I have multiple projects — show me everything at a glance" gap. Analysts managing several prediction models across different projects can now ask "show all my models", "portfolio overview", or "which project is doing best" and receive a `PortfolioCard` SSE card in chat.
 - `compute_portfolio_summary(project_summaries)` pure function in `core/analyzer.py` — aggregates total_projects, active_deployments, total_predictions, best_performer (highest metric), per-project summaries.
@@ -57,10 +71,6 @@ the time is better spent on real features.
 - `PortfolioCard` (purple border, 🗂️ icon): header badges (N projects, N deployed, N predictions total), plain-English summary, 🏆 best performer highlight box (name, algorithm, metric %), per-project rows (name, dataset, target column, metric badge, Live/Trained/No model status badge, prediction count).
 - `PortfolioResult`/`PortfolioProjectSummary`/`PortfolioBestPerformer` TypeScript types; `portfolio?` field on `ChatMessage`; `attachPortfolioToLastMessage` Zustand action; SSE handler + render wired in workspace page.
 - 21 backend + 16 frontend = 37 new tests. Total: 2889 backend + 1478 frontend = 4367, all passing. Backend lint: clean. Frontend build + lint: clean.
-
-**What's next:**
-- Track B: cross-project model comparison API (compare models from different projects side-by-side), cross-project template sharing.
-- Track D: further deployment automation — rate limiting per deployment, usage quota management.
 
 ## Day 30 (12:00) — Done
 **Track D — SDK Generation.** Closes the developer-handoff gap: a deployed model is a REST API, but developers still had to reverse-engineer the endpoint shape and write HTTP code from scratch. Now a single chat message ("generate a python sdk") triggers downloadable, schema-aware Python and JavaScript client libraries.
