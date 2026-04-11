@@ -49,6 +49,19 @@ the time is better spent on real features.
 
 ## Currently Working On
 
+## Day 31 (12:00) — Done
+**Track D — Prediction Input Guard Rails.** Closes the "Not a black box" gap for the VP-facing prediction dashboard: when a user enters a feature value outside the model's training distribution (numeric too high/low, or unseen category), the prediction response now includes `guard_rail_warnings` describing exactly what's out of bounds and why confidence may be lower.
+- `feature_ranges` field on `PredictionPipeline` (backward-compatible, computed at build time): numeric → `{p5, p95, min, max}`; categorical → `{known_categories: [...]}`.
+- `validate_prediction_inputs(provided_features, pipeline)` pure function in `core/deployer.py`; checks ONLY user-supplied values (not auto-filled defaults). Three severity levels: `out_of_range` (p5–p95 breach), `extreme_outlier` (min/max breach), `unknown_category`.
+- `predict_single()` accepts optional `provided_features` kwarg; `make_prediction()` passes `provided_features=input_data`; chat inline-pred handler passes extracted features before defaults merge.
+- `GuardRailWarning` TypeScript interface; `guard_rail_warnings?` added to `InlinePredictionResult` and `PredictionResult`. `InlinePredictionCard` shifts to amber border + warning rows (`role="alert"`) when warnings present. `predict/[id]/page.tsx` shows amber warning callout in result section.
+- 17 backend + 17 frontend = 34 new tests. Total: 2932 backend + 1512 frontend = 4444, all passing. Backend lint: clean. Frontend build + lint: clean.
+
+**What's next:**
+- Track D: cross-project model comparison improvements, deployment health alerting improvements.
+- Track C: automated feature selection (drop near-zero-importance features), class imbalance detection in training.
+- Track E: run the "lunch break" flow as a real business analyst and fix any remaining UX friction.
+
 ## Day 31 (04:00) — Done
 **Track D — Per-Deployment Rate Limiting + Monthly Quotas.** Closes the production-readiness gap: analysts sharing deployed prediction endpoints can now cap per-minute request rates and rolling 30-day prediction counts via chat ("set rate limit to 60 requests per minute", "add a monthly quota of 1000 predictions").
 - `rate_limit_rpm` + `monthly_quota` fields on `Deployment` (inline SQLite migration). `_check_rate_limit()` sliding-window (in-memory deque + threading.Lock). `_check_monthly_quota()` rolling 30-day PredictionLog count. HTTP 429 on violation.
