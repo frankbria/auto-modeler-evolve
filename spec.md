@@ -1184,6 +1184,22 @@ guides them forward through the natural flow.
       this prediction is extrapolating, not interpolating."
       *Day 31 (12:00): 17 backend + 17 frontend = 34 new tests; total 2932 backend + 1512 frontend = 4444. Backend lint: clean. Frontend build + lint: clean.*
 
+- [x] **SLA Latency Monitoring via chat** — Analysts can ask "how fast is my model?",
+      "show me the prediction latency", "p95 latency", "response time stats", or "is my API
+      within SLA?" and receive an `SlaCard` showing p50/p95/p99 percentiles, average latency,
+      sample count, a trend sparkline (Recharts LineChart over `latency_by_day`), and an alert
+      badge + `role="alert"` message when p95 exceeds the 500ms target. `_SLA_PATTERNS` (10 NL
+      variants) in `chat.py` detects intent. Handler queries `PredictionLog.response_ms` values
+      for the active deployment, computes percentiles via the existing `_percentile()` helper,
+      groups by day for the sparkline, and emits `{type:"sla_metrics"}` SSE event with the full
+      `SlaData` payload. Claude's system prompt is injected with the latency summary and SLA
+      status so it narrates in plain English. `SlaCard` (sky border, ⚡ icon) is a new chat-
+      context component (distinct from the deployment-panel `SlaMonitorCard`): no-data empty
+      state, percentile grid (p50/p95/p99), avg/sample-count row, sparkline when ≥2 days of
+      data, red alert with `role="alert"` paragraph when p95 > 500ms, SLA target footnote.
+      `attachSlaMetricsToLastMessage` Zustand action; SSE handler and render wired in `page.tsx`.
+      *Day 32 (12:00): 15 backend + 19 frontend = 34 new tests; total 2989 backend + 1561 frontend = 4550. Backend lint: clean. Frontend build + lint: clean.*
+
 #### Track E — End-to-End Polish
 
 > The "lunch break" success criterion: a business analyst uploads quarterly sales data and
