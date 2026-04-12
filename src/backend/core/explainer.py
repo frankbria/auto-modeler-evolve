@@ -250,9 +250,7 @@ def compute_partial_dependence(
                 str(class_names[i]): class_sums[i] for i in range(len(class_sums))
             }
         else:
-            class_curves = {
-                f"class_{i}": class_sums[i] for i in range(len(class_sums))
-            }
+            class_curves = {f"class_{i}": class_sums[i] for i in range(len(class_sums))}
 
     # Build a plain-English summary
     if len(mean_preds) >= 2:
@@ -261,7 +259,9 @@ def compute_partial_dependence(
         first_pred = round(mean_preds[0], 4)
         last_pred = round(mean_preds[-1], 4)
         change = last_pred - first_pred
-        direction = "increases" if change > 0 else "decreases" if change < 0 else "stays flat"
+        direction = (
+            "increases" if change > 0 else "decreases" if change < 0 else "stays flat"
+        )
         if problem_type == "classification":
             summary = (
                 f"As the feature varies from {first_val} to {last_val}, "

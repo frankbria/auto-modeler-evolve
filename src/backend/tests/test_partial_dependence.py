@@ -135,10 +135,12 @@ def test_detect_feature_longest_match_wins():
 def _make_regression_model():
     """Return a tiny fitted LinearRegression with known coefficients."""
     np.random.seed(0)
-    X = np.column_stack([
-        np.linspace(1, 10, 50),   # feature 0 (units)
-        np.random.randn(50),       # feature 1 (noise)
-    ])
+    X = np.column_stack(
+        [
+            np.linspace(1, 10, 50),  # feature 0 (units)
+            np.random.randn(50),  # feature 1 (noise)
+        ]
+    )
     y = 2 * X[:, 0] + np.random.randn(50) * 0.1
     model = LinearRegression().fit(X, y)
     return model, X
@@ -147,10 +149,12 @@ def _make_regression_model():
 def _make_binary_classifier():
     """Return a tiny fitted LogisticRegression (binary)."""
     np.random.seed(42)
-    X = np.column_stack([
-        np.linspace(0, 1, 80),
-        np.random.randn(80),
-    ])
+    X = np.column_stack(
+        [
+            np.linspace(0, 1, 80),
+            np.random.randn(80),
+        ]
+    )
     y = (X[:, 0] > 0.5).astype(int)
     model = LogisticRegression(max_iter=500).fit(X, y)
     return model, X
@@ -159,10 +163,12 @@ def _make_binary_classifier():
 def _make_multiclass_classifier():
     """Return a tiny fitted LogisticRegression (3 classes)."""
     np.random.seed(7)
-    X = np.column_stack([
-        np.linspace(0, 2, 90),
-        np.random.randn(90),
-    ])
+    X = np.column_stack(
+        [
+            np.linspace(0, 2, 90),
+            np.random.randn(90),
+        ]
+    )
     y = (X[:, 0] * 1.5).astype(int).clip(0, 2)
     model = LogisticRegression(max_iter=500).fit(X, y)
     return model, X
@@ -298,12 +304,8 @@ def test_pdp_problem_type_preserved():
 # API endpoint integration tests
 # ---------------------------------------------------------------------------
 
-_PDP_CSV = (
-    "units,price,target\n"
-    + "\n".join(
-        f"{i},{i * 0.5 + 1.0},{i * 2.0 + 0.1}"
-        for i in range(1, 101)
-    )
+_PDP_CSV = "units,price,target\n" + "\n".join(
+    f"{i},{i * 0.5 + 1.0},{i * 2.0 + 0.1}" for i in range(1, 101)
 )
 
 

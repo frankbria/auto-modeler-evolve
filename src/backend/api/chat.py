@@ -6590,9 +6590,7 @@ def send_message(
             from core.trainer import prepare_features as _pf
 
             # Pick best/selected completed run
-            _pdp_runs = [
-                mr for mr in ctx["model_runs"] if mr.status == "done"
-            ]
+            _pdp_runs = [mr for mr in ctx["model_runs"] if mr.status == "done"]
             _pdp_run = next(
                 (mr for mr in _pdp_runs if mr.is_selected),
                 _pdp_runs[0] if _pdp_runs else None,
