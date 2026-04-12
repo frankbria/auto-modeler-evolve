@@ -49,6 +49,17 @@ the time is better spent on real features.
 
 ## Currently Working On
 
+## Day 32 (12:00) — Done
+**Track D — SLA Latency Monitoring via chat.** Closes the gap between the deployment panel's `SlaMonitorCard` and the conversational interface. Analysts can now ask "how fast is my model?", "show me the prediction latency", or "p95 latency?" and receive an `SlaCard` inline in chat showing p50/p95/p99 percentiles, avg latency, sample count, a daily sparkline, and an alert when p95 > 500ms — without navigating away from the conversation.
+- `_SLA_PATTERNS` (10 NL variants) in `chat.py`; handler queries `PredictionLog.response_ms`, computes percentiles, groups by day for sparkline, emits `{type:"sla_metrics"}` SSE event.
+- `SlaCard` (sky border, ⚡ icon): empty state, p50/p95/p99 grid, avg/count row, Recharts sparkline, `role="alert"` message when p95 > 500ms.
+- 15 backend + 19 frontend = 34 new tests. Total: 2989 backend + 1561 frontend = 4550, all passing. Backend lint: clean. Frontend build + lint: clean.
+
+**What's next:**
+- Track D: advanced quota alerting, export as self-contained prediction service (ZIP).
+- Track C: ensemble methods (voting + stacking), date-aware chronological train/test splits.
+- Track E: run the "lunch break" flow as a real business analyst; fix remaining friction.
+
 ## Day 32 (04:00) — Done
 **Track C — Calibration Check via chat.** Closes the gap between the Validation panel's Calibration sub-tab and the conversational interface. Analysts can now ask "how well-calibrated is my model?" or "brier score?" and receive a `CalibrationCheckCard` with the reliability diagram inline in chat — surfacing data that was already computed at training time but inaccessible through conversation.
 - `_CALIBRATION_CHECK_PATTERNS` (8 NL variants) in `chat.py`; handler loads model run metrics, extracts is_calibrated/brier_score/calibration_curve, applies quality bucket, injects narration hint, emits `{type:"calibration_check"}` SSE event.
