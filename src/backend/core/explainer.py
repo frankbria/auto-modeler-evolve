@@ -160,6 +160,134 @@ def explain_single_prediction(
     }
 
 
+# ---------------------------------------------------------------------------
+# Partial Dependence Plot (PDP)
+# ---------------------------------------------------------------------------
+
+
+def compute_partial_dependence(
+    model,  # fitted sklearn estimator
+    X_train: np.ndarray,  # shape (n_samples, n_features)
+    feature_idx: int,  # column index in X_train to sweep
+    grid_values: np.ndarray,  # 1-D array of values to sweep
+    problem_type: str = "regression",
+    class_names: list[str] | None = None,
+) -> dict:
+    """Compute partial dependence of the model output on one feature.
+
+    Unlike sensitivity analysis (which holds all other features at training means),
+    PDP averages over the *actual* training distribution for the other features —
+    giving a more statistically accurate marginal effect estimate.
+
+    For regression: returns average model prediction at each grid value.
+    For binary classification: returns average probability of the positive class.
+    For multiclass classification: returns average probability per class.
+
+    Returns:
+        {
+          grid_values: [float, ...],
+          mean_predictions: [float, ...],   # averaged over all training rows
+          std_predictions: [float, ...],    # std dev across training rows
+          class_curves: {class_name: [float, ...]} | None  (multiclass only)
+          problem_type: str,
+          n_training_rows: int,
+          summary: str,
+        }
+    """
+    grid = np.array(grid_values, dtype=float)
+    n_rows = len(X_train)
+
+    mean_preds: list[float] = []
+    std_preds: list[float] = []
+    # Per-class curves for multiclass classification
+    class_sums: list[list[float]] | None = None
+
+    is_multiclass = False
+    if problem_type == "classification" and hasattr(model, "predict_proba"):
+        try:
+            probe = model.predict_proba(X_train[:1])
+            if probe.shape[1] > 2:
+                is_multiclass = True
+                class_sums = [[] for _ in range(probe.shape[1])]
+        except Exception:  # noqa: BLE001
+            pass
+
+    for val in grid:
+        X_mod = X_train.copy()
+        X_mod[:, feature_idx] = val
+
+        if problem_type == "classification" and hasattr(model, "predict_proba"):
+            try:
+                proba = model.predict_proba(X_mod)  # (n_rows, n_classes)
+                if is_multiclass and class_sums is not None:
+                    for ci in range(len(class_sums)):
+                        class_sums[ci].append(float(np.mean(proba[:, ci])))
+                    # mean_prediction = average predicted class index (not very meaningful)
+                    # Use max-class average probability instead
+                    avg_proba = np.mean(proba, axis=0)
+                    mean_preds.append(float(np.max(avg_proba)))
+                    std_preds.append(0.0)
+                else:
+                    # Binary: use positive class (index 1)
+                    pos_proba = proba[:, 1]
+                    mean_preds.append(float(np.mean(pos_proba)))
+                    std_preds.append(float(np.std(pos_proba)))
+            except Exception:  # noqa: BLE001
+                # Fallback to label prediction
+                preds = model.predict(X_mod).astype(float)
+                mean_preds.append(float(np.mean(preds)))
+                std_preds.append(float(np.std(preds)))
+        else:
+            preds = model.predict(X_mod).astype(float)
+            mean_preds.append(float(np.mean(preds)))
+            std_preds.append(float(np.std(preds)))
+
+    # Build class_curves dict if multiclass
+    class_curves: dict[str, list[float]] | None = None
+    if is_multiclass and class_sums is not None:
+        if class_names and len(class_names) == len(class_sums):
+            class_curves = {
+                str(class_names[i]): class_sums[i] for i in range(len(class_sums))
+            }
+        else:
+            class_curves = {
+                f"class_{i}": class_sums[i] for i in range(len(class_sums))
+            }
+
+    # Build a plain-English summary
+    if len(mean_preds) >= 2:
+        first_val = round(float(grid[0]), 4)
+        last_val = round(float(grid[-1]), 4)
+        first_pred = round(mean_preds[0], 4)
+        last_pred = round(mean_preds[-1], 4)
+        change = last_pred - first_pred
+        direction = "increases" if change > 0 else "decreases" if change < 0 else "stays flat"
+        if problem_type == "classification":
+            summary = (
+                f"As the feature varies from {first_val} to {last_val}, "
+                f"the average predicted probability {direction} "
+                f"({first_pred:.3f} → {last_pred:.3f}) across {n_rows} training records."
+            )
+        else:
+            summary = (
+                f"As the feature varies from {first_val} to {last_val}, "
+                f"the average prediction {direction} "
+                f"({first_pred:.4g} → {last_pred:.4g}) across {n_rows} training records."
+            )
+    else:
+        summary = "Partial dependence computed."
+
+    return {
+        "grid_values": [round(float(v), 6) for v in grid],
+        "mean_predictions": [round(v, 6) for v in mean_preds],
+        "std_predictions": [round(v, 6) for v in std_preds],
+        "class_curves": class_curves,
+        "problem_type": problem_type,
+        "n_training_rows": n_rows,
+        "summary": summary,
+    }
+
+
 def _prediction_summary(
     top_contributions: list[dict],
     prediction_val: float,

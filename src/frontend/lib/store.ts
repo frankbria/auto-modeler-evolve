@@ -108,6 +108,7 @@ interface AppState {
   attachSdkDownloadToLastMessage: (sdk_download: import("./types").SdkDownloadInfo) => void
   attachPortfolioToLastMessage: (portfolio: import("./types").PortfolioResult) => void
   attachRateLimitToLastMessage: (rate_limit: import("./types").RateLimitInfo) => void
+  attachPartialDependenceToLastMessage: (partial_dependence: import("./types").PartialDependenceResult) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -715,6 +716,15 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, rate_limit }
+      }
+      return { messages }
+    }),
+  attachPartialDependenceToLastMessage: (partial_dependence) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, partial_dependence }
       }
       return { messages }
     }),

@@ -17,7 +17,11 @@ import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
 
-from core.explainer import compute_feature_importance, explain_single_prediction
+from core.explainer import (
+    compute_feature_importance,
+    compute_partial_dependence,
+    explain_single_prediction,
+)
 from core.feature_engine import apply_transformations
 from core.trainer import (
     CLASSIFICATION_ALGORITHMS,
@@ -381,5 +385,88 @@ def get_prediction_errors(
         "problem_type": problem_type,
         "target_col": target_col,
         "n_requested": n,
+        **result,
+    }
+
+
+# ---------------------------------------------------------------------------
+# 5. Partial dependence plot
+# ---------------------------------------------------------------------------
+
+
+@router.get("/api/models/{model_run_id}/partial-dependence")
+def get_partial_dependence(
+    model_run_id: str,
+    feature: str,
+    steps: int = 20,
+    session: Session = Depends(get_session),
+):
+    """Compute partial dependence of model output on one feature.
+
+    Unlike sensitivity analysis (which fixes all other features at training means),
+    PDP averages over the actual training distribution — giving a more accurate
+    marginal effect estimate.
+
+    Args:
+        feature: Column name to sweep.
+        steps:   Number of evenly-spaced grid points between p5 and p95 of training values.
+                 Clamped to [5, 50].
+
+    Returns JSON with grid_values, mean_predictions, std_predictions, and a summary.
+    """
+    run, feature_set, _dataset, file_path = _load_run_context(model_run_id, session)
+
+    X, y, feature_cols = _build_Xy(file_path, feature_set)
+
+    if feature not in feature_cols:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Feature '{feature}' not found in the trained model's feature set. "
+                f"Available features: {', '.join(feature_cols)}"
+            ),
+        )
+
+    feature_idx = feature_cols.index(feature)
+    steps = max(5, min(50, steps))
+
+    # Build sweep grid from p5 to p95 of training values (avoids extreme extrapolation)
+    col_vals = X[:, feature_idx]
+    p5 = float(np.percentile(col_vals, 5))
+    p95 = float(np.percentile(col_vals, 95))
+    if p5 == p95:
+        # Constant feature — return trivial result
+        grid = np.array([p5])
+    else:
+        grid = np.linspace(p5, p95, steps)
+
+    problem_type = feature_set.problem_type or "regression"
+    fitted_model = joblib.load(run.model_path)
+
+    # Resolve class names for multiclass classification
+    class_names: list[str] | None = None
+    pipeline_path = run.model_path.replace("_model.joblib", "_pipeline.joblib")
+    if Path(pipeline_path).exists():
+        try:
+            _pipe = joblib.load(pipeline_path)
+            class_names = getattr(_pipe, "target_classes", None)
+        except Exception:  # noqa: BLE001
+            pass
+
+    result = compute_partial_dependence(
+        model=fitted_model,
+        X_train=X,
+        feature_idx=feature_idx,
+        grid_values=grid,
+        problem_type=problem_type,
+        class_names=class_names,
+    )
+
+    return {
+        "model_run_id": model_run_id,
+        "feature": feature,
+        "feature_idx": feature_idx,
+        "algorithm": run.algorithm,
+        "target_col": feature_set.target_column,
         **result,
     }

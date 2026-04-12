@@ -466,6 +466,7 @@ export interface ChatMessage {
   sdk_download?: SdkDownloadInfo
   portfolio?: PortfolioResult
   rate_limit?: RateLimitInfo
+  partial_dependence?: PartialDependenceResult
 }
 
 export interface SegmentPerformanceSegment {
@@ -2303,5 +2304,18 @@ export interface QuotaStatus {
   pct_used: number | null
   rate_limit_rpm: number | null
   rate_limit_enabled: boolean
+  summary: string
+}
+
+export interface PartialDependenceResult {
+  feature: string
+  target_col: string
+  algorithm: string
+  problem_type: string
+  grid_values: number[]
+  mean_predictions: number[]
+  std_predictions: number[]
+  class_curves: Record<string, number[]> | null
+  n_training_rows: number
   summary: string
 }

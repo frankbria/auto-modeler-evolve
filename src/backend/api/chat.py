@@ -2176,6 +2176,41 @@ _LEARNING_CURVE_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# Partial Dependence Plot — marginal effect of one feature averaged over training data.
+# Distinct from sensitivity analysis (fixes others at means) — PDP averages over the
+# actual training distribution. Business analysts ask:
+#   "partial dependence for price", "marginal effect of units on revenue",
+#   "how does price affect predictions on average", "PDP for region",
+#   "average effect of units on my model", "population-level effect of discount"
+_PDP_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"partial\s+depend(?:ence|ency)?\s+(?:plot\s+)?(?:for|of|on)\s+\w|"
+    r"pdp\s+(?:for|of|on)\s+\w|"
+    r"marginal\s+effect\s+of\s+\w|"
+    r"(?:how\s+does|what\s+is\s+the\s+effect\s+of)\s+\w+\s+(?:affect|influence|impact)\s+(?:the\s+)?prediction[s]?\s+on\s+average|"
+    r"average\s+effect\s+of\s+\w+\s+on\s+(?:the\s+)?(?:prediction|model|output)|"
+    r"population.level\s+effect\s+of\s+\w|"
+    r"how\s+does\s+\w+\s+(?:relate\s+to|drive|affect)\s+(?:the\s+)?(?:average|mean)\s+prediction|"
+    r"partial\s+dependence\b"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def _detect_pdp_feature(message: str, feature_names: list[str]) -> str | None:
+    """Extract the feature name to sweep from a PDP request.
+
+    Scans the message for the longest-match column name from the model's feature list.
+    Returns None when no feature name is recognised.
+    """
+    msg_lower = message.lower()
+    # Sort by length descending so "product_category" beats "category"
+    for feat in sorted(feature_names, key=len, reverse=True):
+        if feat.lower() in msg_lower or feat.lower().replace("_", " ") in msg_lower:
+            return feat
+    return None
+
+
 # Feature interaction — 2-D heatmap sweeping two features jointly
 _INTERACTION_PATTERNS = re.compile(
     r"(?i)(?:"
@@ -6534,6 +6569,122 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Cohort profiling is nice-to-have; never crash chat
 
+    # Partial Dependence Plot — "marginal effect of price", "PDP for units"
+    # Distinct from sensitivity analysis (which holds others at training means).
+    # PDP averages over the ACTUAL training distribution → more accurate marginal effect.
+    pdp_event: dict | None = None
+    if (
+        _PDP_PATTERNS.search(body.message)
+        and ctx.get("model_runs")
+        and not sensitivity_event
+        and not interaction_event
+    ):
+        try:
+            import json as _json
+
+            import joblib as _jl
+            import numpy as _np
+
+            from core.explainer import compute_partial_dependence as _cpd
+            from core.feature_engine import apply_transformations as _at
+            from core.trainer import prepare_features as _pf
+
+            # Pick best/selected completed run
+            _pdp_runs = [
+                mr for mr in ctx["model_runs"] if mr.status == "done"
+            ]
+            _pdp_run = next(
+                (mr for mr in _pdp_runs if mr.is_selected),
+                _pdp_runs[0] if _pdp_runs else None,
+            )
+            if (
+                _pdp_run
+                and _pdp_run.model_path
+                and Path(_pdp_run.model_path).exists()
+                and ctx["dataset"]
+                and ctx.get("feature_set")
+            ):
+                _pdp_fs = ctx["feature_set"]
+                _pdp_ds = ctx["dataset"]
+                _pdp_file = Path(_pdp_ds.file_path)
+                if _pdp_file.exists():
+                    import pandas as _pd_pdp
+
+                    _pdp_df = _pd_pdp.read_csv(_pdp_file)
+                    _pdp_transforms = _json.loads(_pdp_fs.transformations or "[]")
+                    if _pdp_transforms:
+                        _pdp_df, _ = _at(_pdp_df, _pdp_transforms)
+                    _pdp_target = _pdp_fs.target_column
+                    _pdp_feat_cols = [c for c in _pdp_df.columns if c != _pdp_target]
+                    _pdp_prob_type = _pdp_fs.problem_type or "regression"
+
+                    _pdp_X, _pdp_y, _pdp_feature_names = _pf(
+                        _pdp_df,
+                        _pdp_feat_cols,
+                        _pdp_target,
+                        _pdp_prob_type,
+                    )
+
+                    _pdp_feat = _detect_pdp_feature(body.message, _pdp_feature_names)
+                    if _pdp_feat is None and _pdp_feature_names:
+                        _pdp_feat = _pdp_feature_names[0]
+
+                    if _pdp_feat and _pdp_feat in _pdp_feature_names:
+                        _pdp_idx = _pdp_feature_names.index(_pdp_feat)
+                        _pdp_col_vals = _pdp_X[:, _pdp_idx]
+                        _pdp_p5 = float(_np.percentile(_pdp_col_vals, 5))
+                        _pdp_p95 = float(_np.percentile(_pdp_col_vals, 95))
+                        _pdp_steps = 20
+                        if _pdp_p5 == _pdp_p95:
+                            _pdp_grid = _np.array([_pdp_p5])
+                        else:
+                            _pdp_grid = _np.linspace(_pdp_p5, _pdp_p95, _pdp_steps)
+
+                        # Resolve class names
+                        _pdp_class_names = None
+                        _pdp_pipeline_path = _pdp_run.model_path.replace(
+                            "_model.joblib", "_pipeline.joblib"
+                        )
+                        if Path(_pdp_pipeline_path).exists():
+                            try:
+                                _pdp_pipe = _jl.load(_pdp_pipeline_path)
+                                _pdp_class_names = getattr(
+                                    _pdp_pipe, "target_classes", None
+                                )
+                            except Exception:  # noqa: BLE001
+                                pass
+
+                        _pdp_model = _jl.load(_pdp_run.model_path)
+                        _pdp_result = _cpd(
+                            model=_pdp_model,
+                            X_train=_pdp_X,
+                            feature_idx=_pdp_idx,
+                            grid_values=_pdp_grid,
+                            problem_type=_pdp_prob_type,
+                            class_names=_pdp_class_names,
+                        )
+                        pdp_event = {
+                            **_pdp_result,
+                            "feature": _pdp_feat,
+                            "target_col": _pdp_target,
+                            "algorithm": _pdp_run.algorithm,
+                        }
+                        system_prompt += (
+                            f"\n\n## Partial Dependence Analysis\n"
+                            f"Feature swept: {_pdp_feat} (from {_pdp_grid[0]:.4g} to {_pdp_grid[-1]:.4g})\n"
+                            f"{_pdp_result['summary']}\n"
+                            f"A PartialDependenceCard is shown in the chat with a line chart "
+                            f"of the average predicted {_pdp_target} across {_pdp_result['n_training_rows']} "
+                            f"training records as {_pdp_feat} varies. "
+                            f"Unlike sensitivity analysis (which fixes other features at their means), "
+                            f"this PDP averages over the actual training data distribution — giving a "
+                            f"more accurate marginal effect. Narrate the key finding in plain English: "
+                            f"does increasing {_pdp_feat} consistently raise or lower the prediction, "
+                            f"is there a threshold or nonlinear effect, and what should the analyst do with this?"
+                        )
+        except Exception:  # noqa: BLE001
+            pass  # PDP is nice-to-have; never crash chat
+
     # Guided onboarding wizard — responds to "guide me", "first steps", etc.
     onboarding_event: dict | None = None
     if _ONBOARDING_PATTERNS.search(body.message):
@@ -7419,6 +7570,10 @@ def send_message(
         # Emit prediction cohort profile result
         if cohort_event:
             yield f"data: {json.dumps({'type': 'prediction_cohort', 'prediction_cohort': cohort_event})}\n\n"
+
+        # Emit partial dependence plot result
+        if pdp_event:
+            yield f"data: {json.dumps({'type': 'partial_dependence', 'partial_dependence': pdp_event})}\n\n"
 
         # Emit learning curve analysis result
         if learning_curve_event:

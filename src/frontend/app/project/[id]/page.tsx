@@ -77,6 +77,7 @@ import { PresetListCard } from "@/components/deploy/preset-list-card"
 import { SdkDownloadCard } from "@/components/deploy/sdk-download-card"
 import { PortfolioCard } from "@/components/chat/portfolio-card"
 import { RateLimitCard } from "@/components/deploy/rate-limit-card"
+import { PartialDependenceCard } from "@/components/validation/partial-dependence-card"
 import { PairCorrelationCard } from "@/components/data/pair-correlation-card"
 import { StatQueryCard } from "@/components/data/stat-query-card"
 import { SummaryStatsCard } from "@/components/data/summary-stats-card"
@@ -235,6 +236,7 @@ export default function ProjectWorkspace() {
     attachSdkDownloadToLastMessage,
     attachPortfolioToLastMessage,
     attachRateLimitToLastMessage,
+    attachPartialDependenceToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -596,6 +598,8 @@ export default function ProjectWorkspace() {
                 attachPortfolioToLastMessage(json.portfolio as import("@/lib/types").PortfolioResult)
               } else if (json.type === "rate_limit" && json.rate_limit) {
                 attachRateLimitToLastMessage(json.rate_limit as import("@/lib/types").RateLimitInfo)
+              } else if (json.type === "partial_dependence" && json.partial_dependence) {
+                attachPartialDependenceToLastMessage(json.partial_dependence as import("@/lib/types").PartialDependenceResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -677,6 +681,7 @@ export default function ProjectWorkspace() {
     attachSdkDownloadToLastMessage,
     attachPortfolioToLastMessage,
     attachRateLimitToLastMessage,
+    attachPartialDependenceToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -1106,6 +1111,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.rate_limit && (
                       <RateLimitCard info={msg.rate_limit} />
+                    )}
+                    {msg.partial_dependence && (
+                      <PartialDependenceCard result={msg.partial_dependence} />
                     )}
                   </div>
                 </div>
