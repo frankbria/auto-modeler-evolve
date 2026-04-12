@@ -187,7 +187,8 @@ def _inject_prediction_logs(deployment_id: str, latencies: list[float]) -> None:
                 input_features=json.dumps({"feat1": float(i + 1)}),
                 prediction=str(float(i * 10)),
                 response_ms=ms,
-                created_at=datetime.now(UTC).replace(tzinfo=None) - timedelta(days=i % 3),
+                created_at=datetime.now(UTC).replace(tzinfo=None)
+                - timedelta(days=i % 3),
             )
             session.add(log)
         session.commit()

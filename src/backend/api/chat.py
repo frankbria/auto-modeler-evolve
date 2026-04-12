@@ -7485,7 +7485,9 @@ def send_message(
 
                 _day_totals: dict = _defaultdict(list)
                 for _lg in _timed:
-                    _day_totals[_lg.created_at.strftime("%Y-%m-%d")].append(_lg.response_ms)
+                    _day_totals[_lg.created_at.strftime("%Y-%m-%d")].append(
+                        _lg.response_ms
+                    )
 
                 _by_day = [
                     {"date": d, "avg_ms": round(sum(ms) / len(ms), 2)}
