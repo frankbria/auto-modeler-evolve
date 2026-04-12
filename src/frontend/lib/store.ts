@@ -110,6 +110,7 @@ interface AppState {
   attachRateLimitToLastMessage: (rate_limit: import("./types").RateLimitInfo) => void
   attachPartialDependenceToLastMessage: (partial_dependence: import("./types").PartialDependenceResult) => void
   attachCalibrationCheckToLastMessage: (calibration_check: import("./types").CalibrationCheckResult) => void
+  attachSlaMetricsToLastMessage: (sla_metrics: import("./types").SlaData) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -735,6 +736,15 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, calibration_check }
+      }
+      return { messages }
+    }),
+  attachSlaMetricsToLastMessage: (sla_metrics) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, sla_metrics }
       }
       return { messages }
     }),

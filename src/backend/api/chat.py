@@ -2424,6 +2424,22 @@ _DISABLE_QUOTA_RE = re.compile(
     re.IGNORECASE,
 )
 
+_SLA_PATTERNS = re.compile(
+    r"\b("
+    r"(?:show|check|view|get|what(?:'s|\s+is)?)\s+(?:\w+\s+){0,3}(?:prediction\s+)?latency|"
+    r"(?:prediction\s+)?latency\s+(?:stats|statistics|metrics|numbers|data|report)|"
+    r"how\s+fast\s+is\s+(?:my\s+)?(?:model|api|endpoint|deployment)|"
+    r"(?:model|api|endpoint)\s+speed|"
+    r"p(?:95|99|50)\s+latency|latency\s+p(?:95|99|50)|"
+    r"(?:is\s+(?:my\s+)?(?:model|api|endpoint)\s+(?:within|meeting|hitting))\s+sla|"
+    r"sla\s+(?:status|check|report|metrics|monitoring)|"
+    r"response\s+time(?:\s+(?:stats|statistics|metrics|data))?|"
+    r"how\s+long\s+(?:does|do)\s+(?:it|predictions?)\s+take|"
+    r"prediction\s+speed\s+(?:stats|report|metrics)"
+    r")\b",
+    re.IGNORECASE,
+)
+
 
 def _extract_preset_definition(message: str) -> dict | None:
     """Extract preset name and feature key=value pairs from a natural language message.
@@ -7424,6 +7440,85 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Rate limit events are nice-to-have; never crash chat
 
+    # SLA / latency monitoring
+    sla_metrics_event: dict | None = None
+    if _SLA_PATTERNS.search(body.message) and ctx["deployment"]:
+        try:
+            _dep = ctx["deployment"]
+            _dep_id = _dep.id if hasattr(_dep, "id") else str(_dep)
+
+            from collections import defaultdict as _defaultdict
+
+            _logs = session.exec(
+                select(PredictionLog).where(PredictionLog.deployment_id == _dep_id)
+            ).all()
+            _timed = [lg for lg in _logs if lg.response_ms is not None]
+
+            if not _timed:
+                sla_metrics_event = {
+                    "deployment_id": _dep_id,
+                    "sample_count": 0,
+                    "p50_ms": None,
+                    "p95_ms": None,
+                    "p99_ms": None,
+                    "avg_ms": None,
+                    "alert": False,
+                    "alert_message": None,
+                    "latency_by_day": [],
+                    "summary": "No timing data yet — latency will appear after the first prediction.",
+                }
+            else:
+                from api.deploy import _percentile as _pctile
+
+                _lats = sorted(lg.response_ms for lg in _timed)  # type: ignore[misc]
+                _p50 = _pctile(_lats, 50)
+                _p95 = _pctile(_lats, 95)
+                _p99 = _pctile(_lats, 99)
+                _avg = round(sum(_lats) / len(_lats), 2)
+                _alert = _p95 > 500.0
+                _alert_msg = (
+                    f"p95 latency is {_p95}ms — above the 500ms target. "
+                    "Consider retraining with fewer features or switching to a simpler algorithm."
+                    if _alert
+                    else None
+                )
+
+                _day_totals: dict = _defaultdict(list)
+                for _lg in _timed:
+                    _day_totals[_lg.created_at.strftime("%Y-%m-%d")].append(_lg.response_ms)
+
+                _by_day = [
+                    {"date": d, "avg_ms": round(sum(ms) / len(ms), 2)}
+                    for d, ms in sorted(_day_totals.items())
+                ]
+
+                _status = "Alert" if _alert else "Healthy"
+                sla_metrics_event = {
+                    "deployment_id": _dep_id,
+                    "sample_count": len(_timed),
+                    "p50_ms": _p50,
+                    "p95_ms": _p95,
+                    "p99_ms": _p99,
+                    "avg_ms": _avg,
+                    "alert": _alert,
+                    "alert_message": _alert_msg,
+                    "latency_by_day": _by_day,
+                    "summary": (
+                        f"Prediction latency ({_status}): p50={_p50}ms, p95={_p95}ms, p99={_p99}ms "
+                        f"— based on {len(_timed)} timed prediction{'s' if len(_timed) != 1 else ''}."
+                    ),
+                }
+            system_prompt += (
+                f"\n\n## Prediction Latency\n"
+                f"{sla_metrics_event['summary']} "
+                "Explain prediction latency in plain English. If there is an alert, "
+                "tell the analyst whether their p95 latency is above 500ms and suggest "
+                "switching to a simpler algorithm or reducing features to improve speed. "
+                "If the latency is healthy, reassure them."
+            )
+        except Exception:  # noqa: BLE001
+            pass  # SLA events are nice-to-have; never crash chat
+
     # Pre-compute follow-up suggestions (based on state + current message)
     current_state = detect_state(
         ctx["dataset"], ctx["feature_set"], ctx["model_runs"], ctx["deployment"]
@@ -7781,6 +7876,10 @@ def send_message(
         # Emit rate limit / quota status card
         if rate_limit_event:
             yield f"data: {json.dumps({'type': 'rate_limit', 'rate_limit': rate_limit_event})}\n\n"
+
+        # Emit SLA / latency metrics card
+        if sla_metrics_event:
+            yield f"data: {json.dumps({'type': 'sla_metrics', 'sla_metrics': sla_metrics_event})}\n\n"
 
         # After text stream, opportunistically generate a chart if the
         # message is about data and we have a dataset loaded

@@ -79,6 +79,7 @@ import { PortfolioCard } from "@/components/chat/portfolio-card"
 import { RateLimitCard } from "@/components/deploy/rate-limit-card"
 import { PartialDependenceCard } from "@/components/validation/partial-dependence-card"
 import CalibrationCheckCard from "@/components/models/calibration-check-card"
+import { SlaCard } from "@/components/deploy/sla-chat-card"
 import { PairCorrelationCard } from "@/components/data/pair-correlation-card"
 import { StatQueryCard } from "@/components/data/stat-query-card"
 import { SummaryStatsCard } from "@/components/data/summary-stats-card"
@@ -239,6 +240,7 @@ export default function ProjectWorkspace() {
     attachRateLimitToLastMessage,
     attachPartialDependenceToLastMessage,
     attachCalibrationCheckToLastMessage,
+    attachSlaMetricsToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -604,6 +606,8 @@ export default function ProjectWorkspace() {
                 attachPartialDependenceToLastMessage(json.partial_dependence as import("@/lib/types").PartialDependenceResult)
               } else if (json.type === "calibration_check" && json.calibration_check) {
                 attachCalibrationCheckToLastMessage(json.calibration_check as import("@/lib/types").CalibrationCheckResult)
+              } else if (json.type === "sla_metrics" && json.sla_metrics) {
+                attachSlaMetricsToLastMessage(json.sla_metrics as import("@/lib/types").SlaData)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -687,6 +691,7 @@ export default function ProjectWorkspace() {
     attachRateLimitToLastMessage,
     attachPartialDependenceToLastMessage,
     attachCalibrationCheckToLastMessage,
+    attachSlaMetricsToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -1122,6 +1127,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.calibration_check && (
                       <CalibrationCheckCard result={msg.calibration_check} />
+                    )}
+                    {msg.sla_metrics && (
+                      <SlaCard sla={msg.sla_metrics} />
                     )}
                   </div>
                 </div>

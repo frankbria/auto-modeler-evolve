@@ -468,6 +468,7 @@ export interface ChatMessage {
   rate_limit?: RateLimitInfo
   partial_dependence?: PartialDependenceResult
   calibration_check?: CalibrationCheckResult
+  sla_metrics?: SlaData
 }
 
 export interface SegmentPerformanceSegment {
