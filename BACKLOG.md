@@ -49,6 +49,17 @@ the time is better spent on real features.
 
 ## Currently Working On
 
+## Day 32 (04:00) — Done
+**Track C — Calibration Check via chat.** Closes the gap between the Validation panel's Calibration sub-tab and the conversational interface. Analysts can now ask "how well-calibrated is my model?" or "brier score?" and receive a `CalibrationCheckCard` with the reliability diagram inline in chat — surfacing data that was already computed at training time but inaccessible through conversation.
+- `_CALIBRATION_CHECK_PATTERNS` (8 NL variants) in `chat.py`; handler loads model run metrics, extracts is_calibrated/brier_score/calibration_curve, applies quality bucket, injects narration hint, emits `{type:"calibration_check"}` SSE event.
+- `CalibrationCheckCard` (violet border, 🎯 icon): quality badge (excellent/good/needs attention), Brier score, reliability BarChart with perfect-calibration diagonal, calibration note.
+- 13 backend + 15 frontend = 28 new tests. Total: 2974 backend + 1542 frontend = 4516, all passing. Backend lint: clean. Frontend build + lint: clean.
+
+**What's next:**
+- Track D: deployment SLA dashboard improvements, advanced quota alerting.
+- Track C: automated feature interaction suggestions after training, class imbalance detection improvements.
+- Track E: run the "lunch break" flow as a real business analyst; fix any remaining friction.
+
 ## Day 31 (20:00) — Done
 **Track C — Partial Dependence Plots (PDP) via chat.** Closes the "how does feature X affect predictions on AVERAGE across all customers?" analyst question. Unlike sensitivity analysis (which fixes all other features at training means), PDP averages over the actual training distribution — statistically more accurate for datasets where features are correlated.
 - `compute_partial_dependence()` pure function in `core/explainer.py` — sweeps feature across p5-p95 grid, averages predictions over all training rows; regression/binary/multiclass variants.
