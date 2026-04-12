@@ -49,6 +49,21 @@ the time is better spent on real features.
 
 ## Currently Working On
 
+## Day 31 (20:00) — Done
+**Track C — Partial Dependence Plots (PDP) via chat.** Closes the "how does feature X affect predictions on AVERAGE across all customers?" analyst question. Unlike sensitivity analysis (which fixes all other features at training means), PDP averages over the actual training distribution — statistically more accurate for datasets where features are correlated.
+- `compute_partial_dependence()` pure function in `core/explainer.py` — sweeps feature across p5-p95 grid, averages predictions over all training rows; regression/binary/multiclass variants.
+- `GET /api/models/{run_id}/partial-dependence?feature=&steps=20` endpoint in `api/validation.py`.
+- `_PDP_PATTERNS` (8 NL variants) + `_detect_pdp_feature()` in `chat.py`; handler picks best/selected run, injects trend summary into system prompt, emits `{type:"partial_dependence"}` SSE event.
+- `PartialDependenceCard` (purple border, 📉 icon): trend badge, std band chart, multiclass per-class curves.
+- 29 backend + 15 frontend = 44 new tests. Total: 2961 backend + 1527 frontend = 4488, all passing. Backend lint: clean. Frontend build + lint: clean.
+
+**What's next:**
+- Track D: cross-project model comparison improvements, deployment health alerting at-scale.
+- Track C: confidence calibration curves in chat ("how well-calibrated are my model's confidence scores?"), automated feature interaction suggestions after training.
+- Track E: run the "lunch break" flow as a real business analyst; fix any remaining friction.
+
+
+
 ## Day 31 (12:00) — Done
 **Track D — Prediction Input Guard Rails.** Closes the "Not a black box" gap for the VP-facing prediction dashboard: when a user enters a feature value outside the model's training distribution (numeric too high/low, or unseen category), the prediction response now includes `guard_rail_warnings` describing exactly what's out of bounds and why confidence may be lower.
 - `feature_ranges` field on `PredictionPipeline` (backward-compatible, computed at build time): numeric → `{p5, p95, min, max}`; categorical → `{known_categories: [...]}`.
