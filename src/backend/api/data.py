@@ -1551,7 +1551,8 @@ def refresh_dataset(
     feature_set = session.exec(
         select(FeatureSet)
         .where(
-            FeatureSet.dataset_id == dataset_id, FeatureSet.is_active == True  # noqa: E712
+            FeatureSet.dataset_id == dataset_id,
+            FeatureSet.is_active == True,  # noqa: E712
         )
         .order_by(FeatureSet.created_at.desc())  # type: ignore[arg-type]
     ).first()

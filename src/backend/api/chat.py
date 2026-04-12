@@ -3184,7 +3184,8 @@ def _load_project_context(project_id: str, session: Session) -> dict:
         feature_set = session.exec(
             select(FeatureSet)
             .where(
-                FeatureSet.dataset_id == dataset.id, FeatureSet.is_active == True  # noqa: E712
+                FeatureSet.dataset_id == dataset.id,
+                FeatureSet.is_active == True,  # noqa: E712
             )
             .order_by(FeatureSet.created_at.desc())  # type: ignore[arg-type]
         ).first()
@@ -3197,7 +3198,8 @@ def _load_project_context(project_id: str, session: Session) -> dict:
     deployment = session.exec(
         select(Deployment)
         .where(
-            Deployment.project_id == project_id, Deployment.is_active == True  # noqa: E712
+            Deployment.project_id == project_id,
+            Deployment.is_active == True,  # noqa: E712
         )
         .order_by(Deployment.created_at.desc())  # type: ignore[arg-type]
     ).first()
