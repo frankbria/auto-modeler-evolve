@@ -2211,6 +2211,21 @@ def _detect_pdp_feature(message: str, feature_names: list[str]) -> str | None:
     return None
 
 
+# Calibration check — how reliable are the model's confidence scores?
+_CALIBRATION_CHECK_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"(?:how\s+)?(?:well.)?calibrated\s+(?:is\s+)?(?:(?:the|my)\s+)?(?:model|classifier|predictions?)\b|"
+    r"(?:are|is)\s+(?:my\s+)?(?:model.s\s+)?confidence\s+scores?\s+(?:reliable|accurate|trustworthy|calibrated)\b|"
+    r"reliability\s+diagram\b|"
+    r"(?:show|check|plot|display|see|view)\s+(?:me\s+)?(?:the\s+)?calibration\b|"
+    r"brier\s+score\b|"
+    r"(?:model\s+)?calibration\s+(?:check|curve|plot|analysis|report)\b|"
+    r"(?:how\s+accurate\s+are|can\s+I\s+trust)\s+(?:the\s+)?(?:confidence|probability|prob)\s+(?:scores?|estimates?)\b"
+    r")",
+    re.IGNORECASE,
+)
+
+
 # Feature interaction — 2-D heatmap sweeping two features jointly
 _INTERACTION_PATTERNS = re.compile(
     r"(?i)(?:"
@@ -6683,6 +6698,86 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # PDP is nice-to-have; never crash chat
 
+    # Calibration check — reliability of confidence scores for classifiers
+    calibration_check_event: dict | None = None
+    if _CALIBRATION_CHECK_PATTERNS.search(body.message) and ctx.get("model_runs"):
+        try:
+            import json as _json_cal
+
+            _cal_runs = [mr for mr in ctx["model_runs"] if mr.status == "done"]
+            _cal_run = next(
+                (mr for mr in _cal_runs if mr.is_selected),
+                _cal_runs[0] if _cal_runs else None,
+            )
+            if _cal_run:
+                _cal_metrics = _json_cal.loads(_cal_run.metrics or "{}")
+                if _cal_metrics.get("is_calibrated"):
+                    _cal_curve = _cal_metrics.get("calibration_curve", [])
+                    _cal_brier = _cal_metrics.get("brier_score")
+                    _cal_note = _cal_metrics.get("calibration_note", "")
+                    # Compute plain-English calibration quality summary
+                    _cal_quality = "unknown"
+                    _cal_summary = ""
+                    if _cal_brier is not None:
+                        if _cal_brier < 0.1:
+                            _cal_quality = "excellent"
+                            _cal_summary = (
+                                f"Brier score {_cal_brier:.3f} — excellent calibration. "
+                                "When the model says '80% confident', it's right roughly 80% of the time."
+                            )
+                        elif _cal_brier < 0.2:
+                            _cal_quality = "good"
+                            _cal_summary = (
+                                f"Brier score {_cal_brier:.3f} — good calibration. "
+                                "Confidence scores are generally reliable but may be slightly over- or under-confident."
+                            )
+                        else:
+                            _cal_quality = "poor"
+                            _cal_summary = (
+                                f"Brier score {_cal_brier:.3f} — calibration needs attention. "
+                                "The model's stated confidence may not match actual accuracy at each level."
+                            )
+                    calibration_check_event = {
+                        "run_id": _cal_run.id,
+                        "algorithm": _cal_run.algorithm,
+                        "is_calibrated": True,
+                        "brier_score": _cal_brier,
+                        "calibration_quality": _cal_quality,
+                        "calibration_curve": _cal_curve,
+                        "calibration_note": _cal_note,
+                        "summary": _cal_summary,
+                    }
+                    system_prompt += (
+                        f"\n\n## Model Calibration Analysis\n"
+                        f"Algorithm: {_cal_run.algorithm}\n"
+                        f"{_cal_summary}\n"
+                        f"{_cal_note}\n"
+                        f"A CalibrationCheckCard is shown with the reliability diagram. "
+                        f"Explain what calibration means in plain English (a calibrated model's "
+                        f"stated 70% confidence matches real 70% accuracy), describe the Brier score "
+                        f"result, and advise whether the analyst can trust the confidence scores shown "
+                        f"on the prediction dashboard."
+                    )
+                else:
+                    # Classifier exists but calibration not available — explain why
+                    _cal_problem = _cal_metrics.get("problem_type", "")
+                    if _cal_problem == "regression":
+                        system_prompt += (
+                            "\n\n## Calibration Not Available\n"
+                            "Calibration curves apply to classifiers (models that output probabilities). "
+                            "This is a regression model — it predicts numeric values, not probabilities. "
+                            "Calibration does not apply."
+                        )
+                    else:
+                        system_prompt += (
+                            "\n\n## Calibration Not Available\n"
+                            "Calibration data was not computed for this model run. "
+                            "This can happen when threshold tuning, SMOTE, or too few training rows were used. "
+                            "Explain this to the analyst and suggest retraining with more data if needed."
+                        )
+        except Exception:  # noqa: BLE001
+            pass  # Calibration check is nice-to-have; never crash chat
+
     # Guided onboarding wizard — responds to "guide me", "first steps", etc.
     onboarding_event: dict | None = None
     if _ONBOARDING_PATTERNS.search(body.message):
@@ -7572,6 +7667,10 @@ def send_message(
         # Emit partial dependence plot result
         if pdp_event:
             yield f"data: {json.dumps({'type': 'partial_dependence', 'partial_dependence': pdp_event})}\n\n"
+
+        # Emit calibration check result
+        if calibration_check_event:
+            yield f"data: {json.dumps({'type': 'calibration_check', 'calibration_check': calibration_check_event})}\n\n"
 
         # Emit learning curve analysis result
         if learning_curve_event:

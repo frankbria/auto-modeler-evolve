@@ -109,6 +109,7 @@ interface AppState {
   attachPortfolioToLastMessage: (portfolio: import("./types").PortfolioResult) => void
   attachRateLimitToLastMessage: (rate_limit: import("./types").RateLimitInfo) => void
   attachPartialDependenceToLastMessage: (partial_dependence: import("./types").PartialDependenceResult) => void
+  attachCalibrationCheckToLastMessage: (calibration_check: import("./types").CalibrationCheckResult) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -725,6 +726,15 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, partial_dependence }
+      }
+      return { messages }
+    }),
+  attachCalibrationCheckToLastMessage: (calibration_check) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, calibration_check }
       }
       return { messages }
     }),

@@ -467,6 +467,7 @@ export interface ChatMessage {
   portfolio?: PortfolioResult
   rate_limit?: RateLimitInfo
   partial_dependence?: PartialDependenceResult
+  calibration_check?: CalibrationCheckResult
 }
 
 export interface SegmentPerformanceSegment {
@@ -1783,6 +1784,17 @@ export interface CalibrationData {
   calibration_curve: CalibrationPoint[]
   calibration_note: string
   is_calibrated: boolean
+}
+
+export interface CalibrationCheckResult {
+  run_id: string
+  algorithm: string
+  is_calibrated: boolean
+  brier_score: number | null
+  calibration_quality: "excellent" | "good" | "poor" | "unknown"
+  calibration_curve: CalibrationPoint[]
+  calibration_note: string
+  summary: string
 }
 
 export type ImprovementDifficulty = "easy" | "medium" | "hard"

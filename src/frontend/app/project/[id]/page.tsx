@@ -78,6 +78,7 @@ import { SdkDownloadCard } from "@/components/deploy/sdk-download-card"
 import { PortfolioCard } from "@/components/chat/portfolio-card"
 import { RateLimitCard } from "@/components/deploy/rate-limit-card"
 import { PartialDependenceCard } from "@/components/validation/partial-dependence-card"
+import CalibrationCheckCard from "@/components/models/calibration-check-card"
 import { PairCorrelationCard } from "@/components/data/pair-correlation-card"
 import { StatQueryCard } from "@/components/data/stat-query-card"
 import { SummaryStatsCard } from "@/components/data/summary-stats-card"
@@ -237,6 +238,7 @@ export default function ProjectWorkspace() {
     attachPortfolioToLastMessage,
     attachRateLimitToLastMessage,
     attachPartialDependenceToLastMessage,
+    attachCalibrationCheckToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -600,6 +602,8 @@ export default function ProjectWorkspace() {
                 attachRateLimitToLastMessage(json.rate_limit as import("@/lib/types").RateLimitInfo)
               } else if (json.type === "partial_dependence" && json.partial_dependence) {
                 attachPartialDependenceToLastMessage(json.partial_dependence as import("@/lib/types").PartialDependenceResult)
+              } else if (json.type === "calibration_check" && json.calibration_check) {
+                attachCalibrationCheckToLastMessage(json.calibration_check as import("@/lib/types").CalibrationCheckResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -682,6 +686,7 @@ export default function ProjectWorkspace() {
     attachPortfolioToLastMessage,
     attachRateLimitToLastMessage,
     attachPartialDependenceToLastMessage,
+    attachCalibrationCheckToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -1114,6 +1119,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.partial_dependence && (
                       <PartialDependenceCard result={msg.partial_dependence} />
+                    )}
+                    {msg.calibration_check && (
+                      <CalibrationCheckCard result={msg.calibration_check} />
                     )}
                   </div>
                 </div>
