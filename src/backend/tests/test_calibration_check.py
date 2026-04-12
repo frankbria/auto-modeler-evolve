@@ -120,7 +120,9 @@ def client(tmp_path):
 
     test_db = str(tmp_path / "cal_test.db")
     orig_engine = db_module_local.engine
-    db_module_local.engine = _ce(f"sqlite:///{test_db}", connect_args={"check_same_thread": False})
+    db_module_local.engine = _ce(
+        f"sqlite:///{test_db}", connect_args={"check_same_thread": False}
+    )
     SQLModel.metadata.create_all(db_module_local.engine)
     # Run inline migrations so deployment/predictionlog columns exist
     db_module_local.create_db_and_tables()
@@ -227,7 +229,9 @@ def test_calibration_check_required_fields(client, calibrated_project):
     """calibration_check event contains all required fields."""
     project_id = calibrated_project["project_id"]
     events = _chat_events(client, project_id, "show calibration for my model")
-    cal = next(e["calibration_check"] for e in events if e.get("type") == "calibration_check")
+    cal = next(
+        e["calibration_check"] for e in events if e.get("type") == "calibration_check"
+    )
     assert cal["is_calibrated"] is True
     assert "brier_score" in cal
     assert "calibration_curve" in cal
@@ -240,7 +244,9 @@ def test_calibration_brier_score_quality(client, calibrated_project):
     """Brier score 0.08 → calibration_quality='excellent'."""
     project_id = calibrated_project["project_id"]
     events = _chat_events(client, project_id, "brier score for my model")
-    cal = next(e["calibration_check"] for e in events if e.get("type") == "calibration_check")
+    cal = next(
+        e["calibration_check"] for e in events if e.get("type") == "calibration_check"
+    )
     assert cal["brier_score"] == pytest.approx(0.08)
     assert cal["calibration_quality"] == "excellent"
 
@@ -249,6 +255,8 @@ def test_calibration_curve_data_forwarded(client, calibrated_project):
     """calibration_curve from metrics is forwarded verbatim in the event."""
     project_id = calibrated_project["project_id"]
     events = _chat_events(client, project_id, "reliability diagram")
-    cal = next(e["calibration_check"] for e in events if e.get("type") == "calibration_check")
+    cal = next(
+        e["calibration_check"] for e in events if e.get("type") == "calibration_check"
+    )
     assert len(cal["calibration_curve"]) == 3
     assert cal["calibration_curve"][1]["predicted"] == pytest.approx(0.5)

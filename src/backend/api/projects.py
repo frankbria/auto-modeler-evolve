@@ -157,9 +157,7 @@ def get_portfolio(session: Session = Depends(get_session)):
             metric_name = (
                 "r2"
                 if "r2" in metrics
-                else "accuracy"
-                if "accuracy" in metrics
-                else None
+                else "accuracy" if "accuracy" in metrics else None
             )
             if metric_val is not None and (
                 best_metric_value is None or metric_val > best_metric_value
@@ -182,9 +180,9 @@ def get_portfolio(session: Session = Depends(get_session)):
                 "best_target_column": best_run.target_column if best_run else None,
                 "has_deployment": deployment is not None,
                 "prediction_count": prediction_count,
-                "last_activity_at": project.updated_at.isoformat()
-                if project.updated_at
-                else None,
+                "last_activity_at": (
+                    project.updated_at.isoformat() if project.updated_at else None
+                ),
             }
         )
 
@@ -507,9 +505,7 @@ def _static_narrative(ctx: dict) -> str:
         quality = (
             "clean"
             if d["missing_pct"] < 5
-            else "mostly complete"
-            if d["missing_pct"] < 20
-            else "with some gaps"
+            else "mostly complete" if d["missing_pct"] < 20 else "with some gaps"
         )
         parts.append(
             f"The analysis is based on **{d['filename']}** — "

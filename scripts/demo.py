@@ -41,7 +41,14 @@ from typing import Any
 # HTTP helpers (pure stdlib — no requests dependency)
 # ---------------------------------------------------------------------------
 
-def _request(method: str, url: str, data: Any = None, headers: dict | None = None, timeout: int = 120) -> tuple[int, Any]:
+
+def _request(
+    method: str,
+    url: str,
+    data: Any = None,
+    headers: dict | None = None,
+    timeout: int = 120,
+) -> tuple[int, Any]:
     """Make an HTTP request; return (status_code, parsed_response)."""
     req_headers = headers or {}
 
@@ -81,7 +88,9 @@ def _delete(url: str) -> tuple[int, Any]:
     return _request("DELETE", url)
 
 
-def _post_form(url: str, fields: dict, file_field: str, filename: str, file_content: bytes) -> tuple[int, Any]:
+def _post_form(
+    url: str, fields: dict, file_field: str, filename: str, file_content: bytes
+) -> tuple[int, Any]:
     """Multipart form-data POST for file uploads."""
     boundary = "----AutoModelerDemoBoundary"
     body_parts = []
@@ -94,11 +103,11 @@ def _post_form(url: str, fields: dict, file_field: str, filename: str, file_cont
     body_parts.append(
         f'--{boundary}\r\nContent-Disposition: form-data; name="{file_field}"; filename="{filename}"\r\nContent-Type: text/csv\r\n\r\n'.encode()
         + file_content
-        + b'\r\n'
+        + b"\r\n"
     )
-    body_parts.append(f'--{boundary}--\r\n'.encode())
+    body_parts.append(f"--{boundary}--\r\n".encode())
 
-    body = b''.join(body_parts)
+    body = b"".join(body_parts)
     return _request(
         "POST",
         url,
@@ -110,6 +119,7 @@ def _post_form(url: str, fields: dict, file_field: str, filename: str, file_cont
 # ---------------------------------------------------------------------------
 # Demo runner
 # ---------------------------------------------------------------------------
+
 
 class DemoRunner:
     def __init__(self, base_url: str, verbose: bool = True):
@@ -135,17 +145,33 @@ class DemoRunner:
         try:
             result = fn()
             elapsed = time.time() - start
-            self.results.append({"step": name, "status": "PASS", "elapsed_s": round(elapsed, 2)})
+            self.results.append(
+                {"step": name, "status": "PASS", "elapsed_s": round(elapsed, 2)}
+            )
             self.log(f"  ✓  PASS ({elapsed:.2f}s)")
             return result
         except AssertionError as e:
             elapsed = time.time() - start
-            self.results.append({"step": name, "status": "FAIL", "elapsed_s": round(elapsed, 2), "error": str(e)})
+            self.results.append(
+                {
+                    "step": name,
+                    "status": "FAIL",
+                    "elapsed_s": round(elapsed, 2),
+                    "error": str(e),
+                }
+            )
             self.log(f"  ✗  FAIL: {e}")
             return None
         except Exception as e:
             elapsed = time.time() - start
-            self.results.append({"step": name, "status": "ERROR", "elapsed_s": round(elapsed, 2), "error": str(e)})
+            self.results.append(
+                {
+                    "step": name,
+                    "status": "ERROR",
+                    "elapsed_s": round(elapsed, 2),
+                    "error": str(e),
+                }
+            )
             self.log(f"  ✗  ERROR: {e}")
             return None
 
@@ -159,14 +185,19 @@ class DemoRunner:
         self.log(f"     Server: {self.base}")
 
     def create_project(self):
-        status, body = _post(f"{self.base}/api/projects", {"name": "Demo Project", "description": "Automated demo run"})
+        status, body = _post(
+            f"{self.base}/api/projects",
+            {"name": "Demo Project", "description": "Automated demo run"},
+        )
         assert status == 201, f"Create project failed: {status} — {body}"
         self.project_id = body["id"]
         self.log(f"     Project ID: {self.project_id}")
 
     def load_sample_data(self):
         assert self.project_id, "No project_id"
-        status, body = _post(f"{self.base}/api/data/sample", {"project_id": self.project_id})
+        status, body = _post(
+            f"{self.base}/api/data/sample", {"project_id": self.project_id}
+        )
         assert status == 201, f"Load sample failed: {status} — {body}"
         self.dataset_id = body["dataset_id"]
         rows = body["row_count"]
@@ -190,7 +221,9 @@ class DemoRunner:
         assert answer, "Query returned no answer"
         self.log(f"     Answer: {answer[:120]}...")
         if body.get("chart_spec"):
-            self.log(f"     Chart: {body['chart_spec']['chart_type']} — {body['chart_spec']['title']}")
+            self.log(
+                f"     Chart: {body['chart_spec']['chart_type']} — {body['chart_spec']['title']}"
+            )
 
     def get_feature_suggestions(self):
         assert self.dataset_id, "No dataset_id"
@@ -216,7 +249,9 @@ class DemoRunner:
         )
         assert status == 201, f"Apply features failed: {status} — {body}"
         self.feature_set_id = body["feature_set_id"]
-        self.log(f"     FeatureSet ID: {self.feature_set_id} ({body['total_columns']} columns)")
+        self.log(
+            f"     FeatureSet ID: {self.feature_set_id} ({body['total_columns']} columns)"
+        )
 
     def set_target_variable(self):
         assert self.dataset_id, "No dataset_id"
@@ -226,7 +261,9 @@ class DemoRunner:
             {"target_column": "revenue", "feature_set_id": self.feature_set_id},
         )
         assert status == 200, f"Set target failed: {status} — {body}"
-        self.log(f"     Target: {body['target_column']} — problem type: {body['problem_type']}")
+        self.log(
+            f"     Target: {body['target_column']} — problem type: {body['problem_type']}"
+        )
 
     def train_models(self):
         assert self.project_id, "No project_id"
@@ -279,7 +316,9 @@ class DemoRunner:
         cv = body.get("cross_validation", {})
         conf = body.get("confidence", {})
         self.log(f"     CV: {cv.get('summary', '')[:80]}")
-        self.log(f"     Confidence: {conf.get('overall_confidence')} — {conf.get('summary', '')[:80]}")
+        self.log(
+            f"     Confidence: {conf.get('overall_confidence')} — {conf.get('summary', '')[:80]}"
+        )
 
     def get_feature_importance(self):
         assert self.best_run_id, "No best_run_id"
@@ -314,9 +353,13 @@ class DemoRunner:
                 opts = feat.get("options", [])
                 input_data[feat["name"]] = opts[0] if opts else "unknown"
 
-        status, body = _post(f"{self.base}/api/predict/{self.deployment_id}", input_data)
+        status, body = _post(
+            f"{self.base}/api/predict/{self.deployment_id}", input_data
+        )
         assert status == 200, f"Prediction failed: {status} — {body}"
-        self.log(f"     Prediction: {body.get('prediction')} ({body.get('target_column', '')})")
+        self.log(
+            f"     Prediction: {body.get('prediction')} ({body.get('target_column', '')})"
+        )
 
     def batch_predict(self):
         assert self.deployment_id, "No deployment_id"
@@ -352,7 +395,7 @@ class DemoRunner:
         body_bytes = (
             f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="batch.csv"\r\nContent-Type: text/csv\r\n\r\n'.encode()
             + csv_bytes
-            + f'\r\n--{boundary}--\r\n'.encode()
+            + f"\r\n--{boundary}--\r\n".encode()
         )
         req = urllib.request.Request(
             f"{self.base}/api/predict/{self.deployment_id}/batch",
@@ -365,7 +408,9 @@ class DemoRunner:
             result_csv = resp.read().decode()
             result_rows = result_csv.strip().split("\n")
             # +1 for header row
-            assert len(result_rows) >= 4, f"Expected 4 rows (header + 3), got {len(result_rows)}"
+            assert (
+                len(result_rows) >= 4
+            ), f"Expected 4 rows (header + 3), got {len(result_rows)}"
             self.log(f"     Batch: {len(result_rows)-1} predictions returned")
 
     def undeploy_cleanup(self):
@@ -432,6 +477,7 @@ class DemoRunner:
 # Entry point
 # ---------------------------------------------------------------------------
 
+
 def wait_for_server(url: str, max_wait: int = 30) -> bool:
     """Poll health endpoint until server is up."""
     deadline = time.time() + max_wait
@@ -448,9 +494,15 @@ def wait_for_server(url: str, max_wait: int = 30) -> bool:
 
 def main():
     parser = argparse.ArgumentParser(description="AutoModeler self-demo script")
-    parser.add_argument("--url", default="http://localhost:8000", help="Backend base URL")
-    parser.add_argument("--wait", type=int, default=0, help="Seconds to wait for server startup")
-    parser.add_argument("--quiet", action="store_true", help="Suppress step-by-step output")
+    parser.add_argument(
+        "--url", default="http://localhost:8000", help="Backend base URL"
+    )
+    parser.add_argument(
+        "--wait", type=int, default=0, help="Seconds to wait for server startup"
+    )
+    parser.add_argument(
+        "--quiet", action="store_true", help="Suppress step-by-step output"
+    )
     args = parser.parse_args()
 
     if args.wait > 0:
