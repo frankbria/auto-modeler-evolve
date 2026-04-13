@@ -2542,13 +2542,23 @@ _SCHEDULE_PATTERNS = re.compile(
 )
 
 _DOW_NAMES: dict[str, int] = {
-    "monday": 0, "mon": 0,
-    "tuesday": 1, "tue": 1, "tues": 1,
-    "wednesday": 2, "wed": 2,
-    "thursday": 3, "thu": 3, "thur": 3, "thurs": 3,
-    "friday": 4, "fri": 4,
-    "saturday": 5, "sat": 5,
-    "sunday": 6, "sun": 6,
+    "monday": 0,
+    "mon": 0,
+    "tuesday": 1,
+    "tue": 1,
+    "tues": 1,
+    "wednesday": 2,
+    "wed": 2,
+    "thursday": 3,
+    "thu": 3,
+    "thur": 3,
+    "thurs": 3,
+    "friday": 4,
+    "fri": 4,
+    "saturday": 5,
+    "sat": 5,
+    "sunday": 6,
+    "sun": 6,
 }
 
 
@@ -2586,7 +2596,9 @@ def _extract_schedule_params(message: str) -> dict:
     # Time extraction: "at 9am", "at 9:30", "9pm", "14:00"
     run_hour = 9
     run_minute = 0
-    time_m = re.search(r"\bat\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b", msg, re.IGNORECASE)
+    time_m = re.search(
+        r"\bat\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b", msg, re.IGNORECASE
+    )
     if not time_m:
         time_m = re.search(r"\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b", msg, re.IGNORECASE)
     if time_m:
@@ -2617,7 +2629,15 @@ def _build_schedule_description(
     day_of_month: int | None,
 ) -> str:
     """Return a plain-English description of a schedule."""
-    day_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    day_names = [
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday",
+        "Saturday",
+        "Sunday",
+    ]
     hh = str(run_hour).zfill(2)
     mm = str(run_minute).zfill(2)
     if frequency == "daily":
@@ -7726,7 +7746,9 @@ def send_message(
     if _SCHEDULE_PATTERNS.search(body.message) and ctx["deployment"]:
         try:
             _sched_dep = ctx["deployment"]
-            _sched_dep_id = _sched_dep.id if hasattr(_sched_dep, "id") else str(_sched_dep)
+            _sched_dep_id = (
+                _sched_dep.id if hasattr(_sched_dep, "id") else str(_sched_dep)
+            )
 
             _is_list_request = bool(
                 re.search(r"\b(show|list|view|what|get)\s", body.message, re.IGNORECASE)
@@ -7750,8 +7772,11 @@ def send_message(
                         "last_run": s.last_run.isoformat() if s.last_run else None,
                         "last_row_count": s.last_row_count,
                         "description": _build_schedule_description(
-                            s.frequency, s.run_hour, s.run_minute,
-                            s.day_of_week, s.day_of_month
+                            s.frequency,
+                            s.run_hour,
+                            s.run_minute,
+                            s.day_of_week,
+                            s.day_of_month,
                         ),
                     }
                     for s in _existing
@@ -7813,7 +7838,9 @@ def send_message(
                     "run_minute": _params["run_minute"],
                     "day_of_week": _params["day_of_week"],
                     "day_of_month": _params["day_of_month"],
-                    "next_run": _new_sched.next_run.isoformat() if _new_sched.next_run else None,
+                    "next_run": _new_sched.next_run.isoformat()
+                    if _new_sched.next_run
+                    else None,
                     "description": _desc,
                     "summary": f"Batch predictions scheduled: {_desc}.",
                 }

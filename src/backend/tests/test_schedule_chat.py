@@ -125,42 +125,52 @@ def deployed_project(client, tmp_path):
 class TestSchedulePatterns:
     def test_schedule_daily_predictions(self):
         from api.chat import _SCHEDULE_PATTERNS
+
         assert _SCHEDULE_PATTERNS.search("schedule daily predictions at 9am")
 
     def test_set_up_daily_schedule(self):
         from api.chat import _SCHEDULE_PATTERNS
+
         assert _SCHEDULE_PATTERNS.search("set up a daily prediction schedule")
 
     def test_create_weekly_batch_prediction_schedule(self):
         from api.chat import _SCHEDULE_PATTERNS
+
         assert _SCHEDULE_PATTERNS.search("create a weekly batch prediction schedule")
 
     def test_run_model_every_day(self):
         from api.chat import _SCHEDULE_PATTERNS
+
         assert _SCHEDULE_PATTERNS.search("run my model every day at 8am")
 
     def test_run_every_monday(self):
         from api.chat import _SCHEDULE_PATTERNS
+
         assert _SCHEDULE_PATTERNS.search("run my batch every Monday at 9am")
 
     def test_batch_predictions_every_month(self):
         from api.chat import _SCHEDULE_PATTERNS
+
         assert _SCHEDULE_PATTERNS.search("batch predictions every month")
 
     def test_configure_monthly_schedule(self):
         from api.chat import _SCHEDULE_PATTERNS
+
         assert _SCHEDULE_PATTERNS.search("configure a monthly prediction schedule")
 
     def test_list_schedules(self):
         from api.chat import _SCHEDULE_PATTERNS
+
         assert _SCHEDULE_PATTERNS.search("show my batch schedules")
 
     def test_negative_train_model(self):
         from api.chat import _SCHEDULE_PATTERNS
+
         assert not _SCHEDULE_PATTERNS.search("train a new model")
 
     def test_negative_make_prediction(self):
         from api.chat import _SCHEDULE_PATTERNS
+
         assert not _SCHEDULE_PATTERNS.search("make a prediction for units=100")
 
 
@@ -172,6 +182,7 @@ class TestSchedulePatterns:
 class TestExtractScheduleParams:
     def test_daily_default(self):
         from api.chat import _extract_schedule_params
+
         p = _extract_schedule_params("schedule daily predictions")
         assert p["frequency"] == "daily"
         assert p["day_of_week"] is None
@@ -179,6 +190,7 @@ class TestExtractScheduleParams:
 
     def test_daily_time_at_9am(self):
         from api.chat import _extract_schedule_params
+
         p = _extract_schedule_params("run model every day at 9am")
         assert p["frequency"] == "daily"
         assert p["run_hour"] == 9
@@ -186,29 +198,34 @@ class TestExtractScheduleParams:
 
     def test_daily_time_2pm(self):
         from api.chat import _extract_schedule_params
+
         p = _extract_schedule_params("schedule batch predictions at 2pm")
         assert p["run_hour"] == 14
 
     def test_daily_time_with_minutes(self):
         from api.chat import _extract_schedule_params
+
         p = _extract_schedule_params("run model at 9:30am every day")
         assert p["run_hour"] == 9
         assert p["run_minute"] == 30
 
     def test_weekly_monday(self):
         from api.chat import _extract_schedule_params
+
         p = _extract_schedule_params("run my model every Monday at 9am")
         assert p["frequency"] == "weekly"
         assert p["day_of_week"] == 0
 
     def test_weekly_friday(self):
         from api.chat import _extract_schedule_params
+
         p = _extract_schedule_params("schedule batch predictions every Friday")
         assert p["frequency"] == "weekly"
         assert p["day_of_week"] == 4
 
     def test_monthly_defaults_to_1st(self):
         from api.chat import _extract_schedule_params
+
         p = _extract_schedule_params("schedule monthly batch predictions")
         assert p["frequency"] == "monthly"
         assert p["day_of_month"] == 1
@@ -222,17 +239,20 @@ class TestExtractScheduleParams:
 class TestBuildScheduleDescription:
     def test_daily(self):
         from api.chat import _build_schedule_description
+
         desc = _build_schedule_description("daily", 9, 0, None, None)
         assert desc == "Every day at 09:00 UTC"
 
     def test_weekly_wednesday(self):
         from api.chat import _build_schedule_description
+
         desc = _build_schedule_description("weekly", 14, 30, 2, None)
         assert "Wednesday" in desc
         assert "14:30 UTC" in desc
 
     def test_monthly_1st(self):
         from api.chat import _build_schedule_description
+
         desc = _build_schedule_description("monthly", 8, 0, None, 1)
         assert "1st" in desc
         assert "08:00 UTC" in desc
@@ -246,8 +266,9 @@ class TestBuildScheduleDescription:
 def test_chat_creates_daily_schedule(client, deployed_project):
     """A chat message with schedule intent creates a BatchSchedule record."""
     events = _chat_events(
-        client, deployed_project["project_id"],
-        "schedule daily batch predictions at 9am"
+        client,
+        deployed_project["project_id"],
+        "schedule daily batch predictions at 9am",
     )
     types = [e.get("type") for e in events]
     assert "schedule_set" in types, f"Expected schedule_set in {types}"
@@ -261,8 +282,7 @@ def test_chat_creates_daily_schedule(client, deployed_project):
 def test_chat_schedule_has_next_run(client, deployed_project):
     """Created schedule includes next_run timestamp."""
     events = _chat_events(
-        client, deployed_project["project_id"],
-        "schedule batch predictions every day"
+        client, deployed_project["project_id"], "schedule batch predictions every day"
     )
     se_events = [e for e in events if e.get("type") == "schedule_set"]
     assert len(se_events) == 1
@@ -281,8 +301,7 @@ def test_chat_no_schedule_without_deployment(client):
 def test_chat_list_schedules(client, deployed_project):
     """'show my schedules' emits a list action event."""
     events = _chat_events(
-        client, deployed_project["project_id"],
-        "show my batch schedules"
+        client, deployed_project["project_id"], "show my batch schedules"
     )
     types = [e.get("type") for e in events]
     assert "schedule_set" in types, f"Expected schedule_set in {types}"
@@ -294,8 +313,7 @@ def test_chat_list_schedules(client, deployed_project):
 def test_chat_schedule_weekly_monday(client, deployed_project):
     """Weekly schedule for Monday sets correct day_of_week."""
     events = _chat_events(
-        client, deployed_project["project_id"],
-        "run my model every Monday at 8am"
+        client, deployed_project["project_id"], "run my model every Monday at 8am"
     )
     se_events = [e for e in events if e.get("type") == "schedule_set"]
     assert len(se_events) == 1
