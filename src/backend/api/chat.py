@@ -2564,7 +2564,9 @@ _AB_TEST_PATTERNS = re.compile(
 _AB_PROMOTE_RE = re.compile(
     r"(?i)\b(promote|make\s+(?:the\s+)?challenger\s+(?:the\s+)?(?:production|live|champion|main))\b"
 )
-_AB_END_RE = re.compile(r"(?i)\b(end|stop|finish|close)\s+(?:the\s+)?(?:a\s*/\s*b|ab|split)\s+test\b")
+_AB_END_RE = re.compile(
+    r"(?i)\b(end|stop|finish|close)\s+(?:the\s+)?(?:a\s*/\s*b|ab|split)\s+test\b"
+)
 
 _DOW_NAMES: dict[str, int] = {
     "monday": 0,
@@ -8000,9 +8002,9 @@ def send_message(
                     "run_minute": _params["run_minute"],
                     "day_of_week": _params["day_of_week"],
                     "day_of_month": _params["day_of_month"],
-                    "next_run": _new_sched.next_run.isoformat()
-                    if _new_sched.next_run
-                    else None,
+                    "next_run": (
+                        _new_sched.next_run.isoformat() if _new_sched.next_run else None
+                    ),
                     "description": _desc,
                     "summary": f"Batch predictions scheduled: {_desc}.",
                 }

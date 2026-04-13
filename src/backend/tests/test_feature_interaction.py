@@ -19,7 +19,6 @@ from sqlmodel import SQLModel, create_engine
 
 import db as db_module
 
-
 # ---------------------------------------------------------------------------
 # Pattern detection
 # ---------------------------------------------------------------------------
@@ -290,9 +289,9 @@ def test_interaction_classification_returns_class_labels(tmp_path):
     # Values should be string class labels
     for row in result["values"]:
         for cell in row:
-            assert isinstance(cell, str), (
-                f"Expected str class label, got {type(cell)}: {cell}"
-            )
+            assert isinstance(
+                cell, str
+            ), f"Expected str class label, got {type(cell)}: {cell}"
 
 
 def test_interaction_classification_min_max_none(tmp_path):

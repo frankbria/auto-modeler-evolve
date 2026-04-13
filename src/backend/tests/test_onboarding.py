@@ -14,7 +14,6 @@ import db as db_module
 
 from core.onboarding import compute_onboarding_state
 
-
 # ---------------------------------------------------------------------------
 # Test DB fixture
 # ---------------------------------------------------------------------------

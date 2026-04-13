@@ -18,7 +18,6 @@ import db as db_module
 from api.chat import _SDK_PATTERNS
 from api.deploy import _generate_javascript_sdk, _generate_python_sdk, _sdk_class_name
 
-
 # ---------------------------------------------------------------------------
 # Pattern detection tests
 # ---------------------------------------------------------------------------

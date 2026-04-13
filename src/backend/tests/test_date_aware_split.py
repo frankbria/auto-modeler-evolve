@@ -363,6 +363,6 @@ def test_time_split_patterns_no_false_positives():
         "how does my model perform",
     ]
     for phrase in should_not_match:
-        assert not _TIME_SPLIT_PATTERNS.search(phrase), (
-            f"Pattern falsely matched: {phrase!r}"
-        )
+        assert not _TIME_SPLIT_PATTERNS.search(
+            phrase
+        ), f"Pattern falsely matched: {phrase!r}"

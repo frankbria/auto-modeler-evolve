@@ -212,7 +212,9 @@ class TestABTestChatHandler:
         assert event["action"] == "none"
         assert "summary" in event
 
-    def test_status_emits_event_with_test_data(self, deployed_project, client, tmp_path):
+    def test_status_emits_event_with_test_data(
+        self, deployed_project, client, tmp_path
+    ):
         """With an active A/B test, status query returns action=status with metrics.
 
         Creates a second independent deployment (different project) as the challenger

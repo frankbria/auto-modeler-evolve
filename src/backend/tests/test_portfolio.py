@@ -17,7 +17,6 @@ import db as db_module
 from api.chat import _PORTFOLIO_PATTERNS
 from core.analyzer import compute_portfolio_summary
 
-
 # ---------------------------------------------------------------------------
 # Pattern detection tests
 # ---------------------------------------------------------------------------

@@ -14,7 +14,6 @@ from sqlmodel import SQLModel, create_engine
 import db as db_module
 from api.chat import _PRESET_LIST_PATTERNS, _PRESET_SAVE_PATTERNS
 
-
 # ---------------------------------------------------------------------------
 # Pattern detection tests
 # ---------------------------------------------------------------------------
