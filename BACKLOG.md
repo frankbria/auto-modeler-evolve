@@ -49,8 +49,17 @@ the time is better spent on real features.
 
 ## Currently Working On
 
-## Day 33 (12:00) — In Progress
-**Track D — A/B Test Chat Integration.** The champion-challenger A/B testing infrastructure (ABTest model, create/get/end/promote endpoints, traffic-split routing, Mann-Whitney significance test) was fully built in an earlier session but has zero chat integration — analysts asking "how is my A/B test going?" get a generic LLM response. This session wires the existing backend into the chat interface: `_AB_TEST_PATTERNS` (8 NL variants covering status, promote, end actions) + handler in `chat.py` emitting `{type:"ab_test_result"}` SSE event. `ABTestChatCard` (purple border, ⚗️ icon) inline in conversation shows traffic split visualizer, per-variant metrics, significance badge, and action guidance. `ABTestChatResult` TypeScript type, Zustand action, SSE wiring.
+## Day 33 (12:00) — Done
+**Track D — A/B Test Chat Integration.** Wired the existing champion-challenger A/B testing infrastructure into chat. Analysts can now ask "how is my A/B test going?", "is the challenger doing better?", "promote the challenger", or "end the A/B test" and receive an `ABTestChatCard` inline in conversation — no navigation to the Deployment panel required.
+- `_AB_TEST_PATTERNS` (8 NL variants) + `_AB_PROMOTE_RE` + `_AB_END_RE` in `chat.py`. Handler: status → `_ab_test_response()` with split/metrics/significance; promote → inline `promote_challenger()` replication; end → `is_active=False`; none → guidance message. SSE `{type:"ab_test_result"}`.
+- `ABTestChatCard` (purple border, ⚗️ icon): status view with split bar + MetricsColumn + SignificanceRow; promoted/ended/none confirmation views. `ABTestChatResult` type; Zustand action; SSE wired in page.tsx.
+- Note: one-deployment-per-project design means A/B tests require two separate projects as champion/challenger — this is expected behavior documented in the test.
+- 16 backend + 19 frontend = 35 new tests. Total: 3051 backend + 1611 frontend = 4662, all passing. Backend lint: clean. Frontend build + lint: clean.
+
+**What's next:**
+- Track D: Webhook event history via chat ("what webhooks fired recently?") — the webhook system is built but has no chat-triggered history view.
+- Track C: Class imbalance detection + handling (SMOTE / class weights), or ensemble methods (voting/stacking).
+- Track E: Run the "lunch break" flow end-to-end as a real analyst; fix friction points.
 
 ## Day 32 (20:00) — Done
 **Track D — Quota Alert Notifications.** Closes the gap between having a monthly quota configured and knowing before your VP's dashboard starts returning 429 errors. Analysts can now say "alert me when I hit 80% of my quota" or "set quota alert at 90%" and AutoModeler will fire registered webhooks exactly once the moment usage first crosses the threshold.
