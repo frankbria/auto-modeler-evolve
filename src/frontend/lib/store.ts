@@ -112,6 +112,7 @@ interface AppState {
   attachCalibrationCheckToLastMessage: (calibration_check: import("./types").CalibrationCheckResult) => void
   attachSlaMetricsToLastMessage: (sla_metrics: import("./types").SlaData) => void
   attachQuotaAlertConfigToLastMessage: (quota_alert_config: import("./types").QuotaAlertConfig) => void
+  attachScheduleSetToLastMessage: (schedule_set: import("./types").ScheduleSetResult) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -755,6 +756,15 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, quota_alert_config }
+      }
+      return { messages }
+    }),
+  attachScheduleSetToLastMessage: (schedule_set) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, schedule_set }
       }
       return { messages }
     }),

@@ -81,6 +81,7 @@ import { PartialDependenceCard } from "@/components/validation/partial-dependenc
 import CalibrationCheckCard from "@/components/models/calibration-check-card"
 import { SlaCard } from "@/components/deploy/sla-chat-card"
 import { QuotaAlertCard } from "@/components/deploy/quota-alert-card"
+import { ScheduleSetChatCard } from "@/components/deploy/schedule-set-chat-card"
 import { PairCorrelationCard } from "@/components/data/pair-correlation-card"
 import { StatQueryCard } from "@/components/data/stat-query-card"
 import { SummaryStatsCard } from "@/components/data/summary-stats-card"
@@ -243,6 +244,7 @@ export default function ProjectWorkspace() {
     attachCalibrationCheckToLastMessage,
     attachSlaMetricsToLastMessage,
     attachQuotaAlertConfigToLastMessage,
+    attachScheduleSetToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -612,6 +614,8 @@ export default function ProjectWorkspace() {
                 attachSlaMetricsToLastMessage(json.sla_metrics as import("@/lib/types").SlaData)
               } else if (json.type === "quota_alert_config" && json.quota_alert_config) {
                 attachQuotaAlertConfigToLastMessage(json.quota_alert_config as import("@/lib/types").QuotaAlertConfig)
+              } else if (json.type === "schedule_set" && json.schedule_set) {
+                attachScheduleSetToLastMessage(json.schedule_set as import("@/lib/types").ScheduleSetResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -697,6 +701,7 @@ export default function ProjectWorkspace() {
     attachCalibrationCheckToLastMessage,
     attachSlaMetricsToLastMessage,
     attachQuotaAlertConfigToLastMessage,
+    attachScheduleSetToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -1138,6 +1143,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.quota_alert_config && (
                       <QuotaAlertCard config={msg.quota_alert_config} />
+                    )}
+                    {msg.schedule_set && (
+                      <ScheduleSetChatCard result={msg.schedule_set} />
                     )}
                   </div>
                 </div>

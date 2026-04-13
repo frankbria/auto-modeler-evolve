@@ -470,6 +470,7 @@ export interface ChatMessage {
   calibration_check?: CalibrationCheckResult
   sla_metrics?: SlaData
   quota_alert_config?: QuotaAlertConfig
+  schedule_set?: ScheduleSetResult
 }
 
 export interface SegmentPerformanceSegment {
@@ -886,6 +887,35 @@ export interface QuotaAlertConfig {
   monthly_quota: number | null
   used_this_month: number
   pct_used: number | null
+  summary: string
+}
+
+export interface ScheduleSetScheduleItem {
+  id: string
+  frequency: "daily" | "weekly" | "monthly"
+  run_hour: number
+  run_minute: number
+  day_of_week: number | null
+  day_of_month: number | null
+  next_run: string | null
+  last_run: string | null
+  last_row_count: number | null
+  description: string
+}
+
+export interface ScheduleSetResult {
+  action: "created" | "list"
+  deployment_id: string
+  schedule_id?: string
+  frequency?: "daily" | "weekly" | "monthly"
+  run_hour?: number
+  run_minute?: number
+  day_of_week?: number | null
+  day_of_month?: number | null
+  next_run?: string | null
+  description?: string
+  schedules?: ScheduleSetScheduleItem[]
+  count?: number
   summary: string
 }
 

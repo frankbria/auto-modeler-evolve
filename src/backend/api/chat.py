@@ -2524,6 +2524,112 @@ _COHORT_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# ---------------------------------------------------------------------------
+# Batch schedule patterns — "schedule daily predictions at 9am"
+# ---------------------------------------------------------------------------
+
+_SCHEDULE_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"schedule\s+(?:daily|weekly|monthly|batch|automatic|recurring|a)?\s*(?:batch\s+)?predictions?\b|"
+    r"(?:set\s+up|create|configure|add)\s+(?:a\s+)?(?:daily|weekly|monthly|batch|automatic|recurring)?\s*(?:batch\s+)?(?:prediction\s+)?schedule\b|"
+    r"(?:run|predict|score)\s+(?:my\s+)?(?:model|data|batch|predictions?)\s+(?:every|each)\s+(?:day|week|month|\w+day)\b|"
+    r"batch\s+predictions?\s+every\s+(?:day|week|month)\b|"
+    r"automatic(?:ally)?\s+(?:run|predict|score)\s+(?:every|each|daily|weekly|monthly)\b|"
+    r"(?:run|predict)\s+(?:my\s+)?(?:model|batch)\s+at\s+\d+\b|"
+    r"(?:show|list|view)\s+(?:my\s+)?(?:batch\s+)?schedules?\b"
+    r")",
+    re.IGNORECASE,
+)
+
+_DOW_NAMES: dict[str, int] = {
+    "monday": 0, "mon": 0,
+    "tuesday": 1, "tue": 1, "tues": 1,
+    "wednesday": 2, "wed": 2,
+    "thursday": 3, "thu": 3, "thur": 3, "thurs": 3,
+    "friday": 4, "fri": 4,
+    "saturday": 5, "sat": 5,
+    "sunday": 6, "sun": 6,
+}
+
+
+def _extract_schedule_params(message: str) -> dict:
+    """Parse frequency, hour, minute, day_of_week/month from a natural-language schedule request."""
+    msg = message.lower()
+
+    # Frequency + day-of-week detection
+    frequency = "daily"
+    day_of_week: int | None = None
+    day_of_month: int | None = None
+
+    if re.search(r"\b(weekly|every\s+week|each\s+week)\b", msg):
+        frequency = "weekly"
+    elif re.search(r"\b(monthly|every\s+month|each\s+month|once\s+a\s+month)\b", msg):
+        frequency = "monthly"
+    else:
+        # Check for explicit weekday names — implies weekly
+        for name, idx in _DOW_NAMES.items():
+            if re.search(r"\b" + name + r"\b", msg):
+                frequency = "weekly"
+                day_of_week = idx
+                break
+
+    if frequency == "weekly" and day_of_week is None:
+        day_of_week = 0  # default Monday
+
+    if frequency == "monthly":
+        dom_m = re.search(r"\b(\d{1,2})(?:st|nd|rd|th)?\b", msg)
+        if dom_m:
+            day_of_month = max(1, min(28, int(dom_m.group(1))))
+        if day_of_month is None:
+            day_of_month = 1  # default 1st
+
+    # Time extraction: "at 9am", "at 9:30", "9pm", "14:00"
+    run_hour = 9
+    run_minute = 0
+    time_m = re.search(r"\bat\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b", msg, re.IGNORECASE)
+    if not time_m:
+        time_m = re.search(r"\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b", msg, re.IGNORECASE)
+    if time_m:
+        h = int(time_m.group(1))
+        m = int(time_m.group(2)) if time_m.group(2) else 0
+        ampm = (time_m.group(3) or "").lower()
+        if ampm == "pm" and h != 12:
+            h += 12
+        elif ampm == "am" and h == 12:
+            h = 0
+        run_hour = max(0, min(23, h))
+        run_minute = max(0, min(59, m))
+
+    return {
+        "frequency": frequency,
+        "run_hour": run_hour,
+        "run_minute": run_minute,
+        "day_of_week": day_of_week,
+        "day_of_month": day_of_month,
+    }
+
+
+def _build_schedule_description(
+    frequency: str,
+    run_hour: int,
+    run_minute: int,
+    day_of_week: int | None,
+    day_of_month: int | None,
+) -> str:
+    """Return a plain-English description of a schedule."""
+    day_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    hh = str(run_hour).zfill(2)
+    mm = str(run_minute).zfill(2)
+    if frequency == "daily":
+        return f"Every day at {hh}:{mm} UTC"
+    if frequency == "weekly":
+        dow_name = day_names[day_of_week] if day_of_week is not None else "Monday"
+        return f"Every {dow_name} at {hh}:{mm} UTC"
+    # monthly
+    dom = day_of_month or 1
+    suffix = {1: "st", 2: "nd", 3: "rd"}.get(dom if dom <= 20 else dom % 10, "th")
+    return f"Monthly on the {dom}{suffix} at {hh}:{mm} UTC"
+
 
 def _detect_ranked_pred_request(message: str) -> dict:
     """Extract n (number of rows) and direction (highest/lowest) from a ranking request.
@@ -7615,6 +7721,112 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Quota alert events are nice-to-have; never crash chat
 
+    # Batch prediction schedule creation / listing
+    schedule_event: dict | None = None
+    if _SCHEDULE_PATTERNS.search(body.message) and ctx["deployment"]:
+        try:
+            _sched_dep = ctx["deployment"]
+            _sched_dep_id = _sched_dep.id if hasattr(_sched_dep, "id") else str(_sched_dep)
+
+            _is_list_request = bool(
+                re.search(r"\b(show|list|view|what|get)\s", body.message, re.IGNORECASE)
+            )
+
+            if _is_list_request:
+                from models.batch_schedule import BatchSchedule as _BS2
+
+                _existing = session.exec(
+                    select(_BS2).where(_BS2.deployment_id == _sched_dep_id)
+                ).all()
+                _sched_list = [
+                    {
+                        "id": s.id,
+                        "frequency": s.frequency,
+                        "run_hour": s.run_hour,
+                        "run_minute": s.run_minute,
+                        "day_of_week": s.day_of_week,
+                        "day_of_month": s.day_of_month,
+                        "next_run": s.next_run.isoformat() if s.next_run else None,
+                        "last_run": s.last_run.isoformat() if s.last_run else None,
+                        "last_row_count": s.last_row_count,
+                        "description": _build_schedule_description(
+                            s.frequency, s.run_hour, s.run_minute,
+                            s.day_of_week, s.day_of_month
+                        ),
+                    }
+                    for s in _existing
+                ]
+                schedule_event = {
+                    "action": "list",
+                    "deployment_id": _sched_dep_id,
+                    "schedules": _sched_list,
+                    "count": len(_sched_list),
+                    "summary": (
+                        f"You have {len(_sched_list)} batch schedule(s)."
+                        if _sched_list
+                        else "No batch schedules configured yet."
+                    ),
+                }
+                system_prompt += (
+                    f"\n\n## Batch Schedules\n{schedule_event['summary']} "
+                    "List the schedules in plain English and tell the analyst they can "
+                    "manage schedules in the Deployment panel."
+                )
+            else:
+                # Create a new schedule
+                _params = _extract_schedule_params(body.message)
+                from core.scheduler import compute_next_run as _cnr2
+                from models.batch_schedule import BatchSchedule as _BS3
+
+                _new_sched = _BS3(
+                    deployment_id=_sched_dep_id,
+                    frequency=_params["frequency"],
+                    run_hour=_params["run_hour"],
+                    run_minute=_params["run_minute"],
+                    day_of_week=_params["day_of_week"],
+                    day_of_month=_params["day_of_month"],
+                )
+                _new_sched.next_run = _cnr2(
+                    _params["frequency"],
+                    _params["run_hour"],
+                    _params["run_minute"],
+                    _params["day_of_week"],
+                    _params["day_of_month"],
+                )
+                session.add(_new_sched)
+                session.commit()
+                session.refresh(_new_sched)
+
+                _desc = _build_schedule_description(
+                    _params["frequency"],
+                    _params["run_hour"],
+                    _params["run_minute"],
+                    _params["day_of_week"],
+                    _params["day_of_month"],
+                )
+                schedule_event = {
+                    "action": "created",
+                    "schedule_id": _new_sched.id,
+                    "deployment_id": _sched_dep_id,
+                    "frequency": _params["frequency"],
+                    "run_hour": _params["run_hour"],
+                    "run_minute": _params["run_minute"],
+                    "day_of_week": _params["day_of_week"],
+                    "day_of_month": _params["day_of_month"],
+                    "next_run": _new_sched.next_run.isoformat() if _new_sched.next_run else None,
+                    "description": _desc,
+                    "summary": f"Batch predictions scheduled: {_desc}.",
+                }
+                system_prompt += (
+                    f"\n\n## Batch Schedule Created\n{_desc}. "
+                    "Tell the analyst their batch prediction schedule has been set up. "
+                    "Explain that the model will automatically score their current dataset "
+                    "on this schedule and save results as a downloadable CSV. "
+                    "Mention they can view and manage schedules in the Deployment panel."
+                )
+        except Exception:  # noqa: BLE001
+            pass  # Schedule events are nice-to-have; never crash chat
+
     # Pre-compute follow-up suggestions (based on state + current message)
     current_state = detect_state(
         ctx["dataset"], ctx["feature_set"], ctx["model_runs"], ctx["deployment"]
@@ -7980,6 +8192,10 @@ def send_message(
         # Emit quota alert configuration card
         if quota_alert_event:
             yield f"data: {json.dumps({'type': 'quota_alert_config', 'quota_alert_config': quota_alert_event})}\n\n"
+
+        # Emit batch prediction schedule event
+        if schedule_event:
+            yield f"data: {json.dumps({'type': 'schedule_set', 'schedule_set': schedule_event})}\n\n"
 
         # After text stream, opportunistically generate a chart if the
         # message is about data and we have a dataset loaded
