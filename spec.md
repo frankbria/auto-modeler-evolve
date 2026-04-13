@@ -1184,6 +1184,25 @@ guides them forward through the natural flow.
       this prediction is extrapolating, not interpolating."
       *Day 31 (12:00): 17 backend + 17 frontend = 34 new tests; total 2932 backend + 1512 frontend = 4444. Backend lint: clean. Frontend build + lint: clean.*
 
+- [x] **Quota Alert Notifications** — When monthly quota usage crosses a configured
+      percentage threshold, registered webhooks with the `quota_alert` event type are dispatched
+      exactly once — the moment the threshold is first crossed. Analysts configure via chat:
+      "alert me when I hit 80% of my quota", "set quota alert at 90%", "disable quota alert".
+      `quota_alert_threshold_pct` field added to `Deployment` model (inline SQLite migration).
+      `EVENT_QUOTA_ALERT` added to `core/webhook.py` `ALL_EVENTS`. `_check_and_fire_quota_alert()`
+      pure helper in `api/deploy.py` — fires only when `used == ceil(quota * threshold / 100)`,
+      preventing repeated alerts on every subsequent prediction. Called in a daemon thread after
+      each successful prediction commit. `PUT /api/deploy/{id}/quota-alert` endpoint (validates
+      1-99 range; 0 or null removes; 422 for negative or >99). `GET /api/deploy/{id}/quota-status`
+      now includes `quota_alert_threshold_pct` and `quota_alert_enabled`. `_QUOTA_ALERT_PATTERNS`
+      (8 NL variants) in `chat.py`; handler sets/reads threshold, emits `{type:"quota_alert_config"}`
+      SSE event. `QuotaAlertCard` (orange border, 🔔 icon): enabled/disabled badge, threshold
+      explanation, current usage fraction + color-coded progress bar (green/amber/red), help text.
+      `QuotaAlertConfig` TypeScript interface; `attachQuotaAlertConfigToLastMessage` Zustand action;
+      SSE handler + render wired in workspace page. Closes the gap where analysts setting a monthly
+      quota had no early warning before their VP's dashboard started returning 429 errors.
+      *Day 32 (20:00): 21 backend + 16 frontend = 37 new tests. Total: 3010 backend + 1577 frontend = 4587. Backend lint: clean. Frontend build + lint: clean.*
+
 - [x] **SLA Latency Monitoring via chat** — Analysts can ask "how fast is my model?",
       "show me the prediction latency", "p95 latency", "response time stats", or "is my API
       within SLA?" and receive an `SlaCard` showing p50/p95/p99 percentiles, average latency,
