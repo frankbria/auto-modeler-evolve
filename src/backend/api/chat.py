@@ -7552,7 +7552,9 @@ def send_message(
 
             _disable_alert = bool(_DISABLE_QUOTA_ALERT_RE.search(body.message))
             _alert_pct_m = _QUOTA_ALERT_PCT_RE.search(body.message)
-            _new_alert_pct: int | None = int(_alert_pct_m.group(1)) if _alert_pct_m else None
+            _new_alert_pct: int | None = (
+                int(_alert_pct_m.group(1)) if _alert_pct_m else None
+            )
 
             if _dep_obj:
                 if _disable_alert:
@@ -7579,7 +7581,9 @@ def send_message(
                         PredictionLog.created_at >= _cutoff2,
                     )
                 ).one()
-                _pct2 = round(_used2 / _monthly_quota * 100, 1) if _monthly_quota else None
+                _pct2 = (
+                    round(_used2 / _monthly_quota * 100, 1) if _monthly_quota else None
+                )
 
                 quota_alert_event = {
                     "deployment_id": _dep_id,
