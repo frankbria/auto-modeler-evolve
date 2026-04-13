@@ -49,6 +49,17 @@ the time is better spent on real features.
 
 ## Currently Working On
 
+## Day 32 (20:00) — Done
+**Track D — Quota Alert Notifications.** Closes the gap between having a monthly quota configured and knowing before your VP's dashboard starts returning 429 errors. Analysts can now say "alert me when I hit 80% of my quota" or "set quota alert at 90%" and AutoModeler will fire registered webhooks exactly once the moment usage first crosses the threshold.
+- `quota_alert_threshold_pct` field on `Deployment` (inline SQLite migration). `EVENT_QUOTA_ALERT` added to `webhook.py` `ALL_EVENTS`. `_check_and_fire_quota_alert()` pure helper fires only when `used == ceil(quota * threshold / 100)` — no alert spam on subsequent predictions. Runs in a background daemon thread after each prediction commit.
+- `PUT /api/deploy/{id}/quota-alert` endpoint (1-99 valid; 0/null removes; 422 for invalid). `GET /api/deploy/{id}/quota-status` extended with `quota_alert_threshold_pct` + `quota_alert_enabled`. `_QUOTA_ALERT_PATTERNS` (8 NL variants) + handler in `chat.py`; emits `{type:"quota_alert_config"}` SSE event. `QuotaAlertCard` (orange border, 🔔 icon): threshold badge, explanation, usage bar. Fixed pre-existing `test_all_events_constant_has_three_entries` to `has_expected_entries` (now 4 event types).
+- 21 backend + 16 frontend = 37 new tests. Total: 3010 backend + 1577 frontend = 4587, all passing. Backend lint: clean. Frontend lint: clean.
+
+**What's next:**
+- Track E: run the "lunch break" flow as a real business analyst; look for friction in the VP-sharing flow.
+- Track C: feature interaction detection (interaction terms between top features), or confidence interval improvements for classification.
+- Track D: cross-deployment quota dashboard (analyst view of quota usage across all their projects).
+
 ## Day 32 (12:00) — Done
 **Track D — SLA Latency Monitoring via chat.** Closes the gap between the deployment panel's `SlaMonitorCard` and the conversational interface. Analysts can now ask "how fast is my model?", "show me the prediction latency", or "p95 latency?" and receive an `SlaCard` inline in chat showing p50/p95/p99 percentiles, avg latency, sample count, a daily sparkline, and an alert when p95 > 500ms — without navigating away from the conversation.
 - `_SLA_PATTERNS` (10 NL variants) in `chat.py`; handler queries `PredictionLog.response_ms`, computes percentiles, groups by day for sparkline, emits `{type:"sla_metrics"}` SSE event.
