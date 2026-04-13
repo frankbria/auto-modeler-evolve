@@ -82,6 +82,7 @@ import CalibrationCheckCard from "@/components/models/calibration-check-card"
 import { SlaCard } from "@/components/deploy/sla-chat-card"
 import { QuotaAlertCard } from "@/components/deploy/quota-alert-card"
 import { ScheduleSetChatCard } from "@/components/deploy/schedule-set-chat-card"
+import { ABTestChatCard } from "@/components/deploy/ab-test-chat-card"
 import { PairCorrelationCard } from "@/components/data/pair-correlation-card"
 import { StatQueryCard } from "@/components/data/stat-query-card"
 import { SummaryStatsCard } from "@/components/data/summary-stats-card"
@@ -245,6 +246,7 @@ export default function ProjectWorkspace() {
     attachSlaMetricsToLastMessage,
     attachQuotaAlertConfigToLastMessage,
     attachScheduleSetToLastMessage,
+    attachABTestResultToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -616,6 +618,8 @@ export default function ProjectWorkspace() {
                 attachQuotaAlertConfigToLastMessage(json.quota_alert_config as import("@/lib/types").QuotaAlertConfig)
               } else if (json.type === "schedule_set" && json.schedule_set) {
                 attachScheduleSetToLastMessage(json.schedule_set as import("@/lib/types").ScheduleSetResult)
+              } else if (json.type === "ab_test_result" && json.ab_test_result) {
+                attachABTestResultToLastMessage(json.ab_test_result as import("@/lib/types").ABTestChatResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -702,6 +706,7 @@ export default function ProjectWorkspace() {
     attachSlaMetricsToLastMessage,
     attachQuotaAlertConfigToLastMessage,
     attachScheduleSetToLastMessage,
+    attachABTestResultToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -1146,6 +1151,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.schedule_set && (
                       <ScheduleSetChatCard result={msg.schedule_set} />
+                    )}
+                    {msg.ab_test_result && (
+                      <ABTestChatCard result={msg.ab_test_result} />
                     )}
                   </div>
                 </div>

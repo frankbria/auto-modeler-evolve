@@ -2541,6 +2541,31 @@ _SCHEDULE_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# ---------------------------------------------------------------------------
+# A/B test patterns — "how is my A/B test going?", "promote the challenger"
+# Covers: status check, promote challenger, end test
+# Does NOT overlap with _READINESS_PATTERNS or _ALERTS_PATTERNS
+# ---------------------------------------------------------------------------
+
+_AB_TEST_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"(?:how\s+is|check|show|view|get|what\s+(?:are|is))\s+(?:my\s+)?(?:a\s*/\s*b|ab|split|champion.challenger)\s+test\b|"
+    r"a\s*/\s*b\s+test\s+(?:results?|status|progress|update)\b|"
+    r"(?:is|are)\s+(?:the\s+)?challenger\s+(?:doing|performing|beating|better)\b|"
+    r"(?:compare|versus|vs)\s+(?:the\s+)?(?:champion|challenger)\s+model\b|"
+    r"promote\s+(?:the\s+)?challenger\b|"
+    r"make\s+(?:the\s+)?challenger\s+(?:the\s+)?(?:production|live|champion|main)\s+model\b|"
+    r"(?:end|stop|finish|close)\s+(?:the\s+)?(?:a\s*/\s*b|ab|split)\s+test\b|"
+    r"(?:traffic\s+split|split\s+traffic|prediction\s+split)\s+(?:results?|status)?\b"
+    r")",
+    re.IGNORECASE,
+)
+
+_AB_PROMOTE_RE = re.compile(
+    r"(?i)\b(promote|make\s+(?:the\s+)?challenger\s+(?:the\s+)?(?:production|live|champion|main))\b"
+)
+_AB_END_RE = re.compile(r"(?i)\b(end|stop|finish|close)\s+(?:the\s+)?(?:a\s*/\s*b|ab|split)\s+test\b")
+
 _DOW_NAMES: dict[str, int] = {
     "monday": 0,
     "mon": 0,
@@ -7741,6 +7766,143 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Quota alert events are nice-to-have; never crash chat
 
+    # A/B test status / promote / end
+    ab_test_result_event: dict | None = None
+    if _AB_TEST_PATTERNS.search(body.message) and ctx["deployment"]:
+        try:
+            from models.ab_test import ABTest as _ABTest
+
+            _ab_dep = ctx["deployment"]
+            _ab_dep_id = _ab_dep.id if hasattr(_ab_dep, "id") else str(_ab_dep)
+
+            _active_test = session.exec(
+                select(_ABTest).where(
+                    _ABTest.champion_id == _ab_dep_id,
+                    _ABTest.is_active == True,  # noqa: E712
+                )
+            ).first()
+
+            if _AB_PROMOTE_RE.search(body.message) and _active_test:
+                # Promote challenger — replicate promote_challenger() logic
+                from models.deployment import Deployment as _Dep2
+                from models.deployment_version import DeploymentVersion as _DV
+
+                _champ = session.get(_Dep2, _ab_dep_id)
+                _chall = session.get(_Dep2, _active_test.challenger_id)
+                if _champ and _chall and _chall.pipeline_path:
+                    from api.deploy import _archive_current_version
+
+                    _archive_current_version(_champ, session)
+                    _new_ver = getattr(_champ, "current_version_number", 1) + 1
+                    _champ.model_run_id = _chall.model_run_id
+                    _champ.pipeline_path = _chall.pipeline_path
+                    _champ.algorithm = _chall.algorithm
+                    _champ.problem_type = _chall.problem_type
+                    _champ.feature_names = _chall.feature_names
+                    _champ.target_column = _chall.target_column
+                    _champ.metrics = _chall.metrics
+                    _champ.current_version_number = _new_ver
+                    session.add(_champ)
+                    session.add(
+                        _DV(
+                            deployment_id=_ab_dep_id,
+                            version_number=_new_ver,
+                            model_run_id=_chall.model_run_id,
+                            algorithm=_chall.algorithm,
+                            problem_type=_chall.problem_type,
+                            target_column=_chall.target_column,
+                            metrics=_chall.metrics,
+                            pipeline_path=_chall.pipeline_path,
+                            is_current=True,
+                        )
+                    )
+                    _active_test.is_active = False
+                    _active_test.ended_at = datetime.now(UTC).replace(tzinfo=None)
+                    _active_test.winner = "challenger"
+                    session.add(_active_test)
+                    session.commit()
+                    ab_test_result_event = {
+                        "action": "promoted",
+                        "summary": (
+                            f"Challenger ({_chall.algorithm}) promoted to champion. "
+                            "Your prediction URL stays the same."
+                        ),
+                    }
+                    system_prompt += (
+                        "\n\n## A/B Test Outcome\n"
+                        f"The challenger model ({_chall.algorithm}) has been promoted to "
+                        "champion. The prediction endpoint URL is unchanged so any VP or "
+                        "developer links continue to work."
+                    )
+                else:
+                    ab_test_result_event = {
+                        "action": "none",
+                        "summary": "Promotion failed: challenger pipeline not found.",
+                    }
+
+            elif _AB_END_RE.search(body.message) and _active_test:
+                # End the A/B test without promoting
+                _active_test.is_active = False
+                _active_test.ended_at = datetime.now(UTC).replace(tzinfo=None)
+                session.add(_active_test)
+                session.commit()
+                ab_test_result_event = {
+                    "action": "ended",
+                    "summary": "A/B test ended. Champion model remains active.",
+                }
+                system_prompt += (
+                    "\n\n## A/B Test Ended\n"
+                    "The A/B test has been stopped. The original champion model remains "
+                    "active and continues to handle all prediction traffic."
+                )
+
+            elif _active_test:
+                # Status report — build full response via helper
+                from api.deploy import _ab_test_response as _ab_resp
+
+                _ab_data = _ab_resp(_active_test, session)
+                ab_test_result_event = {
+                    "action": "status",
+                    "summary": (
+                        f"A/B test active: {_ab_data['champion_split_pct']}% champion "
+                        f"({_ab_data['champion_algorithm'] or 'Model'}) / "
+                        f"{_ab_data['challenger_split_pct']}% challenger "
+                        f"({_ab_data['challenger_algorithm'] or 'Model'}). "
+                        f"Champion: {_ab_data['champion_metrics']['request_count']} requests. "
+                        f"Challenger: {_ab_data['challenger_metrics']['request_count']} requests."
+                    ),
+                    **_ab_data,
+                }
+                system_prompt += (
+                    f"\n\n## Active A/B Test\n"
+                    f"Traffic split: {_ab_data['champion_split_pct']}% champion / "
+                    f"{_ab_data['challenger_split_pct']}% challenger. "
+                    f"Champion requests: {_ab_data['champion_metrics']['request_count']}, "
+                    f"Challenger requests: {_ab_data['challenger_metrics']['request_count']}. "
+                    f"Statistical significance: {_ab_data['significance']['note']}. "
+                    "Tell the analyst what the test data shows in plain English. "
+                    "If there are enough samples and a result, recommend whether to promote "
+                    "or keep running."
+                )
+
+            else:
+                # No active test
+                ab_test_result_event = {
+                    "action": "none",
+                    "summary": (
+                        "No active A/B test. You can start one from the Deployment panel "
+                        "once you have a second trained model as a challenger."
+                    ),
+                }
+                system_prompt += (
+                    "\n\n## A/B Test\nNo active A/B test is running for this deployment. "
+                    "Explain to the analyst how to start one: train a second model, deploy it, "
+                    "then use the Deployment panel A/B Test section to split traffic."
+                )
+
+        except Exception:  # noqa: BLE001
+            pass  # A/B test events are nice-to-have; never crash chat
+
     # Batch prediction schedule creation / listing
     schedule_event: dict | None = None
     if _SCHEDULE_PATTERNS.search(body.message) and ctx["deployment"]:
@@ -8223,6 +8385,10 @@ def send_message(
         # Emit batch prediction schedule event
         if schedule_event:
             yield f"data: {json.dumps({'type': 'schedule_set', 'schedule_set': schedule_event})}\n\n"
+
+        # Emit A/B test status / action confirmation
+        if ab_test_result_event:
+            yield f"data: {json.dumps({'type': 'ab_test_result', 'ab_test_result': ab_test_result_event})}\n\n"
 
         # After text stream, opportunistically generate a chart if the
         # message is about data and we have a dataset loaded

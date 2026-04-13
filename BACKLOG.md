@@ -49,6 +49,9 @@ the time is better spent on real features.
 
 ## Currently Working On
 
+## Day 33 (12:00) — In Progress
+**Track D — A/B Test Chat Integration.** The champion-challenger A/B testing infrastructure (ABTest model, create/get/end/promote endpoints, traffic-split routing, Mann-Whitney significance test) was fully built in an earlier session but has zero chat integration — analysts asking "how is my A/B test going?" get a generic LLM response. This session wires the existing backend into the chat interface: `_AB_TEST_PATTERNS` (8 NL variants covering status, promote, end actions) + handler in `chat.py` emitting `{type:"ab_test_result"}` SSE event. `ABTestChatCard` (purple border, ⚗️ icon) inline in conversation shows traffic split visualizer, per-variant metrics, significance badge, and action guidance. `ABTestChatResult` TypeScript type, Zustand action, SSE wiring.
+
 ## Day 32 (20:00) — Done
 **Track D — Quota Alert Notifications.** Closes the gap between having a monthly quota configured and knowing before your VP's dashboard starts returning 429 errors. Analysts can now say "alert me when I hit 80% of my quota" or "set quota alert at 90%" and AutoModeler will fire registered webhooks exactly once the moment usage first crosses the threshold.
 - `quota_alert_threshold_pct` field on `Deployment` (inline SQLite migration). `EVENT_QUOTA_ALERT` added to `webhook.py` `ALL_EVENTS`. `_check_and_fire_quota_alert()` pure helper fires only when `used == ceil(quota * threshold / 100)` — no alert spam on subsequent predictions. Runs in a background daemon thread after each prediction commit.

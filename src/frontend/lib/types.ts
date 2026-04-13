@@ -471,6 +471,7 @@ export interface ChatMessage {
   sla_metrics?: SlaData
   quota_alert_config?: QuotaAlertConfig
   schedule_set?: ScheduleSetResult
+  ab_test_result?: ABTestChatResult
 }
 
 export interface SegmentPerformanceSegment {
@@ -1812,6 +1813,24 @@ export interface ABTest {
   champion_metrics: ABVariantMetrics
   challenger_metrics: ABVariantMetrics
   significance: ABSignificance
+}
+
+export interface ABTestChatResult {
+  action: "status" | "promoted" | "ended" | "none"
+  summary: string
+  // Present only when action === "status"
+  id?: string
+  champion_id?: string
+  challenger_id?: string
+  champion_algorithm?: string | null
+  challenger_algorithm?: string | null
+  champion_split_pct?: number
+  challenger_split_pct?: number
+  is_active?: boolean
+  champion_metrics?: ABVariantMetrics
+  challenger_metrics?: ABVariantMetrics
+  significance?: ABSignificance
+  created_at?: string | null
 }
 
 export interface CalibrationPoint {
