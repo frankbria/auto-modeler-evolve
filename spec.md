@@ -1219,6 +1219,21 @@ guides them forward through the natural flow.
       `attachSlaMetricsToLastMessage` Zustand action; SSE handler and render wired in `page.tsx`.
       *Day 32 (12:00): 15 backend + 19 frontend = 34 new tests; total 2989 backend + 1561 frontend = 4550. Backend lint: clean. Frontend build + lint: clean.*
 
+- [x] **Batch Prediction Scheduling via chat** — Analysts can say "schedule daily batch
+      predictions at 9am", "run my model every Monday at 8am", "batch predictions every
+      month", or "show my batch schedules" to create and list `BatchSchedule` records
+      directly from the chat interface. `_SCHEDULE_PATTERNS` (7 NL arms) detects create/list
+      intents. `_extract_schedule_params()` parses frequency (daily/weekly/monthly), run time
+      (12h + 24h), and day-of-week names. `_build_schedule_description()` returns plain-English
+      confirmations ("Every Monday at 08:00 UTC"). Handler guards on active deployment; list
+      path queries all schedules; create path calls `compute_next_run()` and commits a new
+      `BatchSchedule`. SSE emits `{type:"schedule_set"}` event. `ScheduleSetChatCard` (teal
+      border, 🗓️): "created" view shows FrequencyBadge + description + next-run + help footer;
+      "list" view shows count badge + per-schedule rows with frequency/description/next-run/
+      last-row-count. `attachScheduleSetToLastMessage` Zustand action; SSE handler + render
+      wired in workspace page.
+      *Day 33 (04:00): 25 backend + 15 frontend = 40 new tests. Total: 3035 backend + 1592 frontend = 4627. Backend lint: clean. Frontend build + lint: clean.*
+
 #### Track E — End-to-End Polish
 
 > The "lunch break" success criterion: a business analyst uploads quarterly sales data and
