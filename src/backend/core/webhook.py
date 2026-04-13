@@ -29,8 +29,14 @@ logger = logging.getLogger(__name__)
 EVENT_BATCH_COMPLETE = "batch_complete"
 EVENT_DRIFT_DETECTED = "drift_detected"
 EVENT_HEALTH_DEGRADED = "health_degraded"
+EVENT_QUOTA_ALERT = "quota_alert"
 
-ALL_EVENTS = {EVENT_BATCH_COMPLETE, EVENT_DRIFT_DETECTED, EVENT_HEALTH_DEGRADED}
+ALL_EVENTS = {
+    EVENT_BATCH_COMPLETE,
+    EVENT_DRIFT_DETECTED,
+    EVENT_HEALTH_DEGRADED,
+    EVENT_QUOTA_ALERT,
+}
 
 
 def _sign_payload(secret: str, payload_bytes: bytes) -> str:

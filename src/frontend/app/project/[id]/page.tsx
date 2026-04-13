@@ -80,6 +80,7 @@ import { RateLimitCard } from "@/components/deploy/rate-limit-card"
 import { PartialDependenceCard } from "@/components/validation/partial-dependence-card"
 import CalibrationCheckCard from "@/components/models/calibration-check-card"
 import { SlaCard } from "@/components/deploy/sla-chat-card"
+import { QuotaAlertCard } from "@/components/deploy/quota-alert-card"
 import { PairCorrelationCard } from "@/components/data/pair-correlation-card"
 import { StatQueryCard } from "@/components/data/stat-query-card"
 import { SummaryStatsCard } from "@/components/data/summary-stats-card"
@@ -241,6 +242,7 @@ export default function ProjectWorkspace() {
     attachPartialDependenceToLastMessage,
     attachCalibrationCheckToLastMessage,
     attachSlaMetricsToLastMessage,
+    attachQuotaAlertConfigToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -608,6 +610,8 @@ export default function ProjectWorkspace() {
                 attachCalibrationCheckToLastMessage(json.calibration_check as import("@/lib/types").CalibrationCheckResult)
               } else if (json.type === "sla_metrics" && json.sla_metrics) {
                 attachSlaMetricsToLastMessage(json.sla_metrics as import("@/lib/types").SlaData)
+              } else if (json.type === "quota_alert_config" && json.quota_alert_config) {
+                attachQuotaAlertConfigToLastMessage(json.quota_alert_config as import("@/lib/types").QuotaAlertConfig)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -692,6 +696,7 @@ export default function ProjectWorkspace() {
     attachPartialDependenceToLastMessage,
     attachCalibrationCheckToLastMessage,
     attachSlaMetricsToLastMessage,
+    attachQuotaAlertConfigToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -1130,6 +1135,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.sla_metrics && (
                       <SlaCard sla={msg.sla_metrics} />
+                    )}
+                    {msg.quota_alert_config && (
+                      <QuotaAlertCard config={msg.quota_alert_config} />
                     )}
                   </div>
                 </div>

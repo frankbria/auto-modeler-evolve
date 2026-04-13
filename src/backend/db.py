@@ -27,6 +27,7 @@ def _apply_migrations():
         ("predictionlog", "ab_variant", "TEXT"),
         ("deployment", "rate_limit_rpm", "INTEGER"),
         ("deployment", "monthly_quota", "INTEGER"),
+        ("deployment", "quota_alert_threshold_pct", "INTEGER"),
     ]
     with engine.connect() as conn:
         for table, col, definition in migrations:

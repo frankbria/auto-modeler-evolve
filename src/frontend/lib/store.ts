@@ -111,6 +111,7 @@ interface AppState {
   attachPartialDependenceToLastMessage: (partial_dependence: import("./types").PartialDependenceResult) => void
   attachCalibrationCheckToLastMessage: (calibration_check: import("./types").CalibrationCheckResult) => void
   attachSlaMetricsToLastMessage: (sla_metrics: import("./types").SlaData) => void
+  attachQuotaAlertConfigToLastMessage: (quota_alert_config: import("./types").QuotaAlertConfig) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -745,6 +746,15 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, sla_metrics }
+      }
+      return { messages }
+    }),
+  attachQuotaAlertConfigToLastMessage: (quota_alert_config) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, quota_alert_config }
       }
       return { messages }
     }),

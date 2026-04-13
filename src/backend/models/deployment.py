@@ -35,6 +35,8 @@ class Deployment(SQLModel, table=True):
     monthly_quota: Optional[int] = (
         None  # max predictions per rolling 30 days; None = unlimited
     )
+    # Quota alert: fire webhooks when usage crosses this % of monthly_quota (None = disabled)
+    quota_alert_threshold_pct: Optional[int] = None
     # Versioning — monotonically incremented each time the deployment is updated
     current_version_number: int = Field(default=1)
     # Environment: "staging" (default) or "production"

@@ -469,6 +469,7 @@ export interface ChatMessage {
   partial_dependence?: PartialDependenceResult
   calibration_check?: CalibrationCheckResult
   sla_metrics?: SlaData
+  quota_alert_config?: QuotaAlertConfig
 }
 
 export interface SegmentPerformanceSegment {
@@ -876,6 +877,16 @@ export interface SlaData {
   alert: boolean
   alert_message: string | null
   latency_by_day: { date: string; avg_ms: number }[]
+}
+
+export interface QuotaAlertConfig {
+  deployment_id: string
+  quota_alert_enabled: boolean
+  quota_alert_threshold_pct: number | null
+  monthly_quota: number | null
+  used_this_month: number
+  pct_used: number | null
+  summary: string
 }
 
 // ---------------------------------------------------------------------------

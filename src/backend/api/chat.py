@@ -2440,6 +2440,27 @@ _SLA_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# Keywords that trigger quota alert configuration via chat
+_QUOTA_ALERT_PATTERNS = re.compile(
+    r"\b("
+    r"alert\s+(?:me\s+)?when\s+(?:i\s+)?(?:hit|reach|use)\s+(?:[\w%]+\s+){0,4}quota|"
+    r"notify\s+(?:me\s+)?when\s+(?:my\s+)?quota\s+is\s+(?:almost|nearly|close\s+to)\s+(?:full|exhausted|used)|"
+    r"quota\s+(?:usage\s+)?alert|quota\s+(?:usage\s+)?warning|"
+    r"set\s+(?:a\s+)?quota\s+(?:alert|warning|notification)\s+(?:at|threshold|to)|"
+    r"configure\s+quota\s+(?:alert|warning|notification)|"
+    r"(?:alert|warn|notify)\s+(?:me\s+)?(?:at|when\s+quota\s+(?:reaches|hits))\s+\d+|"
+    r"(?:disable|remove|turn\s+off|clear)\s+(?:the\s+)?quota\s+alert|"
+    r"quota\s+(?:alert\s+)?threshold"
+    r")\b",
+    re.IGNORECASE,
+)
+
+_QUOTA_ALERT_PCT_RE = re.compile(r"\b(\d+)\s*(?:%|percent)\b", re.IGNORECASE)
+_DISABLE_QUOTA_ALERT_RE = re.compile(
+    r"\b(disable|remove|turn\s+off|clear)\s+(?:the\s+)?quota\s+alert",
+    re.IGNORECASE,
+)
+
 
 def _extract_preset_definition(message: str) -> dict | None:
     """Extract preset name and feature key=value pairs from a natural language message.
@@ -7521,6 +7542,75 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # SLA events are nice-to-have; never crash chat
 
+    # Quota alert threshold configuration
+    quota_alert_event: dict | None = None
+    if _QUOTA_ALERT_PATTERNS.search(body.message) and ctx["deployment"]:
+        try:
+            _dep = ctx["deployment"]
+            _dep_id = _dep.id if hasattr(_dep, "id") else str(_dep)
+            _dep_obj = session.get(Deployment, _dep_id)
+
+            _disable_alert = bool(_DISABLE_QUOTA_ALERT_RE.search(body.message))
+            _alert_pct_m = _QUOTA_ALERT_PCT_RE.search(body.message)
+            _new_alert_pct: int | None = int(_alert_pct_m.group(1)) if _alert_pct_m else None
+
+            if _dep_obj:
+                if _disable_alert:
+                    _dep_obj.quota_alert_threshold_pct = None
+                    session.add(_dep_obj)
+                    session.commit()
+                    session.refresh(_dep_obj)
+                elif _new_alert_pct is not None and 1 <= _new_alert_pct <= 99:
+                    _dep_obj.quota_alert_threshold_pct = _new_alert_pct
+                    session.add(_dep_obj)
+                    session.commit()
+                    session.refresh(_dep_obj)
+
+                _threshold = getattr(_dep_obj, "quota_alert_threshold_pct", None)
+                _monthly_quota = getattr(_dep_obj, "monthly_quota", None)
+
+                from datetime import timedelta as _td2
+                from sqlmodel import func as _sqlfunc2
+
+                _cutoff2 = _utcnow() - _td2(days=30)
+                _used2 = session.exec(
+                    select(_sqlfunc2.count(PredictionLog.id)).where(
+                        PredictionLog.deployment_id == _dep_id,
+                        PredictionLog.created_at >= _cutoff2,
+                    )
+                ).one()
+                _pct2 = round(_used2 / _monthly_quota * 100, 1) if _monthly_quota else None
+
+                quota_alert_event = {
+                    "deployment_id": _dep_id,
+                    "quota_alert_enabled": _threshold is not None,
+                    "quota_alert_threshold_pct": _threshold,
+                    "monthly_quota": _monthly_quota,
+                    "used_this_month": _used2,
+                    "pct_used": _pct2,
+                    "summary": (
+                        f"Quota alert set at {_threshold}% of {_monthly_quota} predictions "
+                        f"(currently at {_pct2}%)."
+                        if _threshold and _monthly_quota
+                        else (
+                            f"Quota alert set at {_threshold}% — configure a monthly quota to activate."
+                            if _threshold
+                            else "Quota alerts are disabled."
+                        )
+                    ),
+                }
+                system_prompt += (
+                    f"\n\n## Quota Alert Configuration\n"
+                    f"{quota_alert_event['summary']} "
+                    "Tell the analyst the current quota alert setting in plain English. "
+                    "If a threshold was just set, confirm it and explain that they will receive "
+                    "a webhook notification when usage reaches that percentage of their monthly quota. "
+                    "If alerts were disabled, confirm that. "
+                    "Remind them that webhooks must be configured to receive notifications."
+                )
+        except Exception:  # noqa: BLE001
+            pass  # Quota alert events are nice-to-have; never crash chat
+
     # Pre-compute follow-up suggestions (based on state + current message)
     current_state = detect_state(
         ctx["dataset"], ctx["feature_set"], ctx["model_runs"], ctx["deployment"]
@@ -7882,6 +7972,10 @@ def send_message(
         # Emit SLA / latency metrics card
         if sla_metrics_event:
             yield f"data: {json.dumps({'type': 'sla_metrics', 'sla_metrics': sla_metrics_event})}\n\n"
+
+        # Emit quota alert configuration card
+        if quota_alert_event:
+            yield f"data: {json.dumps({'type': 'quota_alert_config', 'quota_alert_config': quota_alert_event})}\n\n"
 
         # After text stream, opportunistically generate a chart if the
         # message is about data and we have a dataset loaded

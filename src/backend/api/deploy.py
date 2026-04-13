@@ -520,6 +520,8 @@ def get_quota_status(
     remaining = (quota - used) if quota else None
     pct_used = round((used / quota * 100), 1) if quota else None
 
+    alert_pct = getattr(deployment, "quota_alert_threshold_pct", None)
+
     return {
         "deployment_id": deployment_id,
         "quota_enabled": quota is not None,
@@ -529,7 +531,71 @@ def get_quota_status(
         "pct_used": pct_used,
         "rate_limit_rpm": rpm,
         "rate_limit_enabled": rpm is not None,
+        "quota_alert_threshold_pct": alert_pct,
+        "quota_alert_enabled": alert_pct is not None,
         "summary": _rate_limit_summary(rpm, quota),
+    }
+
+
+# ---------------------------------------------------------------------------
+# 4d. Quota alert threshold configuration
+# ---------------------------------------------------------------------------
+
+
+class QuotaAlertRequest(BaseModel):
+    threshold_pct: int | None = None  # 1-99 = set; 0 or null = remove
+
+
+@router.put("/api/deploy/{deployment_id}/quota-alert")
+def set_quota_alert(
+    deployment_id: str,
+    body: QuotaAlertRequest,
+    session: Session = Depends(get_session),
+):
+    """Configure or remove a quota usage alert threshold.
+
+    When monthly_quota is set and usage reaches this percentage of the quota,
+    registered webhooks with the 'quota_alert' event type are dispatched.
+    The alert fires exactly once when usage first crosses each threshold.
+
+    Pass threshold_pct=N (1-99) to enable alerts at N% of the monthly quota.
+    Pass threshold_pct=0 or null to disable quota alerts.
+    """
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment or not deployment.is_active:
+        raise HTTPException(status_code=404, detail="Deployment not found or inactive")
+
+    pct = body.threshold_pct
+    if pct is not None and pct < 0:
+        raise HTTPException(
+            status_code=422, detail="threshold_pct must be >= 0 (0 = remove alert)"
+        )
+    if pct is not None and pct > 99:
+        raise HTTPException(
+            status_code=422,
+            detail="threshold_pct must be <= 99 (100% means quota is already exhausted)",
+        )
+
+    deployment.quota_alert_threshold_pct = pct if pct and pct > 0 else None
+    session.add(deployment)
+    session.commit()
+
+    quota = getattr(deployment, "monthly_quota", None)
+    return {
+        "deployment_id": deployment_id,
+        "quota_alert_enabled": deployment.quota_alert_threshold_pct is not None,
+        "quota_alert_threshold_pct": deployment.quota_alert_threshold_pct,
+        "monthly_quota": quota,
+        "message": (
+            f"Quota alerts enabled at {deployment.quota_alert_threshold_pct}% of {quota} predictions."
+            if deployment.quota_alert_threshold_pct and quota
+            else (
+                "Quota alerts enabled at "
+                f"{deployment.quota_alert_threshold_pct}% — set a monthly_quota to activate."
+                if deployment.quota_alert_threshold_pct
+                else "Quota alerts disabled."
+            )
+        ),
     }
 
 
@@ -742,6 +808,29 @@ def make_prediction(
     )
     session.add(log_entry)
     session.commit()
+
+    # Quota alert: fire webhooks if usage just crossed the configured threshold
+    _quota_alert_pct = getattr(deployment, "quota_alert_threshold_pct", None)
+    _quota_cap = getattr(deployment, "monthly_quota", None)
+    if _quota_alert_pct and _quota_cap:
+        # Re-count including the prediction we just committed
+        _cutoff_alert = datetime.now(UTC).replace(tzinfo=None) - timedelta(days=30)
+        from sqlmodel import func as _func_alert
+
+        _used_now = session.exec(
+            select(_func_alert.count(PredictionLog.id)).where(
+                PredictionLog.deployment_id == deployment_id,
+                PredictionLog.created_at >= _cutoff_alert,
+            )
+        ).one()
+        import threading as _threading
+
+        _t = _threading.Thread(
+            target=_check_and_fire_quota_alert,
+            args=(deployment_id, _used_now, _quota_cap, _quota_alert_pct),
+            daemon=True,
+        )
+        _t.start()
 
     return {
         "deployment_id": deployment_id,
@@ -2301,6 +2390,50 @@ def _check_monthly_quota(
         )
     ).one()
     return used < quota, used, quota
+
+
+def _check_and_fire_quota_alert(
+    deployment_id: str,
+    used: int,
+    quota: int,
+    threshold_pct: int,
+) -> None:
+    """Fire quota_alert webhooks exactly once when usage crosses the threshold.
+
+    The alert fires only when the current prediction was the one that crossed
+    the threshold — i.e., used >= ceil(quota * threshold_pct / 100) but
+    (used - 1) was still below it. This prevents repeated alerts on every
+    subsequent prediction after the threshold is hit.
+
+    Dispatched in a daemon thread — never blocks the prediction response.
+    """
+    import math
+
+    crossing_count = math.ceil(quota * threshold_pct / 100)
+    if used != crossing_count:
+        return  # either already past threshold or not there yet
+
+    try:
+        from core.webhook import EVENT_QUOTA_ALERT, dispatch_webhooks
+
+        pct_used = round(used / quota * 100, 1)
+        remaining = quota - used
+        payload = {
+            "deployment_id": deployment_id,
+            "used_this_month": used,
+            "monthly_quota": quota,
+            "pct_used": pct_used,
+            "remaining": remaining,
+            "threshold_pct": threshold_pct,
+            "message": (
+                f"Quota alert: {used}/{quota} predictions used "
+                f"({pct_used}% — {remaining} remaining). "
+                f"Your configured alert threshold of {threshold_pct}% has been reached."
+            ),
+        }
+        dispatch_webhooks(deployment_id, EVENT_QUOTA_ALERT, payload)
+    except Exception:
+        pass  # Best-effort; never crash the prediction path
 
 
 # ---------------------------------------------------------------------------
