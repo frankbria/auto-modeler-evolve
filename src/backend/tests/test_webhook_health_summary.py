@@ -206,9 +206,7 @@ class TestWebhookHealthHistorySeparation:
 
 
 @pytest.mark.asyncio
-async def test_no_webhook_config_returns_no_webhooks_status(
-    ac, project_id, dataset_id
-):
+async def test_no_webhook_config_returns_no_webhooks_status(ac, project_id, dataset_id):
     """When no webhooks are configured, health summary returns no_webhooks status."""
     with mock.patch("anthropic.Anthropic") as mock_anthropic:
         mock_client = mock.MagicMock()
@@ -263,7 +261,14 @@ async def test_health_event_has_required_fields(
     health_events = [e for e in events if e.get("type") == "webhook_health_summary"]
     assert len(health_events) == 1
     data = health_events[0]["webhook_health_summary"]
-    for field in ("overall_status", "total_webhooks", "total_events", "total_failed", "deployments", "summary"):
+    for field in (
+        "overall_status",
+        "total_webhooks",
+        "total_events",
+        "total_failed",
+        "deployments",
+        "summary",
+    ):
         assert field in data, f"Missing field: {field}"
 
 
@@ -312,9 +317,7 @@ async def test_with_webhook_config_includes_deployment(
 
 
 @pytest.mark.asyncio
-async def test_history_phrase_does_not_trigger_health(
-    ac, project_id, dataset_id
-):
+async def test_history_phrase_does_not_trigger_health(ac, project_id, dataset_id):
     """A webhook history phrase should NOT emit webhook_health_summary."""
     with mock.patch("anthropic.Anthropic") as mock_anthropic:
         mock_client = mock.MagicMock()
