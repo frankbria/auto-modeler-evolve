@@ -2461,6 +2461,25 @@ _DISABLE_QUOTA_ALERT_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Keywords that trigger class imbalance detection via chat
+_CLASS_IMBALANCE_PATTERNS = re.compile(
+    r"(?i)\b("
+    r"class\s+imbalance|imbalanced?\s+(?:class(?:es)?|data(?:set)?)|"
+    r"(?:data(?:set)?)\s+is\s+imbalanced?|"
+    r"imbalanced?\s+target|skewed\s+(?:class(?:es)?|target|data)|"
+    r"rare\s+(?:class|event|case|positive|category)|"
+    r"minority\s+class|majority\s+class|"
+    r"my\s+(?:positive|negative|target)\s+class\s+is\s+(?:rare|small|low|tiny|few)|"
+    r"(?:only|just)\s+\d+\s*%?\s+(?:are\s+)?(?:positive|negative|true|churn|fraud)|"
+    r"handle\s+imbalance|fix\s+imbalance|deal\s+with\s+imbalance|"
+    r"class[\s_]weight|smote|oversample|undersample|balance\s+(?:my\s+)?(?:class(?:es)?|data|target)|"
+    r"unbalanced\s+(?:class(?:es)?|data|target)|"
+    r"is\s+(?:my\s+)?(?:data|target|dataset)\s+(?:balanced|imbalanced|unbalanced)|"
+    r"check\s+(?:for\s+)?(?:class\s+)?imbalance"
+    r")\b",
+    re.IGNORECASE,
+)
+
 
 def _extract_preset_definition(message: str) -> dict | None:
     """Extract preset name and feature key=value pairs from a natural language message.
@@ -8082,6 +8101,79 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Schedule events are nice-to-have; never crash chat
 
+    # Class imbalance detection via chat
+    class_imbalance_event: dict | None = None
+    if _CLASS_IMBALANCE_PATTERNS.search(body.message) and ctx["dataset"]:
+        try:
+            _ci_dataset = ctx["dataset"]
+            _ci_fs = ctx["feature_set"]
+            _ci_file = getattr(_ci_dataset, "file_path", None)
+            _ci_target = None
+            if _ci_fs:
+                _ci_target = getattr(_ci_fs, "target_column", None)
+
+            if _ci_file and _ci_target and Path(_ci_file).exists():
+                from core.trainer import detect_class_imbalance as _detect_imbalance
+
+                _ci_df = pd.read_csv(_ci_file)
+                if _ci_target in _ci_df.columns:
+                    _ci_problem_type = (
+                        getattr(_ci_fs, "problem_type", None) or "unknown"
+                    )
+                    if _ci_problem_type == "classification":
+                        _ci_y = _ci_df[_ci_target].dropna().astype(str).values
+                        _ci_result = _detect_imbalance(_ci_y)
+                        _ci_result["project_id"] = project_id
+                        _ci_result["target_column"] = _ci_target
+                        _ci_result["problem_type"] = _ci_problem_type
+                        class_imbalance_event = _ci_result
+                        _ci_pct = round(
+                            (_ci_result.get("minority_ratio") or 0) * 100, 1
+                        )
+                        system_prompt += (
+                            f"\n\n## Class Imbalance Analysis\n"
+                            f"Target: {_ci_target} | Problem type: {_ci_problem_type}\n"
+                            + (
+                                f"Imbalanced: yes — minority class is {_ci_pct}% of rows. "
+                                f"Recommended strategy: {_ci_result['recommended_strategy']}. "
+                                f"{_ci_result['explanation']}\n\n"
+                                "Explain class imbalance in plain English: the model will be "
+                                "biased toward the majority class and will miss the rare "
+                                "cases that often matter most (fraud, churn, failures). "
+                                f"Recommend the {_ci_result['recommended_strategy']} strategy "
+                                "and explain how to apply it via the Models tab."
+                                if _ci_result["is_imbalanced"]
+                                else f"Balanced: classes are well-distributed. "
+                                f"{_ci_result['explanation']}\n\n"
+                                "Reassure the analyst their target classes are balanced — "
+                                "no special handling is needed before training."
+                            )
+                        )
+                    else:
+                        # Regression — class imbalance doesn't apply
+                        class_imbalance_event = {
+                            "project_id": project_id,
+                            "target_column": _ci_target,
+                            "problem_type": _ci_problem_type,
+                            "is_imbalanced": False,
+                            "class_distribution": [],
+                            "minority_class": None,
+                            "minority_ratio": None,
+                            "recommended_strategy": "none",
+                            "explanation": (
+                                "Class imbalance only applies to classification problems. "
+                                "Your target column is numeric (regression) — no balancing needed."
+                            ),
+                        }
+                        system_prompt += (
+                            "\n\n## Class Imbalance\n"
+                            "Class imbalance does not apply to regression problems. "
+                            "Explain that the target column is continuous, so class balancing "
+                            "strategies are not relevant here."
+                        )
+        except Exception:  # noqa: BLE001
+            pass  # Nice-to-have; never crash chat
+
     # Pre-compute follow-up suggestions (based on state + current message)
     current_state = detect_state(
         ctx["dataset"], ctx["feature_set"], ctx["model_runs"], ctx["deployment"]
@@ -8459,6 +8551,10 @@ def send_message(
         # Emit A/B test status / action confirmation
         if ab_test_result_event:
             yield f"data: {json.dumps({'type': 'ab_test_result', 'ab_test_result': ab_test_result_event})}\n\n"
+
+        # Emit class imbalance detection result
+        if class_imbalance_event:
+            yield f"data: {json.dumps({'type': 'class_imbalance_check', 'class_imbalance_check': class_imbalance_event})}\n\n"
 
         # After text stream, opportunistically generate a chart if the
         # message is about data and we have a dataset loaded

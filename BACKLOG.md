@@ -49,6 +49,17 @@ the time is better spent on real features.
 
 ## Currently Working On
 
+## Day 34 (04:00) — Done
+**Track C — Class Imbalance Detection via Chat.** Wired the existing `detect_class_imbalance()` pure function into the chat pipeline. Analysts can now ask "is my data imbalanced?", "my minority class is rare", "should I use SMOTE?" and receive a `ClassImbalanceChatCard` inline in conversation showing the actual class distribution and a concrete strategy recommendation.
+- `_CLASS_IMBALANCE_PATTERNS` (10 NL variants) + handler in `chat.py`. Root-cause bug fixed: `body.project_id` → `project_id` (path parameter); `ChatMessage` Pydantic model does not expose project_id — was silently swallowed by `except Exception: pass`, leaving `class_imbalance_event = None`.
+- SSE `{type:"class_imbalance_check"}`. `ClassImbalanceChatCard` (rose/emerald/muted states): `DistributionBar` sub-component (minority bars rose-colored), strategy panel (class_weight/smote/threshold/none with hints), "Go to Models tab" CTA. Zustand `attachClassImbalanceCheckToLastMessage`; SSE wired in `page.tsx`.
+- 22 backend + 14 frontend = 36 new tests. Total: 3091 backend + 1640 frontend = 4731, all passing. Backend lint: clean. Frontend build: clean.
+
+**What's next:**
+- Track C: Ensemble methods (VotingClassifier/VotingRegressor, StackingClassifier/StackingRegressor) via chat — "what's the best ensemble for this problem?".
+- Track D: Cross-deployment webhook health dashboard (all webhook failures across projects at once).
+- Track E: Run the "lunch break" flow end-to-end as a real analyst; audit friction in the VP-sharing flow.
+
 ## Day 33 (20:00) — Done
 **Track D — Webhook Event History via Chat.** Closed the gap between webhooks firing silently and analysts having visibility into their integration health. Analysts can now ask "what webhooks fired recently?" or "show webhook history" and receive a `WebhookHistoryCard` inline in conversation showing a per-event timeline.
 - `WebhookEvent` SQLModel table persists each dispatch attempt (webhook_id, deployment_id, event_type, fired_at, status_code). `_dispatch_in_thread()` in `core/webhook.py` writes a row after each HTTP call.

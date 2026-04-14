@@ -115,6 +115,7 @@ interface AppState {
   attachScheduleSetToLastMessage: (schedule_set: import("./types").ScheduleSetResult) => void
   attachABTestResultToLastMessage: (ab_test_result: import("./types").ABTestChatResult) => void
   attachWebhookHistoryToLastMessage: (webhook_history: import("./types").WebhookHistoryResult) => void
+  attachClassImbalanceCheckToLastMessage: (class_imbalance_check: import("./types").ClassImbalanceResult) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -785,6 +786,15 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, webhook_history }
+      }
+      return { messages }
+    }),
+  attachClassImbalanceCheckToLastMessage: (class_imbalance_check) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, class_imbalance_check }
       }
       return { messages }
     }),

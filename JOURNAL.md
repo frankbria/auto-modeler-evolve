@@ -1,5 +1,19 @@
 # Journal
 
+## Day 34 — 04:00 — Class Imbalance Detection via Chat: SSE card with distribution bars + strategy recommendation (3091 backend + 1640 frontend = 4731 tests)
+
+No community issues. Track C continuation: the class imbalance feature (backend pure function + model panel card) had no chat integration. An analyst typing "is my data imbalanced?" or "minority class is rare" would get a generic LLM response rather than a data-driven card showing their actual class distribution and a concrete strategy recommendation.
+
+**What changed:**
+
+`_CLASS_IMBALANCE_PATTERNS` regex (10 NL variants: "class imbalance", "imbalanced data/dataset/target", "dataset is imbalanced", "rare class/event/case/positive", "minority class", "positive/target class is rare/small", "class_weight", "SMOTE", "oversample/undersample", "balance my classes/data", "unbalanced target", "is my data balanced/imbalanced", "check for class imbalance") in `chat.py`. Handler block in `send_message()` guards on pattern match AND `ctx["dataset"]`: reads `feature_set.problem_type`; for classification, calls `detect_class_imbalance(target_col_values)` (existing pure function from `core/trainer.py`), enriches dict with `project_id`, `target_column`, `problem_type`, stores as `class_imbalance_event`, injects plain-English analysis into `system_prompt`; for regression, emits N/A event explaining class imbalance is not applicable. SSE emit `{type:"class_imbalance_check", class_imbalance_check:{...}}` inside `stream_response()`.
+
+**Root-cause bug fixed:** `body.project_id` raised `AttributeError: 'ChatMessage' object has no attribute 'project_id'` because the Pydantic model doesn't expose the path parameter — replaced with `project_id` (the function's path argument). This bug was silently swallowed by `except Exception: pass`, leaving `class_imbalance_event = None` and no SSE event. Confirmed via systematic debug prints tracing the exact failure line.
+
+`ClassImbalanceChatCard` (rose border on imbalance, emerald on balanced, muted on regression): `DistributionBar` sub-component (rose bars for minority classes with `<20%` ratio, standard primary bars otherwise, row per class with percentage + count), strategy info panel (class_weight/smote/threshold/none with color-coded badge + plain-English hint), "Go to Models tab" CTA button (`onSwitchTab` callback). `class_imbalance_check?: ClassImbalanceResult` added to `ChatMessage` type; `target_column?: string` added to `ClassImbalanceResult`; `attachClassImbalanceCheckToLastMessage` Zustand action; SSE handler + card render wired in `project/[id]/page.tsx`.
+
+**Test count:** 22 backend (12 pattern + 6 pure-function + 4 integration) + 14 frontend (imbalanced/balanced/regression render, interaction, store) = 36 new tests. Total: 3091 backend + 1640 frontend = 4731, all passing. Backend lint: clean. Frontend build: clean.
+
 ## Day 33 — 20:00 — Webhook Event History via Chat: per-event timeline inline in conversation (3069 backend + 1626 frontend = 4695 tests)
 
 No community issues. Continued Track D deployment depth. The webhook system (built Day 21) fires events and signs payloads — but had no history store: every dispatch updated `WebhookConfig.last_fired_at` and `last_status_code` in-place, overwriting the previous result. Analysts asking "did the batch webhook fire this morning?" or "why did my Slack integration stop working?" had no data to surface.

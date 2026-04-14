@@ -473,6 +473,7 @@ export interface ChatMessage {
   schedule_set?: ScheduleSetResult
   ab_test_result?: ABTestChatResult
   webhook_history?: WebhookHistoryResult
+  class_imbalance_check?: ClassImbalanceResult
 }
 
 export interface SegmentPerformanceSegment {
@@ -572,6 +573,7 @@ export interface ClassDistributionEntry {
 export interface ClassImbalanceResult {
   project_id: string
   problem_type: string
+  target_column?: string
   is_imbalanced: boolean
   class_distribution: ClassDistributionEntry[]
   minority_class: string | null

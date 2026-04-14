@@ -84,6 +84,7 @@ import { QuotaAlertCard } from "@/components/deploy/quota-alert-card"
 import { ScheduleSetChatCard } from "@/components/deploy/schedule-set-chat-card"
 import { ABTestChatCard } from "@/components/deploy/ab-test-chat-card"
 import { WebhookHistoryCard } from "@/components/deploy/webhook-history-card"
+import { ClassImbalanceChatCard } from "@/components/models/class-imbalance-chat-card"
 import { PairCorrelationCard } from "@/components/data/pair-correlation-card"
 import { StatQueryCard } from "@/components/data/stat-query-card"
 import { SummaryStatsCard } from "@/components/data/summary-stats-card"
@@ -249,6 +250,7 @@ export default function ProjectWorkspace() {
     attachScheduleSetToLastMessage,
     attachABTestResultToLastMessage,
     attachWebhookHistoryToLastMessage,
+    attachClassImbalanceCheckToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -624,6 +626,8 @@ export default function ProjectWorkspace() {
                 attachABTestResultToLastMessage(json.ab_test_result as import("@/lib/types").ABTestChatResult)
               } else if (json.type === "webhook_history" && json.webhook_history) {
                 attachWebhookHistoryToLastMessage(json.webhook_history as import("@/lib/types").WebhookHistoryResult)
+              } else if (json.type === "class_imbalance_check" && json.class_imbalance_check) {
+                attachClassImbalanceCheckToLastMessage(json.class_imbalance_check as import("@/lib/types").ClassImbalanceResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -712,6 +716,7 @@ export default function ProjectWorkspace() {
     attachScheduleSetToLastMessage,
     attachABTestResultToLastMessage,
     attachWebhookHistoryToLastMessage,
+    attachClassImbalanceCheckToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -1162,6 +1167,12 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.webhook_history && (
                       <WebhookHistoryCard data={msg.webhook_history} />
+                    )}
+                    {msg.class_imbalance_check && (
+                      <ClassImbalanceChatCard
+                        data={msg.class_imbalance_check}
+                        onSwitchTab={(tab) => setActiveTab(tab as RightTab)}
+                      />
                     )}
                   </div>
                 </div>
