@@ -474,6 +474,7 @@ export interface ChatMessage {
   ab_test_result?: ABTestChatResult
   webhook_history?: WebhookHistoryResult
   class_imbalance_check?: ClassImbalanceResult
+  webhook_health_summary?: WebhookHealthSummaryResult
 }
 
 export interface SegmentPerformanceSegment {
@@ -580,6 +581,33 @@ export interface ClassImbalanceResult {
   minority_ratio: number | null
   recommended_strategy: "class_weight" | "smote" | "threshold" | "none"
   explanation: string
+}
+
+export interface WebhookHealthRow {
+  webhook_id: string
+  url: string
+  event_types: string[]
+  total_events: number
+  failed_events: number
+  success_rate: number | null
+  last_event: string | null
+  status: "healthy" | "warning" | "critical" | "no_events"
+}
+
+export interface WebhookDeploymentHealth {
+  deployment_id: string
+  deployment_name: string
+  webhooks: WebhookHealthRow[]
+  status: "healthy" | "warning" | "critical" | "no_events"
+}
+
+export interface WebhookHealthSummaryResult {
+  overall_status: "healthy" | "warning" | "critical" | "no_events" | "no_webhooks"
+  total_webhooks: number
+  total_events: number
+  total_failed: number
+  deployments: WebhookDeploymentHealth[]
+  summary: string
 }
 
 export interface SplitStrategyInfo {

@@ -2480,6 +2480,21 @@ _CLASS_IMBALANCE_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# Keywords that trigger a cross-deployment webhook health summary
+_WEBHOOK_HEALTH_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"(?:are|is)\s+(?:my\s+)?webhooks?\s+(?:working|ok|healthy|failing|broken|active)\b|"
+    r"webhook\s+(?:health|status|errors?|failure|failures?|success)\b|"
+    r"(?:any\s+)?(?:failed|failing|broken)\s+webhooks?\b|"
+    r"webhook\s+integration\s+(?:status|health|check)\b|"
+    r"webhook\s+failure\s+rate\b|"
+    r"check\s+(?:my\s+)?webhook\s+(?:health|status|errors?)\b|"
+    r"webhook\s+health\s+(?:across|for|summary|dashboard|overview)\b|"
+    r"(?:show|list|view|get)\s+(?:my\s+)?webhook\s+health\b"
+    r")",
+    re.IGNORECASE,
+)
+
 
 def _extract_preset_definition(message: str) -> dict | None:
     """Extract preset name and feature key=value pairs from a natural language message.
@@ -8174,6 +8189,138 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Nice-to-have; never crash chat
 
+    # Cross-deployment webhook health summary
+    webhook_health_event: dict | None = None
+    if _WEBHOOK_HEALTH_PATTERNS.search(body.message) and not _WEBHOOK_HISTORY_PATTERNS.search(body.message):
+        try:
+            from models.webhook_config import WebhookConfig as _WHCfgH
+            from models.webhook_event import WebhookEvent as _WHEvtH
+            from models.deployment import Deployment as _DepH
+
+            # Find all active deployments in this project
+            _wh_deps = session.exec(
+                select(_DepH).where(
+                    _DepH.project_id == project_id,
+                    _DepH.is_active == True,  # noqa: E712
+                )
+            ).all()
+
+            _wh_dep_summaries = []
+            _wh_total_events = 0
+            _wh_total_failed = 0
+            _wh_total_webhooks = 0
+
+            for _dep in _wh_deps:
+                # Get webhook configs for this deployment
+                _wh_cfgs = session.exec(
+                    select(_WHCfgH).where(_WHCfgH.deployment_id == _dep.id)
+                ).all()
+                if not _wh_cfgs:
+                    continue
+
+                _dep_webhook_rows = []
+                for _cfg in _wh_cfgs:
+                    _wh_total_webhooks += 1
+                    _evts = session.exec(
+                        select(_WHEvtH)
+                        .where(_WHEvtH.webhook_id == _cfg.id)
+                        .order_by(_WHEvtH.fired_at.desc())
+                        .limit(50)
+                    ).all()
+                    _n_total = len(_evts)
+                    _n_failed = sum(
+                        1 for e in _evts
+                        if e.status_code is not None and not (200 <= e.status_code < 300)
+                    )
+                    _last_evt = _evts[0].fired_at.isoformat() if _evts else None
+                    _success_rate = (
+                        round((_n_total - _n_failed) / _n_total * 100, 1)
+                        if _n_total > 0
+                        else None
+                    )
+                    _wh_status = (
+                        "no_events" if _n_total == 0
+                        else "healthy" if _n_failed == 0
+                        else "warning" if _n_failed / _n_total < 0.1
+                        else "critical"
+                    )
+                    _wh_total_events += _n_total
+                    _wh_total_failed += _n_failed
+                    try:
+                        _wh_evt_types = list({e.event_type for e in _evts})
+                    except Exception:  # noqa: BLE001
+                        _wh_evt_types = []
+                    _dep_webhook_rows.append({
+                        "webhook_id": _cfg.id,
+                        "url": _cfg.url,
+                        "event_types": _wh_evt_types,
+                        "total_events": _n_total,
+                        "failed_events": _n_failed,
+                        "success_rate": _success_rate,
+                        "last_event": _last_evt,
+                        "status": _wh_status,
+                    })
+
+                if _dep_webhook_rows:
+                    _dep_status = (
+                        "no_events" if all(r["status"] == "no_events" for r in _dep_webhook_rows)
+                        else "critical" if any(r["status"] == "critical" for r in _dep_webhook_rows)
+                        else "warning" if any(r["status"] == "warning" for r in _dep_webhook_rows)
+                        else "healthy"
+                    )
+                    _dep_name = _dep.model_run_id[:8] if _dep.model_run_id else _dep.id[:8]
+                    _wh_dep_summaries.append({
+                        "deployment_id": _dep.id,
+                        "deployment_name": f"Model {_dep_name}",
+                        "webhooks": _dep_webhook_rows,
+                        "status": _dep_status,
+                    })
+
+            _wh_overall = (
+                "no_webhooks" if _wh_total_webhooks == 0
+                else "critical" if any(d["status"] == "critical" for d in _wh_dep_summaries)
+                else "warning" if any(d["status"] == "warning" for d in _wh_dep_summaries)
+                else "no_events" if _wh_total_events == 0
+                else "healthy"
+            )
+
+            if _wh_total_webhooks == 0:
+                _wh_summary = "No webhooks are configured for any deployment in this project."
+            elif _wh_total_events == 0:
+                _wh_summary = (
+                    f"{_wh_total_webhooks} webhook{'s' if _wh_total_webhooks != 1 else ''} configured "
+                    "but no events have fired yet."
+                )
+            elif _wh_total_failed == 0:
+                _wh_summary = (
+                    f"All {_wh_total_webhooks} webhook{'s' if _wh_total_webhooks != 1 else ''} healthy. "
+                    f"{_wh_total_events} event{'s' if _wh_total_events != 1 else ''} delivered successfully."
+                )
+            else:
+                _wh_fail_pct = round(_wh_total_failed / _wh_total_events * 100, 1)
+                _wh_summary = (
+                    f"{_wh_total_failed} of {_wh_total_events} webhook event{'s' if _wh_total_events != 1 else ''} "
+                    f"failed ({_wh_fail_pct}% failure rate). Check the URLs are reachable."
+                )
+
+            webhook_health_event = {
+                "overall_status": _wh_overall,
+                "total_webhooks": _wh_total_webhooks,
+                "total_events": _wh_total_events,
+                "total_failed": _wh_total_failed,
+                "deployments": _wh_dep_summaries,
+                "summary": _wh_summary,
+            }
+            system_prompt += (
+                f"\n\n## Webhook Health Summary\n{_wh_summary}\n\n"
+                f"Overall status: {_wh_overall}. "
+                "Summarise the webhook health for the analyst. "
+                "If there are failures, advise them to check the webhook URL is reachable. "
+                "If no webhooks are configured, explain how to register one via the Deployment panel."
+            )
+        except Exception:  # noqa: BLE001
+            pass  # Nice-to-have; never crash chat
+
     # Pre-compute follow-up suggestions (based on state + current message)
     current_state = detect_state(
         ctx["dataset"], ctx["feature_set"], ctx["model_runs"], ctx["deployment"]
@@ -8555,6 +8702,10 @@ def send_message(
         # Emit class imbalance detection result
         if class_imbalance_event:
             yield f"data: {json.dumps({'type': 'class_imbalance_check', 'class_imbalance_check': class_imbalance_event})}\n\n"
+
+        # Emit cross-deployment webhook health summary
+        if webhook_health_event:
+            yield f"data: {json.dumps({'type': 'webhook_health_summary', 'webhook_health_summary': webhook_health_event})}\n\n"
 
         # After text stream, opportunistically generate a chart if the
         # message is about data and we have a dataset loaded

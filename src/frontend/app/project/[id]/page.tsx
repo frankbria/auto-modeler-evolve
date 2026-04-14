@@ -85,6 +85,7 @@ import { ScheduleSetChatCard } from "@/components/deploy/schedule-set-chat-card"
 import { ABTestChatCard } from "@/components/deploy/ab-test-chat-card"
 import { WebhookHistoryCard } from "@/components/deploy/webhook-history-card"
 import { ClassImbalanceChatCard } from "@/components/models/class-imbalance-chat-card"
+import { WebhookHealthSummaryCard } from "@/components/deploy/webhook-health-summary-card"
 import { PairCorrelationCard } from "@/components/data/pair-correlation-card"
 import { StatQueryCard } from "@/components/data/stat-query-card"
 import { SummaryStatsCard } from "@/components/data/summary-stats-card"
@@ -251,6 +252,7 @@ export default function ProjectWorkspace() {
     attachABTestResultToLastMessage,
     attachWebhookHistoryToLastMessage,
     attachClassImbalanceCheckToLastMessage,
+    attachWebhookHealthSummaryToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -628,6 +630,8 @@ export default function ProjectWorkspace() {
                 attachWebhookHistoryToLastMessage(json.webhook_history as import("@/lib/types").WebhookHistoryResult)
               } else if (json.type === "class_imbalance_check" && json.class_imbalance_check) {
                 attachClassImbalanceCheckToLastMessage(json.class_imbalance_check as import("@/lib/types").ClassImbalanceResult)
+              } else if (json.type === "webhook_health_summary" && json.webhook_health_summary) {
+                attachWebhookHealthSummaryToLastMessage(json.webhook_health_summary as import("@/lib/types").WebhookHealthSummaryResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -717,6 +721,7 @@ export default function ProjectWorkspace() {
     attachABTestResultToLastMessage,
     attachWebhookHistoryToLastMessage,
     attachClassImbalanceCheckToLastMessage,
+    attachWebhookHealthSummaryToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -1173,6 +1178,9 @@ export default function ProjectWorkspace() {
                         data={msg.class_imbalance_check}
                         onSwitchTab={(tab) => setActiveTab(tab as RightTab)}
                       />
+                    )}
+                    {msg.webhook_health_summary && (
+                      <WebhookHealthSummaryCard data={msg.webhook_health_summary} />
                     )}
                   </div>
                 </div>
