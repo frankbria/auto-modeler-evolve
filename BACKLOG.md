@@ -49,6 +49,18 @@ the time is better spent on real features.
 
 ## Currently Working On
 
+## Day 34 (12:00) — Done
+**Track D — Cross-Deployment Webhook Health Summary via Chat.** Analysts can now ask "are my webhooks working?", "any webhook failures?", "webhook health", or "check webhook status" and receive a `WebhookHealthSummaryCard` inline in conversation showing the health of every webhook across all active deployments in the project.
+- `_WEBHOOK_HEALTH_PATTERNS` (8 NL variants) + mutual-exclusion guard (`not _WEBHOOK_HISTORY_PATTERNS.search(...)`) so health and history cards don't both fire on the same message.
+- Handler aggregates `WebhookConfig` + `WebhookEvent` rows per deployment: per-webhook stats (total events, failed events, success rate, last event, status: healthy/warning/critical/no_events), per-deployment rollup, overall project status (healthy/warning/critical/no_events/no_webhooks).
+- SSE `{type:"webhook_health_summary"}`. `WebhookHealthSummaryCard` (border color adapts: emerald=healthy, amber=warning, red=critical, slate=no_events/no_webhooks): 🔗 icon, overall status badge + webhook count badge, summary paragraph, per-deployment section with per-webhook URL + event stats + status badge, stats footer, guidance footer.
+- 16 backend + 19 frontend = 35 new tests. Total: 3107 backend + 1659 frontend = 4766, all passing. Backend lint: clean. Frontend build + tests: clean.
+
+**What's next:**
+- Track C: Ensemble methods (VotingClassifier/VotingRegressor, StackingClassifier/StackingRegressor) via chat — "what's the best ensemble for this problem?".
+- Track D: Export as self-contained prediction service (ZIP + uvicorn) — "package my model for deployment anywhere".
+- Track E: Run the "lunch break" flow end-to-end as a real analyst; audit friction in the VP-sharing flow.
+
 ## Day 34 (04:00) — Done
 **Track C — Class Imbalance Detection via Chat.** Wired the existing `detect_class_imbalance()` pure function into the chat pipeline. Analysts can now ask "is my data imbalanced?", "my minority class is rare", "should I use SMOTE?" and receive a `ClassImbalanceChatCard` inline in conversation showing the actual class distribution and a concrete strategy recommendation.
 - `_CLASS_IMBALANCE_PATTERNS` (10 NL variants) + handler in `chat.py`. Root-cause bug fixed: `body.project_id` → `project_id` (path parameter); `ChatMessage` Pydantic model does not expose project_id — was silently swallowed by `except Exception: pass`, leaving `class_imbalance_event = None`.

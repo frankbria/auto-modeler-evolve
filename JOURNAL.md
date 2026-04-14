@@ -1,5 +1,19 @@
 # Journal
 
+## Day 34 — 12:00 — Cross-Deployment Webhook Health Summary via Chat: per-webhook failure rates across all deployments (3107 backend + 1659 frontend = 4766 tests)
+
+No community issues. Track D continuation: the webhook system (built Day 21) and webhook event history (built Day 33) let analysts see what fired — but an analyst asking "are my webhooks working?" or "any webhook failures?" had no way to get a health overview across ALL their deployed models at once. The gap: someone running three models in production might have a webhook silently failing on one of them for days without knowing.
+
+**What changed:**
+
+`_WEBHOOK_HEALTH_PATTERNS` regex (8 NL variants: "are my webhooks working?", "any failed webhooks?", "webhook health", "webhook status", "webhook errors", "check webhook health", "webhook failure rate", "webhook integration status") in `chat.py`. Mutual-exclusion guard (`not _WEBHOOK_HISTORY_PATTERNS.search(...)`) so health and history cards don't both fire on the same message (critical because "webhook events" could otherwise trigger both). Handler aggregates `WebhookConfig` + `WebhookEvent` rows across all active `Deployment` records in the project: per-webhook stats (total_events, failed_events, success_rate, last_event, status: healthy/warning/critical/no_events — critical when ≥10% failure, warning when <10% but >0%), per-deployment rollup, overall project status (no_webhooks when none configured, otherwise worst-case escalation). System prompt injected with health summary for Claude narration.
+
+`WebhookHealthSummaryCard` (border adapts: emerald=healthy, amber=warning, red=critical, slate=no_events/no_webhooks; 🔗 icon): overall status badge + webhook count badge in header; summary paragraph; per-deployment section showing deployment name + status badge; per-webhook row (URL, event count, failed count, success rate %, last event timestamp, status badge); stats footer (total events, failed events, failure %); guidance footer pointing to Deployment panel. `WebhookHealthRow` + `WebhookDeploymentHealth` + `WebhookHealthSummaryResult` TypeScript interfaces; `attachWebhookHealthSummaryToLastMessage` Zustand action; SSE handler and render wired in `page.tsx`.
+
+**Root-cause found during debug:** Integration tests used `/api/chat/{project_id}/message` instead of `/api/chat/{project_id}` (router prefix is `prefix="/api/chat"`, route is `"/{project_id}"`). The 404 was swallowed, returning 0 SSE events — the handler appeared to do nothing. Fixed by correcting URL in all 4 integration test cases.
+
+**Test count:** 10 `TestWebhookHealthPatterns` tests (8 positive + 2 negative) + 3 `TestWebhookHealthHistorySeparation` tests (history phrase hits history not health, exclusion confirmed) + 3 integration tests (no webhooks → no_webhooks status, required fields present, webhook config → deployment appears with no_events status) + 1 separation integration test (history phrase emits no health event) = 16 backend; 19 frontend (no-webhooks region/icon/heading/badge/guidance/summary, healthy: Healthy badge + count + deployment section + URL + event stats + footer, critical: Critical badge + URL + failure rate, store attach/no-attach/no-crash). **16 backend + 19 frontend = 35 new tests. Total: 3107 backend + 1659 frontend = 4766, all passing. Backend lint: clean. Frontend build + lint: clean.**
+
 ## Day 34 — 04:00 — Class Imbalance Detection via Chat: SSE card with distribution bars + strategy recommendation (3091 backend + 1640 frontend = 4731 tests)
 
 No community issues. Track C continuation: the class imbalance feature (backend pure function + model panel card) had no chat integration. An analyst typing "is my data imbalanced?" or "minority class is rare" would get a generic LLM response rather than a data-driven card showing their actual class distribution and a concrete strategy recommendation.
