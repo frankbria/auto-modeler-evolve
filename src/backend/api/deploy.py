@@ -3566,6 +3566,78 @@ def test_webhook(
 
 
 # ---------------------------------------------------------------------------
+# Webhook event history
+# ---------------------------------------------------------------------------
+
+
+@router.get("/api/deploy/{deployment_id}/webhook-history")
+def webhook_event_history(
+    deployment_id: str,
+    limit: int = 20,
+    session: Session = Depends(get_session),
+):
+    """Return the most recent webhook dispatch events for this deployment.
+
+    Events are ordered most-recent-first.  ``status_code`` of 0 means the
+    HTTP request itself failed (network error / timeout); None means the event
+    was created but status not yet recorded (shouldn't happen in practice).
+    """
+    dep = session.get(Deployment, deployment_id)
+    if not dep:
+        raise HTTPException(status_code=404, detail="Deployment not found")
+
+    from models.webhook_event import WebhookEvent
+
+    limit = max(1, min(limit, 100))
+    events = session.exec(
+        select(WebhookEvent)
+        .where(WebhookEvent.deployment_id == deployment_id)
+        .order_by(WebhookEvent.fired_at.desc())
+        .limit(limit)
+    ).all()
+
+    # Pull webhook URLs once so we can surface them per-event
+    hooks = session.exec(
+        select(WebhookConfig).where(WebhookConfig.deployment_id == deployment_id)
+    ).all()
+    url_by_id = {h.id: h.url for h in hooks}
+
+    event_list = [
+        {
+            "id": e.id,
+            "webhook_id": e.webhook_id,
+            "webhook_url": url_by_id.get(e.webhook_id, "(deleted)"),
+            "event_type": e.event_type,
+            "fired_at": e.fired_at.isoformat() if e.fired_at else None,
+            "status_code": e.status_code,
+            "success": (200 <= (e.status_code or 0) < 300) if e.status_code else False,
+        }
+        for e in events
+    ]
+
+    # Plain-English summary
+    total = len(event_list)
+    if total == 0:
+        summary = "No webhook events recorded yet for this deployment."
+    else:
+        successes = sum(1 for e in event_list if e["success"])
+        types_seen = list(dict.fromkeys(e["event_type"] for e in event_list))
+        type_str = ", ".join(types_seen[:3])
+        summary = (
+            f"{total} recent event{'s' if total != 1 else ''} "
+            f"({successes} successful). "
+            f"Event types: {type_str}."
+        )
+
+    return {
+        "deployment_id": deployment_id,
+        "total": total,
+        "events": event_list,
+        "summary": summary,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Champion-challenger A/B testing
 # ---------------------------------------------------------------------------
 

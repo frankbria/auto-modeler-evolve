@@ -472,6 +472,7 @@ export interface ChatMessage {
   quota_alert_config?: QuotaAlertConfig
   schedule_set?: ScheduleSetResult
   ab_test_result?: ABTestChatResult
+  webhook_history?: WebhookHistoryResult
 }
 
 export interface SegmentPerformanceSegment {
@@ -1831,6 +1832,22 @@ export interface ABTestChatResult {
   challenger_metrics?: ABVariantMetrics
   significance?: ABSignificance
   created_at?: string | null
+}
+
+export interface WebhookEventRecord {
+  id: string
+  webhook_id: string
+  webhook_url: string
+  event_type: string
+  fired_at: string | null
+  status_code: number | null
+  success: boolean
+}
+
+export interface WebhookHistoryResult {
+  total: number
+  events: WebhookEventRecord[]
+  summary: string
 }
 
 export interface CalibrationPoint {

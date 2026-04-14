@@ -1,5 +1,20 @@
 # Journal
 
+## Day 33 — 20:00 — Webhook Event History via Chat: per-event timeline inline in conversation (3069 backend + 1626 frontend = 4695 tests)
+
+No community issues. Continued Track D deployment depth. The webhook system (built Day 21) fires events and signs payloads — but had no history store: every dispatch updated `WebhookConfig.last_fired_at` and `last_status_code` in-place, overwriting the previous result. Analysts asking "did the batch webhook fire this morning?" or "why did my Slack integration stop working?" had no data to surface.
+
+**What changed:**
+
+`WebhookEvent` SQLModel table (`id`, `webhook_id`, `deployment_id`, `event_type`, `fired_at`, `status_code`) captures each dispatch attempt as an immutable row. `_dispatch_in_thread()` in `core/webhook.py` writes the row after every HTTP call, regardless of success or failure. `GET /api/deploy/{id}/webhook-history` REST endpoint returns `{total, events[{id, webhook_id, webhook_url, event_type, fired_at, status_code, success}], summary}` — events joined with `WebhookConfig` for URL lookup; summary is plain-English ("2 recent webhook events (1 successful). Event types seen: batch_complete, drift_detected."). `_WEBHOOK_HISTORY_PATTERNS` (8 NL variants covering "what webhooks fired recently?", "show webhook history", "webhook log", "webhook events", "did any webhooks fire?", "recent webhook", "webhook activity", "show my webhook notifications") + handler block in `chat.py` (guarded by `ctx["deployment"]`); SSE `{type:"webhook_history"}`. `WebhookHistoryCard` (slate border, 🔔 icon): event count badge, summary text, column header row, per-event rows with color-coded event type badges (sky=batch_complete, amber=drift_detected, red=health_degraded, orange=quota_alert), webhook URL, timestamp, HTTP status badge (200 OK / Error). Zustand `attachWebhookHistoryToLastMessage`; SSE handler and render wired in `page.tsx`.
+
+**Bugs fixed during development:**
+- `NameError: name 'WebhookConfig' is not defined` — handler block used `WebhookConfig` without a local import; fixed with `from models.webhook_config import WebhookConfig as _WHCfg`.
+- Stale debug `print()` statements in the alerts handler block (from a prior debugging session) removed.
+- Test: `import api.data as dm, api.deploy as dep, api.models as mm` on one line triggered ruff E401; split to three imports.
+
+**Test count:** 18 backend + 15 frontend = 33 new tests. Total: 3069 backend + 1626 frontend = 4695, all passing. Backend lint: clean. Frontend build + lint: clean.
+
 ## Day 33 — 12:00 — A/B Test Chat Integration: status/promote/end via inline conversation card (3051 backend + 1611 frontend = 4662 tests)
 
 No community issues today. All spec phases remain 100% complete. This session identified a genuine Track D gap: the champion-challenger A/B testing infrastructure (`ABTest` model, create/get/end/promote endpoints, traffic-split routing in `make_prediction()`, Mann-Whitney U significance test) was fully built in Day 21 and lives in the Deployment panel — but asking "how is my A/B test going?", "is the challenger doing better?", or "promote the challenger" in chat yielded a generic LLM response with no data. The vision's "chat is the primary interface" promise extends to operational decisions: an analyst who ran an A/B test for two weeks should be able to get the results and act on them without navigating to the deployment panel.

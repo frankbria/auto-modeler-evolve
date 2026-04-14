@@ -79,14 +79,18 @@ def _dispatch_in_thread(
     secret: str,
     payload: dict[str, Any],
 ) -> None:
-    """Update last_fired_at / last_status_code after dispatch."""
+    """Update last_fired_at / last_status_code after dispatch, and log the event."""
     status = _do_dispatch(webhook_id, url, secret, payload)
 
-    # Update the DB record (best-effort)
+    # Update the DB record and write an event log entry (best-effort)
     try:
         from db import engine
         from models.webhook_config import WebhookConfig
+        from models.webhook_event import WebhookEvent
         from sqlmodel import Session
+
+        deployment_id = payload.get("deployment_id", "")
+        event_type = payload.get("event_type", "")
 
         with Session(engine) as session:
             wh = session.get(WebhookConfig, webhook_id)
@@ -94,7 +98,16 @@ def _dispatch_in_thread(
                 wh.last_fired_at = datetime.now(UTC).replace(tzinfo=None)
                 wh.last_status_code = status
                 session.add(wh)
-                session.commit()
+
+            # Write one row to the event log regardless of outcome
+            evt = WebhookEvent(
+                webhook_id=webhook_id,
+                deployment_id=deployment_id,
+                event_type=event_type,
+                status_code=status,
+            )
+            session.add(evt)
+            session.commit()
     except Exception:
         pass
 

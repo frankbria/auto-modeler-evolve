@@ -49,6 +49,19 @@ the time is better spent on real features.
 
 ## Currently Working On
 
+## Day 33 (20:00) — Done
+**Track D — Webhook Event History via Chat.** Closed the gap between webhooks firing silently and analysts having visibility into their integration health. Analysts can now ask "what webhooks fired recently?" or "show webhook history" and receive a `WebhookHistoryCard` inline in conversation showing a per-event timeline.
+- `WebhookEvent` SQLModel table persists each dispatch attempt (webhook_id, deployment_id, event_type, fired_at, status_code). `_dispatch_in_thread()` in `core/webhook.py` writes a row after each HTTP call.
+- `GET /api/deploy/{id}/webhook-history` REST endpoint returns `{total, events, summary}`.
+- `_WEBHOOK_HISTORY_PATTERNS` (8 NL variants) + handler + SSE `{type:"webhook_history"}` in `chat.py`. Bug fixed: missing `from models.webhook_config import WebhookConfig` local import + stale debug print.
+- `WebhookHistoryCard` (slate border, 🔔 icon): event count badge, summary, per-event rows with color-coded badges, URL, timestamp, HTTP status badge (200 OK / Error). Zustand `attachWebhookHistoryToLastMessage`; SSE wired in `page.tsx`.
+- 18 backend + 15 frontend = 33 new tests. Total: 3069 backend + 1626 frontend = 4695, all passing. Backend lint: clean. Frontend build + lint: clean.
+
+**What's next:**
+- Track C: Class imbalance detection + handling (SMOTE / class weights / threshold tuning), or ensemble methods (voting + stacking).
+- Track E: Run the "lunch break" flow end-to-end as a real analyst; audit friction in the VP-sharing flow.
+- Track D: Cross-deployment webhook health dashboard (view all webhook failures across projects at once).
+
 ## Day 33 (12:00) — Done
 **Track D — A/B Test Chat Integration.** Wired the existing champion-challenger A/B testing infrastructure into chat. Analysts can now ask "how is my A/B test going?", "is the challenger doing better?", "promote the challenger", or "end the A/B test" and receive an `ABTestChatCard` inline in conversation — no navigation to the Deployment panel required.
 - `_AB_TEST_PATTERNS` (8 NL variants) + `_AB_PROMOTE_RE` + `_AB_END_RE` in `chat.py`. Handler: status → `_ab_test_response()` with split/metrics/significance; promote → inline `promote_challenger()` replication; end → `is_active=False`; none → guidance message. SSE `{type:"ab_test_result"}`.

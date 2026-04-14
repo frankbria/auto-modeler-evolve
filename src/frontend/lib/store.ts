@@ -114,6 +114,7 @@ interface AppState {
   attachQuotaAlertConfigToLastMessage: (quota_alert_config: import("./types").QuotaAlertConfig) => void
   attachScheduleSetToLastMessage: (schedule_set: import("./types").ScheduleSetResult) => void
   attachABTestResultToLastMessage: (ab_test_result: import("./types").ABTestChatResult) => void
+  attachWebhookHistoryToLastMessage: (webhook_history: import("./types").WebhookHistoryResult) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -775,6 +776,15 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, ab_test_result }
+      }
+      return { messages }
+    }),
+  attachWebhookHistoryToLastMessage: (webhook_history) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, webhook_history }
       }
       return { messages }
     }),

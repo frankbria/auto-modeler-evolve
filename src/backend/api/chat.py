@@ -2568,6 +2568,19 @@ _AB_END_RE = re.compile(
     r"(?i)\b(end|stop|finish|close)\s+(?:the\s+)?(?:a\s*/\s*b|ab|split)\s+test\b"
 )
 
+# Webhook event history — "what webhooks fired recently?", "show webhook log", etc.
+_WEBHOOK_HISTORY_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"(?:what|which|show|list|view|get)\s+(?:my\s+)?(?:webhooks?|webhook\s+events?|webhook\s+notifications?|webhook\s+(?:fire|fired|trigger|triggered))\b|"
+    r"webhook\s+(?:histor(?:y|ies)?|log|events?|record|activit(?:y|ies)?|fire|trigger|notification)\b|"
+    r"(?:recent|latest|last)\s+webhook\b|"
+    r"(?:did|have)\s+(?:any\s+)?webhooks?\s+(?:fire|fired|trigger|triggered|sent|gone\s+off)\b|"
+    r"webhook\s+(?:status|report|summary)\b|"
+    r"(?:show|check|view)\s+(?:my\s+)?webhook\s+(?:histor(?:y|ies)?|log|activit(?:y|ies)?|events?)\b"
+    r")",
+    re.IGNORECASE,
+)
+
 _DOW_NAMES: dict[str, int] = {
     "monday": 0,
     "mon": 0,
@@ -4125,15 +4138,8 @@ def send_message(
 
     # Check for cross-deployment alerts request
     alerts_data: dict | None = None
-    import sys
-
-    print(
-        f"DEBUG: Checking alerts pattern: {_ALERTS_PATTERNS.search(body.message)}",
-        file=sys.stderr,
-    )
     if _ALERTS_PATTERNS.search(body.message):
         try:
-            print("DEBUG: Entering alerts try block", file=sys.stderr)
             active_deployments = list(
                 session.exec(
                     select(Deployment).where(
@@ -4141,10 +4147,6 @@ def send_message(
                         Deployment.is_active == True,  # noqa: E712
                     )
                 ).all()
-            )
-            print(
-                f"DEBUG: Found {len(active_deployments)} active deployments",
-                file=sys.stderr,
             )
             alert_list: list[dict] = []
             now_ts = datetime.now(UTC).replace(tzinfo=None)
@@ -4191,9 +4193,6 @@ def send_message(
                 ),
                 "alerts": alert_list,
             }
-            print(
-                f"DEBUG: Set alerts_data with {len(alert_list)} alerts", file=sys.stderr
-            )
             alert_summary = (
                 f"{len(alert_list)} alert(s) found: "
                 f"{alerts_data['critical_count']} critical, {alerts_data['warning_count']} warning."
@@ -4205,8 +4204,7 @@ def send_message(
                 "Summarise the alert status for the user. If there are critical alerts, "
                 "guide them on what to do. If everything is healthy, reassure them."
             )
-        except Exception as e:  # noqa: BLE001
-            print(f"DEBUG: Exception in alerts block: {e}", file=sys.stderr)
+        except Exception:  # noqa: BLE001
             pass  # Alerts are nice-to-have; never crash chat
 
     # Check for model version history request
@@ -7905,6 +7903,72 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # A/B test events are nice-to-have; never crash chat
 
+    # Webhook event history — "what webhooks fired recently?"
+    webhook_history_event: dict | None = None
+    if _WEBHOOK_HISTORY_PATTERNS.search(body.message) and ctx["deployment"]:
+        try:
+            from models.webhook_event import WebhookEvent as _WHEvt
+            from models.webhook_config import WebhookConfig as _WHCfg
+
+            _wh_dep = ctx["deployment"]
+            _wh_dep_id = _wh_dep.id if hasattr(_wh_dep, "id") else str(_wh_dep)
+
+            _wh_events = session.exec(
+                select(_WHEvt)
+                .where(_WHEvt.deployment_id == _wh_dep_id)
+                .order_by(_WHEvt.fired_at.desc())
+                .limit(10)
+            ).all()
+
+            # Look up webhook URLs
+            _wh_hooks = session.exec(
+                select(_WHCfg).where(_WHCfg.deployment_id == _wh_dep_id)
+            ).all()
+            _url_map: dict[str, str] = {h.id: h.url for h in _wh_hooks}
+
+            _wh_event_list = [
+                {
+                    "id": e.id,
+                    "webhook_id": e.webhook_id,
+                    "webhook_url": _url_map.get(e.webhook_id, "(deleted)"),
+                    "event_type": e.event_type,
+                    "fired_at": e.fired_at.isoformat() if e.fired_at else None,
+                    "status_code": e.status_code,
+                    "success": (
+                        (200 <= (e.status_code or 0) < 300) if e.status_code else False
+                    ),
+                }
+                for e in _wh_events
+            ]
+
+            _wh_total = len(_wh_event_list)
+            if _wh_total == 0:
+                _wh_summary = "No webhook events have fired for this deployment yet."
+            else:
+                _wh_successes = sum(1 for e in _wh_event_list if e["success"])
+                _wh_types = list(dict.fromkeys(e["event_type"] for e in _wh_event_list))
+                _wh_summary = (
+                    f"{_wh_total} recent webhook event{'s' if _wh_total != 1 else ''} "
+                    f"({_wh_successes} successful). "
+                    f"Event types seen: {', '.join(_wh_types[:3])}."
+                )
+
+            webhook_history_event = {
+                "total": _wh_total,
+                "events": _wh_event_list,
+                "summary": _wh_summary,
+            }
+            system_prompt += (
+                f"\n\n## Webhook Event History\n"
+                f"{_wh_summary} "
+                f"Present this as a brief timeline. "
+                f"If no events: explain that webhooks fire when events like batch completion, "
+                f"drift detection, health degradation, or quota alerts occur."
+            )
+
+        except Exception:  # noqa: BLE001
+            pass  # Webhook history is nice-to-have; never crash chat
+
     # Batch prediction schedule creation / listing
     schedule_event: dict | None = None
     if _SCHEDULE_PATTERNS.search(body.message) and ctx["deployment"]:
@@ -8387,6 +8451,10 @@ def send_message(
         # Emit batch prediction schedule event
         if schedule_event:
             yield f"data: {json.dumps({'type': 'schedule_set', 'schedule_set': schedule_event})}\n\n"
+
+        # Emit webhook event history
+        if webhook_history_event:
+            yield f"data: {json.dumps({'type': 'webhook_history', 'webhook_history': webhook_history_event})}\n\n"
 
         # Emit A/B test status / action confirmation
         if ab_test_result_event:
