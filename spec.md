@@ -1286,6 +1286,32 @@ guides them forward through the natural flow.
       and add any new ideas you discovered.
       *Day 3 (08:04): BACKLOG updated at session start and end each session from Day 2 onward.*
 
+- [x] **Executive Briefing Generator** — Analysts can say "write a briefing for my VP" or
+      "create an executive summary" and receive a polished VP-ready `ExecutiveBriefingCard`
+      directly in chat. Closes the "share results with leadership" gap: the analyst has a
+      prediction dashboard URL, but previously had no structured way to communicate model value
+      to a non-technical audience.
+      *Day 35 (04:00): `generate_executive_briefing()` pure function in `core/storyteller.py` —
+      assembles plain-English metric explanations (`_metric_explanation()` formats R², accuracy,
+      RMSE with quality tiers and plain-English meaning), algorithm descriptions
+      (`_algo_description()` one-sentence business explanations), 4-section briefing structure
+      (What We Analyzed, How Accurate Is It?, What This Means, Deployment Status), one-sentence
+      headline `summary`, and `action_items` list. `GET /api/projects/{id}/executive-briefing`
+      REST endpoint gathers all project context (dataset, features, model runs, deployment,
+      prediction count) and returns the full structured result. `_BRIEFING_PATTERNS` regex
+      (8 natural-language variants: "write a briefing for my VP", "create an executive summary",
+      "explain this to my executive team", "talking points for my VP meeting", etc.) + handler
+      block in `chat.py` that emits `{type:"executive_briefing"}` SSE event and injects
+      plain-English context into system_prompt. `ExecutiveBriefingCard` (emerald border, 📋 icon):
+      algorithm badge, metric label badge (color-coded by quality tier), italic one-line summary,
+      4 sections with uppercase headings, Recommended Actions list with → bullets, footer with
+      prediction dashboard link OR deploy-prompt, copy-to-clipboard button
+      (`aria-label="Copy briefing to clipboard"`). `ExecutiveBriefingResult` / `BriefingSection`
+      TypeScript types; `api.projects.executiveBriefing()` client method;
+      `attachExecutiveBriefingToLastMessage` Zustand action; SSE handler + card render in
+      `project/[id]/page.tsx`. 22 backend + 16 frontend = 38 new tests. All passing. Backend lint:
+      clean. Frontend build + lint: clean.*
+
 ---
 
 ## Data Model

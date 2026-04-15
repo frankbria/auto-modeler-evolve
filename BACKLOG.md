@@ -49,6 +49,18 @@ the time is better spent on real features.
 
 ## Currently Working On
 
+## Day 35 (04:00) — Done
+**Track B/E — Executive Briefing Generator.** Analysts can now say "write a briefing for my VP" or "create an executive summary" and receive a polished `ExecutiveBriefingCard` inline in chat — closing the "share results with leadership" gap.
+- `generate_executive_briefing()` pure function in `core/storyteller.py`: assembles plain-English metric explanations (quality tiers: excellent/good/moderate/developing), algorithm descriptions, 4-section briefing (What We Analyzed, How Accurate Is It?, What This Means, Deployment Status), one-sentence headline summary, and action items.
+- `GET /api/projects/{id}/executive-briefing` REST endpoint; `_BRIEFING_PATTERNS` (8 NL variants) + handler + SSE `{type:"executive_briefing"}` in `chat.py`.
+- `ExecutiveBriefingCard` (emerald border, 📋 icon): algorithm badge, metric badge (color-coded by quality), italic summary, 4 sections, Recommended Actions list, prediction dashboard link OR deploy-prompt, copy-to-clipboard button.
+- 22 backend + 16 frontend = 38 new tests. Total: 3129 backend + 1675 frontend = 4804, all passing. Backend lint: clean. Frontend build + lint: clean.
+
+**What's next:**
+- Track C: Ensemble methods via chat — "what's the best ensemble for this problem?" — VotingClassifier/Regressor, StackingClassifier/Regressor, with plain-English explanation of which base models voted and how confident each was.
+- Track D: Export as self-contained prediction service (ZIP + uvicorn) — "package my model for deployment anywhere".
+- Track E: Run the "lunch break" flow end-to-end as a real analyst; audit friction in the VP-sharing flow.
+
 ## Day 34 (12:00) — Done
 **Track D — Cross-Deployment Webhook Health Summary via Chat.** Analysts can now ask "are my webhooks working?", "any webhook failures?", "webhook health", or "check webhook status" and receive a `WebhookHealthSummaryCard` inline in conversation showing the health of every webhook across all active deployments in the project.
 - `_WEBHOOK_HEALTH_PATTERNS` (8 NL variants) + mutual-exclusion guard (`not _WEBHOOK_HISTORY_PATTERNS.search(...)`) so health and history cards don't both fire on the same message.
