@@ -49,6 +49,17 @@ the time is better spent on real features.
 
 ## Currently Working On
 
+## Day 35 (12:00) — Done
+**Track D — Service Export Chat Integration.** Analysts can now say "package my model", "export my model as a service", or "deploy this elsewhere" and receive a `ServiceExportChatCard` inline in chat with a direct ZIP download link — no navigation to the deployment panel required. Closes the developer hand-off story through pure conversation.
+- `_SERVICE_EXPORT_PATTERNS` (8 NL variants) + handler in `chat.py`. Guards on `ctx["deployment"]`; extracts algorithm/target/problem_type/feature_count from Deployment record; emits `{type:"service_export", service_export:{deployment_id, algorithm, target_column, problem_type, feature_count, download_url, included_files}}` SSE event.
+- `ServiceExportChatCard` (indigo border, 📦 icon): ZIP-download badge, problem-type badge, formatted algorithm name, included-files list with per-file plain-English annotations, quickstart code block (pip install + uvicorn), feature count, `<a download>` link with aria-label. Zustand `attachServiceExportToLastMessage`; SSE wired in `page.tsx`.
+- 13 backend + 18 frontend = 31 new tests. Total: 3142 backend + 1693 frontend = 4835, all passing. Backend lint: clean. Frontend build + lint: clean.
+
+**What's next:**
+- Track C: Ensemble methods via chat — "what's the best ensemble for this problem?" — VotingClassifier/Regressor, StackingClassifier/Regressor.
+- Track E: Run the "lunch break" flow end-to-end as a real analyst; audit friction in the VP-sharing flow.
+- Track D: Deployment version comparison — "how does the current model compare to last week?" — diff of metrics between deployment versions.
+
 ## Day 35 (04:00) — Done
 **Track B/E — Executive Briefing Generator.** Analysts can now say "write a briefing for my VP" or "create an executive summary" and receive a polished `ExecutiveBriefingCard` inline in chat — closing the "share results with leadership" gap.
 - `generate_executive_briefing()` pure function in `core/storyteller.py`: assembles plain-English metric explanations (quality tiers: excellent/good/moderate/developing), algorithm descriptions, 4-section briefing (What We Analyzed, How Accurate Is It?, What This Means, Deployment Status), one-sentence headline summary, and action items.

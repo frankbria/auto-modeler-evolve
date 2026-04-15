@@ -1,5 +1,19 @@
 # Journal
 
+## Day 35 — 12:00 — Service Export Chat Integration: "package my model" triggers inline ZIP download card (3142 backend + 1693 frontend = 4835 tests)
+
+No community issues. Track D continuation: the ZIP export endpoint (`GET /api/deploy/{id}/export`) was built Day 21 and the `ExportServiceCard` lives in the DeploymentPanel — but analysts in the chat interface had no way to request it without navigating away. The gap: the "hand your model to a developer" story required leaving the conversation.
+
+**What changed:**
+
+`_SERVICE_EXPORT_PATTERNS` regex in `chat.py` (8 NL variants: "package my model", "export my model as a service", "download the prediction service", "standalone prediction service", "self-contained API", "deploy this elsewhere", "package my model for deployment", "export my prediction service"). Handler block guarded by `ctx["deployment"]`: extracts `algorithm`, `target_column`, `problem_type`, `feature_count` from the active `Deployment` record (falls back to linked model run for algorithm); builds `service_export` dict with `deployment_id`, `download_url` (`/api/deploy/{id}/export`), and `included_files` list; injects system prompt context ("Tell the user their model service is packaged and ready to hand to a developer"); emits `{type:"service_export", service_export:{...}}` SSE event. Wrapped in `except Exception: pass` — rich card is enhancement, never crashes chat.
+
+`ServiceExportChatCard` component (`components/deploy/service-export-chat-card.tsx`): indigo border, 📦 icon (aria-hidden="true"), "Model Package Ready" heading, ZIP-download badge + problem-type badge, formatted algorithm name (`random_forest_regressor` → "Random Forest Regressor"), description paragraph with target column. Included-files section (`data-testid="included-files"`): per-file plain-English annotations (server.py = FastAPI prediction server, model_pipeline.joblib = preprocessing pipeline, model.joblib = trained model, requirements.txt = Python dependencies, README.md = setup instructions). Quickstart code block (`data-testid="quickstart-block"`) with `pip install -r requirements.txt` + `uvicorn server:app --host 0.0.0.0 --port 8000`. Feature count paragraph with singular/plural. `<a download>` link with `data-testid="service-export-download-link"`, `aria-label="Download {algo} model service as ZIP"`, prepends `NEXT_PUBLIC_API_URL`.
+
+`ServiceExportChatResult` TypeScript interface in `lib/types.ts`; `service_export?` on `ChatMessage`; `attachServiceExportToLastMessage` Zustand action; SSE handler and render wired in `project/[id]/page.tsx`.
+
+**Test count:** 13 backend (10 pattern detection + 3 chat integration) + 18 frontend (15 component render + 3 store action) = 31 new tests. Total: 3142 backend + 1693 frontend = 4835, all passing. Backend lint: clean. Frontend build + lint: clean.
+
 ## Day 35 — 04:00 — Executive Briefing Generator: VP-ready structured summary via chat (3129 backend + 1675 frontend = 4804 tests)
 
 No community issues. All Phase 1–9 spec items checked off. Chose to implement the **Executive Briefing Generator** — a genuine gap in the analyst's workflow: the analyst can share a prediction dashboard URL or download a technical PDF, but has no polished, plain-English executive summary to hand to a VP or stakeholder before a meeting.

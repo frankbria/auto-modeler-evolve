@@ -476,6 +476,7 @@ export interface ChatMessage {
   class_imbalance_check?: ClassImbalanceResult
   webhook_health_summary?: WebhookHealthSummaryResult
   executive_briefing?: ExecutiveBriefingResult
+  service_export?: ServiceExportChatResult
 }
 
 export interface SegmentPerformanceSegment {
@@ -628,6 +629,16 @@ export interface ExecutiveBriefingResult {
   summary: string
   action_items: string[]
   prediction_url: string | null
+}
+
+export interface ServiceExportChatResult {
+  deployment_id: string
+  algorithm: string | null
+  target_column: string
+  problem_type: string
+  feature_count: number
+  download_url: string
+  included_files: string[]
 }
 
 export interface SplitStrategyInfo {

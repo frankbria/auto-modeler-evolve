@@ -87,6 +87,7 @@ import { WebhookHistoryCard } from "@/components/deploy/webhook-history-card"
 import { ClassImbalanceChatCard } from "@/components/models/class-imbalance-chat-card"
 import { WebhookHealthSummaryCard } from "@/components/deploy/webhook-health-summary-card"
 import { ExecutiveBriefingCard } from "@/components/deploy/executive-briefing-card"
+import { ServiceExportChatCard } from "@/components/deploy/service-export-chat-card"
 import { PairCorrelationCard } from "@/components/data/pair-correlation-card"
 import { StatQueryCard } from "@/components/data/stat-query-card"
 import { SummaryStatsCard } from "@/components/data/summary-stats-card"
@@ -255,6 +256,7 @@ export default function ProjectWorkspace() {
     attachClassImbalanceCheckToLastMessage,
     attachWebhookHealthSummaryToLastMessage,
     attachExecutiveBriefingToLastMessage,
+    attachServiceExportToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -636,6 +638,8 @@ export default function ProjectWorkspace() {
                 attachWebhookHealthSummaryToLastMessage(json.webhook_health_summary as import("@/lib/types").WebhookHealthSummaryResult)
               } else if (json.type === "executive_briefing" && json.executive_briefing) {
                 attachExecutiveBriefingToLastMessage(json.executive_briefing as import("@/lib/types").ExecutiveBriefingResult)
+              } else if (json.type === "service_export" && json.service_export) {
+                attachServiceExportToLastMessage(json.service_export as import("@/lib/types").ServiceExportChatResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -727,6 +731,7 @@ export default function ProjectWorkspace() {
     attachClassImbalanceCheckToLastMessage,
     attachWebhookHealthSummaryToLastMessage,
     attachExecutiveBriefingToLastMessage,
+    attachServiceExportToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -1189,6 +1194,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.executive_briefing && (
                       <ExecutiveBriefingCard briefing={msg.executive_briefing} />
+                    )}
+                    {msg.service_export && (
+                      <ServiceExportChatCard result={msg.service_export} />
                     )}
                   </div>
                 </div>

@@ -1312,6 +1312,27 @@ guides them forward through the natural flow.
       `project/[id]/page.tsx`. 22 backend + 16 frontend = 38 new tests. All passing. Backend lint:
       clean. Frontend build + lint: clean.*
 
+- [x] **Service export via chat** — Analysts can say "package my model", "export my model as a
+      service", "download the prediction service", "deploy this elsewhere", or "give my model to a
+      developer" and receive a `ServiceExportChatCard` inline in chat with a direct ZIP download
+      link — no navigation to the deployment panel required. Closes the last gap in the "chat-first
+      deployment workflow": the developer hand-off story is now completable entirely through
+      conversation.
+      *Day 35 (12:00): `_SERVICE_EXPORT_PATTERNS` regex (8 NL variants: package/bundle/export/zip,
+      standalone/self-contained service, deploy elsewhere, give model to developer) added to
+      `chat.py`. Handler guards on `ctx["deployment"]`; extracts `algorithm`, `target_column`,
+      `problem_type`, `feature_count` from the active deployment record (falls back to model run),
+      and emits `{type:"service_export", service_export:{deployment_id, algorithm, target_column,
+      problem_type, feature_count, download_url, included_files}}` SSE event. `ServiceExportChatCard`
+      (indigo border, 📦 icon): "Model Package Ready" heading, ZIP-download badge, problem-type
+      badge, formatted algorithm description, included-files list (`data-testid="included-files"`;
+      per-file plain-English annotations), quickstart code block (`pip install -r requirements.txt`
+      + `uvicorn server:app --host 0.0.0.0 --port 8000`), feature count, `<a download>` link with
+      `aria-label`. `ServiceExportChatResult` TypeScript type; `service_export?` on `ChatMessage`;
+      `attachServiceExportToLastMessage` Zustand action; SSE handler + card render wired in
+      `project/[id]/page.tsx`. 13 backend + 18 frontend = 31 new tests. Total: ~3142 backend +
+      1693 frontend. Backend lint: clean. Frontend build + lint: clean.*
+
 ---
 
 ## Data Model

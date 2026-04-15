@@ -1013,6 +1013,21 @@ _REPORT_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# Keywords that trigger service export / self-contained ZIP download
+_SERVICE_EXPORT_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"(?:package|bundle|export|download|zip)\s+(?:my\s+|the\s+)?(?:model|prediction\s+service|api|service)\b|"
+    r"(?:export|download)\s+(?:the\s+)?(?:model\s+)?(?:as\s+(?:a\s+)?)?(?:self.contained|standalone|portable|zip)\b|"
+    r"(?:standalone|self.contained|portable)\s+(?:prediction\s+)?(?:service|api|model)\b|"
+    r"(?:deploy|run)\s+(?:this|the\s+model|it)\s+(?:elsewhere|on\s+(?:my\s+|our\s+)?(?:own\s+)?server|offline|anywhere)\b|"
+    r"give\s+(?:me\s+)?(?:the\s+)?(?:model|service)\s+zip\b|"
+    r"(?:package|wrap)\s+(?:my\s+)?model\s+(?:for\s+(?:deployment|production|my\s+developer|the\s+team)|up)\b|"
+    r"(?:export|package|zip)\s+(?:my\s+)?(?:prediction|model)\s+service\b|"
+    r"(?:how\s+(?:do\s+I|can\s+I)\s+)?(?:share|give|hand)\s+(?:my\s+)?model\s+to\s+(?:a\s+|my\s+)?developer\b"
+    r")",
+    re.IGNORECASE,
+)
+
 # Keywords that trigger chat-driven feature engineering suggestions
 _FEATURE_SUGGEST_PATTERNS = re.compile(
     r"(?i)\b("
@@ -8434,6 +8449,49 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Nice-to-have; never crash chat
 
+    # Service export — model packaged as a self-contained ZIP for hand-off to developer
+    service_export_event: dict | None = None
+    if _SERVICE_EXPORT_PATTERNS.search(body.message) and ctx["deployment"]:
+        try:
+            _svc_dep = ctx["deployment"]
+            _svc_run = next(
+                (r for r in ctx["model_runs"] if r.id == _svc_dep.model_run_id), None
+            )
+            _svc_algo = _svc_dep.algorithm or (_svc_run.algorithm if _svc_run else "model")
+            _svc_target = _svc_dep.target_column or "target"
+            _svc_problem = _svc_dep.problem_type or "regression"
+            _svc_features: list[str] = (
+                json.loads(_svc_dep.feature_names) if _svc_dep.feature_names else []
+            )
+            service_export_event = {
+                "deployment_id": _svc_dep.id,
+                "algorithm": _svc_algo,
+                "target_column": _svc_target,
+                "problem_type": _svc_problem,
+                "feature_count": len(_svc_features),
+                "download_url": f"/api/deploy/{_svc_dep.id}/export",
+                "included_files": [
+                    "server.py",
+                    "model_pipeline.joblib",
+                    "model.joblib",
+                    "requirements.txt",
+                    "README.md",
+                ],
+            }
+            system_prompt += (
+                "\n\n## Service Export Ready\n"
+                f"A self-contained prediction service ZIP is ready for download. "
+                f"Target: {_svc_target} ({_svc_problem}). "
+                f"Algorithm: {_svc_algo}. "
+                f"{len(_svc_features)} feature{'s' if len(_svc_features) != 1 else ''}.\n"
+                "Tell the user their model service is packaged and ready. "
+                "Explain they can unzip and run it with: "
+                "pip install -r requirements.txt && uvicorn server:app --port 8000. "
+                "Mention it includes the trained model, preprocessing pipeline, and a FastAPI server."
+            )
+        except Exception:  # noqa: BLE001
+            pass  # Nice-to-have; never crash chat
+
     # Pre-compute follow-up suggestions (based on state + current message)
     current_state = detect_state(
         ctx["dataset"], ctx["feature_set"], ctx["model_runs"], ctx["deployment"]
@@ -8823,6 +8881,10 @@ def send_message(
         # Emit executive briefing card
         if briefing_event:
             yield f"data: {json.dumps({'type': 'executive_briefing', 'executive_briefing': briefing_event})}\n\n"
+
+        # Emit service export card — model packaged as self-contained ZIP
+        if service_export_event:
+            yield f"data: {json.dumps({'type': 'service_export', 'service_export': service_export_event})}\n\n"
 
         # After text stream, opportunistically generate a chart if the
         # message is about data and we have a dataset loaded
