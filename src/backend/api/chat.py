@@ -8457,7 +8457,9 @@ def send_message(
             _svc_run = next(
                 (r for r in ctx["model_runs"] if r.id == _svc_dep.model_run_id), None
             )
-            _svc_algo = _svc_dep.algorithm or (_svc_run.algorithm if _svc_run else "model")
+            _svc_algo = _svc_dep.algorithm or (
+                _svc_run.algorithm if _svc_run else "model"
+            )
             _svc_target = _svc_dep.target_column or "target"
             _svc_problem = _svc_dep.problem_type or "regression"
             _svc_features: list[str] = (
