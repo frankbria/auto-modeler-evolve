@@ -473,7 +473,10 @@ def _algo_description(algorithm: str | None) -> str:
     }
     if not algorithm:
         return ""
-    return _DESC.get(algorithm.lower(), "It learned patterns from your historical data to make predictions.")
+    return _DESC.get(
+        algorithm.lower(),
+        "It learned patterns from your historical data to make predictions.",
+    )
 
 
 def _metric_explanation(

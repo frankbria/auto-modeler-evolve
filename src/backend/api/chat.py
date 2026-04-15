@@ -8218,7 +8218,9 @@ def send_message(
             # Pick best model run
             _completed_runs = [r for r in ctx["model_runs"] if r.status == "done"]
             _selected_run = next((r for r in _completed_runs if r.is_selected), None)
-            _best_run = _selected_run or (_completed_runs[0] if _completed_runs else None)
+            _best_run = _selected_run or (
+                _completed_runs[0] if _completed_runs else None
+            )
 
             # Extract metrics
             _brief_algo = _best_run.algorithm if _best_run else None
@@ -8250,8 +8252,12 @@ def send_message(
                 dataset_filename=_brief_dataset.filename if _brief_dataset else None,
                 row_count=_brief_dataset.row_count if _brief_dataset else None,
                 col_count=_brief_dataset.column_count if _brief_dataset else None,
-                target_column=_brief_feature_set.target_column if _brief_feature_set else None,
-                problem_type=_brief_feature_set.problem_type if _brief_feature_set else None,
+                target_column=_brief_feature_set.target_column
+                if _brief_feature_set
+                else None,
+                problem_type=_brief_feature_set.problem_type
+                if _brief_feature_set
+                else None,
                 algorithm=_brief_algo,
                 primary_metric_name=_brief_metric_name,
                 primary_metric_value=_brief_metric_value,

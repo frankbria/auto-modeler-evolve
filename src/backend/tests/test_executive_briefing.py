@@ -144,7 +144,14 @@ class TestGenerateExecutiveBriefing:
             request_count=42,
             conversation_snippet=None,
         )
-        for key in ("project_name", "target_column", "sections", "summary", "action_items", "algorithm"):
+        for key in (
+            "project_name",
+            "target_column",
+            "sections",
+            "summary",
+            "action_items",
+            "algorithm",
+        ):
             assert key in result, f"Missing key: {key}"
 
     def test_sections_have_heading_and_body(self):
