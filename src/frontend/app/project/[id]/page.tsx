@@ -86,6 +86,7 @@ import { ABTestChatCard } from "@/components/deploy/ab-test-chat-card"
 import { WebhookHistoryCard } from "@/components/deploy/webhook-history-card"
 import { ClassImbalanceChatCard } from "@/components/models/class-imbalance-chat-card"
 import { WebhookHealthSummaryCard } from "@/components/deploy/webhook-health-summary-card"
+import { ExecutiveBriefingCard } from "@/components/deploy/executive-briefing-card"
 import { PairCorrelationCard } from "@/components/data/pair-correlation-card"
 import { StatQueryCard } from "@/components/data/stat-query-card"
 import { SummaryStatsCard } from "@/components/data/summary-stats-card"
@@ -253,6 +254,7 @@ export default function ProjectWorkspace() {
     attachWebhookHistoryToLastMessage,
     attachClassImbalanceCheckToLastMessage,
     attachWebhookHealthSummaryToLastMessage,
+    attachExecutiveBriefingToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -632,6 +634,8 @@ export default function ProjectWorkspace() {
                 attachClassImbalanceCheckToLastMessage(json.class_imbalance_check as import("@/lib/types").ClassImbalanceResult)
               } else if (json.type === "webhook_health_summary" && json.webhook_health_summary) {
                 attachWebhookHealthSummaryToLastMessage(json.webhook_health_summary as import("@/lib/types").WebhookHealthSummaryResult)
+              } else if (json.type === "executive_briefing" && json.executive_briefing) {
+                attachExecutiveBriefingToLastMessage(json.executive_briefing as import("@/lib/types").ExecutiveBriefingResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -722,6 +726,7 @@ export default function ProjectWorkspace() {
     attachWebhookHistoryToLastMessage,
     attachClassImbalanceCheckToLastMessage,
     attachWebhookHealthSummaryToLastMessage,
+    attachExecutiveBriefingToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -1181,6 +1186,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.webhook_health_summary && (
                       <WebhookHealthSummaryCard data={msg.webhook_health_summary} />
+                    )}
+                    {msg.executive_briefing && (
+                      <ExecutiveBriefingCard briefing={msg.executive_briefing} />
                     )}
                   </div>
                 </div>

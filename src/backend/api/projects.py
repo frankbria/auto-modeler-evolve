@@ -572,6 +572,105 @@ def _static_narrative(ctx: dict) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Executive Briefing
+# ---------------------------------------------------------------------------
+
+
+@router.get("/{project_id}/executive-briefing")
+def get_executive_briefing(
+    project_id: str,
+    session: Session = Depends(get_session),
+):
+    """Generate a structured, VP-ready executive briefing for the project.
+
+    Synthesises all project artifacts (dataset, model, deployment) into
+    plain-English sections: What We Analyzed, The Model, Accuracy, Key
+    Findings, Caveats, and Recommended Actions.  Returns structured data
+    suitable for rendering as a formatted card or for copy-paste into an
+    email / slide deck.
+    """
+    from core.storyteller import generate_executive_briefing
+
+    project = session.get(Project, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    dataset = session.exec(
+        select(Dataset).where(Dataset.project_id == project_id)
+    ).first()
+
+    feature_set = None
+    if dataset:
+        feature_set = session.exec(
+            select(FeatureSet).where(
+                FeatureSet.dataset_id == dataset.id,
+                FeatureSet.is_active == True,  # noqa: E712
+            )
+        ).first()
+
+    completed_runs = session.exec(
+        select(ModelRun).where(
+            ModelRun.project_id == project_id,
+            ModelRun.status == "done",
+        )
+    ).all()
+
+    selected_run = next((r for r in completed_runs if r.is_selected), None)
+    best_run = selected_run or (completed_runs[0] if completed_runs else None)
+
+    deployment = None
+    request_count = 0
+    if best_run and best_run.is_deployed:
+        deployment = session.exec(
+            select(Deployment).where(
+                Deployment.project_id == project_id,
+                Deployment.is_active == True,  # noqa: E712
+            )
+        ).first()
+        if deployment:
+            request_count = len(
+                session.exec(
+                    select(PredictionLog).where(
+                        PredictionLog.deployment_id == deployment.id
+                    )
+                ).all()
+            )
+
+    # Extract model metrics
+    algorithm = None
+    primary_metric_name = None
+    primary_metric_value = None
+    if best_run:
+        algorithm = best_run.algorithm
+        metrics = json.loads(best_run.metrics or "{}")
+        if "r2" in metrics:
+            primary_metric_name = "r2"
+            primary_metric_value = metrics["r2"]
+        elif "accuracy" in metrics:
+            primary_metric_name = "accuracy"
+            primary_metric_value = metrics["accuracy"]
+
+    briefing = generate_executive_briefing(
+        project_name=project.name,
+        dataset_filename=dataset.filename if dataset else None,
+        row_count=dataset.row_count if dataset else None,
+        col_count=dataset.column_count if dataset else None,
+        target_column=feature_set.target_column if feature_set else None,
+        problem_type=feature_set.problem_type if feature_set else None,
+        algorithm=algorithm,
+        primary_metric_name=primary_metric_name,
+        primary_metric_value=primary_metric_value,
+        deployment_url=deployment.dashboard_url if deployment else None,
+        request_count=request_count if request_count > 0 else None,
+        conversation_snippet=None,
+    )
+
+    briefing["project_id"] = project_id
+    briefing["generated_at"] = datetime.now(UTC).replace(tzinfo=None).isoformat()
+    return briefing
+
+
+# ---------------------------------------------------------------------------
 # Model Monitoring Alerts
 # ---------------------------------------------------------------------------
 

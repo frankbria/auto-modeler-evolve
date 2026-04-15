@@ -2495,6 +2495,21 @@ _WEBHOOK_HEALTH_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# Keywords that trigger the executive briefing generator
+_BRIEFING_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"(?:write|create|generate|make|prepare|draft)\s+(?:an?\s+)?(?:executive\s+)?briefing\b|"
+    r"(?:executive|vp|management|stakeholder|board)\s+(?:summary|briefing|report|overview)\b|"
+    r"(?:write|create|prepare|draft)\s+(?:a\s+)?(?:summary|report)\s+for\s+(?:my\s+)?(?:vp|boss|manager|stakeholder|executive|leadership|team)\b|"
+    r"(?:explain|summarize|summarise)\s+this\s+(?:to|for)\s+(?:my\s+)?(?:vp|boss|manager|non-technical|executive)\b|"
+    r"(?:talking\s+points|key\s+findings)\s+for\s+(?:my\s+)?(?:vp|boss|meeting|presentation)\b|"
+    r"(?:non-technical|business|plain.english)\s+(?:summary|overview|report|briefing)\b|"
+    r"(?:how\s+do\s+I\s+)?(?:share|present|pitch|show)\s+(?:this|the\s+model|results?|findings?)\s+to\s+(?:my\s+)?(?:vp|boss|manager|team|stakeholder)\b|"
+    r"write\s+(?:up|me)\s+(?:the\s+)?(?:analysis|findings?|results?|report)\b"
+    r")",
+    re.IGNORECASE,
+)
+
 
 def _extract_preset_definition(message: str) -> dict | None:
     """Extract preset name and feature key=value pairs from a natural language message.
@@ -8189,6 +8204,76 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Nice-to-have; never crash chat
 
+    # Executive briefing — VP-ready structured summary of the project
+    briefing_event: dict | None = None
+    if _BRIEFING_PATTERNS.search(body.message):
+        try:
+            from core.storyteller import generate_executive_briefing as _gen_briefing
+            from models.prediction_log import PredictionLog as _PLBrief
+
+            _brief_dataset = ctx["dataset"]
+            _brief_feature_set = ctx["feature_set"]
+            _brief_deployment = ctx["deployment"]
+
+            # Pick best model run
+            _completed_runs = [r for r in ctx["model_runs"] if r.status == "done"]
+            _selected_run = next((r for r in _completed_runs if r.is_selected), None)
+            _best_run = _selected_run or (_completed_runs[0] if _completed_runs else None)
+
+            # Extract metrics
+            _brief_algo = _best_run.algorithm if _best_run else None
+            _brief_metric_name = None
+            _brief_metric_value = None
+            if _best_run:
+                _bm = json.loads(_best_run.metrics or "{}")
+                if "r2" in _bm:
+                    _brief_metric_name = "r2"
+                    _brief_metric_value = _bm["r2"]
+                elif "accuracy" in _bm:
+                    _brief_metric_name = "accuracy"
+                    _brief_metric_value = _bm["accuracy"]
+
+            # Request count for active deployment
+            _brief_req_count = None
+            _brief_dashboard_url = None
+            if _brief_deployment:
+                _brief_dashboard_url = _brief_deployment.dashboard_url
+                _pl_rows = session.exec(
+                    select(_PLBrief).where(
+                        _PLBrief.deployment_id == _brief_deployment.id
+                    )
+                ).all()
+                _brief_req_count = len(_pl_rows) if _pl_rows else None
+
+            briefing_event = _gen_briefing(
+                project_name=project.name,
+                dataset_filename=_brief_dataset.filename if _brief_dataset else None,
+                row_count=_brief_dataset.row_count if _brief_dataset else None,
+                col_count=_brief_dataset.column_count if _brief_dataset else None,
+                target_column=_brief_feature_set.target_column if _brief_feature_set else None,
+                problem_type=_brief_feature_set.problem_type if _brief_feature_set else None,
+                algorithm=_brief_algo,
+                primary_metric_name=_brief_metric_name,
+                primary_metric_value=_brief_metric_value,
+                deployment_url=_brief_dashboard_url,
+                request_count=_brief_req_count,
+                conversation_snippet=None,
+            )
+            briefing_event["project_id"] = project_id
+
+            # Inject summary into system prompt for Claude narration
+            _brief_summary = briefing_event.get("summary", "")
+            _brief_metric_label = briefing_event.get("metric_label", "")
+            system_prompt += (
+                f"\n\n## Executive Briefing Request\n"
+                f"The analyst is asking for a VP-ready summary. One-line headline: {_brief_summary}\n"
+                f"Model accuracy: {_brief_metric_label}.\n"
+                "Introduce the briefing card below briefly, then invite the analyst to copy, "
+                "share, or customise any section for their VP meeting."
+            )
+        except Exception:  # noqa: BLE001
+            pass  # Nice-to-have; never crash chat
+
     # Cross-deployment webhook health summary
     webhook_health_event: dict | None = None
     if _WEBHOOK_HEALTH_PATTERNS.search(
@@ -8728,6 +8813,10 @@ def send_message(
         # Emit cross-deployment webhook health summary
         if webhook_health_event:
             yield f"data: {json.dumps({'type': 'webhook_health_summary', 'webhook_health_summary': webhook_health_event})}\n\n"
+
+        # Emit executive briefing card
+        if briefing_event:
+            yield f"data: {json.dumps({'type': 'executive_briefing', 'executive_briefing': briefing_event})}\n\n"
 
         # After text stream, opportunistically generate a chart if the
         # message is about data and we have a dataset loaded

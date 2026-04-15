@@ -475,6 +475,7 @@ export interface ChatMessage {
   webhook_history?: WebhookHistoryResult
   class_imbalance_check?: ClassImbalanceResult
   webhook_health_summary?: WebhookHealthSummaryResult
+  executive_briefing?: ExecutiveBriefingResult
 }
 
 export interface SegmentPerformanceSegment {
@@ -608,6 +609,25 @@ export interface WebhookHealthSummaryResult {
   total_failed: number
   deployments: WebhookDeploymentHealth[]
   summary: string
+}
+
+export interface BriefingSection {
+  heading: string
+  body: string
+}
+
+export interface ExecutiveBriefingResult {
+  project_id: string
+  project_name: string
+  target_column: string | null
+  problem_type: string | null
+  algorithm: string | null
+  metric_label: string | null
+  metric_value: number | null
+  sections: BriefingSection[]
+  summary: string
+  action_items: string[]
+  prediction_url: string | null
 }
 
 export interface SplitStrategyInfo {

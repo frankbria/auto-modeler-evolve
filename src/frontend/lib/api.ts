@@ -75,6 +75,9 @@ export const api = {
         r.json()
       ),
 
+    executiveBriefing: (id: string): Promise<import("./types").ExecutiveBriefingResult> =>
+      fetch(`${API_URL}/api/projects/${id}/executive-briefing`).then((r) => r.json()),
+
     alerts: (id: string): Promise<ProjectAlerts> =>
       fetch(`${API_URL}/api/projects/${id}/alerts`).then((r) => r.json()),
 
