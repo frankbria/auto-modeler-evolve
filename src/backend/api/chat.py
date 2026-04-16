@@ -2370,6 +2370,25 @@ _PRESET_LIST_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# ---------------------------------------------------------------------------
+# Ensemble model recommendation (distinct from _MODEL_SELECT_PATTERNS which ranks
+# existing runs, and _TRAIN_PATTERNS which handles generic training — this is
+# specifically about "should I use an ensemble?" and "what ensemble options exist?")
+# ---------------------------------------------------------------------------
+_ENSEMBLE_PATTERNS = re.compile(
+    r"(?:"
+    r"(?:what(?:'s|\s+is)\s+)?(?:the\s+)?best\s+ensemble(?:\s+(?:for|model|type|approach|option))?\b|"
+    r"should\s+(?:I\s+)?(?:try|use|build|train)\s+(?:an?\s+)?ensemble\b|"
+    r"(?:try|use|build|recommend|suggest)\s+(?:an?\s+)?ensemble\s+(?:model|method|approach)?\b|"
+    r"(?:combine|stack)\s+(?:my\s+)?models?\s+(?:together|into\s+(?:an?\s+)?ensemble)?\b|"
+    r"voting\s+(?:classifier|regressor|ensemble|model)\b|"
+    r"stacking\s+(?:classifier|regressor|ensemble|model)\b|"
+    r"(?:can|will)\s+(?:an?\s+)?ensemble\s+(?:improve|help|boost|increase)\b|"
+    r"ensemble\s+(?:method|approach|model|recommendation|suggestion|options?|advice|learning)\b"
+    r")",
+    re.IGNORECASE,
+)
+
 _PRESET_NAME_RE = re.compile(
     r"(?:called|named)\s+['\"]?([A-Za-z0-9][A-Za-z0-9 _\-]*?)['\"]?\s*"
     r"(?=\s+with\s+|\s*:\s*[A-Za-z]|\s*,\s*[A-Za-z]|$)",
@@ -8508,6 +8527,139 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Nice-to-have; never crash chat
 
+    # Ensemble model recommendation — "should I try an ensemble?", "voting classifier"
+    ensemble_event: dict | None = None
+    if _ENSEMBLE_PATTERNS.search(body.message) and ctx["model_runs"]:
+        try:
+            _fset_ens = ctx["feature_set"]
+            _prob_type_ens = (
+                (_fset_ens.problem_type or "regression") if _fset_ens else "regression"
+            )
+            _done_runs_ens = [r for r in ctx["model_runs"] if r.status == "done"]
+            _metric_name_ens = "r2" if _prob_type_ens == "regression" else "accuracy"
+
+            # Find the best non-ensemble run for context
+            _best_score_ens: float | None = None
+            _best_algo_ens: str | None = None
+            for _r_ens in _done_runs_ens:
+                _m_ens = json.loads(_r_ens.metrics or "{}")
+                _v_ens = _m_ens.get(_metric_name_ens)
+                _is_ens_run = bool(_m_ens.get("ensemble_type"))
+                if _v_ens is not None and not _is_ens_run:
+                    _v_ens = float(_v_ens)
+                    if _best_score_ens is None or _v_ens > _best_score_ens:
+                        _best_score_ens = _v_ens
+                        _best_algo_ens = _r_ens.algorithm
+
+            # Dataset size for stacking recommendation
+            _ds_size_ens = ctx["dataset"].row_count if ctx["dataset"] else 0
+
+            # Stacking needs ≥200 rows and ≥2 completed runs to train reliably
+            _recommend_stacking = _ds_size_ens >= 200 and len(_done_runs_ens) >= 2
+
+            if _prob_type_ens == "classification":
+                _voting_algo_ens = "voting_classifier"
+                _stacking_algo_ens = "stacking_classifier"
+                _voting_name_ens = "Voting Classifier"
+                _stacking_name_ens = "Stacking Classifier"
+                _voting_desc_ens = (
+                    "Combines Logistic Regression, Random Forest, and Gradient Boosting "
+                    "by majority vote (soft voting)."
+                )
+                _stacking_desc_ens = (
+                    "Uses a meta-learner (Logistic Regression) to optimally combine "
+                    "Logistic Regression, Random Forest, and Gradient Boosting."
+                )
+            else:
+                _voting_algo_ens = "voting_regressor"
+                _stacking_algo_ens = "stacking_regressor"
+                _voting_name_ens = "Voting Ensemble"
+                _stacking_name_ens = "Stacking Ensemble"
+                _voting_desc_ens = (
+                    "Averages predictions from Linear Regression, Random Forest, "
+                    "and Gradient Boosting."
+                )
+                _stacking_desc_ens = (
+                    "Uses a Ridge meta-learner to weight Linear Regression, Random Forest, "
+                    "and Gradient Boosting based on their relative strengths."
+                )
+
+            _recommended_algo_ens = (
+                _stacking_algo_ens if _recommend_stacking else _voting_algo_ens
+            )
+            _recommended_name_ens = (
+                _stacking_name_ens if _recommend_stacking else _voting_name_ens
+            )
+
+            _ensemble_options = [
+                {
+                    "algorithm": _voting_algo_ens,
+                    "name": _voting_name_ens,
+                    "ensemble_type": "voting",
+                    "description": _voting_desc_ens,
+                    "plain_english": (
+                        "Gets a second opinion from three different models and averages "
+                        "their answers — like consulting multiple experts. Often 1-3% "
+                        "more accurate than any single model."
+                    ),
+                    "best_for": "Quick accuracy improvement; fast to train; easy to explain",
+                    "complexity": "easy",
+                    "is_recommended": not _recommend_stacking,
+                },
+                {
+                    "algorithm": _stacking_algo_ens,
+                    "name": _stacking_name_ens,
+                    "ensemble_type": "stacking",
+                    "description": _stacking_desc_ens,
+                    "plain_english": (
+                        "Trains three models, then trains a fourth model to learn the "
+                        "optimal combination — more powerful than simple averaging. The "
+                        "meta-learner figures out which base model to trust most."
+                    ),
+                    "best_for": "Maximum accuracy; needs 200+ rows and takes longer to train",
+                    "complexity": "medium",
+                    "is_recommended": _recommend_stacking,
+                },
+            ]
+
+            _score_text = (
+                f" (current best {_metric_name_ens.upper()}: {_best_score_ens:.3f})"
+                if _best_score_ens is not None
+                else ""
+            )
+            _ensemble_summary = (
+                f"{'Stacking' if _recommend_stacking else 'Voting'} ensemble recommended "
+                f"for your {_prob_type_ens} problem{_score_text}. "
+                f"Ensembles typically improve accuracy by 1-5% over the best single model. "
+                f"Say 'train a {_voting_name_ens.lower()}' or 'train a {_stacking_name_ens.lower()}' to start."
+            )
+
+            ensemble_event = {
+                "problem_type": _prob_type_ens,
+                "best_current_algorithm": _best_algo_ens,
+                "best_current_score": (
+                    round(_best_score_ens, 4) if _best_score_ens is not None else None
+                ),
+                "metric_name": _metric_name_ens,
+                "dataset_size": _ds_size_ens,
+                "recommended_algorithm": _recommended_algo_ens,
+                "recommended_name": _recommended_name_ens,
+                "options": _ensemble_options,
+                "summary": _ensemble_summary,
+            }
+            system_prompt += (
+                "\n\n## Ensemble Model Recommendation\n"
+                f"{_ensemble_summary}\n"
+                f"Recommended option: {_recommended_name_ens}. "
+                "Explain what ensemble models are in plain language: they combine multiple "
+                "models to reduce errors that any single model makes. "
+                "Mention both Voting (simpler, faster, good default) and Stacking (more "
+                "powerful but needs more data). "
+                "Encourage the analyst to say 'train a voting/stacking model' to start."
+            )
+        except Exception:  # noqa: BLE001
+            pass  # Nice-to-have; never crash chat
+
     # Deployment version comparison — diff metrics between current and previous version
     version_compare_event: dict | None = None
     if _VERSION_COMPARE_PATTERNS.search(body.message) and ctx["deployment"]:
@@ -9044,6 +9196,10 @@ def send_message(
         # Emit service export card — model packaged as self-contained ZIP
         if service_export_event:
             yield f"data: {json.dumps({'type': 'service_export', 'service_export': service_export_event})}\n\n"
+
+        # Emit ensemble recommendation card
+        if ensemble_event:
+            yield f"data: {json.dumps({'type': 'ensemble_recommendation', 'ensemble_recommendation': ensemble_event})}\n\n"
 
         # Emit deployment version comparison card
         if version_compare_event:

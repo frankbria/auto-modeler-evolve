@@ -120,6 +120,7 @@ interface AppState {
   attachExecutiveBriefingToLastMessage: (executive_briefing: import("./types").ExecutiveBriefingResult) => void
   attachServiceExportToLastMessage: (service_export: import("./types").ServiceExportChatResult) => void
   attachVersionComparisonToLastMessage: (version_comparison: import("./types").DeploymentVersionComparisonResult) => void
+  attachEnsembleRecommendationToLastMessage: (ensemble_recommendation: import("./types").EnsembleRecommendationResult) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -835,6 +836,15 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, version_comparison }
+      }
+      return { messages }
+    }),
+  attachEnsembleRecommendationToLastMessage: (ensemble_recommendation) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, ensemble_recommendation }
       }
       return { messages }
     }),

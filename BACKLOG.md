@@ -49,6 +49,12 @@ the time is better spent on real features.
 
 ## Currently Working On
 
+## Day 36 (04:00) — Done
+**Track C — Ensemble Method Recommendation via Chat.** Analysts can now ask "should I use an ensemble?", "best ensemble for this problem?", "voting classifier", "stacking regressor", or "can an ensemble improve my accuracy?" and receive an `EnsembleRecommendationCard` inline in chat. The card explains what ensembles are, recommends stacking or voting based on dataset size and number of completed runs, and shows both options with plain-English descriptions and training prompts. No training is triggered — "explain before executing".
+- `_ENSEMBLE_PATTERNS` (8 NL variants) + handler in `chat.py`. Guards on `ctx["model_runs"]`. Recommends stacking (≥200 rows AND ≥2 runs) or voting. Emits `{type:"ensemble_recommendation"}` SSE event.
+- `EnsembleRecommendationCard` (violet border, 🧩 icon): problem-type/score/algorithm badges, "What is an ensemble?" callout, summary, two option rows with Recommended/Easy/Medium badges and plain-English prompts. `EnsembleOption` + `EnsembleRecommendationResult` types; `attachEnsembleRecommendationToLastMessage` Zustand action; SSE wired in `page.tsx`.
+- 16 backend + 18 frontend = 34 new tests. Total: 3370 backend + 1749 frontend = 5119, all passing. Backend lint: clean. Frontend build: clean.
+
 ## Day 35 (20:00) — Done
 **Track D — Deployment Version Comparison via Chat.** Analysts can now ask "did my retrain improve?", "compare my deployment versions", or "is the new version better?" and receive a `DeploymentVersionComparisonCard` inline in chat showing per-metric deltas between the current and previous deployment version. Closes the "was this retrain worth it?" conversational gap.
 - `_VERSION_COMPARE_PATTERNS` (8 NL variants) + handler in `chat.py`. Guards on `ctx["deployment"]` and 2+ `DeploymentVersion` records. Computes delta/pct_change/direction/improved for r2, accuracy, mae, rmse, f1, precision, recall (respecting higher_is_better — MAE/RMSE lower is better). Algorithm-change detection. <2 versions emits has_comparison=False with onboarding guidance.
@@ -56,8 +62,9 @@ the time is better spent on real features.
 - 13 backend + 19 frontend = 32 new tests. Total: 3155 backend + 1712 frontend = 4867, all passing. Backend lint: clean. Frontend build + lint: clean.
 
 **What's next:**
-- Track C: Ensemble methods via chat — "what's the best ensemble for this problem?" — VotingClassifier/Regressor, StackingClassifier/Regressor.
 - Track E: Run the "lunch break" flow end-to-end as a real analyst; audit friction in the VP-sharing flow.
+- Track C: Hyperparameter tuning via chat — "optimize my model's settings" — auto-run GridSearchCV/RandomizedSearchCV on the best algorithm and show the improvement.
+- Track D: Webhook notifications on model drift/degradation.
 - Track D: Prediction SLA/latency monitoring — track p50/p95 per endpoint, surface in chat ("is my API slow?").
 
 ## Day 35 (12:00) — Done

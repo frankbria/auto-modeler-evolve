@@ -478,6 +478,7 @@ export interface ChatMessage {
   executive_briefing?: ExecutiveBriefingResult
   service_export?: ServiceExportChatResult
   version_comparison?: DeploymentVersionComparisonResult
+  ensemble_recommendation?: EnsembleRecommendationResult
 }
 
 export interface SegmentPerformanceSegment {
@@ -2496,5 +2497,28 @@ export interface PartialDependenceResult {
   std_predictions: number[]
   class_curves: Record<string, number[]> | null
   n_training_rows: number
+  summary: string
+}
+
+export interface EnsembleOption {
+  algorithm: string
+  name: string
+  ensemble_type: "voting" | "stacking"
+  description: string
+  plain_english: string
+  best_for: string
+  complexity: "easy" | "medium" | "hard"
+  is_recommended: boolean
+}
+
+export interface EnsembleRecommendationResult {
+  problem_type: string
+  best_current_algorithm: string | null
+  best_current_score: number | null
+  metric_name: string
+  dataset_size: number
+  recommended_algorithm: string
+  recommended_name: string
+  options: EnsembleOption[]
   summary: string
 }

@@ -1,5 +1,23 @@
 # Journal
 
+## Day 36 — 04:00 — Ensemble Method Recommendation via Chat: "should I use an ensemble?" triggers voting/stacking options card (3370 backend + 1749 frontend = 5119 tests)
+
+No community issues. Track C continuation: ensemble training (voting + stacking) shipped Day 22. Analysts could train ensemble models via the UI, but there was no conversational entry point — no way to ask "what's the best ensemble for my problem?" and get a recommendation. The gap: the "should I use ensembles?" question had no chat answer.
+
+**What changed:**
+
+`_ENSEMBLE_PATTERNS` regex in `chat.py` (8 NL variants: "should I use an ensemble", "best ensemble for this problem", "voting classifier", "stacking regressor", "combine my models", "can an ensemble improve my accuracy", "ensemble recommendation", etc.). Handler block guarded by `ctx["model_runs"]`: reads `feature_set.problem_type` to determine regression vs classification; finds best non-ensemble completed run by R²/accuracy; decides stacking vs voting recommendation (stacking only when dataset ≥200 rows AND ≥2 completed runs — needs sufficient data for meta-learner cross-validation); builds two-option list with `voting` and `stacking` entries; emits `{type:"ensemble_recommendation", ensemble_recommendation:{...}}` SSE event. Injects plain-English summary into system_prompt. Wrapped in `except Exception: pass` — card is enhancement, never crashes chat. "Explain before executing" principle: no training triggered — card shows options with "say 'train a voting ensemble' to start" prompts.
+
+`EnsembleRecommendationCard` (violet border, 🧩 icon): problem-type badge, current best score badge, current best algorithm badge; "What is an ensemble model?" callout explaining ensembles as getting a second opinion from multiple experts; recommendation summary (`data-testid="ensemble-summary"`) with recommended name and summary text; two option rows (`data-testid="ensemble-option-{voting|stacking}"`) each with Recommended badge (violet, on recommended option), Easy/Medium complexity badge (emerald/amber), ensemble-type badge, plain-English description, "Best for:" note, and "Say 'train a …' to start" prompt; figcaption footer noting no new data needed.
+
+`EnsembleOption` + `EnsembleRecommendationResult` TypeScript types in `lib/types.ts`. `ensemble_recommendation?` field on `ChatMessage`. `attachEnsembleRecommendationToLastMessage` Zustand action. SSE handler + render wired in `project/[id]/page.tsx`.
+
+**Key insight:** Integration tests calling the real training endpoint fail with `sqlite3.OperationalError: no such table: modelrun` because `_train_in_background()` in `api/models.py` captures the module-level `db_module.engine` reference at import time — before the test fixture can swap it with the test DB. Fix: inject `ModelRun(status="done", metrics='{"r2": 0.92}')` directly via `Session(db_module.engine)` in the setup helper, bypassing background threads entirely.
+
+16 backend + 18 frontend = 34 new tests. Total: 3370 backend + 1749 frontend = 5119, all passing. Backend lint: clean. Frontend build: clean.
+
+---
+
 ## Day 35 — 20:00 — Deployment Version Comparison via Chat: "did my retrain improve?" triggers metric diff card (3155 backend + 1712 frontend = 4867 tests)
 
 No community issues. Track D continuation: DeploymentVersion records have been written since Day 21 versioning, but analysts had no conversational way to ask "did my retrain help?" — they'd need to navigate to the Deployment panel and compare numbers manually. Gap: the "was this retrain worth it?" question had no chat answer.

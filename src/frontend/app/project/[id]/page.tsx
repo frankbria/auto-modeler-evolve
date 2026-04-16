@@ -89,6 +89,7 @@ import { WebhookHealthSummaryCard } from "@/components/deploy/webhook-health-sum
 import { ExecutiveBriefingCard } from "@/components/deploy/executive-briefing-card"
 import { ServiceExportChatCard } from "@/components/deploy/service-export-chat-card"
 import { DeploymentVersionComparisonCard } from "@/components/deploy/deployment-version-comparison-card"
+import { EnsembleRecommendationCard } from "@/components/models/ensemble-recommendation-card"
 import { PairCorrelationCard } from "@/components/data/pair-correlation-card"
 import { StatQueryCard } from "@/components/data/stat-query-card"
 import { SummaryStatsCard } from "@/components/data/summary-stats-card"
@@ -259,6 +260,7 @@ export default function ProjectWorkspace() {
     attachExecutiveBriefingToLastMessage,
     attachServiceExportToLastMessage,
     attachVersionComparisonToLastMessage,
+    attachEnsembleRecommendationToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -644,6 +646,8 @@ export default function ProjectWorkspace() {
                 attachServiceExportToLastMessage(json.service_export as import("@/lib/types").ServiceExportChatResult)
               } else if (json.type === "version_comparison" && json.version_comparison) {
                 attachVersionComparisonToLastMessage(json.version_comparison as import("@/lib/types").DeploymentVersionComparisonResult)
+              } else if (json.type === "ensemble_recommendation" && json.ensemble_recommendation) {
+                attachEnsembleRecommendationToLastMessage(json.ensemble_recommendation as import("@/lib/types").EnsembleRecommendationResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -737,6 +741,7 @@ export default function ProjectWorkspace() {
     attachExecutiveBriefingToLastMessage,
     attachServiceExportToLastMessage,
     attachVersionComparisonToLastMessage,
+    attachEnsembleRecommendationToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -1205,6 +1210,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.version_comparison && (
                       <DeploymentVersionComparisonCard result={msg.version_comparison} />
+                    )}
+                    {msg.ensemble_recommendation && (
+                      <EnsembleRecommendationCard result={msg.ensemble_recommendation} />
                     )}
                   </div>
                 </div>
