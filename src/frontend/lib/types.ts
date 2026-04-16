@@ -479,6 +479,7 @@ export interface ChatMessage {
   service_export?: ServiceExportChatResult
   version_comparison?: DeploymentVersionComparisonResult
   ensemble_recommendation?: EnsembleRecommendationResult
+  tune_chat?: TuningChatResult
 }
 
 export interface SegmentPerformanceSegment {
@@ -2520,5 +2521,24 @@ export interface EnsembleRecommendationResult {
   recommended_algorithm: string
   recommended_name: string
   options: EnsembleOption[]
+  summary: string
+}
+
+// ---------------------------------------------------------------------------
+// Hyperparameter Tuning Chat Card (inline tuning result via chat)
+// ---------------------------------------------------------------------------
+
+export interface TuningChatResult {
+  tunable: boolean
+  algorithm: string
+  algorithm_name: string
+  problem_type?: string
+  original_run_id?: string
+  tuned_run_id?: string | null
+  original_metrics?: Record<string, number>
+  tuned_metrics?: Record<string, number> | null
+  best_params?: Record<string, unknown>
+  improved?: boolean
+  improvement_pct?: number | null
   summary: string
 }

@@ -90,6 +90,7 @@ import { ExecutiveBriefingCard } from "@/components/deploy/executive-briefing-ca
 import { ServiceExportChatCard } from "@/components/deploy/service-export-chat-card"
 import { DeploymentVersionComparisonCard } from "@/components/deploy/deployment-version-comparison-card"
 import { EnsembleRecommendationCard } from "@/components/models/ensemble-recommendation-card"
+import { TuningChatCard } from "@/components/models/tuning-chat-card"
 import { PairCorrelationCard } from "@/components/data/pair-correlation-card"
 import { StatQueryCard } from "@/components/data/stat-query-card"
 import { SummaryStatsCard } from "@/components/data/summary-stats-card"
@@ -261,6 +262,7 @@ export default function ProjectWorkspace() {
     attachServiceExportToLastMessage,
     attachVersionComparisonToLastMessage,
     attachEnsembleRecommendationToLastMessage,
+    attachTuneChatToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -648,6 +650,8 @@ export default function ProjectWorkspace() {
                 attachVersionComparisonToLastMessage(json.version_comparison as import("@/lib/types").DeploymentVersionComparisonResult)
               } else if (json.type === "ensemble_recommendation" && json.ensemble_recommendation) {
                 attachEnsembleRecommendationToLastMessage(json.ensemble_recommendation as import("@/lib/types").EnsembleRecommendationResult)
+              } else if (json.type === "tune_chat" && json.tune_chat) {
+                attachTuneChatToLastMessage(json.tune_chat as import("@/lib/types").TuningChatResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -742,6 +746,7 @@ export default function ProjectWorkspace() {
     attachServiceExportToLastMessage,
     attachVersionComparisonToLastMessage,
     attachEnsembleRecommendationToLastMessage,
+    attachTuneChatToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -1213,6 +1218,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.ensemble_recommendation && (
                       <EnsembleRecommendationCard result={msg.ensemble_recommendation} />
+                    )}
+                    {msg.tune_chat && (
+                      <TuningChatCard result={msg.tune_chat} />
                     )}
                   </div>
                 </div>

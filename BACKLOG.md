@@ -49,6 +49,14 @@ the time is better spent on real features.
 
 ## Currently Working On
 
+## Day 36 (12:00) — Done
+**Track C — Hyperparameter Tuning Chat Card.** Analysts can now say "tune my model", "go ahead and tune it", "optimize hyperparameters", or "run the tuning" and receive an inline `TuningChatCard` showing before/after metrics, best params, and improvement percentage — all within the conversation, without navigating to the Models panel.
+- `_EXPLICIT_TUNE_RE` constant (unambiguous vocabulary: tune/tuning/optimize/hyperparameter/grid-search/best params) guards inline tuning from generic "improve my model" phrases (those still route to `_IMPROVEMENT_PATTERNS`).
+- `tune_chat_event` block in `send_message()`: loads CSV, prepares X/y, creates ModelRun, calls `tune_model()` (10-iter RandomizedSearchCV, 3-fold CV), updates run to done, emits `{type:"tune_chat"}` with original_metrics, tuned_metrics, best_params, improved, improvement_pct.
+- `TuningChatCard` (emerald border when improved, amber when unchanged, slate when not-tunable, 🔧 icon): before/after metrics table with delta column, best params in monospace, Improved/Unchanged badge, ±% badge.
+- `TuningChatResult` TypeScript type; `tune_chat?` on `ChatMessage`; `attachTuneChatToLastMessage` Zustand action; SSE handler + render wired in `page.tsx`.
+- 20 backend + 21 frontend = 41 new tests. Ruff lint: clean. Frontend build: clean.
+
 ## Day 36 (04:00) — Done
 **Track C — Ensemble Method Recommendation via Chat.** Analysts can now ask "should I use an ensemble?", "best ensemble for this problem?", "voting classifier", "stacking regressor", or "can an ensemble improve my accuracy?" and receive an `EnsembleRecommendationCard` inline in chat. The card explains what ensembles are, recommends stacking or voting based on dataset size and number of completed runs, and shows both options with plain-English descriptions and training prompts. No training is triggered — "explain before executing".
 - `_ENSEMBLE_PATTERNS` (8 NL variants) + handler in `chat.py`. Guards on `ctx["model_runs"]`. Recommends stacking (≥200 rows AND ≥2 runs) or voting. Emits `{type:"ensemble_recommendation"}` SSE event.
@@ -63,9 +71,9 @@ the time is better spent on real features.
 
 **What's next:**
 - Track E: Run the "lunch break" flow end-to-end as a real analyst; audit friction in the VP-sharing flow.
-- Track C: Hyperparameter tuning via chat — "optimize my model's settings" — auto-run GridSearchCV/RandomizedSearchCV on the best algorithm and show the improvement.
-- Track D: Webhook notifications on model drift/degradation.
+- Track D: Webhook notifications on model drift/degradation — "alert me when predictions shift".
 - Track D: Prediction SLA/latency monitoring — track p50/p95 per endpoint, surface in chat ("is my API slow?").
+- Track C: Cross-validation score distribution — show CV fold variance in training results so analysts know if model is consistent.
 
 ## Day 35 (12:00) — Done
 **Track D — Service Export Chat Integration.** Analysts can now say "package my model", "export my model as a service", or "deploy this elsewhere" and receive a `ServiceExportChatCard` inline in chat with a direct ZIP download link — no navigation to the deployment panel required. Closes the developer hand-off story through pure conversation.

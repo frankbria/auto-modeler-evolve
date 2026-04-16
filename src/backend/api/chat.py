@@ -65,6 +65,16 @@ _TUNE_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# Explicit tuning vocabulary — triggers an actual tuning run (not just guidance)
+# Must include one of these unambiguous terms to fire the inline tuning job
+_EXPLICIT_TUNE_RE = re.compile(
+    r"\b(tune|tuning|optimize|optimise|hyperparameter|grid[.\s-]?search|"
+    r"random[.\s-]?search|auto[.\s-]?tune|fine[.\s-]?tune|"
+    r"best[.\s-]?params?|best[.\s-]?settings?|"
+    r"go ahead and tune|run the tuning|start tuning)\b",
+    re.IGNORECASE,
+)
+
 # Keywords that trigger the model improvement advisor card
 # Distinct from _TUNE_PATTERNS (hyperparameter-only) — these ask for broad advice
 _IMPROVEMENT_PATTERNS = re.compile(
@@ -4137,7 +4147,7 @@ def send_message(
             pass  # Nice-to-have; never crash chat
 
     # Check if this is a tune/optimize request
-    tune_data: dict | None = None
+    tune_chat_event: dict | None = None
     if _TUNE_PATTERNS.search(body.message):
         completed_runs = [mr for mr in ctx["model_runs"] if mr.status == "done"]
         selected_run = next((mr for mr in completed_runs if mr.is_selected), None)
@@ -4145,23 +4155,171 @@ def send_message(
         if target_run:
             from core.tuner import is_tunable as _is_tunable
 
-            if _is_tunable(target_run.algorithm):
-                tune_data = {
-                    "model_run_id": target_run.id,
+            from core.trainer import (
+                CLASSIFICATION_ALGORITHMS as _CLS_ALGOS_T,
+                REGRESSION_ALGORITHMS as _REG_ALGOS_T,
+            )
+
+            _all_algos_t = {**_REG_ALGOS_T, **_CLS_ALGOS_T}
+            _algo_plain_t = _all_algos_t.get(target_run.algorithm, {}).get(
+                "name",
+                target_run.algorithm.replace("_", " ").title(),
+            )
+            _orig_metrics_t = (
+                json.loads(target_run.metrics) if target_run.metrics else {}
+            )
+
+            if (
+                _EXPLICIT_TUNE_RE.search(body.message)
+                and ctx["feature_set"]
+                and ctx["dataset"]
+            ):
+                # Run hyperparameter tuning inline and return results as a card
+                try:
+                    from api.models import MODELS_DIR as _MODELS_DIR_T
+                    from core.trainer import (
+                        prepare_features as _prep_features_t,
+                        tune_model as _tune_model_fn,
+                    )
+
+                    _fs_t = ctx["feature_set"]
+                    _ds_t = ctx["dataset"]
+                    _fp_t = Path(_ds_t.file_path)
+                    _target_t = _fs_t.target_column
+                    _pt_t = _fs_t.problem_type or "regression"
+
+                    _df_t = _load_working_df(_fp_t, _active_filter_conditions)
+                    _transforms_t = json.loads(_fs_t.transformations or "[]")
+                    if _transforms_t:
+                        from core.feature_engine import apply_transformations as _apply_t
+
+                        _df_t, _ = _apply_t(_df_t, _transforms_t)
+
+                    _feat_cols_t = [c for c in _df_t.columns if c != _target_t]
+                    _X_t, _y_t, _ = _prep_features_t(
+                        _df_t, _feat_cols_t, _target_t, _pt_t
+                    )
+
+                    _tuned_run = ModelRun(
+                        project_id=project_id,
+                        feature_set_id=target_run.feature_set_id,
+                        algorithm=target_run.algorithm,
+                        hyperparameters=json.dumps(
+                            {"tuned": True, "original_run_id": target_run.id}
+                        ),
+                        status="training",
+                    )
+                    session.add(_tuned_run)
+                    session.commit()
+                    session.refresh(_tuned_run)
+
+                    _model_dir_t = _MODELS_DIR_T / project_id
+                    _result_t = _tune_model_fn(
+                        _X_t, _y_t, target_run.algorithm, _pt_t, _model_dir_t, _tuned_run.id
+                    )
+
+                    _tuned_metrics_t = _result_t.get("metrics") or {}
+                    _primary_t = "r2" if _pt_t == "regression" else "accuracy"
+                    _orig_score_t = float(_orig_metrics_t.get(_primary_t) or 0.0)
+                    _tuned_score_t = float(_tuned_metrics_t.get(_primary_t) or 0.0)
+                    _improved_t = bool(_tuned_score_t > _orig_score_t)
+                    _improv_pct_t: float | None = None
+                    if _orig_score_t and _orig_score_t != 0:
+                        _improv_pct_t = round(
+                            ((_tuned_score_t - _orig_score_t) / abs(_orig_score_t)) * 100,
+                            2,
+                        )
+
+                    _tuned_run.status = "done"
+                    _tuned_run.metrics = json.dumps(_tuned_metrics_t)
+                    _tuned_run.model_path = _result_t.get("model_path")
+                    _tuned_run.training_duration_ms = _result_t.get("training_duration_ms")
+                    _tuned_run.summary = _result_t.get("summary")
+                    _tuned_run.hyperparameters = json.dumps(
+                        {
+                            "tuned": True,
+                            "original_run_id": target_run.id,
+                            "best_params": _result_t.get("best_params", {}),
+                        }
+                    )
+                    session.add(_tuned_run)
+                    session.commit()
+
+                    _primary_label_t = "R²" if _pt_t == "regression" else "Accuracy"
+                    if _improved_t and _improv_pct_t is not None:
+                        _summary_t = (
+                            f"Tuning improved {_primary_label_t} from {_orig_score_t:.3f} "
+                            f"to {_tuned_score_t:.3f} (+{_improv_pct_t:.1f}%). "
+                            "Best settings found by RandomizedSearchCV."
+                        )
+                    elif _improv_pct_t is not None and _improv_pct_t < 0:
+                        _summary_t = (
+                            "Tuning did not improve this model — the default settings are "
+                            "already well-suited for your data."
+                        )
+                    else:
+                        _summary_t = (
+                            "Tuning complete. Performance is equivalent — the original "
+                            "settings were already near-optimal."
+                        )
+
+                    tune_chat_event = {
+                        "tunable": True,
+                        "original_run_id": target_run.id,
+                        "tuned_run_id": _tuned_run.id,
+                        "algorithm": target_run.algorithm,
+                        "algorithm_name": _algo_plain_t,
+                        "problem_type": _pt_t,
+                        "original_metrics": _orig_metrics_t,
+                        "tuned_metrics": _tuned_metrics_t,
+                        "best_params": _result_t.get("best_params", {}),
+                        "improved": _improved_t,
+                        "improvement_pct": _improv_pct_t,
+                        "summary": _summary_t,
+                    }
+
+                    _direction_t = "improved" if _improved_t else "unchanged"
+                    system_prompt += (
+                        f"\n\n## Hyperparameter Tuning Complete\n"
+                        f"You just ran RandomizedSearchCV on {_algo_plain_t}. "
+                        f"{_primary_label_t} {_direction_t}: "
+                        f"{_orig_score_t:.3f} → {_tuned_score_t:.3f}. "
+                        f"Summary: {_summary_t} "
+                        "Tell the user the tuned model has been saved and is ready to select "
+                        "in the Models tab. Explain the best settings found in plain English. "
+                        "Do NOT suggest they need to do anything else — the tuning is done."
+                    )
+                except Exception:  # noqa: BLE001
+                    pass  # Nice-to-have; never crash chat
+
+            elif _is_tunable(target_run.algorithm):
+                # Tuning vocabulary detected but dataset not ready — guide to Models tab
+                system_prompt += (
+                    f"\n\n## Hyperparameter Tuning Available\n"
+                    f"The user wants to tune {_algo_plain_t} "
+                    f"(current metrics: {_orig_metrics_t}). "
+                    "Inform them that you can automatically tune the hyperparameters using "
+                    "RandomizedSearchCV. Tell them to say 'go ahead and tune it' once a "
+                    "dataset and feature set are configured, or use the Tune button in the "
+                    "Models tab."
+                )
+            else:
+                # Algorithm has no tunable hyperparameters
+                tune_chat_event = {
+                    "tunable": False,
                     "algorithm": target_run.algorithm,
-                    "metrics": (
-                        json.loads(target_run.metrics) if target_run.metrics else {}
+                    "algorithm_name": _algo_plain_t,
+                    "original_metrics": _orig_metrics_t,
+                    "summary": (
+                        f"{_algo_plain_t} has no hyperparameters to tune — "
+                        "it uses the optimal configuration by definition."
                     ),
                 }
                 system_prompt += (
-                    f"\n\n## Hyperparameter Tuning Available\n"
-                    f"The user is asking about improving model performance. "
-                    f"Their current best model is {target_run.algorithm} "
-                    f"(metrics: {tune_data['metrics']}). "
-                    "Inform them that you can automatically tune the hyperparameters using "
-                    "RandomizedSearchCV to find better settings — no technical knowledge needed. "
-                    "Tell them the Tune button is now available in the Models tab, or they can "
-                    "say 'go ahead and tune it' to start immediately."
+                    f"\n\n## Not Tunable\n"
+                    f"{_algo_plain_t} has no meaningful hyperparameters to search. "
+                    "Suggest the user try a tree-based model (Random Forest or Gradient "
+                    "Boosting) if they want tunable hyperparameters."
                 )
 
     # Check if this is a model health / retraining question
@@ -8857,9 +9015,9 @@ def send_message(
         if drift_data:
             yield f"data: {json.dumps({'type': 'drift', 'drift': drift_data})}\n\n"
 
-        # Emit tune suggestion if detected
-        if tune_data:
-            yield f"data: {json.dumps({'type': 'tune', 'tune': tune_data})}\n\n"
+        # Emit hyperparameter tuning result (ran inline) or not-tunable explanation
+        if tune_chat_event:
+            yield f"data: {json.dumps({'type': 'tune_chat', 'tune_chat': tune_chat_event})}\n\n"
 
         # Emit model improvement suggestions if computed
         if improvement_event:

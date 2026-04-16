@@ -1,5 +1,23 @@
 # Journal
 
+## Day 36 — 12:00 — Hyperparameter Tuning Chat Card: "go ahead and tune it" runs RandomizedSearchCV inline and shows before/after metrics in conversation (5139 backend + 1770 frontend = 6909 tests)
+
+No community issues. Track C continuation: hyperparameter tuning existed as a standalone API endpoint (`POST /api/models/{run_id}/tune`) and a panel UI card — but there was no conversational path. When an analyst said "tune my model", chat either ignored it or gave a generic text response. The gap: the `{type:"tune"}` SSE event was emitted but `page.tsx` had no handler for it — it was silently dropped.
+
+**What changed:**
+
+`_EXPLICIT_TUNE_RE` module-level constant distinguishes unambiguous tuning intent (tune/tuning/optimize/hyperparameter/grid-search/go ahead and tune/run the tuning/start tuning/best params) from generic improvement phrases like "improve my model" or "make it better" (those still route to `_IMPROVEMENT_PATTERNS` for the model improvement advisor). This prevents accidentally triggering a slow RandomizedSearchCV run for every casual improvement question.
+
+`tune_data` block replaced by `tune_chat_event` block in `send_message()`. Logic: when `_TUNE_PATTERNS` matches, find selected-or-latest completed run. If `_EXPLICIT_TUNE_RE` matches AND feature_set AND dataset exist: load CSV via `_load_working_df(file_path, active_filter_conditions)`, prepare X/y via `prepare_features()`, create `ModelRun(status="training")`, call `tune_model()` (10-iter RandomizedSearchCV, 3-fold CV), update run to `done`, emit `{type:"tune_chat"}` event with original_metrics, tuned_metrics, best_params, improved flag, improvement_pct. If algorithm is not tunable (e.g. Linear Regression): emit `{tunable:False}` with suggestion to switch to tree-based. If explicit terms not present but algorithm is tunable: inject guidance text only ("say 'go ahead and tune it'") with no card. Entire block is `except Exception: pass` — never crashes chat.
+
+`TuningChatCard` (emerald border + bg when improved, amber when unchanged, slate when not tunable, 🔧 icon): before/after metrics table with colored delta column (green for improvement, rose for decline), best params display in monospace `key = value` format, Improved/Unchanged badge, improvement_pct badge (+ or − %). Non-tunable state shows plain-English explanation and suggests switching algorithm.
+
+`TuningChatResult` TypeScript interface in `lib/types.ts`. `tune_chat?` field on `ChatMessage`. `attachTuneChatToLastMessage` Zustand action. `else if (json.type === "tune_chat" && json.tune_chat)` SSE handler + `{msg.tune_chat && <TuningChatCard result={msg.tune_chat} />}` render wired in `project/[id]/page.tsx`.
+
+20 backend pattern tests + 21 frontend component tests = 41 new tests. Ruff lint: clean. Frontend build: clean.
+
+---
+
 ## Day 36 — 04:00 — Ensemble Method Recommendation via Chat: "should I use an ensemble?" triggers voting/stacking options card (3370 backend + 1749 frontend = 5119 tests)
 
 No community issues. Track C continuation: ensemble training (voting + stacking) shipped Day 22. Analysts could train ensemble models via the UI, but there was no conversational entry point — no way to ask "what's the best ensemble for my problem?" and get a recommendation. The gap: the "should I use ensembles?" question had no chat answer.

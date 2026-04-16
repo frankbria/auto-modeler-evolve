@@ -121,6 +121,7 @@ interface AppState {
   attachServiceExportToLastMessage: (service_export: import("./types").ServiceExportChatResult) => void
   attachVersionComparisonToLastMessage: (version_comparison: import("./types").DeploymentVersionComparisonResult) => void
   attachEnsembleRecommendationToLastMessage: (ensemble_recommendation: import("./types").EnsembleRecommendationResult) => void
+  attachTuneChatToLastMessage: (tune_chat: import("./types").TuningChatResult) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -845,6 +846,15 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, ensemble_recommendation }
+      }
+      return { messages }
+    }),
+  attachTuneChatToLastMessage: (tune_chat) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, tune_chat }
       }
       return { messages }
     }),
