@@ -119,6 +119,7 @@ interface AppState {
   attachWebhookHealthSummaryToLastMessage: (webhook_health_summary: import("./types").WebhookHealthSummaryResult) => void
   attachExecutiveBriefingToLastMessage: (executive_briefing: import("./types").ExecutiveBriefingResult) => void
   attachServiceExportToLastMessage: (service_export: import("./types").ServiceExportChatResult) => void
+  attachVersionComparisonToLastMessage: (version_comparison: import("./types").DeploymentVersionComparisonResult) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -825,6 +826,15 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, service_export }
+      }
+      return { messages }
+    }),
+  attachVersionComparisonToLastMessage: (version_comparison) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, version_comparison }
       }
       return { messages }
     }),

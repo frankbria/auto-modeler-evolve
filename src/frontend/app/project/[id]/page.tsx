@@ -88,6 +88,7 @@ import { ClassImbalanceChatCard } from "@/components/models/class-imbalance-chat
 import { WebhookHealthSummaryCard } from "@/components/deploy/webhook-health-summary-card"
 import { ExecutiveBriefingCard } from "@/components/deploy/executive-briefing-card"
 import { ServiceExportChatCard } from "@/components/deploy/service-export-chat-card"
+import { DeploymentVersionComparisonCard } from "@/components/deploy/deployment-version-comparison-card"
 import { PairCorrelationCard } from "@/components/data/pair-correlation-card"
 import { StatQueryCard } from "@/components/data/stat-query-card"
 import { SummaryStatsCard } from "@/components/data/summary-stats-card"
@@ -257,6 +258,7 @@ export default function ProjectWorkspace() {
     attachWebhookHealthSummaryToLastMessage,
     attachExecutiveBriefingToLastMessage,
     attachServiceExportToLastMessage,
+    attachVersionComparisonToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -640,6 +642,8 @@ export default function ProjectWorkspace() {
                 attachExecutiveBriefingToLastMessage(json.executive_briefing as import("@/lib/types").ExecutiveBriefingResult)
               } else if (json.type === "service_export" && json.service_export) {
                 attachServiceExportToLastMessage(json.service_export as import("@/lib/types").ServiceExportChatResult)
+              } else if (json.type === "version_comparison" && json.version_comparison) {
+                attachVersionComparisonToLastMessage(json.version_comparison as import("@/lib/types").DeploymentVersionComparisonResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -732,6 +736,7 @@ export default function ProjectWorkspace() {
     attachWebhookHealthSummaryToLastMessage,
     attachExecutiveBriefingToLastMessage,
     attachServiceExportToLastMessage,
+    attachVersionComparisonToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -1197,6 +1202,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.service_export && (
                       <ServiceExportChatCard result={msg.service_export} />
+                    )}
+                    {msg.version_comparison && (
+                      <DeploymentVersionComparisonCard result={msg.version_comparison} />
                     )}
                   </div>
                 </div>

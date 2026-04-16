@@ -477,6 +477,7 @@ export interface ChatMessage {
   webhook_health_summary?: WebhookHealthSummaryResult
   executive_briefing?: ExecutiveBriefingResult
   service_export?: ServiceExportChatResult
+  version_comparison?: DeploymentVersionComparisonResult
 }
 
 export interface SegmentPerformanceSegment {
@@ -639,6 +640,33 @@ export interface ServiceExportChatResult {
   feature_count: number
   download_url: string
   included_files: string[]
+}
+
+export interface VersionMetricDiff {
+  metric: string
+  previous: number
+  current: number
+  delta: number
+  pct_change: number
+  direction: "up" | "down" | "flat"
+  improved: boolean
+  higher_is_better: boolean
+}
+
+export interface DeploymentVersionComparisonResult {
+  has_comparison: boolean
+  current_version?: number
+  previous_version?: number
+  current_algorithm?: string
+  previous_algorithm?: string
+  current_deployed_at?: string | null
+  previous_deployed_at?: string | null
+  algorithm_changed?: boolean
+  metric_diffs?: VersionMetricDiff[]
+  improved_count?: number
+  declined_count?: number
+  summary: string
+  version_count?: number
 }
 
 export interface SplitStrategyInfo {

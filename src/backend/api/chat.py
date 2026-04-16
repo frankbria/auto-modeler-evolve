@@ -2645,6 +2645,20 @@ _WEBHOOK_HISTORY_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+_VERSION_COMPARE_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"(?:compare|diff(?:erence)?)\s+(?:my\s+)?(?:deployment\s+)?versions?\b|"
+    r"(?:how\s+(?:does|did|has)\s+(?:my\s+)?(?:model|deployment|retrain|version))(?:\s+(?:compare|changed?|improve[d]?|do))\b|"
+    r"(?:did|has)\s+(?:my\s+)?(?:retrain|update|new\s+version)\s+(?:help|improve|work|get\s+better)\b|"
+    r"(?:what|how\s+much)\s+(?:changed?|improved?|got\s+better|got\s+worse)\s+(?:after|since|with)\s+(?:the\s+)?(?:retrain|retraining|last\s+(?:update|version|deploy))\b|"
+    r"(?:current|new|latest)\s+(?:version|model)\s+vs\s+(?:previous|last|old|prior)\b|"
+    r"(?:previous|last|old|prior)\s+(?:version|model)\s+vs\s+(?:current|new|latest)\b|"
+    r"(?:show|view|check|see)\s+(?:my\s+)?(?:version|deployment)\s+(?:history|comparison|metrics|changes?)\b|"
+    r"(?:is|was)\s+(?:(?:my|the)\s+)?(?:retrain|new\s+version|model\s+update)\s+(?:better|an\s+improvement|worth\s+it)\b"
+    r")",
+    re.IGNORECASE,
+)
+
 _DOW_NAMES: dict[str, int] = {
     "monday": 0,
     "mon": 0,
@@ -8494,6 +8508,141 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Nice-to-have; never crash chat
 
+    # Deployment version comparison — diff metrics between current and previous version
+    version_compare_event: dict | None = None
+    if _VERSION_COMPARE_PATTERNS.search(body.message) and ctx["deployment"]:
+        try:
+            from models.deployment_version import DeploymentVersion as _DVModel
+
+            _vc_dep = ctx["deployment"]
+            _vc_versions = session.exec(
+                select(_DVModel)
+                .where(_DVModel.deployment_id == _vc_dep.id)
+                .order_by(_DVModel.version_number.desc())
+            ).all()
+            if len(_vc_versions) >= 2:
+                _vc_current = _vc_versions[0]
+                _vc_previous = _vc_versions[1]
+                _vc_cur_metrics: dict = (
+                    json.loads(_vc_current.metrics) if _vc_current.metrics else {}
+                )
+                _vc_prev_metrics: dict = (
+                    json.loads(_vc_previous.metrics) if _vc_previous.metrics else {}
+                )
+
+                # Compute per-metric delta for all shared numeric metrics
+                _DISPLAY_METRICS = [
+                    "r2",
+                    "accuracy",
+                    "mae",
+                    "rmse",
+                    "f1",
+                    "precision",
+                    "recall",
+                ]
+                _vc_diffs: list[dict] = []
+                for _m in _DISPLAY_METRICS:
+                    if _m in _vc_cur_metrics and _m in _vc_prev_metrics:
+                        try:
+                            _cur_val = float(_vc_cur_metrics[_m])
+                            _prev_val = float(_vc_prev_metrics[_m])
+                            _delta = _cur_val - _prev_val
+                            _pct = (
+                                (_delta / abs(_prev_val) * 100) if _prev_val != 0 else 0.0
+                            )
+                            # For error metrics (mae, rmse), lower is better
+                            _higher_is_better = _m not in ("mae", "rmse", "mse")
+                            _improved = (
+                                _delta > 0 if _higher_is_better else _delta < 0
+                            )
+                            _vc_diffs.append(
+                                {
+                                    "metric": _m,
+                                    "previous": round(_prev_val, 4),
+                                    "current": round(_cur_val, 4),
+                                    "delta": round(_delta, 4),
+                                    "pct_change": round(_pct, 1),
+                                    "direction": "up" if _delta > 0 else ("down" if _delta < 0 else "flat"),
+                                    "improved": _improved,
+                                    "higher_is_better": _higher_is_better,
+                                }
+                            )
+                        except (ValueError, TypeError):
+                            continue
+
+                # Algorithm change detection
+                _algo_changed = (
+                    _vc_current.algorithm != _vc_previous.algorithm
+                    and _vc_current.algorithm
+                    and _vc_previous.algorithm
+                )
+
+                # Build plain-English summary
+                _improved_metrics = [d for d in _vc_diffs if d["improved"]]
+                _declined_metrics = [d for d in _vc_diffs if not d["improved"] and d["delta"] != 0]
+                if _vc_diffs:
+                    _primary = _vc_diffs[0]
+                    _direction_word = "improved" if _primary["improved"] else "declined"
+                    _pct_word = f"{abs(_primary['pct_change']):.1f}%"
+                    _vc_summary = (
+                        f"Version {_vc_current.version_number} vs {_vc_previous.version_number}: "
+                        f"{_primary['metric'].upper()} {_direction_word} "
+                        f"from {_primary['previous']} to {_primary['current']} "
+                        f"({'+' if _primary['delta'] > 0 else ''}{_primary['delta']:.4f}, {'+' if _primary['pct_change'] > 0 else ''}{_pct_word}). "
+                        f"{len(_improved_metrics)} metric{'s' if len(_improved_metrics) != 1 else ''} improved, "
+                        f"{len(_declined_metrics)} declined."
+                    )
+                else:
+                    _vc_summary = (
+                        f"Version {_vc_current.version_number} vs {_vc_previous.version_number}: "
+                        "metrics were not comparable between versions."
+                    )
+
+                version_compare_event = {
+                    "current_version": _vc_current.version_number,
+                    "previous_version": _vc_previous.version_number,
+                    "current_algorithm": _vc_current.algorithm or "unknown",
+                    "previous_algorithm": _vc_previous.algorithm or "unknown",
+                    "current_deployed_at": (
+                        _vc_current.deployed_at.isoformat() if _vc_current.deployed_at else None
+                    ),
+                    "previous_deployed_at": (
+                        _vc_previous.deployed_at.isoformat() if _vc_previous.deployed_at else None
+                    ),
+                    "algorithm_changed": bool(_algo_changed),
+                    "metric_diffs": _vc_diffs,
+                    "improved_count": len(_improved_metrics),
+                    "declined_count": len(_declined_metrics),
+                    "summary": _vc_summary,
+                    "has_comparison": True,
+                }
+                system_prompt += (
+                    "\n\n## Deployment Version Comparison\n"
+                    f"{_vc_summary}\n"
+                    "Briefly summarise which metrics improved and which declined. "
+                    "For metrics that went down, mention whether it might be worth investigating. "
+                    "Keep the tone of a smart data-savvy colleague reviewing results after a retrain."
+                )
+            else:
+                # Fewer than 2 versions — guide user
+                _vc_ver_count = len(_vc_versions)
+                version_compare_event = {
+                    "has_comparison": False,
+                    "version_count": _vc_ver_count,
+                    "summary": (
+                        "Only one deployment version exists so far — retrain the model to create a second version for comparison."
+                        if _vc_ver_count == 1
+                        else "No deployment versions found yet. Deploy a model first."
+                    ),
+                }
+                system_prompt += (
+                    "\n\n## Version Comparison Not Available\n"
+                    + version_compare_event["summary"]
+                    + "\nTell the user they need to retrain the model to generate a second version."
+                )
+        except Exception:  # noqa: BLE001
+            pass  # Nice-to-have; never crash chat
+
     # Pre-compute follow-up suggestions (based on state + current message)
     current_state = detect_state(
         ctx["dataset"], ctx["feature_set"], ctx["model_runs"], ctx["deployment"]
@@ -8887,6 +9036,10 @@ def send_message(
         # Emit service export card — model packaged as self-contained ZIP
         if service_export_event:
             yield f"data: {json.dumps({'type': 'service_export', 'service_export': service_export_event})}\n\n"
+
+        # Emit deployment version comparison card
+        if version_compare_event:
+            yield f"data: {json.dumps({'type': 'version_comparison', 'version_comparison': version_compare_event})}\n\n"
 
         # After text stream, opportunistically generate a chart if the
         # message is about data and we have a dataset loaded
