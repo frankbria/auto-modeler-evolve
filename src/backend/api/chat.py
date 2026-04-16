@@ -4191,7 +4191,9 @@ def send_message(
                     _df_t = _load_working_df(_fp_t, _active_filter_conditions)
                     _transforms_t = json.loads(_fs_t.transformations or "[]")
                     if _transforms_t:
-                        from core.feature_engine import apply_transformations as _apply_t
+                        from core.feature_engine import (
+                            apply_transformations as _apply_t,
+                        )
 
                         _df_t, _ = _apply_t(_df_t, _transforms_t)
 
@@ -4215,7 +4217,12 @@ def send_message(
 
                     _model_dir_t = _MODELS_DIR_T / project_id
                     _result_t = _tune_model_fn(
-                        _X_t, _y_t, target_run.algorithm, _pt_t, _model_dir_t, _tuned_run.id
+                        _X_t,
+                        _y_t,
+                        target_run.algorithm,
+                        _pt_t,
+                        _model_dir_t,
+                        _tuned_run.id,
                     )
 
                     _tuned_metrics_t = _result_t.get("metrics") or {}
@@ -4226,14 +4233,17 @@ def send_message(
                     _improv_pct_t: float | None = None
                     if _orig_score_t and _orig_score_t != 0:
                         _improv_pct_t = round(
-                            ((_tuned_score_t - _orig_score_t) / abs(_orig_score_t)) * 100,
+                            ((_tuned_score_t - _orig_score_t) / abs(_orig_score_t))
+                            * 100,
                             2,
                         )
 
                     _tuned_run.status = "done"
                     _tuned_run.metrics = json.dumps(_tuned_metrics_t)
                     _tuned_run.model_path = _result_t.get("model_path")
-                    _tuned_run.training_duration_ms = _result_t.get("training_duration_ms")
+                    _tuned_run.training_duration_ms = _result_t.get(
+                        "training_duration_ms"
+                    )
                     _tuned_run.summary = _result_t.get("summary")
                     _tuned_run.hyperparameters = json.dumps(
                         {
