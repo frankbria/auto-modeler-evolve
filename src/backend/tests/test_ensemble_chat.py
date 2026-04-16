@@ -191,7 +191,9 @@ class TestEnsembleChatHandler:
     def test_with_model_run_emits_event(self, sync_client):
         """With a completed model run, ensemble_recommendation event is emitted."""
         pid = _setup_with_model_run(sync_client)
-        events = _chat_events(sync_client, pid, "what's the best ensemble for this problem?")
+        events = _chat_events(
+            sync_client, pid, "what's the best ensemble for this problem?"
+        )
         ens_events = [e for e in events if e.get("type") == "ensemble_recommendation"]
         assert len(ens_events) == 1
 
