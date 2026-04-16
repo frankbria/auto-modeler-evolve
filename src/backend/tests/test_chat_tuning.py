@@ -7,11 +7,14 @@ Covers:
 - POST /api/chat/{project_id} tune_chat SSE event (integration)
 """
 
+from __future__ import annotations
+
+import io
 import json
+import unittest.mock as mock
 
 import pytest
-from httpx import ASGITransport, AsyncClient
-from sqlmodel import SQLModel, create_engine
+from sqlmodel import Session, SQLModel, create_engine
 
 import db as db_module
 from api.chat import (
@@ -20,106 +23,116 @@ from api.chat import (
 )
 
 # ---------------------------------------------------------------------------
-# Fixtures (same pattern as test_chat_training.py)
+# Fixtures (synchronous TestClient pattern — avoids background-thread engine issue)
 # ---------------------------------------------------------------------------
 
+# 100-row regression CSV — enough rows for 3-fold CV in RandomizedSearchCV
 _SAMPLE_CSV = (
-    b"region,revenue,units,cost\n"
-    b"East,100,10,50\n"
-    b"West,200,20,80\n"
-    b"East,150,15,60\n"
-    b"West,300,30,120\n"
-    b"North,250,25,100\n"
-    b"East,175,18,70\n"
-    b"West,220,22,90\n"
-    b"North,190,19,75\n"
-    b"East,130,13,55\n"
-    b"West,280,28,110\n"
+    b"units,price,cost,revenue\n"
+    + b"10,5.0,3.0,50.0\n" * 34
+    + b"20,8.0,5.0,160.0\n" * 33
+    + b"15,6.0,4.0,90.0\n" * 33
 )
 
 
+def _parse_sse(text: str) -> list[dict]:
+    events = []
+    for line in text.split("\n"):
+        if line.startswith("data: "):
+            try:
+                events.append(json.loads(line[6:]))
+            except json.JSONDecodeError:
+                pass
+    return events
+
+
+def _chat_events(client, project_id: str, message: str) -> list[dict]:
+    """Send a chat message with mocked Anthropic and return parsed SSE events."""
+    with mock.patch("anthropic.Anthropic") as mock_cls:
+        mc = mock.MagicMock()
+        mock_cls.return_value = mc
+        ms = mock.MagicMock()
+        ms.__enter__ = mock.MagicMock(return_value=ms)
+        ms.__exit__ = mock.MagicMock(return_value=False)
+        ms.text_stream = iter(["Done."])
+        mc.messages.stream.return_value = ms
+        resp = client.post(
+            f"/api/chat/{project_id}",
+            json={"message": message, "project_id": project_id},
+        )
+    return _parse_sse(resp.text)
+
+
 @pytest.fixture()
-async def ac(tmp_path):
-    test_db = str(tmp_path / "test.db")
-    db_module.engine = create_engine(f"sqlite:///{test_db}", echo=False)
-    db_module.DATA_DIR = tmp_path
-
-    import models.conversation  # noqa
-    import models.dataset  # noqa
-    import models.deployment  # noqa
-    import models.feature_set  # noqa
-    import models.feedback_record  # noqa
-    import models.model_run  # noqa
-    import models.prediction_log  # noqa
-    import models.project  # noqa
-
-    SQLModel.metadata.create_all(db_module.engine)
-
-    import api.data as data_module
-
-    data_module.UPLOAD_DIR = tmp_path / "uploads"
-
-    import api.models as models_module
-
-    models_module.MODELS_DIR = tmp_path / "models"
-
+def sync_client(tmp_path):
+    """Synchronous TestClient with isolated SQLite DB."""
+    from fastapi.testclient import TestClient
     from main import app
 
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
-        yield client
+    test_db = str(tmp_path / "tuning_chat_test.db")
+    orig_engine = db_module.engine
+    db_module.engine = create_engine(
+        f"sqlite:///{test_db}", connect_args={"check_same_thread": False}
+    )
+    import models  # noqa — registers all tables
+
+    SQLModel.metadata.create_all(db_module.engine)
+    db_module.create_db_and_tables()
+
+    import api.data as dm
+    import api.models as mm
+
+    dm.UPLOAD_DIR = tmp_path / "uploads"
+    mm.MODELS_DIR = tmp_path / "models"
+
+    yield TestClient(app)
+    db_module.engine = orig_engine
 
 
-@pytest.fixture()
-async def project_id(ac):
-    resp = await ac.post("/api/projects", json={"name": "Tuning Test"})
-    return resp.json()["id"]
+def _setup_with_model_run(client, tmp_path) -> str:
+    """Create project + dataset + feature_set, inject a done ModelRun. Returns project_id.
 
+    Injects ModelRun directly to avoid the background-training thread / DB-engine
+    mismatch. The chat handler calls tune_model() fresh on X/y — it doesn't load
+    a saved model file — so no model on disk is needed.
+    """
+    from models.model_run import ModelRun
 
-@pytest.fixture()
-async def dataset_id(ac, project_id):
-    resp = await ac.post(
+    proj = client.post("/api/projects", json={"name": "TuningChatTest"})
+    pid = proj.json()["id"]
+
+    upload = client.post(
         "/api/data/upload",
-        files={"file": ("sales.csv", _SAMPLE_CSV, "text/csv")},
-        data={"project_id": project_id},
+        data={"project_id": pid},
+        files={"file": ("sales.csv", io.BytesIO(_SAMPLE_CSV), "text/csv")},
     )
-    assert resp.status_code == 201, resp.text
-    return resp.json()["dataset_id"]
+    assert upload.status_code == 201, upload.text
+    did = upload.json()["dataset_id"]
 
+    fs_r = client.post(f"/api/features/{did}/apply", json={"transformations": []})
+    assert fs_r.status_code == 201, fs_r.text
+    fs_id = fs_r.json()["feature_set_id"]
 
-@pytest.fixture()
-async def feature_set_id(ac, dataset_id):
-    resp = await ac.post(
-        f"/api/features/{dataset_id}/apply",
-        json={"transformations": []},
-    )
-    assert resp.status_code == 201, resp.text
-    fs_id = resp.json()["feature_set_id"]
-
-    await ac.post(
-        f"/api/features/{dataset_id}/target",
+    client.post(
+        f"/api/features/{did}/target",
         json={"target_column": "revenue", "feature_set_id": fs_id},
     )
-    return fs_id
 
+    # Inject a completed ModelRun with a tunable algorithm
+    # Must use the full registry key, not the display name
+    with Session(db_module.engine) as session:
+        run = ModelRun(
+            project_id=pid,
+            feature_set_id=fs_id,
+            algorithm="random_forest_regressor",
+            status="done",
+            metrics=json.dumps({"r2": 0.72, "mae": 8.5, "rmse": 12.0}),
+            summary="Random Forest Regressor: R² 0.720",
+        )
+        session.add(run)
+        session.commit()
 
-@pytest.fixture()
-async def model_run_id(ac, project_id, dataset_id, feature_set_id):
-    """Train a model so there is a completed run to tune."""
-    resp = await ac.post(
-        "/api/models/train",
-        json={
-            "project_id": project_id,
-            "feature_set_id": feature_set_id,
-            "algorithm": "random_forest",
-            "problem_type": "regression",
-        },
-    )
-    assert resp.status_code in (200, 201), resp.text
-    data = resp.json()
-    # Return the model run id from the train response
-    return data.get("id") or data.get("model_run_id")
+    return pid
 
 
 # ---------------------------------------------------------------------------
@@ -219,40 +232,37 @@ def test_explicit_tune_re_no_false_positive_accuracy():
 
 
 # ---------------------------------------------------------------------------
-# Integration test — tune_chat SSE event emitted when model run exists
+# Integration tests — tune_chat SSE event
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
-async def test_tune_chat_event_emitted(ac, project_id, dataset_id, feature_set_id, model_run_id):
-    """Sending 'go ahead and tune it' with a trained model should emit tune_chat event."""
-    resp = await ac.post(
-        f"/api/chat/{project_id}",
-        json={"message": "go ahead and tune it"},
-        headers={"Accept": "text/event-stream"},
-        timeout=120,
-    )
-    assert resp.status_code == 200
+class TestTuneChatHandler:
+    """Integration tests for the hyperparameter tuning chat handler."""
 
-    # Collect all SSE events
-    events: list[dict] = []
-    for line in resp.text.splitlines():
-        if line.startswith("data: "):
-            payload = line[6:]
-            try:
-                events.append(json.loads(payload))
-            except json.JSONDecodeError:
-                pass
+    def test_no_model_runs_no_event(self, sync_client):
+        """Without any model runs the tune_chat event must not be emitted."""
+        proj = sync_client.post("/api/projects", json={"name": "NoRuns"})
+        pid = proj.json()["id"]
+        events = _chat_events(sync_client, pid, "go ahead and tune it")
+        assert not any(e.get("type") == "tune_chat" for e in events)
 
-    event_types = {e.get("type") for e in events}
-    assert "tune_chat" in event_types, f"Expected tune_chat event, got: {event_types}"
+    def test_tune_chat_event_emitted(self, sync_client, tmp_path):
+        """Explicit tuning phrase with a completed run emits tune_chat event."""
+        pid = _setup_with_model_run(sync_client, tmp_path)
+        events = _chat_events(sync_client, pid, "go ahead and tune it")
+        tune_events = [e for e in events if e.get("type") == "tune_chat"]
+        assert len(tune_events) == 1
+        tc = tune_events[0]["tune_chat"]
+        assert tc["tunable"] is True
+        assert tc["algorithm"] == "random_forest_regressor"
+        assert "original_metrics" in tc
+        assert "tuned_metrics" in tc
+        assert "best_params" in tc
+        assert "improved" in tc
+        assert "summary" in tc
 
-    tune_event = next(e for e in events if e.get("type") == "tune_chat")
-    tc = tune_event["tune_chat"]
-    assert tc["tunable"] is True
-    assert tc["algorithm"] == "random_forest"
-    assert "original_metrics" in tc
-    assert "tuned_metrics" in tc
-    assert "best_params" in tc
-    assert "improved" in tc
-    assert "summary" in tc
+    def test_generic_improve_phrase_no_tune_event(self, sync_client, tmp_path):
+        """Generic 'improve my model' must not trigger inline tuning."""
+        pid = _setup_with_model_run(sync_client, tmp_path)
+        events = _chat_events(sync_client, pid, "how do I improve my model")
+        assert not any(e.get("type") == "tune_chat" for e in events)
