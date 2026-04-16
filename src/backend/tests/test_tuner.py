@@ -473,8 +473,8 @@ class TestChatTuneIntent:
             )
 
         assert r.status_code == 200
-        body = r.text
-        assert '"type": "tune"' in body
+        # Explicit "tune" keyword → inline RandomizedSearchCV → tune_chat event
+        assert '"type": "tune_chat"' in r.text
 
     def test_optimize_keyword_triggers_tune_event(self, client, tmp_path):
         project_id, _ = self._setup_trained_project(client, tmp_path)
@@ -486,9 +486,12 @@ class TestChatTuneIntent:
             )
 
         assert r.status_code == 200
-        assert '"type": "tune"' in r.text
+        # Explicit "optimize" keyword → inline tuning → tune_chat event
+        assert '"type": "tune_chat"' in r.text
 
-    def test_improve_keyword_triggers_tune_event(self, client, tmp_path):
+    def test_improve_keyword_no_inline_tuning(self, client, tmp_path):
+        # "improve my model" is vague — matches _TUNE_PATTERNS but NOT _EXPLICIT_TUNE_RE.
+        # Should give guidance text only; inline tuning must NOT be triggered.
         project_id, _ = self._setup_trained_project(client, tmp_path)
 
         with patch("api.chat.anthropic.Anthropic", return_value=self._mock_anthropic()):
@@ -498,7 +501,7 @@ class TestChatTuneIntent:
             )
 
         assert r.status_code == 200
-        assert '"type": "tune"' in r.text
+        assert '"type": "tune_chat"' not in r.text
 
     def test_no_tune_event_without_keyword(self, client, tmp_path):
         project_id, _ = self._setup_trained_project(client, tmp_path)
@@ -510,10 +513,10 @@ class TestChatTuneIntent:
             )
 
         assert r.status_code == 200
-        assert '"type": "tune"' not in r.text
+        assert '"type": "tune_chat"' not in r.text
 
     def test_tune_event_includes_model_run_id(self, client, tmp_path):
-        project_id, model_run_id = self._setup_trained_project(client, tmp_path)
+        project_id, _ = self._setup_trained_project(client, tmp_path)
 
         with patch("api.chat.anthropic.Anthropic", return_value=self._mock_anthropic()):
             r = client.post(
@@ -521,12 +524,15 @@ class TestChatTuneIntent:
                 json={"message": "Can you tune this model?"},
             )
 
-        assert '"type": "tune"' in r.text
-        # Parse the tune event from SSE stream
+        assert '"type": "tune_chat"' in r.text
+        # Parse the tune_chat event and verify required fields
         for line in r.text.splitlines():
-            if line.startswith("data:") and '"type": "tune"' in line:
+            if line.startswith("data:") and '"type": "tune_chat"' in line:
                 event = json.loads(line[5:].strip())
-                assert "tune" in event
-                assert "model_run_id" in event["tune"]
-                assert "algorithm" in event["tune"]
+                assert "tune_chat" in event
+                tc = event["tune_chat"]
+                assert "algorithm" in tc
+                assert "original_metrics" in tc
+                assert "tuned_metrics" in tc
+                assert "best_params" in tc
                 break
