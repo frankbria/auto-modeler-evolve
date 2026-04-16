@@ -8548,13 +8548,13 @@ def send_message(
                             _prev_val = float(_vc_prev_metrics[_m])
                             _delta = _cur_val - _prev_val
                             _pct = (
-                                (_delta / abs(_prev_val) * 100) if _prev_val != 0 else 0.0
+                                (_delta / abs(_prev_val) * 100)
+                                if _prev_val != 0
+                                else 0.0
                             )
                             # For error metrics (mae, rmse), lower is better
                             _higher_is_better = _m not in ("mae", "rmse", "mse")
-                            _improved = (
-                                _delta > 0 if _higher_is_better else _delta < 0
-                            )
+                            _improved = _delta > 0 if _higher_is_better else _delta < 0
                             _vc_diffs.append(
                                 {
                                     "metric": _m,
@@ -8562,7 +8562,9 @@ def send_message(
                                     "current": round(_cur_val, 4),
                                     "delta": round(_delta, 4),
                                     "pct_change": round(_pct, 1),
-                                    "direction": "up" if _delta > 0 else ("down" if _delta < 0 else "flat"),
+                                    "direction": "up"
+                                    if _delta > 0
+                                    else ("down" if _delta < 0 else "flat"),
                                     "improved": _improved,
                                     "higher_is_better": _higher_is_better,
                                 }
@@ -8579,7 +8581,9 @@ def send_message(
 
                 # Build plain-English summary
                 _improved_metrics = [d for d in _vc_diffs if d["improved"]]
-                _declined_metrics = [d for d in _vc_diffs if not d["improved"] and d["delta"] != 0]
+                _declined_metrics = [
+                    d for d in _vc_diffs if not d["improved"] and d["delta"] != 0
+                ]
                 if _vc_diffs:
                     _primary = _vc_diffs[0]
                     _direction_word = "improved" if _primary["improved"] else "declined"
@@ -8604,10 +8608,14 @@ def send_message(
                     "current_algorithm": _vc_current.algorithm or "unknown",
                     "previous_algorithm": _vc_previous.algorithm or "unknown",
                     "current_deployed_at": (
-                        _vc_current.deployed_at.isoformat() if _vc_current.deployed_at else None
+                        _vc_current.deployed_at.isoformat()
+                        if _vc_current.deployed_at
+                        else None
                     ),
                     "previous_deployed_at": (
-                        _vc_previous.deployed_at.isoformat() if _vc_previous.deployed_at else None
+                        _vc_previous.deployed_at.isoformat()
+                        if _vc_previous.deployed_at
+                        else None
                     ),
                     "algorithm_changed": bool(_algo_changed),
                     "metric_diffs": _vc_diffs,
