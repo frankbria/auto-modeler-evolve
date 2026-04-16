@@ -1333,6 +1333,20 @@ guides them forward through the natural flow.
       `project/[id]/page.tsx`. 13 backend + 18 frontend = 31 new tests. Total: ~3142 backend +
       1693 frontend. Backend lint: clean. Frontend build + lint: clean.*
 
+- [x] **Deployment Version Comparison via Chat** — Analysts can ask "compare my deployment
+      versions", "did my retrain improve?", "current version vs previous", "how did my retrain
+      improve", or "is the new version better?" and receive a `DeploymentVersionComparisonCard`
+      inline in chat showing per-metric deltas between the current and previous deployment version.
+      Handler guards on `ctx["deployment"]` and 2+ `DeploymentVersion` records. Computes
+      delta/pct_change/direction/improved for r2, accuracy, mae, rmse, f1, precision, recall.
+      MAE/RMSE treated as error metrics (lower=better). Algorithm-change detection with amber note.
+      Plain-English summary. When <2 versions: `has_comparison=False` with onboarding guidance.
+      No-comparison state shows summary only (no table). `_VERSION_COMPARE_PATTERNS` regex (8 NL
+      variants). `DeploymentVersionComparisonResult`/`VersionMetricDiff` TypeScript types;
+      `attachVersionComparisonToLastMessage` Zustand action; SSE handler + card render wired in
+      `project/[id]/page.tsx`. 13 backend + 19 frontend = 32 new tests. Total: 3155 backend +
+      1712 frontend = 4867, all passing. Backend lint: clean. Frontend build + lint: clean.*
+
 ---
 
 ## Data Model

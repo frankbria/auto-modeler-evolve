@@ -1,5 +1,21 @@
 # Journal
 
+## Day 35 — 20:00 — Deployment Version Comparison via Chat: "did my retrain improve?" triggers metric diff card (3155 backend + 1712 frontend = 4867 tests)
+
+No community issues. Track D continuation: DeploymentVersion records have been written since Day 21 versioning, but analysts had no conversational way to ask "did my retrain help?" — they'd need to navigate to the Deployment panel and compare numbers manually. Gap: the "was this retrain worth it?" question had no chat answer.
+
+**What changed:**
+
+`_VERSION_COMPARE_PATTERNS` regex in `chat.py` (8 NL variants: "compare my deployment versions", "how did my retrain improve", "did my retrain help", "how much improved after the retrain", "current version vs previous", "previous model vs current", "show version history metrics", "is the new version better"). Handler block guarded by `ctx["deployment"]` and 2+ `DeploymentVersion` records. Queries versions newest-first. If <2 versions: emits `has_comparison=False` with onboarding text. If 2+: computes per-metric delta, pct_change, direction, improved flag (respecting `higher_is_better` — MAE/RMSE are error metrics where lower is better), improved_count/declined_count, algorithm-change detection, plain-English summary. Emits `{type:"version_comparison", version_comparison:{...}}` SSE event. Wrapped in `except Exception: pass` — never crashes chat.
+
+`DeploymentVersionComparisonCard`: border adapts by outcome (emerald=more improved, rose=more declined, amber=tied, slate=no comparison). Version range badge (v1→v2), improved/declined count badges, date info with human-readable dates, amber algorithm-changed note, metric table (Metric|v{prev}|v{current}|Change) with directional arrows color-coded emerald/rose, summary footer, MAE/RMSE "lower is better" note. No-comparison state: summary only.
+
+`DeploymentVersionComparisonResult`/`VersionMetricDiff` TypeScript types. `attachVersionComparisonToLastMessage` Zustand action. SSE handler + card render wired in `project/[id]/page.tsx`. 13 backend + 19 frontend = 32 new tests. Total: 3155 backend + 1712 frontend = 4867, all passing. Backend lint: clean. Frontend build + lint: clean.
+
+**Key insight:** `execute_deployment()` is idempotent — re-deploying the same `model_run_id` returns early without creating a second `DeploymentVersion`. Tests for "2 versions exist" must train a second model with a different algorithm and deploy that new run.
+
+---
+
 ## Day 35 — 12:00 — Service Export Chat Integration: "package my model" triggers inline ZIP download card (3142 backend + 1693 frontend = 4835 tests)
 
 No community issues. Track D continuation: the ZIP export endpoint (`GET /api/deploy/{id}/export`) was built Day 21 and the `ExportServiceCard` lives in the DeploymentPanel — but analysts in the chat interface had no way to request it without navigating away. The gap: the "hand your model to a developer" story required leaving the conversation.

@@ -49,6 +49,17 @@ the time is better spent on real features.
 
 ## Currently Working On
 
+## Day 35 (20:00) — Done
+**Track D — Deployment Version Comparison via Chat.** Analysts can now ask "did my retrain improve?", "compare my deployment versions", or "is the new version better?" and receive a `DeploymentVersionComparisonCard` inline in chat showing per-metric deltas between the current and previous deployment version. Closes the "was this retrain worth it?" conversational gap.
+- `_VERSION_COMPARE_PATTERNS` (8 NL variants) + handler in `chat.py`. Guards on `ctx["deployment"]` and 2+ `DeploymentVersion` records. Computes delta/pct_change/direction/improved for r2, accuracy, mae, rmse, f1, precision, recall (respecting higher_is_better — MAE/RMSE lower is better). Algorithm-change detection. <2 versions emits has_comparison=False with onboarding guidance.
+- `DeploymentVersionComparisonCard`: border by outcome (emerald/rose/amber/slate), version range badge, improved/declined badges, date info, algorithm-changed note, metric table with directional arrows, summary footer, MAE/RMSE note. `DeploymentVersionComparisonResult`/`VersionMetricDiff` types; `attachVersionComparisonToLastMessage` Zustand action; SSE wired in `page.tsx`.
+- 13 backend + 19 frontend = 32 new tests. Total: 3155 backend + 1712 frontend = 4867, all passing. Backend lint: clean. Frontend build + lint: clean.
+
+**What's next:**
+- Track C: Ensemble methods via chat — "what's the best ensemble for this problem?" — VotingClassifier/Regressor, StackingClassifier/Regressor.
+- Track E: Run the "lunch break" flow end-to-end as a real analyst; audit friction in the VP-sharing flow.
+- Track D: Prediction SLA/latency monitoring — track p50/p95 per endpoint, surface in chat ("is my API slow?").
+
 ## Day 35 (12:00) — Done
 **Track D — Service Export Chat Integration.** Analysts can now say "package my model", "export my model as a service", or "deploy this elsewhere" and receive a `ServiceExportChatCard` inline in chat with a direct ZIP download link — no navigation to the deployment panel required. Closes the developer hand-off story through pure conversation.
 - `_SERVICE_EXPORT_PATTERNS` (8 NL variants) + handler in `chat.py`. Guards on `ctx["deployment"]`; extracts algorithm/target/problem_type/feature_count from Deployment record; emits `{type:"service_export", service_export:{deployment_id, algorithm, target_column, problem_type, feature_count, download_url, included_files}}` SSE event.
