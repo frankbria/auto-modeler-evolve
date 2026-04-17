@@ -468,7 +468,7 @@ class TestChatHistoryIntent:
 
 
 class TestChatAnalyticsIntent:
-    """Chat SSE emits {type: analytics} for prediction-analytics keywords."""
+    """Chat SSE emits {type: prediction_analytics_chat} for prediction-analytics keywords."""
 
     def test_how_many_predictions_triggers_event(self, deployed_project, client):
         project_id = deployed_project["project_id"]
@@ -482,7 +482,7 @@ class TestChatAnalyticsIntent:
             for line in resp.text.split("\n")
             if line.startswith("data: ")
         ]
-        assert "analytics" in [c["type"] for c in chunks]
+        assert "prediction_analytics_chat" in [c["type"] for c in chunks]
 
     def test_usage_stats_triggers_event(self, deployed_project, client):
         project_id = deployed_project["project_id"]
@@ -496,7 +496,7 @@ class TestChatAnalyticsIntent:
             for line in resp.text.split("\n")
             if line.startswith("data: ")
         ]
-        assert "analytics" in [c["type"] for c in chunks]
+        assert "prediction_analytics_chat" in [c["type"] for c in chunks]
 
     def test_analytics_event_schema(self, deployed_project, client):
         project_id = deployed_project["project_id"]
@@ -510,9 +510,9 @@ class TestChatAnalyticsIntent:
             for line in resp.text.split("\n")
             if line.startswith("data: ")
         ]
-        analytics_events = [c for c in chunks if c.get("type") == "analytics"]
+        analytics_events = [c for c in chunks if c.get("type") == "prediction_analytics_chat"]
         assert len(analytics_events) == 1
-        payload = analytics_events[0]["analytics"]
+        payload = analytics_events[0]["prediction_analytics_chat"]
         assert "deployment_id" in payload
         assert "total_predictions" in payload
 
@@ -529,7 +529,7 @@ class TestChatAnalyticsIntent:
             for line in resp.text.split("\n")
             if line.startswith("data: ")
         ]
-        assert "analytics" not in [c["type"] for c in chunks]
+        assert "prediction_analytics_chat" not in [c["type"] for c in chunks]
 
     def test_irrelevant_message_no_analytics_event(self, deployed_project, client):
         project_id = deployed_project["project_id"]
@@ -543,4 +543,4 @@ class TestChatAnalyticsIntent:
             for line in resp.text.split("\n")
             if line.startswith("data: ")
         ]
-        assert "analytics" not in [c["type"] for c in chunks]
+        assert "prediction_analytics_chat" not in [c["type"] for c in chunks]

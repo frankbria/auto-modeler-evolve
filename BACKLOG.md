@@ -49,15 +49,20 @@ the time is better spent on real features.
 
 ## Currently Working On
 
+## Day 37 (16:00) — Done
+**Track C — Ensemble Training via Chat.** The ensemble recommendation card (Day 36 04:00) told analysts to say "train a voting ensemble" to proceed — but that phrase had no handler. Fixed: `_ENSEMBLE_TRAIN_PATTERNS` regex (8 NL variants) + `_STACKING_RE` sub-detector. Handler fires before `_TRAIN_PATTERNS` to prevent double-fire; selects `voting_regressor`/`stacking_regressor`/`voting_classifier`/`stacking_classifier` based on problem type and stacking keyword; creates `ModelRun(status="pending")` and starts `_train_in_background` thread.
+- Bug fix: `test_monitoring_alerts.py::TestChatAnalyticsIntent` was using stale event type `"analytics"` — updated to `"prediction_analytics_chat"` (3 failing + 2 negative checks fixed).
+- 22 new backend tests in `test_ensemble_train_chat.py`. Backend lint: clean. Frontend build: clean.
+
+**What's next:**
+- Track D: Deployment cost estimate via chat ("how much would 1000 predictions cost?", "estimate my monthly prediction cost") — surfacing the rate limit and quota configs in terms of business cost.
+- Track D: Prediction SLA / latency monitoring — show p50/p95/p99 prediction latency in the deployment panel.
+- Track E: Run the "lunch break" flow end-to-end as a real analyst; audit friction in the VP-sharing flow.
+
 ## Day 37 (12:00) — Done
 **Track D — Prediction Log Analytics Chat Card.** Upgraded the thin `_ANALYTICS_PATTERNS` stub into a full analytics card. Analysts can ask "how many predictions have been made?", "show prediction analytics", or "prediction volume report" and receive a `PredictionAnalyticsChatCard` with 14-day daily sparkline, 7d/30d/today stats, peak day, class distribution (classification), avg prediction (regression).
 - Bug fixed: handler was reading `model_run.problem_type` (field doesn't exist on `ModelRun`) — fixed to `deployment.problem_type`.
 - 16 backend + 17 frontend = 33 new tests. Backend lint: clean. Frontend build: clean.
-
-**What's next:**
-- Track D: Deployment cost estimate via chat ("how much would 1000 predictions cost?", "estimate my monthly prediction cost") — surfacing the rate limit and quota configs in terms of business cost.
-- Track C: Stacking/Voting ensemble training via chat — "train a stacking model" should invoke `VotingClassifier` or `StackingRegressor` and create a ModelRun.
-- Track E: Run the "lunch break" flow end-to-end as a real analyst; audit friction in the VP-sharing flow.
 
 ## Day 37 (04:00) — Done
 **Audit + bug fix session.** Discovered three fully-implemented but undocumented features (Learning Curve Analysis, Developer SDK Generation, Cross-Project Portfolio Overview) and added them to spec.md. Fixed active-filter bug in learning curve chat handler (`pd.read_csv` → `_load_working_df`).

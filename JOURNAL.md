@@ -1,5 +1,19 @@
 # Journal
 
+## Day 37 — 16:00 — Ensemble Training via Chat: "train a voting ensemble" / "build a stacking regressor" triggers ensemble training inline; fixed stale event-type in monitoring alerts tests
+
+No community issues. Continuation of Track C model-building depth: the Day 36 ensemble recommendation card told analysts *what* ensembles are and asked them to say "train a voting ensemble" to proceed — but that phrase had no handler. Saying "train a voting ensemble" routed to the generic `_TRAIN_PATTERNS` block and trained the last selected algorithm again. Gap: the conversational loop was broken — the card prompted an action the app didn't execute.
+
+**What changed:**
+
+`_ENSEMBLE_TRAIN_PATTERNS` module-level regex (8 NL variants: "train a voting ensemble", "train a stacking ensemble", "build a voting/stacking model/classifier/regressor", "run a voting/stacking ensemble/training", "create a voting/stacking ensemble/model/classifier/regressor", "start/try voting/stacking ensemble") added after `_ENSEMBLE_PATTERNS`. `_STACKING_RE` sub-detector (`\bstack(?:ing)?\b`) distinguishes voting vs stacking. Handler block fires **before** `_TRAIN_PATTERNS` guard; sets `training_started_event` immediately so `_TRAIN_PATTERNS` check (`and not training_started_event`) prevents double-firing. Algorithm selection: `feature_set.problem_type` → regression/classification; `_STACKING_RE` match → `stacking_regressor`/`stacking_classifier` vs `voting_regressor`/`voting_classifier`. Creates `ModelRun(status="pending")` in its own `Session(session.bind)`, starts `_train_in_background` thread, populates `training_started_event` with same schema as regular training. LLM context injected: "Ensembles combine multiple models for higher accuracy."
+
+**Bug fix:** `test_monitoring_alerts.py::TestChatAnalyticsIntent` was asserting `type == "analytics"` but the SSE event was renamed to `prediction_analytics_chat` in the Day 37 (12:00) session. Updated 3 failing tests (positive checks) and 2 negative checks to use the correct event type name.
+
+**Tests:** 22 new backend tests in `test_ensemble_train_chat.py` (17 pattern + 5 integration: voting emits event, stacking emits event, voting_regressor algo, stacking_regressor algo, required fields, no-double-event). 5 fixed tests in `test_monitoring_alerts.py`. Total: 3247+ backend, all passing. Backend lint: clean. Frontend build: clean.
+
+---
+
 ## Day 37 — 12:00 — Prediction Log Analytics Chat Card: "how many predictions?" shows per-day sparkline, 7d/30d stats, class distribution
 
 No community issues. Track D continuation: the `_ANALYTICS_PATTERNS` handler existed but returned only `{total_predictions: N}` — a thin stub with no frontend card. Analysts asking "how many predictions have been made?" got a text response with no visual. Gap: no conversational entry point for production usage visibility — analysts couldn't see trends, peak days, or class breakdowns through chat.

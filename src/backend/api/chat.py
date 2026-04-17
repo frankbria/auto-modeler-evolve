@@ -2399,6 +2399,24 @@ _ENSEMBLE_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# Patterns for directly TRAINING an ensemble (distinct from _ENSEMBLE_PATTERNS which
+# only recommends — this fires when the analyst says "train a voting ensemble" etc.)
+_ENSEMBLE_TRAIN_PATTERNS = re.compile(
+    r"(?:"
+    r"train\s+(?:a\s+)?voting\s+(?:ensemble|classifier|regressor|model)\b|"
+    r"train\s+(?:a\s+)?stacking\s+(?:ensemble|classifier|regressor|model)\b|"
+    r"build\s+(?:a\s+)?voting\s+(?:ensemble|classifier|regressor|model)\b|"
+    r"build\s+(?:a\s+)?stacking\s+(?:ensemble|classifier|regressor|model)\b|"
+    r"run\s+(?:a\s+)?voting\s+(?:ensemble|training)\b|"
+    r"run\s+(?:a\s+)?stacking\s+(?:ensemble|training)\b|"
+    r"create\s+(?:a\s+)?(?:voting|stacking)\s+(?:ensemble|model|classifier|regressor)\b|"
+    r"(?:start|try)\s+(?:voting|stacking)\s+ensemble\b"
+    r")",
+    re.IGNORECASE,
+)
+# Subtype detector: voting vs stacking
+_STACKING_RE = re.compile(r"\bstack(?:ing)?\b", re.IGNORECASE)
+
 _PRESET_NAME_RE = re.compile(
     r"(?:called|named)\s+['\"]?([A-Za-z0-9][A-Za-z0-9 _\-]*?)['\"]?\s*"
     r"(?=\s+with\s+|\s*:\s*[A-Za-z]|\s*,\s*[A-Za-z]|$)",
@@ -5869,8 +5887,104 @@ def send_message(
             pass
 
     # Check if user wants to train a model through conversation
+    # Check for explicit ensemble training request (voting / stacking).
+    # Must fire BEFORE _TRAIN_PATTERNS so that "train a voting ensemble" doesn't
+    # also start three generic training runs.
     training_started_event: dict | None = None
-    if _TRAIN_PATTERNS.search(body.message) and ctx["dataset"]:
+    if _ENSEMBLE_TRAIN_PATTERNS.search(body.message) and ctx["feature_set"] and ctx["dataset"]:
+        try:
+            import queue as _queue
+            import threading as _threading
+
+            from api.models import (
+                MODELS_DIR as _MODELS_DIR,
+                _lock as _train_lock,
+                _train_in_background,
+                _training_counters,
+                _training_queues,
+            )
+            from models.model_run import ModelRun as _ModelRun
+
+            _fs = ctx["feature_set"]
+            _ds = ctx["dataset"]
+            _file_path = Path(_ds.file_path)
+
+            if _file_path.exists() and _fs.target_column:
+                _target = _fs.target_column
+                _problem_type = _fs.problem_type or "regression"
+                _feature_set_id = _fs.id
+
+                _df = _load_working_df(_file_path, _active_filter_conditions)
+
+                _transforms_raw = json.loads(_fs.transformations or "[]")
+                if _transforms_raw:
+                    from core.feature_engine import apply_transformations as _apply_t
+
+                    _df, _ = _apply_t(_df, _transforms_raw)
+
+                _feature_cols = [c for c in _df.columns if c != _target]
+                _model_dir = _MODELS_DIR / project_id
+
+                # Choose voting vs stacking based on message
+                _use_stacking = bool(_STACKING_RE.search(body.message))
+                if _problem_type == "regression":
+                    _algo = "stacking_regressor" if _use_stacking else "voting_regressor"
+                else:
+                    _algo = "stacking_classifier" if _use_stacking else "voting_classifier"
+                _algo_display = _algo.replace("_", " ").title()
+
+                with _train_lock:
+                    _training_queues[project_id] = _queue.Queue()
+                    _training_counters[project_id] = 1
+
+                with Session(session.bind) as _et_session:
+                    _run = _ModelRun(
+                        project_id=project_id,
+                        feature_set_id=_feature_set_id,
+                        algorithm=_algo,
+                        hyperparameters=json.dumps({}),
+                        status="pending",
+                    )
+                    _et_session.add(_run)
+                    _et_session.commit()
+                    _et_session.refresh(_run)
+                    _run_id = _run.id
+
+                _t = _threading.Thread(
+                    target=_train_in_background,
+                    args=(
+                        _run_id,
+                        project_id,
+                        _df.copy(),
+                        _feature_cols,
+                        _target,
+                        _algo,
+                        _problem_type,
+                        _model_dir,
+                    ),
+                    daemon=True,
+                )
+                _t.start()
+
+                training_started_event = {
+                    "project_id": project_id,
+                    "target_column": _target,
+                    "problem_type": _problem_type,
+                    "algorithms": [_algo],
+                    "run_count": 1,
+                    "status": "started",
+                }
+                system_prompt += (
+                    f"\n\n## Ensemble Training Started\n"
+                    f"Training a {_algo_display} to predict '{_target}' "
+                    f"({_problem_type}). Ensembles combine multiple models for "
+                    "higher accuracy. Tell the user training has started and to "
+                    "check the Models tab for real-time progress."
+                )
+        except Exception:  # noqa: BLE001
+            pass  # Ensemble training is nice-to-have; never crash chat
+
+    if _TRAIN_PATTERNS.search(body.message) and ctx["dataset"] and not training_started_event:
         try:
             import queue as _queue
             import threading as _threading
