@@ -1350,6 +1350,71 @@ guides them forward through the natural flow.
       `project/[id]/page.tsx`. 13 backend + 19 frontend = 32 new tests. Total: 3155 backend +
       1712 frontend = 4867, all passing. Backend lint: clean. Frontend build + lint: clean.*
 
+- [x] **Learning Curve Analysis via Chat** — Analysts can ask "would more data help?", "would
+      adding data improve my model?", "show me the learning curve", "do I need more data?",
+      "is my training set big enough?", "did my model converge?", or "training size analysis" and
+      receive a `LearningCurveCard` with a Recharts line chart showing training score vs validation
+      score at increasing dataset sizes, with a plain-English convergence verdict. `compute_learning_curve(X,
+      y, algorithm, problem_type, n_sizes=5, cv_folds=3)` pure function in `core/trainer.py` uses
+      `sklearn.model_selection.learning_curve` — sweeps min_fraction…1.0 in n_sizes steps, computes
+      mean train/val scores per fold, detects convergence when the val score improvement over the last
+      two steps is < 1% of the full-data score. Returns `sizes_pct`, `train_scores`, `val_scores`,
+      `converged`, `plateau_pct`, `best_val_score`, `metric_label`, `metric_key`, `n_total`,
+      `algorithm_name`, `recommendation`, `summary`. `GET /api/models/{project_id}/learning-curve`
+      REST endpoint. `_LEARNING_CURVE_PATTERNS` (8 NL variants) + handler in `chat.py` that selects
+      the best/selected run, loads the working DataFrame via `_load_working_df` (active filters
+      respected), prepares X/y, calls `compute_learning_curve()`, and emits
+      `{type:"learning_curve"}` SSE event. `LearningCurveCard` (indigo border, 📈 icon): Converged
+      /Still Learning badge, row count + algorithm name, summary text, Recharts dual-series LineChart
+      (solid training line, solid validation line, X-axis = % of training data, Y-axis = metric),
+      best val score box, plateau convergence box (when converged), recommendation callout.
+      `LearningCurveResult` TypeScript type; `learning_curve?` on `ChatMessage`;
+      `attachLearningCurveToLastMessage` Zustand action; SSE handler + render wired in
+      `project/[id]/page.tsx`. Bug fixed Day 37: handler was using `pd.read_csv` directly instead
+      of `_load_working_df` — active filters were not respected. Closes the "do I need to collect
+      more data before retraining?" analyst question — distinct from CV score distribution (which
+      shows consistency across folds at full size) and from the training progress view.
+      *Day 37 (04:00): 25 backend + 17 frontend = 42 tests. Backend lint: clean. Frontend build: clean.*
+
+- [x] **Developer SDK Generation via Chat** — When a model is deployed, analysts can say "generate
+      a Python SDK", "create a JavaScript SDK for my model", "developer SDK", "how can my developers
+      use my API", or "make it easy for developers" and receive a `SdkDownloadCard` inline in chat
+      with download links for a typed Python class and JavaScript module wrapping the prediction
+      endpoint. `GET /api/deploy/{id}/sdk?language=python|javascript` endpoint generates a self-
+      contained SDK file: Python produces a class with `__init__(base_url)` + `predict(**features)`
+      that POSTs to the prediction endpoint and returns typed results; JavaScript produces an ES
+      module `class` with the same interface using `fetch`. Class name derived from target column
+      (e.g. `revenue_predictor` → `RevenuePredictor`). `_SDK_PATTERNS` (8 NL variants) in `chat.py`
+      guards on `ctx["deployment"]`; computes class name, builds Python/JS URL params, emits
+      `{type:"sdk_download"}` SSE event. `SdkDownloadCard` (indigo border, 📦 icon): algorithm +
+      problem-type info, Python and JavaScript download buttons, usage code snippet showing
+      `from revenue_predictor_sdk import RevenuePredictor` + `predictor.predict(...)`.
+      `SdkDownloadInfo` TypeScript type; `sdk_download?` on `ChatMessage`;
+      `attachSdkDownloadToLastMessage` Zustand action; SSE handler + render wired in
+      `project/[id]/page.tsx`. Closes the "how does my developer consume this model?" gap —
+      the analyst can hand a developer a pre-built client library instead of raw API docs.
+      *Day 37 (04:00): 27 backend + 16 frontend = 43 tests. Backend lint: clean. Frontend build: clean.*
+
+- [x] **Cross-Project Portfolio Overview via Chat** — Analysts managing multiple projects can ask
+      "show all my models", "portfolio overview", "compare all my projects", "which project is doing
+      best?", "cross-project view", or "all my work" and receive a `PortfolioCard` summarising every
+      project in one place. `compute_portfolio_summary(project_summaries)` pure function in
+      `core/analyzer.py` aggregates: `total_projects`, `active_deployments`, `total_predictions`,
+      `best_performer` (project with highest primary metric), `avg_metric`, `projects` (per-project
+      rows with name, dataset, model count, best algorithm, best metric value, deployment status,
+      prediction count), `summary` (plain-English overview sentence). `GET /api/projects/portfolio`
+      REST endpoint queries all projects and their associated datasets, model runs, and deployments.
+      `_PORTFOLIO_PATTERNS` (8 NL variants) + handler in `chat.py` that iterates all projects for
+      the database session, assembles per-project summary dicts, and emits `{type:"portfolio"}` SSE
+      event. `PortfolioCard` (purple border): total-projects/active-deployments/total-predictions
+      stat chips, best-performer highlight row (algorithm + metric), per-project table (name,
+      dataset, models trained, best score, deployed status, predictions served), plain-English
+      summary footer. `PortfolioResult` TypeScript type; `portfolio?` on `ChatMessage`;
+      `attachPortfolioToLastMessage` Zustand action; SSE handler + render wired in
+      `project/[id]/page.tsx`. Closes the "how are all my models doing?" question for analysts
+      running multiple prediction projects simultaneously.
+      *Day 37 (04:00): 21 backend + 16 frontend = 37 tests. Backend lint: clean. Frontend build: clean.*
+
 ---
 
 ## Data Model

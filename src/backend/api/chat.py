@@ -7329,7 +7329,9 @@ def send_message(
 
                 _lc_ds = ctx["dataset"]
                 if _lc_ds and _lc_ds.file_path and Path(_lc_ds.file_path).exists():
-                    _lc_df = pd.read_csv(_lc_ds.file_path)
+                    _lc_df = _load_working_df(
+                        Path(_lc_ds.file_path), _active_filter_conditions
+                    )
                     _lc_fs = ctx.get("feature_set")
                     if _lc_fs:
                         _lc_transforms = json.loads(_lc_fs.transformations or "[]")
