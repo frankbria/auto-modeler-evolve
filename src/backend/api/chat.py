@@ -2688,6 +2688,20 @@ _VERSION_COMPARE_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+_CV_SCORE_DIST_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"how\s+(?:consistent|stable|reliable|variable)\s+is\s+(?:my\s+)?(?:model|prediction)\b|"
+    r"cross.?(?:val(?:idation)?|validation)\s+(?:scores?|results?|variance|distribution|breakdown)\b|"
+    r"(?:show|give|get|display)\s+(?:me\s+)?(?:the\s+)?(?:fold|cv|cross.?val)\s+(?:scores?|results?|distribution)\b|"
+    r"cv\s+(?:score|variance|distribution|fold|stability|results?)\b|"
+    r"(?:model|prediction)\s+(?:stability|consistency|variance|variability)\s*(?:score|check|report|analysis)?\b|"
+    r"is\s+(?:my\s+)?(?:model|accuracy)\s+(?:stable|consistent|reliable|variable)\b|"
+    r"(?:high|low)\s+(?:variance|std|standard\s+deviation)\s+(?:in|on|for)?\s+(?:my\s+)?(?:model|cv|cross.?val|fold)\b|"
+    r"fold.?by.?fold\s+(?:performance|result|score|breakdown)\b"
+    r")",
+    re.IGNORECASE,
+)
+
 _DOW_NAMES: dict[str, int] = {
     "monday": 0,
     "mon": 0,
@@ -7362,6 +7376,130 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Learning curve is nice-to-have; never crash chat
 
+    # CV score distribution — "how consistent is my model?", "show fold scores"
+    cv_score_dist_event: dict | None = None
+    if _CV_SCORE_DIST_PATTERNS.search(body.message) and ctx.get("model_runs"):
+        try:
+            _cv_runs = [r for r in (ctx.get("model_runs") or []) if r.status == "done"]
+            if _cv_runs:
+                _cv_run = next((r for r in _cv_runs if r.is_selected), None)
+                if not _cv_run:
+                    from api.models import REGRESSION_ALGORITHMS as _REG_ALGOS_CV
+                    from api.models import CLASSIFICATION_ALGORITHMS as _CLS_ALGOS_CV
+
+                    _cv_reg = [r for r in _cv_runs if r.algorithm in _REG_ALGOS_CV]
+                    _cv_cls = [r for r in _cv_runs if r.algorithm in _CLS_ALGOS_CV]
+                    if _cv_reg:
+                        _cv_run = max(
+                            _cv_reg,
+                            key=lambda r: json.loads(r.metrics or "{}").get("r2", 0),
+                        )
+                    elif _cv_cls:
+                        _cv_run = max(
+                            _cv_cls,
+                            key=lambda r: json.loads(r.metrics or "{}").get("accuracy", 0),
+                        )
+                    else:
+                        _cv_run = _cv_runs[-1]
+
+                _cv_ds = ctx["dataset"]
+                if _cv_ds and _cv_ds.file_path and Path(_cv_ds.file_path).exists():
+                    from api.models import (
+                        CLASSIFICATION_ALGORITHMS as _CV_CLS_ALGOS,
+                        REGRESSION_ALGORITHMS as _CV_REG_ALGOS,
+                    )
+                    from core.trainer import prepare_features as _cv_pf
+                    from core.validator import run_cross_validation as _cv_rcv
+
+                    _all_cv_algos = {**_CV_REG_ALGOS, **_CV_CLS_ALGOS}
+                    _cv_problem = (
+                        "classification"
+                        if _cv_run.algorithm in _CV_CLS_ALGOS
+                        else "regression"
+                    )
+                    _cv_algo_plain = _all_cv_algos.get(_cv_run.algorithm, {}).get(
+                        "name", _cv_run.algorithm.replace("_", " ").title()
+                    )
+                    _cv_df = _load_working_df(
+                        Path(_cv_ds.file_path), _active_filter_conditions
+                    )
+                    _cv_fs = ctx.get("feature_set")
+                    if _cv_fs:
+                        _cv_transforms = json.loads(_cv_fs.transformations or "[]")
+                        if _cv_transforms:
+                            from core.feature_engine import (
+                                apply_transformations as _cv_at,
+                            )
+
+                            _cv_df, _ = _cv_at(_cv_df, _cv_transforms)
+                        _cv_target = _cv_fs.target_column
+                    else:
+                        _cv_target = _cv_df.columns[-1]
+
+                    if _cv_target and _cv_target in _cv_df.columns:
+                        _cv_feat_cols = [c for c in _cv_df.columns if c != _cv_target]
+                        _cv_X, _cv_y, _ = _cv_pf(
+                            _cv_df, _cv_feat_cols, _cv_target, _cv_problem
+                        )
+                        # Get unfitted model for CV
+                        _cv_registry = (
+                            _CV_REG_ALGOS
+                            if _cv_problem == "regression"
+                            else _CV_CLS_ALGOS
+                        )
+                        _cv_info = _cv_registry.get(_cv_run.algorithm)
+                        if _cv_info:
+                            _cv_unfitted = _cv_info["class"](**_cv_info["params"])
+                            _cv_result = _cv_rcv(
+                                _cv_unfitted, _cv_X, _cv_y, _cv_problem
+                            )
+                            _cv_mean = _cv_result.get("mean") or 0.0
+                            _cv_std = _cv_result.get("std") or 0.0
+                            _cv_coeff = (
+                                _cv_std / abs(_cv_mean) if abs(_cv_mean) > 0.01 else 0.0
+                            )
+                            if _cv_coeff < 0.05:
+                                _cv_consistency = "stable"
+                            elif _cv_coeff < 0.15:
+                                _cv_consistency = "moderate"
+                            else:
+                                _cv_consistency = "variable"
+                            _cv_metric_plain = (
+                                "R²" if _cv_problem == "regression" else "Weighted F1"
+                            )
+                            cv_score_dist_event = {
+                                "algorithm": _cv_run.algorithm,
+                                "algorithm_plain": _cv_algo_plain,
+                                "problem_type": _cv_problem,
+                                "metric": _cv_result.get("metric", ""),
+                                "metric_plain": _cv_metric_plain,
+                                "scores": _cv_result.get("scores", []),
+                                "mean": _cv_mean,
+                                "std": _cv_std,
+                                "ci_low": _cv_result.get("ci_low", 0.0),
+                                "ci_high": _cv_result.get("ci_high", 0.0),
+                                "n_splits": _cv_result.get("n_splits", 0),
+                                "consistency": _cv_consistency,
+                                "consistency_pct": round(_cv_coeff * 100, 1),
+                                "summary": _cv_result.get("summary", ""),
+                            }
+                            system_prompt += (
+                                f"\n\n## Cross-Validation Score Distribution\n"
+                                f"Algorithm: {_cv_algo_plain}. "
+                                f"Metric: {_cv_metric_plain}. "
+                                f"Mean: {_cv_mean:.3f} ± {_cv_std:.3f} "
+                                f"({_cv_result.get('n_splits', 5)} folds). "
+                                f"Consistency: {_cv_consistency} "
+                                f"(CoV={_cv_coeff * 100:.1f}%). "
+                                f"{_cv_result.get('summary', '')}\n"
+                                f"A CvScoreDistributionCard is shown with fold scores as a bar chart.\n"
+                                f"Explain in plain English whether the model is reliable: "
+                                f"low variance = trustworthy, high variance = sensitive to training data — "
+                                f"the analyst should treat the accuracy number with caution."
+                            )
+        except Exception:  # noqa: BLE001
+            pass  # CV distribution is nice-to-have; never crash chat
+
     # Check for "show me the data" / record table viewer
     records_event: dict | None = None
     if _RECORDS_PATTERNS.search(body.message) and ctx["dataset"]:
@@ -9372,6 +9510,10 @@ def send_message(
         # Emit deployment version comparison card
         if version_compare_event:
             yield f"data: {json.dumps({'type': 'version_comparison', 'version_comparison': version_compare_event})}\n\n"
+
+        # Emit cross-validation score distribution card
+        if cv_score_dist_event:
+            yield f"data: {json.dumps({'type': 'cv_score_distribution', 'cv_score_distribution': cv_score_dist_event})}\n\n"
 
         # After text stream, opportunistically generate a chart if the
         # message is about data and we have a dataset loaded

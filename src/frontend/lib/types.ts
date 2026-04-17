@@ -480,6 +480,7 @@ export interface ChatMessage {
   version_comparison?: DeploymentVersionComparisonResult
   ensemble_recommendation?: EnsembleRecommendationResult
   tune_chat?: TuningChatResult
+  cv_score_distribution?: CvScoreDistributionResult
 }
 
 export interface SegmentPerformanceSegment {
@@ -2540,5 +2541,26 @@ export interface TuningChatResult {
   best_params?: Record<string, unknown>
   improved?: boolean
   improvement_pct?: number | null
+  summary: string
+}
+
+// ---------------------------------------------------------------------------
+// Cross-Validation Score Distribution Card
+// ---------------------------------------------------------------------------
+
+export interface CvScoreDistributionResult {
+  algorithm: string
+  algorithm_plain: string
+  problem_type: string
+  metric: string
+  metric_plain: string
+  scores: number[]
+  mean: number
+  std: number
+  ci_low: number
+  ci_high: number
+  n_splits: number
+  consistency: "stable" | "moderate" | "variable"
+  consistency_pct: number
   summary: string
 }

@@ -91,6 +91,7 @@ import { ServiceExportChatCard } from "@/components/deploy/service-export-chat-c
 import { DeploymentVersionComparisonCard } from "@/components/deploy/deployment-version-comparison-card"
 import { EnsembleRecommendationCard } from "@/components/models/ensemble-recommendation-card"
 import { TuningChatCard } from "@/components/models/tuning-chat-card"
+import { CvScoreDistributionCard } from "@/components/models/cv-score-distribution-card"
 import { PairCorrelationCard } from "@/components/data/pair-correlation-card"
 import { StatQueryCard } from "@/components/data/stat-query-card"
 import { SummaryStatsCard } from "@/components/data/summary-stats-card"
@@ -263,6 +264,7 @@ export default function ProjectWorkspace() {
     attachVersionComparisonToLastMessage,
     attachEnsembleRecommendationToLastMessage,
     attachTuneChatToLastMessage,
+    attachCvScoreDistributionToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -652,6 +654,8 @@ export default function ProjectWorkspace() {
                 attachEnsembleRecommendationToLastMessage(json.ensemble_recommendation as import("@/lib/types").EnsembleRecommendationResult)
               } else if (json.type === "tune_chat" && json.tune_chat) {
                 attachTuneChatToLastMessage(json.tune_chat as import("@/lib/types").TuningChatResult)
+              } else if (json.type === "cv_score_distribution" && json.cv_score_distribution) {
+                attachCvScoreDistributionToLastMessage(json.cv_score_distribution as import("@/lib/types").CvScoreDistributionResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -747,6 +751,7 @@ export default function ProjectWorkspace() {
     attachVersionComparisonToLastMessage,
     attachEnsembleRecommendationToLastMessage,
     attachTuneChatToLastMessage,
+    attachCvScoreDistributionToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -1221,6 +1226,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.tune_chat && (
                       <TuningChatCard result={msg.tune_chat} />
+                    )}
+                    {msg.cv_score_distribution && (
+                      <CvScoreDistributionCard result={msg.cv_score_distribution} />
                     )}
                   </div>
                 </div>
