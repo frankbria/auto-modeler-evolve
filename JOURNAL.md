@@ -1,5 +1,21 @@
 # Journal
 
+## Day 37 — 12:00 — Prediction Log Analytics Chat Card: "how many predictions?" shows per-day sparkline, 7d/30d stats, class distribution
+
+No community issues. Track D continuation: the `_ANALYTICS_PATTERNS` handler existed but returned only `{total_predictions: N}` — a thin stub with no frontend card. Analysts asking "how many predictions have been made?" got a text response with no visual. Gap: no conversational entry point for production usage visibility — analysts couldn't see trends, peak days, or class breakdowns through chat.
+
+**What changed:**
+
+`_ANALYTICS_PATTERNS` handler in `send_message()` upgraded from stub to full computation: queries `PredictionLog` for last 30 days, computes `predictions_last_7_days`, `predictions_last_30_days`, `predictions_today`, `predictions_by_day` (14-day daily counts), `peak_day` (highest-volume date), `class_counts` (classification: class→count dict for last 30d), `avg_prediction` (regression: mean of `prediction_numeric`). SSE event key changed from `analytics` to `prediction_analytics_chat` (type + field) to avoid collision with the deployment-panel's REST-based analytics endpoint. Bug fixed in the handler: `model_run.problem_type` attribute doesn't exist on `ModelRun` — fixed to `deployment.problem_type`.
+
+`PredictionAnalyticsChatCard` (sky-blue border, 📊 icon): total-predictions badge, problem-type badge, summary paragraph, 3-stat grid (7-day / 30-day / today), 14-day `BarChart` sparkline (peak day highlighted in darker `#0284c7`, others in `#bae6fd`), "No predictions in this period" empty state, peak-day info row, class distribution progress bars with %-width (classification only), avg-prediction box (regression only). `PredictionAnalyticsChatResult` TypeScript type; `prediction_analytics_chat?` on `ChatMessage`; `attachPredictionAnalyticsChatToLastMessage` Zustand action; SSE handler + render wired in `project/[id]/page.tsx`.
+
+**Tests:** 16 backend (10 pattern + 6 handler: no-deployment, emits-event, required-fields, by-day structure, zero counts, peak-day with rows) + 17 frontend (component render: aria-label, icon, stats, sparkline, empty state, peak day, class distribution, avg prediction; store action) = 33 new tests.
+
+**Totals (collected):** ~3223 backend tests, ~1514 frontend tests. Backend lint: clean. Frontend build: clean.
+
+---
+
 ## Day 37 — 04:00 — Discovered and documented three undocumented features; fixed active-filter bug in learning curve handler
 
 No community issues. Audit session: self-assessment revealed three fully-implemented but never-journaled features — Learning Curve Analysis, Developer SDK Generation, and Cross-Project Portfolio Overview. All three had complete backend handlers, frontend cards, TypeScript types, Zustand actions, and test suites, but were missing from spec.md and JOURNAL.md.
