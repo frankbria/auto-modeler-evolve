@@ -4523,9 +4523,7 @@ def send_message(
             _count_7d = sum(1 for _lg in _logs_30d if _lg.created_at >= _7d_ago_a)
             _count_30d = len(_logs_30d)
             _count_today = sum(
-                1
-                for _lg in _logs_30d
-                if _lg.created_at.date() == _now_a.date()
+                1 for _lg in _logs_30d if _lg.created_at.date() == _now_a.date()
             )
 
             _day_counts_a = _Counter(
@@ -4557,13 +4555,14 @@ def send_message(
                         _pv = (
                             json.loads(_lg.prediction)
                             if _lg.prediction
-                            and (_lg.prediction.startswith("{") or _lg.prediction.startswith("["))
+                            and (
+                                _lg.prediction.startswith("{")
+                                or _lg.prediction.startswith("[")
+                            )
                             else _lg.prediction
                         )
                         _cls = str(
-                            _pv.get("class", _pv)
-                            if isinstance(_pv, dict)
-                            else _pv
+                            _pv.get("class", _pv) if isinstance(_pv, dict) else _pv
                         )
                         _cls_map[_cls] = _cls_map.get(_cls, 0) + 1
                     except Exception:  # noqa: BLE001
@@ -4585,7 +4584,9 @@ def send_message(
                 f"{_count_today} today."
             )
             if _peak_a and _peak_a["count"] > 0:
-                _summary_a += f" Peak day: {_peak_a['date']} ({_peak_a['count']} predictions)."
+                _summary_a += (
+                    f" Peak day: {_peak_a['date']} ({_peak_a['count']} predictions)."
+                )
 
             analytics_event = {
                 "deployment_id": _dep_id_a,
