@@ -7397,7 +7397,9 @@ def send_message(
                     elif _cv_cls:
                         _cv_run = max(
                             _cv_cls,
-                            key=lambda r: json.loads(r.metrics or "{}").get("accuracy", 0),
+                            key=lambda r: json.loads(r.metrics or "{}").get(
+                                "accuracy", 0
+                            ),
                         )
                     else:
                         _cv_run = _cv_runs[-1]
