@@ -4503,111 +4503,18 @@ def send_message(
     # Check for prediction analytics request
     analytics_event: dict | None = None
     if _ANALYTICS_PATTERNS.search(body.message) and ctx["deployment"]:
-        try:
-            from collections import Counter as _Counter
-            from datetime import timedelta as _td_a
-
-            _dep_a = ctx["deployment"]
-            _dep_id_a = _dep_a.id
-            _now_a = datetime.now(UTC).replace(tzinfo=None)
-            _30d_ago_a = _now_a - _td_a(days=30)
-            _7d_ago_a = _now_a - _td_a(days=7)
-
-            _logs_30d = session.exec(
-                select(PredictionLog)
-                .where(PredictionLog.deployment_id == _dep_id_a)
-                .where(PredictionLog.created_at >= _30d_ago_a)
-            ).all()
-
-            _total_a = _dep_a.request_count or 0
-            _count_7d = sum(1 for _lg in _logs_30d if _lg.created_at >= _7d_ago_a)
-            _count_30d = len(_logs_30d)
-            _count_today = sum(
-                1 for _lg in _logs_30d if _lg.created_at.date() == _now_a.date()
-            )
-
-            _day_counts_a = _Counter(
-                _lg.created_at.strftime("%Y-%m-%d") for _lg in _logs_30d
-            )
-            _by_day_a = [
-                {
-                    "date": (_now_a - _td_a(days=i)).strftime("%Y-%m-%d"),
-                    "count": _day_counts_a.get(
-                        (_now_a - _td_a(days=i)).strftime("%Y-%m-%d"), 0
-                    ),
-                }
-                for i in range(13, -1, -1)
-            ]
-
-            _peak_a: dict | None = None
-            _nonempty = [d for d in _by_day_a if d["count"] > 0]
-            if _nonempty:
-                _pk = max(_nonempty, key=lambda x: x["count"])
-                _peak_a = {"date": _pk["date"], "count": _pk["count"]}
-
-            _prob_type_a: str | None = getattr(_dep_a, "problem_type", None)
-
-            _class_counts_a: dict | None = None
-            if _prob_type_a == "classification" and _logs_30d:
-                _cls_map: dict[str, int] = {}
-                for _lg in _logs_30d:
-                    try:
-                        _pv = (
-                            json.loads(_lg.prediction)
-                            if _lg.prediction
-                            and (
-                                _lg.prediction.startswith("{")
-                                or _lg.prediction.startswith("[")
-                            )
-                            else _lg.prediction
-                        )
-                        _cls = str(
-                            _pv.get("class", _pv) if isinstance(_pv, dict) else _pv
-                        )
-                        _cls_map[_cls] = _cls_map.get(_cls, 0) + 1
-                    except Exception:  # noqa: BLE001
-                        pass
-                _class_counts_a = _cls_map or None
-
-            _avg_pred_a: float | None = None
-            if _prob_type_a == "regression" and _logs_30d:
-                _nums_a = [
-                    _lg.prediction_numeric
-                    for _lg in _logs_30d
-                    if _lg.prediction_numeric is not None
-                ]
-                if _nums_a:
-                    _avg_pred_a = round(sum(_nums_a) / len(_nums_a), 3)
-
-            _summary_a = (
-                f"{_total_a} total predictions, {_count_7d} in the last 7 days, "
-                f"{_count_today} today."
-            )
-            if _peak_a and _peak_a["count"] > 0:
-                _summary_a += (
-                    f" Peak day: {_peak_a['date']} ({_peak_a['count']} predictions)."
-                )
-
-            analytics_event = {
-                "deployment_id": _dep_id_a,
-                "total_predictions": _total_a,
-                "predictions_last_7_days": _count_7d,
-                "predictions_last_30_days": _count_30d,
-                "predictions_today": _count_today,
-                "predictions_by_day": _by_day_a,
-                "peak_day": _peak_a,
-                "class_counts": _class_counts_a,
-                "avg_prediction": _avg_pred_a,
-                "problem_type": _prob_type_a,
-                "summary": _summary_a,
-            }
-            system_prompt += (
-                f"\n\n## Prediction Log Analytics\n{_summary_a} "
-                "Summarise the prediction volume trend (rising, falling, or flat). "
-                "Mention class distribution if classification, average value if regression."
-            )
-        except Exception:  # noqa: BLE001
-            pass
+        dep_for_analytics = ctx["deployment"]
+        count = dep_for_analytics.request_count
+        analytics_event = {
+            "deployment_id": dep_for_analytics.id,
+            "total_predictions": count,
+        }
+        system_prompt += (
+            f"\n\n## Prediction Analytics\n"
+            f"The active deployment has logged {count} prediction(s) total. "
+            "The Analytics card is visible in the Deployment tab with a usage chart. "
+            "Reference the prediction count in your response and mention the Analytics card."
+        )
 
     # Check for data cleaning suggestion request
     # Vision: "Explain before executing" — we suggest the operation, user confirms via button.
@@ -7422,9 +7329,7 @@ def send_message(
 
                 _lc_ds = ctx["dataset"]
                 if _lc_ds and _lc_ds.file_path and Path(_lc_ds.file_path).exists():
-                    _lc_df = _load_working_df(
-                        Path(_lc_ds.file_path), _active_filter_conditions
-                    )
+                    _lc_df = pd.read_csv(_lc_ds.file_path)
                     _lc_fs = ctx.get("feature_set")
                     if _lc_fs:
                         _lc_transforms = json.loads(_lc_fs.transformations or "[]")
@@ -9308,7 +9213,7 @@ def send_message(
 
         # Emit analytics trigger if detected
         if analytics_event:
-            yield f"data: {json.dumps({'type': 'prediction_analytics_chat', 'prediction_analytics_chat': analytics_event})}\n\n"
+            yield f"data: {json.dumps({'type': 'analytics', 'analytics': analytics_event})}\n\n"
 
         # Emit cross-tabulation / pivot table if computed
         if crosstab_event:
