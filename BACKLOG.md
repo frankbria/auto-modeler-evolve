@@ -49,6 +49,14 @@ the time is better spent on real features.
 
 ## Currently Working On
 
+## Day 36 (20:00) — Done
+**Track C — CV Score Distribution Chat Card.** Analysts can now ask "how consistent is my model?", "show fold scores", "cv variance", or "is my model stable?" and receive an inline `CvScoreDistributionCard` showing per-fold CV scores as labeled bars, mean ± std, CoV%, 95% CI, and a stability classification (stable/moderate/variable).
+- `_CV_SCORE_DIST_PATTERNS` regex (8 NL variants covering consistency, fold scores, cv variance, stability checks).
+- Handler in `send_message()`: calls `run_cross_validation()`, classifies by CoV (std/mean) — <5% stable, 5–15% moderate, >15% variable.
+- `CvScoreDistributionCard` (emerald/amber/rose border by stability, 📊 icon, per-fold bars, stats grid, 95% CI, figcaption).
+- `CvScoreDistributionResult` TypeScript type; `cv_score_distribution?` on `ChatMessage`; Zustand action; SSE handler + render in `page.tsx`.
+- 13 backend + 14 frontend = 27 new tests. Ruff lint: clean. Frontend build: clean.
+
 ## Day 36 (12:00) — Done
 **Track C — Hyperparameter Tuning Chat Card.** Analysts can now say "tune my model", "go ahead and tune it", "optimize hyperparameters", or "run the tuning" and receive an inline `TuningChatCard` showing before/after metrics, best params, and improvement percentage — all within the conversation, without navigating to the Models panel.
 - `_EXPLICIT_TUNE_RE` constant (unambiguous vocabulary: tune/tuning/optimize/hyperparameter/grid-search/best params) guards inline tuning from generic "improve my model" phrases (those still route to `_IMPROVEMENT_PATTERNS`).

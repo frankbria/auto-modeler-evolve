@@ -1,5 +1,21 @@
 # Journal
 
+## Day 36 — 20:00 — CV Score Distribution Chat Card: "how consistent is my model?" shows per-fold CV variance, CoV%, and stability badge inline
+
+No community issues. Track C continuation: cross-validation already ran at training time (stored in model metrics), but analysts had no way to ask "is my model consistent?" and see fold-by-fold variance. The gap: no conversational entry point for CV score distribution — analysts couldn't distinguish a model that scored 0.82 consistently across folds from one that varied wildly between 0.55 and 0.92.
+
+**What changed:**
+
+`_CV_SCORE_DIST_PATTERNS` module-level regex (8 NL variants: "how consistent/stable is my model", "cross-validation scores", "show fold scores", "cv variance", "model stability check", "is my model stable", "high variance in cv folds", "fold-by-fold performance"). Handler block in `send_message()`: selects best completed run, loads dataset via `_load_working_df(file_path, active_filter_conditions)`, calls `run_cross_validation()` to get per-fold scores, computes coefficient of variation (std/mean) — <5% → stable, 5–15% → moderate, >15% → variable. Emits `{type:"cv_score_distribution"}` SSE event with algorithm, problem_type, metric, scores[], mean, std, 95% CI (ci_low/ci_high), n_splits, consistency, consistency_pct, summary. Injects plain-English summary into system_prompt. Wrapped in `except Exception: pass`.
+
+`CvScoreDistributionCard` (emerald border stable / amber moderate / rose variable, 📊 icon): algorithm + problem_type + consistency badges; stats grid (Mean metric / Std Dev / CoV%); per-fold labeled bars with color coding (emerald ≥0.8, sky ≥0.6, amber ≥0.4, rose <0.4); 95% CI line; plain-English summary; figcaption explaining what the variance level means for deployment trust.
+
+`CvScoreDistributionResult` TypeScript interface; `cv_score_distribution?` on `ChatMessage`; `attachCvScoreDistributionToLastMessage` Zustand action; SSE handler + render wired in `page.tsx`.
+
+13 backend tests + 14 frontend tests = 27 new tests. Ruff lint: clean. Frontend build: clean.
+
+---
+
 ## Day 36 — 12:00 — Hyperparameter Tuning Chat Card: "go ahead and tune it" runs RandomizedSearchCV inline and shows before/after metrics in conversation (5139 backend + 1770 frontend = 6909 tests)
 
 No community issues. Track C continuation: hyperparameter tuning existed as a standalone API endpoint (`POST /api/models/{run_id}/tune`) and a panel UI card — but there was no conversational path. When an analyst said "tune my model", chat either ignored it or gave a generic text response. The gap: the `{type:"tune"}` SSE event was emitted but `page.tsx` had no handler for it — it was silently dropped.
