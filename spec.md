@@ -1415,6 +1415,26 @@ guides them forward through the natural flow.
       running multiple prediction projects simultaneously.
       *Day 37 (04:00): 21 backend + 16 frontend = 37 tests. Backend lint: clean. Frontend build: clean.*
 
+- [x] **Prediction Log Analytics via Chat** — Track D perpetual. Analysts can ask "how many
+      predictions have been made?", "show prediction analytics", "prediction volume this week",
+      "usage stats for my model", or "how often is my model being called?" and receive a
+      `PredictionAnalyticsChatCard` inline in chat. Upgrades the existing thin stub (only
+      `total_predictions`) into a full analytics card. Handler queries `PredictionLog` for the last
+      30 days, computes: `total_predictions` (all-time from `Deployment.request_count`),
+      `predictions_last_7_days`, `predictions_last_30_days`, `predictions_today`, `predictions_by_day`
+      (14-day daily bar counts), `peak_day` (date + count of highest-volume day), `class_counts`
+      (classification only — dict of predicted_class→count for last 30 days), `avg_prediction`
+      (regression only — mean of `prediction_numeric`). Bug fixed: was using `model_runs.problem_type`
+      which doesn't exist — fixed to `deployment.problem_type`. Emits `{type:"prediction_analytics_chat"}`
+      SSE event. `PredictionAnalyticsChatCard` (sky-blue border, 📊 icon): total badge, problem-type
+      badge, summary paragraph, 3-stat grid (7-day / 30-day / today), 14-day `BarChart` sparkline
+      with peak day highlighted in darker blue (no chart shown when all zero), peak-day info row,
+      class distribution bars with % widths (classification), avg prediction box (regression).
+      `PredictionAnalyticsChatResult` TypeScript type; `prediction_analytics_chat?` on `ChatMessage`;
+      `attachPredictionAnalyticsChatToLastMessage` Zustand action; SSE handler + render wired in
+      `project/[id]/page.tsx`.
+      *Day 37 (12:00): 16 backend + 17 frontend = 33 new tests. Backend lint: clean. Frontend build: clean.*
+
 ---
 
 ## Data Model

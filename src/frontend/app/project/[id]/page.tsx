@@ -67,6 +67,7 @@ import { PredictionCohortCard } from "@/components/deploy/prediction-cohort-card
 import { OnboardingGuideCard } from "@/components/chat/onboarding-guide-card"
 import { DataVersionHistoryCard } from "@/components/chat/data-version-history-card"
 import { LearningCurveCard } from "@/components/chat/learning-curve-card"
+import { PredictionAnalyticsChatCard } from "@/components/chat/prediction-analytics-chat-card"
 import {
   TemplateSavedCard,
   TemplateListCard,
@@ -265,6 +266,7 @@ export default function ProjectWorkspace() {
     attachEnsembleRecommendationToLastMessage,
     attachTuneChatToLastMessage,
     attachCvScoreDistributionToLastMessage,
+    attachPredictionAnalyticsChatToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -656,6 +658,8 @@ export default function ProjectWorkspace() {
                 attachTuneChatToLastMessage(json.tune_chat as import("@/lib/types").TuningChatResult)
               } else if (json.type === "cv_score_distribution" && json.cv_score_distribution) {
                 attachCvScoreDistributionToLastMessage(json.cv_score_distribution as import("@/lib/types").CvScoreDistributionResult)
+              } else if (json.type === "prediction_analytics_chat" && json.prediction_analytics_chat) {
+                attachPredictionAnalyticsChatToLastMessage(json.prediction_analytics_chat as import("@/lib/types").PredictionAnalyticsChatResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -752,6 +756,7 @@ export default function ProjectWorkspace() {
     attachEnsembleRecommendationToLastMessage,
     attachTuneChatToLastMessage,
     attachCvScoreDistributionToLastMessage,
+    attachPredictionAnalyticsChatToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -1229,6 +1234,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.cv_score_distribution && (
                       <CvScoreDistributionCard result={msg.cv_score_distribution} />
+                    )}
+                    {msg.prediction_analytics_chat && (
+                      <PredictionAnalyticsChatCard result={msg.prediction_analytics_chat} />
                     )}
                   </div>
                 </div>
