@@ -5891,7 +5891,11 @@ def send_message(
     # Must fire BEFORE _TRAIN_PATTERNS so that "train a voting ensemble" doesn't
     # also start three generic training runs.
     training_started_event: dict | None = None
-    if _ENSEMBLE_TRAIN_PATTERNS.search(body.message) and ctx["feature_set"] and ctx["dataset"]:
+    if (
+        _ENSEMBLE_TRAIN_PATTERNS.search(body.message)
+        and ctx["feature_set"]
+        and ctx["dataset"]
+    ):
         try:
             import queue as _queue
             import threading as _threading
@@ -5928,9 +5932,13 @@ def send_message(
                 # Choose voting vs stacking based on message
                 _use_stacking = bool(_STACKING_RE.search(body.message))
                 if _problem_type == "regression":
-                    _algo = "stacking_regressor" if _use_stacking else "voting_regressor"
+                    _algo = (
+                        "stacking_regressor" if _use_stacking else "voting_regressor"
+                    )
                 else:
-                    _algo = "stacking_classifier" if _use_stacking else "voting_classifier"
+                    _algo = (
+                        "stacking_classifier" if _use_stacking else "voting_classifier"
+                    )
                 _algo_display = _algo.replace("_", " ").title()
 
                 with _train_lock:
@@ -5984,7 +5992,11 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Ensemble training is nice-to-have; never crash chat
 
-    if _TRAIN_PATTERNS.search(body.message) and ctx["dataset"] and not training_started_event:
+    if (
+        _TRAIN_PATTERNS.search(body.message)
+        and ctx["dataset"]
+        and not training_started_event
+    ):
         try:
             import queue as _queue
             import threading as _threading

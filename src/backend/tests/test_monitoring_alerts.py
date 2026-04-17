@@ -510,7 +510,9 @@ class TestChatAnalyticsIntent:
             for line in resp.text.split("\n")
             if line.startswith("data: ")
         ]
-        analytics_events = [c for c in chunks if c.get("type") == "prediction_analytics_chat"]
+        analytics_events = [
+            c for c in chunks if c.get("type") == "prediction_analytics_chat"
+        ]
         assert len(analytics_events) == 1
         payload = analytics_events[0]["prediction_analytics_chat"]
         assert "deployment_id" in payload
