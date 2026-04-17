@@ -481,6 +481,7 @@ export interface ChatMessage {
   ensemble_recommendation?: EnsembleRecommendationResult
   tune_chat?: TuningChatResult
   cv_score_distribution?: CvScoreDistributionResult
+  prediction_analytics_chat?: PredictionAnalyticsChatResult
 }
 
 export interface SegmentPerformanceSegment {
@@ -2562,5 +2563,23 @@ export interface CvScoreDistributionResult {
   n_splits: number
   consistency: "stable" | "moderate" | "variable"
   consistency_pct: number
+  summary: string
+}
+
+// ---------------------------------------------------------------------------
+// Prediction Log Analytics Chat Card
+// ---------------------------------------------------------------------------
+
+export interface PredictionAnalyticsChatResult {
+  deployment_id: string
+  total_predictions: number
+  predictions_last_7_days: number
+  predictions_last_30_days: number
+  predictions_today: number
+  predictions_by_day: { date: string; count: number }[]
+  peak_day: { date: string; count: number } | null
+  class_counts: Record<string, number> | null
+  avg_prediction: number | null
+  problem_type: string | null
   summary: string
 }

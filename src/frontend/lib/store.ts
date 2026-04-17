@@ -123,6 +123,7 @@ interface AppState {
   attachEnsembleRecommendationToLastMessage: (ensemble_recommendation: import("./types").EnsembleRecommendationResult) => void
   attachTuneChatToLastMessage: (tune_chat: import("./types").TuningChatResult) => void
   attachCvScoreDistributionToLastMessage: (cv_score_distribution: import("./types").CvScoreDistributionResult) => void
+  attachPredictionAnalyticsChatToLastMessage: (prediction_analytics_chat: import("./types").PredictionAnalyticsChatResult) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -866,6 +867,16 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, cv_score_distribution }
+      }
+      return { messages }
+    }),
+
+  attachPredictionAnalyticsChatToLastMessage: (prediction_analytics_chat) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, prediction_analytics_chat }
       }
       return { messages }
     }),

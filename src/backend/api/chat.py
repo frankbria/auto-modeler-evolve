@@ -4503,18 +4503,92 @@ def send_message(
     # Check for prediction analytics request
     analytics_event: dict | None = None
     if _ANALYTICS_PATTERNS.search(body.message) and ctx["deployment"]:
-        dep_for_analytics = ctx["deployment"]
-        count = dep_for_analytics.request_count
-        analytics_event = {
-            "deployment_id": dep_for_analytics.id,
-            "total_predictions": count,
-        }
-        system_prompt += (
-            f"\n\n## Prediction Analytics\n"
-            f"The active deployment has logged {count} prediction(s) total. "
-            "The Analytics card is visible in the Deployment tab with a usage chart. "
-            "Reference the prediction count in your response and mention the Analytics card."
-        )
+        try:
+            dep_for_analytics = ctx["deployment"]
+            _dep_id = dep_for_analytics.id
+            _total = dep_for_analytics.request_count or 0
+            _problem_type = dep_for_analytics.problem_type
+
+            _now = datetime.now(UTC).replace(tzinfo=None)
+            _today_str = _now.strftime("%Y-%m-%d")
+
+            # Build last 14 calendar dates
+            from datetime import timedelta as _td
+
+            _dates_14 = [
+                (_now - _td(days=13 - i)).strftime("%Y-%m-%d") for i in range(14)
+            ]
+            _day_map: dict[str, int] = {d: 0 for d in _dates_14}
+            _start_30 = _now - _td(days=30)
+            _start_7 = _now - _td(days=7)
+
+            _logs = session.exec(
+                select(PredictionLog).where(
+                    PredictionLog.deployment_id == _dep_id,
+                    PredictionLog.created_at >= _start_30,
+                )
+            ).all()
+
+            _count_30 = 0
+            _count_7 = 0
+            _count_today = 0
+            _class_tally: dict[str, int] = {}
+            _num_preds: list[float] = []
+
+            for _log in _logs:
+                _log_date = _log.created_at.strftime("%Y-%m-%d")
+                _count_30 += 1
+                if _log.created_at >= _start_7:
+                    _count_7 += 1
+                if _log_date == _today_str:
+                    _count_today += 1
+                if _log_date in _day_map:
+                    _day_map[_log_date] += 1
+                if _problem_type == "classification" and _log.prediction:
+                    _class_tally[_log.prediction] = (
+                        _class_tally.get(_log.prediction, 0) + 1
+                    )
+                if _log.prediction_numeric is not None:
+                    _num_preds.append(_log.prediction_numeric)
+
+            _by_day = [{"date": d, "count": _day_map[d]} for d in _dates_14]
+
+            # Peak day: highest count in the 14-day window
+            _peak = max(_by_day, key=lambda x: x["count"])
+            _peak_day = _peak if _peak["count"] > 0 else None
+
+            _avg_pred = (
+                round(sum(_num_preds) / len(_num_preds), 2) if _num_preds else None
+            )
+            _class_counts = _class_tally if _class_tally else None
+
+            _summary = (
+                f"{_total} total predictions, {_count_7} in the last 7 days, "
+                f"{_count_today} today."
+            )
+
+            analytics_event = {
+                "deployment_id": _dep_id,
+                "total_predictions": _total,
+                "predictions_last_7_days": _count_7,
+                "predictions_last_30_days": _count_30,
+                "predictions_today": _count_today,
+                "predictions_by_day": _by_day,
+                "peak_day": _peak_day,
+                "class_counts": _class_counts,
+                "avg_prediction": _avg_pred,
+                "problem_type": _problem_type,
+                "summary": _summary,
+            }
+            system_prompt += (
+                f"\n\n## Prediction Analytics\n"
+                f"The deployment has received {_total} total predictions, "
+                f"{_count_7} in the last 7 days, {_count_today} today. "
+                "A PredictionAnalyticsChatCard is shown with a 14-day sparkline, "
+                "peak day, and usage stats. Reference the key numbers naturally."
+            )
+        except Exception:  # noqa: BLE001
+            pass  # Analytics card is enhancement; never crash chat
 
     # Check for data cleaning suggestion request
     # Vision: "Explain before executing" — we suggest the operation, user confirms via button.
@@ -9211,9 +9285,9 @@ def send_message(
         if history_event:
             yield f"data: {json.dumps({'type': 'history', 'history': history_event})}\n\n"
 
-        # Emit analytics trigger if detected
+        # Emit prediction analytics chat card if computed
         if analytics_event:
-            yield f"data: {json.dumps({'type': 'analytics', 'analytics': analytics_event})}\n\n"
+            yield f"data: {json.dumps({'type': 'prediction_analytics_chat', 'prediction_analytics_chat': analytics_event})}\n\n"
 
         # Emit cross-tabulation / pivot table if computed
         if crosstab_event:

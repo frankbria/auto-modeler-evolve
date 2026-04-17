@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import io
 import json
-import time
 import unittest.mock as mock
 from datetime import UTC, datetime
 
@@ -74,7 +73,14 @@ def client(tmp_path):
 
 
 def _setup_deployed_model(client):
-    """Create project → upload → features → target → train → deploy."""
+    """Create project → upload → features → target → inject run + deployment.
+
+    Uses direct DB injection (no background training threads) so the test is
+    stable regardless of ordering in the full suite.
+    """
+    import json as _json
+    import uuid as _uuid
+
     proj = client.post("/api/projects", json={"name": "AnalyticsTest"})
     assert proj.status_code == 201
     project_id = proj.json()["id"]
@@ -88,29 +94,48 @@ def _setup_deployed_model(client):
     dataset_id = upload.json()["dataset_id"]
 
     client.post(f"/api/features/{dataset_id}/apply", json={"transformations": []})
-    client.post(
+    fs_resp = client.post(
         f"/api/features/{dataset_id}/target",
         json={"target_column": "revenue", "problem_type": "regression"},
     )
+    feature_set_id = fs_resp.json().get("feature_set_id")
 
-    train = client.post(
-        f"/api/models/{project_id}/train",
-        json={"algorithms": ["linear_regression"]},
-    )
-    assert train.status_code == 202
-    run_id = train.json()["model_run_ids"][0]
+    from models.deployment import Deployment
+    from models.model_run import ModelRun
 
-    for _ in range(60):
-        runs = client.get(f"/api/models/{project_id}/runs").json()["runs"]
-        run = next((r for r in runs if r["id"] == run_id), None)
-        if run and run["status"] in ("done", "failed"):
-            break
-        time.sleep(0.2)
-    assert run and run["status"] == "done"
+    run_id = str(_uuid.uuid4())
+    deployment_id = str(_uuid.uuid4())
 
-    deploy = client.post(f"/api/deploy/{run_id}")
-    assert deploy.status_code == 201
-    deployment_id = deploy.json()["id"]
+    with Session(db_module.engine) as session:
+        session.add(
+            ModelRun(
+                id=run_id,
+                project_id=project_id,
+                feature_set_id=feature_set_id,
+                algorithm="linear_regression",
+                status="done",
+                metrics=_json.dumps({"r2": 0.88, "mae": 12.0}),
+                summary="Linear Regression: R² 0.880",
+            )
+        )
+        session.add(
+            Deployment(
+                id=deployment_id,
+                model_run_id=run_id,
+                project_id=project_id,
+                endpoint_path=f"/api/predict/{deployment_id}",
+                dashboard_url=f"/predict/{deployment_id}",
+                is_active=True,
+                algorithm="linear_regression",
+                problem_type="regression",
+                feature_names=_json.dumps(["units", "region"]),
+                target_column="revenue",
+                metrics=_json.dumps({"r2": 0.88}),
+                request_count=5,
+            )
+        )
+        session.commit()
+
     return project_id, dataset_id, deployment_id
 
 
