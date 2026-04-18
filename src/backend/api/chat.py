@@ -2720,6 +2720,20 @@ _CV_SCORE_DIST_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+_CONFUSION_MATRIX_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"(?:show|display|give|get)\s+(?:me\s+)?(?:the\s+)?confusion\s+matrix\b|"
+    r"confusion\s+matrix\b|"
+    r"(?:where|how)\s+(?:does|do|did|is)\s+(?:my\s+)?model\s+(?:make\s+)?(?:mistakes?|errors?|wrong)\b|"
+    r"(?:true|false)\s+(?:positives?|negatives?)\b|"
+    r"classification\s+(?:accuracy|errors?|breakdown|matrix)\s+by\s+class\b|"
+    r"(?:how\s+)?(?:accurate|well)\s+(?:is|does)\s+(?:my\s+)?model\s+(?:by|per|for\s+each)\s+class\b|"
+    r"(?:precision|recall|f1)\s+per\s+class\b|"
+    r"model\s+classification\s+(?:breakdown|errors?|mistakes?|confusion)\b"
+    r")",
+    re.IGNORECASE,
+)
+
 _DOW_NAMES: dict[str, int] = {
     "monday": 0,
     "mon": 0,
@@ -7702,6 +7716,103 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # CV distribution is nice-to-have; never crash chat
 
+    # Confusion matrix — "show me the confusion matrix", "where does my model make mistakes?"
+    confusion_matrix_event: dict | None = None
+    if _CONFUSION_MATRIX_PATTERNS.search(body.message) and ctx.get("model_runs"):
+        try:
+            import joblib as _cm_jl
+
+            from core.feature_engine import apply_transformations as _cm_at
+            from core.trainer import prepare_features as _cm_pf
+            from core.validator import compute_confusion_matrix as _ccm
+
+            _cm_runs = [r for r in (ctx.get("model_runs") or []) if r.status == "done"]
+            # Classification only — find best/selected classification run
+            from api.models import CLASSIFICATION_ALGORITHMS as _CM_CLS_ALGOS
+
+            _cm_cls_runs = [r for r in _cm_runs if r.algorithm in _CM_CLS_ALGOS]
+            if _cm_cls_runs:
+                _cm_run = next((r for r in _cm_cls_runs if r.is_selected), None)
+                if not _cm_run:
+                    _cm_run = max(
+                        _cm_cls_runs,
+                        key=lambda r: json.loads(r.metrics or "{}").get("accuracy", 0),
+                    )
+
+                _cm_ds = ctx["dataset"]
+                _cm_fs = ctx.get("feature_set")
+                if (
+                    _cm_run
+                    and _cm_run.model_path
+                    and Path(_cm_run.model_path).exists()
+                    and _cm_ds
+                    and _cm_ds.file_path
+                    and Path(_cm_ds.file_path).exists()
+                    and _cm_fs
+                ):
+                    _cm_df = _load_working_df(Path(_cm_ds.file_path), _active_filter_conditions)
+                    _cm_transforms = json.loads(_cm_fs.transformations or "[]")
+                    if _cm_transforms:
+                        _cm_df, _ = _cm_at(_cm_df, _cm_transforms)
+                    _cm_target = _cm_fs.target_column
+                    if _cm_target and _cm_target in _cm_df.columns:
+                        _cm_feat_cols = [c for c in _cm_df.columns if c != _cm_target]
+                        _cm_X, _cm_y, _cm_feat_names = _cm_pf(
+                            _cm_df, _cm_feat_cols, _cm_target, "classification"
+                        )
+                        _cm_model = _cm_jl.load(_cm_run.model_path)
+                        _cm_y_pred = _cm_model.predict(_cm_X)
+
+                        # Resolve class names from pipeline if available
+                        _cm_class_names = None
+                        _cm_pipeline_path = _cm_run.model_path.replace(
+                            "_model.joblib", "_pipeline.joblib"
+                        )
+                        if Path(_cm_pipeline_path).exists():
+                            try:
+                                _cm_pipe = _cm_jl.load(_cm_pipeline_path)
+                                _cm_class_names = getattr(_cm_pipe, "target_classes", None)
+                            except Exception:  # noqa: BLE001
+                                pass
+
+                        _cm_result = _ccm(_cm_y, _cm_y_pred, class_labels=_cm_class_names)
+                        from api.models import CLASSIFICATION_ALGORITHMS as _CM_CLS2
+
+                        _cm_algo_plain = _CM_CLS2.get(_cm_run.algorithm, {}).get(
+                            "name", _cm_run.algorithm.replace("_", " ").title()
+                        )
+                        confusion_matrix_event = {
+                            **_cm_result,
+                            "algorithm": _cm_run.algorithm,
+                            "algorithm_plain": _cm_algo_plain,
+                            "target_col": _cm_target,
+                        }
+                        _cm_summary = _cm_result["summary"]
+                        _cm_acc = _cm_result["accuracy"]
+                        _cm_confused = _cm_result.get("most_confused_pair")
+                        _cm_confused_txt = (
+                            f"Most confused: '{_cm_confused['actual']}' predicted as "
+                            f"'{_cm_confused['predicted']}' ({_cm_confused['count']} times). "
+                            if _cm_confused
+                            else ""
+                        )
+                        system_prompt += (
+                            f"\n\n## Confusion Matrix\n"
+                            f"Algorithm: {_cm_algo_plain}. "
+                            f"Target: {_cm_target}. "
+                            f"Overall accuracy: {_cm_acc:.1%} "
+                            f"({_cm_result['correct']} of {_cm_result['total']} correct). "
+                            f"{_cm_confused_txt}"
+                            f"{_cm_summary}\n"
+                            f"A ConfusionMatrixChatCard is shown with the full matrix grid and "
+                            f"per-class precision, recall, and F1 scores. "
+                            f"Explain in plain English: overall accuracy, which class the model "
+                            f"struggles with most, and one actionable suggestion "
+                            f"(e.g., collect more data for the weak class, or use class weighting)."
+                        )
+        except Exception:  # noqa: BLE001
+            pass  # Confusion matrix is nice-to-have; never crash chat
+
     # Check for "show me the data" / record table viewer
     records_event: dict | None = None
     if _RECORDS_PATTERNS.search(body.message) and ctx["dataset"]:
@@ -9716,6 +9827,10 @@ def send_message(
         # Emit cross-validation score distribution card
         if cv_score_dist_event:
             yield f"data: {json.dumps({'type': 'cv_score_distribution', 'cv_score_distribution': cv_score_dist_event})}\n\n"
+
+        # Emit confusion matrix card
+        if confusion_matrix_event:
+            yield f"data: {json.dumps({'type': 'confusion_matrix_chat', 'confusion_matrix_chat': confusion_matrix_event})}\n\n"
 
         # After text stream, opportunistically generate a chart if the
         # message is about data and we have a dataset loaded

@@ -482,6 +482,7 @@ export interface ChatMessage {
   tune_chat?: TuningChatResult
   cv_score_distribution?: CvScoreDistributionResult
   prediction_analytics_chat?: PredictionAnalyticsChatResult
+  confusion_matrix_chat?: ConfusionMatrixChatResult
 }
 
 export interface SegmentPerformanceSegment {
@@ -2582,4 +2583,30 @@ export interface PredictionAnalyticsChatResult {
   avg_prediction: number | null
   problem_type: string | null
   summary: string
+}
+
+// ---------------------------------------------------------------------------
+// Confusion Matrix Chat Card
+// ---------------------------------------------------------------------------
+
+export interface PerClassMetric {
+  label: string
+  precision: number
+  recall: number
+  f1: number
+  support: number
+}
+
+export interface ConfusionMatrixChatResult {
+  matrix: number[][]
+  labels: string[]
+  total: number
+  correct: number
+  accuracy: number
+  per_class_metrics: PerClassMetric[]
+  most_confused_pair: { actual: string; predicted: string; count: number } | null
+  summary: string
+  algorithm: string
+  algorithm_plain: string
+  target_col: string
 }

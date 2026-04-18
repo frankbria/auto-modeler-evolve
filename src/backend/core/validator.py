@@ -103,7 +103,7 @@ def compute_confusion_matrix(
 ) -> dict:
     """Compute confusion matrix with plain-English annotation.
 
-    Returns a dict with 'matrix' (list-of-lists), 'labels', and 'summary'.
+    Returns matrix, labels, per_class_metrics, most_confused_pair, and summary.
     """
     cm = confusion_matrix(y_true, y_pred)
     total = len(y_true)
@@ -115,12 +115,48 @@ def compute_confusion_matrix(
         unique = sorted(set(y_true.tolist()))
         labels = [str(lbl) for lbl in unique]
 
+    # Per-class precision, recall, f1, support
+    n = len(cm)
+    per_class_metrics = []
+    for i in range(n):
+        tp = int(cm[i, i])
+        fp = int(cm[:, i].sum()) - tp
+        fn = int(cm[i, :].sum()) - tp
+        precision = round(tp / (tp + fp), 4) if (tp + fp) > 0 else 0.0
+        recall = round(tp / (tp + fn), 4) if (tp + fn) > 0 else 0.0
+        f1 = (
+            round(2 * precision * recall / (precision + recall), 4)
+            if (precision + recall) > 0
+            else 0.0
+        )
+        support = int(cm[i, :].sum())
+        lbl = labels[i] if i < len(labels) else str(i)
+        per_class_metrics.append(
+            {"label": lbl, "precision": precision, "recall": recall, "f1": f1, "support": support}
+        )
+
+    # Most common misclassification (highest off-diagonal cell)
+    cm_no_diag = cm.copy()
+    np.fill_diagonal(cm_no_diag, 0)
+    most_confused_pair = None
+    if cm_no_diag.max() > 0:
+        idx = np.unravel_index(cm_no_diag.argmax(), cm_no_diag.shape)
+        actual_lbl = labels[idx[0]] if idx[0] < len(labels) else str(idx[0])
+        pred_lbl = labels[idx[1]] if idx[1] < len(labels) else str(idx[1])
+        most_confused_pair = {
+            "actual": actual_lbl,
+            "predicted": pred_lbl,
+            "count": int(cm_no_diag[idx]),
+        }
+
     return {
         "matrix": cm.tolist(),
         "labels": labels,
         "total": total,
         "correct": correct,
         "accuracy": round(correct / total, 4) if total > 0 else 0.0,
+        "per_class_metrics": per_class_metrics,
+        "most_confused_pair": most_confused_pair,
         "summary": _confusion_summary(cm, labels),
     }
 

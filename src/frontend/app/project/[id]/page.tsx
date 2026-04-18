@@ -93,6 +93,7 @@ import { EnsembleRecommendationCard } from "@/components/models/ensemble-recomme
 import { TuningChatCard } from "@/components/models/tuning-chat-card"
 import { CvScoreDistributionCard } from "@/components/models/cv-score-distribution-card"
 import { PredictionAnalyticsChatCard } from "@/components/chat/prediction-analytics-chat-card"
+import { ConfusionMatrixChatCard } from "@/components/models/confusion-matrix-chat-card"
 import { PairCorrelationCard } from "@/components/data/pair-correlation-card"
 import { StatQueryCard } from "@/components/data/stat-query-card"
 import { SummaryStatsCard } from "@/components/data/summary-stats-card"
@@ -267,6 +268,7 @@ export default function ProjectWorkspace() {
     attachTuneChatToLastMessage,
     attachCvScoreDistributionToLastMessage,
     attachPredictionAnalyticsChatToLastMessage,
+    attachConfusionMatrixChatToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -660,6 +662,8 @@ export default function ProjectWorkspace() {
                 attachCvScoreDistributionToLastMessage(json.cv_score_distribution as import("@/lib/types").CvScoreDistributionResult)
               } else if (json.type === "prediction_analytics_chat" && json.prediction_analytics_chat) {
                 attachPredictionAnalyticsChatToLastMessage(json.prediction_analytics_chat as import("@/lib/types").PredictionAnalyticsChatResult)
+              } else if (json.type === "confusion_matrix_chat" && json.confusion_matrix_chat) {
+                attachConfusionMatrixChatToLastMessage(json.confusion_matrix_chat as import("@/lib/types").ConfusionMatrixChatResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -757,6 +761,7 @@ export default function ProjectWorkspace() {
     attachTuneChatToLastMessage,
     attachCvScoreDistributionToLastMessage,
     attachPredictionAnalyticsChatToLastMessage,
+    attachConfusionMatrixChatToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -1237,6 +1242,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.prediction_analytics_chat && (
                       <PredictionAnalyticsChatCard result={msg.prediction_analytics_chat} />
+                    )}
+                    {msg.confusion_matrix_chat && (
+                      <ConfusionMatrixChatCard result={msg.confusion_matrix_chat} />
                     )}
                   </div>
                 </div>
