@@ -73,7 +73,9 @@ class TestExplainSinglePrediction:
         from core.explainer import explain_single_prediction
 
         model, X, y = self._make_regression_model()
-        result = explain_single_prediction(model, X[0], X, ["f1", "f2"], "regression", "target")
+        result = explain_single_prediction(
+            model, X[0], X, ["f1", "f2"], "regression", "target"
+        )
         for field in ("prediction", "prediction_value", "contributions", "summary"):
             assert field in result
 
@@ -81,7 +83,9 @@ class TestExplainSinglePrediction:
         from core.explainer import explain_single_prediction
 
         model, X, y = self._make_regression_model()
-        result = explain_single_prediction(model, X[0], X, ["f1", "f2"], "regression", "target")
+        result = explain_single_prediction(
+            model, X[0], X, ["f1", "f2"], "regression", "target"
+        )
         for c in result["contributions"]:
             assert "feature" in c
             assert "value" in c
@@ -93,7 +97,9 @@ class TestExplainSinglePrediction:
         from core.explainer import explain_single_prediction
 
         model, X, y = self._make_regression_model()
-        result = explain_single_prediction(model, X[0], X, ["f1", "f2"], "regression", "target")
+        result = explain_single_prediction(
+            model, X[0], X, ["f1", "f2"], "regression", "target"
+        )
         contribs = [abs(c["contribution"]) for c in result["contributions"]]
         assert contribs == sorted(contribs, reverse=True)
 
@@ -101,28 +107,36 @@ class TestExplainSinglePrediction:
         from core.explainer import explain_single_prediction
 
         model, X, y = self._make_regression_model()
-        result = explain_single_prediction(model, X[0], X, ["f1", "f2"], "regression", "target")
+        result = explain_single_prediction(
+            model, X[0], X, ["f1", "f2"], "regression", "target"
+        )
         assert len(result["contributions"]) == 2
 
     def test_classification_returns_prediction_class(self):
         from core.explainer import explain_single_prediction
 
         model, X, y = self._make_classification_model()
-        result = explain_single_prediction(model, X[0], X, ["f1", "f2"], "classification", "label")
+        result = explain_single_prediction(
+            model, X[0], X, ["f1", "f2"], "classification", "label"
+        )
         assert result["prediction"] in (0, 1)
 
     def test_classification_summary_mentions_target(self):
         from core.explainer import explain_single_prediction
 
         model, X, y = self._make_classification_model()
-        result = explain_single_prediction(model, X[0], X, ["f1", "f2"], "classification", "my_label")
+        result = explain_single_prediction(
+            model, X[0], X, ["f1", "f2"], "classification", "my_label"
+        )
         assert "my_label" in result["summary"]
 
     def test_regression_summary_non_empty(self):
         from core.explainer import explain_single_prediction
 
         model, X, y = self._make_regression_model()
-        result = explain_single_prediction(model, X[0], X, ["f1", "f2"], "regression", "revenue")
+        result = explain_single_prediction(
+            model, X[0], X, ["f1", "f2"], "regression", "revenue"
+        )
         assert len(result["summary"]) > 5
 
 
@@ -202,6 +216,7 @@ class TestLocalExplanationChatIntegration:
     @pytest.fixture()
     def client(self):
         from main import app
+
         return TestClient(app)
 
     @pytest.fixture()
@@ -244,7 +259,9 @@ class TestLocalExplanationChatIntegration:
                 file_path=str(csv_path),
                 row_count=30,
                 column_count=3,
-                columns=json.dumps([{"name": "units"}, {"name": "price"}, {"name": "revenue"}]),
+                columns=json.dumps(
+                    [{"name": "units"}, {"name": "price"}, {"name": "revenue"}]
+                ),
             )
             session.add(dataset)
             session.flush()
@@ -293,20 +310,38 @@ class TestLocalExplanationChatIntegration:
         return events
 
     def test_local_explanation_event_emitted(self, client, project_with_model):
-        events = self._chat_events(client, project_with_model, "explain this specific prediction")
+        events = self._chat_events(
+            client, project_with_model, "explain this specific prediction"
+        )
         assert any(e.get("type") == "local_explanation" for e in events)
 
-    def test_local_explanation_event_has_required_fields(self, client, project_with_model):
-        events = self._chat_events(client, project_with_model, "show me feature contributions for row 0")
+    def test_local_explanation_event_has_required_fields(
+        self, client, project_with_model
+    ):
+        events = self._chat_events(
+            client, project_with_model, "show me feature contributions for row 0"
+        )
         le_events = [e for e in events if e.get("type") == "local_explanation"]
         assert len(le_events) >= 1
         payload = le_events[0]["local_explanation"]
-        for field in ("row_index", "algorithm", "target_col", "problem_type",
-                      "contributions", "summary", "actual_value", "predicted_value"):
+        for field in (
+            "row_index",
+            "algorithm",
+            "target_col",
+            "problem_type",
+            "contributions",
+            "summary",
+            "actual_value",
+            "predicted_value",
+        ):
             assert field in payload, f"Missing field: {field}"
 
-    def test_local_explanation_contributions_structure(self, client, project_with_model):
-        events = self._chat_events(client, project_with_model, "show me the feature contributions")
+    def test_local_explanation_contributions_structure(
+        self, client, project_with_model
+    ):
+        events = self._chat_events(
+            client, project_with_model, "show me the feature contributions"
+        )
         le_events = [e for e in events if e.get("type") == "local_explanation"]
         assert le_events
         for c in le_events[0]["local_explanation"]["contributions"]:
@@ -314,14 +349,20 @@ class TestLocalExplanationChatIntegration:
             assert "contribution" in c
             assert c["direction"] in ("positive", "negative")
 
-    def test_local_explanation_row_index_defaults_zero(self, client, project_with_model):
-        events = self._chat_events(client, project_with_model, "what drove this prediction")
+    def test_local_explanation_row_index_defaults_zero(
+        self, client, project_with_model
+    ):
+        events = self._chat_events(
+            client, project_with_model, "what drove this prediction"
+        )
         le_events = [e for e in events if e.get("type") == "local_explanation"]
         assert le_events
         assert le_events[0]["local_explanation"]["row_index"] == 0
 
     def test_local_explanation_specific_row_index(self, client, project_with_model):
-        events = self._chat_events(client, project_with_model, "explain prediction for row 5")
+        events = self._chat_events(
+            client, project_with_model, "explain prediction for row 5"
+        )
         le_events = [e for e in events if e.get("type") == "local_explanation"]
         assert le_events
         assert le_events[0]["local_explanation"]["row_index"] == 5

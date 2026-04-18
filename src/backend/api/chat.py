@@ -7522,11 +7522,7 @@ def send_message(
                 (mr for mr in _le_runs if mr.is_selected),
                 _le_runs[0] if _le_runs else None,
             )
-            if (
-                _le_run
-                and _le_run.model_path
-                and Path(_le_run.model_path).exists()
-            ):
+            if _le_run and _le_run.model_path and Path(_le_run.model_path).exists():
                 _le_fs = ctx["feature_set"]
                 _le_ds = ctx["dataset"]
                 _le_file = Path(_le_ds.file_path)
@@ -7561,7 +7557,9 @@ def send_message(
                     if Path(_le_pipeline_path).exists():
                         try:
                             _le_pipe = _jl_le.load(_le_pipeline_path)
-                            _le_target_classes = getattr(_le_pipe, "target_classes", None)
+                            _le_target_classes = getattr(
+                                _le_pipe, "target_classes", None
+                            )
                         except Exception:  # noqa: BLE001
                             pass
 
@@ -7610,16 +7608,11 @@ def send_message(
                         "contributions": _le_result["contributions"][:12],
                         "summary": _le_result["summary"],
                         "raw_feature_values": {
-                            k: v
-                            for k, v in _le_raw_row.items()
-                            if k != _le_target
+                            k: v for k, v in _le_raw_row.items() if k != _le_target
                         },
                     }
 
-                    _le_top3 = [
-                        c["feature"]
-                        for c in _le_result["contributions"][:3]
-                    ]
+                    _le_top3 = [c["feature"] for c in _le_result["contributions"][:3]]
                     system_prompt += (
                         f"\n\n## Local Prediction Explanation (Row {_le_row_idx})\n"
                         f"Problem type: {_le_prob_type}. Algorithm: {_le_run.algorithm}.\n"
