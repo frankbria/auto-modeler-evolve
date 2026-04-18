@@ -49,6 +49,18 @@ the time is better spent on real features.
 
 ## Currently Working On
 
+## Day 38 (12:00) — Done
+**Track D — Production Input Distribution Chat Card.** Analysts can now ask "what values are users sending to my model?", "show production input distribution", or "are my production inputs in range?" and receive a `ProductionInputDistributionCard` inline in chat — per-feature production stats vs training ranges, with out-of-range and unseen-category detection.
+- `_PROD_INPUT_DIST_PATTERNS` regex (8 NL variants) in `chat.py`. Guard: `ctx["deployment"]`.
+- Handler: queries last 500 `PredictionLog` records, parses `input_features` JSON, aggregates numeric (mean/min/max vs training range from PredictionPipeline.feature_ranges) and categorical (top-5 value counts + unseen detection) features (capped at 10).
+- `ProductionInputDistributionCard` (sky-blue border, 📊 icon): amber tint for OOR numeric, rose tint for unseen categorical, empty state, legend.
+- 21 backend + 15 frontend = 36 new tests. Backend lint: clean. Frontend build: clean.
+
+**What's next:**
+- Track E: Run the "lunch break" flow end-to-end as a real analyst; audit friction in the VP-sharing flow
+- Track D: Covariate drift alert — proactively notify when production input means shift significantly from training baselines
+- Track C: Feature selection automation — suggest dropping near-zero-importance features to simplify models
+
 ## Day 38 (04:00) — Done
 **Track C — Local Explanation Chat Card (Feature Contribution Waterfall).** Analysts can now ask "explain this prediction", "what drove this result?", "show SHAP values for row 5", or "why did the model predict that?" and receive a `LocalExplanationCard` inline in chat — a waterfall chart showing each feature's contribution to the selected row's prediction.
 - `_EXPLAIN_ROW_PATTERNS` regex (9 NL variants) + `_extract_row_index()` helper in `chat.py`. Guard: `ctx["model_runs"]` AND `ctx["dataset"]` AND `ctx["feature_set"]` AND `not pdp_event`.
