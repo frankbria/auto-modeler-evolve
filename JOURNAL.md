@@ -1,5 +1,17 @@
 # Journal
 
+## Day 38 — 12:00 — Production Input Distribution Chat Card: "what values are users sending?" shows per-feature production stats vs training ranges
+
+No community issues. Track D: `PredictionLog.input_features` was being stored as JSON on every prediction (Day 14) but had no conversational entry point — analysts had no way to ask "are users sending weird values to my model?" and see what the production population actually looks like. Gap: covariate shift (production inputs diverging from training distribution) is a leading indicator of silent accuracy degradation, but was invisible through the chat interface.
+
+**What changed:**
+
+`_PROD_INPUT_DIST_PATTERNS` regex (8 NL variants: "what values are users sending to my model", "show production input distribution", "input distribution", "what feature values is my model receiving", "are my production inputs in range", "most common inputs", "how different are production inputs from training") added to `chat.py`. Handler: queries last 500 `PredictionLog` records for the active deployment, parses `input_features` JSON blobs, aggregates per-feature stats (capped at 10 features). Numeric features: production mean/min/max vs `PredictionPipeline.feature_ranges` training min/max (loaded from pipeline joblib), out-of-range count and percentage. Categorical features: top-5 value distribution bars with percentages, unseen-category count for values absent from `known_categories`. Emits `{type:"prod_input_dist"}` SSE event. Guards on `ctx["deployment"]`; wrapped in `except Exception: pass`.
+
+`ProductionInputDistributionCard` (sky-blue border, 📊 icon): sample-count/feature-count badges; "All inputs in range" (emerald) or "N out-of-range values" (amber) aggregate badge; per-feature rows with amber tint (numeric OOR) or rose tint (unseen category); numeric rows show min/avg/max grid + training range footnote + per-feature OOR badge; categorical rows show horizontal percentage bars for top categories + "N values not seen during training" warning; empty state for deployments with no predictions yet; figcaption legend (amber=numeric OOR, rose=unseen category). `ProductionInputDistributionResult`/`ProdInputFeature`/`ProdInputNumericFeature`/`ProdInputCategoricalFeature` TypeScript types; `prod_input_dist?` on `ChatMessage`; `attachProdInputDistToLastMessage` Zustand action; SSE handler + render wired in `project/[id]/page.tsx`.
+
+**Tests:** 21 backend (12 pattern tests + 3 integration: no-event-without-deployment, server-does-not-crash, full-integration with real DB and prediction logs + 6 data-structure unit tests) + 15 frontend (aria-label, icon, badges, all-in-range vs OOR, numeric feature row, categorical feature row, unseen detection, empty state, summary, legend, store action). Backend lint: clean. Frontend build: clean.
+
 ## Day 38 — 04:00 — Local Explanation Chat Card: "explain this prediction" shows a feature contribution waterfall for any training row
 
 No community issues. Track C: the `explain_single_prediction()` function in `core/explainer.py` existed (Day 14) but had no chat integration — analysts asking "explain this prediction", "what drove this result?", or "show SHAP values for row 5" got a generic text response with no waterfall visual. Gap: the "Not a black box" promise was unmet for per-prediction explanations in the conversational interface.
