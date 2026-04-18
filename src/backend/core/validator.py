@@ -132,7 +132,13 @@ def compute_confusion_matrix(
         support = int(cm[i, :].sum())
         lbl = labels[i] if i < len(labels) else str(i)
         per_class_metrics.append(
-            {"label": lbl, "precision": precision, "recall": recall, "f1": f1, "support": support}
+            {
+                "label": lbl,
+                "precision": precision,
+                "recall": recall,
+                "f1": f1,
+                "support": support,
+            }
         )
 
     # Most common misclassification (highest off-diagonal cell)

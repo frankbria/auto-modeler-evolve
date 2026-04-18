@@ -1,6 +1,5 @@
 """Tests for confusion matrix chat card — pattern matching and integration."""
 
-
 import numpy as np
 import pytest
 
@@ -97,8 +96,16 @@ class TestComputeConfusionMatrix:
         y_true = np.array([0, 1])
         y_pred = np.array([0, 0])
         result = compute_confusion_matrix(y_true, y_pred)
-        for field in ("matrix", "labels", "total", "correct", "accuracy",
-                      "per_class_metrics", "most_confused_pair", "summary"):
+        for field in (
+            "matrix",
+            "labels",
+            "total",
+            "correct",
+            "accuracy",
+            "per_class_metrics",
+            "most_confused_pair",
+            "summary",
+        ):
             assert field in result
 
 
@@ -111,32 +118,39 @@ class TestConfusionMatrixPatterns:
     @pytest.fixture
     def pattern(self):
         from api.chat import _CONFUSION_MATRIX_PATTERNS
+
         return _CONFUSION_MATRIX_PATTERNS
 
-    @pytest.mark.parametrize("msg", [
-        "show me the confusion matrix",
-        "confusion matrix",
-        "display the confusion matrix",
-        "where does my model make mistakes",
-        "how does my model make errors",
-        "true positives",
-        "false negatives",
-        "classification accuracy by class",
-        "precision per class",
-        "recall per class",
-        "f1 per class",
-        "model classification breakdown",
-        "model classification errors",
-    ])
+    @pytest.mark.parametrize(
+        "msg",
+        [
+            "show me the confusion matrix",
+            "confusion matrix",
+            "display the confusion matrix",
+            "where does my model make mistakes",
+            "how does my model make errors",
+            "true positives",
+            "false negatives",
+            "classification accuracy by class",
+            "precision per class",
+            "recall per class",
+            "f1 per class",
+            "model classification breakdown",
+            "model classification errors",
+        ],
+    )
     def test_positive_matches(self, pattern, msg):
         assert pattern.search(msg), f"Should match: {msg!r}"
 
-    @pytest.mark.parametrize("msg", [
-        "train a model",
-        "what is my accuracy",
-        "show me the data",
-        "how consistent is my model",
-        "cross validation scores",
-    ])
+    @pytest.mark.parametrize(
+        "msg",
+        [
+            "train a model",
+            "what is my accuracy",
+            "show me the data",
+            "how consistent is my model",
+            "cross validation scores",
+        ],
+    )
     def test_negative_no_match(self, pattern, msg):
         assert not pattern.search(msg), f"Should not match: {msg!r}"

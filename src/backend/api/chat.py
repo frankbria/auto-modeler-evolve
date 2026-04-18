@@ -7750,7 +7750,9 @@ def send_message(
                     and Path(_cm_ds.file_path).exists()
                     and _cm_fs
                 ):
-                    _cm_df = _load_working_df(Path(_cm_ds.file_path), _active_filter_conditions)
+                    _cm_df = _load_working_df(
+                        Path(_cm_ds.file_path), _active_filter_conditions
+                    )
                     _cm_transforms = json.loads(_cm_fs.transformations or "[]")
                     if _cm_transforms:
                         _cm_df, _ = _cm_at(_cm_df, _cm_transforms)
@@ -7771,11 +7773,15 @@ def send_message(
                         if Path(_cm_pipeline_path).exists():
                             try:
                                 _cm_pipe = _cm_jl.load(_cm_pipeline_path)
-                                _cm_class_names = getattr(_cm_pipe, "target_classes", None)
+                                _cm_class_names = getattr(
+                                    _cm_pipe, "target_classes", None
+                                )
                             except Exception:  # noqa: BLE001
                                 pass
 
-                        _cm_result = _ccm(_cm_y, _cm_y_pred, class_labels=_cm_class_names)
+                        _cm_result = _ccm(
+                            _cm_y, _cm_y_pred, class_labels=_cm_class_names
+                        )
                         from api.models import CLASSIFICATION_ALGORITHMS as _CM_CLS2
 
                         _cm_algo_plain = _CM_CLS2.get(_cm_run.algorithm, {}).get(
