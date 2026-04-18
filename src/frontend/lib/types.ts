@@ -484,6 +484,7 @@ export interface ChatMessage {
   prediction_analytics_chat?: PredictionAnalyticsChatResult
   confusion_matrix_chat?: ConfusionMatrixChatResult
   local_explanation?: LocalExplanationResult
+  prod_input_dist?: ProductionInputDistributionResult
 }
 
 export interface SegmentPerformanceSegment {
@@ -2631,4 +2632,45 @@ export interface LocalExplanationResult {
   contributions: LocalExplanationContribution[]
   summary: string
   raw_feature_values: Record<string, unknown>
+}
+
+export interface ProdInputNumericFeature {
+  feature: string
+  feature_type: "numeric"
+  count: number
+  mean: number
+  min: number
+  max: number
+  train_min: number | null
+  train_max: number | null
+  train_p5: number | null
+  train_p95: number | null
+  out_of_range_count: number
+  out_of_range_pct: number
+}
+
+export interface ProdInputCategoryCount {
+  value: string
+  count: number
+  pct: number
+}
+
+export interface ProdInputCategoricalFeature {
+  feature: string
+  feature_type: "categorical"
+  count: number
+  top_categories: ProdInputCategoryCount[]
+  n_unique: number
+  known_categories: string[]
+  unseen_count: number
+  unseen_pct: number
+}
+
+export type ProdInputFeature = ProdInputNumericFeature | ProdInputCategoricalFeature
+
+export interface ProductionInputDistributionResult {
+  deployment_id: string
+  sample_count: number
+  features: ProdInputFeature[]
+  summary: string
 }

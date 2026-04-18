@@ -2706,6 +2706,21 @@ _VERSION_COMPARE_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# Production input distribution — "what values are users sending to my model?", "show production inputs"
+_PROD_INPUT_DIST_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"what\s+(?:values?|features?|inputs?)\s+are\s+(?:users?|people|callers?|clients?)\s+(?:sending|submitting|providing|using|passing)\b|"
+    r"(?:show|view|check|see)\s+(?:my\s+)?(?:production\s+)?input\s+(?:distribution|stats?|statistics|data|values?|features?)\b|"
+    r"input\s+(?:feature\s+)?distribution(?:\s+in\s+production)?\b|"
+    r"(?:production|live|real-world)\s+input\s+(?:distribution|stats?|statistics|values?)\b|"
+    r"what\s+(?:feature\s+values?|inputs?)\s+(?:is|are)\s+(?:my\s+)?(?:model|api|endpoint)\s+(?:receiving|getting|seeing)\b|"
+    r"(?:most\s+common\s+inputs?|common\s+feature\s+values?|input\s+patterns?)\b|"
+    r"(?:are\s+(?:my\s+)?production\s+inputs?|input\s+values?)\s+(?:in\s+range|within\s+range|out\s+of\s+range|normal|unusual)\b|"
+    r"(?:how\s+different|how\s+similar)\s+(?:are\s+(?:the\s+)?production\s+inputs?|is\s+production)\s+(?:from|to)\s+(?:training|the\s+training)\b"
+    r")",
+    re.IGNORECASE,
+)
+
 _CV_SCORE_DIST_PATTERNS = re.compile(
     r"(?i)(?:"
     r"how\s+(?:consistent|stable|reliable|variable)\s+is\s+(?:my\s+)?(?:model|prediction)\b|"
@@ -8854,6 +8869,178 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Webhook history is nice-to-have; never crash chat
 
+    # Production input feature distribution
+    prod_input_dist_event: dict | None = None
+    if _PROD_INPUT_DIST_PATTERNS.search(body.message) and ctx["deployment"]:
+        try:
+            import json as _json_pid
+            from collections import Counter as _Counter_pid
+
+            _pid_dep = ctx["deployment"]
+            _pid_dep_id = _pid_dep.id if hasattr(_pid_dep, "id") else str(_pid_dep)
+
+            _pid_logs = session.exec(
+                select(PredictionLog)
+                .where(PredictionLog.deployment_id == _pid_dep_id)
+                .order_by(PredictionLog.created_at.desc())
+                .limit(500)
+            ).all()
+
+            if not _pid_logs:
+                prod_input_dist_event = {
+                    "deployment_id": _pid_dep_id,
+                    "sample_count": 0,
+                    "features": [],
+                    "summary": "No predictions have been made yet — input distributions will appear after users start using the model.",
+                }
+            else:
+                _all_inputs: list[dict] = []
+                for _log in _pid_logs:
+                    try:
+                        _parsed = _json_pid.loads(_log.input_features)
+                        if isinstance(_parsed, dict):
+                            _all_inputs.append(_parsed)
+                    except Exception:  # noqa: BLE001
+                        pass
+
+                if not _all_inputs:
+                    prod_input_dist_event = {
+                        "deployment_id": _pid_dep_id,
+                        "sample_count": len(_pid_logs),
+                        "features": [],
+                        "summary": "Could not parse input features from prediction logs.",
+                    }
+                else:
+                    _pid_feat_names = list(_all_inputs[0].keys())
+
+                    _pid_training_ranges: dict = {}
+                    try:
+                        _pid_dep_obj = session.get(Deployment, _pid_dep_id)
+                        if _pid_dep_obj and getattr(_pid_dep_obj, "pipeline_path", None):
+                            from core.deployer import load_pipeline as _load_pipeline_pid
+
+                            _pid_pipeline = _load_pipeline_pid(_pid_dep_obj.pipeline_path)
+                            _pid_training_ranges = getattr(_pid_pipeline, "feature_ranges", {})
+                    except Exception:  # noqa: BLE001
+                        pass
+
+                    _pid_feat_stats: list[dict] = []
+                    for _feat_name in _pid_feat_names[:10]:
+                        _pid_values = [
+                            inp[_feat_name]
+                            for inp in _all_inputs
+                            if _feat_name in inp and inp[_feat_name] is not None
+                        ]
+                        if not _pid_values:
+                            continue
+
+                        _pid_numeric: list[float] = []
+                        for _v in _pid_values:
+                            try:
+                                _pid_numeric.append(float(_v))
+                            except (TypeError, ValueError):
+                                pass
+
+                        if len(_pid_numeric) > len(_pid_values) * 0.5:
+                            _pid_mean = sum(_pid_numeric) / len(_pid_numeric)
+                            _pid_min = min(_pid_numeric)
+                            _pid_max = max(_pid_numeric)
+                            _pid_tr = _pid_training_ranges.get(_feat_name, {})
+                            _pid_train_min = _pid_tr.get("min")
+                            _pid_train_max = _pid_tr.get("max")
+                            _pid_oor = (
+                                sum(
+                                    1
+                                    for v in _pid_numeric
+                                    if v < _pid_train_min or v > _pid_train_max
+                                )
+                                if _pid_train_min is not None and _pid_train_max is not None
+                                else 0
+                            )
+                            _pid_feat_stats.append(
+                                {
+                                    "feature": _feat_name,
+                                    "feature_type": "numeric",
+                                    "count": len(_pid_numeric),
+                                    "mean": round(_pid_mean, 4),
+                                    "min": round(_pid_min, 4),
+                                    "max": round(_pid_max, 4),
+                                    "train_min": _pid_train_min,
+                                    "train_max": _pid_train_max,
+                                    "train_p5": _pid_tr.get("p5"),
+                                    "train_p95": _pid_tr.get("p95"),
+                                    "out_of_range_count": _pid_oor,
+                                    "out_of_range_pct": round(
+                                        _pid_oor / len(_pid_numeric) * 100, 1
+                                    ),
+                                }
+                            )
+                        else:
+                            _pid_cat_counts = _Counter_pid(str(v) for v in _pid_values)
+                            _pid_total_cats = sum(_pid_cat_counts.values())
+                            _pid_top = [
+                                {
+                                    "value": k,
+                                    "count": v,
+                                    "pct": round(v / _pid_total_cats * 100, 1),
+                                }
+                                for k, v in _pid_cat_counts.most_common(5)
+                            ]
+                            _pid_tr_cat = _pid_training_ranges.get(_feat_name, {})
+                            _pid_known = set(_pid_tr_cat.get("known_categories", []))
+                            _pid_unseen = (
+                                sum(1 for v in _pid_values if str(v) not in _pid_known)
+                                if _pid_known
+                                else 0
+                            )
+                            _pid_feat_stats.append(
+                                {
+                                    "feature": _feat_name,
+                                    "feature_type": "categorical",
+                                    "count": len(_pid_values),
+                                    "top_categories": _pid_top,
+                                    "n_unique": len(_pid_cat_counts),
+                                    "known_categories": sorted(_pid_known)[:10],
+                                    "unseen_count": _pid_unseen,
+                                    "unseen_pct": round(
+                                        _pid_unseen / len(_pid_values) * 100, 1
+                                    ),
+                                }
+                            )
+
+                    _pid_n_oor = sum(
+                        f.get("out_of_range_count", 0) + f.get("unseen_count", 0)
+                        for f in _pid_feat_stats
+                    )
+                    _pid_summary = (
+                        f"{len(_all_inputs)} prediction{'s' if len(_all_inputs) != 1 else ''} analyzed across "
+                        f"{len(_pid_feat_stats)} feature{'s' if len(_pid_feat_stats) != 1 else ''}. "
+                        + (
+                            f"{_pid_n_oor} input value{'s' if _pid_n_oor != 1 else ''} "
+                            f"outside the training distribution."
+                            if _pid_n_oor > 0
+                            else "All inputs are within training ranges."
+                        )
+                    )
+
+                    prod_input_dist_event = {
+                        "deployment_id": _pid_dep_id,
+                        "sample_count": len(_all_inputs),
+                        "features": _pid_feat_stats,
+                        "summary": _pid_summary,
+                    }
+                    system_prompt += (
+                        f"\n\n## Production Input Distribution\n"
+                        f"{_pid_summary} "
+                        "Explain what values production users are actually sending to the model. "
+                        "Flag any features with out-of-range or unseen values — this indicates "
+                        "production data may differ from training data, which can affect prediction quality. "
+                        "Reassure the analyst if all inputs are within range."
+                    )
+
+        except Exception:  # noqa: BLE001
+            pass  # Production input distributions are nice-to-have; never crash chat
+
     # Batch prediction schedule creation / listing
     schedule_event: dict | None = None
     if _SCHEDULE_PATTERNS.search(body.message) and ctx["deployment"]:
@@ -10004,6 +10191,10 @@ def send_message(
         # Emit local explanation (feature contribution waterfall) for a specific training row
         if local_explanation_event:
             yield f"data: {json.dumps({'type': 'local_explanation', 'local_explanation': local_explanation_event})}\n\n"
+
+        # Emit production input feature distribution card
+        if prod_input_dist_event:
+            yield f"data: {json.dumps({'type': 'prod_input_dist', 'prod_input_dist': prod_input_dist_event})}\n\n"
 
         # After text stream, opportunistically generate a chart if the
         # message is about data and we have a dataset loaded

@@ -95,6 +95,7 @@ import { CvScoreDistributionCard } from "@/components/models/cv-score-distributi
 import { PredictionAnalyticsChatCard } from "@/components/chat/prediction-analytics-chat-card"
 import { ConfusionMatrixChatCard } from "@/components/models/confusion-matrix-chat-card"
 import { LocalExplanationCard } from "@/components/models/local-explanation-card"
+import { ProductionInputDistributionCard } from "@/components/chat/production-input-distribution-card"
 import { PairCorrelationCard } from "@/components/data/pair-correlation-card"
 import { StatQueryCard } from "@/components/data/stat-query-card"
 import { SummaryStatsCard } from "@/components/data/summary-stats-card"
@@ -271,6 +272,7 @@ export default function ProjectWorkspace() {
     attachPredictionAnalyticsChatToLastMessage,
     attachConfusionMatrixChatToLastMessage,
     attachLocalExplanationToLastMessage,
+    attachProdInputDistToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -668,6 +670,8 @@ export default function ProjectWorkspace() {
                 attachConfusionMatrixChatToLastMessage(json.confusion_matrix_chat as import("@/lib/types").ConfusionMatrixChatResult)
               } else if (json.type === "local_explanation" && json.local_explanation) {
                 attachLocalExplanationToLastMessage(json.local_explanation as import("@/lib/types").LocalExplanationResult)
+              } else if (json.type === "prod_input_dist" && json.prod_input_dist) {
+                attachProdInputDistToLastMessage(json.prod_input_dist as import("@/lib/types").ProductionInputDistributionResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -767,6 +771,7 @@ export default function ProjectWorkspace() {
     attachPredictionAnalyticsChatToLastMessage,
     attachConfusionMatrixChatToLastMessage,
     attachLocalExplanationToLastMessage,
+    attachProdInputDistToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -1253,6 +1258,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.local_explanation && (
                       <LocalExplanationCard result={msg.local_explanation} />
+                    )}
+                    {msg.prod_input_dist && (
+                      <ProductionInputDistributionCard result={msg.prod_input_dist} />
                     )}
                   </div>
                 </div>

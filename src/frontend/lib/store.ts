@@ -126,6 +126,7 @@ interface AppState {
   attachPredictionAnalyticsChatToLastMessage: (prediction_analytics_chat: import("./types").PredictionAnalyticsChatResult) => void
   attachConfusionMatrixChatToLastMessage: (confusion_matrix_chat: import("./types").ConfusionMatrixChatResult) => void
   attachLocalExplanationToLastMessage: (local_explanation: import("./types").LocalExplanationResult) => void
+  attachProdInputDistToLastMessage: (prod_input_dist: import("./types").ProductionInputDistributionResult) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -899,6 +900,16 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, local_explanation }
+      }
+      return { messages }
+    }),
+
+  attachProdInputDistToLastMessage: (prod_input_dist) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, prod_input_dist }
       }
       return { messages }
     }),
