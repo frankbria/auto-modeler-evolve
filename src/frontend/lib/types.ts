@@ -483,6 +483,7 @@ export interface ChatMessage {
   cv_score_distribution?: CvScoreDistributionResult
   prediction_analytics_chat?: PredictionAnalyticsChatResult
   confusion_matrix_chat?: ConfusionMatrixChatResult
+  local_explanation?: LocalExplanationResult
 }
 
 export interface SegmentPerformanceSegment {
@@ -2609,4 +2610,25 @@ export interface ConfusionMatrixChatResult {
   algorithm: string
   algorithm_plain: string
   target_col: string
+}
+
+export interface LocalExplanationContribution {
+  feature: string
+  value: number
+  mean_value: number
+  contribution: number
+  direction: "positive" | "negative"
+}
+
+export interface LocalExplanationResult {
+  row_index: number
+  algorithm: string
+  target_col: string
+  problem_type: string
+  actual_value: string | number
+  predicted_value: string | number
+  prediction_numeric: number
+  contributions: LocalExplanationContribution[]
+  summary: string
+  raw_feature_values: Record<string, unknown>
 }

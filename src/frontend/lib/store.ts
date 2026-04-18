@@ -125,6 +125,7 @@ interface AppState {
   attachCvScoreDistributionToLastMessage: (cv_score_distribution: import("./types").CvScoreDistributionResult) => void
   attachPredictionAnalyticsChatToLastMessage: (prediction_analytics_chat: import("./types").PredictionAnalyticsChatResult) => void
   attachConfusionMatrixChatToLastMessage: (confusion_matrix_chat: import("./types").ConfusionMatrixChatResult) => void
+  attachLocalExplanationToLastMessage: (local_explanation: import("./types").LocalExplanationResult) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -888,6 +889,16 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, confusion_matrix_chat }
+      }
+      return { messages }
+    }),
+
+  attachLocalExplanationToLastMessage: (local_explanation) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, local_explanation }
       }
       return { messages }
     }),

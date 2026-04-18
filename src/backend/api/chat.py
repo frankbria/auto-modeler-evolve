@@ -2734,6 +2734,37 @@ _CONFUSION_MATRIX_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# Keywords that trigger a local (per-row) prediction explanation / feature contribution waterfall
+# Distinct from: _PRED_ERROR_PATTERNS (worst training errors), _PDP_PATTERNS (average marginal effect)
+# This shows WHY the model predicted what it did for ONE specific training row
+_EXPLAIN_ROW_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"explain\s+(?:this\s+|the\s+)?prediction\s+(?:for\s+)?(?:row|record|index)\s*(?:#\s*)?\d*\b|"
+    r"explain\s+(?:row|record|index)\s*(?:#\s*)?\d+\b|"
+    r"explain\s+(?:this\s+)?specific\s+prediction\b|"
+    r"(?:show|give)\s+(?:me\s+)?(?:the\s+)?(?:shap\s+values?|feature\s+contributions?|local\s+explanation)\b|"
+    r"what\s+(?:drove|caused|influenced|affected)\s+(?:this|that|the)\s+prediction\b|"
+    r"why\s+(?:did|does|was)\s+(?:the\s+)?model\s+(?:predict|say|give)\b|"
+    r"feature\s+contributions?\s+for\s+(?:row|record|index)\s*(?:#\s*)?\d*\b|"
+    r"individual\s+(?:prediction\s+)?explanation\b|"
+    r"local\s+(?:model\s+)?explanation\b|"
+    r"waterfall\s+(?:chart|plot)?\b"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def _extract_row_index(message: str) -> int:
+    """Parse a row / record / index number from the message. Defaults to 0."""
+    m = re.search(r"\b(?:row|record|index)\s*(?:#\s*)?(\d+)\b", message, re.IGNORECASE)
+    if m:
+        return int(m.group(1))
+    m = re.search(r"(?<!\w)#\s*(\d+)\b", message)
+    if m:
+        return int(m.group(1))
+    return 0
+
+
 _DOW_NAMES: dict[str, int] = {
     "monday": 0,
     "mon": 0,
@@ -7465,6 +7496,145 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Calibration check is nice-to-have; never crash chat
 
+    # Local explanation (feature contribution waterfall) for a specific training row
+    # "explain prediction for row 5", "show SHAP values", "what drove this prediction"
+    # Distinct from: PDP (average marginal effect), pred_errors (worst rows), inline prediction
+    local_explanation_event: dict | None = None
+    if (
+        _EXPLAIN_ROW_PATTERNS.search(body.message)
+        and ctx.get("model_runs")
+        and ctx["dataset"]
+        and ctx.get("feature_set")
+        and not pdp_event
+    ):
+        try:
+            import json as _json_le
+
+            import joblib as _jl_le
+            import pandas as _pd_le
+
+            from core.explainer import explain_single_prediction as _esp
+            from core.feature_engine import apply_transformations as _at_le
+            from core.trainer import prepare_features as _pf_le
+
+            _le_runs = [mr for mr in ctx["model_runs"] if mr.status == "done"]
+            _le_run = next(
+                (mr for mr in _le_runs if mr.is_selected),
+                _le_runs[0] if _le_runs else None,
+            )
+            if (
+                _le_run
+                and _le_run.model_path
+                and Path(_le_run.model_path).exists()
+            ):
+                _le_fs = ctx["feature_set"]
+                _le_ds = ctx["dataset"]
+                _le_file = Path(_le_ds.file_path)
+                if _le_file.exists():
+                    _le_df_raw = _pd_le.read_csv(_le_file)
+                    _le_transforms = _json_le.loads(_le_fs.transformations or "[]")
+                    _le_df = _le_df_raw.copy()
+                    if _le_transforms:
+                        _le_df, _ = _at_le(_le_df, _le_transforms)
+
+                    _le_target = _le_fs.target_column
+                    _le_prob_type = _le_fs.problem_type or "regression"
+                    _le_feat_cols = [c for c in _le_df.columns if c != _le_target]
+
+                    _le_X, _le_y, _ = _pf_le(
+                        _le_df, _le_feat_cols, _le_target, _le_prob_type
+                    )
+
+                    # Parse requested row index, clamp to valid range
+                    _le_row_idx = _extract_row_index(body.message)
+                    _le_row_idx = max(0, min(_le_row_idx, len(_le_X) - 1))
+
+                    _le_model = _jl_le.load(_le_run.model_path)
+                    _le_x_row = _le_X[_le_row_idx]
+                    _le_actual = _le_y[_le_row_idx]
+
+                    # Resolve class names from pipeline if available
+                    _le_target_classes: list | None = None
+                    _le_pipeline_path = _le_run.model_path.replace(
+                        "_model.joblib", "_pipeline.joblib"
+                    )
+                    if Path(_le_pipeline_path).exists():
+                        try:
+                            _le_pipe = _jl_le.load(_le_pipeline_path)
+                            _le_target_classes = getattr(_le_pipe, "target_classes", None)
+                        except Exception:  # noqa: BLE001
+                            pass
+
+                    _le_result = _esp(
+                        model=_le_model,
+                        x_row=_le_x_row,
+                        X_train=_le_X,
+                        feature_names=_le_feat_cols,
+                        problem_type=_le_prob_type,
+                        target_name=_le_target,
+                    )
+
+                    # Decode actual value to class label if available
+                    _le_actual_display: str | float = float(_le_actual)
+                    if _le_target_classes and _le_prob_type == "classification":
+                        try:
+                            _le_actual_display = str(
+                                _le_target_classes[int(_le_actual)]
+                            )
+                        except (IndexError, ValueError):
+                            _le_actual_display = str(int(_le_actual))
+
+                    # Decode predicted class label if available
+                    _le_pred_display = _le_result["prediction"]
+                    if _le_target_classes and _le_prob_type == "classification":
+                        try:
+                            _le_pred_display = str(
+                                _le_target_classes[int(_le_result["prediction"])]
+                            )
+                        except (IndexError, ValueError, TypeError):
+                            _le_pred_display = str(_le_result["prediction"])
+
+                    # Get original (pre-transform) feature values for display
+                    _le_raw_row: dict = {}
+                    if _le_row_idx < len(_le_df_raw):
+                        _le_raw_row = _le_df_raw.iloc[_le_row_idx].to_dict()
+
+                    local_explanation_event = {
+                        "row_index": _le_row_idx,
+                        "algorithm": _le_run.algorithm,
+                        "target_col": _le_target,
+                        "problem_type": _le_prob_type,
+                        "actual_value": _le_actual_display,
+                        "predicted_value": _le_pred_display,
+                        "prediction_numeric": _le_result["prediction_value"],
+                        "contributions": _le_result["contributions"][:12],
+                        "summary": _le_result["summary"],
+                        "raw_feature_values": {
+                            k: v
+                            for k, v in _le_raw_row.items()
+                            if k != _le_target
+                        },
+                    }
+
+                    _le_top3 = [
+                        c["feature"]
+                        for c in _le_result["contributions"][:3]
+                    ]
+                    system_prompt += (
+                        f"\n\n## Local Prediction Explanation (Row {_le_row_idx})\n"
+                        f"Problem type: {_le_prob_type}. Algorithm: {_le_run.algorithm}.\n"
+                        f"Actual {_le_target}: {_le_actual_display}. "
+                        f"Predicted: {_le_pred_display}.\n"
+                        f"Top 3 drivers: {', '.join(_le_top3)}.\n"
+                        f"{_le_result['summary']}\n"
+                        f"A LocalExplanationCard waterfall is shown in the chat. "
+                        f"Narrate why the model made this prediction in plain English, "
+                        f"focusing on the top features and what their values mean for this specific record. "
+                        f"Avoid ML jargon — speak as a smart colleague explaining the model's reasoning."
+                    )
+        except Exception:  # noqa: BLE001
+            pass  # Local explanation is nice-to-have; never crash chat
+
     # Guided onboarding wizard — responds to "guide me", "first steps", etc.
     onboarding_event: dict | None = None
     if _ONBOARDING_PATTERNS.search(body.message):
@@ -9837,6 +10007,10 @@ def send_message(
         # Emit confusion matrix card
         if confusion_matrix_event:
             yield f"data: {json.dumps({'type': 'confusion_matrix_chat', 'confusion_matrix_chat': confusion_matrix_event})}\n\n"
+
+        # Emit local explanation (feature contribution waterfall) for a specific training row
+        if local_explanation_event:
+            yield f"data: {json.dumps({'type': 'local_explanation', 'local_explanation': local_explanation_event})}\n\n"
 
         # After text stream, opportunistically generate a chart if the
         # message is about data and we have a dataset loaded

@@ -94,6 +94,7 @@ import { TuningChatCard } from "@/components/models/tuning-chat-card"
 import { CvScoreDistributionCard } from "@/components/models/cv-score-distribution-card"
 import { PredictionAnalyticsChatCard } from "@/components/chat/prediction-analytics-chat-card"
 import { ConfusionMatrixChatCard } from "@/components/models/confusion-matrix-chat-card"
+import { LocalExplanationCard } from "@/components/models/local-explanation-card"
 import { PairCorrelationCard } from "@/components/data/pair-correlation-card"
 import { StatQueryCard } from "@/components/data/stat-query-card"
 import { SummaryStatsCard } from "@/components/data/summary-stats-card"
@@ -269,6 +270,7 @@ export default function ProjectWorkspace() {
     attachCvScoreDistributionToLastMessage,
     attachPredictionAnalyticsChatToLastMessage,
     attachConfusionMatrixChatToLastMessage,
+    attachLocalExplanationToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -664,6 +666,8 @@ export default function ProjectWorkspace() {
                 attachPredictionAnalyticsChatToLastMessage(json.prediction_analytics_chat as import("@/lib/types").PredictionAnalyticsChatResult)
               } else if (json.type === "confusion_matrix_chat" && json.confusion_matrix_chat) {
                 attachConfusionMatrixChatToLastMessage(json.confusion_matrix_chat as import("@/lib/types").ConfusionMatrixChatResult)
+              } else if (json.type === "local_explanation" && json.local_explanation) {
+                attachLocalExplanationToLastMessage(json.local_explanation as import("@/lib/types").LocalExplanationResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -762,6 +766,7 @@ export default function ProjectWorkspace() {
     attachCvScoreDistributionToLastMessage,
     attachPredictionAnalyticsChatToLastMessage,
     attachConfusionMatrixChatToLastMessage,
+    attachLocalExplanationToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -1245,6 +1250,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.confusion_matrix_chat && (
                       <ConfusionMatrixChatCard result={msg.confusion_matrix_chat} />
+                    )}
+                    {msg.local_explanation && (
+                      <LocalExplanationCard result={msg.local_explanation} />
                     )}
                   </div>
                 </div>
