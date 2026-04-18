@@ -1438,6 +1438,28 @@ guides them forward through the natural flow.
       `project/[id]/page.tsx`.
       *Day 37 (12:00): 16 backend + 17 frontend = 33 new tests. Backend lint: clean. Frontend build: clean.*
 
+- [x] **Production Input Feature Distribution via Chat** — Track D perpetual. Analysts can ask
+      "what values are users sending to my model?", "show production input distribution", "are my
+      production inputs in range?", or "how different are production inputs from training?" and receive
+      a `ProductionInputDistributionCard` inline in chat. Handler queries the last 500 `PredictionLog`
+      records for the active deployment, parses `input_features` JSON, aggregates per-feature stats
+      (capped at 10 features): numeric features show production mean/min/max vs training range
+      (from `PredictionPipeline.feature_ranges`), with out-of-range count and percentage; categorical
+      features show top-5 value distribution bars with percentage widths, plus unseen-category detection
+      for values not in training `known_categories`. Guards on `ctx["deployment"]`. Emits
+      `{type:"prod_input_dist"}` SSE event with `{deployment_id, sample_count, features[], summary}`.
+      `ProductionInputDistributionCard` (sky-blue border, 📊 icon): sample-count/feature-count badges,
+      "All inputs in range" (emerald) or "N out-of-range values" (amber) badge; per-feature rows
+      colored amber (numeric OOR) or rose (unseen categorical); numeric rows show min/avg/max grid
+      and training range footnote; categorical rows show horizontal percentage bars + unseen warning;
+      empty state when no predictions yet; figcaption legend. `ProductionInputDistributionResult`/
+      `ProdInputFeature`/`ProdInputNumericFeature`/`ProdInputCategoricalFeature` TypeScript types;
+      `prod_input_dist?` on `ChatMessage`; `attachProdInputDistToLastMessage` Zustand action; SSE
+      handler + render wired in `project/[id]/page.tsx`. Closes the "are users sending weird values
+      to my model?" analyst question — surfaces production covariate shift before it causes silent
+      accuracy degradation.
+      *Day 38 (12:00): 21 backend + 15 frontend = 36 new tests. Backend lint: clean. Frontend build: clean.*
+
 ---
 
 ## Data Model
