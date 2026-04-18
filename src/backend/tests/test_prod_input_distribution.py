@@ -246,7 +246,9 @@ class TestProdInputDistHandler:
                 sess.add(
                     PredictionLog(
                         deployment_id=dep_id,
-                        input_features=json.dumps({"units": units_val, "region": region_val}),
+                        input_features=json.dumps(
+                            {"units": units_val, "region": region_val}
+                        ),
                         prediction=json.dumps(150.0),
                         prediction_numeric=150.0,
                     )
@@ -273,7 +275,9 @@ class TestProdInputDistHandler:
             for line in resp.text.splitlines()
             if line.startswith("data: ") and line[6:].strip()
         ]
-        pid_event = next((e for e in events if e.get("type") == "prod_input_dist"), None)
+        pid_event = next(
+            (e for e in events if e.get("type") == "prod_input_dist"), None
+        )
         assert pid_event is not None
         result = pid_event["prod_input_dist"]
         assert result["sample_count"] == 3

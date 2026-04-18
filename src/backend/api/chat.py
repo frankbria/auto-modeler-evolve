@@ -8916,11 +8916,19 @@ def send_message(
                     _pid_training_ranges: dict = {}
                     try:
                         _pid_dep_obj = session.get(Deployment, _pid_dep_id)
-                        if _pid_dep_obj and getattr(_pid_dep_obj, "pipeline_path", None):
-                            from core.deployer import load_pipeline as _load_pipeline_pid
+                        if _pid_dep_obj and getattr(
+                            _pid_dep_obj, "pipeline_path", None
+                        ):
+                            from core.deployer import (
+                                load_pipeline as _load_pipeline_pid,
+                            )
 
-                            _pid_pipeline = _load_pipeline_pid(_pid_dep_obj.pipeline_path)
-                            _pid_training_ranges = getattr(_pid_pipeline, "feature_ranges", {})
+                            _pid_pipeline = _load_pipeline_pid(
+                                _pid_dep_obj.pipeline_path
+                            )
+                            _pid_training_ranges = getattr(
+                                _pid_pipeline, "feature_ranges", {}
+                            )
                     except Exception:  # noqa: BLE001
                         pass
 
@@ -8954,7 +8962,8 @@ def send_message(
                                     for v in _pid_numeric
                                     if v < _pid_train_min or v > _pid_train_max
                                 )
-                                if _pid_train_min is not None and _pid_train_max is not None
+                                if _pid_train_min is not None
+                                and _pid_train_max is not None
                                 else 0
                             )
                             _pid_feat_stats.append(
