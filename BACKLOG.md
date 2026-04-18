@@ -49,6 +49,20 @@ the time is better spent on real features.
 
 ## Currently Working On
 
+## Day 38 (04:00) — Done
+**Track C — Local Explanation Chat Card (Feature Contribution Waterfall).** Analysts can now ask "explain this prediction", "what drove this result?", "show SHAP values for row 5", or "why did the model predict that?" and receive a `LocalExplanationCard` inline in chat — a waterfall chart showing each feature's contribution to the selected row's prediction.
+- `_EXPLAIN_ROW_PATTERNS` regex (9 NL variants) + `_extract_row_index()` helper in `chat.py`. Guard: `ctx["model_runs"]` AND `ctx["dataset"]` AND `ctx["feature_set"]` AND `not pdp_event`.
+- Handler: finds selected/best completed run; loads CSV; applies transformations; builds X/y; calls `explain_single_prediction()` from `core/explainer.py` (existing); caps contributions at 12; injects top-3 drivers into system prompt.
+- Bugfix: `prepare_features` returns `(X, y, LabelEncoder|None)` — handler was passing `None` as feature names; fixed to use `_le_feat_cols` directly.
+- `LocalExplanationCard` (violet border, 🔍 icon): Row/Algorithm/Target/Correct-Wrong badges; Actual vs Predicted side-by-side; blue/rose bars proportional to contribution magnitude; figcaption summary.
+- `LocalExplanationContribution` + `LocalExplanationResult` TypeScript types; `attachLocalExplanationToLastMessage` Zustand action; SSE handler + render wired in `page.tsx`.
+- 41 backend tests (unit + integration). Backend lint: clean. Frontend build: clean.
+
+**What's next:**
+- Track D: Input feature distribution in production — "what values are users sending to my model?" shows distribution of production inputs vs training ranges
+- Track D: Prediction SLA / latency monitoring — show p50/p95/p99 prediction latency in deployment panel
+- Track E: Run the "lunch break" flow end-to-end as a real analyst; audit friction
+
 ## Day 37 (20:00) — Done
 **Track C — Confusion Matrix Chat Card.** "Show me the confusion matrix" / "where does my model make mistakes?" / "precision per class" now renders a `ConfusionMatrixChatCard` inline in chat. Enhanced `compute_confusion_matrix()` with `per_class_metrics` (precision/recall/f1/support per class) and `most_confused_pair` (most common misclassification). Classification-only guard; loads fitted model from joblib. 28 backend + 18 frontend = 46 new tests. Backend lint: clean. Frontend build: clean.
 

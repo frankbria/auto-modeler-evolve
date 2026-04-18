@@ -1,5 +1,17 @@
 # Journal
 
+## Day 38 — 04:00 — Local Explanation Chat Card: "explain this prediction" shows a feature contribution waterfall for any training row
+
+No community issues. Track C: the `explain_single_prediction()` function in `core/explainer.py` existed (Day 14) but had no chat integration — analysts asking "explain this prediction", "what drove this result?", or "show SHAP values for row 5" got a generic text response with no waterfall visual. Gap: the "Not a black box" promise was unmet for per-prediction explanations in the conversational interface.
+
+**What changed:**
+
+`_EXPLAIN_ROW_PATTERNS` regex (9 NL variants: "explain prediction for row/record/index N", "explain specific prediction", "show SHAP values", "show feature contributions", "give me local explanation", "what drove/caused/influenced this prediction", "why did the model predict", "individual/local explanation", "waterfall chart") and `_extract_row_index()` helper (parses "row N", "record N", "index N", "#N" — defaults to 0) added to `chat.py`. Handler: finds selected/best completed run; loads CSV via `pd.read_csv`; applies transformations; builds X/y via `prepare_features`; clamps requested row index; loads joblib model; optionally resolves class labels from `_pipeline.joblib`; calls `explain_single_prediction()`; caps contributions at 12 for payload; injects top-3 drivers into system prompt. Guard: `not pdp_event` (mutual exclusion with PDP card). Bugfix discovered during testing: `prepare_features` returns `(X, y, LabelEncoder|None)` — handler was incorrectly passing the label encoder as feature names (resulting in `None`); fixed to pass `_le_feat_cols` directly.
+
+`LocalExplanationCard` (violet border `border-violet-300 bg-violet-50`, 🔍 icon): Row/Algorithm/Target badges + Correct/Wrong badge for classification; side-by-side Actual vs Predicted boxes; legend (blue = pushed prediction up, rose = pushed down); `ContributionBar` sub-component with horizontal bars proportional to `abs(contribution)/maxAbs`; column headers (Feature/Value/Impact); bar aria-labels; figcaption summary. `LocalExplanationContribution` + `LocalExplanationResult` TypeScript interfaces; `local_explanation?` on `ChatMessage`; `attachLocalExplanationToLastMessage` Zustand action; SSE handler + render wired in workspace page.
+
+**Tests:** 41 backend (8 `TestExtractRowIndex` + 7 `TestExplainSinglePrediction` + 20 `TestExplainRowPatterns` + 6 `TestLocalExplanationChatIntegration` using TestClient). Backend lint: clean. Frontend build: clean.
+
 ## Day 37 — 20:00 — Confusion Matrix Chat Card: "show me the confusion matrix" reveals per-class precision/recall/F1 and most common misclassification inline
 
 No community issues. Track C continuation: the confusion matrix existed in the validation panel UI but had no chat handler. Analysts asking "show me the confusion matrix" or "where does my model make mistakes?" got a generic text response with no visual. Gap: the "Not a black box" promise was unmet for the conversational interface — the confusion matrix is often the first thing a business analyst wants to see after training a classifier.
