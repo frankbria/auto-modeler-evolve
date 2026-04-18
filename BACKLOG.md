@@ -49,6 +49,14 @@ the time is better spent on real features.
 
 ## Currently Working On
 
+## Day 37 (20:00) — Done
+**Track C — Confusion Matrix Chat Card.** "Show me the confusion matrix" / "where does my model make mistakes?" / "precision per class" now renders a `ConfusionMatrixChatCard` inline in chat. Enhanced `compute_confusion_matrix()` with `per_class_metrics` (precision/recall/f1/support per class) and `most_confused_pair` (most common misclassification). Classification-only guard; loads fitted model from joblib. 28 backend + 18 frontend = 46 new tests. Backend lint: clean. Frontend build: clean.
+
+**What's next:**
+- Track C: SHAP waterfall via chat — "explain this specific prediction" shows individual feature contributions (SHAP values) as a waterfall chart for the selected training row
+- Track D: Input feature distribution in production — "what values are users sending to my model?" shows distribution of production inputs vs training ranges
+- Track E: Run the "lunch break" flow end-to-end as a real analyst; audit friction
+
 ## Day 37 (16:00) — Done
 **Track C — Ensemble Training via Chat.** The ensemble recommendation card (Day 36 04:00) told analysts to say "train a voting ensemble" to proceed — but that phrase had no handler. Fixed: `_ENSEMBLE_TRAIN_PATTERNS` regex (8 NL variants) + `_STACKING_RE` sub-detector. Handler fires before `_TRAIN_PATTERNS` to prevent double-fire; selects `voting_regressor`/`stacking_regressor`/`voting_classifier`/`stacking_classifier` based on problem type and stacking keyword; creates `ModelRun(status="pending")` and starts `_train_in_background` thread.
 - Bug fix: `test_monitoring_alerts.py::TestChatAnalyticsIntent` was using stale event type `"analytics"` — updated to `"prediction_analytics_chat"` (3 failing + 2 negative checks fixed).
