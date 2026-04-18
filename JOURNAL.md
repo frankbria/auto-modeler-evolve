@@ -1,5 +1,21 @@
 # Journal
 
+## Day 37 — 20:00 — Confusion Matrix Chat Card: "show me the confusion matrix" reveals per-class precision/recall/F1 and most common misclassification inline
+
+No community issues. Track C continuation: the confusion matrix existed in the validation panel UI but had no chat handler. Analysts asking "show me the confusion matrix" or "where does my model make mistakes?" got a generic text response with no visual. Gap: the "Not a black box" promise was unmet for the conversational interface — the confusion matrix is often the first thing a business analyst wants to see after training a classifier.
+
+**What changed:**
+
+`_CONFUSION_MATRIX_PATTERNS` (8 NL variants: "show me/display the confusion matrix", "where/how does my model make mistakes/errors", "true/false positives/negatives", "classification accuracy/errors by class", "precision/recall/f1 per class", "model classification breakdown/errors") added to `chat.py`. Guard: classification algorithms only (`algorithm in _CM_CLS_ALGOS`). Handler: loads best/selected classification run, applies feature transformations via `_load_working_df` + `apply_transformations`, builds X/y via `prepare_features()`, loads fitted model from joblib, calls `model.predict()` to get actual test predictions. Resolves `target_classes` from pipeline joblib for human-readable labels. Injects accuracy, most_confused_pair, and summary into system prompt. Emits `{type:"confusion_matrix_chat"}` SSE event.
+
+`compute_confusion_matrix()` in `core/validator.py` enhanced: new `per_class_metrics` field (precision/recall/f1/support computed directly from confusion matrix rows/columns for each class) and `most_confused_pair` field (off-diagonal argmax — the most common misclassification). Both are computed without additional sklearn imports.
+
+`ConfusionMatrixChatCard` (border adapts to accuracy: emerald ≥85%, amber ≥70%, rose <70%, 🎯 icon): algorithm + target + accuracy badges; correct/total count; color-coded 2D matrix grid with "Actual" vertical label and "Predicted" horizontal header (emerald diagonal = correct with intensity by recall, rose off-diagonal = errors); per-class metrics table (Class/Precision/Recall/F1/Support); rose callout for most_confused_pair; figcaption with plain-English summary. `PerClassMetric` + `ConfusionMatrixChatResult` TypeScript interfaces; `confusion_matrix_chat?` on `ChatMessage`; `attachConfusionMatrixChatToLastMessage` Zustand action; SSE handler + render wired in workspace page.
+
+**Tests:** 28 backend (10 unit `TestComputeConfusionMatrix` + 18 pattern `TestConfusionMatrixPatterns`) + 18 frontend (aria-label, icon, headings, badges, matrix grid, per-class table, most_confused_pair, store action) = 46 new tests. Backend lint: clean. Frontend build: clean.
+
+---
+
 ## Day 37 — 16:00 — Ensemble Training via Chat: "train a voting ensemble" / "build a stacking regressor" triggers ensemble training inline; fixed stale event-type in monitoring alerts tests
 
 No community issues. Continuation of Track C model-building depth: the Day 36 ensemble recommendation card told analysts *what* ensembles are and asked them to say "train a voting ensemble" to proceed — but that phrase had no handler. Saying "train a voting ensemble" routed to the generic `_TRAIN_PATTERNS` block and trained the last selected algorithm again. Gap: the conversational loop was broken — the card prompted an action the app didn't execute.
