@@ -97,6 +97,7 @@ import { ConfusionMatrixChatCard } from "@/components/models/confusion-matrix-ch
 import { LocalExplanationCard } from "@/components/models/local-explanation-card"
 import { ProductionInputDistributionCard } from "@/components/chat/production-input-distribution-card"
 import { CovariateDriftAlertCard } from "@/components/deploy/covariate-drift-alert-card"
+import { QuotaRunwayCard } from "@/components/deploy/quota-runway-card"
 import { PairCorrelationCard } from "@/components/data/pair-correlation-card"
 import { StatQueryCard } from "@/components/data/stat-query-card"
 import { SummaryStatsCard } from "@/components/data/summary-stats-card"
@@ -275,6 +276,7 @@ export default function ProjectWorkspace() {
     attachLocalExplanationToLastMessage,
     attachProdInputDistToLastMessage,
     attachCovariateDriftAlertToLastMessage,
+    attachQuotaRunwayToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -699,6 +701,8 @@ export default function ProjectWorkspace() {
                 attachProdInputDistToLastMessage(json.prod_input_dist as import("@/lib/types").ProductionInputDistributionResult)
               } else if (json.type === "covariate_drift_alert" && json.covariate_drift_alert) {
                 attachCovariateDriftAlertToLastMessage(json.covariate_drift_alert as import("@/lib/types").CovariateDriftAlertResult)
+              } else if (json.type === "quota_runway" && json.quota_runway) {
+                attachQuotaRunwayToLastMessage(json.quota_runway as import("@/lib/types").QuotaRunwayResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -800,6 +804,7 @@ export default function ProjectWorkspace() {
     attachLocalExplanationToLastMessage,
     attachProdInputDistToLastMessage,
     attachCovariateDriftAlertToLastMessage,
+    attachQuotaRunwayToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -1292,6 +1297,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.covariate_drift_alert && (
                       <CovariateDriftAlertCard result={msg.covariate_drift_alert} />
+                    )}
+                    {msg.quota_runway && (
+                      <QuotaRunwayCard result={msg.quota_runway} />
                     )}
                   </div>
                 </div>

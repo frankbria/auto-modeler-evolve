@@ -128,6 +128,7 @@ interface AppState {
   attachLocalExplanationToLastMessage: (local_explanation: import("./types").LocalExplanationResult) => void
   attachProdInputDistToLastMessage: (prod_input_dist: import("./types").ProductionInputDistributionResult) => void
   attachCovariateDriftAlertToLastMessage: (covariate_drift_alert: import("./types").CovariateDriftAlertResult) => void
+  attachQuotaRunwayToLastMessage: (quota_runway: import("./types").QuotaRunwayResult) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -921,6 +922,16 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, covariate_drift_alert }
+      }
+      return { messages }
+    }),
+
+  attachQuotaRunwayToLastMessage: (quota_runway) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, quota_runway }
       }
       return { messages }
     }),

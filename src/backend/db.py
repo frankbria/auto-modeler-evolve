@@ -18,6 +18,7 @@ def create_db_and_tables():
 def _apply_migrations():
     """Add any columns missing from pre-existing tables."""
     migrations = [
+        ("project", "auto_retrain", "INTEGER NOT NULL DEFAULT 0"),
         ("deployment", "api_key_enabled", "INTEGER NOT NULL DEFAULT 0"),
         ("deployment", "api_key_hash", "TEXT"),
         ("deployment", "api_key_salt", "TEXT"),

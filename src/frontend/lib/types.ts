@@ -486,6 +486,7 @@ export interface ChatMessage {
   local_explanation?: LocalExplanationResult
   prod_input_dist?: ProductionInputDistributionResult
   covariate_drift_alert?: CovariateDriftAlertResult
+  quota_runway?: QuotaRunwayResult
 }
 
 export interface SegmentPerformanceSegment {
@@ -2702,4 +2703,18 @@ export interface CovariateDriftAlertResult {
   alert_count: number
   alerts: CovariateDriftFeatureAlert[]
   summary: string
+}
+
+export interface QuotaRunwayResult {
+  deployment_id: string
+  has_quota: boolean
+  monthly_quota: number | null
+  used_this_month: number
+  remaining: number | null
+  avg_per_day: number
+  days_left_at_rate: number | null
+  est_month_total: number
+  days_remaining_in_month: number
+  rate_limit_rpm: number | null
+  will_exhaust: boolean
 }

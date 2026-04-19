@@ -1,5 +1,19 @@
 # Journal
 
+## Day 39 — Quota Runway Analysis: "will my quota last the month?" + CI fix (auto_retrain migration)
+
+No community issues. Track D continuation: analysts could see deployment health, drift alerts, and production input distributions — but had no way to ask forward-looking capacity questions: "will I hit my monthly limit at this rate?", "how many days of quota do I have left?", "when will I run out?". Gap: monthly quota and rate limiting were already stored on `Deployment`, but there was no conversational capacity planning surface.
+
+**CI fix first:** `test_anomaly.py` (22 tests) was failing in CI because `automodeler.db` was created before `Project.auto_retrain` was added to the SQLModel schema. `_apply_migrations()` in `db.py` only ran DDL migrations listed explicitly — `auto_retrain` was missing. Fixed by adding `("project", "auto_retrain", "INTEGER NOT NULL DEFAULT 0")` as the first entry in the `migrations` list. All 22 anomaly tests now pass.
+
+**What changed:**
+
+`_QUOTA_RUNWAY_PATTERNS` regex (8 NL variants: "will my quota last the month", "at this rate when will I run out", "quota runway/forecast/projection/burndown/exhaustion/depletion", "prediction budget analysis", "when will my monthly quota run out") in `chat.py`. Handler guarded by `ctx["deployment"]`: queries `PredictionLog` for (1) current calendar-month count, (2) last 7-day daily average. Computes: `remaining = max(0, monthly_quota - used)`, `days_left_at_rate = remaining / avg_per_day`, `est_month_total = used + (avg_per_day * days_remaining)`, `will_exhaust = est_month_total > monthly_quota`. Emits `{type:"quota_runway"}` SSE event with all 11 fields. Injects plain-English quota narrative into system_prompt. Wrapped in `except Exception: pass`.
+
+`QuotaRunwayCard` (`src/frontend/components/deploy/quota-runway-card.tsx`): 📊 icon; rose/amber/emerald border coding (will_exhaust / has_quota / unlimited); `UsageBar` sub-component with `role="progressbar"`, `aria-valuenow`, color-coded fill (rose ≥90%, amber ≥70%, emerald otherwise); used/total header with percentage label; remaining + days-left-in-month grid; at-risk alert section (`role="alert"`, rose background) showing rate and days until exhaustion; safe-state message with ✓; unlimited state shows used-this-month and avg/day; rate limit RPM footnote with hourly capacity conversion; `figcaption` sr-only caption. `QuotaRunwayResult` TypeScript type; `quota_runway?` on `ChatMessage`; `attachQuotaRunwayToLastMessage` Zustand action; SSE handler + render wired in `project/[id]/page.tsx`.
+
+**Tests:** 21 backend (9 positive regex, 6 negative regex, 1 no-deployment, 1 emits-event, 1 required-fields, 1 no-quota-state, 1 with-quota-set, 1 rate-limit-included) + 20 frontend (unlimited state: 5, within quota: 6, at-risk: 4, accessibility: 3, progressive bar attrs: 2). All pass. Backend lint: clean. Frontend build: clean.
+
 ## Day 38 — 20:00 — Proactive Covariate Drift Alert: "are my inputs drifting?" surfaces severity-driven alerts + auto-injects on workspace load
 
 No community issues. Track D continuation: Day 38 12:00's `ProductionInputDistributionCard` answered the reactive question "what values are users sending?" — but analysts couldn't ask the proactive question "are my production inputs quietly drifting from training?" and get an actionable alert. Gap: covariate drift (the silent model-killer) needed a severity-ranked alert surface, not just a raw distribution dump.

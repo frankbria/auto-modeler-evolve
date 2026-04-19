@@ -2735,6 +2735,20 @@ _COVARIATE_DRIFT_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+_QUOTA_RUNWAY_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"(?:will|can)\s+(?:my\s+)?quota\s+(?:last|cover|handle)\s+(?:the\s+)?month\b|"
+    r"at\s+this\s+rate\s+(?:when|how\s+long)\s+(?:will|until)\s+(?:i|my\s+quota)\s+run\s+out\b|"
+    r"quota\s+(?:runway|forecast|projection|burn(?:\s*down)?)\b|"
+    r"(?:how\s+long\s+(?:will|until|before))\s+(?:my\s+)?quota\s+(?:runs?\s+out|is\s+exhausted)\b|"
+    r"quota\s+(?:exhaustion|depletion)\b|"
+    r"prediction\s+(?:budget|runway|burn(?:\s*down)?)\s*(?:analysis|estimate|report)?\b|"
+    r"(?:how\s+many\s+days?\s+(?:of|worth\s+of)\s+)?predictions?\s+(?:can\s+i\s+still\s+make|runway)\b|"
+    r"when\s+will\s+(?:my\s+)?(?:monthly\s+)?quota\s+(?:run\s+out|be\s+exhausted)\b"
+    r")",
+    re.IGNORECASE,
+)
+
 _CV_SCORE_DIST_PATTERNS = re.compile(
     r"(?i)(?:"
     r"how\s+(?:consistent|stable|reliable|variable)\s+is\s+(?:my\s+)?(?:model|prediction)\b|"
@@ -9121,6 +9135,97 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Covariate drift alert is nice-to-have; never crash chat
 
+    # Quota runway / capacity planning (forward-looking projection)
+    quota_runway_event: dict | None = None
+    if _QUOTA_RUNWAY_PATTERNS.search(body.message) and ctx["deployment"]:
+        try:
+            import calendar as _qr_calendar
+
+            _qr_dep = ctx["deployment"]
+            _qr_dep_id = _qr_dep.id if hasattr(_qr_dep, "id") else str(_qr_dep)
+            _qr_dep_obj = session.get(Deployment, _qr_dep_id)
+
+            _qr_monthly_quota = getattr(_qr_dep_obj, "monthly_quota", None) if _qr_dep_obj else None
+            _qr_rate_limit_rpm = getattr(_qr_dep_obj, "rate_limit_rpm", None) if _qr_dep_obj else None
+
+            # Usage this calendar month
+            _qr_today = datetime.utcnow().date()
+            _qr_month_start = datetime(_qr_today.year, _qr_today.month, 1)
+            _qr_logs_month = session.exec(
+                select(PredictionLog)
+                .where(PredictionLog.deployment_id == _qr_dep_id)
+                .where(PredictionLog.created_at >= _qr_month_start)
+            ).all()
+            _qr_used_this_month = len(_qr_logs_month)
+
+            # Last 7-day average daily rate
+            from datetime import timedelta as _qr_td
+            _qr_week_ago = datetime.utcnow() - _qr_td(days=7)
+            _qr_recent = session.exec(
+                select(PredictionLog)
+                .where(PredictionLog.deployment_id == _qr_dep_id)
+                .where(PredictionLog.created_at >= _qr_week_ago)
+            ).all()
+            _qr_avg_per_day = len(_qr_recent) / 7.0
+
+            # Days remaining in current month
+            _qr_days_in_month = _qr_calendar.monthrange(_qr_today.year, _qr_today.month)[1]
+            _qr_days_remaining = _qr_days_in_month - _qr_today.day + 1
+
+            _qr_remaining: int | None = None
+            _qr_days_left: float | None = None
+            _qr_est_month_total = round(_qr_used_this_month + (_qr_avg_per_day * _qr_days_remaining))
+
+            if _qr_monthly_quota is not None:
+                _qr_remaining = max(0, _qr_monthly_quota - _qr_used_this_month)
+                if _qr_avg_per_day > 0:
+                    _qr_days_left = _qr_remaining / _qr_avg_per_day
+
+            _qr_will_exhaust = (
+                _qr_monthly_quota is not None
+                and _qr_est_month_total > _qr_monthly_quota
+            )
+
+            quota_runway_event = {
+                "deployment_id": _qr_dep_id,
+                "has_quota": _qr_monthly_quota is not None,
+                "monthly_quota": _qr_monthly_quota,
+                "used_this_month": _qr_used_this_month,
+                "remaining": _qr_remaining,
+                "avg_per_day": round(_qr_avg_per_day, 1),
+                "days_left_at_rate": round(_qr_days_left, 1) if _qr_days_left is not None else None,
+                "est_month_total": _qr_est_month_total,
+                "days_remaining_in_month": _qr_days_remaining,
+                "rate_limit_rpm": _qr_rate_limit_rpm,
+                "will_exhaust": _qr_will_exhaust,
+            }
+
+            if _qr_monthly_quota is not None:
+                system_prompt += (
+                    f"\n\n## Quota Runway Analysis\n"
+                    f"Monthly quota: {_qr_monthly_quota}. Used: {_qr_used_this_month}. "
+                    f"Remaining: {_qr_remaining}. "
+                    f"Avg {_qr_avg_per_day:.1f} predictions/day (last 7 days). "
+                )
+                if _qr_days_left is not None:
+                    system_prompt += f"At this rate, quota runs out in {_qr_days_left:.1f} days. "
+                system_prompt += (
+                    f"Projected month total: ~{_qr_est_month_total}. "
+                    f"{'Quota at risk — projected usage exceeds monthly limit.' if _qr_will_exhaust else 'Projected usage within quota.'}"
+                    f" Explain in plain English whether the analyst has enough quota and what they should do."
+                )
+            else:
+                system_prompt += (
+                    "\n\n## Quota Runway Analysis\n"
+                    f"No monthly quota configured — all predictions are unlimited. "
+                    f"Current month usage: {_qr_used_this_month} predictions. "
+                    f"Rate: {_qr_avg_per_day:.1f}/day (last 7 days). "
+                    "Explain this reassuringly."
+                )
+
+        except Exception:  # noqa: BLE001
+            pass  # Quota runway is nice-to-have; never crash chat
+
     # Batch prediction schedule creation / listing
     schedule_event: dict | None = None
     if _SCHEDULE_PATTERNS.search(body.message) and ctx["deployment"]:
@@ -10279,6 +10384,10 @@ def send_message(
         # Emit covariate drift alert card
         if covariate_drift_alert_event:
             yield f"data: {json.dumps({'type': 'covariate_drift_alert', 'covariate_drift_alert': covariate_drift_alert_event})}\n\n"
+
+        # Emit quota runway / capacity planning card
+        if quota_runway_event:
+            yield f"data: {json.dumps({'type': 'quota_runway', 'quota_runway': quota_runway_event})}\n\n"
 
         # After text stream, opportunistically generate a chart if the
         # message is about data and we have a dataset loaded

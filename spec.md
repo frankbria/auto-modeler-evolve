@@ -1478,6 +1478,23 @@ guides them forward through the natural flow.
       alerts into welcome-back message). Closes the "are my production inputs quietly drifting?" question.
       *Day 38 (20:00): 41 backend + 24 frontend = 65 new tests. Backend lint: clean. Frontend build: clean.*
 
+- [x] **Quota Runway Analysis via Chat** — Track D perpetual. Analysts can ask "will my quota last
+      the month?", "quota runway", "quota forecast", "quota projection", "quota exhaustion", "at this
+      rate when will I run out?", "prediction budget analysis", or "when will my monthly quota run out?"
+      and receive a `QuotaRunwayCard` inline in chat. `_QUOTA_RUNWAY_PATTERNS` regex (8 NL variants)
+      guards the handler; handler queries `PredictionLog` for (1) current calendar-month count (2) last
+      7-day average daily rate, then computes: remaining quota, days until exhaustion at current rate,
+      projected month total, and `will_exhaust` flag (projected > quota). `QuotaRunwayCard` (📊 icon,
+      rose/amber/emerald border coding by risk): progress bar (aria-valuenow, role="progressbar") with
+      percentage label; used/total, remaining, days-left-in-month grid; at-risk alert (role="alert")
+      showing rate, days_left_at_rate, projected total vs. limit; safe-state message with green ✓;
+      unlimited state shows usage stats reassuringly; rate limit RPM footnote with hourly capacity;
+      figcaption sr-only caption. `QuotaRunwayResult` TypeScript type; `quota_runway?` on `ChatMessage`;
+      `attachQuotaRunwayToLastMessage` Zustand action; SSE handler + render wired in `project/[id]/page.tsx`.
+      CI fix in same session: `_apply_migrations()` in `db.py` backfills missing `auto_retrain` column
+      (added to Project model previously but not migrated), resolving CI failures on real-DB tests.
+      *Day 39: 21 backend + 20 frontend = 41 new tests. Backend lint: clean. Frontend build: clean.*
+
 ---
 
 ## Data Model
