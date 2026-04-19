@@ -1,5 +1,9 @@
 # Journal
 
+## Day 39 — 04:00 — Quota Runway Forecasting: capacity planning for monthly prediction budgets
+
+Shipped quota runway chat card to answer "will my quota last the month?" — queries prediction logs, computes remaining capacity and days-left, auto-injects alerts on high-risk. Fixed CI regression where `auto_retrain` migration wasn't applied before running tests (23-test anomaly suite), ensuring schema stays in sync. All 41 backend tests + 44 frontend tests pass; lint and build clean. Track D momentum holds; drift monitoring and quota warnings now form a complete deployment health loop.
+
 ## Day 39 — Quota Runway Analysis: "will my quota last the month?" + CI fix (auto_retrain migration)
 
 No community issues. Track D continuation: analysts could see deployment health, drift alerts, and production input distributions — but had no way to ask forward-looking capacity questions: "will I hit my monthly limit at this rate?", "how many days of quota do I have left?", "when will I run out?". Gap: monthly quota and rate limiting were already stored on `Deployment`, but there was no conversational capacity planning surface.
