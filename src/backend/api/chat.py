@@ -9361,9 +9361,7 @@ def send_message(
                     f"({_ce_used_month:,} used so far this month). "
                 )
                 if _ce_within_quota is False:
-                    system_prompt += (
-                        "This exceeds remaining quota — you would need to increase your monthly quota. "
-                    )
+                    system_prompt += "This exceeds remaining quota — you would need to increase your monthly quota. "
                 else:
                     system_prompt += "This fits within your remaining monthly quota. "
             else:

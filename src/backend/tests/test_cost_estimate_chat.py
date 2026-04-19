@@ -187,7 +187,10 @@ class TestCostEstimateChatHandler:
             with client.stream(
                 "POST",
                 f"/api/chat/{pid}",
-                json={"message": "how much would 1000 predictions cost?", "conversation_history": []},
+                json={
+                    "message": "how much would 1000 predictions cost?",
+                    "conversation_history": [],
+                },
             ) as resp:
                 events = [
                     line
@@ -204,12 +207,17 @@ class TestCostEstimateChatHandler:
             with client.stream(
                 "POST",
                 f"/api/chat/{project_id}",
-                json={"message": "how much would 1000 predictions cost?", "conversation_history": []},
+                json={
+                    "message": "how much would 1000 predictions cost?",
+                    "conversation_history": [],
+                },
             ) as resp:
-                events = [line for line in resp.iter_lines() if '"cost_estimate"' in line]
+                events = [
+                    line for line in resp.iter_lines() if '"cost_estimate"' in line
+                ]
 
         assert len(events) >= 1
-        payload = json.loads(events[0][len("data:"):])
+        payload = json.loads(events[0][len("data:") :])
         assert payload["type"] == "cost_estimate"
         assert "cost_estimate" in payload
 
@@ -221,12 +229,17 @@ class TestCostEstimateChatHandler:
             with client.stream(
                 "POST",
                 f"/api/chat/{project_id}",
-                json={"message": "estimate prediction cost", "conversation_history": []},
+                json={
+                    "message": "estimate prediction cost",
+                    "conversation_history": [],
+                },
             ) as resp:
-                events = [line for line in resp.iter_lines() if '"cost_estimate"' in line]
+                events = [
+                    line for line in resp.iter_lines() if '"cost_estimate"' in line
+                ]
 
         assert len(events) >= 1
-        result = json.loads(events[0][len("data:"):])["cost_estimate"]
+        result = json.loads(events[0][len("data:") :])["cost_estimate"]
         required = {
             "deployment_id",
             "n_predictions",
@@ -251,11 +264,16 @@ class TestCostEstimateChatHandler:
             with client.stream(
                 "POST",
                 f"/api/chat/{project_id}",
-                json={"message": "how much would 500 predictions cost?", "conversation_history": []},
+                json={
+                    "message": "how much would 500 predictions cost?",
+                    "conversation_history": [],
+                },
             ) as resp:
-                events = [line for line in resp.iter_lines() if '"cost_estimate"' in line]
+                events = [
+                    line for line in resp.iter_lines() if '"cost_estimate"' in line
+                ]
 
-        result = json.loads(events[0][len("data:"):])["cost_estimate"]
+        result = json.loads(events[0][len("data:") :])["cost_estimate"]
         assert result["monthly_quota"] is None
         assert result["quota_pct"] is None
         assert result["within_quota"] is None
@@ -268,11 +286,16 @@ class TestCostEstimateChatHandler:
             with client.stream(
                 "POST",
                 f"/api/chat/{project_id}",
-                json={"message": "how much would 1000 predictions cost?", "conversation_history": []},
+                json={
+                    "message": "how much would 1000 predictions cost?",
+                    "conversation_history": [],
+                },
             ) as resp:
-                events = [line for line in resp.iter_lines() if '"cost_estimate"' in line]
+                events = [
+                    line for line in resp.iter_lines() if '"cost_estimate"' in line
+                ]
 
-        result = json.loads(events[0][len("data:"):])["cost_estimate"]
+        result = json.loads(events[0][len("data:") :])["cost_estimate"]
         assert result["monthly_quota"] == 2000
         assert result["quota_pct"] == 50.0  # 1000/2000
         assert result["within_quota"] is True
@@ -285,11 +308,16 @@ class TestCostEstimateChatHandler:
             with client.stream(
                 "POST",
                 f"/api/chat/{project_id}",
-                json={"message": "how much would 500 predictions cost?", "conversation_history": []},
+                json={
+                    "message": "how much would 500 predictions cost?",
+                    "conversation_history": [],
+                },
             ) as resp:
-                events = [line for line in resp.iter_lines() if '"cost_estimate"' in line]
+                events = [
+                    line for line in resp.iter_lines() if '"cost_estimate"' in line
+                ]
 
-        result = json.loads(events[0][len("data:"):])["cost_estimate"]
+        result = json.loads(events[0][len("data:") :])["cost_estimate"]
         assert result["n_predictions"] == 500
 
     def test_recommended_rpm_positive(self, client):
@@ -300,11 +328,16 @@ class TestCostEstimateChatHandler:
             with client.stream(
                 "POST",
                 f"/api/chat/{project_id}",
-                json={"message": "prediction capacity planning", "conversation_history": []},
+                json={
+                    "message": "prediction capacity planning",
+                    "conversation_history": [],
+                },
             ) as resp:
-                events = [line for line in resp.iter_lines() if '"cost_estimate"' in line]
+                events = [
+                    line for line in resp.iter_lines() if '"cost_estimate"' in line
+                ]
 
-        result = json.loads(events[0][len("data:"):])["cost_estimate"]
+        result = json.loads(events[0][len("data:") :])["cost_estimate"]
         assert result["recommended_rpm"] >= 1
 
     def test_rate_limit_sets_daily_capacity(self, client):
@@ -315,11 +348,16 @@ class TestCostEstimateChatHandler:
             with client.stream(
                 "POST",
                 f"/api/chat/{project_id}",
-                json={"message": "how many users can my model handle?", "conversation_history": []},
+                json={
+                    "message": "how many users can my model handle?",
+                    "conversation_history": [],
+                },
             ) as resp:
-                events = [line for line in resp.iter_lines() if '"cost_estimate"' in line]
+                events = [
+                    line for line in resp.iter_lines() if '"cost_estimate"' in line
+                ]
 
-        result = json.loads(events[0][len("data:"):])["cost_estimate"]
+        result = json.loads(events[0][len("data:") :])["cost_estimate"]
         assert result["current_rpm"] == 60
         # 60 RPM × 60 min × 24 h = 86400
         assert result["daily_capacity"] == 86400
