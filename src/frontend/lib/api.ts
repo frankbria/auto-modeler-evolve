@@ -1147,5 +1147,15 @@ export const api = {
       if (!res.ok) throw new Error(await res.text())
       return res.json()
     },
+
+    covariateDrift: async (
+      deploymentId: string
+    ): Promise<import("./types").CovariateDriftAlertResult> => {
+      const res = await fetch(
+        `${API_URL}/api/deploy/${deploymentId}/covariate-drift`
+      )
+      if (!res.ok) throw new Error(await res.text())
+      return res.json()
+    },
   },
 }

@@ -2890,3 +2890,165 @@ def compute_portfolio_summary(project_summaries: list[dict]) -> dict:
         "projects": project_summaries,
         "summary": summary,
     }
+
+
+def compute_covariate_drift_alert(
+    all_inputs: list[dict],
+    feature_ranges: dict[str, dict],
+    *,
+    oor_threshold_medium: float = 0.15,
+    oor_threshold_high: float = 0.30,
+    max_features: int = 10,
+) -> dict:
+    """Assess covariate drift between production inputs and training feature ranges.
+
+    Compares each feature's production values against training min/max (numeric)
+    or known_categories (categorical). Features exceeding oor_threshold_medium
+    (15%) generate a "medium" alert; those exceeding oor_threshold_high (30%)
+    generate a "high" alert.
+
+    Args:
+        all_inputs: Parsed input_features dicts from PredictionLog records.
+        feature_ranges: {feature: {"min", "max", "p5", "p95"} or
+                         {"known_categories": [...]}} from PredictionPipeline.
+        oor_threshold_medium: Fraction of OOR/unseen values for "medium" severity.
+        oor_threshold_high: Fraction of OOR/unseen values for "high" severity.
+        max_features: Maximum number of features to analyse.
+
+    Returns:
+        Dict with has_alerts, severity, severity_label, sample_count,
+        feature_count, alert_count, alerts (list), and summary.
+    """
+    if not all_inputs:
+        return {
+            "has_alerts": False,
+            "severity": "low",
+            "severity_label": "No predictions yet",
+            "sample_count": 0,
+            "feature_count": 0,
+            "alert_count": 0,
+            "alerts": [],
+            "summary": "No predictions have been made yet.",
+        }
+
+    feat_names = list(all_inputs[0].keys())[:max_features]
+    alerts: list[dict] = []
+
+    for feat in feat_names:
+        values = [
+            inp[feat] for inp in all_inputs if feat in inp and inp[feat] is not None
+        ]
+        if not values:
+            continue
+
+        numeric: list[float] = []
+        for v in values:
+            try:
+                numeric.append(float(v))
+            except (TypeError, ValueError):
+                pass
+
+        ranges = feature_ranges.get(feat, {})
+
+        if len(numeric) > len(values) * 0.5:
+            train_min = ranges.get("min")
+            train_max = ranges.get("max")
+            if train_min is None or train_max is None:
+                continue
+
+            oor = sum(1 for v in numeric if v < train_min or v > train_max)
+            oor_pct = oor / len(numeric)
+
+            if oor_pct >= oor_threshold_medium:
+                sev = "high" if oor_pct >= oor_threshold_high else "medium"
+                alerts.append(
+                    {
+                        "feature": feat,
+                        "feature_type": "numeric",
+                        "oor_count": oor,
+                        "oor_pct": round(oor_pct * 100, 1),
+                        "total_count": len(numeric),
+                        "train_min": train_min,
+                        "train_max": train_max,
+                        "severity": sev,
+                        "description": (
+                            f"{oor_pct:.0%} of '{feat}' values are outside the "
+                            f"training range [{train_min:.3g}, {train_max:.3g}]"
+                        ),
+                    }
+                )
+        else:
+            known = set(ranges.get("known_categories", []))
+            if not known:
+                continue
+
+            unseen = sum(1 for v in values if str(v) not in known)
+            unseen_pct = unseen / len(values)
+
+            if unseen_pct >= oor_threshold_medium:
+                sev = "high" if unseen_pct >= oor_threshold_high else "medium"
+                alerts.append(
+                    {
+                        "feature": feat,
+                        "feature_type": "categorical",
+                        "unseen_count": unseen,
+                        "unseen_pct": round(unseen_pct * 100, 1),
+                        "total_count": len(values),
+                        "severity": sev,
+                        "description": (
+                            f"{unseen_pct:.0%} of '{feat}' values are categories "
+                            "not seen during training"
+                        ),
+                    }
+                )
+
+    has_high = any(a["severity"] == "high" for a in alerts)
+    has_medium = any(a["severity"] == "medium" for a in alerts)
+
+    if has_high:
+        severity = "high"
+        severity_label = "Significant drift detected"
+    elif has_medium:
+        severity = "medium"
+        severity_label = "Some drift detected"
+    else:
+        severity = "low"
+        severity_label = "No significant drift"
+
+    has_alerts = bool(alerts)
+
+    if not has_alerts:
+        summary = (
+            f"Production inputs look good — all {len(feat_names)} features are within "
+            f"training ranges across {len(all_inputs)} recent "
+            f"prediction{'s' if len(all_inputs) != 1 else ''}."
+        )
+    elif severity == "high":
+        high_feats = [a["feature"] for a in alerts if a["severity"] == "high"]
+        feat_list = ", ".join(f"'{f}'" for f in high_feats[:3])
+        summary = (
+            f"High drift detected in {len(alerts)} "
+            f"feature{'s' if len(alerts) != 1 else ''} ({feat_list}). "
+            "These inputs diverge significantly from training data — "
+            "consider retraining the model."
+        )
+    else:
+        med_feats = [a["feature"] for a in alerts]
+        feat_list = ", ".join(f"'{f}'" for f in med_feats[:3])
+        summary = (
+            f"Moderate drift detected in {len(alerts)} "
+            f"feature{'s' if len(alerts) != 1 else ''} ({feat_list}). "
+            "Some production inputs are outside training ranges — "
+            "monitor closely and consider retraining."
+        )
+
+    return {
+        "has_alerts": has_alerts,
+        "severity": severity,
+        "severity_label": severity_label,
+        "sample_count": len(all_inputs),
+        "feature_count": len(feat_names),
+        "alert_count": len(alerts),
+        "alerts": alerts,
+        "summary": summary,
+    }

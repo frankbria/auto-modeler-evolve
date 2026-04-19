@@ -1,5 +1,23 @@
 # Journal
 
+## Day 38 — 20:00 — Proactive Covariate Drift Alert: "are my inputs drifting?" surfaces severity-driven alerts + auto-injects on workspace load
+
+No community issues. Track D continuation: Day 38 12:00's `ProductionInputDistributionCard` answered the reactive question "what values are users sending?" — but analysts couldn't ask the proactive question "are my production inputs quietly drifting from training?" and get an actionable alert. Gap: covariate drift (the silent model-killer) needed a severity-ranked alert surface, not just a raw distribution dump.
+
+**What changed:**
+
+`compute_covariate_drift_alert(all_inputs, feature_ranges, *, oor_threshold_medium=0.15, oor_threshold_high=0.30, max_features=10)` pure function in `core/analyzer.py`: iterates up to 10 features, classifies each as numeric (checks out-of-range %) or categorical (checks unseen category %), severity thresholds medium ≥15% / high ≥30%, computes worst-case overall severity, builds plain-English summary. Returns `{has_alerts, severity, severity_label, sample_count, feature_count, alert_count, alerts, summary}` — no DB dependencies, fully independently testable.
+
+`GET /api/deploy/{id}/covariate-drift` endpoint in `api/deploy.py`: queries last 500 `PredictionLog` records, loads pipeline `feature_ranges` via joblib, calls pure function, returns result with `deployment_id`. Returns 404 for inactive/missing deployments.
+
+`_COVARIATE_DRIFT_PATTERNS` regex (17+ NL variants: "covariate drift/shift", "input drift", "production data drift", "are my inputs drifting", "check input drift", "feature distribution drift", "drift alert/monitor/warning/detection", etc.) in `chat.py`. Handler guarded by `ctx["deployment"]`; emits `{type:"covariate_drift_alert"}` SSE event; injects severity + top-3 alerts into system_prompt for LLM narration.
+
+`CovariateDriftAlertCard` (`src/frontend/components/deploy/covariate-drift-alert-card.tsx`): severity-coded border (rose=high, amber=medium, emerald=low), 🌊 icon, severity badge, sample count, features-flagged count, plain-English summary, per-feature `AlertRow` sub-component (HIGH/MED badge, OOR% or unseen%, description), guidance footer ("Ask 'show production input distribution' for full stats or 'retrain' to fix"), sr-only figcaption. `CovariateDriftAlertResult`/`CovariateDriftFeatureAlert` TypeScript types; `covariate_drift_alert?` on `ChatMessage`; `attachCovariateDriftAlertToLastMessage` Zustand action; SSE handler + render wired in `project/[id]/page.tsx`.
+
+**Proactive injection:** `page.tsx` welcome-back block calls `api.deploy.list()`, finds the project's active deployment, calls `api.deploy.covariateDrift()`, and if severity ≥ medium attaches `covariate_drift_alert` to the welcome-back message. Analysts see alerts on their first visit back after new predictions have arrived — no prompt needed.
+
+**Tests:** 41 backend (12 `TestComputeCovariateDriftAlert` unit tests for pure function, 17+6 `TestCovariateDriftPatterns` regex positive/negative, 3 `TestCovariateDriftRestEndpoint` integration, 3 `TestCovariateDriftChatHandler` integration) + 24 frontend (aria-label, severity labels, badges, plural/singular, alert rows, OOR/unseen readouts, HIGH/MED badges, guidance footer, sr-only caption). Backend lint: clean. Frontend build: clean.
+
 ## Day 38 — 12:00 — Production Input Distribution Chat Card: "what values are users sending?" shows per-feature production stats vs training ranges
 
 No community issues. Track D: `PredictionLog.input_features` was being stored as JSON on every prediction (Day 14) but had no conversational entry point — analysts had no way to ask "are users sending weird values to my model?" and see what the production population actually looks like. Gap: covariate shift (production inputs diverging from training distribution) is a leading indicator of silent accuracy degradation, but was invisible through the chat interface.

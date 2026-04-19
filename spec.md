@@ -1460,6 +1460,24 @@ guides them forward through the natural flow.
       accuracy degradation.
       *Day 38 (12:00): 21 backend + 15 frontend = 36 new tests. Backend lint: clean. Frontend build: clean.*
 
+- [x] **Proactive Covariate Drift Alert** — Complements `ProductionInputDistributionCard` with a
+      proactive, severity-driven alert when production inputs diverge from training distributions.
+      `compute_covariate_drift_alert(all_inputs, feature_ranges)` pure function in `core/analyzer.py`:
+      iterates up to 10 features, classifies each as numeric (checks out-of-range %) or categorical
+      (checks unseen category %), applies medium threshold (≥15%) and high threshold (≥30%), returns
+      `{has_alerts, severity, severity_label, sample_count, feature_count, alert_count, alerts, summary}`.
+      `GET /api/deploy/{id}/covariate-drift` endpoint loads PredictionLogs + pipeline feature_ranges,
+      calls pure function, returns result with `deployment_id`. `_COVARIATE_DRIFT_PATTERNS` regex in
+      `chat.py` detects 17+ natural-language variants ("covariate drift", "input drift", "drift alert",
+      etc.); handler guarded by `ctx["deployment"]` emits `{type:"covariate_drift_alert"}` SSE event.
+      `CovariateDriftAlertCard` (🌊 icon, severity-colored border): severity badge, sample/feature count
+      badges, per-feature `AlertRow` with HIGH/MED badge, OOR% or unseen% readout, description, guidance
+      footer. `CovariateDriftAlertResult`/`CovariateDriftFeatureAlert` TypeScript types; Zustand
+      `attachCovariateDriftAlertToLastMessage`; SSE handler + render + proactive welcome-back injection
+      in `project/[id]/page.tsx` (auto-checks active deployment on returning visit, injects medium/high
+      alerts into welcome-back message). Closes the "are my production inputs quietly drifting?" question.
+      *Day 38 (20:00): 41 backend + 24 frontend = 65 new tests. Backend lint: clean. Frontend build: clean.*
+
 ---
 
 ## Data Model

@@ -2721,6 +2721,20 @@ _PROD_INPUT_DIST_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+_COVARIATE_DRIFT_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"covariate\s+(?:drift|shift)\b|"
+    r"input\s+(?:feature\s+)?drift\b|"
+    r"production\s+(?:data|input)\s+(?:drift|shift)\b|"
+    r"(?:are\s+(?:my\s+)?(?:production\s+)?inputs?\s+drift(?:ing)?)\b|"
+    r"(?:check|detect|show|any)\s+(?:input|feature|covariate)\s+drift\b|"
+    r"feature\s+distribution\s+(?:drift|shift)\b|"
+    r"(?:any\s+)?(?:input\s+)?drift\s+(?:alert|warning|check|report)\b|"
+    r"drift\s+(?:alert|monitor|check|warning|detection)\b"
+    r")",
+    re.IGNORECASE,
+)
+
 _CV_SCORE_DIST_PATTERNS = re.compile(
     r"(?i)(?:"
     r"how\s+(?:consistent|stable|reliable|variable)\s+is\s+(?:my\s+)?(?:model|prediction)\b|"
@@ -9050,6 +9064,63 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Production input distributions are nice-to-have; never crash chat
 
+    # Covariate drift alert (proactive companion to the full distribution card)
+    covariate_drift_alert_event: dict | None = None
+    if _COVARIATE_DRIFT_PATTERNS.search(body.message) and ctx["deployment"]:
+        try:
+            import json as _json_cda
+            from collections import Counter as _Counter_cda  # noqa: F401
+
+            from core.analyzer import (
+                compute_covariate_drift_alert as _compute_cda,
+            )
+
+            _cda_dep = ctx["deployment"]
+            _cda_dep_id = _cda_dep.id if hasattr(_cda_dep, "id") else str(_cda_dep)
+
+            _cda_logs = session.exec(
+                select(PredictionLog)
+                .where(PredictionLog.deployment_id == _cda_dep_id)
+                .order_by(PredictionLog.created_at.desc())
+                .limit(500)
+            ).all()
+
+            _cda_all_inputs: list[dict] = []
+            for _cda_log in _cda_logs:
+                try:
+                    _cda_parsed = _json_cda.loads(_cda_log.input_features)
+                    if isinstance(_cda_parsed, dict):
+                        _cda_all_inputs.append(_cda_parsed)
+                except Exception:  # noqa: BLE001
+                    pass
+
+            _cda_feature_ranges: dict = {}
+            try:
+                _cda_dep_obj = session.get(Deployment, _cda_dep_id)
+                if _cda_dep_obj and getattr(_cda_dep_obj, "pipeline_path", None):
+                    from core.deployer import load_pipeline as _load_pipeline_cda
+
+                    _cda_pipeline = _load_pipeline_cda(_cda_dep_obj.pipeline_path)
+                    _cda_feature_ranges = getattr(_cda_pipeline, "feature_ranges", {})
+            except Exception:  # noqa: BLE001
+                pass
+
+            _cda_result = _compute_cda(_cda_all_inputs, _cda_feature_ranges)
+            _cda_result["deployment_id"] = _cda_dep_id
+            covariate_drift_alert_event = _cda_result
+
+            system_prompt += (
+                f"\n\n## Covariate Drift Alert\n"
+                f"Severity: {_cda_result['severity_label']}. "
+                f"{_cda_result['summary']} "
+                f"If drift is detected, explain what covariate drift means in plain English "
+                f"and recommend retraining. If no drift: reassure the analyst their model is "
+                f"seeing representative inputs."
+            )
+
+        except Exception:  # noqa: BLE001
+            pass  # Covariate drift alert is nice-to-have; never crash chat
+
     # Batch prediction schedule creation / listing
     schedule_event: dict | None = None
     if _SCHEDULE_PATTERNS.search(body.message) and ctx["deployment"]:
@@ -10204,6 +10275,10 @@ def send_message(
         # Emit production input feature distribution card
         if prod_input_dist_event:
             yield f"data: {json.dumps({'type': 'prod_input_dist', 'prod_input_dist': prod_input_dist_event})}\n\n"
+
+        # Emit covariate drift alert card
+        if covariate_drift_alert_event:
+            yield f"data: {json.dumps({'type': 'covariate_drift_alert', 'covariate_drift_alert': covariate_drift_alert_event})}\n\n"
 
         # After text stream, opportunistically generate a chart if the
         # message is about data and we have a dataset loaded

@@ -30,6 +30,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
+from core.analyzer import compute_covariate_drift_alert
 from core.deployer import (
     build_prediction_pipeline,
     explain_prediction,
@@ -4108,3 +4109,50 @@ def delete_preset(
     session.delete(preset)
     session.commit()
     return None
+
+
+@router.get("/api/deploy/{deployment_id}/covariate-drift")
+def get_covariate_drift(
+    deployment_id: str,
+    sample_size: int = Query(default=500, ge=10, le=2000),
+    session: Session = Depends(get_session),
+):
+    """Return a covariate drift assessment for a deployment.
+
+    Compares recent production inputs against training feature ranges stored
+    in the PredictionPipeline. Returns severity (low/medium/high), per-feature
+    alerts, and a plain-English summary.
+    """
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment or not deployment.is_active:
+        raise HTTPException(status_code=404, detail="Deployment not found or inactive")
+
+    logs = session.exec(
+        select(PredictionLog)
+        .where(PredictionLog.deployment_id == deployment_id)
+        .order_by(PredictionLog.created_at.desc())
+        .limit(sample_size)
+    ).all()
+
+    all_inputs: list[dict] = []
+    for log in logs:
+        try:
+            parsed = json.loads(log.input_features)
+            if isinstance(parsed, dict):
+                all_inputs.append(parsed)
+        except Exception:  # noqa: BLE001
+            pass
+
+    feature_ranges: dict = {}
+    if deployment.pipeline_path:
+        try:
+            from core.deployer import load_pipeline as _load_pipeline
+
+            pipeline = _load_pipeline(deployment.pipeline_path)
+            feature_ranges = getattr(pipeline, "feature_ranges", {})
+        except Exception:  # noqa: BLE001
+            pass
+
+    result = compute_covariate_drift_alert(all_inputs, feature_ranges)
+    result["deployment_id"] = deployment_id
+    return result

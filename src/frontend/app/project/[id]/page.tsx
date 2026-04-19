@@ -96,6 +96,7 @@ import { PredictionAnalyticsChatCard } from "@/components/chat/prediction-analyt
 import { ConfusionMatrixChatCard } from "@/components/models/confusion-matrix-chat-card"
 import { LocalExplanationCard } from "@/components/models/local-explanation-card"
 import { ProductionInputDistributionCard } from "@/components/chat/production-input-distribution-card"
+import { CovariateDriftAlertCard } from "@/components/deploy/covariate-drift-alert-card"
 import { PairCorrelationCard } from "@/components/data/pair-correlation-card"
 import { StatQueryCard } from "@/components/data/stat-query-card"
 import { SummaryStatsCard } from "@/components/data/summary-stats-card"
@@ -273,6 +274,7 @@ export default function ProjectWorkspace() {
     attachConfusionMatrixChatToLastMessage,
     attachLocalExplanationToLastMessage,
     attachProdInputDistToLastMessage,
+    attachCovariateDriftAlertToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -369,6 +371,7 @@ export default function ProjectWorkspace() {
             }
             // Proactively surface model health alerts on returning visits
             let healthSummary: import("@/lib/types").ProjectHealthSummary | undefined
+            let covariateDriftAlert: import("@/lib/types").CovariateDriftAlertResult | undefined
             if (project.has_deployment) {
               try {
                 const hs = await api.projects.healthSummary(projectId)
@@ -378,8 +381,30 @@ export default function ProjectWorkspace() {
               } catch {
                 // Non-critical — never block the welcome message
               }
+              // Proactively surface covariate drift if inputs are drifting significantly
+              try {
+                const deployments = await api.deploy.list()
+                const projectDeployment = deployments.find(
+                  (d: { project_id: string }) => d.project_id === projectId
+                )
+                if (projectDeployment) {
+                  const drift = await api.deploy.covariateDrift(projectDeployment.id)
+                  if (drift.has_alerts && drift.severity !== "low") {
+                    covariateDriftAlert = drift
+                  }
+                }
+              } catch {
+                // Non-critical — never block the welcome message
+              }
             }
-            setMessages([...msgs, { ...welcomeBack, health_summary: healthSummary }])
+            setMessages([
+              ...msgs,
+              {
+                ...welcomeBack,
+                health_summary: healthSummary,
+                covariate_drift_alert: covariateDriftAlert,
+              },
+            ])
           } else {
             setMessages(msgs)
           }
@@ -672,6 +697,8 @@ export default function ProjectWorkspace() {
                 attachLocalExplanationToLastMessage(json.local_explanation as import("@/lib/types").LocalExplanationResult)
               } else if (json.type === "prod_input_dist" && json.prod_input_dist) {
                 attachProdInputDistToLastMessage(json.prod_input_dist as import("@/lib/types").ProductionInputDistributionResult)
+              } else if (json.type === "covariate_drift_alert" && json.covariate_drift_alert) {
+                attachCovariateDriftAlertToLastMessage(json.covariate_drift_alert as import("@/lib/types").CovariateDriftAlertResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -772,6 +799,7 @@ export default function ProjectWorkspace() {
     attachConfusionMatrixChatToLastMessage,
     attachLocalExplanationToLastMessage,
     attachProdInputDistToLastMessage,
+    attachCovariateDriftAlertToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -1261,6 +1289,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.prod_input_dist && (
                       <ProductionInputDistributionCard result={msg.prod_input_dist} />
+                    )}
+                    {msg.covariate_drift_alert && (
+                      <CovariateDriftAlertCard result={msg.covariate_drift_alert} />
                     )}
                   </div>
                 </div>

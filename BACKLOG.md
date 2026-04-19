@@ -49,6 +49,14 @@ the time is better spent on real features.
 
 ## Currently Working On
 
+## Day 38 (20:00) — Done
+**Track D — Proactive Covariate Drift Alert via Chat.** Complement to Day 38 12:00's reactive `ProductionInputDistributionCard`: proactively surfaces input drift alerts when an analyst asks "are my inputs drifting?" or on workspace load when a deployed model has significant OOR inputs. 41 backend + 24 frontend tests, all passing. Lint: clean. Build: clean.
+
+**What's next:**
+- Track D: Deployment cost estimate — "how much would 1000 predictions cost?" surfaces quota + rate limits in business terms
+- Track C: Multi-model champion comparison — when retrained, show metric delta prominently in chat vs previous version
+- Track E: Run the "lunch break" flow end-to-end as a real analyst; fix any new friction points
+
 ## Day 38 (12:00) — Done
 **Track D — Production Input Distribution Chat Card.** Analysts can now ask "what values are users sending to my model?", "show production input distribution", or "are my production inputs in range?" and receive a `ProductionInputDistributionCard` inline in chat — per-feature production stats vs training ranges, with out-of-range and unseen-category detection.
 - `_PROD_INPUT_DIST_PATTERNS` regex (8 NL variants) in `chat.py`. Guard: `ctx["deployment"]`.

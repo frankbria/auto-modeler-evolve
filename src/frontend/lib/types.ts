@@ -485,6 +485,7 @@ export interface ChatMessage {
   confusion_matrix_chat?: ConfusionMatrixChatResult
   local_explanation?: LocalExplanationResult
   prod_input_dist?: ProductionInputDistributionResult
+  covariate_drift_alert?: CovariateDriftAlertResult
 }
 
 export interface SegmentPerformanceSegment {
@@ -2672,5 +2673,33 @@ export interface ProductionInputDistributionResult {
   deployment_id: string
   sample_count: number
   features: ProdInputFeature[]
+  summary: string
+}
+
+export interface CovariateDriftFeatureAlert {
+  feature: string
+  feature_type: "numeric" | "categorical"
+  severity: "medium" | "high"
+  description: string
+  // numeric fields
+  oor_count?: number
+  oor_pct?: number
+  total_count?: number
+  train_min?: number
+  train_max?: number
+  // categorical fields
+  unseen_count?: number
+  unseen_pct?: number
+}
+
+export interface CovariateDriftAlertResult {
+  deployment_id: string
+  has_alerts: boolean
+  severity: "low" | "medium" | "high"
+  severity_label: string
+  sample_count: number
+  feature_count: number
+  alert_count: number
+  alerts: CovariateDriftFeatureAlert[]
   summary: string
 }
