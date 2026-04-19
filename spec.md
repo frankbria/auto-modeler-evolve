@@ -1495,6 +1495,23 @@ guides them forward through the natural flow.
       (added to Project model previously but not migrated), resolving CI failures on real-DB tests.
       *Day 39: 21 backend + 20 frontend = 41 new tests. Backend lint: clean. Frontend build: clean.*
 
+- [x] **Deployment Cost Estimate via Chat** — Track D perpetual. Analysts can ask "how much would
+      1000 predictions cost?", "estimate prediction cost", "estimate the capacity", "how many users can
+      my model handle?", "prediction capacity planning", "optimal rate limit for this use case?", or
+      "quota capacity planning" and receive a `CostEstimateCard` inline in chat. `_COST_ESTIMATE_PATTERNS`
+      regex (8 NL variants) guards the handler; `_extract_cost_n()` parses target N from message (plain
+      number, comma-formatted, k/m suffixes, "requests"/"users" synonyms, defaults to 1000). Handler
+      queries `PredictionLog` for used_this_month and avg_per_day; computes: `daily_capacity` (rpm×60×24),
+      `quota_pct` (n/monthly_quota×100), `within_quota` flag, `days_needed` (n/avg_per_day), and
+      `recommended_rpm` (ceil(n/(30×24×60)) to spread evenly over 30 days). `CostEstimateCard` (💰 icon,
+      amber/rose/emerald border by quota state): `CapacityBar` progress bar (role="progressbar",
+      aria-valuenow, color-coded); quota impact section with used/remaining text; daily-capacity and
+      days-to-serve grid; recommended-RPM box; no-rate-limit hint; figcaption sr-only caption.
+      `CostEstimateResult` TypeScript type; `cost_estimate?` on `ChatMessage`;
+      `attachCostEstimateToLastMessage` Zustand action; SSE handler + render wired in `project/[id]/page.tsx`.
+      Distinct from Quota Runway (backwards-looking, current-pace) — this is forwards-looking, scenario-based.
+      *Day 39: 34 backend + 22 frontend = 56 new tests. Backend lint: clean. Frontend build: clean.*
+
 ---
 
 ## Data Model
