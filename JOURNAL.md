@@ -1,5 +1,9 @@
 # Journal
 
+## Day 39 — 12:00 — Deployment Cost Estimate: forward-looking capacity planning for prediction volume
+
+Shipped the deployment cost estimate chat card — forwards-looking counterpart to quota runway. Analysts can now ask "how much would 1000 predictions cost?", "how many users can my model handle?", or "prediction capacity planning" and receive an inline `CostEstimateCard` with quota impact bar, daily capacity, days-to-serve, and a recommended rate limit (RPM calculated to spread the requested volume evenly over 30 days). `_COST_ESTIMATE_PATTERNS` (8 NL variants), `_extract_cost_n()` (handles k/m suffixes, comma-formatted numbers), and the full SSE card pipeline all followed the established Chat Intent → SSE Card pattern exactly. 56 new tests (34 backend pattern/extraction/integration, 22 frontend render/accessibility) all pass; backend lint clean; frontend build clean. Track D deployment depth now covers both reactive (quota runway) and proactive (cost estimate) capacity analysis.
+
 ## Day 39 — 04:00 — Quota Runway Forecasting: capacity planning for monthly prediction budgets
 
 Shipped quota runway chat card to answer "will my quota last the month?" — queries prediction logs, computes remaining capacity and days-left, auto-injects alerts on high-risk. Fixed CI regression where `auto_retrain` migration wasn't applied before running tests (23-test anomaly suite), ensuring schema stays in sync. All 41 backend tests + 44 frontend tests pass; lint and build clean. Track D momentum holds; drift monitoring and quota warnings now form a complete deployment health loop.
