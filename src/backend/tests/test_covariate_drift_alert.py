@@ -132,8 +132,14 @@ class TestComputeCovariateDriftAlert:
     def test_result_contains_required_keys(self):
         result = compute_covariate_drift_alert([], {})
         required = {
-            "has_alerts", "severity", "severity_label",
-            "sample_count", "feature_count", "alert_count", "alerts", "summary",
+            "has_alerts",
+            "severity",
+            "severity_label",
+            "sample_count",
+            "feature_count",
+            "alert_count",
+            "alerts",
+            "summary",
         }
         assert required.issubset(result.keys())
 
@@ -146,38 +152,45 @@ class TestComputeCovariateDriftAlert:
 class TestCovariateDriftPatterns:
     def _pattern(self):
         from api.chat import _COVARIATE_DRIFT_PATTERNS
+
         return _COVARIATE_DRIFT_PATTERNS
 
-    @pytest.mark.parametrize("msg", [
-        "covariate drift",
-        "covariate shift",
-        "input drift",
-        "input feature drift",
-        "production data drift",
-        "production input drift",
-        "are my inputs drifting",
-        "are my production inputs drifting?",
-        "check input drift",
-        "detect feature drift",
-        "show drift alert",
-        "feature distribution drift",
-        "any input drift alerts?",
-        "drift alert",
-        "drift monitor",
-        "drift warning",
-        "drift detection",
-    ])
+    @pytest.mark.parametrize(
+        "msg",
+        [
+            "covariate drift",
+            "covariate shift",
+            "input drift",
+            "input feature drift",
+            "production data drift",
+            "production input drift",
+            "are my inputs drifting",
+            "are my production inputs drifting?",
+            "check input drift",
+            "detect feature drift",
+            "show drift alert",
+            "feature distribution drift",
+            "any input drift alerts?",
+            "drift alert",
+            "drift monitor",
+            "drift warning",
+            "drift detection",
+        ],
+    )
     def test_positive_matches(self, msg):
         assert self._pattern().search(msg), f"Expected match for: {msg!r}"
 
-    @pytest.mark.parametrize("msg", [
-        "show production input distribution",
-        "what values are users sending",
-        "how is my model doing",
-        "show feature importance",
-        "train my model",
-        "deploy the model",
-    ])
+    @pytest.mark.parametrize(
+        "msg",
+        [
+            "show production input distribution",
+            "what values are users sending",
+            "how is my model doing",
+            "show feature importance",
+            "train my model",
+            "deploy the model",
+        ],
+    )
     def test_negative_no_match(self, msg):
         assert not self._pattern().search(msg), f"Expected no match for: {msg!r}"
 
@@ -211,6 +224,7 @@ def client(tmp_path):
     SQLModel.metadata.create_all(db_module.engine)
 
     from main import app
+
     return TestClient(app)
 
 
@@ -226,28 +240,32 @@ def _setup_project_with_deployment(client, tmp_path):
     dep_id = str(uuid.uuid4())
 
     with Session(db_module.engine) as sess:
-        sess.add(ModelRun(
-            id=run_id,
-            project_id=project_id,
-            feature_set_id=str(uuid.uuid4()),
-            algorithm="linear_regression",
-            status="done",
-            metrics=json.dumps({"r2": 0.85}),
-            summary="LR: R² 0.850",
-        ))
-        sess.add(Deployment(
-            id=dep_id,
-            model_run_id=run_id,
-            project_id=project_id,
-            endpoint_path=f"/api/predict/{dep_id}",
-            dashboard_url=f"/predict/{dep_id}",
-            is_active=True,
-            algorithm="linear_regression",
-            problem_type="regression",
-            feature_names=json.dumps(["units", "region"]),
-            target_column="revenue",
-            metrics=json.dumps({"r2": 0.85}),
-        ))
+        sess.add(
+            ModelRun(
+                id=run_id,
+                project_id=project_id,
+                feature_set_id=str(uuid.uuid4()),
+                algorithm="linear_regression",
+                status="done",
+                metrics=json.dumps({"r2": 0.85}),
+                summary="LR: R² 0.850",
+            )
+        )
+        sess.add(
+            Deployment(
+                id=dep_id,
+                model_run_id=run_id,
+                project_id=project_id,
+                endpoint_path=f"/api/predict/{dep_id}",
+                dashboard_url=f"/predict/{dep_id}",
+                is_active=True,
+                algorithm="linear_regression",
+                problem_type="regression",
+                feature_names=json.dumps(["units", "region"]),
+                target_column="revenue",
+                metrics=json.dumps({"r2": 0.85}),
+            )
+        )
         sess.commit()
 
     return project_id, run_id, dep_id
@@ -272,13 +290,23 @@ class TestCovariateDriftRestEndpoint:
         resp = client.get(f"/api/deploy/{deployment_id}/covariate-drift")
         assert resp.status_code == 200
         data = resp.json()
-        for key in ["has_alerts", "severity", "severity_label", "sample_count",
-                    "feature_count", "alert_count", "alerts", "summary", "deployment_id"]:
+        for key in [
+            "has_alerts",
+            "severity",
+            "severity_label",
+            "sample_count",
+            "feature_count",
+            "alert_count",
+            "alerts",
+            "summary",
+            "deployment_id",
+        ]:
             assert key in data, f"Missing key: {key}"
 
 
 def _mock_anthropic():
     from unittest import mock
+
     mock_ant = mock.patch("anthropic.Anthropic")
     patcher = mock_ant.start()
     mock_cli = mock.MagicMock()
@@ -294,6 +322,7 @@ def _mock_anthropic():
 class TestCovariateDriftChatHandler:
     def test_no_event_without_deployment(self, client):
         from unittest import mock
+
         proj = client.post("/api/projects", json={"name": "NoDeploy"}).json()
         project_id = proj["id"]
 
@@ -316,6 +345,7 @@ class TestCovariateDriftChatHandler:
 
     def test_emits_event_with_deployment(self, client, tmp_path):
         from unittest import mock
+
         project_id, _, _ = _setup_project_with_deployment(client, tmp_path)
 
         with mock.patch("anthropic.Anthropic") as m:
@@ -343,6 +373,7 @@ class TestCovariateDriftChatHandler:
 
     def test_event_structure(self, client, tmp_path):
         from unittest import mock
+
         project_id, _, _ = _setup_project_with_deployment(client, tmp_path)
 
         with mock.patch("anthropic.Anthropic") as m:
@@ -363,7 +394,8 @@ class TestCovariateDriftChatHandler:
         events = [
             json.loads(line[6:])
             for line in resp.text.splitlines()
-            if line.startswith("data: ") and line[6:].strip()
+            if line.startswith("data: ")
+            and line[6:].strip()
             and '"covariate_drift_alert"' in line
         ]
         assert len(events) >= 1
