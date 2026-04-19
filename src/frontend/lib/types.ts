@@ -487,6 +487,7 @@ export interface ChatMessage {
   prod_input_dist?: ProductionInputDistributionResult
   covariate_drift_alert?: CovariateDriftAlertResult
   quota_runway?: QuotaRunwayResult
+  cost_estimate?: CostEstimateResult
 }
 
 export interface SegmentPerformanceSegment {
@@ -2717,4 +2718,18 @@ export interface QuotaRunwayResult {
   days_remaining_in_month: number
   rate_limit_rpm: number | null
   will_exhaust: boolean
+}
+
+export interface CostEstimateResult {
+  deployment_id: string
+  n_predictions: number
+  monthly_quota: number | null
+  used_this_month: number
+  quota_pct: number | null
+  within_quota: boolean | null
+  current_rpm: number | null
+  daily_capacity: number | null
+  avg_per_day: number
+  days_needed: number | null
+  recommended_rpm: number
 }

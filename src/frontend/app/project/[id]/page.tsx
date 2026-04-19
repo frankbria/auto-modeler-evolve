@@ -98,6 +98,7 @@ import { LocalExplanationCard } from "@/components/models/local-explanation-card
 import { ProductionInputDistributionCard } from "@/components/chat/production-input-distribution-card"
 import { CovariateDriftAlertCard } from "@/components/deploy/covariate-drift-alert-card"
 import { QuotaRunwayCard } from "@/components/deploy/quota-runway-card"
+import { CostEstimateCard } from "@/components/deploy/cost-estimate-card"
 import { PairCorrelationCard } from "@/components/data/pair-correlation-card"
 import { StatQueryCard } from "@/components/data/stat-query-card"
 import { SummaryStatsCard } from "@/components/data/summary-stats-card"
@@ -277,6 +278,7 @@ export default function ProjectWorkspace() {
     attachProdInputDistToLastMessage,
     attachCovariateDriftAlertToLastMessage,
     attachQuotaRunwayToLastMessage,
+    attachCostEstimateToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -703,6 +705,8 @@ export default function ProjectWorkspace() {
                 attachCovariateDriftAlertToLastMessage(json.covariate_drift_alert as import("@/lib/types").CovariateDriftAlertResult)
               } else if (json.type === "quota_runway" && json.quota_runway) {
                 attachQuotaRunwayToLastMessage(json.quota_runway as import("@/lib/types").QuotaRunwayResult)
+              } else if (json.type === "cost_estimate" && json.cost_estimate) {
+                attachCostEstimateToLastMessage(json.cost_estimate as import("@/lib/types").CostEstimateResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -805,6 +809,7 @@ export default function ProjectWorkspace() {
     attachProdInputDistToLastMessage,
     attachCovariateDriftAlertToLastMessage,
     attachQuotaRunwayToLastMessage,
+    attachCostEstimateToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -1300,6 +1305,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.quota_runway && (
                       <QuotaRunwayCard result={msg.quota_runway} />
+                    )}
+                    {msg.cost_estimate && (
+                      <CostEstimateCard result={msg.cost_estimate} />
                     )}
                   </div>
                 </div>

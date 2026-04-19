@@ -2749,6 +2749,42 @@ _QUOTA_RUNWAY_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+_COST_ESTIMATE_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"how\s+much\s+(?:would|will|does)\s+(?:\d[\d,]*\s+)?predictions?\s+cost\b|"
+    r"(?:estimate|calculate|compute)\s+(?:the\s+)?(?:prediction\s+)?(?:cost|capacity)\b|"
+    r"(?:cost|price)\s+(?:for|of)\s+\d[\d,]*\s+predictions?\b|"
+    r"how\s+many\s+(?:users?|requests?|predictions?|calls?)\s+can\s+(?:my\s+model|i|the\s+api)\s+handle\b|"
+    r"(?:prediction\s+)?capacity\s+(?:plan(?:ning)?|estimate|analysis|for\s+\d)\b|"
+    r"(?:optimal|best|recommended)\s+rate\s+limit\s+(?:for|to|given|if)\b|"
+    r"how\s+many\s+predictions?\s+(?:per|a)\s+(?:day|hour|month|minute)\s+can\b|"
+    r"quota\s+capacity\s+(?:plan(?:ning)?|for)\b"
+    r")",
+    re.IGNORECASE,
+)
+
+_COST_N_RE = re.compile(
+    r"\b(\d[\d,]*(?:\.\d+)?[km]?)\s*(?:predictions?|requests?|users?|calls?)\b",
+    re.IGNORECASE,
+)
+
+
+def _extract_cost_n(message: str) -> int:
+    """Extract a target prediction count from a message, defaulting to 1000."""
+    m = _COST_N_RE.search(message)
+    if not m:
+        return 1000
+    raw = m.group(1).replace(",", "").lower()
+    if raw.endswith("k"):
+        return max(1, int(float(raw[:-1]) * 1000))
+    if raw.endswith("m"):
+        return max(1, int(float(raw[:-1]) * 1_000_000))
+    try:
+        return max(1, int(float(raw)))
+    except ValueError:
+        return 1000
+
+
 _CV_SCORE_DIST_PATTERNS = re.compile(
     r"(?i)(?:"
     r"how\s+(?:consistent|stable|reliable|variable)\s+is\s+(?:my\s+)?(?:model|prediction)\b|"
@@ -9239,6 +9275,116 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Quota runway is nice-to-have; never crash chat
 
+    # Deployment cost / capacity estimate
+    cost_estimate_event: dict | None = None
+    if _COST_ESTIMATE_PATTERNS.search(body.message) and ctx["deployment"]:
+        try:
+            import math as _ce_math
+
+            _ce_dep = ctx["deployment"]
+            _ce_dep_id = _ce_dep.id if hasattr(_ce_dep, "id") else str(_ce_dep)
+            _ce_dep_obj = session.get(Deployment, _ce_dep_id)
+
+            _ce_monthly_quota = (
+                getattr(_ce_dep_obj, "monthly_quota", None) if _ce_dep_obj else None
+            )
+            _ce_rpm = (
+                getattr(_ce_dep_obj, "rate_limit_rpm", None) if _ce_dep_obj else None
+            )
+
+            # Current month usage
+            _ce_today = datetime.utcnow().date()
+            _ce_month_start = datetime(_ce_today.year, _ce_today.month, 1)
+            _ce_used_month = len(
+                session.exec(
+                    select(PredictionLog)
+                    .where(PredictionLog.deployment_id == _ce_dep_id)
+                    .where(PredictionLog.created_at >= _ce_month_start)
+                ).all()
+            )
+
+            # 7-day daily average
+            from datetime import timedelta as _ce_td
+
+            _ce_week_ago = datetime.utcnow() - _ce_td(days=7)
+            _ce_avg_per_day = (
+                len(
+                    session.exec(
+                        select(PredictionLog)
+                        .where(PredictionLog.deployment_id == _ce_dep_id)
+                        .where(PredictionLog.created_at >= _ce_week_ago)
+                    ).all()
+                )
+                / 7.0
+            )
+
+            _ce_n = _extract_cost_n(body.message)
+
+            # Daily capacity at current rate limit (RPM × 60 min × 24 h)
+            _ce_daily_cap = (_ce_rpm * 60 * 24) if _ce_rpm else None
+
+            # Quota impact
+            _ce_quota_pct: float | None = None
+            _ce_within_quota: bool | None = None
+            if _ce_monthly_quota and _ce_monthly_quota > 0:
+                _ce_quota_pct = round(_ce_n / _ce_monthly_quota * 100, 1)
+                _ce_within_quota = _ce_n <= (_ce_monthly_quota - _ce_used_month)
+
+            # Days needed to serve N at current average rate
+            _ce_days_needed: float | None = None
+            if _ce_avg_per_day > 0:
+                _ce_days_needed = round(_ce_n / _ce_avg_per_day, 1)
+
+            # Recommended RPM so N predictions are spread over 30 days
+            # N / (30 days × 24 h × 60 min) rounded up
+            _ce_rec_rpm = _ce_math.ceil(_ce_n / (30 * 24 * 60)) if _ce_n > 0 else 1
+
+            cost_estimate_event = {
+                "deployment_id": _ce_dep_id,
+                "n_predictions": _ce_n,
+                "monthly_quota": _ce_monthly_quota,
+                "used_this_month": _ce_used_month,
+                "quota_pct": _ce_quota_pct,
+                "within_quota": _ce_within_quota,
+                "current_rpm": _ce_rpm,
+                "daily_capacity": _ce_daily_cap,
+                "avg_per_day": round(_ce_avg_per_day, 1),
+                "days_needed": _ce_days_needed,
+                "recommended_rpm": _ce_rec_rpm,
+            }
+
+            _ce_desc = f"{_ce_n:,} predictions"
+            if _ce_quota_pct is not None:
+                system_prompt += (
+                    f"\n\n## Prediction Capacity Estimate\n"
+                    f"{_ce_desc} = {_ce_quota_pct}% of your {_ce_monthly_quota:,}-prediction monthly quota "
+                    f"({_ce_used_month:,} used so far this month). "
+                )
+                if _ce_within_quota is False:
+                    system_prompt += (
+                        "This exceeds remaining quota — you would need to increase your monthly quota. "
+                    )
+                else:
+                    system_prompt += "This fits within your remaining monthly quota. "
+            else:
+                system_prompt += (
+                    f"\n\n## Prediction Capacity Estimate\n"
+                    f"No monthly quota set — {_ce_desc} can be served without a cap. "
+                )
+            if _ce_daily_cap:
+                system_prompt += (
+                    f"At the current {_ce_rpm} RPM rate limit, you can serve "
+                    f"{_ce_daily_cap:,} predictions/day. "
+                )
+            system_prompt += (
+                f"To spread {_ce_n:,} predictions across 30 days, "
+                f"set rate limit to at least {_ce_rec_rpm} RPM. "
+                "Explain in plain English what the analyst needs to do to handle this volume."
+            )
+
+        except Exception:  # noqa: BLE001
+            pass  # Cost estimate is nice-to-have; never crash chat
+
     # Batch prediction schedule creation / listing
     schedule_event: dict | None = None
     if _SCHEDULE_PATTERNS.search(body.message) and ctx["deployment"]:
@@ -10401,6 +10547,10 @@ def send_message(
         # Emit quota runway / capacity planning card
         if quota_runway_event:
             yield f"data: {json.dumps({'type': 'quota_runway', 'quota_runway': quota_runway_event})}\n\n"
+
+        # Emit deployment cost / capacity estimate card
+        if cost_estimate_event:
+            yield f"data: {json.dumps({'type': 'cost_estimate', 'cost_estimate': cost_estimate_event})}\n\n"
 
         # After text stream, opportunistically generate a chart if the
         # message is about data and we have a dataset loaded
