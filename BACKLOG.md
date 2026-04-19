@@ -49,13 +49,17 @@ the time is better spent on real features.
 
 ## Currently Working On
 
-## Day 38 (20:00) — Done
-**Track D — Proactive Covariate Drift Alert via Chat.** Complement to Day 38 12:00's reactive `ProductionInputDistributionCard`: proactively surfaces input drift alerts when an analyst asks "are my inputs drifting?" or on workspace load when a deployed model has significant OOR inputs. 41 backend + 24 frontend tests, all passing. Lint: clean. Build: clean.
+## Day 39 (12:00) — Done
+**Track D — Deployment Cost Estimate via Chat.** Forwards-looking capacity planning: analysts can ask "how much would 1000 predictions cost?", "estimate prediction cost", "how many users can my model handle?", or "prediction capacity planning" and receive an inline `CostEstimateCard` with quota impact bar, daily capacity, days-to-serve, and recommended rate limit. `_COST_ESTIMATE_PATTERNS` (8 NL variants), `_extract_cost_n()` (k/m suffixes, comma formatting). 34 backend + 22 frontend = 56 new tests. Lint: clean. Build: clean.
 
 **What's next:**
-- Track D: Deployment cost estimate — "how much would 1000 predictions cost?" surfaces quota + rate limits in business terms
-- Track C: Multi-model champion comparison — when retrained, show metric delta prominently in chat vs previous version
+- Track D: Prediction SLA / latency monitoring — show p50/p95/p99 prediction latency in deployment panel or via "is my API slow?" chat query
+- Track D: Webhook notifications on model drift/degradation — "alert me when predictions shift"
+- Track C: Class imbalance detection + handling (SMOTE / class weights / threshold tuning)
 - Track E: Run the "lunch break" flow end-to-end as a real analyst; fix any new friction points
+
+## Day 38 (20:00) — Done
+**Track D — Proactive Covariate Drift Alert via Chat.** Complement to Day 38 12:00's reactive `ProductionInputDistributionCard`: proactively surfaces input drift alerts when an analyst asks "are my inputs drifting?" or on workspace load when a deployed model has significant OOR inputs. 41 backend + 24 frontend tests, all passing. Lint: clean. Build: clean.
 
 ## Day 38 (12:00) — Done
 **Track D — Production Input Distribution Chat Card.** Analysts can now ask "what values are users sending to my model?", "show production input distribution", or "are my production inputs in range?" and receive a `ProductionInputDistributionCard` inline in chat — per-feature production stats vs training ranges, with out-of-range and unseen-category detection.
