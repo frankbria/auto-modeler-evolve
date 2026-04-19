@@ -9145,8 +9145,12 @@ def send_message(
             _qr_dep_id = _qr_dep.id if hasattr(_qr_dep, "id") else str(_qr_dep)
             _qr_dep_obj = session.get(Deployment, _qr_dep_id)
 
-            _qr_monthly_quota = getattr(_qr_dep_obj, "monthly_quota", None) if _qr_dep_obj else None
-            _qr_rate_limit_rpm = getattr(_qr_dep_obj, "rate_limit_rpm", None) if _qr_dep_obj else None
+            _qr_monthly_quota = (
+                getattr(_qr_dep_obj, "monthly_quota", None) if _qr_dep_obj else None
+            )
+            _qr_rate_limit_rpm = (
+                getattr(_qr_dep_obj, "rate_limit_rpm", None) if _qr_dep_obj else None
+            )
 
             # Usage this calendar month
             _qr_today = datetime.utcnow().date()
@@ -9160,6 +9164,7 @@ def send_message(
 
             # Last 7-day average daily rate
             from datetime import timedelta as _qr_td
+
             _qr_week_ago = datetime.utcnow() - _qr_td(days=7)
             _qr_recent = session.exec(
                 select(PredictionLog)
@@ -9169,12 +9174,16 @@ def send_message(
             _qr_avg_per_day = len(_qr_recent) / 7.0
 
             # Days remaining in current month
-            _qr_days_in_month = _qr_calendar.monthrange(_qr_today.year, _qr_today.month)[1]
+            _qr_days_in_month = _qr_calendar.monthrange(
+                _qr_today.year, _qr_today.month
+            )[1]
             _qr_days_remaining = _qr_days_in_month - _qr_today.day + 1
 
             _qr_remaining: int | None = None
             _qr_days_left: float | None = None
-            _qr_est_month_total = round(_qr_used_this_month + (_qr_avg_per_day * _qr_days_remaining))
+            _qr_est_month_total = round(
+                _qr_used_this_month + (_qr_avg_per_day * _qr_days_remaining)
+            )
 
             if _qr_monthly_quota is not None:
                 _qr_remaining = max(0, _qr_monthly_quota - _qr_used_this_month)
@@ -9193,7 +9202,9 @@ def send_message(
                 "used_this_month": _qr_used_this_month,
                 "remaining": _qr_remaining,
                 "avg_per_day": round(_qr_avg_per_day, 1),
-                "days_left_at_rate": round(_qr_days_left, 1) if _qr_days_left is not None else None,
+                "days_left_at_rate": round(_qr_days_left, 1)
+                if _qr_days_left is not None
+                else None,
                 "est_month_total": _qr_est_month_total,
                 "days_remaining_in_month": _qr_days_remaining,
                 "rate_limit_rpm": _qr_rate_limit_rpm,
@@ -9208,7 +9219,9 @@ def send_message(
                     f"Avg {_qr_avg_per_day:.1f} predictions/day (last 7 days). "
                 )
                 if _qr_days_left is not None:
-                    system_prompt += f"At this rate, quota runs out in {_qr_days_left:.1f} days. "
+                    system_prompt += (
+                        f"At this rate, quota runs out in {_qr_days_left:.1f} days. "
+                    )
                 system_prompt += (
                     f"Projected month total: ~{_qr_est_month_total}. "
                     f"{'Quota at risk — projected usage exceeds monthly limit.' if _qr_will_exhaust else 'Projected usage within quota.'}"

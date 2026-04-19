@@ -77,6 +77,7 @@ def client(tmp_path):
 
     SQLModel.metadata.create_all(db_module.engine)
     from main import app
+
     return TestClient(app)
 
 
@@ -173,11 +174,13 @@ class TestQuotaRunwayChatHandler:
                 f"/api/chat/{project_id}",
                 json={"message": "quota runway", "conversation_history": []},
             ) as resp:
-                events = [line for line in resp.iter_lines() if line.startswith("data:")]
+                events = [
+                    line for line in resp.iter_lines() if line.startswith("data:")
+                ]
 
         quota_events = [e for e in events if '"quota_runway"' in e]
         assert len(quota_events) >= 1
-        payload = json.loads(quota_events[0][len("data:"):])
+        payload = json.loads(quota_events[0][len("data:") :])
         assert payload["type"] == "quota_runway"
         assert "quota_runway" in payload
 
@@ -191,14 +194,24 @@ class TestQuotaRunwayChatHandler:
                 f"/api/chat/{project_id}",
                 json={"message": "quota forecast", "conversation_history": []},
             ) as resp:
-                events = [line for line in resp.iter_lines() if '"quota_runway"' in line]
+                events = [
+                    line for line in resp.iter_lines() if '"quota_runway"' in line
+                ]
 
         assert len(events) >= 1
-        result = json.loads(events[0][len("data:"):])["quota_runway"]
+        result = json.loads(events[0][len("data:") :])["quota_runway"]
         required = {
-            "deployment_id", "has_quota", "monthly_quota", "used_this_month",
-            "remaining", "avg_per_day", "days_left_at_rate", "est_month_total",
-            "days_remaining_in_month", "rate_limit_rpm", "will_exhaust",
+            "deployment_id",
+            "has_quota",
+            "monthly_quota",
+            "used_this_month",
+            "remaining",
+            "avg_per_day",
+            "days_left_at_rate",
+            "est_month_total",
+            "days_remaining_in_month",
+            "rate_limit_rpm",
+            "will_exhaust",
         }
         for field in required:
             assert field in result, f"Missing field: {field}"
@@ -213,9 +226,11 @@ class TestQuotaRunwayChatHandler:
                 f"/api/chat/{project_id}",
                 json={"message": "quota runway", "conversation_history": []},
             ) as resp:
-                events = [line for line in resp.iter_lines() if '"quota_runway"' in line]
+                events = [
+                    line for line in resp.iter_lines() if '"quota_runway"' in line
+                ]
 
-        result = json.loads(events[0][len("data:"):])["quota_runway"]
+        result = json.loads(events[0][len("data:") :])["quota_runway"]
         assert result["has_quota"] is False
         assert result["monthly_quota"] is None
         assert result["remaining"] is None
@@ -223,9 +238,7 @@ class TestQuotaRunwayChatHandler:
 
     def test_with_quota_set(self, client):
         """When monthly quota is set, has_quota is True and remaining is computed."""
-        project_id, _, _ = _setup_project_with_deployment(
-            client, monthly_quota=500
-        )
+        project_id, _, _ = _setup_project_with_deployment(client, monthly_quota=500)
 
         with _mock_anthropic():
             with client.stream(
@@ -233,9 +246,11 @@ class TestQuotaRunwayChatHandler:
                 f"/api/chat/{project_id}",
                 json={"message": "quota projection", "conversation_history": []},
             ) as resp:
-                events = [line for line in resp.iter_lines() if '"quota_runway"' in line]
+                events = [
+                    line for line in resp.iter_lines() if '"quota_runway"' in line
+                ]
 
-        result = json.loads(events[0][len("data:"):])["quota_runway"]
+        result = json.loads(events[0][len("data:") :])["quota_runway"]
         assert result["has_quota"] is True
         assert result["monthly_quota"] == 500
         assert result["remaining"] == 500  # no predictions yet
@@ -243,9 +258,7 @@ class TestQuotaRunwayChatHandler:
 
     def test_rate_limit_included(self, client):
         """Rate limit RPM is included in the event when set."""
-        project_id, _, _ = _setup_project_with_deployment(
-            client, rate_limit_rpm=100
-        )
+        project_id, _, _ = _setup_project_with_deployment(client, rate_limit_rpm=100)
 
         with _mock_anthropic():
             with client.stream(
@@ -253,7 +266,9 @@ class TestQuotaRunwayChatHandler:
                 f"/api/chat/{project_id}",
                 json={"message": "quota runway", "conversation_history": []},
             ) as resp:
-                events = [line for line in resp.iter_lines() if '"quota_runway"' in line]
+                events = [
+                    line for line in resp.iter_lines() if '"quota_runway"' in line
+                ]
 
-        result = json.loads(events[0][len("data:"):])["quota_runway"]
+        result = json.loads(events[0][len("data:") :])["quota_runway"]
         assert result["rate_limit_rpm"] == 100
