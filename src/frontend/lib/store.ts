@@ -132,6 +132,7 @@ interface AppState {
   attachCostEstimateToLastMessage: (cost_estimate: import("./types").CostEstimateResult) => void
   attachUsagePatternToLastMessage: (usage_pattern: import("./types").UsagePatternResult) => void
   attachPredictionLogExportToLastMessage: (prediction_log_export: import("./types").PredictionLogExportResult) => void
+  attachRecentPredictionsToLastMessage: (recent_predictions: import("./types").RecentPredictionsResult) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -964,6 +965,15 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, prediction_log_export }
+      }
+      return { messages }
+    }),
+  attachRecentPredictionsToLastMessage: (recent_predictions) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, recent_predictions }
       }
       return { messages }
     }),

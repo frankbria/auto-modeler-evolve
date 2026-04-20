@@ -2813,6 +2813,32 @@ _PRED_LOG_EXPORT_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+_RECENT_PRED_LOG_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"(?:show|display|list|get)\s+(?:me\s+)?(?:(?:the\s+)?(?:last|recent|latest)\s+)?(?:\d+\s+)?(?:recent\s+)?predictions?\b(?!\s+(?:analytics|statistics|stats|report|performance|count|monitor|history))|"
+    r"(?:what\s+(?:were|are|did)|show\s+me)\s+(?:the\s+)?(?:last|recent|latest)\s+(?:\d+\s+)?predictions?\b|"
+    r"(?:recent|latest)\s+(?:\d+\s+)?(?:api\s+calls?|requests?|prediction\s+requests?)\b|"
+    r"(?:show|display|list|get)\s+(?:me\s+)?(?:today'?s?|yesterday'?s?|this\s+week'?s?)\s+predictions?\b|"
+    r"(?:what\s+(?:has|have)|show\s+me\s+what)\s+(?:my\s+)?model\s+(?:predicted|scored|classified)\s+recently\b|"
+    r"(?:prediction|inference|scoring)\s+(?:log\s+)?(?:table|view|browser|inspector|feed)\b|"
+    r"(?:browse|inspect|view|look\s+at)\s+(?:(?:my\s+)?(?:recent|latest|last)\s+)?predictions?\b|"
+    r"(?:last|recent|latest)\s+(?:\d+\s+)?(?:prediction|inference|scoring)\s+(?:results?|entries?|records?|rows?)\b"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def _extract_recent_pred_n(message: str) -> int:
+    """Extract how many recent predictions to show. Defaults to 10."""
+    m = re.search(r"\b(?:last|recent|latest|show|display|get|list)\s+(\d+)\b", message, re.IGNORECASE)
+    if m:
+        return max(1, min(int(m.group(1)), 50))
+    m2 = re.search(r"\b(\d+)\s+(?:recent|latest|last|prediction|inference|scoring)\b", message, re.IGNORECASE)
+    if m2:
+        return max(1, min(int(m2.group(1)), 50))
+    return 10
+
+
 _CV_SCORE_DIST_PATTERNS = re.compile(
     r"(?i)(?:"
     r"how\s+(?:consistent|stable|reliable|variable)\s+is\s+(?:my\s+)?(?:model|prediction)\b|"
@@ -9494,6 +9520,91 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Export event is nice-to-have; never crash chat
 
+    # Recent predictions table — "show me recent predictions", "last 10 API calls"
+    recent_predictions_event: dict | None = None
+    if _RECENT_PRED_LOG_PATTERNS.search(body.message) and ctx["deployment"] and not pred_log_export_event:
+        try:
+            _rp_dep = ctx["deployment"]
+            _rp_dep_id = _rp_dep.id if hasattr(_rp_dep, "id") else str(_rp_dep)
+            _rp_n = _extract_recent_pred_n(body.message)
+
+            # Total count all-time
+            from sqlalchemy import func as _sa_func
+
+            _rp_total = session.exec(
+                select(_sa_func.count(PredictionLog.id)).where(
+                    PredictionLog.deployment_id == _rp_dep_id
+                )
+            ).one()
+
+            # Most recent N records
+            _rp_logs = session.exec(
+                select(PredictionLog)
+                .where(PredictionLog.deployment_id == _rp_dep_id)
+                .order_by(PredictionLog.created_at.desc())  # type: ignore[arg-type]
+                .limit(_rp_n)
+            ).all()
+
+            _rp_rows = []
+            for _rp_log in _rp_logs:
+                # Parse input_features JSON for a short summary (first 3 key-value pairs)
+                try:
+                    _rp_feats = json.loads(_rp_log.input_features) if _rp_log.input_features else {}
+                except Exception:  # noqa: BLE001
+                    _rp_feats = {}
+                _rp_input_summary = [
+                    {"key": str(k), "value": str(v)}
+                    for k, v in list(_rp_feats.items())[:3]
+                ]
+                # Parse prediction (may be JSON-encoded class label or numeric string)
+                try:
+                    _rp_pred_raw = json.loads(_rp_log.prediction)
+                except Exception:  # noqa: BLE001
+                    _rp_pred_raw = _rp_log.prediction
+                _rp_rows.append({
+                    "id": _rp_log.id[:8],  # short ID for display
+                    "created_at": _rp_log.created_at.isoformat(),
+                    "prediction": str(_rp_pred_raw),
+                    "confidence": round(_rp_log.confidence * 100, 1) if _rp_log.confidence is not None else None,
+                    "response_ms": round(_rp_log.response_ms, 1) if _rp_log.response_ms is not None else None,
+                    "input_summary": _rp_input_summary,
+                    "ab_variant": _rp_log.ab_variant,
+                })
+
+            if _rp_total > 0:
+                _rp_summary = (
+                    f"Showing the {len(_rp_rows)} most recent of {_rp_total:,} "
+                    f"total prediction{'s' if _rp_total != 1 else ''}."
+                )
+            else:
+                _rp_summary = "No predictions have been made yet."
+
+            recent_predictions_event = {
+                "deployment_id": _rp_dep_id,
+                "n_shown": len(_rp_rows),
+                "total_all_time": _rp_total,
+                "predictions": _rp_rows,
+                "export_url": f"/api/deploy/{_rp_dep_id}/prediction-logs/export",
+                "summary": _rp_summary,
+            }
+
+            if _rp_total > 0:
+                _rp_first_pred = _rp_rows[0]["prediction"] if _rp_rows else "N/A"
+                system_prompt += (
+                    f"\n\n## Recent Predictions\n"
+                    f"{_rp_summary} The most recent prediction was: {_rp_first_pred}. "
+                    "Describe the predictions in plain English. Note any patterns in confidence or "
+                    "response time if relevant. Mention they can say 'export prediction logs' to download all."
+                )
+            else:
+                system_prompt += (
+                    "\n\n## Recent Predictions\n"
+                    "No predictions have been recorded yet. Tell the analyst that predictions will "
+                    "appear here once the deployed model receives API requests."
+                )
+        except Exception:  # noqa: BLE001
+            pass  # Recent predictions table is nice-to-have; never crash chat
+
     # Batch prediction schedule creation / listing
     schedule_event: dict | None = None
     if _SCHEDULE_PATTERNS.search(body.message) and ctx["deployment"]:
@@ -10668,6 +10779,10 @@ def send_message(
         # Emit prediction log export card
         if pred_log_export_event:
             yield f"data: {json.dumps({'type': 'prediction_log_export', 'prediction_log_export': pred_log_export_event})}\n\n"
+
+        # Emit recent predictions table card
+        if recent_predictions_event:
+            yield f"data: {json.dumps({'type': 'recent_predictions', 'recent_predictions': recent_predictions_event})}\n\n"
 
         # After text stream, opportunistically generate a chart if the
         # message is about data and we have a dataset loaded

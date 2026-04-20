@@ -490,6 +490,7 @@ export interface ChatMessage {
   cost_estimate?: CostEstimateResult
   usage_pattern?: UsagePatternResult
   prediction_log_export?: PredictionLogExportResult
+  recent_predictions?: RecentPredictionsResult
 }
 
 export interface SegmentPerformanceSegment {
@@ -2758,4 +2759,28 @@ export interface PredictionLogExportResult {
   download_url: string
   first_prediction_at: string | null
   last_prediction_at: string | null
+}
+
+export interface RecentPredictionInputKV {
+  key: string
+  value: string
+}
+
+export interface RecentPredictionRow {
+  id: string
+  created_at: string
+  prediction: string
+  confidence: number | null
+  response_ms: number | null
+  input_summary: RecentPredictionInputKV[]
+  ab_variant: string | null
+}
+
+export interface RecentPredictionsResult {
+  deployment_id: string
+  n_shown: number
+  total_all_time: number
+  predictions: RecentPredictionRow[]
+  export_url: string
+  summary: string
 }

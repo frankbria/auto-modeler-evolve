@@ -101,6 +101,7 @@ import { QuotaRunwayCard } from "@/components/deploy/quota-runway-card"
 import { CostEstimateCard } from "@/components/deploy/cost-estimate-card"
 import { UsagePatternCard } from "@/components/deploy/usage-pattern-card"
 import { PredictionLogExportCard } from "@/components/deploy/prediction-log-export-card"
+import { RecentPredictionsCard } from "@/components/deploy/recent-predictions-card"
 import { PairCorrelationCard } from "@/components/data/pair-correlation-card"
 import { StatQueryCard } from "@/components/data/stat-query-card"
 import { SummaryStatsCard } from "@/components/data/summary-stats-card"
@@ -283,6 +284,7 @@ export default function ProjectWorkspace() {
     attachCostEstimateToLastMessage,
     attachUsagePatternToLastMessage,
     attachPredictionLogExportToLastMessage,
+    attachRecentPredictionsToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -715,6 +717,8 @@ export default function ProjectWorkspace() {
                 attachUsagePatternToLastMessage(json.usage_pattern as import("@/lib/types").UsagePatternResult)
               } else if (json.type === "prediction_log_export" && json.prediction_log_export) {
                 attachPredictionLogExportToLastMessage(json.prediction_log_export as import("@/lib/types").PredictionLogExportResult)
+              } else if (json.type === "recent_predictions" && json.recent_predictions) {
+                attachRecentPredictionsToLastMessage(json.recent_predictions as import("@/lib/types").RecentPredictionsResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -820,6 +824,7 @@ export default function ProjectWorkspace() {
     attachCostEstimateToLastMessage,
     attachUsagePatternToLastMessage,
     attachPredictionLogExportToLastMessage,
+    attachRecentPredictionsToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -1324,6 +1329,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.prediction_log_export && (
                       <PredictionLogExportCard result={msg.prediction_log_export} />
+                    )}
+                    {msg.recent_predictions && (
+                      <RecentPredictionsCard result={msg.recent_predictions} />
                     )}
                   </div>
                 </div>

@@ -1062,6 +1062,75 @@ def get_prediction_logs(
     }
 
 
+@router.get("/api/deploy/{deployment_id}/recent-predictions")
+def get_recent_predictions(
+    deployment_id: str,
+    n: int = Query(10, ge=1, le=50),
+    session: Session = Depends(get_session),
+):
+    """Return the last N predictions in a lightweight format for the chat card."""
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment:
+        raise HTTPException(status_code=404, detail="Deployment not found")
+
+    from sqlalchemy import func as _sql_func
+
+    total = session.exec(
+        select(_sql_func.count(PredictionLog.id)).where(
+            PredictionLog.deployment_id == deployment_id
+        )
+    ).one()
+
+    logs = session.exec(
+        select(PredictionLog)
+        .where(PredictionLog.deployment_id == deployment_id)
+        .order_by(PredictionLog.created_at.desc())  # type: ignore[arg-type]
+        .limit(n)
+    ).all()
+
+    rows = []
+    for log in logs:
+        try:
+            feats = json.loads(log.input_features) if log.input_features else {}
+        except Exception:  # noqa: BLE001
+            feats = {}
+        input_summary = [
+            {"key": str(k), "value": str(v)} for k, v in list(feats.items())[:3]
+        ]
+        try:
+            pred_raw = json.loads(log.prediction)
+        except Exception:  # noqa: BLE001
+            pred_raw = log.prediction
+        rows.append(
+            {
+                "id": log.id[:8],
+                "created_at": log.created_at.isoformat(),
+                "prediction": str(pred_raw),
+                "confidence": round(log.confidence * 100, 1) if log.confidence is not None else None,
+                "response_ms": round(log.response_ms, 1) if log.response_ms is not None else None,
+                "input_summary": input_summary,
+                "ab_variant": log.ab_variant,
+            }
+        )
+
+    if total > 0:
+        summary = (
+            f"Showing the {len(rows)} most recent of {total:,} "
+            f"total prediction{'s' if total != 1 else ''}."
+        )
+    else:
+        summary = "No predictions have been made yet."
+
+    return {
+        "deployment_id": deployment_id,
+        "n_shown": len(rows),
+        "total_all_time": total,
+        "predictions": rows,
+        "export_url": f"/api/deploy/{deployment_id}/prediction-logs/export",
+        "summary": summary,
+    }
+
+
 @router.get("/api/deploy/{deployment_id}/prediction-logs/export")
 def export_prediction_logs(
     deployment_id: str,
