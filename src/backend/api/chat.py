@@ -2799,6 +2799,20 @@ _USAGE_PATTERN_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+_PRED_LOG_EXPORT_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"(?:export|download|save|get)\s+(?:(?:my|the|all)\s+)?prediction\s+(?:history|log(?:s)?|data|records?|results?)\b|"
+    r"(?:export|download|save)\s+(?:all\s+)?(?:my\s+)?(?:model'?s?\s+)?predictions?\b|"
+    r"prediction\s+log\s+(?:export|download|csv|backup)\b|"
+    r"(?:download|export)\s+(?:my\s+)?(?:production\s+)?(?:model\s+)?(?:output|result)\s+history\b|"
+    r"save\s+(?:my\s+)?prediction\s+log\s+(?:to|as)\s+csv\b|"
+    r"(?:give|send)\s+me\s+(?:the\s+)?prediction\s+(?:history|log(?:s)?)\s*(?:as\s+a?\s+)?(?:csv|file)?\b|"
+    r"export\s+(?:my\s+)?model\s+(?:output|prediction)\s+log\b|"
+    r"download\s+(?:my\s+)?(?:api\s+)?(?:call|request)\s+history\b"
+    r")",
+    re.IGNORECASE,
+)
+
 _CV_SCORE_DIST_PATTERNS = re.compile(
     r"(?i)(?:"
     r"how\s+(?:consistent|stable|reliable|variable)\s+is\s+(?:my\s+)?(?:model|prediction)\b|"
@@ -9438,6 +9452,52 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Usage pattern is nice-to-have; never crash chat
 
+    # Prediction log export
+    pred_log_export_event: dict | None = None
+    if _PRED_LOG_EXPORT_PATTERNS.search(body.message) and ctx["deployment"]:
+        try:
+            _ple_dep = ctx["deployment"]
+            _ple_dep_id = _ple_dep.id if hasattr(_ple_dep, "id") else str(_ple_dep)
+
+            _ple_logs = session.exec(
+                select(PredictionLog)
+                .where(PredictionLog.deployment_id == _ple_dep_id)
+                .order_by(PredictionLog.created_at)  # type: ignore[arg-type]
+            ).all()
+
+            _ple_total = len(_ple_logs)
+            _ple_first = (
+                _ple_logs[0].created_at.isoformat() if _ple_total > 0 else None
+            )
+            _ple_last = (
+                _ple_logs[-1].created_at.isoformat() if _ple_total > 0 else None
+            )
+            _ple_url = f"/api/deploy/{_ple_dep_id}/prediction-logs/export"
+
+            pred_log_export_event = {
+                "deployment_id": _ple_dep_id,
+                "total_predictions": _ple_total,
+                "download_url": _ple_url,
+                "first_prediction_at": _ple_first,
+                "last_prediction_at": _ple_last,
+            }
+
+            if _ple_total > 0:
+                system_prompt += (
+                    f"\n\n## Prediction Log Export\n"
+                    f"There are {_ple_total:,} prediction records available for download as CSV. "
+                    "Tell the analyst they can click the download link to get all predictions with "
+                    "inputs, outputs, confidence scores, and timestamps in spreadsheet-ready format."
+                )
+            else:
+                system_prompt += (
+                    "\n\n## Prediction Log Export\n"
+                    "No predictions recorded yet. Tell the analyst that prediction logs will be "
+                    "available to export once the model receives API requests."
+                )
+        except Exception:  # noqa: BLE001
+            pass  # Export event is nice-to-have; never crash chat
+
     # Batch prediction schedule creation / listing
     schedule_event: dict | None = None
     if _SCHEDULE_PATTERNS.search(body.message) and ctx["deployment"]:
@@ -10608,6 +10668,10 @@ def send_message(
         # Emit prediction usage pattern card
         if usage_pattern_event:
             yield f"data: {json.dumps({'type': 'usage_pattern', 'usage_pattern': usage_pattern_event})}\n\n"
+
+        # Emit prediction log export card
+        if pred_log_export_event:
+            yield f"data: {json.dumps({'type': 'prediction_log_export', 'prediction_log_export': pred_log_export_event})}\n\n"
 
         # After text stream, opportunistically generate a chart if the
         # message is about data and we have a dataset loaded

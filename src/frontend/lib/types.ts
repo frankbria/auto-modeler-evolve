@@ -489,6 +489,7 @@ export interface ChatMessage {
   quota_runway?: QuotaRunwayResult
   cost_estimate?: CostEstimateResult
   usage_pattern?: UsagePatternResult
+  prediction_log_export?: PredictionLogExportResult
 }
 
 export interface SegmentPerformanceSegment {
@@ -2749,4 +2750,12 @@ export interface UsagePatternResult {
   total_predictions: number
   day_names: string[]
   summary: string
+}
+
+export interface PredictionLogExportResult {
+  deployment_id: string
+  total_predictions: number
+  download_url: string
+  first_prediction_at: string | null
+  last_prediction_at: string | null
 }

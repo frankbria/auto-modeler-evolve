@@ -15,7 +15,9 @@ Routes:
 
 from __future__ import annotations
 
+import csv
 import hashlib
+import io
 import json
 import random
 import secrets
@@ -26,7 +28,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, Header, Query, UploadFile
-from fastapi.responses import Response
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
@@ -1058,6 +1060,70 @@ def get_prediction_logs(
             for log in page
         ],
     }
+
+
+@router.get("/api/deploy/{deployment_id}/prediction-logs/export")
+def export_prediction_logs(
+    deployment_id: str,
+    session: Session = Depends(get_session),
+):
+    """Download all prediction logs for a deployment as a CSV file.
+
+    Columns: id, created_at, prediction, confidence, response_ms, and one column
+    per input feature (flattened from the JSON blob stored at log time).
+    """
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment:
+        raise HTTPException(status_code=404, detail="Deployment not found")
+
+    logs = session.exec(
+        select(PredictionLog)
+        .where(PredictionLog.deployment_id == deployment_id)
+        .order_by(PredictionLog.created_at)  # type: ignore[arg-type]
+    ).all()
+
+    # Collect all feature key names (union across all logs)
+    feature_keys: list[str] = []
+    parsed_features: list[dict] = []
+    for log in logs:
+        try:
+            feats = json.loads(log.input_features)
+        except (json.JSONDecodeError, TypeError):
+            feats = {}
+        parsed_features.append(feats)
+        for k in feats:
+            if k not in feature_keys:
+                feature_keys.append(k)
+
+    base_cols = ["id", "created_at", "prediction", "confidence", "response_ms"]
+    all_cols = base_cols + feature_keys
+
+    output = io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=all_cols, extrasaction="ignore")
+    writer.writeheader()
+    for log, feats in zip(logs, parsed_features):
+        try:
+            pred_raw = json.loads(log.prediction)
+            pred_val = pred_raw if not isinstance(pred_raw, (list, dict)) else json.dumps(pred_raw)
+        except (json.JSONDecodeError, TypeError):
+            pred_val = log.prediction
+        row: dict = {
+            "id": log.id,
+            "created_at": log.created_at.isoformat(),
+            "prediction": pred_val,
+            "confidence": log.confidence if log.confidence is not None else "",
+            "response_ms": log.response_ms if log.response_ms is not None else "",
+        }
+        row.update(feats)
+        writer.writerow(row)
+
+    csv_bytes = output.getvalue().encode("utf-8")
+    filename = f"predictions_{deployment_id[:8]}.csv"
+    return StreamingResponse(
+        iter([csv_bytes]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
 
 
 # ---------------------------------------------------------------------------

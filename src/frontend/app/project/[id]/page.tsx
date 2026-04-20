@@ -100,6 +100,7 @@ import { CovariateDriftAlertCard } from "@/components/deploy/covariate-drift-ale
 import { QuotaRunwayCard } from "@/components/deploy/quota-runway-card"
 import { CostEstimateCard } from "@/components/deploy/cost-estimate-card"
 import { UsagePatternCard } from "@/components/deploy/usage-pattern-card"
+import { PredictionLogExportCard } from "@/components/deploy/prediction-log-export-card"
 import { PairCorrelationCard } from "@/components/data/pair-correlation-card"
 import { StatQueryCard } from "@/components/data/stat-query-card"
 import { SummaryStatsCard } from "@/components/data/summary-stats-card"
@@ -281,6 +282,7 @@ export default function ProjectWorkspace() {
     attachQuotaRunwayToLastMessage,
     attachCostEstimateToLastMessage,
     attachUsagePatternToLastMessage,
+    attachPredictionLogExportToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -711,6 +713,8 @@ export default function ProjectWorkspace() {
                 attachCostEstimateToLastMessage(json.cost_estimate as import("@/lib/types").CostEstimateResult)
               } else if (json.type === "usage_pattern" && json.usage_pattern) {
                 attachUsagePatternToLastMessage(json.usage_pattern as import("@/lib/types").UsagePatternResult)
+              } else if (json.type === "prediction_log_export" && json.prediction_log_export) {
+                attachPredictionLogExportToLastMessage(json.prediction_log_export as import("@/lib/types").PredictionLogExportResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -815,6 +819,7 @@ export default function ProjectWorkspace() {
     attachQuotaRunwayToLastMessage,
     attachCostEstimateToLastMessage,
     attachUsagePatternToLastMessage,
+    attachPredictionLogExportToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -1316,6 +1321,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.usage_pattern && (
                       <UsagePatternCard result={msg.usage_pattern} />
+                    )}
+                    {msg.prediction_log_export && (
+                      <PredictionLogExportCard result={msg.prediction_log_export} />
                     )}
                   </div>
                 </div>
