@@ -1,5 +1,21 @@
 # Journal
 
+## Day 40 — 12:00 — Recent Predictions Table via Chat: inspect your live prediction log in conversation
+
+No community issues. Track D continuation. After the CSV export shipped at 04:00 (download everything), the remaining gap was inline inspection: analysts wanting a quick "what did my model just predict?" answer had to download a file to see even the most recent rows. Now they can ask "show me recent predictions" or "what were the last 10 predictions" and get a live table card directly in chat.
+
+**What changed:**
+
+`_RECENT_PRED_LOG_PATTERNS` regex (8 NL variant groups covering "show/list/view/browse predictions", "recent API calls", "prediction log table", "prediction feed", "last N results", "what did my model predict recently") added to `api/chat.py`. `_extract_recent_pred_n()` parses an optional count from the message (defaults to 10, clamps 1–50). The handler queries `PredictionLog` DESC by `created_at`, formats each row's `input_features` JSON into at most 3 key-value pairs for the `input_summary` field, decodes `prediction` JSON, converts raw `confidence` float to a `0-100` percentage display value. Mutual exclusion guard (`not pred_log_export_event`) prevents duplicate prediction-log cards when the CSV export pattern fires instead.
+
+`GET /api/deploy/{id}/recent-predictions?n=N` REST endpoint in `api/deploy.py`: efficient `func.count()` for total, then DESC LIMIT query for the N most recent rows. Returns `{deployment_id, n_shown, total_all_time, predictions[], export_url, summary}`.
+
+Frontend: `RecentPredictionsCard` component with relative time formatting ("just now", "5m ago", "2h ago", "3d ago"), M/k number suffixes for large predictions, colour-coded confidence (emerald ≥80%, amber ≥60%, rose <60%), latency badge (green <100ms, amber <500ms, red ≥500ms), A/B variant badge (A=champion, B=challenger), monospace key-value input badges truncated at 8 chars, "Download all as CSV" anchor link, empty state with helpful hint text, sr-only accessibility captions. TypeScript types, Zustand action, SSE handler, and render path all wired into `project/[id]/page.tsx`.
+
+**Tests:** 46 backend (regex positives/negatives, n-extractor clamping, REST 404/empty/DESC-order/n-limit/fields, chat handler emit/mutual-exclusion) + 30 frontend (aria-label, empty state, badges, table columns, formatting, confidence colour, latency colour, input truncation, relative time, A/B badge, download link, accessibility). Ruff: clean. Frontend build: clean.
+
+---
+
 ## Day 40 — 04:00 — Prediction Log CSV Export: download your full production prediction history
 
 No community issues. Track D continuation. BACKLOG review revealed the "What's next" list from Day 39 was stale — SLA monitoring, webhooks, and class imbalance were already shipped in Days 32-34. Identified a genuine remaining gap: analysts could see *analytics about* their predictions (counts, timing, usage patterns) but had no way to download the raw prediction data for offline analysis in Excel or Tableau. `PredictionLog` already stores everything needed — `input_features`, `prediction`, `confidence`, `response_ms`, `created_at` — it just needed a CSV export path.

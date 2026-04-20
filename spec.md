@@ -1535,6 +1535,20 @@ guides them forward through the natural flow.
       `project/[id]/page.tsx`.
       *Day 40 (04:00): 35 backend + 15 frontend = 50 new tests. Backend lint: clean. Frontend build: clean.*
 
+- [x] **Recent Predictions Table via Chat** — Track D perpetual. Analysts can ask "show me recent
+      predictions", "what were the last 10 predictions", "list recent API calls", "view my recent
+      predictions", "prediction log table", etc. REST endpoint `GET /api/deploy/{id}/recent-predictions?n=N`
+      (default 10, max 50): returns `{deployment_id, n_shown, total_all_time, predictions[], export_url, summary}`;
+      each row has `{id (8-char), created_at (ISO), prediction (str), confidence (% or null), response_ms,
+      input_summary (≤3 k-v pairs), ab_variant}`. Chat handler `_RECENT_PRED_LOG_PATTERNS` (8 NL variant groups)
+      + `_extract_recent_pred_n()` helper; mutual exclusion with export event; SSE emit `{type:"recent_predictions"}`.
+      Frontend: `RecentPredictionsCard` (slate border, 📋 icon); relative time ("5m ago"), M/k number formatting,
+      colour-coded confidence (emerald/amber/rose), latency badge (green/amber/red), A/B variant badge, CSV
+      download link, empty state, sr-only accessibility captions. `RecentPredictionsResult` TypeScript type;
+      `recent_predictions?` on `ChatMessage`; `attachRecentPredictionsToLastMessage` Zustand action; SSE handler +
+      render wired in `project/[id]/page.tsx`.
+      *Day 40 (12:00): 46 backend + 30 frontend = 76 new tests. Backend lint: clean. Frontend build: clean.*
+
 ---
 
 ## Data Model

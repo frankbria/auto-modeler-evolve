@@ -49,6 +49,19 @@ the time is better spent on real features.
 
 ## Currently Working On
 
+## Day 40 (12:00) — Done
+**Track D — Recent Predictions Table via Chat.** Analysts can ask "show me recent predictions", "what were the last 10 predictions", "list recent API calls", "browse predictions", "prediction log table", etc. and receive a `RecentPredictionsCard` inline in chat — a live, inspectable table of actual prediction log entries.
+- `_RECENT_PRED_LOG_PATTERNS` (8 NL variant groups) + `_extract_recent_pred_n()` helper. Mutual exclusion with CSV export event.
+- `GET /api/deploy/{id}/recent-predictions?n=N` REST endpoint: returns last N rows DESC with `input_summary` (≤3 k-v pairs from `input_features` JSON), confidence as %, and `total_all_time` count.
+- `RecentPredictionsCard`: relative time, M/k number formatting, colour-coded confidence + latency badges, A/B variant badge, key-input badge chips, CSV download link, empty state, sr-only accessibility captions.
+- `RecentPredictionsResult` TypeScript type; `attachRecentPredictionsToLastMessage` Zustand action; SSE handler + render in `page.tsx`.
+- 46 backend + 30 frontend = 76 new tests. Backend lint: clean. Frontend build: clean.
+
+**What's next:**
+- Track D: Prediction SLA / latency monitoring — "is my API slow?", "show p95 latency" shows p50/p95/p99 latency chart + threshold alert
+- Track D: Webhook notifications on model drift/degradation — "alert me when predictions shift"
+- Track E: End-to-end "lunch break" analyst flow — upload → chat → train → deploy → predict → inspect recent predictions
+
 ## Day 40 (04:00) — Done
 **Track D — Prediction Log CSV Export via Chat.** Analysts can ask "export prediction history", "download prediction logs", "save predictions as csv", "get my prediction history", etc. and receive a `PredictionLogExportCard` inline in chat with a direct download link.
 - REST endpoint `GET /api/deploy/{id}/prediction-logs/export`: streams CSV with all `input_features` columns dynamically extracted from JSON blobs, plus `id, created_at, prediction, confidence, response_ms`. `Content-Disposition: attachment` header.
