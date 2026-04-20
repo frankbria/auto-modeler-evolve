@@ -2892,6 +2892,115 @@ def compute_portfolio_summary(project_summaries: list[dict]) -> dict:
     }
 
 
+_DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+_DAY_SHORT = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+
+
+def compute_usage_pattern(prediction_logs: list) -> dict:
+    """Compute hour-of-day and day-of-week prediction usage patterns.
+
+    Accepts a list of objects/dicts with a ``created_at`` datetime field.
+    Returns aggregated counts, peak identifiers, quiet-hour recommendations,
+    and a plain-English summary — all timezone-naive (UTC).
+    """
+    from datetime import datetime as _dt
+
+    hour_counts = [0] * 24
+    day_counts = [0] * 7
+    total = 0
+
+    for log in prediction_logs:
+        ts = getattr(log, "created_at", None)
+        if ts is None:
+            continue
+        if isinstance(ts, str):
+            try:
+                ts = _dt.fromisoformat(ts.replace("Z", "+00:00"))
+            except Exception:  # noqa: BLE001
+                continue
+        try:
+            hour_counts[ts.hour] += 1
+            # weekday(): 0=Mon … 6=Sun
+            day_counts[ts.weekday()] += 1
+            total += 1
+        except Exception:  # noqa: BLE001
+            continue
+
+    if total == 0:
+        return {
+            "hour_counts": hour_counts,
+            "day_counts": day_counts,
+            "peak_hour": None,
+            "peak_hour_count": 0,
+            "peak_day": None,
+            "peak_day_name": None,
+            "peak_day_count": 0,
+            "quiet_hours": [],
+            "busiest_period": None,
+            "total_predictions": 0,
+            "summary": "No predictions recorded yet — usage patterns will appear once the model starts receiving requests.",
+        }
+
+    peak_hour = int(hour_counts.index(max(hour_counts)))
+    peak_day_idx = int(day_counts.index(max(day_counts)))
+    peak_day_count = day_counts[peak_day_idx]
+
+    # Quiet hours: hours with < 5% of peak volume (good maintenance windows)
+    peak_h_count = hour_counts[peak_hour]
+    quiet_threshold = max(1, peak_h_count * 0.05)
+    quiet_hours = [h for h in range(24) if hour_counts[h] < quiet_threshold]
+
+    # Plain-English busiest period (AM/PM grouping)
+    am_total = sum(hour_counts[6:12])
+    pm_total = sum(hour_counts[12:18])
+    evening_total = sum(hour_counts[18:24])
+    night_total = sum(hour_counts[0:6])
+    period_map = {
+        "morning (6am–12pm)": am_total,
+        "afternoon (12pm–6pm)": pm_total,
+        "evening (6pm–midnight)": evening_total,
+        "late night (midnight–6am)": night_total,
+    }
+    busiest_period = max(period_map, key=lambda k: period_map[k])
+
+    # Format peak hour as 12-hour clock
+    def _fmt_hour(h: int) -> str:
+        if h == 0:
+            return "12am"
+        if h < 12:
+            return f"{h}am"
+        if h == 12:
+            return "12pm"
+        return f"{h - 12}pm"
+
+    summary_parts = [
+        f"Peak usage is at {_fmt_hour(peak_hour)} UTC ({peak_h_count} "
+        f"prediction{'s' if peak_h_count != 1 else ''}) "
+        f"and on {_DAY_NAMES[peak_day_idx]}s ({peak_day_count} predictions).",
+    ]
+    if quiet_hours:
+        quiet_str = ", ".join(_fmt_hour(h) for h in quiet_hours[:3])
+        if len(quiet_hours) > 3:
+            quiet_str += f" and {len(quiet_hours) - 3} more"
+        summary_parts.append(
+            f"Lowest usage: {quiet_str} UTC — good windows for maintenance or retraining."
+        )
+
+    return {
+        "hour_counts": hour_counts,
+        "day_counts": day_counts,
+        "peak_hour": peak_hour,
+        "peak_hour_count": peak_h_count,
+        "peak_day": peak_day_idx,
+        "peak_day_name": _DAY_NAMES[peak_day_idx],
+        "peak_day_short": _DAY_SHORT[peak_day_idx],
+        "quiet_hours": quiet_hours,
+        "busiest_period": busiest_period,
+        "total_predictions": total,
+        "day_names": _DAY_SHORT,
+        "summary": " ".join(summary_parts),
+    }
+
 def compute_covariate_drift_alert(
     all_inputs: list[dict],
     feature_ranges: dict[str, dict],

@@ -49,14 +49,17 @@ the time is better spent on real features.
 
 ## Currently Working On
 
-## Day 39 (12:00) — Done
-**Track D — Deployment Cost Estimate via Chat.** Forwards-looking capacity planning: analysts can ask "how much would 1000 predictions cost?", "estimate prediction cost", "how many users can my model handle?", or "prediction capacity planning" and receive an inline `CostEstimateCard` with quota impact bar, daily capacity, days-to-serve, and recommended rate limit. `_COST_ESTIMATE_PATTERNS` (8 NL variants), `_extract_cost_n()` (k/m suffixes, comma formatting). 34 backend + 22 frontend = 56 new tests. Lint: clean. Build: clean.
+## Day 39 (20:00) — Done
+**Track D — Prediction Usage Pattern Analysis via Chat.** Analysts can ask "when is my model busiest?", "peak traffic hours for my endpoint", "hourly usage pattern", "maintenance window for my api", etc. `compute_usage_pattern()` pure function + `GET /api/deploy/{id}/usage-pattern` REST endpoint. `_USAGE_PATTERN_PATTERNS` (8 NL variants) in `chat.py`. `UsagePatternCard` with 24-bar hour chart + 7-bar day chart, busiest period callout, maintenance window suggestion from quiet hours. 39 backend + 17 frontend = 56 new tests. Lint: clean. Build: clean.
 
 **What's next:**
 - Track D: Prediction SLA / latency monitoring — show p50/p95/p99 prediction latency in deployment panel or via "is my API slow?" chat query
 - Track D: Webhook notifications on model drift/degradation — "alert me when predictions shift"
 - Track C: Class imbalance detection + handling (SMOTE / class weights / threshold tuning)
 - Track E: Run the "lunch break" flow end-to-end as a real analyst; fix any new friction points
+
+## Day 39 (12:00) — Done
+**Track D — Deployment Cost Estimate via Chat.** Forwards-looking capacity planning: analysts can ask "how much would 1000 predictions cost?", "estimate prediction cost", "how many users can my model handle?", or "prediction capacity planning" and receive an inline `CostEstimateCard` with quota impact bar, daily capacity, days-to-serve, and recommended rate limit. `_COST_ESTIMATE_PATTERNS` (8 NL variants), `_extract_cost_n()` (k/m suffixes, comma formatting). 34 backend + 22 frontend = 56 new tests. Lint: clean. Build: clean.
 
 ## Day 38 (20:00) — Done
 **Track D — Proactive Covariate Drift Alert via Chat.** Complement to Day 38 12:00's reactive `ProductionInputDistributionCard`: proactively surfaces input drift alerts when an analyst asks "are my inputs drifting?" or on workspace load when a deployed model has significant OOR inputs. 41 backend + 24 frontend tests, all passing. Lint: clean. Build: clean.

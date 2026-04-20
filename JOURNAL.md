@@ -1,5 +1,21 @@
 # Journal
 
+## Day 39 — 20:00 — Prediction Usage Pattern Analysis: when is my model busiest?
+
+No community issues. Track D continuation. With cost estimate (12:00) and quota runway (04:00) shipped, deployment depth now needed temporal visibility: analysts had no way to ask *when* their model gets used — peak hours, busiest days, quiet windows for maintenance. Gap: `PredictionLog` already stores `created_at` timestamps but nothing surfaced hour-of-day or day-of-week distributions conversationally.
+
+**What changed:**
+
+`compute_usage_pattern(prediction_logs)` pure function in `core/analyzer.py`: aggregates `created_at` timestamps into 24-element `hour_counts` and 7-element `day_counts` arrays; detects `peak_hour`, `peak_hour_count`, `peak_day`, `peak_day_name`/`_short`; identifies `quiet_hours` (< 5% of peak volume); infers `busiest_period` (morning/afternoon/evening/night); generates plain-English `summary`. Empty logs case handled gracefully.
+
+`GET /api/deploy/{deployment_id}/usage-pattern` REST endpoint in `deploy.py`: fetches up to 1000 recent `PredictionLog` records, calls `compute_usage_pattern()`, returns full result including `deployment_id`. Returns 404 for unknown/inactive deployments.
+
+`_USAGE_PATTERN_PATTERNS` regex (8 NL variants: "when is my model busiest", "peak usage/traffic/hours for my model", "hourly/daily usage pattern", "usage heatmap", "what time do people use my model", "busiest/quietest hours", "maintenance window for my api") in `chat.py`. Handler guarded by `ctx["deployment"]`: queries last 30 days of `PredictionLog` (up to 1000 records), calls `compute_usage_pattern()`, emits `{type:"usage_pattern"}` SSE event. Injects hour/day distribution summary into system prompt for LLM narration.
+
+`UsagePatternCard` (`src/frontend/components/deploy/usage-pattern-card.tsx`): 🕐 icon; indigo border; `HourBar` sub-component (24 bars, `fmt12h()` 12-hour formatting, tick labels at 0/6/12/18, peak bars `bg-indigo-500`); `DayBar` sub-component (7 bars with day name + count label); busiest period callout (📈); maintenance window suggestion from first 3 quiet hours (🔧); summary text; sr-only figcaption with total + peak details. `UsagePatternResult` TypeScript type; `usage_pattern?` on `ChatMessage`; `attachUsagePatternToLastMessage` Zustand action; SSE handler + render wired in `project/[id]/page.tsx`.
+
+**Tests:** 39 backend (21 regex, 12 compute_usage_pattern unit, 3 REST endpoint, 3 chat integration) + 17 frontend (aria, icon/heading, empty state, badges, bar counts, sections, accessibility, store action). All 56 pass. Backend lint: clean. Frontend build: clean.
+
 ## Day 39 — 12:00 — Deployment Cost Estimate: forward-looking capacity planning for prediction volume
 
 Shipped the deployment cost estimate chat card — forwards-looking counterpart to quota runway. Analysts can now ask "how much would 1000 predictions cost?", "how many users can my model handle?", or "prediction capacity planning" and receive an inline `CostEstimateCard` with quota impact bar, daily capacity, days-to-serve, and a recommended rate limit (RPM calculated to spread the requested volume evenly over 30 days). `_COST_ESTIMATE_PATTERNS` (8 NL variants), `_extract_cost_n()` (handles k/m suffixes, comma-formatted numbers), and the full SSE card pipeline all followed the established Chat Intent → SSE Card pattern exactly. 56 new tests (34 backend pattern/extraction/integration, 22 frontend render/accessibility) all pass; backend lint clean; frontend build clean. Track D deployment depth now covers both reactive (quota runway) and proactive (cost estimate) capacity analysis.

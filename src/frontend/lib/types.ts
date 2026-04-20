@@ -488,6 +488,7 @@ export interface ChatMessage {
   covariate_drift_alert?: CovariateDriftAlertResult
   quota_runway?: QuotaRunwayResult
   cost_estimate?: CostEstimateResult
+  usage_pattern?: UsagePatternResult
 }
 
 export interface SegmentPerformanceSegment {
@@ -2732,4 +2733,20 @@ export interface CostEstimateResult {
   avg_per_day: number
   days_needed: number | null
   recommended_rpm: number
+}
+
+export interface UsagePatternResult {
+  deployment_id: string
+  hour_counts: number[]
+  day_counts: number[]
+  peak_hour: number | null
+  peak_hour_count: number
+  peak_day: number | null
+  peak_day_name: string | null
+  peak_day_short: string | null
+  quiet_hours: number[]
+  busiest_period: string | null
+  total_predictions: number
+  day_names: string[]
+  summary: string
 }

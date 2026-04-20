@@ -99,6 +99,7 @@ import { ProductionInputDistributionCard } from "@/components/chat/production-in
 import { CovariateDriftAlertCard } from "@/components/deploy/covariate-drift-alert-card"
 import { QuotaRunwayCard } from "@/components/deploy/quota-runway-card"
 import { CostEstimateCard } from "@/components/deploy/cost-estimate-card"
+import { UsagePatternCard } from "@/components/deploy/usage-pattern-card"
 import { PairCorrelationCard } from "@/components/data/pair-correlation-card"
 import { StatQueryCard } from "@/components/data/stat-query-card"
 import { SummaryStatsCard } from "@/components/data/summary-stats-card"
@@ -279,6 +280,7 @@ export default function ProjectWorkspace() {
     attachCovariateDriftAlertToLastMessage,
     attachQuotaRunwayToLastMessage,
     attachCostEstimateToLastMessage,
+    attachUsagePatternToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -707,6 +709,8 @@ export default function ProjectWorkspace() {
                 attachQuotaRunwayToLastMessage(json.quota_runway as import("@/lib/types").QuotaRunwayResult)
               } else if (json.type === "cost_estimate" && json.cost_estimate) {
                 attachCostEstimateToLastMessage(json.cost_estimate as import("@/lib/types").CostEstimateResult)
+              } else if (json.type === "usage_pattern" && json.usage_pattern) {
+                attachUsagePatternToLastMessage(json.usage_pattern as import("@/lib/types").UsagePatternResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -810,6 +814,7 @@ export default function ProjectWorkspace() {
     attachCovariateDriftAlertToLastMessage,
     attachQuotaRunwayToLastMessage,
     attachCostEstimateToLastMessage,
+    attachUsagePatternToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -1308,6 +1313,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.cost_estimate && (
                       <CostEstimateCard result={msg.cost_estimate} />
+                    )}
+                    {msg.usage_pattern && (
+                      <UsagePatternCard result={msg.usage_pattern} />
                     )}
                   </div>
                 </div>

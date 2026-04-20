@@ -2785,6 +2785,20 @@ def _extract_cost_n(message: str) -> int:
         return 1000
 
 
+_USAGE_PATTERN_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"when\s+is\s+(?:my\s+)?(?:model|api|endpoint)\s+(?:busiest|most\s+used|most\s+active|most\s+popular|peak|get(?:ting)?\s+called)\b|"
+    r"peak\s+(?:usage|traffic|load|hours?|time)\s+(?:for\s+)?(?:my\s+)?(?:model|api|endpoint)?\b|"
+    r"(?:hourly|daily)\s+(?:usage|traffic|prediction|request|call)\s+(?:pattern|distribution|breakdown|stats?|summary)\b|"
+    r"usage\s+(?:heatmap|pattern|distribution|schedule|breakdown)\b|"
+    r"what\s+(?:time|hour)\s+(?:do\s+people|is\s+(?:my\s+)?(?:model|api))\s+(?:use|get\s+called|receive\s+requests)\b|"
+    r"when\s+(?:do\s+(?:people|users?)|is\s+(?:my\s+)?(?:model|api|endpoint))\s+(?:use|get(?:ting)?\s+called|busiest|most\s+active)\b|"
+    r"(?:busiest|quietest|lowest|highest)\s+(?:hours?|times?|periods?)\s+(?:for\s+)?(?:my\s+)?(?:model|api|predictions?)?\b|"
+    r"maintenance\s+(?:window|period)\s+(?:for\s+)?(?:my\s+)?(?:model|api|endpoint)\b"
+    r")",
+    re.IGNORECASE,
+)
+
 _CV_SCORE_DIST_PATTERNS = re.compile(
     r"(?i)(?:"
     r"how\s+(?:consistent|stable|reliable|variable)\s+is\s+(?:my\s+)?(?:model|prediction)\b|"
@@ -9383,6 +9397,47 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Cost estimate is nice-to-have; never crash chat
 
+    # Prediction usage pattern analysis
+    usage_pattern_event: dict | None = None
+    if _USAGE_PATTERN_PATTERNS.search(body.message) and ctx["deployment"]:
+        try:
+            from core.analyzer import compute_usage_pattern as _compute_usage_pattern
+
+            _up_dep = ctx["deployment"]
+            _up_dep_id = _up_dep.id if hasattr(_up_dep, "id") else str(_up_dep)
+
+            from datetime import timedelta as _up_td
+
+            _up_since = datetime.utcnow() - _up_td(days=30)
+            _up_logs = session.exec(
+                select(PredictionLog)
+                .where(PredictionLog.deployment_id == _up_dep_id)
+                .where(PredictionLog.created_at >= _up_since)
+                .order_by(PredictionLog.created_at.desc())
+                .limit(1000)
+            ).all()
+
+            _up_result = _compute_usage_pattern(_up_logs)
+            _up_result["deployment_id"] = _up_dep_id
+            usage_pattern_event = _up_result
+
+            if _up_result["total_predictions"] > 0:
+                system_prompt += (
+                    f"\n\n## Prediction Usage Pattern\n"
+                    f"{_up_result['summary']} "
+                    f"Busiest period of day: {_up_result['busiest_period']}. "
+                    "Explain the usage pattern in plain English and suggest a maintenance window "
+                    "if one exists."
+                )
+            else:
+                system_prompt += (
+                    "\n\n## Prediction Usage Pattern\n"
+                    "No predictions recorded yet. Explain that usage patterns will be visible "
+                    "once the model starts receiving requests."
+                )
+        except Exception:  # noqa: BLE001
+            pass  # Usage pattern is nice-to-have; never crash chat
+
     # Batch prediction schedule creation / listing
     schedule_event: dict | None = None
     if _SCHEDULE_PATTERNS.search(body.message) and ctx["deployment"]:
@@ -10549,6 +10604,10 @@ def send_message(
         # Emit deployment cost / capacity estimate card
         if cost_estimate_event:
             yield f"data: {json.dumps({'type': 'cost_estimate', 'cost_estimate': cost_estimate_event})}\n\n"
+
+        # Emit prediction usage pattern card
+        if usage_pattern_event:
+            yield f"data: {json.dumps({'type': 'usage_pattern', 'usage_pattern': usage_pattern_event})}\n\n"
 
         # After text stream, opportunistically generate a chart if the
         # message is about data and we have a dataset loaded

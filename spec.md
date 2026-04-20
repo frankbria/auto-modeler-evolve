@@ -1512,6 +1512,17 @@ guides them forward through the natural flow.
       Distinct from Quota Runway (backwards-looking, current-pace) — this is forwards-looking, scenario-based.
       *Day 39: 34 backend + 22 frontend = 56 new tests. Backend lint: clean. Frontend build: clean.*
 
+- [x] **Prediction Usage Pattern Analysis via Chat** — Track D perpetual. Analysts can ask "when is my
+      model busiest?", "peak traffic hours for my endpoint", "hourly usage pattern", "maintenance window
+      for my api", etc. Backend: `compute_usage_pattern()` pure function returns 24-element `hour_counts`,
+      7-element `day_counts`, `peak_hour`, `peak_day`, `quiet_hours`, `busiest_period`, `summary`. REST
+      endpoint `GET /api/deploy/{id}/usage-pattern`. Chat handler `_USAGE_PATTERN_PATTERNS` + SSE emit.
+      Frontend: `UsagePatternCard` with 24-bar hour chart + 7-bar day chart, busiest period callout,
+      maintenance window suggestion. `UsagePatternResult` TypeScript type; `usage_pattern?` on
+      `ChatMessage`; `attachUsagePatternToLastMessage` Zustand action; SSE handler + render wired in
+      `project/[id]/page.tsx`.
+      *Day 39 (20:00): 39 backend + 17 frontend = 56 new tests. Backend lint: clean. Frontend build: clean.*
+
 ---
 
 ## Data Model

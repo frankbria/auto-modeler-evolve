@@ -130,6 +130,7 @@ interface AppState {
   attachCovariateDriftAlertToLastMessage: (covariate_drift_alert: import("./types").CovariateDriftAlertResult) => void
   attachQuotaRunwayToLastMessage: (quota_runway: import("./types").QuotaRunwayResult) => void
   attachCostEstimateToLastMessage: (cost_estimate: import("./types").CostEstimateResult) => void
+  attachUsagePatternToLastMessage: (usage_pattern: import("./types").UsagePatternResult) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -943,6 +944,16 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, cost_estimate }
+      }
+      return { messages }
+    }),
+
+  attachUsagePatternToLastMessage: (usage_pattern) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, usage_pattern }
       }
       return { messages }
     }),

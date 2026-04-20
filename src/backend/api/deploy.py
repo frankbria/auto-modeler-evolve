@@ -30,7 +30,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
-from core.analyzer import compute_covariate_drift_alert
+from core.analyzer import compute_covariate_drift_alert, compute_usage_pattern
 from core.deployer import (
     build_prediction_pipeline,
     explain_prediction,
@@ -4154,5 +4154,28 @@ def get_covariate_drift(
             pass
 
     result = compute_covariate_drift_alert(all_inputs, feature_ranges)
+    result["deployment_id"] = deployment_id
+    return result
+
+
+@router.get("/api/deploy/{deployment_id}/usage-pattern")
+def get_usage_pattern(
+    deployment_id: str,
+    sample_size: int = Query(default=1000, ge=10, le=5000),
+    session: Session = Depends(get_session),
+):
+    """Return hour-of-day and day-of-week prediction usage patterns for a deployment."""
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment or not deployment.is_active:
+        raise HTTPException(status_code=404, detail="Deployment not found or inactive")
+
+    logs = session.exec(
+        select(PredictionLog)
+        .where(PredictionLog.deployment_id == deployment_id)
+        .order_by(PredictionLog.created_at.desc())
+        .limit(sample_size)
+    ).all()
+
+    result = compute_usage_pattern(logs)
     result["deployment_id"] = deployment_id
     return result
