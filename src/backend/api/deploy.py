@@ -1104,7 +1104,11 @@ def export_prediction_logs(
     for log, feats in zip(logs, parsed_features):
         try:
             pred_raw = json.loads(log.prediction)
-            pred_val = pred_raw if not isinstance(pred_raw, (list, dict)) else json.dumps(pred_raw)
+            pred_val = (
+                pred_raw
+                if not isinstance(pred_raw, (list, dict))
+                else json.dumps(pred_raw)
+            )
         except (json.JSONDecodeError, TypeError):
             pred_val = log.prediction
         row: dict = {

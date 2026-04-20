@@ -9466,12 +9466,8 @@ def send_message(
             ).all()
 
             _ple_total = len(_ple_logs)
-            _ple_first = (
-                _ple_logs[0].created_at.isoformat() if _ple_total > 0 else None
-            )
-            _ple_last = (
-                _ple_logs[-1].created_at.isoformat() if _ple_total > 0 else None
-            )
+            _ple_first = _ple_logs[0].created_at.isoformat() if _ple_total > 0 else None
+            _ple_last = _ple_logs[-1].created_at.isoformat() if _ple_total > 0 else None
             _ple_url = f"/api/deploy/{_ple_dep_id}/prediction-logs/export"
 
             pred_log_export_event = {

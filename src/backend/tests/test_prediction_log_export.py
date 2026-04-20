@@ -57,7 +57,7 @@ class TestPredLogExportPatterns:
         "show prediction analytics",
         "train a model",
         "what is my quota runway?",
-        "export my data",       # data export, not predictions
+        "export my data",  # data export, not predictions
         "is my model drifting?",
         "latency report",
         "peak traffic hours",
@@ -315,6 +315,11 @@ class TestPredLogExportChatHandler:
         export_events = [e for e in events if e.get("type") == "prediction_log_export"]
         assert export_events
         payload = export_events[0]["prediction_log_export"]
-        for field in ("deployment_id", "total_predictions", "download_url",
-                      "first_prediction_at", "last_prediction_at"):
+        for field in (
+            "deployment_id",
+            "total_predictions",
+            "download_url",
+            "first_prediction_at",
+            "last_prediction_at",
+        ):
             assert field in payload, f"Missing field: {field}"
