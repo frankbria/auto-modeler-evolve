@@ -6,6 +6,7 @@ import React from "react"
 import { render, screen } from "@testing-library/react"
 import { UsagePatternCard } from "../components/deploy/usage-pattern-card"
 import type { UsagePatternResult } from "../lib/types"
+import { useAppStore } from "../lib/store"
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -162,7 +163,6 @@ describe("UsagePatternCard — accessibility", () => {
 
 describe("UsagePatternCard — store action", () => {
   it("attachUsagePatternToLastMessage attaches to last assistant message", () => {
-    const { useAppStore } = require("../lib/store")
     const store = useAppStore.getState()
     store.setMessages([
       { id: "1", role: "user", content: "hello" },
