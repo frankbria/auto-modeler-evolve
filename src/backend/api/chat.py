@@ -2830,10 +2830,18 @@ _RECENT_PRED_LOG_PATTERNS = re.compile(
 
 def _extract_recent_pred_n(message: str) -> int:
     """Extract how many recent predictions to show. Defaults to 10."""
-    m = re.search(r"\b(?:last|recent|latest|show|display|get|list)\s+(\d+)\b", message, re.IGNORECASE)
+    m = re.search(
+        r"\b(?:last|recent|latest|show|display|get|list)\s+(\d+)\b",
+        message,
+        re.IGNORECASE,
+    )
     if m:
         return max(1, min(int(m.group(1)), 50))
-    m2 = re.search(r"\b(\d+)\s+(?:recent|latest|last|prediction|inference|scoring)\b", message, re.IGNORECASE)
+    m2 = re.search(
+        r"\b(\d+)\s+(?:recent|latest|last|prediction|inference|scoring)\b",
+        message,
+        re.IGNORECASE,
+    )
     if m2:
         return max(1, min(int(m2.group(1)), 50))
     return 10
@@ -9522,7 +9530,11 @@ def send_message(
 
     # Recent predictions table — "show me recent predictions", "last 10 API calls"
     recent_predictions_event: dict | None = None
-    if _RECENT_PRED_LOG_PATTERNS.search(body.message) and ctx["deployment"] and not pred_log_export_event:
+    if (
+        _RECENT_PRED_LOG_PATTERNS.search(body.message)
+        and ctx["deployment"]
+        and not pred_log_export_event
+    ):
         try:
             _rp_dep = ctx["deployment"]
             _rp_dep_id = _rp_dep.id if hasattr(_rp_dep, "id") else str(_rp_dep)
@@ -9549,7 +9561,11 @@ def send_message(
             for _rp_log in _rp_logs:
                 # Parse input_features JSON for a short summary (first 3 key-value pairs)
                 try:
-                    _rp_feats = json.loads(_rp_log.input_features) if _rp_log.input_features else {}
+                    _rp_feats = (
+                        json.loads(_rp_log.input_features)
+                        if _rp_log.input_features
+                        else {}
+                    )
                 except Exception:  # noqa: BLE001
                     _rp_feats = {}
                 _rp_input_summary = [
@@ -9561,15 +9577,21 @@ def send_message(
                     _rp_pred_raw = json.loads(_rp_log.prediction)
                 except Exception:  # noqa: BLE001
                     _rp_pred_raw = _rp_log.prediction
-                _rp_rows.append({
-                    "id": _rp_log.id[:8],  # short ID for display
-                    "created_at": _rp_log.created_at.isoformat(),
-                    "prediction": str(_rp_pred_raw),
-                    "confidence": round(_rp_log.confidence * 100, 1) if _rp_log.confidence is not None else None,
-                    "response_ms": round(_rp_log.response_ms, 1) if _rp_log.response_ms is not None else None,
-                    "input_summary": _rp_input_summary,
-                    "ab_variant": _rp_log.ab_variant,
-                })
+                _rp_rows.append(
+                    {
+                        "id": _rp_log.id[:8],  # short ID for display
+                        "created_at": _rp_log.created_at.isoformat(),
+                        "prediction": str(_rp_pred_raw),
+                        "confidence": round(_rp_log.confidence * 100, 1)
+                        if _rp_log.confidence is not None
+                        else None,
+                        "response_ms": round(_rp_log.response_ms, 1)
+                        if _rp_log.response_ms is not None
+                        else None,
+                        "input_summary": _rp_input_summary,
+                        "ab_variant": _rp_log.ab_variant,
+                    }
+                )
 
             if _rp_total > 0:
                 _rp_summary = (

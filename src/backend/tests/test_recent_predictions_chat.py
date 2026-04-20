@@ -253,7 +253,14 @@ class TestRecentPredictionsEndpoint:
 
         resp = client.get(f"/api/deploy/{dep_id}/recent-predictions")
         body = resp.json()
-        for field in ("deployment_id", "n_shown", "total_all_time", "predictions", "export_url", "summary"):
+        for field in (
+            "deployment_id",
+            "n_shown",
+            "total_all_time",
+            "predictions",
+            "export_url",
+            "summary",
+        ):
             assert field in body, f"Missing field: {field}"
 
     def test_prediction_row_fields(self, client):
@@ -264,7 +271,14 @@ class TestRecentPredictionsEndpoint:
 
         resp = client.get(f"/api/deploy/{dep_id}/recent-predictions")
         row = resp.json()["predictions"][0]
-        for field in ("id", "created_at", "prediction", "confidence", "response_ms", "input_summary"):
+        for field in (
+            "id",
+            "created_at",
+            "prediction",
+            "confidence",
+            "response_ms",
+            "input_summary",
+        ):
             assert field in row, f"Missing row field: {field}"
 
     def test_input_summary_max_3_items(self, client):
@@ -345,7 +359,14 @@ class TestRecentPredictionsChatHandler:
         rp_events = [e for e in events if e.get("type") == "recent_predictions"]
         assert rp_events
         payload = rp_events[0]["recent_predictions"]
-        for field in ("deployment_id", "n_shown", "total_all_time", "predictions", "export_url", "summary"):
+        for field in (
+            "deployment_id",
+            "n_shown",
+            "total_all_time",
+            "predictions",
+            "export_url",
+            "summary",
+        ):
             assert field in payload, f"Missing: {field}"
 
     def test_empty_log_emits_zero_total(self, client):

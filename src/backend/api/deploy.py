@@ -1106,8 +1106,12 @@ def get_recent_predictions(
                 "id": log.id[:8],
                 "created_at": log.created_at.isoformat(),
                 "prediction": str(pred_raw),
-                "confidence": round(log.confidence * 100, 1) if log.confidence is not None else None,
-                "response_ms": round(log.response_ms, 1) if log.response_ms is not None else None,
+                "confidence": round(log.confidence * 100, 1)
+                if log.confidence is not None
+                else None,
+                "response_ms": round(log.response_ms, 1)
+                if log.response_ms is not None
+                else None,
                 "input_summary": input_summary,
                 "ab_variant": log.ab_variant,
             }
