@@ -2892,7 +2892,15 @@ def compute_portfolio_summary(project_summaries: list[dict]) -> dict:
     }
 
 
-_DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+_DAY_NAMES = [
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+    "Sunday",
+]
 _DAY_SHORT = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
 
@@ -3000,6 +3008,7 @@ def compute_usage_pattern(prediction_logs: list) -> dict:
         "day_names": _DAY_SHORT,
         "summary": " ".join(summary_parts),
     }
+
 
 def compute_covariate_drift_alert(
     all_inputs: list[dict],

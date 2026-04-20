@@ -323,7 +323,13 @@ class TestUsagePatternChatHandler:
         up_events = [e for e in events if e.get("type") == "usage_pattern"]
         assert up_events, "Expected usage_pattern event"
         payload = up_events[0]["usage_pattern"]
-        for field in ("deployment_id", "hour_counts", "day_counts", "total_predictions", "summary"):
+        for field in (
+            "deployment_id",
+            "hour_counts",
+            "day_counts",
+            "total_predictions",
+            "summary",
+        ):
             assert field in payload, f"Missing field: {field}"
         assert len(payload["hour_counts"]) == 24
         assert len(payload["day_counts"]) == 7
