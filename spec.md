@@ -1523,6 +1523,18 @@ guides them forward through the natural flow.
       `project/[id]/page.tsx`.
       *Day 39 (20:00): 39 backend + 17 frontend = 56 new tests. Backend lint: clean. Frontend build: clean.*
 
+- [x] **Prediction Log CSV Export via Chat** — Track D perpetual. Analysts can ask "export prediction
+      history", "download prediction logs", "save predictions as csv", "get my prediction history", etc.
+      REST endpoint `GET /api/deploy/{id}/prediction-logs/export`: streams CSV with all feature columns
+      dynamically extracted from `input_features` JSON blobs plus `id, created_at, prediction, confidence,
+      response_ms`; `Content-Disposition: attachment` header. Chat handler `_PRED_LOG_EXPORT_PATTERNS`
+      (8 NL variant groups) + SSE emit `{type:"prediction_log_export"}`. Frontend: `PredictionLogExportCard`
+      (emerald border, ⬇ icon, count badge, CSV badge, date range, `<a download>` link, empty state).
+      `PredictionLogExportResult` TypeScript type; `prediction_log_export?` on `ChatMessage`;
+      `attachPredictionLogExportToLastMessage` Zustand action; SSE handler + render wired in
+      `project/[id]/page.tsx`.
+      *Day 40 (04:00): 35 backend + 15 frontend = 50 new tests. Backend lint: clean. Frontend build: clean.*
+
 ---
 
 ## Data Model

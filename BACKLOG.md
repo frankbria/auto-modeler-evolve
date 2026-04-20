@@ -49,6 +49,20 @@ the time is better spent on real features.
 
 ## Currently Working On
 
+## Day 40 (04:00) — Done
+**Track D — Prediction Log CSV Export via Chat.** Analysts can ask "export prediction history", "download prediction logs", "save predictions as csv", "get my prediction history", etc. and receive a `PredictionLogExportCard` inline in chat with a direct download link.
+- REST endpoint `GET /api/deploy/{id}/prediction-logs/export`: streams CSV with all `input_features` columns dynamically extracted from JSON blobs, plus `id, created_at, prediction, confidence, response_ms`. `Content-Disposition: attachment` header.
+- `_PRED_LOG_EXPORT_PATTERNS` (8 NL variant groups) in `chat.py`. Guard: `ctx["deployment"]`.
+- `PredictionLogExportCard` (emerald border, ⬇ icon): count badge, CSV badge, date range (first/last prediction), `<a download>` link, empty state when no predictions.
+- `PredictionLogExportResult` TypeScript type; `attachPredictionLogExportToLastMessage` Zustand action; SSE handler + render wired in `page.tsx`.
+- 35 backend + 15 frontend = 50 new tests. Backend lint: clean. Frontend build: clean.
+
+**What's next:**
+- Track D: Prediction SLA / latency monitoring — "is my API slow?", "show p95 latency" shows p50/p95/p99 latency chart + threshold alert
+- Track D: Webhook notifications on model drift/degradation — "alert me when predictions shift"
+- Track C: Class imbalance detection + handling (SMOTE / class weights / threshold tuning)
+- Track E: Run the "lunch break" flow end-to-end as a real analyst; fix any new friction points
+
 ## Day 39 (20:00) — Done
 **Track D — Prediction Usage Pattern Analysis via Chat.** Analysts can ask "when is my model busiest?", "peak traffic hours for my endpoint", "hourly usage pattern", "maintenance window for my api", etc. `compute_usage_pattern()` pure function + `GET /api/deploy/{id}/usage-pattern` REST endpoint. `_USAGE_PATTERN_PATTERNS` (8 NL variants) in `chat.py`. `UsagePatternCard` with 24-bar hour chart + 7-bar day chart, busiest period callout, maintenance window suggestion from quiet hours. 39 backend + 17 frontend = 56 new tests. Lint: clean. Build: clean.
 
