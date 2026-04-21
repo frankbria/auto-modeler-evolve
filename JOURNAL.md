@@ -1,5 +1,23 @@
 # Journal
 
+## Day 40 — 20:00 — Prediction Audit Report via Chat: one-question deployment health digest
+
+No community issues. Track D continuation. After shipping the Recent Predictions Table (12:00), the remaining gap was a holistic "how is my deployment doing?" view. Analysts had individual tools for SLA, quota, usage patterns, and prediction logs — but no single card combining all of them into a status digest. Now they can ask "deployment audit", "how is my deployment doing?", or "model monitoring report" and get a comprehensive health card in chat.
+
+**What changed:**
+
+`compute_prediction_audit(logs, deployment, now_utc)` pure function added to `core/analyzer.py`. Takes a list of `PredictionLog`-like objects and a deployment, returns a full audit dict: volume counts (today/7d/30d/total), confidence distribution (high ≥80%, medium ≥60%, low <60%, as percentages), latency percentiles via linear-interpolation (p50/p95/avg_ms), SLA alert flag when p95>500ms, quota tracking (used=count_30d, monthly_quota, quota_pct), and overall status (critical if SLA breach or quota≥90%; warning if quota 70-90% or >15% low-confidence predictions; healthy otherwise). Helper `_log_created_aware()` normalizes timezone-aware datetimes safely.
+
+`GET /api/deploy/{id}/prediction-audit` REST endpoint in `api/deploy.py`: queries all `PredictionLog` for the deployment, calls `compute_prediction_audit`, appends `deployment_id`, returns full dict. Returns 404 for unknown or inactive deployments.
+
+`_PRED_AUDIT_PATTERNS` regex (8 NL variant groups) in `chat.py`: covers "deployment/prediction/model audit", "how is my deployment/model/api doing", "production/deployment/model status report/health report/health digest", "show/give/get me a deployment/model/monitoring digest/summary/report", "morning/daily/weekly model/deployment report", "what's my deployment performance", "comprehensive/full deployment report", "audit my deployment/predictions". SSE emit: `{type:"prediction_audit", prediction_audit:{...}}`.
+
+Frontend: `PredictionAuditCard` with border color adapting to overall_status (emerald/amber/rose), `StatusBadge` sub-component, 4-cell volume grid (total/today/7d/30d), confidence distribution bars (three coloured segments), latency section (p50/p95 pills with SLA alert), quota progress bar (green/amber/red), empty state when no predictions yet. `PredictionAuditResult` TypeScript type; `prediction_audit?` on `ChatMessage`; `attachPredictionAuditToLastMessage` Zustand action; SSE handler and render wired in `project/[id]/page.tsx`.
+
+**Tests:** 45 backend (17 pure-function unit tests for volume/confidence/latency/quota/status, 3 REST endpoint tests, 15+7 regex positive/negative, 3 chat integration tests with Anthropic mock). Ruff: clean. Frontend build: clean.
+
+---
+
 ## Day 40 — 12:00 — Recent Predictions Table via Chat: inspect your live prediction log in conversation
 
 No community issues. Track D continuation. After the CSV export shipped at 04:00 (download everything), the remaining gap was inline inspection: analysts wanting a quick "what did my model just predict?" answer had to download a file to see even the most recent rows. Now they can ask "show me recent predictions" or "what were the last 10 predictions" and get a live table card directly in chat.
