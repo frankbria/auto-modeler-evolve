@@ -64,7 +64,9 @@ class TestComputeConfidenceTrend:
         assert result["sample_count"] == 1
         assert result["trend_direction"] == "stable"
         assert len(result["daily_stats"]) == 1
-        assert result["daily_stats"][0]["avg_confidence"] == pytest.approx(90.0, abs=0.5)
+        assert result["daily_stats"][0]["avg_confidence"] == pytest.approx(
+            90.0, abs=0.5
+        )
 
     def test_logs_outside_window_excluded(self):
         old_log = _mk_log(0.5, NOW - timedelta(days=60))
@@ -132,7 +134,11 @@ class TestComputeConfidenceTrend:
     def test_summary_contains_direction(self):
         logs = [_mk_log(0.80, NOW - timedelta(hours=6))]
         result = compute_confidence_trend(logs, window_days=30, now_utc=NOW)
-        assert "stable" in result["summary"].lower() or "improving" in result["summary"].lower() or "declining" in result["summary"].lower()
+        assert (
+            "stable" in result["summary"].lower()
+            or "improving" in result["summary"].lower()
+            or "declining" in result["summary"].lower()
+        )
 
 
 # ─── Regex tests: _CONFIDENCE_TREND_PATTERNS ─────────────────────────────────
@@ -330,7 +336,10 @@ async def test_chat_confidence_trend_emits_event(ac, project_id, deployment_id):
         MockAnthropic.return_value.messages.stream.return_value = _mock_stream()
         resp = await ac.post(
             f"/api/chat/{project_id}",
-            json={"message": "how is my model confidence trending?", "session_id": "t1"},
+            json={
+                "message": "how is my model confidence trending?",
+                "session_id": "t1",
+            },
         )
     events = _parse_events(resp)
     types = [e.get("type") for e in events]

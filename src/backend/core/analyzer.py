@@ -3438,15 +3438,19 @@ def compute_confidence_trend(
     low_stat = min(daily_stats, key=lambda d: d["avg_confidence"])
 
     # Plain-English summary
-    direction_word = {"improving": "improving", "stable": "stable", "declining": "declining"}[
-        direction
-    ]
+    direction_word = {
+        "improving": "improving",
+        "stable": "stable",
+        "declining": "declining",
+    }[direction]
     if direction == "stable":
         trend_desc = f"averaging {overall_avg:.0f}% confidence"
     elif direction == "improving":
         trend_desc = f"improving (+{abs(trend_rate):.2f}% per day), now averaging {all_avgs[-1]:.0f}%"
     else:
-        trend_desc = f"declining ({trend_rate:.2f}% per day), now averaging {all_avgs[-1]:.0f}%"
+        trend_desc = (
+            f"declining ({trend_rate:.2f}% per day), now averaging {all_avgs[-1]:.0f}%"
+        )
 
     summary = (
         f"Over the last {window_days} days ({len(daily_stats)} active days, "

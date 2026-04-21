@@ -9723,7 +9723,11 @@ def send_message(
                 "\n\n## Model Confidence Trend\n"
                 f"{_ct_summary}\n"
                 f"Trend direction: {_ct_direction}. "
-                + (f"Overall average confidence: {_ct_avg:.0f}%. " if _ct_avg is not None else "")
+                + (
+                    f"Overall average confidence: {_ct_avg:.0f}%. "
+                    if _ct_avg is not None
+                    else ""
+                )
                 + "Explain what this confidence trend means for the analyst. "
                 "If declining, suggest checking for covariate drift or retraining. "
                 "If improving, confirm the model is getting more reliable. "
