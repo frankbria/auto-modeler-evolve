@@ -328,7 +328,10 @@ async def far_feature_set_id(far_client, far_dataset_id):
 async def far_trained_run_id(far_client, far_project_id, far_feature_set_id):
     r = await far_client.post(
         f"/api/models/{far_project_id}/train",
-        json={"algorithms": ["linear_regression"], "feature_set_id": far_feature_set_id},
+        json={
+            "algorithms": ["linear_regression"],
+            "feature_set_id": far_feature_set_id,
+        },
     )
     assert r.status_code == 202, r.text
     run_id = r.json()["model_run_ids"][0]
@@ -381,7 +384,10 @@ async def test_feedback_accuracy_chat_no_deployment_guard(far_client):
         MockAnthropic.return_value.messages.stream.return_value = _mock_stream()
         resp = await far_client.post(
             f"/api/chat/{nd_project_id}",
-            json={"message": "how accurate have my predictions been", "session_id": "f2"},
+            json={
+                "message": "how accurate have my predictions been",
+                "session_id": "f2",
+            },
         )
 
     events = _parse_events(resp)
@@ -405,8 +411,6 @@ async def test_feedback_accuracy_chat_no_feedback_state(
         )
 
     events = _parse_events(resp)
-    ev = next(
-        (e for e in events if e.get("type") == "feedback_accuracy_report"), None
-    )
+    ev = next((e for e in events if e.get("type") == "feedback_accuracy_report"), None)
     assert ev is not None, "Expected feedback_accuracy_report event"
     assert ev["feedback_accuracy_report"]["status"] == "no_feedback"

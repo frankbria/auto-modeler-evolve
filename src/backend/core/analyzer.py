@@ -3579,15 +3579,17 @@ def compute_feedback_accuracy_report(
             verdict_msg = "Excellent — predictions are very close to actual outcomes."
         elif pct_error < 15:
             verdict = "good"
-            verdict_msg = "Good accuracy — predictions are reasonably close to actual outcomes."
+            verdict_msg = (
+                "Good accuracy — predictions are reasonably close to actual outcomes."
+            )
         elif pct_error < 30:
             verdict = "moderate"
-            verdict_msg = (
-                "Moderate accuracy — consider adding more features or retraining with newer data."
-            )
+            verdict_msg = "Moderate accuracy — consider adding more features or retraining with newer data."
         else:
             verdict = "poor"
-            verdict_msg = "Predictions are significantly off. Retraining is recommended."
+            verdict_msg = (
+                "Predictions are significantly off. Retraining is recommended."
+            )
 
         # Weekly trend: group pairs by ISO-week start
         week_buckets: dict[str, list[float]] = {}
@@ -3653,15 +3655,15 @@ def compute_feedback_accuracy_report(
 
         if accuracy >= 0.90:
             verdict = "excellent"
-            verdict_msg = f"Excellent — {accuracy_pct}% of real-world predictions were correct."
+            verdict_msg = (
+                f"Excellent — {accuracy_pct}% of real-world predictions were correct."
+            )
         elif accuracy >= 0.75:
             verdict = "good"
             verdict_msg = f"Good — {accuracy_pct}% accuracy in practice."
         elif accuracy >= 0.60:
             verdict = "moderate"
-            verdict_msg = (
-                f"Moderate — {accuracy_pct}% accuracy. Consider retraining with newer data."
-            )
+            verdict_msg = f"Moderate — {accuracy_pct}% accuracy. Consider retraining with newer data."
         else:
             verdict = "poor"
             verdict_msg = (
