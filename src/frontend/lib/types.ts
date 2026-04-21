@@ -492,6 +492,7 @@ export interface ChatMessage {
   prediction_log_export?: PredictionLogExportResult
   recent_predictions?: RecentPredictionsResult
   prediction_audit?: PredictionAuditResult
+  confidence_trend?: ConfidenceTrendResult
 }
 
 export interface SegmentPerformanceSegment {
@@ -2807,5 +2808,26 @@ export interface PredictionAuditResult {
   quota_enabled: boolean
   overall_status: "healthy" | "warning" | "critical"
   overall_label: string
+  summary: string
+}
+
+export interface ConfidenceTrendDailyStat {
+  date: string
+  avg_confidence: number
+  count: number
+}
+
+export interface ConfidenceTrendResult {
+  deployment_id: string
+  has_data: boolean
+  daily_stats: ConfidenceTrendDailyStat[]
+  overall_avg: number | null
+  trend_direction: "improving" | "stable" | "declining"
+  trend_rate_per_day: number | null
+  peak_day: string | null
+  peak_value: number | null
+  low_day: string | null
+  low_value: number | null
+  sample_count: number
   summary: string
 }

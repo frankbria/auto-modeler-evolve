@@ -1,5 +1,23 @@
 # Journal
 
+## Day 41 — 04:00 — Confidence Trend Analysis via Chat: watch your model's reliability over time
+
+No community issues. Track D continuation. After the Prediction Audit Report (Day 40 20:00), the remaining gap was temporal confidence insight: analysts had snapshots of current confidence distribution, but no way to ask "is my model becoming less reliable?" or see a day-by-day confidence trajectory. That's a leading indicator of model degradation — the kind of thing you want to catch before it becomes a problem. Confidence Trend fills that gap.
+
+**What changed:**
+
+`compute_confidence_trend(prediction_logs, window_days=30, now_utc=None)` pure function added to `core/analyzer.py`. Buckets `PredictionLog`-like objects by calendar day within the window, computes OLS slope via `cov(x,y)/var(x)` (no scipy dependency, x=day index, y=daily avg confidence %). Slope > 0.3 %/day → "improving"; < -0.3 → "declining"; else "stable". Returns `daily_stats` (date/avg_confidence/count, sorted oldest-first), `overall_avg`, `trend_direction`, `trend_rate_per_day`, `peak_day`, `peak_value`, `low_day`, `low_value`, `sample_count`, `has_data`, `summary`. Empty or no-confidence logs return `has_data=False` gracefully.
+
+`GET /api/deploy/{id}/confidence-trend?window=<1-365>` REST endpoint in `api/deploy.py`: 404 for unknown/inactive deployments. Queries all `PredictionLog` for the deployment, passes to `compute_confidence_trend`, appends `deployment_id`.
+
+`_CONFIDENCE_TREND_PATTERNS` regex (8 NL variant groups) in `chat.py`: covers "how is/show confidence trend(ing)/over time/history/change", "are confidence scores dropping/declining/improving", "confidence trend/chart/analysis", "model confidence over time/trending", "are predictions getting less/more reliable/confident", "track my daily confidence level/score", "confidence degradation/improvement/drift over time", "how reliable were my predictions last N days". SSE emit: `{type:"confidence_trend", confidence_trend:{...}}`. Guard: `ctx["deployment"]`.
+
+Frontend: `ConfidenceTrendCard` with adaptive border/badge color per direction (green=improving, red=declining, teal=stable), 3-cell stats grid (avg/peak/low confidence %), trend rate label (e.g. "+10.00%/day"), Recharts LineChart sparkline (colored per direction), sample count, summary sentence. `ConfidenceTrendResult` + `ConfidenceTrendDailyStat` TypeScript types; `confidence_trend?` on `ChatMessage`; `attachConfidenceTrendToLastMessage` Zustand action; SSE handler + render wired in `project/[id]/page.tsx`.
+
+**Tests:** 34 backend (10 pure-function unit tests: empty/single-day/window exclusion/no-confidence/improving/declining/stable/sort/peak-low/summary; 19 regex positive+negative parametrized; 3 REST endpoint; 2 chat integration with Anthropic mock). 15 frontend Jest tests (empty state, heading/icon, direction badges, stats grid, chart, summary, store action). Backend lint: clean. Frontend build: clean.
+
+---
+
 ## Day 40 — 20:00 — Prediction Audit Report via Chat: one-question deployment health digest
 
 No community issues. Track D continuation. After shipping the Recent Predictions Table (12:00), the remaining gap was a holistic "how is my deployment doing?" view. Analysts had individual tools for SLA, quota, usage patterns, and prediction logs — but no single card combining all of them into a status digest. Now they can ask "deployment audit", "how is my deployment doing?", or "model monitoring report" and get a comprehensive health card in chat.

@@ -49,6 +49,15 @@ the time is better spent on real features.
 
 ## Currently Working On
 
+## Day 41 (04:00) — Done
+**Track D — Confidence Trend Analysis via Chat.** Analysts can ask "how is my model confidence trending?", "are my predictions getting less reliable?", "confidence over time", etc. and receive a `ConfidenceTrendCard` in chat — a temporal chart showing whether the model is becoming more or less reliable day by day.
+- `compute_confidence_trend(logs, window_days, now_utc)` pure function in `core/analyzer.py`: OLS slope trend detection (improving/stable/declining), daily_stats, peak/low day, summary.
+- `GET /api/deploy/{id}/confidence-trend?window=<days>` REST endpoint: 404 for unknown/inactive; returns full trend dict + `deployment_id`.
+- `_CONFIDENCE_TREND_PATTERNS` (8 NL variant groups) in `chat.py`. Guard: `ctx["deployment"]`.
+- `ConfidenceTrendCard`: adaptive border/badge per direction, stats grid, Recharts LineChart sparkline, trend rate label, summary.
+- `ConfidenceTrendResult` + `ConfidenceTrendDailyStat` TypeScript types; `attachConfidenceTrendToLastMessage` Zustand action; SSE handler + render in `page.tsx`.
+- 34 backend + 15 frontend tests. Backend lint: clean. Frontend build: clean.
+
 ## Day 40 (20:00) — Done
 **Track D — Prediction Audit Report via Chat.** Analysts can ask "deployment audit", "how is my deployment doing?", "model monitoring report", "show me a deployment summary", etc. and receive a `PredictionAuditCard` in chat — a holistic health digest combining volume, confidence distribution, SLA status, and quota in one card.
 - `compute_prediction_audit(logs, deployment, now_utc)` pure function in `core/analyzer.py`: volume counts (today/7d/30d/total), confidence distribution (high/medium/low %), latency percentiles (p50/p95/avg), SLA alert flag (p95>500ms), quota tracking (used=count_30d, pct, enabled), overall status (critical/warning/healthy).

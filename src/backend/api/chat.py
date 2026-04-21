@@ -2861,6 +2861,22 @@ _PRED_AUDIT_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# Distinct from _SLA_PATTERNS (latency), _PRED_AUDIT_PATTERNS (current snapshot),
+# _USAGE_PATTERN_PATTERNS (volume by hour/day). This tracks confidence level OVER TIME.
+_CONFIDENCE_TREND_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"(?:how\s+is|show|display|chart|plot|graph)\s+(?:my\s+)?(?:model\s+)?confidence\s+(?:trend(?:ing)?|over\s+time|history|change)\b|"
+    r"(?:are|is)\s+(?:my\s+)?(?:model\s+)?(?:predictions?\s+)?confidence\s+(?:scores?\s+)?(?:dropping|declining|falling|decreasing|improving|rising|changing|drifting)\b|"
+    r"confidence\s+(?:trend|over\s+time|history|chart|graph|analysis|trajectory)\b|"
+    r"(?:prediction|model)\s+confidence\s+(?:over\s+time|trend(?:ing)?|chart|history|analysis)\b|"
+    r"(?:are|is)\s+(?:my\s+)?(?:confidence\s+scores?|predictions?)\s+getting\s+(?:less|more)\s+(?:reliable|confident|certain)\b|"
+    r"(?:show|track|monitor)\s+(?:my\s+)?(?:daily\s+)?confidence\s+(?:level|score|average)\b|"
+    r"(?:confidence|prediction\s+certainty)\s+(?:degradation|improvement|drift|change)\s+over\s+(?:time|days?|weeks?)\b|"
+    r"(?:how\s+)?(?:reliable|confident|certain)\s+(?:are|were|is|was)\s+(?:my\s+)?predictions?\s+(?:last|over|this|past)\s+(?:\d+\s+)?(?:days?|weeks?|months?)\b"
+    r")",
+    re.IGNORECASE,
+)
+
 _CV_SCORE_DIST_PATTERNS = re.compile(
     r"(?i)(?:"
     r"how\s+(?:consistent|stable|reliable|variable)\s+is\s+(?:my\s+)?(?:model|prediction)\b|"
@@ -9681,6 +9697,41 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Audit is a nice-to-have summary; never crash chat
 
+    # Confidence Trend — daily average confidence over time with linear trend direction
+    confidence_trend_event: dict | None = None
+    if _CONFIDENCE_TREND_PATTERNS.search(body.message) and ctx["deployment"]:
+        try:
+            from core.analyzer import compute_confidence_trend as _compute_ct
+
+            _ct_dep = ctx["deployment"]
+            _ct_dep_id = _ct_dep.id if hasattr(_ct_dep, "id") else str(_ct_dep)
+
+            _ct_logs = session.exec(
+                select(PredictionLog).where(PredictionLog.deployment_id == _ct_dep_id)
+            ).all()
+
+            _ct_result = _compute_ct(list(_ct_logs), window_days=30)
+            _ct_result["deployment_id"] = _ct_dep_id
+
+            confidence_trend_event = _ct_result
+
+            _ct_direction = _ct_result["trend_direction"]
+            _ct_avg = _ct_result.get("overall_avg")
+            _ct_summary = _ct_result["summary"]
+
+            system_prompt += (
+                "\n\n## Model Confidence Trend\n"
+                f"{_ct_summary}\n"
+                f"Trend direction: {_ct_direction}. "
+                + (f"Overall average confidence: {_ct_avg:.0f}%. " if _ct_avg is not None else "")
+                + "Explain what this confidence trend means for the analyst. "
+                "If declining, suggest checking for covariate drift or retraining. "
+                "If improving, confirm the model is getting more reliable. "
+                "If stable, reassure them confidence is holding steady."
+            )
+        except Exception:  # noqa: BLE001
+            pass  # Confidence trend is nice-to-have; never crash chat
+
     # Batch prediction schedule creation / listing
     schedule_event: dict | None = None
     if _SCHEDULE_PATTERNS.search(body.message) and ctx["deployment"]:
@@ -10863,6 +10914,10 @@ def send_message(
         # Emit prediction audit card
         if pred_audit_event:
             yield f"data: {json.dumps({'type': 'prediction_audit', 'prediction_audit': pred_audit_event})}\n\n"
+
+        # Emit confidence trend card
+        if confidence_trend_event:
+            yield f"data: {json.dumps({'type': 'confidence_trend', 'confidence_trend': confidence_trend_event})}\n\n"
 
         # After text stream, opportunistically generate a chart if the
         # message is about data and we have a dataset loaded

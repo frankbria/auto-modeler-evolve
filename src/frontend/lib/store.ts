@@ -134,6 +134,7 @@ interface AppState {
   attachPredictionLogExportToLastMessage: (prediction_log_export: import("./types").PredictionLogExportResult) => void
   attachRecentPredictionsToLastMessage: (recent_predictions: import("./types").RecentPredictionsResult) => void
   attachPredictionAuditToLastMessage: (prediction_audit: import("./types").PredictionAuditResult) => void
+  attachConfidenceTrendToLastMessage: (confidence_trend: import("./types").ConfidenceTrendResult) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -984,6 +985,15 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, prediction_audit }
+      }
+      return { messages }
+    }),
+  attachConfidenceTrendToLastMessage: (confidence_trend) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, confidence_trend }
       }
       return { messages }
     }),

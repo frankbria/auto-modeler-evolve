@@ -3335,3 +3335,134 @@ def _percentile_list(sorted_vals: list[float], pct: float) -> float:
         return round(sorted_vals[-1], 2)
     frac = idx - lo
     return round(sorted_vals[lo] + frac * (sorted_vals[hi] - sorted_vals[lo]), 2)
+
+
+def compute_confidence_trend(
+    prediction_logs: list,
+    window_days: int = 30,
+    now_utc: "datetime | None" = None,
+) -> dict:
+    """Compute daily average confidence trend for a deployment.
+
+    Bins PredictionLog records into daily buckets, computes per-day average
+    confidence, fits a linear trend, and classifies direction as improving /
+    stable / declining.
+
+    Args:
+        prediction_logs: list of PredictionLog ORM objects with ``confidence``
+            (float 0–1) and ``created_at`` fields.
+        window_days: how many calendar days to look back (default 30).
+        now_utc: injectable UTC datetime for tests; defaults to datetime.now(UTC).
+
+    Returns dict with keys:
+        daily_stats: list of {date, avg_confidence, count} dicts (oldest first),
+        overall_avg: mean confidence across all logs in the window,
+        trend_direction: "improving" | "stable" | "declining",
+        trend_rate_per_day: float — daily change in avg confidence (as 0–100 pct pts),
+        peak_day: date string of highest-avg-confidence day (or None),
+        peak_value: highest daily avg (0–100),
+        low_day: date string of lowest-avg-confidence day (or None),
+        low_value: lowest daily avg (0–100),
+        sample_count: total logs with confidence data in window,
+        has_data: bool,
+        summary: plain-English description.
+    """
+    from collections import defaultdict
+    from datetime import datetime, timezone
+
+    if now_utc is None:
+        now_utc = datetime.now(timezone.utc)
+
+    cutoff = now_utc - __import__("datetime").timedelta(days=window_days)
+
+    # Collect confidence values per calendar day within the window
+    day_buckets: dict = defaultdict(list)
+    for log in prediction_logs:
+        conf = getattr(log, "confidence", None)
+        if conf is None:
+            continue
+        dt = _log_created_aware(log)
+        if dt < cutoff:
+            continue
+        day_key = dt.strftime("%Y-%m-%d")
+        day_buckets[day_key].append(float(conf))
+
+    if not day_buckets:
+        return {
+            "daily_stats": [],
+            "overall_avg": None,
+            "trend_direction": "stable",
+            "trend_rate_per_day": 0.0,
+            "peak_day": None,
+            "peak_value": None,
+            "low_day": None,
+            "low_value": None,
+            "sample_count": 0,
+            "has_data": False,
+            "summary": "No confidence data available for this deployment.",
+        }
+
+    # Build daily_stats sorted oldest → newest
+    sorted_days = sorted(day_buckets.keys())
+    daily_stats = []
+    for day in sorted_days:
+        vals = day_buckets[day]
+        avg_pct = round(sum(vals) / len(vals) * 100, 1)
+        daily_stats.append({"date": day, "avg_confidence": avg_pct, "count": len(vals)})
+
+    all_avgs = [d["avg_confidence"] for d in daily_stats]
+    overall_avg = round(sum(all_avgs) / len(all_avgs), 1)
+    sample_count = sum(d["count"] for d in daily_stats)
+
+    # Linear trend via OLS slope (x = day index 0..n-1, y = avg_confidence %)
+    n = len(all_avgs)
+    slope = 0.0
+    if n >= 2:
+        xs = list(range(n))
+        x_mean = sum(xs) / n
+        y_mean = sum(all_avgs) / n
+        num = sum((xs[i] - x_mean) * (all_avgs[i] - y_mean) for i in range(n))
+        den = sum((xs[i] - x_mean) ** 2 for i in range(n))
+        slope = num / den if den != 0 else 0.0
+
+    trend_rate = round(slope, 3)
+    if slope > 0.3:
+        direction = "improving"
+    elif slope < -0.3:
+        direction = "declining"
+    else:
+        direction = "stable"
+
+    # Peak and low days
+    peak_stat = max(daily_stats, key=lambda d: d["avg_confidence"])
+    low_stat = min(daily_stats, key=lambda d: d["avg_confidence"])
+
+    # Plain-English summary
+    direction_word = {"improving": "improving", "stable": "stable", "declining": "declining"}[
+        direction
+    ]
+    if direction == "stable":
+        trend_desc = f"averaging {overall_avg:.0f}% confidence"
+    elif direction == "improving":
+        trend_desc = f"improving (+{abs(trend_rate):.2f}% per day), now averaging {all_avgs[-1]:.0f}%"
+    else:
+        trend_desc = f"declining ({trend_rate:.2f}% per day), now averaging {all_avgs[-1]:.0f}%"
+
+    summary = (
+        f"Over the last {window_days} days ({len(daily_stats)} active days, "
+        f"{sample_count} predictions), model confidence is {direction_word} — {trend_desc}."
+    )
+
+    return {
+        "daily_stats": daily_stats,
+        "overall_avg": overall_avg,
+        "trend_direction": direction,
+        "trend_rate_per_day": trend_rate,
+        "peak_day": peak_stat["date"],
+        "peak_value": peak_stat["avg_confidence"],
+        "low_day": low_stat["date"],
+        "low_value": low_stat["avg_confidence"],
+        "sample_count": sample_count,
+        "has_data": True,
+        "summary": summary,
+    }

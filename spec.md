@@ -1563,6 +1563,21 @@ guides them forward through the natural flow.
       Zustand action; SSE handler + render wired in `project/[id]/page.tsx`.
       *Day 40 (20:00): 45 backend tests. Backend lint: clean. Frontend build: clean.*
 
+- [x] **Confidence Trend Analysis via Chat** — Track D perpetual. Analysts can ask "how is my model
+      confidence trending?", "are my predictions getting less reliable?", "confidence over time",
+      "show confidence trend", etc. Pure function `compute_confidence_trend(logs, window_days, now_utc)`
+      in `core/analyzer.py`: buckets prediction logs by day, computes OLS slope for trend direction
+      (improving/stable/declining, |slope|>0.3%/day threshold), returns `daily_stats`, `overall_avg`,
+      `trend_rate_per_day`, `peak_day`, `peak_value`, `low_day`, `low_value`, `sample_count`, `has_data`,
+      `summary`. REST endpoint `GET /api/deploy/{id}/confidence-trend?window=<days>` returns full trend
+      dict + `deployment_id`. Chat handler `_CONFIDENCE_TREND_PATTERNS` (8 NL variant groups); SSE emit
+      `{type:"confidence_trend"}`. Frontend: `ConfidenceTrendCard` (adaptive border/badge color per
+      direction, stats grid avg/peak/low, Recharts LineChart sparkline, trend rate label, summary);
+      `ConfidenceTrendResult` TypeScript type + `ConfidenceTrendDailyStat`; `confidence_trend?` on
+      `ChatMessage`; `attachConfidenceTrendToLastMessage` Zustand action; SSE handler + render wired in
+      `project/[id]/page.tsx`.
+      *Day 41 (04:00): 34 backend + 15 frontend tests. Backend lint: clean. Frontend build: clean.*
+
 ---
 
 ## Data Model

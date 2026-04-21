@@ -34,6 +34,7 @@ from sqlmodel import Session, select
 
 from core.analyzer import (
     compute_covariate_drift_alert,
+    compute_confidence_trend,
     compute_prediction_audit,
     compute_usage_pattern,
 )
@@ -4348,5 +4349,30 @@ def get_prediction_audit(
     ).all()
 
     result = compute_prediction_audit(logs, deployment)
+    result["deployment_id"] = deployment_id
+    return result
+
+
+@router.get("/api/deploy/{deployment_id}/confidence-trend")
+def get_confidence_trend(
+    deployment_id: str,
+    window: int = Query(default=30, ge=1, le=365),
+    session: Session = Depends(get_session),
+):
+    """Return daily confidence trend for a deployment over the last N days.
+
+    Bins PredictionLog records by calendar day, computes average daily
+    confidence, and fits a linear trend to classify direction as improving /
+    stable / declining.
+    """
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment or not deployment.is_active:
+        raise HTTPException(status_code=404, detail="Deployment not found or inactive")
+
+    logs = session.exec(
+        select(PredictionLog).where(PredictionLog.deployment_id == deployment_id)
+    ).all()
+
+    result = compute_confidence_trend(list(logs), window_days=window)
     result["deployment_id"] = deployment_id
     return result

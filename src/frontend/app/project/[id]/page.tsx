@@ -103,6 +103,7 @@ import { UsagePatternCard } from "@/components/deploy/usage-pattern-card"
 import { PredictionLogExportCard } from "@/components/deploy/prediction-log-export-card"
 import { RecentPredictionsCard } from "@/components/deploy/recent-predictions-card"
 import { PredictionAuditCard } from "@/components/deploy/prediction-audit-card"
+import { ConfidenceTrendCard } from "@/components/deploy/confidence-trend-card"
 import { PairCorrelationCard } from "@/components/data/pair-correlation-card"
 import { StatQueryCard } from "@/components/data/stat-query-card"
 import { SummaryStatsCard } from "@/components/data/summary-stats-card"
@@ -287,6 +288,7 @@ export default function ProjectWorkspace() {
     attachPredictionLogExportToLastMessage,
     attachRecentPredictionsToLastMessage,
     attachPredictionAuditToLastMessage,
+    attachConfidenceTrendToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -723,6 +725,8 @@ export default function ProjectWorkspace() {
                 attachRecentPredictionsToLastMessage(json.recent_predictions as import("@/lib/types").RecentPredictionsResult)
               } else if (json.type === "prediction_audit" && json.prediction_audit) {
                 attachPredictionAuditToLastMessage(json.prediction_audit as import("@/lib/types").PredictionAuditResult)
+              } else if (json.type === "confidence_trend" && json.confidence_trend) {
+                attachConfidenceTrendToLastMessage(json.confidence_trend as import("@/lib/types").ConfidenceTrendResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -830,6 +834,7 @@ export default function ProjectWorkspace() {
     attachPredictionLogExportToLastMessage,
     attachRecentPredictionsToLastMessage,
     attachPredictionAuditToLastMessage,
+    attachConfidenceTrendToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -1340,6 +1345,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.prediction_audit && (
                       <PredictionAuditCard result={msg.prediction_audit} />
+                    )}
+                    {msg.confidence_trend && (
+                      <ConfidenceTrendCard result={msg.confidence_trend} />
                     )}
                   </div>
                 </div>
