@@ -1,6 +1,7 @@
 import React from "react"
 import { render, screen } from "@testing-library/react"
 import { FeedbackAccuracyCard } from "@/components/deploy/feedback-accuracy-card"
+import { useAppStore } from "@/lib/store"
 import type { FeedbackAccuracyReportResult } from "@/lib/types"
 
 const noDataResult: FeedbackAccuracyReportResult = {
@@ -174,7 +175,6 @@ describe("FeedbackAccuracyCard", () => {
 
 describe("FeedbackAccuracyCard store action", () => {
   it("attachFeedbackAccuracyReportToLastMessage attaches to last assistant message", () => {
-    const { useAppStore } = require("@/lib/store")
     const store = useAppStore.getState()
 
     store.setMessages([
@@ -191,7 +191,6 @@ describe("FeedbackAccuracyCard store action", () => {
   })
 
   it("does not attach to user messages", () => {
-    const { useAppStore } = require("@/lib/store")
     const store = useAppStore.getState()
 
     store.setMessages([{ role: "user", content: "hello", id: "u1" }])
