@@ -1549,6 +1549,20 @@ guides them forward through the natural flow.
       render wired in `project/[id]/page.tsx`.
       *Day 40 (12:00): 46 backend + 30 frontend = 76 new tests. Backend lint: clean. Frontend build: clean.*
 
+- [x] **Prediction Audit Report via Chat** — Track D perpetual. Analysts can ask "deployment audit",
+      "how is my deployment doing", "model monitoring report", "show me a deployment summary", etc.
+      Pure function `compute_prediction_audit(logs, deployment, now_utc)` in `core/analyzer.py`:
+      returns volume counts (today/7d/30d/total), confidence distribution (high/medium/low %),
+      latency percentiles (p50/p95/avg), SLA alert flag (p95>500ms), quota tracking (used/total/pct),
+      and overall status (healthy/warning/critical) with plain-English summary. REST endpoint
+      `GET /api/deploy/{id}/prediction-audit` returns full audit dict + `deployment_id`. Chat handler
+      `_PRED_AUDIT_PATTERNS` (8 NL variant groups); SSE emit `{type:"prediction_audit"}`. Frontend:
+      `PredictionAuditCard` (adaptive border color per status, StatusBadge, volume grid, confidence
+      distribution bars, latency section with SLA alert, quota progress bar); `PredictionAuditResult`
+      TypeScript type; `prediction_audit?` on `ChatMessage`; `attachPredictionAuditToLastMessage`
+      Zustand action; SSE handler + render wired in `project/[id]/page.tsx`.
+      *Day 40 (20:00): 45 backend tests. Backend lint: clean. Frontend build: clean.*
+
 ---
 
 ## Data Model
