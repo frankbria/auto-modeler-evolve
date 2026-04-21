@@ -3208,21 +3208,9 @@ def compute_prediction_audit(
     cutoff_30d = now_utc - __import__("datetime").timedelta(days=30)
 
     total = len(logs)
-    today_count = sum(
-        1
-        for lg in logs
-        if _log_created_aware(lg) >= cutoff_today
-    )
-    count_7d = sum(
-        1
-        for lg in logs
-        if _log_created_aware(lg) >= cutoff_7d
-    )
-    count_30d = sum(
-        1
-        for lg in logs
-        if _log_created_aware(lg) >= cutoff_30d
-    )
+    today_count = sum(1 for lg in logs if _log_created_aware(lg) >= cutoff_today)
+    count_7d = sum(1 for lg in logs if _log_created_aware(lg) >= cutoff_7d)
+    count_30d = sum(1 for lg in logs if _log_created_aware(lg) >= cutoff_30d)
 
     # ── Confidence distribution ─────────────────────────────────────────────
     conf_values = [lg.confidence for lg in logs if lg.confidence is not None]
@@ -3236,9 +3224,7 @@ def compute_prediction_audit(
         high = medium = low = 0.0
 
     # ── SLA / latency ───────────────────────────────────────────────────────
-    latencies = sorted(
-        lg.response_ms for lg in logs if lg.response_ms is not None
-    )
+    latencies = sorted(lg.response_ms for lg in logs if lg.response_ms is not None)
     has_latency = bool(latencies)
     if has_latency:
         p50 = _percentile_list(latencies, 50)
@@ -3285,9 +3271,7 @@ def compute_prediction_audit(
     if total == 0:
         summary = "No predictions recorded yet. Once the API receives requests, metrics will appear here."
     else:
-        parts = [
-            f"{total:,} total prediction{'s' if total != 1 else ''} served."
-        ]
+        parts = [f"{total:,} total prediction{'s' if total != 1 else ''} served."]
         if count_7d > 0:
             parts.append(f"{count_7d:,} in the last 7 days, {today_count} today.")
         if has_latency:

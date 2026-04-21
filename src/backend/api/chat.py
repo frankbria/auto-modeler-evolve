@@ -9651,9 +9651,7 @@ def send_message(
             _pa_dep_id = _pa_dep.id if hasattr(_pa_dep, "id") else str(_pa_dep)
 
             _pa_logs = session.exec(
-                select(PredictionLog).where(
-                    PredictionLog.deployment_id == _pa_dep_id
-                )
+                select(PredictionLog).where(PredictionLog.deployment_id == _pa_dep_id)
             ).all()
 
             _pa_result = _compute_audit(_pa_logs, _pa_dep)

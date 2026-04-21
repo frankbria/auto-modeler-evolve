@@ -6,6 +6,7 @@ Covers:
   - _PRED_AUDIT_PATTERNS regex (positive + negative)
   - Chat handler integration (emits event, required fields, no-deployment guard)
 """
+
 from __future__ import annotations
 
 import io
@@ -24,6 +25,7 @@ from core.analyzer import compute_prediction_audit
 
 
 # ─── helpers ──────────────────────────────────────────────────────────────────
+
 
 def _mk_log(
     created_at: datetime | None = None,
@@ -167,10 +169,10 @@ class TestComputePredictionAudit:
     def test_volume_counts_correctly(self):
         logs = [
             _mk_log(NOW - timedelta(minutes=30)),  # today
-            _mk_log(NOW - timedelta(hours=6)),      # today
-            _mk_log(NOW - timedelta(days=2)),       # 7d
-            _mk_log(NOW - timedelta(days=15)),      # 30d
-            _mk_log(NOW - timedelta(days=40)),      # outside all windows
+            _mk_log(NOW - timedelta(hours=6)),  # today
+            _mk_log(NOW - timedelta(days=2)),  # 7d
+            _mk_log(NOW - timedelta(days=15)),  # 30d
+            _mk_log(NOW - timedelta(days=40)),  # outside all windows
         ]
         result = compute_prediction_audit(logs, _mk_dep(), now_utc=NOW)
         assert result["total_predictions"] == 5
@@ -179,7 +181,11 @@ class TestComputePredictionAudit:
         assert result["predictions_30d"] == 4
 
     def test_confidence_distribution_high(self):
-        logs = [_mk_log(confidence=0.90), _mk_log(confidence=0.85), _mk_log(confidence=0.80)]
+        logs = [
+            _mk_log(confidence=0.90),
+            _mk_log(confidence=0.85),
+            _mk_log(confidence=0.80),
+        ]
         result = compute_prediction_audit(logs, _mk_dep(), now_utc=NOW)
         assert result["has_confidence_data"] is True
         assert result["confidence_high_pct"] == pytest.approx(100.0, abs=0.5)
@@ -238,7 +244,9 @@ class TestComputePredictionAudit:
 
     def test_quota_disabled(self):
         logs = [_mk_log()]
-        result = compute_prediction_audit(logs, _mk_dep(monthly_quota=None), now_utc=NOW)
+        result = compute_prediction_audit(
+            logs, _mk_dep(monthly_quota=None), now_utc=NOW
+        )
         assert result["quota_enabled"] is False
         assert result["quota_pct"] is None
 
@@ -262,12 +270,26 @@ class TestComputePredictionAudit:
     def test_result_has_required_fields(self):
         result = compute_prediction_audit([], _mk_dep(), now_utc=NOW)
         required = [
-            "total_predictions", "predictions_today", "predictions_7d",
-            "predictions_30d", "confidence_high_pct", "confidence_medium_pct",
-            "confidence_low_pct", "has_confidence_data", "p50_ms", "p95_ms",
-            "avg_ms", "has_latency_data", "sla_alert", "quota_used",
-            "monthly_quota", "quota_pct", "quota_enabled", "overall_status",
-            "overall_label", "summary",
+            "total_predictions",
+            "predictions_today",
+            "predictions_7d",
+            "predictions_30d",
+            "confidence_high_pct",
+            "confidence_medium_pct",
+            "confidence_low_pct",
+            "has_confidence_data",
+            "p50_ms",
+            "p95_ms",
+            "avg_ms",
+            "has_latency_data",
+            "sla_alert",
+            "quota_used",
+            "monthly_quota",
+            "quota_pct",
+            "quota_enabled",
+            "overall_status",
+            "overall_label",
+            "summary",
         ]
         for field in required:
             assert field in result, f"Missing field: {field}"
@@ -319,35 +341,41 @@ _PAT = re.compile(
 
 
 class TestPredAuditPatterns:
-    @pytest.mark.parametrize("msg", [
-        "deployment audit",
-        "show me a deployment summary",
-        "give me a monitoring digest",
-        "model monitoring report",
-        "how is my deployment doing",
-        "how is my model doing",
-        "what is my api doing",
-        "model status report",
-        "deployment health report",
-        "daily model report",
-        "morning deployment check",
-        "comprehensive deployment report",
-        "audit my deployment",
-        "audit my predictions",
-        "full monitoring overview",
-    ])
+    @pytest.mark.parametrize(
+        "msg",
+        [
+            "deployment audit",
+            "show me a deployment summary",
+            "give me a monitoring digest",
+            "model monitoring report",
+            "how is my deployment doing",
+            "how is my model doing",
+            "what is my api doing",
+            "model status report",
+            "deployment health report",
+            "daily model report",
+            "morning deployment check",
+            "comprehensive deployment report",
+            "audit my deployment",
+            "audit my predictions",
+            "full monitoring overview",
+        ],
+    )
     def test_positive(self, msg):
         assert _PAT.search(msg), f"Expected match for: {msg!r}"
 
-    @pytest.mark.parametrize("msg", [
-        "show me recent predictions",
-        "export prediction logs",
-        "is my model drifting",
-        "what is my quota",
-        "show SLA metrics",
-        "train a model",
-        "what are the top features",
-    ])
+    @pytest.mark.parametrize(
+        "msg",
+        [
+            "show me recent predictions",
+            "export prediction logs",
+            "is my model drifting",
+            "what is my quota",
+            "show SLA metrics",
+            "train a model",
+            "what are the top features",
+        ],
+    )
     def test_negative(self, msg):
         assert not _PAT.search(msg), f"Expected NO match for: {msg!r}"
 
