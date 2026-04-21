@@ -2847,6 +2847,20 @@ def _extract_recent_pred_n(message: str) -> int:
     return 10
 
 
+_PRED_AUDIT_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"(?:deployment|prediction|model)\s+(?:audit|monitoring\s+(?:digest|summary|report)|operational\s+(?:report|summary))\b|"
+    r"(?:how|what)\s+(?:is|are|was|were)\s+(?:my\s+)?(?:deployment|model|api|endpoint)\s+doing\b|"
+    r"(?:production|deployment|model)\s+(?:status\s+(?:report|summary|check)|health\s+(?:report|digest))\b|"
+    r"(?:show|give|get)\s+(?:me\s+)?(?:a\s+)?(?:deployment|model|monitoring)\s+(?:digest|summary|report|snapshot|overview)\b|"
+    r"(?:morning|daily|weekly)\s+(?:model|deployment|prediction)\s+(?:report|briefing|check|digest)\b|"
+    r"(?:what'?s?|how\s+is)\s+(?:my\s+)?(?:deployment|prediction\s+api|model\s+api)\s+(?:performance|doing|status)\b|"
+    r"(?:full|complete|comprehensive)\s+(?:deployment|prediction|monitoring)\s+(?:report|summary|overview)\b|"
+    r"audit\s+(?:my\s+)?(?:deployment|predictions?|production\s+model)\b"
+    r")",
+    re.IGNORECASE,
+)
+
 _CV_SCORE_DIST_PATTERNS = re.compile(
     r"(?i)(?:"
     r"how\s+(?:consistent|stable|reliable|variable)\s+is\s+(?:my\s+)?(?:model|prediction)\b|"
@@ -9627,6 +9641,48 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Recent predictions table is nice-to-have; never crash chat
 
+    # Prediction Audit Report — comprehensive deployment monitoring digest
+    pred_audit_event: dict | None = None
+    if _PRED_AUDIT_PATTERNS.search(body.message) and ctx["deployment"]:
+        try:
+            from core.analyzer import compute_prediction_audit as _compute_audit
+
+            _pa_dep = ctx["deployment"]
+            _pa_dep_id = _pa_dep.id if hasattr(_pa_dep, "id") else str(_pa_dep)
+
+            _pa_logs = session.exec(
+                select(PredictionLog).where(
+                    PredictionLog.deployment_id == _pa_dep_id
+                )
+            ).all()
+
+            _pa_result = _compute_audit(_pa_logs, _pa_dep)
+            _pa_result["deployment_id"] = _pa_dep_id
+
+            pred_audit_event = _pa_result
+
+            _pa_status = _pa_result["overall_label"]
+            _pa_total = _pa_result["total_predictions"]
+            _pa_p95 = _pa_result.get("p95_ms")
+            _pa_quota_pct = _pa_result.get("quota_pct")
+
+            _pa_ctx_lines = [f"Overall status: {_pa_status}."]
+            _pa_ctx_lines.append(f"Total predictions served: {_pa_total:,}.")
+            if _pa_p95 is not None:
+                _pa_ctx_lines.append(f"p95 latency: {_pa_p95}ms.")
+            if _pa_quota_pct is not None:
+                _pa_ctx_lines.append(f"Monthly quota: {_pa_quota_pct:.0f}% used.")
+
+            system_prompt += (
+                "\n\n## Deployment Audit\n"
+                + " ".join(_pa_ctx_lines)
+                + "\nSummarise these monitoring signals for the analyst in plain English. "
+                "If status is 'Critical' or 'Needs Attention', call out the specific issue. "
+                "Otherwise reassure them everything is running well."
+            )
+        except Exception:  # noqa: BLE001
+            pass  # Audit is a nice-to-have summary; never crash chat
+
     # Batch prediction schedule creation / listing
     schedule_event: dict | None = None
     if _SCHEDULE_PATTERNS.search(body.message) and ctx["deployment"]:
@@ -10805,6 +10861,10 @@ def send_message(
         # Emit recent predictions table card
         if recent_predictions_event:
             yield f"data: {json.dumps({'type': 'recent_predictions', 'recent_predictions': recent_predictions_event})}\n\n"
+
+        # Emit prediction audit card
+        if pred_audit_event:
+            yield f"data: {json.dumps({'type': 'prediction_audit', 'prediction_audit': pred_audit_event})}\n\n"
 
         # After text stream, opportunistically generate a chart if the
         # message is about data and we have a dataset loaded

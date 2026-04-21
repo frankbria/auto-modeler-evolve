@@ -491,6 +491,7 @@ export interface ChatMessage {
   usage_pattern?: UsagePatternResult
   prediction_log_export?: PredictionLogExportResult
   recent_predictions?: RecentPredictionsResult
+  prediction_audit?: PredictionAuditResult
 }
 
 export interface SegmentPerformanceSegment {
@@ -2782,5 +2783,29 @@ export interface RecentPredictionsResult {
   total_all_time: number
   predictions: RecentPredictionRow[]
   export_url: string
+  summary: string
+}
+
+export interface PredictionAuditResult {
+  deployment_id: string
+  total_predictions: number
+  predictions_today: number
+  predictions_7d: number
+  predictions_30d: number
+  confidence_high_pct: number
+  confidence_medium_pct: number
+  confidence_low_pct: number
+  has_confidence_data: boolean
+  p50_ms: number | null
+  p95_ms: number | null
+  avg_ms: number | null
+  has_latency_data: boolean
+  sla_alert: boolean
+  quota_used: number
+  monthly_quota: number | null
+  quota_pct: number | null
+  quota_enabled: boolean
+  overall_status: "healthy" | "warning" | "critical"
+  overall_label: string
   summary: string
 }

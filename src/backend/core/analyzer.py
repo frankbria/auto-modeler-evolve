@@ -3170,3 +3170,184 @@ def compute_covariate_drift_alert(
         "alerts": alerts,
         "summary": summary,
     }
+
+
+def compute_prediction_audit(
+    logs: list,
+    deployment: object,
+    now_utc: "datetime | None" = None,
+) -> dict:
+    """Aggregate production monitoring signals into a single audit snapshot.
+
+    Returns volume stats, confidence distribution, SLA percentiles, quota
+    usage, and an overall health assessment — all from the same set of
+    PredictionLog rows so callers only need one DB query.
+
+    Args:
+        logs: list of PredictionLog ORM objects (all logs for the deployment).
+        deployment: Deployment ORM object (for quota, rate-limit metadata).
+        now_utc: current UTC datetime for "today" calculations (injectable for tests).
+
+    Returns dict with keys:
+        total_predictions, predictions_today, predictions_7d, predictions_30d,
+        confidence_high_pct, confidence_medium_pct, confidence_low_pct,
+        has_confidence_data,
+        p50_ms, p95_ms, avg_ms, has_latency_data, sla_alert,
+        quota_used, monthly_quota, quota_pct, quota_enabled,
+        overall_status ("healthy" | "warning" | "critical"),
+        overall_label, summary.
+    """
+    from datetime import datetime, timezone
+
+    if now_utc is None:
+        now_utc = datetime.now(timezone.utc)
+
+    # ── Volume ──────────────────────────────────────────────────────────────
+    cutoff_today = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
+    cutoff_7d = now_utc - __import__("datetime").timedelta(days=7)
+    cutoff_30d = now_utc - __import__("datetime").timedelta(days=30)
+
+    total = len(logs)
+    today_count = sum(
+        1
+        for lg in logs
+        if _log_created_aware(lg) >= cutoff_today
+    )
+    count_7d = sum(
+        1
+        for lg in logs
+        if _log_created_aware(lg) >= cutoff_7d
+    )
+    count_30d = sum(
+        1
+        for lg in logs
+        if _log_created_aware(lg) >= cutoff_30d
+    )
+
+    # ── Confidence distribution ─────────────────────────────────────────────
+    conf_values = [lg.confidence for lg in logs if lg.confidence is not None]
+    has_conf = bool(conf_values)
+    if has_conf:
+        n_conf = len(conf_values)
+        high = sum(1 for c in conf_values if c >= 0.80) / n_conf * 100
+        medium = sum(1 for c in conf_values if 0.60 <= c < 0.80) / n_conf * 100
+        low = sum(1 for c in conf_values if c < 0.60) / n_conf * 100
+    else:
+        high = medium = low = 0.0
+
+    # ── SLA / latency ───────────────────────────────────────────────────────
+    latencies = sorted(
+        lg.response_ms for lg in logs if lg.response_ms is not None
+    )
+    has_latency = bool(latencies)
+    if has_latency:
+        p50 = _percentile_list(latencies, 50)
+        p95 = _percentile_list(latencies, 95)
+        avg_ms = round(sum(latencies) / len(latencies), 2)
+        sla_alert = p95 > 500.0
+    else:
+        p50 = p95 = avg_ms = None
+        sla_alert = False
+
+    # ── Quota ───────────────────────────────────────────────────────────────
+    monthly_quota = getattr(deployment, "monthly_quota", None)
+    quota_enabled = bool(monthly_quota and monthly_quota > 0)
+    quota_pct: float | None = None
+    if quota_enabled:
+        quota_pct = round(count_30d / monthly_quota * 100, 1)
+
+    # ── Overall status ──────────────────────────────────────────────────────
+    issues: list[str] = []
+    if sla_alert:
+        issues.append(f"p95 latency {p95}ms exceeds 500ms SLA")
+    if quota_enabled and quota_pct is not None and quota_pct >= 90:
+        issues.append(f"quota {quota_pct:.0f}% used this month")
+    if has_conf and low > 30:
+        issues.append(f"{low:.0f}% of predictions have low confidence (<60%)")
+
+    warnings: list[str] = []
+    if quota_enabled and quota_pct is not None and 70 <= quota_pct < 90:
+        warnings.append(f"quota {quota_pct:.0f}% used")
+    if has_conf and 15 <= low <= 30:
+        warnings.append(f"{low:.0f}% low-confidence predictions")
+
+    if issues:
+        status = "critical"
+        status_label = "Critical"
+    elif warnings:
+        status = "warning"
+        status_label = "Needs Attention"
+    else:
+        status = "healthy"
+        status_label = "Healthy"
+
+    # ── Plain-English summary ────────────────────────────────────────────────
+    if total == 0:
+        summary = "No predictions recorded yet. Once the API receives requests, metrics will appear here."
+    else:
+        parts = [
+            f"{total:,} total prediction{'s' if total != 1 else ''} served."
+        ]
+        if count_7d > 0:
+            parts.append(f"{count_7d:,} in the last 7 days, {today_count} today.")
+        if has_latency:
+            sla_note = " ⚠ above SLA target" if sla_alert else " within SLA"
+            parts.append(f"Median response time {p50}ms (p95: {p95}ms{sla_note}).")
+        if has_conf:
+            parts.append(
+                f"Confidence: {high:.0f}% high, {medium:.0f}% medium, {low:.0f}% low."
+            )
+        if issues:
+            parts.append("Action needed: " + "; ".join(issues) + ".")
+        summary = " ".join(parts)
+
+    return {
+        "total_predictions": total,
+        "predictions_today": today_count,
+        "predictions_7d": count_7d,
+        "predictions_30d": count_30d,
+        "confidence_high_pct": round(high, 1),
+        "confidence_medium_pct": round(medium, 1),
+        "confidence_low_pct": round(low, 1),
+        "has_confidence_data": has_conf,
+        "p50_ms": p50,
+        "p95_ms": p95,
+        "avg_ms": avg_ms,
+        "has_latency_data": has_latency,
+        "sla_alert": sla_alert,
+        "quota_used": count_30d,
+        "monthly_quota": monthly_quota,
+        "quota_pct": quota_pct,
+        "quota_enabled": quota_enabled,
+        "overall_status": status,
+        "overall_label": status_label,
+        "summary": summary,
+    }
+
+
+def _log_created_aware(log: object) -> "datetime":
+    """Return log.created_at as a timezone-aware UTC datetime."""
+    from datetime import datetime, timezone
+
+    dt = log.created_at  # type: ignore[attr-defined]
+    if dt is None:
+        return datetime(1970, 1, 1, tzinfo=timezone.utc)
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+def _percentile_list(sorted_vals: list[float], pct: float) -> float:
+    """Linear-interpolation percentile on a pre-sorted list."""
+    n = len(sorted_vals)
+    if n == 0:
+        return 0.0
+    if n == 1:
+        return round(sorted_vals[0], 2)
+    idx = (pct / 100.0) * (n - 1)
+    lo = int(idx)
+    hi = lo + 1
+    if hi >= n:
+        return round(sorted_vals[-1], 2)
+    frac = idx - lo
+    return round(sorted_vals[lo] + frac * (sorted_vals[hi] - sorted_vals[lo]), 2)

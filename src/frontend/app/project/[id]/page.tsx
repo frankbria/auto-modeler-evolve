@@ -102,6 +102,7 @@ import { CostEstimateCard } from "@/components/deploy/cost-estimate-card"
 import { UsagePatternCard } from "@/components/deploy/usage-pattern-card"
 import { PredictionLogExportCard } from "@/components/deploy/prediction-log-export-card"
 import { RecentPredictionsCard } from "@/components/deploy/recent-predictions-card"
+import { PredictionAuditCard } from "@/components/deploy/prediction-audit-card"
 import { PairCorrelationCard } from "@/components/data/pair-correlation-card"
 import { StatQueryCard } from "@/components/data/stat-query-card"
 import { SummaryStatsCard } from "@/components/data/summary-stats-card"
@@ -285,6 +286,7 @@ export default function ProjectWorkspace() {
     attachUsagePatternToLastMessage,
     attachPredictionLogExportToLastMessage,
     attachRecentPredictionsToLastMessage,
+    attachPredictionAuditToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -719,6 +721,8 @@ export default function ProjectWorkspace() {
                 attachPredictionLogExportToLastMessage(json.prediction_log_export as import("@/lib/types").PredictionLogExportResult)
               } else if (json.type === "recent_predictions" && json.recent_predictions) {
                 attachRecentPredictionsToLastMessage(json.recent_predictions as import("@/lib/types").RecentPredictionsResult)
+              } else if (json.type === "prediction_audit" && json.prediction_audit) {
+                attachPredictionAuditToLastMessage(json.prediction_audit as import("@/lib/types").PredictionAuditResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -825,6 +829,7 @@ export default function ProjectWorkspace() {
     attachUsagePatternToLastMessage,
     attachPredictionLogExportToLastMessage,
     attachRecentPredictionsToLastMessage,
+    attachPredictionAuditToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -1332,6 +1337,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.recent_predictions && (
                       <RecentPredictionsCard result={msg.recent_predictions} />
+                    )}
+                    {msg.prediction_audit && (
+                      <PredictionAuditCard result={msg.prediction_audit} />
                     )}
                   </div>
                 </div>

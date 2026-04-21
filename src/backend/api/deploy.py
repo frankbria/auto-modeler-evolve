@@ -32,7 +32,11 @@ from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
-from core.analyzer import compute_covariate_drift_alert, compute_usage_pattern
+from core.analyzer import (
+    compute_covariate_drift_alert,
+    compute_prediction_audit,
+    compute_usage_pattern,
+)
 from core.deployer import (
     build_prediction_pipeline,
     explain_prediction,
@@ -4320,5 +4324,29 @@ def get_usage_pattern(
     ).all()
 
     result = compute_usage_pattern(logs)
+    result["deployment_id"] = deployment_id
+    return result
+
+
+@router.get("/api/deploy/{deployment_id}/prediction-audit")
+def get_prediction_audit(
+    deployment_id: str,
+    session: Session = Depends(get_session),
+):
+    """Return a comprehensive production monitoring snapshot for a deployment.
+
+    Combines volume (today/7d/30d), confidence distribution, SLA percentiles,
+    and quota usage into one call. Useful for chat-triggered "how is my
+    deployment doing?" queries that would otherwise require four separate calls.
+    """
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment or not deployment.is_active:
+        raise HTTPException(status_code=404, detail="Deployment not found or inactive")
+
+    logs = session.exec(
+        select(PredictionLog).where(PredictionLog.deployment_id == deployment_id)
+    ).all()
+
+    result = compute_prediction_audit(logs, deployment)
     result["deployment_id"] = deployment_id
     return result

@@ -1157,5 +1157,15 @@ export const api = {
       if (!res.ok) throw new Error(await res.text())
       return res.json()
     },
+
+    predictionAudit: async (
+      deploymentId: string
+    ): Promise<import("./types").PredictionAuditResult> => {
+      const res = await fetch(
+        `${API_URL}/api/deploy/${deploymentId}/prediction-audit`
+      )
+      if (!res.ok) throw new Error(await res.text())
+      return res.json()
+    },
   },
 }
