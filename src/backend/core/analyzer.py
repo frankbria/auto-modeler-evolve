@@ -3470,3 +3470,244 @@ def compute_confidence_trend(
         "has_data": True,
         "summary": summary,
     }
+
+
+# ---------------------------------------------------------------------------
+# Feedback Accuracy Report — real-world accuracy from analyst-recorded outcomes
+# ---------------------------------------------------------------------------
+
+
+def _iso_week_start(dt: datetime) -> str:
+    """Return ISO week start date string (Monday) for a given datetime."""
+    from datetime import timedelta
+
+    d = dt.date() - timedelta(days=dt.weekday())
+    return d.isoformat()
+
+
+def _trend_direction_from_values(values: list[float], higher_is_better: bool) -> str:
+    """Detect improving/stable/declining across a time-ordered list of values."""
+    if len(values) < 2:
+        return "stable"
+    n = len(values)
+    half = n // 2
+    first_half = values[:half] if half else values[:1]
+    second_half = values[half:] if half else values[-1:]
+    avg_first = sum(first_half) / len(first_half)
+    avg_second = sum(second_half) / len(second_half)
+    if avg_first == 0:
+        return "stable"
+    change_pct = (avg_second - avg_first) / abs(avg_first) * 100
+    threshold = 5.0  # 5% change required to call it a trend
+    if higher_is_better:
+        if change_pct > threshold:
+            return "improving"
+        if change_pct < -threshold:
+            return "declining"
+    else:
+        # lower is better (MAE)
+        if change_pct < -threshold:
+            return "improving"
+        if change_pct > threshold:
+            return "declining"
+    return "stable"
+
+
+def compute_feedback_accuracy_report(
+    feedback_records: list,
+    prediction_logs_map: dict,
+    problem_type: str,
+) -> dict:
+    """Compute a real-world accuracy report from analyst-recorded feedback.
+
+    Args:
+        feedback_records: List of FeedbackRecord-like objects with attributes:
+            prediction_log_id, actual_value, actual_label, is_correct, created_at.
+        prediction_logs_map: Dict mapping prediction_log_id → PredictionLog-like
+            object with attribute prediction_numeric (regression only).
+        problem_type: "regression" or "classification".
+
+    Returns a dict with status, accuracy metrics, weekly trend, verdict, and summary.
+    """
+    total_feedback = len(feedback_records)
+
+    if total_feedback == 0:
+        return {
+            "status": "no_feedback",
+            "total_feedback": 0,
+            "problem_type": problem_type,
+            "has_data": False,
+            "summary": (
+                "No feedback recorded yet. After making predictions and seeing the real "
+                "outcomes, record them using the Deployment tab to track how well the "
+                "model is performing in practice."
+            ),
+        }
+
+    if problem_type == "regression":
+        pairs = []  # (actual, predicted, created_at)
+        for fb in feedback_records:
+            if fb.actual_value is not None and fb.prediction_log_id:
+                log_obj = prediction_logs_map.get(fb.prediction_log_id)
+                if log_obj is not None:
+                    pred_num = getattr(log_obj, "prediction_numeric", None)
+                    if pred_num is not None:
+                        pairs.append((fb.actual_value, float(pred_num), fb.created_at))
+
+        if not pairs:
+            return {
+                "status": "feedback_only",
+                "total_feedback": total_feedback,
+                "paired_count": 0,
+                "problem_type": problem_type,
+                "has_data": False,
+                "summary": (
+                    f"{total_feedback} actual outcome(s) recorded but no paired "
+                    "prediction logs found. Link prediction_log_id to feedback entries "
+                    "to compute error metrics."
+                ),
+            }
+
+        actual_vals = [p[0] for p in pairs]
+        predicted_vals = [p[1] for p in pairs]
+        mae = sum(abs(a - p) for a, p in zip(actual_vals, predicted_vals)) / len(pairs)
+        avg_actual = sum(actual_vals) / len(actual_vals)
+        pct_error = (mae / (abs(avg_actual) + 1e-9)) * 100
+
+        if pct_error < 5:
+            verdict = "excellent"
+            verdict_msg = "Excellent — predictions are very close to actual outcomes."
+        elif pct_error < 15:
+            verdict = "good"
+            verdict_msg = "Good accuracy — predictions are reasonably close to actual outcomes."
+        elif pct_error < 30:
+            verdict = "moderate"
+            verdict_msg = (
+                "Moderate accuracy — consider adding more features or retraining with newer data."
+            )
+        else:
+            verdict = "poor"
+            verdict_msg = "Predictions are significantly off. Retraining is recommended."
+
+        # Weekly trend: group pairs by ISO-week start
+        week_buckets: dict[str, list[float]] = {}
+        for actual, predicted, ts in pairs:
+            week = _iso_week_start(ts)
+            week_buckets.setdefault(week, []).append(abs(actual - predicted))
+        weekly_trend = [
+            {
+                "week_start": w,
+                "mae": round(sum(errs) / len(errs), 4),
+                "sample_count": len(errs),
+            }
+            for w, errs in sorted(week_buckets.items())
+        ]
+        trend_direction = _trend_direction_from_values(
+            [wt["mae"] for wt in weekly_trend], higher_is_better=False
+        )
+
+        summary = (
+            f"Based on {len(pairs)} matched prediction(s): "
+            f"mean absolute error = {mae:.4f} ({pct_error:.1f}% of average actual value). "
+            + verdict_msg
+        )
+
+        return {
+            "status": "computed",
+            "problem_type": problem_type,
+            "total_feedback": total_feedback,
+            "paired_count": len(pairs),
+            "mae": round(mae, 4),
+            "pct_error": round(pct_error, 2),
+            "avg_actual": round(avg_actual, 4),
+            "verdict": verdict,
+            "verdict_msg": verdict_msg,
+            "weekly_trend": weekly_trend,
+            "trend_direction": trend_direction,
+            "has_data": True,
+            "summary": summary,
+        }
+
+    else:
+        # Classification
+        correct_count = sum(1 for fb in feedback_records if fb.is_correct is True)
+        incorrect_count = sum(1 for fb in feedback_records if fb.is_correct is False)
+        rated_count = correct_count + incorrect_count
+
+        if rated_count == 0:
+            return {
+                "status": "feedback_only",
+                "total_feedback": total_feedback,
+                "rated_count": 0,
+                "problem_type": problem_type,
+                "has_data": False,
+                "summary": (
+                    f"{total_feedback} feedback record(s) found, but none have "
+                    "is_correct set. Provide actual_label with feedback to enable "
+                    "accuracy tracking."
+                ),
+            }
+
+        accuracy = correct_count / rated_count
+        accuracy_pct = round(accuracy * 100, 1)
+
+        if accuracy >= 0.90:
+            verdict = "excellent"
+            verdict_msg = f"Excellent — {accuracy_pct}% of real-world predictions were correct."
+        elif accuracy >= 0.75:
+            verdict = "good"
+            verdict_msg = f"Good — {accuracy_pct}% accuracy in practice."
+        elif accuracy >= 0.60:
+            verdict = "moderate"
+            verdict_msg = (
+                f"Moderate — {accuracy_pct}% accuracy. Consider retraining with newer data."
+            )
+        else:
+            verdict = "poor"
+            verdict_msg = (
+                f"Low accuracy ({accuracy_pct}%). Retraining is strongly recommended."
+            )
+
+        # Weekly trend grouped by feedback.created_at
+        week_buckets_cls: dict[str, list[bool]] = {}
+        for fb in feedback_records:
+            if fb.is_correct is not None:
+                week = _iso_week_start(fb.created_at)
+                week_buckets_cls.setdefault(week, []).append(fb.is_correct)
+        weekly_trend = [
+            {
+                "week_start": w,
+                "accuracy": round(sum(vals) / len(vals) * 100, 1),
+                "sample_count": len(vals),
+            }
+            for w, vals in sorted(week_buckets_cls.items())
+        ]
+        trend_direction = _trend_direction_from_values(
+            [wt["accuracy"] for wt in weekly_trend], higher_is_better=True
+        )
+
+        unknown_count = total_feedback - rated_count
+        summary = (
+            f"{correct_count} of {rated_count} rated prediction(s) were correct "
+            f"({accuracy_pct}% real-world accuracy). "
+            + (f"{unknown_count} record(s) not yet rated. " if unknown_count else "")
+            + verdict_msg
+        )
+
+        return {
+            "status": "computed",
+            "problem_type": problem_type,
+            "total_feedback": total_feedback,
+            "rated_count": rated_count,
+            "correct_count": correct_count,
+            "incorrect_count": incorrect_count,
+            "unknown_count": total_feedback - rated_count,
+            "accuracy": round(accuracy, 4),
+            "accuracy_pct": accuracy_pct,
+            "verdict": verdict,
+            "verdict_msg": verdict_msg,
+            "weekly_trend": weekly_trend,
+            "trend_direction": trend_direction,
+            "has_data": True,
+            "summary": summary,
+        }

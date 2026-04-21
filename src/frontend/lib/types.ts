@@ -493,6 +493,7 @@ export interface ChatMessage {
   recent_predictions?: RecentPredictionsResult
   prediction_audit?: PredictionAuditResult
   confidence_trend?: ConfidenceTrendResult
+  feedback_accuracy_report?: FeedbackAccuracyReportResult
 }
 
 export interface SegmentPerformanceSegment {
@@ -2808,6 +2809,36 @@ export interface PredictionAuditResult {
   quota_enabled: boolean
   overall_status: "healthy" | "warning" | "critical"
   overall_label: string
+  summary: string
+}
+
+export interface FeedbackAccuracyWeekly {
+  week_start: string
+  mae?: number
+  accuracy?: number
+  sample_count: number
+}
+
+export interface FeedbackAccuracyReportResult {
+  deployment_id: string
+  status: "no_feedback" | "feedback_only" | "computed"
+  problem_type: string
+  has_data: boolean
+  total_feedback: number
+  paired_count?: number
+  rated_count?: number
+  correct_count?: number
+  incorrect_count?: number
+  unknown_count?: number
+  accuracy?: number
+  accuracy_pct?: number
+  mae?: number
+  pct_error?: number
+  avg_actual?: number
+  verdict?: "excellent" | "good" | "moderate" | "poor"
+  verdict_msg?: string
+  weekly_trend?: FeedbackAccuracyWeekly[]
+  trend_direction?: "improving" | "stable" | "declining"
   summary: string
 }
 

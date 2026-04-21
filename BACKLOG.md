@@ -49,6 +49,19 @@ the time is better spent on real features.
 
 ## Currently Working On
 
+## Day 41 (12:00) — Done
+**Track D — Feedback Accuracy Report via Chat.** Analysts can ask "how accurate have my predictions been?", "show me feedback accuracy report", "how many predictions were correct", "how well did my model perform in production", etc. and receive a `FeedbackAccuracyCard` in chat — closing the loop between model predictions and real-world outcomes using recorded FeedbackRecords.
+- `compute_feedback_accuracy_report(feedback_records, prediction_logs_map, problem_type)` pure function in `core/analyzer.py`: regression → MAE/pct_error/avg_actual/verdict; classification → accuracy/accuracy_pct/correct_count/incorrect_count/verdict; both → ISO-week weekly_trend, trend_direction (improving/stable/declining via first-half vs second-half comparison with 5% threshold).
+- `_FEEDBACK_ACCURACY_PATTERNS` (10 NL variant groups) in `chat.py`. Guard: `ctx["deployment"]`. Queries FeedbackRecord by deployment_id, pairs with PredictionLog, calls pure function, injects summary+verdict into system_prompt.
+- `FeedbackAccuracyCard`: empty/feedback-only/computed states, verdict badge (emerald/green/amber/red), regression MAE/% Error/Matched grid, classification Accuracy %/Correct/Incorrect grid, trend direction row, Recharts LineChart for weekly trend, adaptive border color.
+- `FeedbackAccuracyReportResult` + `FeedbackAccuracyWeekly` TypeScript types; `attachFeedbackAccuracyReportToLastMessage` Zustand action; SSE handler + render in `page.tsx`.
+- 42 backend + 21 frontend tests. Backend lint: clean. Frontend build: clean.
+
+**What's next:**
+- Track D: Webhook notifications on model drift/degradation — "alert me when predictions shift" or "set up drift alerts"
+- Track D: Deployment versioning + rollback — "roll back to last model version", "compare v1 vs v2"
+- Track E: End-to-end "lunch break" analyst flow — upload → chat → train → deploy → predict → audit → feedback loop
+
 ## Day 41 (04:00) — Done
 **Track D — Confidence Trend Analysis via Chat.** Analysts can ask "how is my model confidence trending?", "are my predictions getting less reliable?", "confidence over time", etc. and receive a `ConfidenceTrendCard` in chat — a temporal chart showing whether the model is becoming more or less reliable day by day.
 - `compute_confidence_trend(logs, window_days, now_utc)` pure function in `core/analyzer.py`: OLS slope trend detection (improving/stable/declining), daily_stats, peak/low day, summary.

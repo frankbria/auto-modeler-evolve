@@ -1578,6 +1578,26 @@ guides them forward through the natural flow.
       `project/[id]/page.tsx`.
       *Day 41 (04:00): 34 backend + 15 frontend tests. Backend lint: clean. Frontend build: clean.*
 
+- [x] **Feedback Accuracy Report via Chat** — Track D perpetual. Analysts can ask "how accurate have
+      my predictions been?", "show me feedback accuracy report", "how many predictions were correct",
+      "how well did my model perform in production", etc. Pure function
+      `compute_feedback_accuracy_report(feedback_records, prediction_logs_map, problem_type)` in
+      `core/analyzer.py`: for regression — pairs FeedbackRecord with PredictionLog via
+      `prediction_log_id`, computes MAE, pct_error, avg_actual, verdict (excellent/good/moderate/poor);
+      for classification — tallies is_correct values, computes accuracy/accuracy_pct, rated_count,
+      correct_count, incorrect_count, verdict; both paths compute `weekly_trend` (grouped by ISO week
+      Monday) and `trend_direction` (improving/stable/declining via first-half vs second-half avg
+      comparison with 5% threshold). Chat handler `_FEEDBACK_ACCURACY_PATTERNS` (10 NL variant groups);
+      handler guards on `ctx["deployment"]`, queries FeedbackRecord by deployment_id, builds
+      prediction_logs_map, calls pure function, injects summary+verdict into system_prompt; SSE emit
+      `{type:"feedback_accuracy_report"}`. Frontend: `FeedbackAccuracyCard` (empty/feedback-only/computed
+      states, verdict badge, regression stats grid MAE/% Error/Matched, classification stats grid
+      Accuracy/Correct/Incorrect, trend direction row, Recharts LineChart for weekly trend, adaptive
+      border color); `FeedbackAccuracyReportResult` + `FeedbackAccuracyWeekly` TypeScript types;
+      `feedback_accuracy_report?` on `ChatMessage`; `attachFeedbackAccuracyReportToLastMessage` Zustand
+      action; SSE handler + render wired in `project/[id]/page.tsx`.
+      *Day 41 (12:00): 42 backend + 21 frontend tests. Backend lint: clean. Frontend build: clean.*
+
 ---
 
 ## Data Model

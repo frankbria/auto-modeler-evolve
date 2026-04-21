@@ -104,6 +104,7 @@ import { PredictionLogExportCard } from "@/components/deploy/prediction-log-expo
 import { RecentPredictionsCard } from "@/components/deploy/recent-predictions-card"
 import { PredictionAuditCard } from "@/components/deploy/prediction-audit-card"
 import { ConfidenceTrendCard } from "@/components/deploy/confidence-trend-card"
+import { FeedbackAccuracyCard } from "@/components/deploy/feedback-accuracy-card"
 import { PairCorrelationCard } from "@/components/data/pair-correlation-card"
 import { StatQueryCard } from "@/components/data/stat-query-card"
 import { SummaryStatsCard } from "@/components/data/summary-stats-card"
@@ -289,6 +290,7 @@ export default function ProjectWorkspace() {
     attachRecentPredictionsToLastMessage,
     attachPredictionAuditToLastMessage,
     attachConfidenceTrendToLastMessage,
+    attachFeedbackAccuracyReportToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -727,6 +729,8 @@ export default function ProjectWorkspace() {
                 attachPredictionAuditToLastMessage(json.prediction_audit as import("@/lib/types").PredictionAuditResult)
               } else if (json.type === "confidence_trend" && json.confidence_trend) {
                 attachConfidenceTrendToLastMessage(json.confidence_trend as import("@/lib/types").ConfidenceTrendResult)
+              } else if (json.type === "feedback_accuracy_report" && json.feedback_accuracy_report) {
+                attachFeedbackAccuracyReportToLastMessage(json.feedback_accuracy_report as import("@/lib/types").FeedbackAccuracyReportResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -835,6 +839,7 @@ export default function ProjectWorkspace() {
     attachRecentPredictionsToLastMessage,
     attachPredictionAuditToLastMessage,
     attachConfidenceTrendToLastMessage,
+    attachFeedbackAccuracyReportToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -1348,6 +1353,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.confidence_trend && (
                       <ConfidenceTrendCard result={msg.confidence_trend} />
+                    )}
+                    {msg.feedback_accuracy_report && (
+                      <FeedbackAccuracyCard result={msg.feedback_accuracy_report} />
                     )}
                   </div>
                 </div>

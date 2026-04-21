@@ -2877,6 +2877,25 @@ _CONFIDENCE_TREND_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# Distinct from _CONFIDENCE_TREND_PATTERNS (model confidence scores) and
+# _DRIFT_PATTERNS (prediction distribution shift). This surfaces real-world accuracy
+# computed from analyst-recorded ground-truth outcomes via POST /predict/{id}/feedback.
+_FEEDBACK_ACCURACY_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"(?:how\s+)?(?:accurate|correct)\s+(?:have|were|are)\s+(?:my\s+)?(?:real.?world\s+)?predictions?\b|"
+    r"(?:show|display|give|get)\s+(?:me\s+)?(?:the\s+)?(?:real.?world|actual|feedback|live)\s+(?:accuracy|performance|results?)\b|"
+    r"feedback\s+accuracy\s*(?:report|summary|stats?|breakdown|analysis)?\b|"
+    r"(?:how\s+)?(?:many|often)\s+(?:(?:were|are|have)\s+(?:my\s+)?predictions?|(?:(?:of\s+)?(?:my\s+)?)?predictions?\s+(?:were|are))\s*(?:correct|right|accurate|wrong|incorrect)\b|"
+    r"did\s+(?:my\s+)?predictions?\s+(?:match|reflect)\s+(?:reality|actual|ground.?truth|real\s+outcome)\b|"
+    r"(?:real.?world|actual|production|live)\s+(?:model\s+)?(?:accuracy|performance|error|mae|success\s+rate)\b|"
+    r"(?:how\s+)?(?:well|good)\s+(?:is|are|has|have|did)\s+(?:my\s+)?(?:model|predictions?)\s+(?:(?:perform|done|worked?)\s+)?in\s+(?:reality|practice|production)\b|"
+    r"(?:prediction\s+)?(?:accuracy\s+)?(?:feedback\s+)?(?:real.?world\s+)?(?:ground.?truth|outcome)\s+(?:accuracy|report|stats?|comparison)\b|"
+    r"prediction\s+accuracy\s+feedback|"
+    r"(?:were|are)\s+(?:my\s+)?predictions?\s+(?:correct|right|accurate)\b"
+    r")",
+    re.IGNORECASE,
+)
+
 _CV_SCORE_DIST_PATTERNS = re.compile(
     r"(?i)(?:"
     r"how\s+(?:consistent|stable|reliable|variable)\s+is\s+(?:my\s+)?(?:model|prediction)\b|"
@@ -9697,6 +9716,57 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Audit is a nice-to-have summary; never crash chat
 
+    # Feedback Accuracy Report — real-world accuracy from analyst-recorded ground-truth
+    feedback_accuracy_event: dict | None = None
+    if _FEEDBACK_ACCURACY_PATTERNS.search(body.message) and ctx["deployment"]:
+        try:
+            from core.analyzer import compute_feedback_accuracy_report as _compute_far
+            from models.feedback_record import FeedbackRecord as _FeedbackRecord
+
+            _far_dep = ctx["deployment"]
+            _far_dep_id = _far_dep.id if hasattr(_far_dep, "id") else str(_far_dep)
+
+            _far_feedback = list(
+                session.exec(
+                    select(_FeedbackRecord).where(
+                        _FeedbackRecord.deployment_id == _far_dep_id
+                    )
+                ).all()
+            )
+
+            # Build prediction_logs_map for regression pairing
+            _far_logs_map: dict = {}
+            _far_log_ids = [
+                fb.prediction_log_id
+                for fb in _far_feedback
+                if fb.prediction_log_id is not None
+            ]
+            if _far_log_ids:
+                _far_logs = session.exec(
+                    select(PredictionLog).where(
+                        PredictionLog.id.in_(_far_log_ids)  # type: ignore[attr-defined]
+                    )
+                ).all()
+                _far_logs_map = {log.id: log for log in _far_logs}
+
+            _far_problem_type = _far_dep.problem_type or "classification"
+            _far_result = _compute_far(_far_feedback, _far_logs_map, _far_problem_type)
+            _far_result["deployment_id"] = _far_dep_id
+            feedback_accuracy_event = _far_result
+
+            _far_summary = _far_result["summary"]
+            _far_verdict = _far_result.get("verdict", "")
+            system_prompt += (
+                "\n\n## Real-World Prediction Accuracy (from analyst feedback)\n"
+                f"{_far_summary}\n"
+                + (f"Verdict: {_far_verdict}. " if _far_verdict else "")
+                + "Present this as the model's real-world track record — not just "
+                "training metrics. If accuracy is poor, suggest retraining with more "
+                "recent data. If excellent, reinforce analyst confidence in the model."
+            )
+        except Exception:  # noqa: BLE001
+            pass  # Nice-to-have; never crash chat
+
     # Confidence Trend — daily average confidence over time with linear trend direction
     confidence_trend_event: dict | None = None
     if _CONFIDENCE_TREND_PATTERNS.search(body.message) and ctx["deployment"]:
@@ -10920,6 +10990,9 @@ def send_message(
             yield f"data: {json.dumps({'type': 'prediction_audit', 'prediction_audit': pred_audit_event})}\n\n"
 
         # Emit confidence trend card
+        if feedback_accuracy_event:
+            yield f"data: {json.dumps({'type': 'feedback_accuracy_report', 'feedback_accuracy_report': feedback_accuracy_event})}\n\n"
+
         if confidence_trend_event:
             yield f"data: {json.dumps({'type': 'confidence_trend', 'confidence_trend': confidence_trend_event})}\n\n"
 

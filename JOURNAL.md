@@ -1,5 +1,21 @@
 # Journal
 
+## Day 41 — 12:00 — Feedback Accuracy Report via Chat: close the loop between predictions and reality
+
+No community issues. Track D continuation. After Confidence Trend (Day 41 04:00), the remaining gap was closing the feedback loop: analysts record actual outcomes via the Deployment tab, but had no conversational way to ask "how accurate have my predictions actually been?" Chat-triggered Feedback Accuracy Report fills that gap — tying PredictionLog numeric values to FeedbackRecord actuals (regression MAE) or is_correct tallies (classification accuracy), with weekly trend charts.
+
+**What changed:**
+
+`compute_feedback_accuracy_report(feedback_records, prediction_logs_map, problem_type)` pure function added to `core/analyzer.py`. For regression: pairs each FeedbackRecord with its PredictionLog via `prediction_log_id`, computes MAE, pct_error (MAE as % of avg_actual), avg_actual, verdict (excellent <5%, good <15%, moderate <30%, poor ≥30%). For classification: tallies `is_correct` values → correct_count, incorrect_count, unknown_count, rated_count, accuracy, accuracy_pct, verdict (excellent ≥90%, good ≥75%, moderate ≥60%, poor <60%). Both paths compute `weekly_trend` (ISO Monday grouping) and `trend_direction` (improving/stable/declining via first-half vs second-half avg comparison, 5% threshold). Returns `has_data=False` with status "no_feedback" or "feedback_only" for empty/unpairable cases.
+
+`_FEEDBACK_ACCURACY_PATTERNS` regex (10 NL variant groups) in `chat.py`: covers "how accurate/correct have/were my predictions", "show/display real-world/actual/feedback accuracy", "feedback accuracy report/summary/stats/breakdown", "how many/often predictions were/are correct/right/accurate/wrong", "did predictions match reality/actual/ground-truth", "real-world/actual/production/live model accuracy/performance", "how well is/did my model perform in reality/practice/production", "ground-truth/outcome accuracy/report/stats", "prediction accuracy feedback", "were my predictions correct/right/accurate". Guard: `ctx["deployment"]`. Queries FeedbackRecord by deployment_id, builds prediction_logs_map from paired PredictionLogs, calls pure function, injects summary+verdict into system_prompt, emits `{type:"feedback_accuracy_report"}`.
+
+Frontend: `FeedbackAccuracyCard` — empty state (no feedback yet, tip text), feedback-only state (no paired logs), computed state with adaptive verdict border/badge (emerald=excellent, green=good, amber=moderate, red=poor). Regression: MAE/% Error/Matched stats grid. Classification: Accuracy %/Correct/Incorrect stats grid. Both: trend direction row (↑/→/↓), Recharts LineChart for weekly MAE or accuracy trend, verdict message, summary sentence. `FeedbackAccuracyReportResult` + `FeedbackAccuracyWeekly` TypeScript types; `feedback_accuracy_report?` on `ChatMessage`; `attachFeedbackAccuracyReportToLastMessage` Zustand action; SSE handler + render wired in `project/[id]/page.tsx`.
+
+**Tests:** 42 backend (14 pure-function unit tests: empty/no-data/feedback-only regression+classification, MAE computation, pct_error/verdict excellent/poor, weekly trend, trend direction improving, classification accuracy/verdict excellent/poor/weekly trend/summary; 18 regex positive + 7 negative parametrized; 3 chat integration with Anthropic mock: emits event with deployment, no event without deployment, no_feedback state). 21 frontend Jest tests (aria-label, empty state, tip text, heading, verdict badges, MAE value/label, % error, matched count, accuracy %, Accuracy label, correct/incorrect labels, trend direction, figcaptions, verdict message, summary, feedback-only state, store action attaches/skips). Backend lint: clean. Frontend build: clean.
+
+---
+
 ## Day 41 — 04:00 — Confidence Trend Analysis via Chat: watch your model's reliability over time
 
 No community issues. Track D continuation. After the Prediction Audit Report (Day 40 20:00), the remaining gap was temporal confidence insight: analysts had snapshots of current confidence distribution, but no way to ask "is my model becoming less reliable?" or see a day-by-day confidence trajectory. That's a leading indicator of model degradation — the kind of thing you want to catch before it becomes a problem. Confidence Trend fills that gap.
