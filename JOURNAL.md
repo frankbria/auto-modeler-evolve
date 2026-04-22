@@ -1,5 +1,21 @@
 # Journal
 
+## Day 41 — 20:00 — Chat-Triggered Imbalance-Corrected Training: close the loop from detection to action
+
+No community issues. Track C gap closure. After Day 34's `ClassImbalanceChatCard` (detection + strategy recommendation), analysts were told "train with class weighting" but that exact phrase had no handler — the generic `_TRAIN_PATTERNS` would fire and silently drop the strategy. This session closes the loop: an analyst who sees the imbalance card can now say "train with class weighting", "apply SMOTE and retrain", or "fix the imbalance and train" and the system actually launches training with the correct correction applied.
+
+**What changed:**
+
+`_BALANCE_TRAIN_PATTERNS` regex (8 NL variant groups) in `chat.py`: covers "train with class weighting/weights", "apply SMOTE and retrain", "retrain with SMOTE/oversampling", "fix the imbalance and train", "correct class imbalance and retrain", "train with balanced weights", "use oversampling and train", "train with threshold tuning". `_detect_balance_strategy()` helper extracts `"smote"` (SMOTE/oversampling keywords), `"threshold"`, or `"class_weight"` (default) from the message.
+
+Handler block in `send_message()` fires BEFORE `_TRAIN_PATTERNS` (guarded by `not training_started_event`): runs the same target resolution + feature set lookup as the generic training handler, but passes `imbalance_strategy` as positional arg to each `_train_in_background()` thread. Classification guard: only applies for classification problems; for regression targets, injects a plain-English explanation that imbalance is N/A and no training is started. `training_started_event` dict extended with `imbalance_strategy` field, which the existing SSE emitter includes automatically.
+
+Frontend: `TrainingStartedResult.imbalance_strategy?` optional TypeScript field added to `types.ts`. `TrainingStartedCard` updated with `STRATEGY_LABELS` map (blue=Class Weighting, violet=SMOTE Oversampling, amber=Threshold Tuning): strategy badge appears in the header row alongside the problem type badge, and the description mentions the strategy ("with class weighting"). No change to the SSE handler or store action — the existing `attachTrainingStartedToLastMessage` and `{type:"training_started"}` path carries the new field through unchanged.
+
+**Tests:** 26 backend (12 pattern/helper unit tests + 8 chat integration tests: class_weight fires training_started with correct strategy, SMOTE fires smote, threshold fires threshold, no-dataset → no event, regression → no event, fix-imbalance variant, run_count field, correct-imbalance variant) + 5 frontend (no badge without strategy, class_weight badge present+text, SMOTE badge text, threshold badge text, strategy in description). Backend lint: clean. Frontend build: clean.
+
+---
+
 ## Day 41 — 12:00 — Feedback Accuracy Report via Chat: close the loop between predictions and reality
 
 No community issues. Track D continuation. After Confidence Trend (Day 41 04:00), the remaining gap was closing the feedback loop: analysts record actual outcomes via the Deployment tab, but had no conversational way to ask "how accurate have my predictions actually been?" Chat-triggered Feedback Accuracy Report fills that gap — tying PredictionLog numeric values to FeedbackRecord actuals (regression MAE) or is_correct tallies (classification accuracy), with weekly trend charts.

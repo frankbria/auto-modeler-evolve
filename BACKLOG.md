@@ -49,6 +49,18 @@ the time is better spent on real features.
 
 ## Currently Working On
 
+## Day 41 (20:00) — Done
+**Track C — Chat-Triggered Imbalance-Corrected Training.** Closed the user-experience gap: `ClassImbalanceChatCard` (Day 34) told analysts "train with class weighting" but had no handler for that phrase. Now analysts can say "train with class weighting", "apply SMOTE and retrain", "fix the imbalance and train", etc. and training launches with the correct correction applied.
+- `_BALANCE_TRAIN_PATTERNS` (8 NL variant groups) + `_detect_balance_strategy()` helper in `chat.py`. Handler fires BEFORE `_TRAIN_PATTERNS`; passes `imbalance_strategy` to `_train_in_background()`. Classification only — regression gets a plain-English "N/A" response.
+- `training_started_event` extended with `imbalance_strategy` field (echoed through existing SSE emitter unchanged).
+- `TrainingStartedResult.imbalance_strategy?` TypeScript field; `TrainingStartedCard` shows strategy badge (blue=Class Weighting, violet=SMOTE, amber=Threshold) + strategy in description text.
+- 26 backend + 5 frontend = 31 new tests. Backend lint: clean. Frontend build: clean.
+
+**What's next:**
+- Track C: Feature selection automation via chat — "drop weak features", "remove unimportant columns" triggers dropping near-zero importance features and retraining
+- Track C: Date-aware chronological split via chat — "train with chronological split", "use time-based train/test split" triggers `split_strategy="chronological"`
+- Track E: End-to-end "lunch break" analyst flow — run the full upload → explore → train → validate → deploy → predict → audit → feedback loop as a real user and fix friction
+
 ## Day 41 (12:00) — Done
 **Track D — Feedback Accuracy Report via Chat.** Analysts can ask "how accurate have my predictions been?", "show me feedback accuracy report", "how many predictions were correct", "how well did my model perform in production", etc. and receive a `FeedbackAccuracyCard` in chat — closing the loop between model predictions and real-world outcomes using recorded FeedbackRecords.
 - `compute_feedback_accuracy_report(feedback_records, prediction_logs_map, problem_type)` pure function in `core/analyzer.py`: regression → MAE/pct_error/avg_actual/verdict; classification → accuracy/accuracy_pct/correct_count/incorrect_count/verdict; both → ISO-week weekly_trend, trend_direction (improving/stable/declining via first-half vs second-half comparison with 5% threshold).
