@@ -747,7 +747,9 @@ def compute_fairness_metrics(
         min_mae = min(maes)
         # When all groups have zero MAE (perfect predictions), disparity = 1.0 (fair)
         mae_disparity = (
-            round(max_mae / min_mae, 4) if min_mae > 0 else (1.0 if max_mae == 0 else float("inf"))
+            round(max_mae / min_mae, 4)
+            if min_mae > 0
+            else (1.0 if max_mae == 0 else float("inf"))
         )
 
         if mae_disparity < 1.25:
@@ -803,7 +805,9 @@ def _fairness_classification_summary(
     )
 
     if overall_status == "fair":
-        verdict = "Your model appears fair across groups — prediction rates are similar."
+        verdict = (
+            "Your model appears fair across groups — prediction rates are similar."
+        )
     elif overall_status == "warning":
         verdict = (
             "Minor disparity detected — worth monitoring, "
