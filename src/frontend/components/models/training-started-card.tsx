@@ -37,6 +37,7 @@ export function TrainingStartedCard({ result, onNavigateToModels }: TrainingStar
   const problemLabel =
     result.problem_type === "classification" ? "Classification" : "Regression"
   const strategy = result.imbalance_strategy ? STRATEGY_LABELS[result.imbalance_strategy] : null
+  const excluded = result.excluded_features ?? []
 
   return (
     <div
@@ -54,6 +55,14 @@ export function TrainingStartedCard({ result, onNavigateToModels }: TrainingStar
             {strategy.label}
           </span>
         )}
+        {excluded.length > 0 && (
+          <span
+            className="inline-flex items-center rounded border border-rose-300 bg-rose-100 px-2 py-0.5 text-xs font-medium text-rose-800"
+            data-testid="excluded-features-badge"
+          >
+            {excluded.length} feature{excluded.length !== 1 ? "s" : ""} excluded
+          </span>
+        )}
       </div>
       <p className="mb-2 text-sm text-foreground">
         Training{" "}
@@ -65,12 +74,30 @@ export function TrainingStartedCard({ result, onNavigateToModels }: TrainingStar
         {strategy && (
           <span className="text-muted-foreground"> with {strategy.label.toLowerCase()}</span>
         )}
+        {excluded.length > 0 && (
+          <span className="text-muted-foreground"> without weak features</span>
+        )}
       </p>
       <div className="flex flex-wrap gap-1.5">
         {result.algorithms.map((algo) => (
           <Badge key={algo} variant="outline">{algoLabel(algo)}</Badge>
         ))}
       </div>
+      {excluded.length > 0 && (
+        <div className="mt-2" data-testid="excluded-features-list">
+          <p className="mb-1 text-xs font-medium text-muted-foreground">Excluded (low importance):</p>
+          <div className="flex flex-wrap gap-1">
+            {excluded.map((f) => (
+              <span
+                key={f}
+                className="rounded bg-rose-100 px-1.5 py-0.5 font-mono text-xs text-rose-700 line-through"
+              >
+                {f}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
       <p className="mt-2 text-xs text-muted-foreground">
         Check the{" "}
         {onNavigateToModels ? (

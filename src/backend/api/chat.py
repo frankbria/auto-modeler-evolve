@@ -2076,6 +2076,21 @@ _FEATURE_SEL_PATTERNS = re.compile(
 )
 
 # ---------------------------------------------------------------------------
+# Retrain with weak features excluded — fires BEFORE generic _TRAIN_PATTERNS
+# so the exclusion list is applied rather than training with all features.
+# Distinct from _FEATURE_SEL_PATTERNS (which only *shows* the list).
+# ---------------------------------------------------------------------------
+_WEAK_FEAT_RETRAIN_PATTERNS = re.compile(
+    r"(?:"
+    r"(?:retrain|train|re-train)\s+(?:the\s+model\s+)?(?:without|excluding|minus)\s+(?:the\s+)?(?:weak|unimportant|low.importance|useless|irrelevant)\s+(?:features?|columns?)\b|"
+    r"(?:drop|remove|exclude|eliminate)\s+(?:weak|unimportant|low.importance|useless|irrelevant)\s+(?:features?|columns?)\s+(?:and\s+)?(?:retrain|re-train|train|refit)\b|"
+    r"(?:retrain|train|re-train)\s+(?:the\s+model\s+)?(?:with|after)\s+(?:weak|unimportant|low.importance|useless|irrelevant)\s+(?:features?|columns?)\s+(?:removed|dropped|excluded|eliminated)\b|"
+    r"(?:retrain|train|re-train)\s+(?:the\s+model\s+)?(?:using\s+)?(?:only\s+)?(?:the\s+)?(?:important|top|strong|useful)\s+(?:features?|columns?)\s+(?:only\b|(?:and\s+)?(?:drop|remove|exclude)\s+the\s+rest\b)?"
+    r")",
+    re.IGNORECASE,
+)
+
+# ---------------------------------------------------------------------------
 # Inline multi-feature prediction via chat (distinct from what-if which changes
 # ONE feature; this accepts MULTIPLE explicit feature values from the message)
 # ---------------------------------------------------------------------------
@@ -4184,11 +4199,11 @@ def send_message(
             pass
 
     auto_retrain_event: dict | None = None
-    if _AUTO_RETRAIN_PATTERNS.search(body.message) and ctx["project"]:
+    if _AUTO_RETRAIN_PATTERNS.search(body.message) and project:
         try:
             from db import get_session as _gs
 
-            _project = ctx["project"]
+            _project = project
             _enabled = _project.auto_retrain
 
             # Detect enable/disable intent
@@ -6023,14 +6038,14 @@ def send_message(
 
     # Check if user wants feature selection analysis (are all columns useful?)
     feature_sel_event: dict | None = None
-    if _FEATURE_SEL_PATTERNS.search(body.message) and ctx["project"]:
+    if _FEATURE_SEL_PATTERNS.search(body.message) and project:
         try:
             from sqlmodel import select as _sel_fs
 
             from core.feature_engine import apply_transformations as _apply_fs
             from core.trainer import identify_weak_features as _iwf
 
-            _proj_fs = ctx["project"]
+            _proj_fs = project
             _ds_fs = ctx["dataset"]
             if _ds_fs:
                 # Find the most recently completed model run for this project
@@ -6256,6 +6271,150 @@ def send_message(
                 )
         except Exception:  # noqa: BLE001
             pass  # Ensemble training is nice-to-have; never crash chat
+
+    # Check for "retrain without weak features" / "drop weak features and retrain".
+    # Must fire BEFORE _TRAIN_PATTERNS so excluded_features are applied.
+    if (
+        _WEAK_FEAT_RETRAIN_PATTERNS.search(body.message)
+        and ctx["dataset"]
+        and ctx["feature_set"]
+        and not training_started_event
+    ):
+        try:
+            import queue as _queue
+            import threading as _threading
+
+            import joblib as _jl_wfr
+
+            from api.models import (
+                MODELS_DIR as _MODELS_DIR,
+                _lock as _train_lock,
+                _train_in_background,
+                _training_counters,
+                _training_queues,
+            )
+            from core.feature_engine import apply_transformations as _apply_wfr
+            from core.trainer import identify_weak_features as _iwf_wfr
+            from core.trainer import recommend_models as _rec_wfr
+            from models.model_run import ModelRun as _ModelRun
+
+            _ds_wfr = ctx["dataset"]
+            _fs_wfr = ctx["feature_set"]
+            _file_wfr = Path(_ds_wfr.file_path)
+
+            if _file_wfr.exists() and _fs_wfr.target_column:
+                _df_wfr = _load_working_df(_file_wfr, _active_filter_conditions)
+                _tfms_wfr = json.loads(_fs_wfr.transformations or "[]")
+                if _tfms_wfr:
+                    _df_wfr, _ = _apply_wfr(_df_wfr, _tfms_wfr)
+
+                _target_wfr = _fs_wfr.target_column
+                _ptype_wfr = _fs_wfr.problem_type or "regression"
+                _feat_cols_all = [c for c in _df_wfr.columns if c != _target_wfr]
+
+                # Find best completed run with model file on disk
+                from sqlmodel import select as _sel_wfr
+
+                _done_wfr = list(
+                    session.exec(
+                        _sel_wfr(ModelRun)
+                        .where(
+                            ModelRun.project_id == project_id,
+                            ModelRun.status == "done",
+                        )
+                        .order_by(ModelRun.created_at.desc())  # type: ignore[attr-defined]
+                    ).all()
+                )
+                _best_wfr: ModelRun | None = None
+                for _r in _done_wfr:
+                    if _r.model_path and Path(_r.model_path).exists():
+                        _best_wfr = _r
+                        break
+
+                if _best_wfr:
+                    _model_wfr = _jl_wfr.load(_best_wfr.model_path)
+                    _fs_result_wfr = _iwf_wfr(_model_wfr, _feat_cols_all)
+                    _weak_names: list[str] = [
+                        f["name"] for f in _fs_result_wfr.get("feature_importances", [])
+                        if f.get("is_weak")
+                    ]
+                    _feature_cols_wfr = [
+                        c for c in _feat_cols_all if c not in _weak_names
+                    ]
+
+                    if _weak_names and len(_feature_cols_wfr) >= 1:
+                        _recs_wfr = _rec_wfr(
+                            _ptype_wfr, _ds_wfr.row_count, _ds_wfr.column_count
+                        )
+                        _algo_names_wfr = [r["algorithm"] for r in _recs_wfr[:3]]
+                        _model_dir_wfr = _MODELS_DIR / project_id
+
+                        with _train_lock:
+                            _training_queues[project_id] = _queue.Queue()
+                            _training_counters[project_id] = len(_algo_names_wfr)
+
+                        _run_ids_wfr: list[str] = []
+                        with Session(session.bind) as _wfr_session:
+                            for _algo in _algo_names_wfr:
+                                _run_wfr = _ModelRun(
+                                    project_id=project_id,
+                                    feature_set_id=_fs_wfr.id,
+                                    algorithm=_algo,
+                                    hyperparameters=json.dumps({}),
+                                    status="pending",
+                                )
+                                _wfr_session.add(_run_wfr)
+                                _wfr_session.commit()
+                                _wfr_session.refresh(_run_wfr)
+                                _run_ids_wfr.append(_run_wfr.id)
+
+                                _t_wfr = _threading.Thread(
+                                    target=_train_in_background,
+                                    args=(
+                                        _run_wfr.id,
+                                        project_id,
+                                        _df_wfr.copy(),
+                                        _feature_cols_wfr,
+                                        _target_wfr,
+                                        _algo,
+                                        _ptype_wfr,
+                                        _model_dir_wfr,
+                                    ),
+                                    daemon=True,
+                                )
+                                _t_wfr.start()
+
+                        training_started_event = {
+                            "project_id": project_id,
+                            "target_column": _target_wfr,
+                            "problem_type": _ptype_wfr,
+                            "algorithms": _algo_names_wfr,
+                            "run_count": len(_run_ids_wfr),
+                            "status": "started",
+                            "excluded_features": _weak_names,
+                        }
+                        system_prompt += (
+                            f"\n\n## Retrain Without Weak Features\n"
+                            f"Excluded {len(_weak_names)} weak feature(s): "
+                            f"{', '.join(_weak_names[:5])}{'...' if len(_weak_names) > 5 else ''}. "
+                            f"Training {len(_algo_names_wfr)} model(s) to predict "
+                            f"'{_target_wfr}' using {len(_feature_cols_wfr)} remaining "
+                            f"feature(s). Inform the user that retraining has started "
+                            "with those features excluded, and that removing low-importance "
+                            "features can reduce noise and improve generalisation. Tell them "
+                            "to check the Models tab for real-time progress."
+                        )
+                    else:
+                        # No weak features or too few remaining — fall through to normal training
+                        _n_weak_msg = len(_weak_names) if _weak_names else 0
+                        system_prompt += (
+                            f"\n\n## Feature Selection Result\n"
+                            f"{'No weak features found — all features are contributing.' if _n_weak_msg == 0 else 'Excluding those features would leave too few to train on.'} "
+                            "Tell the user this result clearly. If they still want to retrain, "
+                            "suggest doing so with all features."
+                        )
+        except Exception:  # noqa: BLE001
+            pass  # Weak-feature retrain is nice-to-have; never crash chat
 
     # Check for balance-corrected training request ("train with class weighting",
     # "apply SMOTE and retrain", etc.). Must fire BEFORE _TRAIN_PATTERNS so the
@@ -6817,9 +6976,9 @@ def send_message(
 
     # Check for segment performance request ("how does my model perform by region?")
     segment_performance_event: dict | None = None
-    if _SEGMENT_PERF_PATTERNS.search(body.message) and ctx["dataset"] and ctx["runs"]:
+    if _SEGMENT_PERF_PATTERNS.search(body.message) and ctx["dataset"] and ctx["model_runs"]:
         try:
-            _done_runs = [r for r in ctx["runs"] if r.status == "done"]
+            _done_runs = [r for r in ctx["model_runs"] if r.status == "done"]
             _sel_run = next((r for r in _done_runs if r.is_selected), None)
             _best_run = _sel_run or (
                 max(
@@ -7004,9 +7163,9 @@ def send_message(
 
     # Check for prediction error analysis ("where was my model wrong?", "biggest errors")
     pred_error_event: dict | None = None
-    if _PRED_ERROR_PATTERNS.search(body.message) and ctx["dataset"] and ctx["runs"]:
+    if _PRED_ERROR_PATTERNS.search(body.message) and ctx["dataset"] and ctx["model_runs"]:
         try:
-            _pe_done_runs = [r for r in ctx["runs"] if r.status == "done"]
+            _pe_done_runs = [r for r in ctx["model_runs"] if r.status == "done"]
             _pe_sel_run = next((r for r in _pe_done_runs if r.is_selected), None)
             _pe_best_run = _pe_sel_run or (
                 max(
@@ -8018,10 +8177,10 @@ def send_message(
 
             _ob_has_dataset = ctx["dataset"] is not None
             _ob_messages: list = []
-            if ctx.get("conversation"):
+            if conversation:
                 import json as _json_ob
 
-                _ob_messages = _json_ob.loads(ctx["conversation"].messages or "[]")
+                _ob_messages = _json_ob.loads(conversation.messages or "[]")
             _ob_msg_count = len(_ob_messages)
             _ob_fs = ctx.get("feature_set")
             _ob_has_target = bool(_ob_fs and _ob_fs.target_column)

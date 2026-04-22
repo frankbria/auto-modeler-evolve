@@ -49,6 +49,18 @@ the time is better spent on real features.
 
 ## Currently Working On
 
+## Day 42 (04:00) — Done
+**Track C — Chat-Triggered Retrain Excluding Weak Features.** Closed the gap between `FeatureSelectionCard` (shows weak features) and taking action. Analysts can now say "retrain without weak features", "drop weak features and retrain", "remove unimportant columns and retrain", etc. and the system identifies low-importance features from the best completed model and launches a new training run with those features excluded.
+- `_WEAK_FEAT_RETRAIN_PATTERNS` (8 NL variant groups) in `chat.py`. Handler fires BEFORE `_TRAIN_PATTERNS`; finds best completed `ModelRun`, calls `identify_weak_features()`, launches training with `excluded_features` applied. Mutual exclusion via `training_started_event is not None` check.
+- `TrainingStartedResult.excluded_features?: string[]` TypeScript field; `TrainingStartedCard` shows rose "N feature(s) excluded" badge, strikethrough feature list, "without weak features" in description text.
+- Pre-existing `ctx["project"]` → `project`, `ctx["runs"]` → `ctx["model_runs"]`, `ctx["conversation"]` → `conversation` bug fixes.
+- 20 backend + 8 frontend = 28 new tests. Backend lint: clean. Frontend build: clean.
+
+**What's next:**
+- Track C: Date-aware chronological split via chat — "train with chronological split", "use time-based train/test split" triggers `split_strategy="chronological"`
+- Track E: End-to-end "lunch break" analyst flow — run the full upload → explore → train → validate → deploy → predict → audit → feedback loop as a real user and fix friction points
+- Track D: Webhook notifications on model drift/degradation
+
 ## Day 41 (20:00) — Done
 **Track C — Chat-Triggered Imbalance-Corrected Training.** Closed the user-experience gap: `ClassImbalanceChatCard` (Day 34) told analysts "train with class weighting" but had no handler for that phrase. Now analysts can say "train with class weighting", "apply SMOTE and retrain", "fix the imbalance and train", etc. and training launches with the correct correction applied.
 - `_BALANCE_TRAIN_PATTERNS` (8 NL variant groups) + `_detect_balance_strategy()` helper in `chat.py`. Handler fires BEFORE `_TRAIN_PATTERNS`; passes `imbalance_strategy` to `_train_in_background()`. Classification only — regression gets a plain-English "N/A" response.

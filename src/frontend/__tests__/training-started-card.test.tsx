@@ -159,3 +159,58 @@ describe("attachTrainingStartedToLastMessage store action", () => {
     expect(() => attachTrainingStartedToLastMessage(trainingStarted)).not.toThrow()
   })
 })
+
+// --- Excluded features tests --------------------------------------------
+
+const excludedResult: TrainingStartedResult = {
+  ...trainingStarted,
+  excluded_features: ["f4", "noise_col"],
+}
+
+const excludedSingleResult: TrainingStartedResult = {
+  ...trainingStarted,
+  excluded_features: ["f4"],
+}
+
+describe("TrainingStartedCard excluded_features", () => {
+  it("does not show excluded badge when no excluded_features", () => {
+    render(<TrainingStartedCard result={trainingStarted} />)
+    expect(screen.queryByTestId("excluded-features-badge")).not.toBeInTheDocument()
+  })
+
+  it("shows excluded badge when excluded_features present", () => {
+    render(<TrainingStartedCard result={excludedResult} />)
+    expect(screen.getByTestId("excluded-features-badge")).toBeInTheDocument()
+  })
+
+  it("badge shows correct count for multiple excluded features", () => {
+    render(<TrainingStartedCard result={excludedResult} />)
+    expect(screen.getByTestId("excluded-features-badge")).toHaveTextContent("2 features excluded")
+  })
+
+  it("badge shows singular form for one excluded feature", () => {
+    render(<TrainingStartedCard result={excludedSingleResult} />)
+    expect(screen.getByTestId("excluded-features-badge")).toHaveTextContent("1 feature excluded")
+  })
+
+  it("shows excluded-features-list section when features excluded", () => {
+    render(<TrainingStartedCard result={excludedResult} />)
+    expect(screen.getByTestId("excluded-features-list")).toBeInTheDocument()
+  })
+
+  it("does not show excluded-features-list when no excluded_features", () => {
+    render(<TrainingStartedCard result={trainingStarted} />)
+    expect(screen.queryByTestId("excluded-features-list")).not.toBeInTheDocument()
+  })
+
+  it("renders each excluded feature name in the list", () => {
+    render(<TrainingStartedCard result={excludedResult} />)
+    expect(screen.getByText("f4")).toBeInTheDocument()
+    expect(screen.getByText("noise_col")).toBeInTheDocument()
+  })
+
+  it("shows 'without weak features' in description when excluded present", () => {
+    render(<TrainingStartedCard result={excludedResult} />)
+    expect(screen.getByText(/without weak features/i)).toBeInTheDocument()
+  })
+})

@@ -161,6 +161,7 @@ export interface TrainingStartedResult {
   run_count: number
   status: "started"
   imbalance_strategy?: "class_weight" | "smote" | "threshold"
+  excluded_features?: string[]
 }
 
 export interface DeployedResult {

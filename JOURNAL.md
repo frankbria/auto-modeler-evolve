@@ -1,5 +1,19 @@
 # Journal
 
+## Day 42 — 04:00 — Chat-Triggered Retrain Excluding Weak Features
+
+No community issues. Track C gap closure. Day 23 built `FeatureSelectionCard` — analysts could see which features were weak — but clicking away and manually deselecting them in the panel was the only path to acting on it. This session closes that loop: say "retrain without weak features" or "drop weak features and retrain" and the system automatically identifies low-importance features from the most recent completed model, then launches a new training run with them excluded.
+
+**What shipped:**
+- `_WEAK_FEAT_RETRAIN_PATTERNS` regex (8 NL variants) fires BEFORE `_TRAIN_PATTERNS` to intercept retrain-with-exclusion intent
+- Handler loads the best completed `ModelRun`, calls `identify_weak_features()`, extracts weak column names (`f["name"]`), and launches `_train_in_background()` with those columns filtered out
+- `training_started_event` mutual exclusion prevents double-firing with generic train handler
+- `TrainingStartedCard` gains rose-colored "N feature(s) excluded" badge, strikethrough per-feature list, and "without weak features" description text
+- `TrainingStartedResult.excluded_features?: string[]` TypeScript field
+- Bug fixes: `ctx["project"]` → `project`, `ctx["runs"]` → `ctx["model_runs"]`, `ctx["conversation"]` → `conversation` in `_AUTO_RETRAIN_PATTERNS`, `_FEATURE_SEL_PATTERNS`, and onboarding handlers
+
+**Tests:** 20 backend (12 pattern + 8 integration) + 8 frontend = 28 new tests. 99/99 passing in related test suite. Backend lint: clean. Frontend build: clean.
+
 ## Day 41 — 20:00 — Chat-Triggered Imbalance-Corrected Training: close the loop from detection to action
 
 No community issues. Track C gap closure. After Day 34's `ClassImbalanceChatCard` (detection + strategy recommendation), analysts were told "train with class weighting" but that exact phrase had no handler — the generic `_TRAIN_PATTERNS` would fire and silently drop the strategy. This session closes the loop: an analyst who sees the imbalance card can now say "train with class weighting", "apply SMOTE and retrain", or "fix the imbalance and train" and the system actually launches training with the correct correction applied.
