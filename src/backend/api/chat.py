@@ -6338,7 +6338,9 @@ def send_message(
                         json.loads(_fs.transformations or "[]") if _fs else []
                     )
                     if _transforms_raw:
-                        from core.feature_engine import apply_transformations as _apply_t
+                        from core.feature_engine import (
+                            apply_transformations as _apply_t,
+                        )
 
                         _df, _ = _apply_t(_df, _transforms_raw)
 
