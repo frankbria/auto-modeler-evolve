@@ -1,5 +1,21 @@
 # Journal
 
+## Day 42 — 12:00 — Fairness / Bias Analysis via Chat
+
+No community issues. Track C model-building depth. Every model AutoModeler produces could be systematically unfair — predicting lower loan approval rates for one demographic, higher error rates on certain age groups. Until now, analysts had no way to detect that through conversation. This session implements the first fairness audit in AutoModeler: ask "is my model biased?", "check fairness by gender", "any disparate impact?", and receive a `FairnessCheckCard` inline in chat with Statistical Parity Difference, Disparate Impact Ratio, and per-group performance breakdowns.
+
+**What shipped:**
+
+`compute_fairness_metrics(y_true, y_pred, sensitive_values, problem_type)` pure function in `core/validator.py`. Classification path: groups predictions by sensitive column value; determines positive label globally (critical fix — per-group label detection caused bias toward groups with zero positives, falsely scoring them as 100% positive rate); computes SPD (max_rate − min_rate) and DIR (min_rate / max_rate). Status buckets: fair (|SPD|<0.1 AND 0.8≤DIR≤1.2), warning, biased. Regression path: per-group MAE, MAE disparity ratio (max/min). Zero-MAE edge case treated as 1.0 (fair — no disparity when all predictions are perfect). Helper functions: `_fairness_spd_label()`, `_fairness_dir_label()`, `_fairness_classification_summary()`, `_fairness_regression_summary()`.
+
+`GET /api/models/{run_id}/fairness?col=` REST endpoint in `api/validation.py`: 400 on unknown column, 400 on high cardinality (>50 unique values), 404 on unknown run.
+
+`_FAIRNESS_PATTERNS` regex (10 NL variants: "is my model biased", "check fairness", "run a bias check", "fairness analysis", "disparate impact", "statistical parity", "how fair is my model", "treating everyone fairly", "check bias by X", "model bias across groups") + `_detect_fairness_col()` longest-match helper in `chat.py`. Handler finds best completed run, auto-detects sensitive column (message keyword → fallback to first low-cardinality categorical column). Fixed silent failure: `np` module was shadowed by an earlier local binding; fix was `import numpy as _np_fm` inside the handler block. Wrapped in `except Exception: pass` per the established pattern.
+
+`FairnessCheckCard` in `src/frontend/components/chat/fairness-check-card.tsx`: status-adaptive borders (emerald=fair, amber=warning, rose=biased, slate=insufficient_data). SPD + DIR 2-column metrics grid (classification). MAE Disparity ratio with plain-English thresholds (regression). Per-group metrics table (positive_rate + accuracy for classification; MAE for regression). `role="alert"` callout with action guidance for warning/biased states. sr-only `figcaption` for screen readers. `FairnessCheckResult` / `FairnessGroupMetric` TypeScript interfaces; `fairness_check?` on `ChatMessage`; `attachFairnessCheckToLastMessage` Zustand action; SSE handler + card render wired in workspace page.
+
+**Tests:** 44 backend (13 classification unit tests + 5 regression unit tests + 13 pattern tests + 4 detect-col tests + 5 REST endpoint tests + 3 chat integration tests) + 26 frontend (21 component tests + 3 store tests + 2 render tests) = 70 new tests. Backend lint: clean. Frontend build: clean.
+
 ## Day 42 — 04:00 — Chat-Triggered Retrain Excluding Weak Features
 
 No community issues. Track C gap closure. Day 23 built `FeatureSelectionCard` — analysts could see which features were weak — but clicking away and manually deselecting them in the panel was the only path to acting on it. This session closes that loop: say "retrain without weak features" or "drop weak features and retrain" and the system automatically identifies low-importance features from the most recent completed model, then launches a new training run with them excluded.

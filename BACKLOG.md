@@ -49,6 +49,19 @@ the time is better spent on real features.
 
 ## Currently Working On
 
+## Day 42 (12:00) — Done
+**Track C — Fairness / Bias Analysis via Chat.** Analysts can ask "is my model biased?", "check fairness by gender", "any disparate impact?", "statistical parity difference", "is my model treating everyone fairly?" and receive a `FairnessCheckCard` inline in chat with Statistical Parity Difference (SPD), Disparate Impact Ratio (DIR), and per-group accuracy/MAE metrics.
+- `compute_fairness_metrics()` pure function in `core/validator.py`: classification (SPD + DIR + per-group accuracy), regression (MAE disparity ratio). Status: fair/warning/biased/insufficient_data. Global positive-label detection prevents per-group label drift. Zero-MAE disparity treated as 1.0.
+- `GET /api/models/{run_id}/fairness?col=` REST endpoint in `api/validation.py` (400 on unknown col, 400 on high cardinality >50, 404 on unknown run).
+- `_FAIRNESS_PATTERNS` (10 NL variants) + `_detect_fairness_col()` longest-match helper in `chat.py`. Handler auto-detects sensitive column; falls back to first low-cardinality categorical column. Fixed `np` shadowing by using `import numpy as _np_fm` inside handler.
+- `FairnessCheckCard` (emerald/amber/rose/slate borders). SPD+DIR grid (classification). MAE Disparity section (regression). Per-group table. `role="alert"` for warning/biased. Accessible figcaption.
+- 44 backend + 26 frontend = 70 new tests. Backend lint: clean. Frontend build: clean.
+
+**What's next:**
+- Track C: Date-aware chronological split via chat — "train with chronological split", "use time-based train/test split"
+- Track E: End-to-end "lunch break" analyst flow — run the full upload → explore → train → validate → deploy → predict flow as a real user and fix friction points
+- Track D: Webhook notifications on model drift/degradation
+
 ## Day 42 (04:00) — Done
 **Track C — Chat-Triggered Retrain Excluding Weak Features.** Closed the gap between `FeatureSelectionCard` (shows weak features) and taking action. Analysts can now say "retrain without weak features", "drop weak features and retrain", "remove unimportant columns and retrain", etc. and the system identifies low-importance features from the best completed model and launches a new training run with those features excluded.
 - `_WEAK_FEAT_RETRAIN_PATTERNS` (8 NL variant groups) in `chat.py`. Handler fires BEFORE `_TRAIN_PATTERNS`; finds best completed `ModelRun`, calls `identify_weak_features()`, launches training with `excluded_features` applied. Mutual exclusion via `training_started_event is not None` check.
