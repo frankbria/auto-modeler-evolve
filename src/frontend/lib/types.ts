@@ -496,6 +496,7 @@ export interface ChatMessage {
   prediction_audit?: PredictionAuditResult
   confidence_trend?: ConfidenceTrendResult
   feedback_accuracy_report?: FeedbackAccuracyReportResult
+  fairness_check?: FairnessCheckResult
 }
 
 export interface SegmentPerformanceSegment {
@@ -2862,5 +2863,34 @@ export interface ConfidenceTrendResult {
   low_day: string | null
   low_value: number | null
   sample_count: number
+  summary: string
+}
+
+export interface FairnessGroupMetric {
+  group: string
+  count: number
+  // classification fields
+  positive_rate?: number
+  accuracy?: number
+  // regression fields
+  mae?: number
+}
+
+export interface FairnessCheckResult {
+  sensitive_col: string | null
+  model_run_id?: string
+  algorithm?: string
+  target_col?: string
+  problem_type: string
+  groups: string[]
+  per_group_metrics: FairnessGroupMetric[]
+  // classification-specific
+  spd?: number
+  spd_label?: string
+  dir?: number
+  dir_label?: string
+  // regression-specific
+  mae_disparity?: number
+  overall_status: "fair" | "warning" | "biased" | "insufficient_data"
   summary: string
 }

@@ -2955,6 +2955,48 @@ _CV_SCORE_DIST_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# Distinct from _SEGMENT_PERF_PATTERNS (model accuracy by data group) and
+# _CLASS_IMBALANCE_PATTERNS (class distribution). This checks statistical parity
+# and disparate impact across a user-selected sensitive attribute column.
+_FAIRNESS_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"(?:is|check|test|analyze|analyse|run)\s+(?:my\s+)?(?:model\s+)?(?:for\s+)?(?:bias|fairness|discrimination)\b|"
+    r"(?:is|are)\s+(?:my\s+)?(?:model|predictions?)\s+(?:fair|biased|unbiased|discriminating)\b|"
+    r"(?:any|check\s+for|detect)\s+(?:bias|fairness\s+issues?|disparate\s+impact|discrimination)\b|"
+    r"(?:bias|fairness)\s+(?:check|analysis|audit|report|test|metrics?|score)\b|"
+    r"(?:statistical\s+parity|disparate\s+impact|equal\s+opportunity)\b|"
+    r"(?:is|are)\s+(?:my\s+)?(?:model|predictions?)\s+(?:treating|handling)\s+(?:everyone|all\s+groups?|each\s+group)\s+(?:fairly|equally|the\s+same)\b|"
+    r"(?:how\s+)?(?:fair|unbiased)\s+is\s+(?:my\s+)?(?:model|predictions?)\b|"
+    r"model\s+(?:bias|fairness)\s+(?:by|across|per)\b|"
+    r"(?:check|show|display)\s+(?:me\s+)?(?:model\s+)?(?:bias|fairness)\s+(?:by|across|for|per)\b|"
+    r"(?:does\s+(?:my\s+)?model|do\s+(?:my\s+)?predictions?)\s+(?:discriminate|disadvantage|favour|favor)\b"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def _detect_fairness_col(message: str, df_columns: list[str]) -> str | None:
+    """Extract sensitive column name from a fairness-check message.
+
+    Scans for column name after "by", "for", "across", "per", "on" keywords,
+    then falls back to the first low-cardinality categorical column mentioned.
+    """
+    msg_lower = message.lower()
+    # Longest-match scan for columns mentioned in the message
+    best: str | None = None
+    for col in sorted(df_columns, key=len, reverse=True):
+        col_variants = {col.lower(), col.lower().replace("_", " ")}
+        for variant in col_variants:
+            # Check if preceded by a fairness context keyword
+            pattern = rf"\b(?:by|for|across|per|on|check)\s+{re.escape(variant)}\b"
+            if re.search(pattern, msg_lower):
+                return col
+            # Plain mention of column name in message
+            if variant in msg_lower and (best is None or len(col) > len(best)):
+                best = col
+    return best
+
+
 _CONFUSION_MATRIX_PATTERNS = re.compile(
     r"(?i)(?:"
     r"(?:show|display|give|get)\s+(?:me\s+)?(?:the\s+)?confusion\s+matrix\b|"
@@ -10166,6 +10208,105 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Confidence trend is nice-to-have; never crash chat
 
+    # Fairness / bias analysis — statistical parity + per-group metrics
+    fairness_event: dict | None = None
+    if _FAIRNESS_PATTERNS.search(body.message) and ctx["dataset"] and ctx["model_runs"]:
+        try:
+            from core.validator import compute_fairness_metrics as _compute_fm
+
+            # Find best completed run
+            _fm_runs = [r for r in ctx["model_runs"] if r.status == "done"]
+            _fm_run = next(
+                (r for r in _fm_runs if r.is_selected),
+                _fm_runs[0] if _fm_runs else None,
+            )
+
+            if _fm_run and _fm_run.model_path:
+                _fm_dataset = ctx["dataset"]
+                _fm_file_path = Path(_fm_dataset.file_path)
+                _fm_feature_set = ctx["feature_set"]
+
+                if _fm_file_path.exists() and _fm_feature_set:
+                    _fm_df_raw = pd.read_csv(_fm_file_path)
+                    _fm_cols = list(_fm_df_raw.columns)
+
+                    # Pick sensitive column from message or first low-cardinality categorical
+                    _fm_col = _detect_fairness_col(body.message, _fm_cols)
+                    if _fm_col is None:
+                        # Fall back to first categorical column with 2-20 unique values
+                        for _c in _fm_cols:
+                            if _c == _fm_feature_set.target_column:
+                                continue
+                            _nu = _fm_df_raw[_c].nunique()
+                            if 2 <= _nu <= 20:
+                                _fm_col = _c
+                                break
+
+                    if _fm_col is not None and _fm_df_raw[_fm_col].nunique() <= 50:
+                        # Build X, y
+                        import json as _json_fm
+
+                        from core.feature_engine import (
+                            apply_transformations as _apply_tf_fm,
+                        )
+                        from core.trainer import prepare_features as _prep_feats_fm
+
+                        _fm_transforms = _json_fm.loads(
+                            _fm_feature_set.transformations or "[]"
+                        )
+                        _fm_df = _fm_df_raw.copy()
+                        if _fm_transforms:
+                            _fm_df, _ = _apply_tf_fm(_fm_df, _fm_transforms)
+
+                        _fm_target = _fm_feature_set.target_column
+                        _fm_feat_cols = [c for c in _fm_df.columns if c != _fm_target]
+                        _fm_problem_type = _fm_feature_set.problem_type or "regression"
+
+                        _fm_X, _fm_y, _ = _prep_feats_fm(
+                            _fm_df, _fm_feat_cols, _fm_target, _fm_problem_type
+                        )
+
+                        import joblib as _jl_fm
+
+                        _fm_model = _jl_fm.load(_fm_run.model_path)
+                        _fm_y_pred = _fm_model.predict(_fm_X)
+
+                        # Align sensitive column with post-dropna rows
+                        _fm_df_aligned = _fm_df_raw.dropna(
+                            subset=[_fm_target]
+                        ).reset_index(drop=True)
+                        _fm_sens_vals = _fm_df_aligned[_fm_col].values[: len(_fm_y)]
+
+                        import numpy as _np_fm
+
+                        _fm_result = _compute_fm(
+                            y_true=_fm_y,
+                            y_pred=_fm_y_pred,
+                            sensitive_values=_np_fm.array(_fm_sens_vals),
+                            problem_type=_fm_problem_type,
+                        )
+                        _fm_result["sensitive_col"] = _fm_col
+                        _fm_result["model_run_id"] = _fm_run.id
+                        _fm_result["algorithm"] = _fm_run.algorithm
+                        _fm_result["target_col"] = _fm_target
+
+                        fairness_event = _fm_result
+
+                        _fm_status = _fm_result["overall_status"]
+                        _fm_summary = _fm_result["summary"]
+                        system_prompt += (
+                            f"\n\n## Model Fairness Analysis (sensitive column: '{_fm_col}')\n"
+                            f"{_fm_summary}\n"
+                            f"Overall status: {_fm_status}. "
+                            "Explain what this means for the analyst in plain English. "
+                            "For 'fair', reassure them. "
+                            "For 'warning', explain what to monitor. "
+                            "For 'biased', explain potential causes and suggest collecting "
+                            "more balanced training data or applying fairness constraints."
+                        )
+        except Exception:  # noqa: BLE001
+            pass  # Fairness is nice-to-have; never crash chat
+
     # Batch prediction schedule creation / listing
     schedule_event: dict | None = None
     if _SCHEDULE_PATTERNS.search(body.message) and ctx["deployment"]:
@@ -11355,6 +11496,9 @@ def send_message(
 
         if confidence_trend_event:
             yield f"data: {json.dumps({'type': 'confidence_trend', 'confidence_trend': confidence_trend_event})}\n\n"
+
+        if fairness_event:
+            yield f"data: {json.dumps({'type': 'fairness_check', 'fairness_check': fairness_event})}\n\n"
 
         # After text stream, opportunistically generate a chart if the
         # message is about data and we have a dataset loaded

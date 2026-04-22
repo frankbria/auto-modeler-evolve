@@ -136,6 +136,7 @@ interface AppState {
   attachPredictionAuditToLastMessage: (prediction_audit: import("./types").PredictionAuditResult) => void
   attachConfidenceTrendToLastMessage: (confidence_trend: import("./types").ConfidenceTrendResult) => void
   attachFeedbackAccuracyReportToLastMessage: (feedback_accuracy_report: import("./types").FeedbackAccuracyReportResult) => void
+  attachFairnessCheckToLastMessage: (fairness_check: import("./types").FairnessCheckResult) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -1004,6 +1005,15 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, feedback_accuracy_report }
+      }
+      return { messages }
+    }),
+  attachFairnessCheckToLastMessage: (fairness_check) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, fairness_check }
       }
       return { messages }
     }),

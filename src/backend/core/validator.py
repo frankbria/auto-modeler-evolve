@@ -626,3 +626,228 @@ def _overall_confidence(
     if score >= 0.65:
         return "medium"
     return "low"
+
+
+# ---------------------------------------------------------------------------
+# Fairness / bias analysis
+# ---------------------------------------------------------------------------
+
+
+def compute_fairness_metrics(
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    sensitive_values: np.ndarray,
+    problem_type: str,
+) -> dict:
+    """Compute fairness metrics across groups defined by a sensitive column.
+
+    For classification:
+      - Statistical Parity Difference (SPD): difference in positive prediction rates
+        between the most-favoured and least-favoured group.  |SPD| < 0.1 → fair.
+      - Disparate Impact Ratio (DIR): ratio of positive-prediction rates.
+        0.8–1.2 → fair (the "4/5ths rule").
+      - Per-group accuracy.
+
+    For regression:
+      - Per-group MAE.
+      - MAE Disparity: ratio of max-group MAE to min-group MAE.
+        < 1.25 → fair; 1.25–1.5 → warning; ≥ 1.5 → biased.
+
+    Returns a dict with per_group_metrics, spd/dir (classification) or mae_disparity
+    (regression), overall_status, and a plain-English summary.
+    """
+    groups = {}
+    for val, yt, yp in zip(sensitive_values.tolist(), y_true.tolist(), y_pred.tolist()):
+        key = str(val)
+        groups.setdefault(key, {"y_true": [], "y_pred": []})
+        groups[key]["y_true"].append(yt)
+        groups[key]["y_pred"].append(yp)
+
+    if len(groups) < 2:
+        return {
+            "sensitive_col": None,
+            "groups": list(groups.keys()),
+            "per_group_metrics": [],
+            "overall_status": "insufficient_data",
+            "summary": (
+                "Need at least 2 distinct groups in the sensitive column to check fairness."
+            ),
+        }
+
+    per_group: list[dict] = []
+
+    if problem_type == "classification":
+        # Determine positive label globally so all groups use the same reference
+        all_preds = np.concatenate([np.array(d["y_pred"]) for d in groups.values()])
+        _global_unique = np.unique(all_preds)
+        pos_label = 1 if 1 in _global_unique else _global_unique[-1]
+
+        for grp_name, data in sorted(groups.items()):
+            yt_arr = np.array(data["y_true"])
+            yp_arr = np.array(data["y_pred"])
+            pos_rate = float(np.mean(yp_arr == pos_label))
+            accuracy = float(np.mean(yt_arr == yp_arr))
+            per_group.append(
+                {
+                    "group": grp_name,
+                    "count": len(yt_arr),
+                    "positive_rate": round(pos_rate, 4),
+                    "accuracy": round(accuracy, 4),
+                }
+            )
+
+        rates = [g["positive_rate"] for g in per_group]
+        max_rate = max(rates)
+        min_rate = min(rates)
+        spd = round(max_rate - min_rate, 4)
+        dir_val = round(min_rate / max_rate, 4) if max_rate > 0 else 1.0
+
+        if abs(spd) < 0.1 and 0.8 <= dir_val <= 1.2:
+            overall_status = "fair"
+        elif abs(spd) < 0.2 and 0.7 <= dir_val <= 1.3:
+            overall_status = "warning"
+        else:
+            overall_status = "biased"
+
+        spd_label = _fairness_spd_label(spd)
+        dir_label = _fairness_dir_label(dir_val)
+
+        summary = _fairness_classification_summary(
+            per_group, spd, dir_val, spd_label, dir_label, overall_status
+        )
+
+        return {
+            "problem_type": problem_type,
+            "groups": [g["group"] for g in per_group],
+            "per_group_metrics": per_group,
+            "spd": spd,
+            "spd_label": spd_label,
+            "dir": dir_val,
+            "dir_label": dir_label,
+            "overall_status": overall_status,
+            "summary": summary,
+        }
+
+    else:
+        # Regression: per-group MAE
+        for grp_name, data in sorted(groups.items()):
+            yt_arr = np.array(data["y_true"], dtype=float)
+            yp_arr = np.array(data["y_pred"], dtype=float)
+            mae = float(np.mean(np.abs(yt_arr - yp_arr)))
+            per_group.append(
+                {
+                    "group": grp_name,
+                    "count": len(yt_arr),
+                    "mae": round(mae, 4),
+                }
+            )
+
+        maes = [g["mae"] for g in per_group]
+        max_mae = max(maes)
+        min_mae = min(maes)
+        # When all groups have zero MAE (perfect predictions), disparity = 1.0 (fair)
+        mae_disparity = (
+            round(max_mae / min_mae, 4) if min_mae > 0 else (1.0 if max_mae == 0 else float("inf"))
+        )
+
+        if mae_disparity < 1.25:
+            overall_status = "fair"
+        elif mae_disparity < 1.5:
+            overall_status = "warning"
+        else:
+            overall_status = "biased"
+
+        summary = _fairness_regression_summary(per_group, mae_disparity, overall_status)
+
+        return {
+            "problem_type": problem_type,
+            "groups": [g["group"] for g in per_group],
+            "per_group_metrics": per_group,
+            "mae_disparity": mae_disparity,
+            "overall_status": overall_status,
+            "summary": summary,
+        }
+
+
+def _fairness_spd_label(spd: float) -> str:
+    """Plain-English label for Statistical Parity Difference."""
+    if abs(spd) < 0.1:
+        return "fair"
+    if abs(spd) < 0.2:
+        return "slight disparity"
+    if abs(spd) < 0.3:
+        return "moderate disparity"
+    return "significant disparity"
+
+
+def _fairness_dir_label(dir_val: float) -> str:
+    """Plain-English label for Disparate Impact Ratio (4/5ths rule)."""
+    if 0.8 <= dir_val <= 1.2:
+        return "passes 4/5ths rule"
+    if 0.7 <= dir_val <= 1.3:
+        return "borderline"
+    return "fails 4/5ths rule"
+
+
+def _fairness_classification_summary(
+    per_group: list[dict],
+    spd: float,
+    dir_val: float,
+    spd_label: str,
+    dir_label: str,
+    overall_status: str,
+) -> str:
+    groups_desc = ", ".join(
+        f"'{g['group']}' ({g['positive_rate']:.0%} positive rate, {g['accuracy']:.0%} accuracy)"
+        for g in per_group[:5]
+    )
+
+    if overall_status == "fair":
+        verdict = "Your model appears fair across groups — prediction rates are similar."
+    elif overall_status == "warning":
+        verdict = (
+            "Minor disparity detected — worth monitoring, "
+            "but likely within acceptable limits."
+        )
+    else:
+        verdict = (
+            "Significant disparity detected. "
+            "The model may be treating groups unequally. "
+            "Consider collecting more balanced training data or applying re-weighting."
+        )
+
+    return (
+        f"Groups: {groups_desc}. "
+        f"SPD = {spd:.3f} ({spd_label}). "
+        f"DIR = {dir_val:.3f} ({dir_label}). "
+        f"{verdict}"
+    )
+
+
+def _fairness_regression_summary(
+    per_group: list[dict],
+    mae_disparity: float,
+    overall_status: str,
+) -> str:
+    worst = max(per_group, key=lambda g: g["mae"])
+    best = min(per_group, key=lambda g: g["mae"])
+
+    groups_desc = ", ".join(
+        f"'{g['group']}' (MAE {g['mae']:.4f})" for g in per_group[:5]
+    )
+
+    if overall_status == "fair":
+        verdict = "Error rates are consistent across groups — no significant disparity."
+    elif overall_status == "warning":
+        verdict = (
+            f"The model is {mae_disparity:.1f}× less accurate for '{worst['group']}' "
+            f"than '{best['group']}'. Monitor this as data grows."
+        )
+    else:
+        verdict = (
+            f"The model is {mae_disparity:.1f}× less accurate for '{worst['group']}' "
+            f"than '{best['group']}'. "
+            "This bias may disadvantage certain groups — consider re-balancing training data."
+        )
+
+    return f"MAE by group: {groups_desc}. MAE disparity ratio: {mae_disparity:.2f}. {verdict}"

@@ -31,6 +31,7 @@ from core.trainer import (
 from core.validator import (
     assess_confidence_limitations,
     compute_confusion_matrix,
+    compute_fairness_metrics,
     compute_prediction_errors,
     compute_residuals,
     compute_segment_performance,
@@ -470,3 +471,83 @@ def get_partial_dependence(
         "target_col": feature_set.target_column,
         **result,
     }
+
+
+# ---------------------------------------------------------------------------
+# 6. Fairness / bias analysis
+# ---------------------------------------------------------------------------
+
+
+@router.get("/api/models/{model_run_id}/fairness")
+def get_fairness_metrics(
+    model_run_id: str,
+    col: str,
+    session: Session = Depends(get_session),
+):
+    """Return fairness metrics across groups defined by a sensitive column.
+
+    For classification: SPD, DIR, per-group accuracy and positive-prediction rate.
+    For regression: per-group MAE and MAE disparity ratio.
+
+    Query params:
+      col: Column name to use as the sensitive attribute (e.g. "region", "gender").
+    """
+    run, feature_set, _dataset, file_path = _load_run_context(model_run_id, session)
+
+    problem_type = feature_set.problem_type or "regression"
+
+    # Load the raw CSV to get sensitive column values before encoding
+    df_raw = pd.read_csv(file_path)
+
+    if col not in df_raw.columns:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Column '{col}' not found in the dataset. "
+                f"Available columns: {', '.join(df_raw.columns.tolist())}"
+            ),
+        )
+
+    # Cardinality guard — same limits as segment performance
+    n_unique = df_raw[col].nunique()
+    if n_unique > 50:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Column '{col}' has {n_unique} unique values (max 50 for fairness analysis). "
+                "Choose a column with fewer distinct groups (e.g. region, department, category)."
+            ),
+        )
+    if n_unique < 2:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Column '{col}' has only {n_unique} unique value — need at least 2 groups."
+            ),
+        )
+
+    # Build X, y for predictions
+    X, y, feature_cols = _build_Xy(file_path, feature_set)
+
+    fitted_model = joblib.load(run.model_path)
+    y_pred = fitted_model.predict(X)
+
+    # Align sensitive column with the rows used after feature prep
+    # (_build_Xy may drop rows with NaN target; use first len(y) rows)
+    target_col = feature_set.target_column
+    df_aligned = df_raw.dropna(subset=[target_col]).reset_index(drop=True)
+    sensitive_vals = df_aligned[col].values[: len(y)]
+
+    result = compute_fairness_metrics(
+        y_true=y,
+        y_pred=y_pred,
+        sensitive_values=np.array(sensitive_vals),
+        problem_type=problem_type,
+    )
+
+    result["sensitive_col"] = col
+    result["model_run_id"] = model_run_id
+    result["algorithm"] = run.algorithm
+    result["target_col"] = target_col
+
+    return result
