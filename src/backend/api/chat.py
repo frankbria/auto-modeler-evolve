@@ -2417,6 +2417,36 @@ _ENSEMBLE_TRAIN_PATTERNS = re.compile(
 # Subtype detector: voting vs stacking
 _STACKING_RE = re.compile(r"\bstack(?:ing)?\b", re.IGNORECASE)
 
+# Patterns for training WITH imbalance correction (fires before _TRAIN_PATTERNS so that
+# "train with class weighting" doesn't fall through to uncorrected training).
+_BALANCE_TRAIN_PATTERNS = re.compile(
+    r"(?:"
+    r"train\s+(?:(?:a\s+|the\s+)?model\s+)?with\s+(?:class\s+weight(?:ing|s)?|balanced\s+weights?|smote|oversampling|threshold\s+tuning)\b|"
+    r"(?:apply|use)\s+(?:smote|oversampling|class\s+weight(?:ing|s)?|balanced\s+(?:class\s+)?weights?|threshold\s+tuning)\s+(?:and\s+)?(?:re)?train\b|"
+    r"(?:re)?train\s+(?:with|using)\s+(?:smote|oversampling|class\s+weight(?:ing|s)?|balanced\s+(?:class\s+)?weights?|threshold\s+tuning)\b|"
+    r"fix\s+(?:the\s+)?(?:class\s+)?imbalance\s+(?:and\s+)?(?:then\s+)?(?:re)?train\b|"
+    r"correct\s+(?:the\s+)?(?:class\s+)?imbalance\s+(?:and\s+)?(?:re)?train\b|"
+    r"(?:re)?train\s+(?:with\s+)?(?:the\s+)?(?:recommended|suggested|balanced|corrected)\s+(?:imbalance\s+)?(?:strategy|correction|fix|approach)\b|"
+    r"apply\s+(?:the\s+)?(?:recommended|suggested)?\s*imbalance\s+(?:correction|fix|strategy)\s+(?:and\s+)?(?:re)?train\b|"
+    r"(?:use|apply)\s+(?:class\s+)?(?:weighting|weights?)\s+(?:to\s+)?(?:re)?train\b"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def _detect_balance_strategy(message: str) -> str:
+    """Extract the desired imbalance correction strategy from the user's message.
+
+    Returns "smote", "threshold", or "class_weight" (default).
+    """
+    msg = message.lower()
+    if "smote" in msg or "oversample" in msg or "oversampling" in msg:
+        return "smote"
+    if "threshold" in msg:
+        return "threshold"
+    return "class_weight"
+
+
 _PRESET_NAME_RE = re.compile(
     r"(?:called|named)\s+['\"]?([A-Za-z0-9][A-Za-z0-9 _\-]*?)['\"]?\s*"
     r"(?=\s+with\s+|\s*:\s*[A-Za-z]|\s*,\s*[A-Za-z]|$)",
@@ -6226,6 +6256,166 @@ def send_message(
                 )
         except Exception:  # noqa: BLE001
             pass  # Ensemble training is nice-to-have; never crash chat
+
+    # Check for balance-corrected training request ("train with class weighting",
+    # "apply SMOTE and retrain", etc.). Must fire BEFORE _TRAIN_PATTERNS so the
+    # imbalance strategy is propagated to _train_in_background.
+    if (
+        _BALANCE_TRAIN_PATTERNS.search(body.message)
+        and ctx["dataset"]
+        and not training_started_event
+    ):
+        try:
+            import queue as _queue
+            import threading as _threading
+
+            from api.models import (
+                MODELS_DIR as _MODELS_DIR,
+                _lock as _train_lock,
+                _train_in_background,
+                _training_counters,
+                _training_queues,
+            )
+            from core.feature_engine import detect_problem_type as _detect_pt
+            from core.trainer import recommend_models as _rec_models
+            from models.model_run import ModelRun as _ModelRun
+
+            _balance_strategy = _detect_balance_strategy(body.message)
+            _ds = ctx["dataset"]
+            _file_path = Path(_ds.file_path)
+
+            if _file_path.exists():
+                _df = _load_working_df(_file_path, _active_filter_conditions)
+                _all_cols = list(_df.columns)
+                _fs = ctx["feature_set"]
+
+                _target = None
+                _problem_type = "regression"
+                _feature_set_id = None
+
+                if _fs and _fs.target_column:
+                    _target = _fs.target_column
+                    _problem_type = _fs.problem_type or "regression"
+                    _feature_set_id = _fs.id
+                else:
+                    _target_from_msg = _detect_train_target(body.message, _all_cols)
+                    if _target_from_msg:
+                        _target = _target_from_msg
+                        _pt_result = _detect_pt(_df, _target)
+                        _problem_type = _pt_result.get("problem_type", "regression")
+                        if _fs:
+                            with Session(session.bind) as _fs_s:
+                                _fs_obj = _fs_s.get(FeatureSet, _fs.id)
+                                if _fs_obj:
+                                    _fs_obj.target_column = _target
+                                    _fs_obj.problem_type = _problem_type
+                                    _fs_s.add(_fs_obj)
+                                    _fs_s.commit()
+                            _feature_set_id = _fs.id
+                        else:
+                            _fcols_raw = [c for c in _all_cols if c != _target]
+                            _col_map = {c: [c] for c in _fcols_raw}
+                            with Session(session.bind) as _nfs_s:
+                                _nfs = FeatureSet(
+                                    dataset_id=_ds.id,
+                                    transformations=json.dumps([]),
+                                    column_mapping=json.dumps(_col_map),
+                                    target_column=_target,
+                                    problem_type=_problem_type,
+                                    is_active=True,
+                                )
+                                _nfs_s.add(_nfs)
+                                _nfs_s.commit()
+                                _nfs_s.refresh(_nfs)
+                                _feature_set_id = _nfs.id
+
+                # Only run for classification problems; regression has no imbalance
+                if _target and _feature_set_id and _problem_type == "classification":
+                    _recs = _rec_models(_problem_type, _ds.row_count, _ds.column_count)
+                    _algo_names = [r["algorithm"] for r in _recs[:3]]
+
+                    _transforms_raw = (
+                        json.loads(_fs.transformations or "[]") if _fs else []
+                    )
+                    if _transforms_raw:
+                        from core.feature_engine import apply_transformations as _apply_t
+
+                        _df, _ = _apply_t(_df, _transforms_raw)
+
+                    _feature_cols = [c for c in _df.columns if c != _target]
+                    _model_dir = _MODELS_DIR / project_id
+
+                    with _train_lock:
+                        _training_queues[project_id] = _queue.Queue()
+                        _training_counters[project_id] = len(_algo_names)
+
+                    _run_ids: list[str] = []
+                    with Session(session.bind) as _tr_session:
+                        for _algo in _algo_names:
+                            _run = _ModelRun(
+                                project_id=project_id,
+                                feature_set_id=_feature_set_id,
+                                algorithm=_algo,
+                                hyperparameters=json.dumps({}),
+                                status="pending",
+                            )
+                            _tr_session.add(_run)
+                            _tr_session.commit()
+                            _tr_session.refresh(_run)
+                            _run_ids.append(_run.id)
+
+                            _t = _threading.Thread(
+                                target=_train_in_background,
+                                args=(
+                                    _run.id,
+                                    project_id,
+                                    _df.copy(),
+                                    _feature_cols,
+                                    _target,
+                                    _algo,
+                                    _problem_type,
+                                    _model_dir,
+                                    _balance_strategy,
+                                ),
+                                daemon=True,
+                            )
+                            _t.start()
+
+                    _strategy_label = {
+                        "smote": "SMOTE oversampling",
+                        "threshold": "threshold tuning",
+                        "class_weight": "class weighting",
+                    }.get(_balance_strategy, _balance_strategy)
+
+                    training_started_event = {
+                        "project_id": project_id,
+                        "target_column": _target,
+                        "problem_type": _problem_type,
+                        "algorithms": _algo_names,
+                        "run_count": len(_run_ids),
+                        "status": "started",
+                        "imbalance_strategy": _balance_strategy,
+                    }
+                    system_prompt += (
+                        f"\n\n## Balanced Training Started\n"
+                        f"Training {len(_algo_names)} model(s) to predict '{_target}' "
+                        f"using {_strategy_label} to handle class imbalance. "
+                        f"Algorithms: {', '.join(_algo_names)}.\n"
+                        "Inform the user that training has started with the imbalance "
+                        f"correction ({_strategy_label}) applied. Tell them to check the "
+                        "Models tab for real-time progress. When training finishes the "
+                        "results will show whether the correction improved performance."
+                    )
+                elif _target and _feature_set_id and _problem_type == "regression":
+                    system_prompt += (
+                        "\n\n## Imbalance Correction — Not Applicable\n"
+                        "The user asked to train with an imbalance strategy, but the "
+                        f"target column '{_target}' is a regression problem. Class "
+                        "imbalance only applies to classification. Tell them this "
+                        "clearly and offer to train normally instead."
+                    )
+        except Exception:  # noqa: BLE001
+            pass  # Balance-corrected training is nice-to-have; never crash chat
 
     if (
         _TRAIN_PATTERNS.search(body.message)

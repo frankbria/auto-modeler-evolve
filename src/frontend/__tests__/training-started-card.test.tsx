@@ -27,6 +27,21 @@ const classificationResult: TrainingStartedResult = {
   status: "started",
 }
 
+const classWeightResult: TrainingStartedResult = {
+  ...classificationResult,
+  imbalance_strategy: "class_weight",
+}
+
+const smoteResult: TrainingStartedResult = {
+  ...classificationResult,
+  imbalance_strategy: "smote",
+}
+
+const thresholdResult: TrainingStartedResult = {
+  ...classificationResult,
+  imbalance_strategy: "threshold",
+}
+
 // --- Component tests ----------------------------------------------------
 
 describe("TrainingStartedCard", () => {
@@ -77,6 +92,32 @@ describe("TrainingStartedCard", () => {
     expect(screen.getByText(/1/)).toBeInTheDocument()
     // Should say "model" not "models"
     expect(screen.getByText(/model to predict/i)).toBeInTheDocument()
+  })
+
+  it("does not show strategy badge when no imbalance_strategy", () => {
+    render(<TrainingStartedCard result={trainingStarted} />)
+    expect(screen.queryByTestId("imbalance-strategy-badge")).not.toBeInTheDocument()
+  })
+
+  it("shows 'Class Weighting' badge when imbalance_strategy=class_weight", () => {
+    render(<TrainingStartedCard result={classWeightResult} />)
+    expect(screen.getByTestId("imbalance-strategy-badge")).toBeInTheDocument()
+    expect(screen.getByTestId("imbalance-strategy-badge")).toHaveTextContent("Class Weighting")
+  })
+
+  it("shows 'SMOTE Oversampling' badge when imbalance_strategy=smote", () => {
+    render(<TrainingStartedCard result={smoteResult} />)
+    expect(screen.getByTestId("imbalance-strategy-badge")).toHaveTextContent("SMOTE Oversampling")
+  })
+
+  it("shows 'Threshold Tuning' badge when imbalance_strategy=threshold", () => {
+    render(<TrainingStartedCard result={thresholdResult} />)
+    expect(screen.getByTestId("imbalance-strategy-badge")).toHaveTextContent("Threshold Tuning")
+  })
+
+  it("mentions strategy in description text when imbalance_strategy present", () => {
+    render(<TrainingStartedCard result={classWeightResult} />)
+    expect(screen.getByText(/with class weighting/i)).toBeInTheDocument()
   })
 })
 
