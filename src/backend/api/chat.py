@@ -6335,7 +6335,8 @@ def send_message(
                     _model_wfr = _jl_wfr.load(_best_wfr.model_path)
                     _fs_result_wfr = _iwf_wfr(_model_wfr, _feat_cols_all)
                     _weak_names: list[str] = [
-                        f["name"] for f in _fs_result_wfr.get("feature_importances", [])
+                        f["name"]
+                        for f in _fs_result_wfr.get("feature_importances", [])
                         if f.get("is_weak")
                     ]
                     _feature_cols_wfr = [
@@ -6976,7 +6977,11 @@ def send_message(
 
     # Check for segment performance request ("how does my model perform by region?")
     segment_performance_event: dict | None = None
-    if _SEGMENT_PERF_PATTERNS.search(body.message) and ctx["dataset"] and ctx["model_runs"]:
+    if (
+        _SEGMENT_PERF_PATTERNS.search(body.message)
+        and ctx["dataset"]
+        and ctx["model_runs"]
+    ):
         try:
             _done_runs = [r for r in ctx["model_runs"] if r.status == "done"]
             _sel_run = next((r for r in _done_runs if r.is_selected), None)
@@ -7163,7 +7168,11 @@ def send_message(
 
     # Check for prediction error analysis ("where was my model wrong?", "biggest errors")
     pred_error_event: dict | None = None
-    if _PRED_ERROR_PATTERNS.search(body.message) and ctx["dataset"] and ctx["model_runs"]:
+    if (
+        _PRED_ERROR_PATTERNS.search(body.message)
+        and ctx["dataset"]
+        and ctx["model_runs"]
+    ):
         try:
             _pe_done_runs = [r for r in ctx["model_runs"] if r.status == "done"]
             _pe_sel_run = next((r for r in _pe_done_runs if r.is_selected), None)

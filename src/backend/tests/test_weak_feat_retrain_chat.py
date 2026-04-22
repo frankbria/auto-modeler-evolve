@@ -174,7 +174,9 @@ def _setup_regression_project(client, tmp_path, csv_bytes=_REGRESSION_CSV):
     return pid, did
 
 
-def _train_and_wait(client, project_id: str, algorithm: str = "random_forest_regressor") -> str:
+def _train_and_wait(
+    client, project_id: str, algorithm: str = "random_forest_regressor"
+) -> str:
     """Train a model synchronously and return run_id."""
     resp = client.post(
         f"/api/models/{project_id}/train",
@@ -242,14 +244,19 @@ class TestWeakFeatRetrainChatHandler:
 
         events = _chat_events(sync_client, pid, "drop weak features and retrain")
         # Should not crash; either training_started or text response is fine
-        assert any(e.get("type") in ("training_started", "suggestions") or "content" in e for e in events)
+        assert any(
+            e.get("type") in ("training_started", "suggestions") or "content" in e
+            for e in events
+        )
 
     def test_run_count_in_event(self, sync_client, tmp_path):
         """When training_started emitted, run_count > 0."""
         pid, _ = _setup_regression_project(sync_client, tmp_path)
         _train_and_wait(sync_client, pid, "random_forest_regressor")
 
-        events = _chat_events(sync_client, pid, "remove unimportant features and retrain")
+        events = _chat_events(
+            sync_client, pid, "remove unimportant features and retrain"
+        )
         ts = next((e for e in events if e.get("type") == "training_started"), None)
         if ts is not None:
             assert ts["training"]["run_count"] > 0
