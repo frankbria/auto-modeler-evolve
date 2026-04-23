@@ -49,6 +49,18 @@ the time is better spent on real features.
 
 ## Currently Working On
 
+## Day 43 (04:00) — Done
+**Track D — Production Prediction Explanation via Chat.** Analysts can ask "explain the last prediction", "why did the model give that result?", "what drove that production prediction", "feature contributions for the most recent API call" and receive a `ProductionExplanationCard` in chat showing per-feature contributions for the most recent live `PredictionLog` record.
+- `GET /api/deploy/{deployment_id}/explain-prediction?prediction_id=` in `api/deploy.py`: loads most recent `PredictionLog`, calls existing `explain_prediction()` from `core/deployer.py`, returns `contributions`, `top_drivers`, `summary` + metadata. 404 on missing/inactive deployment or no PredictionLog records.
+- `_PROD_EXPLAIN_PATTERNS` (8 NL variant groups) + handler in `chat.py`. Distinct from `_EXPLAIN_ROW_PATTERNS` (training rows by index). Guard: `ctx["deployment"]`. Queries most recent PredictionLog, injects top-3 drivers into system_prompt. SSE emit `{type:"prod_prediction_explanation"}`.
+- `ProductionExplanationCard` (violet border, 🔍 icon). Algorithm + problem-type badges + timestamp header. Prediction box with confidence badge. Feature contributions list with sky/rose bars + "val: X" annotations + full aria accessibility. Italic summary. `ProdPredictionContribution` + `ProdPredictionExplanationResult` TypeScript types; `attachProdPredictionExplanationToLastMessage` Zustand action; SSE handler + render in `page.tsx`.
+- 35 backend + 22 frontend = 57 new tests. Backend lint: clean. Frontend build + lint: clean.
+
+**What's next:**
+- Track C: Date-aware chronological split via chat — "train with chronological split", "use time-based train/test split"
+- Track E: End-to-end "lunch break" analyst flow — run the full upload → explore → train → validate → deploy → predict flow as a real user and fix friction points
+- Track D: Webhook notifications on model drift/degradation
+
 ## Day 42 (20:00) — Done
 **Track D — Batch Job Results Analytics via Chat.** Analysts can ask "show me batch results", "latest batch results", "batch prediction summary", "how did the last batch job go" and receive a `BatchJobResultCard` in chat — closing the gap between scheduled batch runs and conversational insight delivery.
 - `compute_batch_job_results(output_csv_bytes, problem_type, target_column)` pure function in `core/analyzer.py`. Regression: avg/median/min/max/std + histogram (3–10 bins). Classification: class distribution + pct + avg_confidence (auto-detected, 0–1 proportions converted to %). Falls back to `has_data: False` on empty/malformed CSV.

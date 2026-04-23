@@ -1625,6 +1625,27 @@ guides them forward through the natural flow.
       Zustand action; SSE handler + render wired in `project/[id]/page.tsx`.
       *Day 42 (20:00): 45 backend + 26 frontend tests. Backend lint: clean. Frontend build: clean.*
 
+- [x] **Production Prediction Explanation via Chat** — Track D perpetual. Analysts can ask "explain
+      the last prediction", "why did the model give that result?", "what drove that production
+      prediction", "feature contributions for the most recent API call", etc. REST endpoint `GET
+      /api/deploy/{deployment_id}/explain-prediction?prediction_id=` in `api/deploy.py`: loads most
+      recent `PredictionLog` (or by explicit `prediction_id`), calls existing
+      `explain_prediction(pipeline_path, model_path, input_data)` from `core/deployer.py`, returns
+      enriched response with `contributions` (feature, value, mean_value, contribution, direction),
+      `top_drivers`, `summary`, `prediction_log_id`, `created_at`, `confidence`, `algorithm`,
+      `target_column`, `problem_type`, `deployment_id`. Chat handler `_PROD_EXPLAIN_PATTERNS` (8 NL
+      variant groups) in `api/chat.py` — distinct from `_EXPLAIN_ROW_PATTERNS` (training rows by
+      index); guards on `ctx["deployment"]`; queries most recent PredictionLog; emits
+      `{type:"prod_prediction_explanation"}` SSE event. Frontend: `ProductionExplanationCard` (violet
+      border `border-violet-400/40 bg-violet-50/30`, 🔍 icon): algorithm + problem-type badges +
+      timestamp in header; prediction value box with confidence badge; feature contribution bars
+      (sky-400 positive / rose-400 negative, widths proportional to abs/max, "val: X" annotations,
+      per-row aria-labels); italic summary paragraph; sr-only figcaption. `ProdPredictionContribution`
+      + `ProdPredictionExplanationResult` TypeScript interfaces; `prod_prediction_explanation?` on
+      `ChatMessage`; `attachProdPredictionExplanationToLastMessage` Zustand action; SSE handler +
+      render wired in `project/[id]/page.tsx`.
+      *Day 43 (04:00): 35 backend + 22 frontend tests. Backend lint: clean. Frontend build + lint: clean.*
+
 ---
 
 ## Data Model

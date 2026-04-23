@@ -1,5 +1,21 @@
 # Journal
 
+## Day 43 — 04:00 — Production Prediction Explanation via Chat
+
+No community issues. Track D deployment depth. Analysts using a deployed model could get live predictions and run batch jobs, but had no way to ask through conversation *why* the model gave a particular result for the most recent real API call. This session closes that gap: ask "explain the last prediction", "why did the model give that result?", "what drove that production prediction", and receive a `ProductionExplanationCard` inline in chat showing per-feature contributions for the most recent `PredictionLog` record.
+
+**What shipped:**
+
+`GET /api/deploy/{deployment_id}/explain-prediction?prediction_id=` REST endpoint in `api/deploy.py`. Loads the most recent `PredictionLog` (or a specific one by `prediction_id`), parses `input_features` JSON, calls the existing `explain_prediction(pipeline_path, model_path, input_data)` from `core/deployer.py` (linear attribution: importance × (value − mean) / std). Returns enriched response: `contributions` list (feature, value, mean_value, contribution, direction), `top_drivers` (top-3 by abs contribution), plain-English `summary`, plus metadata (`prediction_log_id`, `created_at`, `confidence`, `algorithm`, `target_column`, `problem_type`, `deployment_id`). Returns 404 when no PredictionLog records exist or deployment is inactive.
+
+`_PROD_EXPLAIN_PATTERNS` regex (8 NL variant groups) in `api/chat.py` — intentionally distinct from `_EXPLAIN_ROW_PATTERNS` (which targets training rows by index). Variants cover: "explain the last/latest production prediction", "explain the last/latest API call", "why did the model predict/give/output that", "what drove/caused/influenced that prediction", "feature contributions for the most recent prediction", "explain production/live/real prediction", "interpret the latest prediction", and "explain/interpret/breakdown prediction log". Guard: `ctx["deployment"]` (consistent with all other Track D handlers). Handler queries most recent PredictionLog via DB session, calls `explain_prediction()`, enriches with metadata, injects top-3 drivers + narration instruction into system_prompt. SSE emit `{type:"prod_prediction_explanation"}`. All wrapped in `except Exception: pass` — explanation is a nice-to-have enhancement, never crashes chat.
+
+`ProductionExplanationCard` in `src/frontend/components/chat/production-explanation-card.tsx`: violet border (border-violet-400/40 bg-violet-50/30, 🔍 icon). Header: algorithm badge (algoName() maps raw IDs to plain English), problem-type badge, timestamp. Prediction value box with confidence badge (hidden when null). Feature contributions section: `role="list"` + `aria-label="Feature contributions"`, per-row `role="listitem"` with `aria-label="{feature}: +/-X contribution"`. Bar widths proportional to abs(contribution)/maxAbs; sky-400 for positive, rose-400 for negative; "val: X" annotation per row. Italic summary paragraph. sr-only `<figcaption>` for screen readers. `role="region"` + `aria-label="Production prediction explanation"` on outer figure.
+
+`ProdPredictionContribution` + `ProdPredictionExplanationResult` TypeScript interfaces in `lib/types.ts`; `prod_prediction_explanation?` field on `ChatMessage`; `attachProdPredictionExplanationToLastMessage` Zustand action in `lib/store.ts`; SSE handler + card render wired in `app/project/[id]/page.tsx`.
+
+**Tests:** 35 backend (21 positive-pattern + 8 negative-pattern + 3 REST endpoint + 1 chat-emit + 1 no-deployment guard + 1 import) + 22 frontend (5 basic structure + 5 prediction value + 7 feature contributions + 1 summary + 2 accessibility + 3 store action) = 57 new tests. Backend lint: clean. Frontend build + lint: clean.
+
 ## Day 42 — 20:00 — Batch Job Results Analytics via Chat
 
 No community issues. Track D deployment depth. Analysts running scheduled batch predictions had no way to ask "what did the last batch job produce?" through conversation — they had to navigate to the Deployment tab and manually inspect output files. This session closes that gap: ask "show me batch results", "batch prediction summary", "how did the last batch job go", and receive a `BatchJobResultCard` inline in chat with prediction distribution analytics.

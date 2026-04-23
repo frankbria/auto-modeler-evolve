@@ -4434,3 +4434,62 @@ def get_batch_results(
     result["row_count"] = job_run.row_count
     result["schedule_id"] = job_run.schedule_id
     return result
+
+
+@router.get("/api/deploy/{deployment_id}/explain-prediction")
+def explain_production_prediction_endpoint(
+    deployment_id: str,
+    prediction_id: str | None = Query(default=None),
+    session: Session = Depends(get_session),
+):
+    """Explain the feature contributions for a production PredictionLog record.
+
+    When prediction_id is omitted, uses the most recent PredictionLog.
+    Returns feature contributions (importance × deviation from training mean)
+    alongside the original prediction, timestamp, and confidence.
+    """
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment or not deployment.is_active:
+        raise HTTPException(status_code=404, detail="Deployment not found or inactive")
+
+    if not deployment.pipeline_path or not Path(deployment.pipeline_path).exists():
+        raise HTTPException(status_code=400, detail="Prediction pipeline not found")
+
+    run = session.get(ModelRun, deployment.model_run_id)
+    if not run or not run.model_path or not Path(run.model_path).exists():
+        raise HTTPException(status_code=400, detail="Trained model file not found")
+
+    if prediction_id:
+        log = session.get(PredictionLog, prediction_id)
+        if not log or log.deployment_id != deployment_id:
+            raise HTTPException(status_code=404, detail="Prediction log record not found")
+    else:
+        log = session.exec(
+            select(PredictionLog)
+            .where(PredictionLog.deployment_id == deployment_id)
+            .order_by(PredictionLog.created_at.desc())
+        ).first()
+        if not log:
+            raise HTTPException(
+                status_code=404,
+                detail="No predictions have been made for this deployment yet",
+            )
+
+    try:
+        input_data = json.loads(log.input_features)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Could not parse stored input features")
+
+    result = explain_prediction(
+        str(deployment.pipeline_path),
+        str(run.model_path),
+        input_data,
+    )
+    result["prediction_log_id"] = log.id
+    result["created_at"] = log.created_at.isoformat() if log.created_at else None
+    result["confidence"] = log.confidence
+    result["algorithm"] = deployment.algorithm
+    result["target_column"] = deployment.target_column
+    result["problem_type"] = deployment.problem_type
+    result["deployment_id"] = deployment_id
+    return result

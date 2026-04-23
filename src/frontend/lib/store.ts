@@ -138,6 +138,7 @@ interface AppState {
   attachFeedbackAccuracyReportToLastMessage: (feedback_accuracy_report: import("./types").FeedbackAccuracyReportResult) => void
   attachFairnessCheckToLastMessage: (fairness_check: import("./types").FairnessCheckResult) => void
   attachBatchJobResultsToLastMessage: (batch_job_results: import("./types").BatchJobResultsResult) => void
+  attachProdPredictionExplanationToLastMessage: (prod_prediction_explanation: import("./types").ProdPredictionExplanationResult) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -1024,6 +1025,15 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, batch_job_results }
+      }
+      return { messages }
+    }),
+  attachProdPredictionExplanationToLastMessage: (prod_prediction_explanation) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, prod_prediction_explanation }
       }
       return { messages }
     }),

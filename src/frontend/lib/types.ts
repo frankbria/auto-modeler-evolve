@@ -498,6 +498,7 @@ export interface ChatMessage {
   feedback_accuracy_report?: FeedbackAccuracyReportResult
   fairness_check?: FairnessCheckResult
   batch_job_results?: BatchJobResultsResult
+  prod_prediction_explanation?: ProdPredictionExplanationResult
 }
 
 export interface SegmentPerformanceSegment {
@@ -2933,4 +2934,26 @@ export interface BatchJobResultsResult {
   top_pct?: number
   class_distribution?: BatchClassDistributionEntry[]
   avg_confidence?: number | null
+}
+
+export interface ProdPredictionContribution {
+  feature: string
+  value: number
+  mean_value: number
+  contribution: number
+  direction: "positive" | "negative"
+}
+
+export interface ProdPredictionExplanationResult {
+  prediction_log_id: string
+  created_at: string | null
+  prediction: string | number
+  confidence: number | null
+  algorithm: string | null
+  target_column: string | null
+  problem_type: string | null
+  deployment_id: string
+  contributions: ProdPredictionContribution[]
+  top_drivers: string[]
+  summary: string
 }
