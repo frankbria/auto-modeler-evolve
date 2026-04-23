@@ -106,6 +106,7 @@ import { PredictionAuditCard } from "@/components/deploy/prediction-audit-card"
 import { ConfidenceTrendCard } from "@/components/deploy/confidence-trend-card"
 import { FeedbackAccuracyCard } from "@/components/deploy/feedback-accuracy-card"
 import { FairnessCheckCard } from "@/components/chat/fairness-check-card"
+import { BatchJobResultCard } from "@/components/chat/batch-job-result-card"
 import { PairCorrelationCard } from "@/components/data/pair-correlation-card"
 import { StatQueryCard } from "@/components/data/stat-query-card"
 import { SummaryStatsCard } from "@/components/data/summary-stats-card"
@@ -293,6 +294,7 @@ export default function ProjectWorkspace() {
     attachConfidenceTrendToLastMessage,
     attachFeedbackAccuracyReportToLastMessage,
     attachFairnessCheckToLastMessage,
+    attachBatchJobResultsToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -735,6 +737,8 @@ export default function ProjectWorkspace() {
                 attachFeedbackAccuracyReportToLastMessage(json.feedback_accuracy_report as import("@/lib/types").FeedbackAccuracyReportResult)
               } else if (json.type === "fairness_check" && json.fairness_check) {
                 attachFairnessCheckToLastMessage(json.fairness_check as import("@/lib/types").FairnessCheckResult)
+              } else if (json.type === "batch_job_results" && json.batch_job_results) {
+                attachBatchJobResultsToLastMessage(json.batch_job_results as import("@/lib/types").BatchJobResultsResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -845,6 +849,7 @@ export default function ProjectWorkspace() {
     attachConfidenceTrendToLastMessage,
     attachFeedbackAccuracyReportToLastMessage,
     attachFairnessCheckToLastMessage,
+    attachBatchJobResultsToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -1364,6 +1369,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.fairness_check && (
                       <FairnessCheckCard result={msg.fairness_check} />
+                    )}
+                    {msg.batch_job_results && (
+                      <BatchJobResultCard result={msg.batch_job_results} />
                     )}
                   </div>
                 </div>

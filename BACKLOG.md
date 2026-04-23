@@ -49,6 +49,19 @@ the time is better spent on real features.
 
 ## Currently Working On
 
+## Day 42 (20:00) — Done
+**Track D — Batch Job Results Analytics via Chat.** Analysts can ask "show me batch results", "latest batch results", "batch prediction summary", "how did the last batch job go" and receive a `BatchJobResultCard` in chat — closing the gap between scheduled batch runs and conversational insight delivery.
+- `compute_batch_job_results(output_csv_bytes, problem_type, target_column)` pure function in `core/analyzer.py`. Regression: avg/median/min/max/std + histogram (3–10 bins). Classification: class distribution + pct + avg_confidence (auto-detected, 0–1 proportions converted to %). Falls back to `has_data: False` on empty/malformed CSV.
+- `GET /api/deploy/{id}/batch-results` endpoint in `api/deploy.py`: queries most recent successful `BatchJobRun`, returns distribution stats with `has_results`, `job_run_id`, `completed_at`, `row_count`.
+- `_BATCH_RESULTS_PATTERNS` (8 NL variants) + handler in `chat.py`. Guard: `ctx["deployment"]`. Reads output CSV, calls pure function, injects summary into system_prompt. SSE emit `{type:"batch_job_results"}`.
+- `BatchJobResultCard` (teal border, empty slate state). Regression: 4-stat grid + histogram bars. Classification: horizontal pct bars per class + avg_confidence. `role="region"` accessibility. `BatchJobResultsResult` + `BatchHistogramBin` + `BatchClassDistributionEntry` TypeScript types; `attachBatchJobResultsToLastMessage` Zustand action; SSE handler + render in `page.tsx`.
+- 45 backend + 26 frontend = 71 new tests. Backend lint: clean. Frontend build: clean.
+
+**What's next:**
+- Track C: Date-aware chronological split via chat — "train with chronological split", "use time-based train/test split"
+- Track E: End-to-end "lunch break" analyst flow — run the full upload → explore → train → validate → deploy → predict flow as a real user and fix friction points
+- Track D: Webhook notifications on model drift/degradation
+
 ## Day 42 (12:00) — Done
 **Track C — Fairness / Bias Analysis via Chat.** Analysts can ask "is my model biased?", "check fairness by gender", "any disparate impact?", "statistical parity difference", "is my model treating everyone fairly?" and receive a `FairnessCheckCard` inline in chat with Statistical Parity Difference (SPD), Disparate Impact Ratio (DIR), and per-group accuracy/MAE metrics.
 - `compute_fairness_metrics()` pure function in `core/validator.py`: classification (SPD + DIR + per-group accuracy), regression (MAE disparity ratio). Status: fair/warning/biased/insufficient_data. Global positive-label detection prevents per-group label drift. Zero-MAE disparity treated as 1.0.

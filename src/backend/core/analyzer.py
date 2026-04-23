@@ -3713,3 +3713,138 @@ def compute_feedback_accuracy_report(
             "has_data": True,
             "summary": summary,
         }
+
+
+# ---------------------------------------------------------------------------
+# Batch job results analytics
+# ---------------------------------------------------------------------------
+
+
+def compute_batch_job_results(
+    output_csv_bytes: bytes,
+    problem_type: str,
+    target_column: str,
+) -> dict:
+    """Analyse a batch prediction output CSV and return distribution stats.
+
+    For regression: avg/median/min/max/std + 10-bin histogram.
+    For classification: per-class count/pct + optional avg confidence.
+    """
+    import io as _io
+
+    try:
+        df = pd.read_csv(_io.BytesIO(output_csv_bytes))
+    except Exception:
+        return {"has_data": False, "summary": "Unable to parse batch output."}
+
+    if df.empty:
+        return {"has_data": False, "summary": "Batch output is empty."}
+
+    # Locate the prediction column (prediction or {target}_prediction)
+    pred_col: str | None = None
+    candidates = [
+        target_column,
+        f"{target_column}_prediction",
+        "prediction",
+        f"predicted_{target_column}",
+    ]
+    for c in candidates:
+        if c in df.columns:
+            pred_col = c
+            break
+    if pred_col is None:
+        pred_col = df.columns[-1]
+
+    total_rows = len(df)
+
+    if problem_type == "regression":
+        values = pd.to_numeric(df[pred_col], errors="coerce").dropna()
+        if len(values) == 0:
+            return {"has_data": False, "summary": "No numeric predictions found."}
+
+        avg_prediction = float(values.mean())
+        median_prediction = float(values.median())
+        min_prediction = float(values.min())
+        max_prediction = float(values.max())
+        std_prediction = float(values.std()) if len(values) > 1 else 0.0
+
+        n_bins = min(10, max(3, len(values) // 5))
+        counts, edges = np.histogram(values.values, bins=n_bins)
+        histogram = [
+            {
+                "bin_start": float(edges[i]),
+                "bin_end": float(edges[i + 1]),
+                "count": int(counts[i]),
+            }
+            for i in range(len(counts))
+        ]
+
+        summary = (
+            f"Batch produced {total_rows} predictions for {target_column}. "
+            f"Average: {avg_prediction:.2f}, range {min_prediction:.2f}\u2013{max_prediction:.2f}."
+        )
+
+        return {
+            "has_data": True,
+            "problem_type": "regression",
+            "target_column": target_column,
+            "prediction_column": pred_col,
+            "total_rows": total_rows,
+            "avg_prediction": avg_prediction,
+            "median_prediction": median_prediction,
+            "min_prediction": min_prediction,
+            "max_prediction": max_prediction,
+            "std_prediction": std_prediction,
+            "histogram": histogram,
+            "summary": summary,
+        }
+
+    # classification
+    class_series = df[pred_col].fillna("unknown").astype(str)
+    class_counts = class_series.value_counts()
+    total_classified = int(class_counts.sum())
+
+    class_distribution = [
+        {
+            "class_name": str(cls),
+            "count": int(cnt),
+            "pct": round(100.0 * int(cnt) / total_classified, 1)
+            if total_classified > 0
+            else 0.0,
+        }
+        for cls, cnt in class_counts.items()
+    ]
+
+    top_class = class_distribution[0]["class_name"] if class_distribution else "unknown"
+    top_pct = class_distribution[0]["pct"] if class_distribution else 0.0
+
+    # Optional: average confidence column
+    avg_confidence: float | None = None
+    for col in df.columns:
+        if "confidence" in col.lower():
+            conf_vals = pd.to_numeric(df[col], errors="coerce").dropna()
+            if len(conf_vals) > 0:
+                mean_val = float(conf_vals.mean())
+                # Convert proportion (0–1) to percentage
+                if mean_val <= 1.0:
+                    mean_val *= 100.0
+                avg_confidence = round(mean_val, 1)
+            break
+
+    summary = (
+        f"Batch produced {total_rows} predictions for {target_column}. "
+        f"Most common: '{top_class}' ({top_pct}% of predictions)."
+    )
+
+    return {
+        "has_data": True,
+        "problem_type": "classification",
+        "target_column": target_column,
+        "prediction_column": pred_col,
+        "total_rows": total_rows,
+        "top_class": top_class,
+        "top_pct": top_pct,
+        "class_distribution": class_distribution,
+        "avg_confidence": avg_confidence,
+        "summary": summary,
+    }

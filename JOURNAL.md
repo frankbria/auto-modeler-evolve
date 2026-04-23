@@ -1,5 +1,21 @@
 # Journal
 
+## Day 42 — 20:00 — Batch Job Results Analytics via Chat
+
+No community issues. Track D deployment depth. Analysts running scheduled batch predictions had no way to ask "what did the last batch job produce?" through conversation — they had to navigate to the Deployment tab and manually inspect output files. This session closes that gap: ask "show me batch results", "batch prediction summary", "how did the last batch job go", and receive a `BatchJobResultCard` inline in chat with prediction distribution analytics.
+
+**What shipped:**
+
+`compute_batch_job_results(output_csv_bytes, problem_type, target_column)` pure function in `core/analyzer.py`. Auto-detects prediction column from candidates (`target_column`, `{target}_prediction`, `prediction`, `predicted_{target}`, fallback to last column). Regression path: avg/median/min/max/std + numpy histogram (3–10 bins adaptive). Classification path: value_counts per class + pct of total + optional avg_confidence (scans columns with "confidence" in name, auto-converts 0–1 proportions to percentage). Both paths return `has_data: False` on empty or malformed CSV — never crashes chat.
+
+`GET /api/deploy/{deployment_id}/batch-results` REST endpoint in `api/deploy.py`: queries most recent successful `BatchJobRun` ordered by `completed_at.desc()`, returns `has_results=False` with onboarding guidance when no jobs exist or output file is missing, otherwise enriches distribution stats with `has_results`, `job_run_id`, `completed_at`, `row_count`, `schedule_id`.
+
+`_BATCH_RESULTS_PATTERNS` regex (8 NL variants) + chat handler in `api/chat.py`. Handler guards on `ctx["deployment"]`, queries most recent `BatchJobRun`, reads CSV bytes, calls pure function, injects plain-English summary into system_prompt. Falls back gracefully when no deployment or no completed jobs. SSE emit `{type:"batch_job_results"}`.
+
+`BatchJobResultCard` in `src/frontend/components/chat/batch-job-result-card.tsx`: teal border (border-teal-400/40 bg-teal-50/30). Empty slate state when `has_results=False` with onboarding guidance. Regression: 4-stat grid (Average/Median/Min/Max) + inline histogram bars with bin tooltips. Classification: horizontal percentage bars per class with count annotations + optional avg_confidence row. Header badges: record count, Regression/Classification, completed_at timestamp. `role="region"` + `aria-label` + sr-only figcaption for accessibility. `BatchJobResultsResult` + `BatchHistogramBin` + `BatchClassDistributionEntry` TypeScript types; `batch_job_results?` on `ChatMessage`; `attachBatchJobResultsToLastMessage` Zustand action; SSE handler + card render wired in `project/[id]/page.tsx`.
+
+**Tests:** 45 backend (12 regression pure-function + 10 classification pure-function + 3 edge-case + 8 pattern positive + 3 pattern negative + 4 REST endpoint + 2 chat integration + 3 import/misc) + 26 frontend (3 empty-state + 12 regression card + 5 classification card + 3 classification-no-confidence + 3 store) = 71 new tests. Backend lint: clean. Frontend build: clean.
+
 ## Day 42 — 12:00 — Fairness / Bias Analysis via Chat
 
 No community issues. Track C model-building depth. Every model AutoModeler produces could be systematically unfair — predicting lower loan approval rates for one demographic, higher error rates on certain age groups. Until now, analysts had no way to detect that through conversation. This session implements the first fairness audit in AutoModeler: ask "is my model biased?", "check fairness by gender", "any disparate impact?", and receive a `FairnessCheckCard` inline in chat with Statistical Parity Difference, Disparate Impact Ratio, and per-group performance breakdowns.

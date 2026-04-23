@@ -1603,6 +1603,28 @@ guides them forward through the natural flow.
       action; SSE handler + render wired in `project/[id]/page.tsx`.
       *Day 41 (12:00): 42 backend + 21 frontend tests. Backend lint: clean. Frontend build: clean.*
 
+- [x] **Batch Job Results Analytics via Chat** — Track D perpetual. Analysts can ask "show me batch
+      results", "latest batch results", "batch prediction summary", "how did the last batch job go",
+      etc. Pure function `compute_batch_job_results(output_csv_bytes, problem_type, target_column)` in
+      `core/analyzer.py`: auto-detects prediction column (target, `{target}_prediction`, `prediction`,
+      `predicted_{target}`, fallback last column); regression path computes avg/median/min/max/std +
+      numpy histogram (3–10 bins); classification path computes per-class count/pct distribution +
+      optional avg_confidence (detected by "confidence" in col name, auto-converts 0–1 proportions to
+      percentage); returns `has_data: False` on empty/malformed CSV. `GET
+      /api/deploy/{id}/batch-results` REST endpoint in `api/deploy.py`: queries most recent successful
+      `BatchJobRun` for the deployment, reads output CSV, returns distribution stats enriched with
+      `has_results`, `job_run_id`, `completed_at`, `row_count`, `schedule_id`. Chat handler
+      `_BATCH_RESULTS_PATTERNS` (8 NL variant groups) in `api/chat.py`; handler guards on
+      `ctx["deployment"]`, queries most recent `BatchJobRun`, reads CSV, calls pure function, injects
+      summary into system_prompt; SSE emit `{type:"batch_job_results"}`. Frontend: `BatchJobResultCard`
+      (teal border, 📦 icon, empty slate state); regression: 4-stat grid (avg/median/min/max) + inline
+      histogram bars; classification: horizontal percentage bars per class + optional avg_confidence;
+      record count + problem_type + completed_at badges in header; sr-only figcaption for
+      accessibility; `BatchJobResultsResult` + `BatchHistogramBin` + `BatchClassDistributionEntry`
+      TypeScript types; `batch_job_results?` on `ChatMessage`; `attachBatchJobResultsToLastMessage`
+      Zustand action; SSE handler + render wired in `project/[id]/page.tsx`.
+      *Day 42 (20:00): 45 backend + 26 frontend tests. Backend lint: clean. Frontend build: clean.*
+
 ---
 
 ## Data Model

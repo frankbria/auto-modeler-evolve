@@ -2974,6 +2974,23 @@ _FAIRNESS_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# Distinct from _SCHEDULE_PATTERNS (creates/lists schedules) and
+# _PRED_AUDIT_PATTERNS (live deployment snapshot). This surfaces distribution
+# analytics from the most recently completed batch job output CSV.
+_BATCH_RESULTS_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"batch\s+(?:job\s+)?(?:results?|output|predictions?|analytics?|summary|report)\b|"
+    r"(?:last|latest|most\s+recent|previous)\s+batch\s+(?:job\s+)?(?:results?|run|predictions?|output|analysis)\b|"
+    r"(?:show|view|display|get|give)\s+(?:me\s+)?(?:the\s+)?(?:last|latest|recent)?\s*batch\s*(?:results?|output|predictions?)?\b|"
+    r"batch\s+prediction\s+(?:results?|summary|output|analytics?|distribution|stats?|breakdown)\b|"
+    r"what\s+(?:did|were|are)\s+(?:the\s+)?(?:last|recent|latest)?\s*batch\s+(?:predictions?|results?|output)\b|"
+    r"how\s+did\s+(?:the\s+)?(?:last\s+)?batch\s+(?:job\s+)?(?:go|do|perform|turn\s+out)\b|"
+    r"(?:view|show|display)\s+batch\s+(?:run\s+)?(?:results?|output|predictions?|analysis)\b|"
+    r"batch\s+(?:run|job)\s+(?:results?|summary|analytics?|output|stats?)\b"
+    r")",
+    re.IGNORECASE,
+)
+
 
 def _detect_fairness_col(message: str, df_columns: list[str]) -> str | None:
     """Extract sensitive column name from a fairness-check message.
@@ -10420,6 +10437,66 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Schedule events are nice-to-have; never crash chat
 
+    # Batch job results analytics via chat
+    batch_results_event: dict | None = None
+    if _BATCH_RESULTS_PATTERNS.search(body.message) and ctx["deployment"]:
+        try:
+            from core.analyzer import compute_batch_job_results as _compute_bjr
+            from models.batch_schedule import BatchJobRun as _BatchJobRun
+
+            _bjr_dep = ctx["deployment"]
+            _bjr_dep_id = _bjr_dep.id if hasattr(_bjr_dep, "id") else str(_bjr_dep)
+
+            from db import engine as _bjr_engine
+
+            with Session(_bjr_engine) as _bjr_session:
+                _bjr_run = _bjr_session.exec(
+                    select(_BatchJobRun)
+                    .where(
+                        _BatchJobRun.deployment_id == _bjr_dep_id,
+                        _BatchJobRun.status == "success",
+                    )
+                    .order_by(_BatchJobRun.completed_at.desc())
+                ).first()
+
+            if _bjr_run and _bjr_run.output_path and Path(_bjr_run.output_path).exists():
+                _bjr_csv = Path(_bjr_run.output_path).read_bytes()
+                _bjr_problem = _bjr_dep.problem_type or "regression"
+                _bjr_target = _bjr_dep.target_column or "prediction"
+
+                _bjr_result = _compute_bjr(_bjr_csv, _bjr_problem, _bjr_target)
+                _bjr_result["deployment_id"] = _bjr_dep_id
+                _bjr_result["has_results"] = _bjr_result.get("has_data", False)
+                _bjr_result["job_run_id"] = _bjr_run.id
+                _bjr_result["completed_at"] = (
+                    _bjr_run.completed_at.isoformat() if _bjr_run.completed_at else None
+                )
+                _bjr_result["row_count"] = _bjr_run.row_count
+                _bjr_result["schedule_id"] = _bjr_run.schedule_id
+
+                batch_results_event = _bjr_result
+                system_prompt += (
+                    f"\n\n## Batch Job Results\n{_bjr_result['summary']} "
+                    "Describe the batch prediction results to the analyst in plain English. "
+                    "For regression, comment on the average prediction and range. "
+                    "For classification, highlight the most common predicted class and distribution. "
+                    "Suggest next steps such as downloading the CSV, scheduling the next run, "
+                    "or reviewing predictions in the deployment panel."
+                )
+            else:
+                batch_results_event = {
+                    "deployment_id": _bjr_dep_id,
+                    "has_results": False,
+                    "summary": "No completed batch jobs found. Schedule a batch prediction first.",
+                }
+                system_prompt += (
+                    "\n\n## Batch Job Results\nNo completed batch jobs found. "
+                    "Guide the analyst to schedule a batch prediction from the Deployment tab "
+                    "or by saying 'schedule daily batch predictions at 9am'."
+                )
+        except Exception:  # noqa: BLE001
+            pass  # Batch results are nice-to-have; never crash chat
+
     # Class imbalance detection via chat
     class_imbalance_event: dict | None = None
     if _CLASS_IMBALANCE_PATTERNS.search(body.message) and ctx["dataset"]:
@@ -11499,6 +11576,9 @@ def send_message(
 
         if fairness_event:
             yield f"data: {json.dumps({'type': 'fairness_check', 'fairness_check': fairness_event})}\n\n"
+
+        if batch_results_event:
+            yield f"data: {json.dumps({'type': 'batch_job_results', 'batch_job_results': batch_results_event})}\n\n"
 
         # After text stream, opportunistically generate a chart if the
         # message is about data and we have a dataset loaded

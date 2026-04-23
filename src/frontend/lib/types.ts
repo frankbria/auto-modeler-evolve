@@ -497,6 +497,7 @@ export interface ChatMessage {
   confidence_trend?: ConfidenceTrendResult
   feedback_accuracy_report?: FeedbackAccuracyReportResult
   fairness_check?: FairnessCheckResult
+  batch_job_results?: BatchJobResultsResult
 }
 
 export interface SegmentPerformanceSegment {
@@ -2893,4 +2894,43 @@ export interface FairnessCheckResult {
   mae_disparity?: number
   overall_status: "fair" | "warning" | "biased" | "insufficient_data"
   summary: string
+}
+
+export interface BatchHistogramBin {
+  bin_start: number
+  bin_end: number
+  count: number
+}
+
+export interface BatchClassDistributionEntry {
+  class_name: string
+  count: number
+  pct: number
+}
+
+export interface BatchJobResultsResult {
+  deployment_id: string
+  has_results: boolean
+  job_run_id?: string
+  completed_at?: string
+  row_count?: number
+  schedule_id?: string
+  summary: string
+  // populated when has_results is true
+  problem_type?: string
+  target_column?: string
+  prediction_column?: string
+  total_rows?: number
+  // regression
+  avg_prediction?: number
+  median_prediction?: number
+  min_prediction?: number
+  max_prediction?: number
+  std_prediction?: number
+  histogram?: BatchHistogramBin[]
+  // classification
+  top_class?: string
+  top_pct?: number
+  class_distribution?: BatchClassDistributionEntry[]
+  avg_confidence?: number | null
 }

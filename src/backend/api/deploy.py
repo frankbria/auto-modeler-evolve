@@ -33,6 +33,7 @@ from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from core.analyzer import (
+    compute_batch_job_results,
     compute_covariate_drift_alert,
     compute_confidence_trend,
     compute_prediction_audit,
@@ -4375,4 +4376,61 @@ def get_confidence_trend(
 
     result = compute_confidence_trend(list(logs), window_days=window)
     result["deployment_id"] = deployment_id
+    return result
+
+
+@router.get("/api/deploy/{deployment_id}/batch-results")
+def get_batch_results(
+    deployment_id: str,
+    session: Session = Depends(get_session),
+):
+    """Return analytics for the most recent successful batch prediction job.
+
+    Reads the batch output CSV from disk and computes prediction distribution
+    stats (regression: avg/min/max/histogram; classification: class counts/pcts).
+    Returns has_results=False with guidance when no completed jobs exist.
+    """
+    from models.batch_schedule import BatchJobRun
+
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment or not deployment.is_active:
+        raise HTTPException(status_code=404, detail="Deployment not found or inactive")
+
+    job_run = session.exec(
+        select(BatchJobRun)
+        .where(
+            BatchJobRun.deployment_id == deployment_id,
+            BatchJobRun.status == "success",
+        )
+        .order_by(BatchJobRun.completed_at.desc())
+    ).first()
+
+    if not job_run or not job_run.output_path:
+        return {
+            "deployment_id": deployment_id,
+            "has_results": False,
+            "summary": "No completed batch jobs found. Schedule a batch prediction first.",
+        }
+
+    output_path = Path(job_run.output_path)
+    if not output_path.exists():
+        return {
+            "deployment_id": deployment_id,
+            "has_results": False,
+            "summary": "Batch output file not found on disk.",
+        }
+
+    csv_bytes = output_path.read_bytes()
+    problem_type = deployment.problem_type or "regression"
+    target_column = deployment.target_column or "prediction"
+
+    result = compute_batch_job_results(csv_bytes, problem_type, target_column)
+    result["deployment_id"] = deployment_id
+    result["has_results"] = result.get("has_data", False)
+    result["job_run_id"] = job_run.id
+    result["completed_at"] = (
+        job_run.completed_at.isoformat() if job_run.completed_at else None
+    )
+    result["row_count"] = job_run.row_count
+    result["schedule_id"] = job_run.schedule_id
     return result
