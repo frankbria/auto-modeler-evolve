@@ -10549,7 +10549,9 @@ def send_message(
                         )
                         _pe_result["prediction_log_id"] = _pe_log.id
                         _pe_result["created_at"] = (
-                            _pe_log.created_at.isoformat() if _pe_log.created_at else None
+                            _pe_log.created_at.isoformat()
+                            if _pe_log.created_at
+                            else None
                         )
                         _pe_result["confidence"] = _pe_log.confidence
                         _pe_result["algorithm"] = _pe_dep.algorithm

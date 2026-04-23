@@ -4462,7 +4462,9 @@ def explain_production_prediction_endpoint(
     if prediction_id:
         log = session.get(PredictionLog, prediction_id)
         if not log or log.deployment_id != deployment_id:
-            raise HTTPException(status_code=404, detail="Prediction log record not found")
+            raise HTTPException(
+                status_code=404, detail="Prediction log record not found"
+            )
     else:
         log = session.exec(
             select(PredictionLog)
@@ -4478,7 +4480,9 @@ def explain_production_prediction_endpoint(
     try:
         input_data = json.loads(log.input_features)
     except Exception:
-        raise HTTPException(status_code=400, detail="Could not parse stored input features")
+        raise HTTPException(
+            status_code=400, detail="Could not parse stored input features"
+        )
 
     result = explain_prediction(
         str(deployment.pipeline_path),

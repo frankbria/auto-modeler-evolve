@@ -1,4 +1,5 @@
 """Tests for production prediction explanation via chat and REST endpoint."""
+
 from __future__ import annotations
 
 import json
