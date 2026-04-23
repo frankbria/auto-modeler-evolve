@@ -138,7 +138,6 @@ def dispatch_webhooks(
                     WebhookConfig.is_active == True,  # noqa: E712
                 )
             ).all()
-            hooks_data = [(h.id, h.url, h.secret, h.event_types) for h in hooks]
 
         full_payload = {
             "deployment_id": deployment_id,
@@ -147,12 +146,12 @@ def dispatch_webhooks(
             **payload,
         }
 
-        for hook_id, url, secret, event_types_json in hooks_data:
-            event_types_list: list[str] = json.loads(event_types_json or "[]")
+        for hook in hooks:
+            event_types_list: list[str] = json.loads(hook.event_types or "[]")
             if event_type in event_types_list:
                 t = threading.Thread(
                     target=_dispatch_in_thread,
-                    args=(hook_id, url, secret, full_payload),
+                    args=(hook.id, hook.url, hook.secret, full_payload),
                     daemon=True,
                 )
                 t.start()

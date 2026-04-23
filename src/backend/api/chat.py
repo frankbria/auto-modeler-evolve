@@ -2992,21 +2992,6 @@ _BATCH_RESULTS_PATTERNS = re.compile(
 )
 
 
-_PROD_EXPLAIN_PATTERNS = re.compile(
-    r"(?i)(?:"
-    r"explain\s+(?:the\s+)?(?:last|latest|most\s+recent)\s+(?:production\s+)?prediction\b|"
-    r"explain\s+(?:the\s+)?(?:last|latest|most\s+recent)\s+(?:api\s+call|request)\b|"
-    r"why\s+did\s+(?:the\s+)?model\s+(?:predict|give|output)\s+that\s+(?:result|answer|prediction|value)?\b|"
-    r"what\s+(?:drove|caused|influenced|affected)\s+(?:the\s+)?(?:last|latest|most\s+recent|that)\s+(?:production\s+)?prediction\b|"
-    r"feature\s+contributions?\s+(?:for\s+)?(?:the\s+)?(?:last|latest|most\s+recent)?\s*(?:production\s+)?(?:prediction|api\s+call|request)\b|"
-    r"explain\s+(?:production|live|real)\s+prediction\b|"
-    r"interpret\s+(?:the\s+)?(?:last|latest|most\s+recent)?\s*(?:production\s+)?prediction\b|"
-    r"(?:explain|interpret|breakdown)\s+prediction\s+(?:log|from\s+(?:the\s+)?(?:log|history|endpoint))\b"
-    r")",
-    re.IGNORECASE,
-)
-
-
 def _detect_fairness_col(message: str, df_columns: list[str]) -> str | None:
     """Extract sensitive column name from a fairness-check message.
 
@@ -10516,74 +10501,6 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Batch results are nice-to-have; never crash chat
 
-    # Production prediction explanation via chat
-    prod_explain_event: dict | None = None
-    if _PROD_EXPLAIN_PATTERNS.search(body.message) and ctx["deployment"]:
-        try:
-            from core.deployer import explain_prediction as _explain_prod_pred
-            from models.prediction_log import PredictionLog as _PredLog
-
-            _pe_dep = ctx["deployment"]
-            _pe_dep_id = _pe_dep.id if hasattr(_pe_dep, "id") else str(_pe_dep)
-
-            if _pe_dep.pipeline_path and Path(_pe_dep.pipeline_path).exists():
-                _pe_run = session.get(ModelRun, _pe_dep.model_run_id)
-                if _pe_run and _pe_run.model_path and Path(_pe_run.model_path).exists():
-                    from db import engine as _pe_engine
-
-                    with Session(_pe_engine) as _pe_session:
-                        _pe_log = _pe_session.exec(
-                            select(_PredLog)
-                            .where(_PredLog.deployment_id == _pe_dep_id)
-                            .order_by(_PredLog.created_at.desc())
-                        ).first()
-
-                    if _pe_log:
-                        import json as _json_pe
-
-                        _pe_input = _json_pe.loads(_pe_log.input_features)
-                        _pe_result = _explain_prod_pred(
-                            str(_pe_dep.pipeline_path),
-                            str(_pe_run.model_path),
-                            _pe_input,
-                        )
-                        _pe_result["prediction_log_id"] = _pe_log.id
-                        _pe_result["created_at"] = (
-                            _pe_log.created_at.isoformat()
-                            if _pe_log.created_at
-                            else None
-                        )
-                        _pe_result["confidence"] = _pe_log.confidence
-                        _pe_result["algorithm"] = _pe_dep.algorithm
-                        _pe_result["target_column"] = _pe_dep.target_column
-                        _pe_result["problem_type"] = _pe_dep.problem_type
-                        _pe_result["deployment_id"] = _pe_dep_id
-                        prod_explain_event = _pe_result
-
-                        _pe_top = _pe_result.get("top_drivers", [])
-                        _pe_pred_val = _pe_result.get("prediction", "unknown")
-                        system_prompt += (
-                            f"\n\n## Production Prediction Explanation\n"
-                            f"Most recent production prediction: '{_pe_pred_val}' (target: {_pe_dep.target_column}). "
-                            f"Top feature drivers: {', '.join(_pe_top[:3]) if _pe_top else 'N/A'}. "
-                            f"{_pe_result.get('summary', '')}\n"
-                            "Explain to the analyst WHY the model gave this production prediction. "
-                            "Name the top 3 features and what they contributed — positive or negative. "
-                            "Use plain English: 'the model predicted X because [feature A] was unusually high, "
-                            "[feature B] pulled it down, and [feature C] had a small positive effect.' "
-                            "Then reassure: 'this is a live production prediction, not a training example.' "
-                            "If confidence is available, mention it and what it means."
-                        )
-                    else:
-                        system_prompt += (
-                            "\n\n## Production Prediction Explanation\n"
-                            "No predictions have been made via the live API yet. "
-                            "Guide the analyst to the shareable prediction dashboard "
-                            "or use the Deployment tab to make a prediction first."
-                        )
-        except Exception:  # noqa: BLE001
-            pass  # Explanation is nice-to-have; never crash chat
-
     # Class imbalance detection via chat
     class_imbalance_event: dict | None = None
     if _CLASS_IMBALANCE_PATTERNS.search(body.message) and ctx["dataset"]:
@@ -11666,9 +11583,6 @@ def send_message(
 
         if batch_results_event:
             yield f"data: {json.dumps({'type': 'batch_job_results', 'batch_job_results': batch_results_event})}\n\n"
-
-        if prod_explain_event:
-            yield f"data: {json.dumps({'type': 'prod_prediction_explanation', 'prod_prediction_explanation': prod_explain_event})}\n\n"
 
         # After text stream, opportunistically generate a chart if the
         # message is about data and we have a dataset loaded

@@ -1,12 +1,12 @@
 {
-  "upload_1000_rows_ms": 185.2,
-  "correlations_ms": 2.3,
-  "train_linear_regression_ms": 77.6,
-  "single_prediction_ms": 16.8,
-  "upload_200_rows_ms": 226.7,
-  "profile_cached_ms": 2.0,
-  "feature_suggestions_ms": 4.7,
-  "recommendations_ms": 2.7,
+  "upload_1000_rows_ms": 219.8,
+  "correlations_ms": 1.9,
+  "train_linear_regression_ms": 227.2,
+  "single_prediction_ms": 16.1,
+  "upload_200_rows_ms": 218.9,
+  "profile_cached_ms": 1.3,
+  "feature_suggestions_ms": 5.7,
+  "recommendations_ms": 2.8,
   "backend_tests": 3142,
   "frontend_tests": 1693
 }

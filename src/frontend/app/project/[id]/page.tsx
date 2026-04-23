@@ -107,7 +107,6 @@ import { ConfidenceTrendCard } from "@/components/deploy/confidence-trend-card"
 import { FeedbackAccuracyCard } from "@/components/deploy/feedback-accuracy-card"
 import { FairnessCheckCard } from "@/components/chat/fairness-check-card"
 import { BatchJobResultCard } from "@/components/chat/batch-job-result-card"
-import { ProductionExplanationCard } from "@/components/chat/production-explanation-card"
 import { PairCorrelationCard } from "@/components/data/pair-correlation-card"
 import { StatQueryCard } from "@/components/data/stat-query-card"
 import { SummaryStatsCard } from "@/components/data/summary-stats-card"
@@ -296,7 +295,6 @@ export default function ProjectWorkspace() {
     attachFeedbackAccuracyReportToLastMessage,
     attachFairnessCheckToLastMessage,
     attachBatchJobResultsToLastMessage,
-    attachProdPredictionExplanationToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -741,8 +739,6 @@ export default function ProjectWorkspace() {
                 attachFairnessCheckToLastMessage(json.fairness_check as import("@/lib/types").FairnessCheckResult)
               } else if (json.type === "batch_job_results" && json.batch_job_results) {
                 attachBatchJobResultsToLastMessage(json.batch_job_results as import("@/lib/types").BatchJobResultsResult)
-              } else if (json.type === "prod_prediction_explanation" && json.prod_prediction_explanation) {
-                attachProdPredictionExplanationToLastMessage(json.prod_prediction_explanation as import("@/lib/types").ProdPredictionExplanationResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -854,7 +850,6 @@ export default function ProjectWorkspace() {
     attachFeedbackAccuracyReportToLastMessage,
     attachFairnessCheckToLastMessage,
     attachBatchJobResultsToLastMessage,
-    attachProdPredictionExplanationToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -1377,9 +1372,6 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.batch_job_results && (
                       <BatchJobResultCard result={msg.batch_job_results} />
-                    )}
-                    {msg.prod_prediction_explanation && (
-                      <ProductionExplanationCard result={msg.prod_prediction_explanation} />
                     )}
                   </div>
                 </div>
