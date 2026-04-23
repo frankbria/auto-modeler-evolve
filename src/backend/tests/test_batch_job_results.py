@@ -11,7 +11,10 @@ Covers:
 
 from __future__ import annotations
 
+import io
 import json
+import time
+from unittest.mock import MagicMock, patch as mock_patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -408,10 +411,6 @@ class TestBatchResultsEndpoint:
 # ---------------------------------------------------------------------------
 # Chat handler integration: SSE event emission
 # ---------------------------------------------------------------------------
-
-import io
-import time
-from unittest.mock import MagicMock, patch as mock_patch
 
 _SAMPLE_CSV = (
     b"feat1,feat2,target\n"
