@@ -436,10 +436,11 @@ def test_chat_emits_prod_explain_event(tmp_path, anthropic_mock):
     db_mod.engine = create_engine(
         f"sqlite:///{test_db}", connect_args={"check_same_thread": False}
     )
-    SQLModel.metadata.create_all(db_mod.engine)
-    db_mod._apply_migrations()
 
     from main import app
+
+    SQLModel.metadata.create_all(db_mod.engine)
+    db_mod._apply_migrations()
 
     with Session(db_mod.engine) as session:
         dep, run, log = _setup_deployment(session, tmp_path)
@@ -471,10 +472,11 @@ def test_chat_no_event_without_deployment(tmp_path, anthropic_mock):
     db_mod.engine = create_engine(
         f"sqlite:///{test_db}", connect_args={"check_same_thread": False}
     )
-    SQLModel.metadata.create_all(db_mod.engine)
-    db_mod._apply_migrations()
 
     from main import app
+
+    SQLModel.metadata.create_all(db_mod.engine)
+    db_mod._apply_migrations()
 
     with Session(db_mod.engine) as session:
         project = Project(name="NoDeploy")

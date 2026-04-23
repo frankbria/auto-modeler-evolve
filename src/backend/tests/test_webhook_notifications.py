@@ -321,6 +321,7 @@ def test_dispatch_webhooks_fires_matching_events(tmp_path):
             deployment_id="dep1",
             url="https://example.com/hook",
             event_types='["batch_complete"]',
+            is_active=True,
         )
         session.add(wh)
         session.commit()
