@@ -3,9 +3,6 @@
 from __future__ import annotations
 
 import json
-import re
-from pathlib import Path
-from typing import Generator
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -72,7 +69,6 @@ def test_prod_explain_pattern_negative(phrase):
 @pytest.fixture
 def client(tmp_path):
     """FastAPI test client with in-memory DB and temp files."""
-    import importlib
     import sys
 
     # Patch DB path so tests don't touch production data
@@ -200,77 +196,73 @@ def _setup_deployment(session, tmp_path):
 
 def test_explain_most_recent_prediction(tmp_path):
     """REST endpoint returns feature contributions for the most recent PredictionLog."""
+    from fastapi.testclient import TestClient
+    from sqlmodel import Session, SQLModel, create_engine
+    import db as db_mod
+
     test_db = str(tmp_path / "test.db")
-    with patch.dict("os.environ", {"DATABASE_URL": f"sqlite:///{test_db}"}):
-        import sys
+    orig_engine = db_mod.engine
+    db_mod.engine = create_engine(
+        f"sqlite:///{test_db}", connect_args={"check_same_thread": False}
+    )
+    SQLModel.metadata.create_all(db_mod.engine)
+    db_mod._apply_migrations()
 
-        for mod in list(sys.modules.keys()):
-            if mod in ("db",):
-                del sys.modules[mod]
+    from main import app
 
-        import db as db_mod
+    with Session(db_mod.engine) as session:
+        dep, run, log = _setup_deployment(session, tmp_path)
+        dep_id = dep.id
+        log_id = log.id
 
-        db_mod.DATABASE_URL = f"sqlite:///{test_db}"
-        from sqlmodel import Session, SQLModel
+    client = TestClient(app)
+    resp = client.get(f"/api/deploy/{dep_id}/explain-prediction")
+    assert resp.status_code == 200, (
+        f"Expected 200 but got {resp.status_code}: {resp.text}"
+    )
+    data = resp.json()
+    assert "contributions" in data
+    assert isinstance(data["contributions"], list)
+    assert len(data["contributions"]) == 2
+    assert data["prediction_log_id"] == log_id
+    assert data["target_column"] == "revenue"
+    assert data["problem_type"] == "regression"
+    assert data["algorithm"] == "linear_regression"
+    assert "summary" in data
 
-        SQLModel.metadata.create_all(db_mod.engine)
-        db_mod._apply_migrations()
-
-        with Session(db_mod.engine) as session:
-            dep, run, log = _setup_deployment(session, tmp_path)
-            dep_id = dep.id
-            log_id = log.id
-
-        from fastapi.testclient import TestClient
-        from main import app
-
-        client = TestClient(app)
-        resp = client.get(f"/api/deploy/{dep_id}/explain-prediction")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert "contributions" in data
-        assert isinstance(data["contributions"], list)
-        assert len(data["contributions"]) == 2
-        assert data["prediction_log_id"] == log_id
-        assert data["target_column"] == "revenue"
-        assert data["problem_type"] == "regression"
-        assert data["algorithm"] == "linear_regression"
-        assert "summary" in data
+    db_mod.engine = orig_engine
 
 
 def test_explain_by_prediction_id(tmp_path):
     """REST endpoint accepts an explicit prediction_id query param."""
+    from fastapi.testclient import TestClient
+    from sqlmodel import Session, SQLModel, create_engine
+    import db as db_mod
+
     test_db = str(tmp_path / "test.db")
-    with patch.dict("os.environ", {"DATABASE_URL": f"sqlite:///{test_db}"}):
-        import sys
+    orig_engine = db_mod.engine
+    db_mod.engine = create_engine(
+        f"sqlite:///{test_db}", connect_args={"check_same_thread": False}
+    )
+    SQLModel.metadata.create_all(db_mod.engine)
+    db_mod._apply_migrations()
 
-        for mod in ("db",):
-            if mod in sys.modules:
-                del sys.modules[mod]
+    from main import app
 
-        import db as db_mod
+    with Session(db_mod.engine) as session:
+        dep, run, log = _setup_deployment(session, tmp_path)
+        dep_id = dep.id
+        log_id = log.id
 
-        db_mod.DATABASE_URL = f"sqlite:///{test_db}"
-        from sqlmodel import Session, SQLModel
+    client = TestClient(app)
+    resp = client.get(f"/api/deploy/{dep_id}/explain-prediction?prediction_id={log_id}")
+    assert resp.status_code == 200, (
+        f"Expected 200 but got {resp.status_code}: {resp.text}"
+    )
+    data = resp.json()
+    assert data["prediction_log_id"] == log_id
 
-        SQLModel.metadata.create_all(db_mod.engine)
-        db_mod._apply_migrations()
-
-        with Session(db_mod.engine) as session:
-            dep, run, log = _setup_deployment(session, tmp_path)
-            dep_id = dep.id
-            log_id = log.id
-
-        from fastapi.testclient import TestClient
-        from main import app
-
-        client = TestClient(app)
-        resp = client.get(
-            f"/api/deploy/{dep_id}/explain-prediction?prediction_id={log_id}"
-        )
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["prediction_log_id"] == log_id
+    db_mod.engine = orig_engine
 
 
 def test_explain_no_predictions_404(tmp_path):
@@ -435,73 +427,69 @@ def anthropic_mock():
 
 def test_chat_emits_prod_explain_event(tmp_path, anthropic_mock):
     """Chat handler emits prod_prediction_explanation event when deployment + logs exist."""
+    from fastapi.testclient import TestClient
+    from sqlmodel import Session, SQLModel, create_engine
+    import db as db_mod
+
     test_db = str(tmp_path / "test.db")
-    with patch.dict("os.environ", {"DATABASE_URL": f"sqlite:///{test_db}"}):
-        import sys
+    orig_engine = db_mod.engine
+    db_mod.engine = create_engine(
+        f"sqlite:///{test_db}", connect_args={"check_same_thread": False}
+    )
+    SQLModel.metadata.create_all(db_mod.engine)
+    db_mod._apply_migrations()
 
-        for mod in ("db",):
-            if mod in sys.modules:
-                del sys.modules[mod]
+    from main import app
 
-        import db as db_mod
+    with Session(db_mod.engine) as session:
+        dep, run, log = _setup_deployment(session, tmp_path)
+        project_id = dep.project_id
 
-        db_mod.DATABASE_URL = f"sqlite:///{test_db}"
-        from sqlmodel import Session, SQLModel
+    client = TestClient(app)
+    resp = client.post(
+        f"/api/chat/{project_id}",
+        json={"message": "explain the most recent production prediction"},
+    )
+    assert resp.status_code == 200, (
+        f"Expected 200 but got {resp.status_code}: {resp.text}"
+    )
+    body = resp.text
+    assert "prod_prediction_explanation" in body
 
-        SQLModel.metadata.create_all(db_mod.engine)
-        db_mod._apply_migrations()
-
-        with Session(db_mod.engine) as session:
-            dep, run, log = _setup_deployment(session, tmp_path)
-            dep_id = dep.id
-            project_id = dep.project_id
-
-        from fastapi.testclient import TestClient
-        from main import app
-
-        client = TestClient(app)
-        resp = client.post(
-            f"/api/chat/{project_id}",
-            json={"message": "explain the most recent production prediction"},
-        )
-        assert resp.status_code == 200
-        body = resp.text
-        assert "prod_prediction_explanation" in body
+    db_mod.engine = orig_engine
 
 
 def test_chat_no_event_without_deployment(tmp_path, anthropic_mock):
     """Chat handler skips prod_explain when no deployment exists for the project."""
+    from fastapi.testclient import TestClient
+    from sqlmodel import Session, SQLModel, create_engine
+    import db as db_mod
+    from models.project import Project
+
     test_db = str(tmp_path / "test.db")
-    with patch.dict("os.environ", {"DATABASE_URL": f"sqlite:///{test_db}"}):
-        import sys
+    orig_engine = db_mod.engine
+    db_mod.engine = create_engine(
+        f"sqlite:///{test_db}", connect_args={"check_same_thread": False}
+    )
+    SQLModel.metadata.create_all(db_mod.engine)
+    db_mod._apply_migrations()
 
-        for mod in ("db",):
-            if mod in sys.modules:
-                del sys.modules[mod]
+    from main import app
 
-        import db as db_mod
+    with Session(db_mod.engine) as session:
+        project = Project(name="NoDeploy")
+        session.add(project)
+        session.commit()
+        project_id = project.id
 
-        db_mod.DATABASE_URL = f"sqlite:///{test_db}"
-        from sqlmodel import Session, SQLModel
+    client = TestClient(app)
+    resp = client.post(
+        f"/api/chat/{project_id}",
+        json={"message": "explain the last prediction"},
+    )
+    assert resp.status_code == 200, (
+        f"Expected 200 but got {resp.status_code}: {resp.text}"
+    )
+    assert "prod_prediction_explanation" not in resp.text
 
-        SQLModel.metadata.create_all(db_mod.engine)
-        db_mod._apply_migrations()
-
-        from models.project import Project
-
-        with Session(db_mod.engine) as session:
-            project = Project(name="NoDeploy")
-            session.add(project)
-            session.commit()
-            project_id = project.id
-
-        from fastapi.testclient import TestClient
-        from main import app
-
-        client = TestClient(app)
-        resp = client.post(
-            f"/api/chat/{project_id}",
-            json={"message": "explain the last prediction"},
-        )
-        assert resp.status_code == 200
-        assert "prod_prediction_explanation" not in resp.text
+    db_mod.engine = orig_engine
