@@ -10459,7 +10459,11 @@ def send_message(
                     .order_by(_BatchJobRun.completed_at.desc())
                 ).first()
 
-            if _bjr_run and _bjr_run.output_path and Path(_bjr_run.output_path).exists():
+            if (
+                _bjr_run
+                and _bjr_run.output_path
+                and Path(_bjr_run.output_path).exists()
+            ):
                 _bjr_csv = Path(_bjr_run.output_path).read_bytes()
                 _bjr_problem = _bjr_dep.problem_type or "regression"
                 _bjr_target = _bjr_dep.target_column or "prediction"

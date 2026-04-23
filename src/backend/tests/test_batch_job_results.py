@@ -53,9 +53,7 @@ _CLASSIFICATION_CONFIDENCE_CSV = (
 _EMPTY_CSV = b"feature1,feature2\n"
 
 _NON_NUMERIC_REGRESSION_CSV = (
-    b"feature1,price_prediction\n"
-    b"a,not_a_number\n"
-    b"b,also_not_a_number\n"
+    b"feature1,price_prediction\na,not_a_number\nb,also_not_a_number\n"
 )
 
 
@@ -65,9 +63,9 @@ _NON_NUMERIC_REGRESSION_CSV = (
 
 
 class TestComputeBatchJobResultsRegression:
-
     def _run(self, csv_bytes=_REGRESSION_CSV, target_column="price"):
         from core.analyzer import compute_batch_job_results
+
         return compute_batch_job_results(csv_bytes, "regression", target_column)
 
     def test_has_data_true(self):
@@ -126,6 +124,7 @@ class TestComputeBatchJobResultsRegression:
 
     def test_non_numeric_returns_no_data(self):
         from core.analyzer import compute_batch_job_results
+
         r = compute_batch_job_results(
             _NON_NUMERIC_REGRESSION_CSV, "regression", "price"
         )
@@ -133,9 +132,9 @@ class TestComputeBatchJobResultsRegression:
 
 
 class TestComputeBatchJobResultsClassification:
-
     def _run(self, csv_bytes=_CLASSIFICATION_CSV, target_column="status"):
         from core.analyzer import compute_batch_job_results
+
         return compute_batch_job_results(csv_bytes, "classification", target_column)
 
     def test_has_data_true(self):
@@ -176,6 +175,7 @@ class TestComputeBatchJobResultsClassification:
 
     def test_avg_confidence_detected(self):
         from core.analyzer import compute_batch_job_results
+
         r = compute_batch_job_results(
             _CLASSIFICATION_CONFIDENCE_CSV, "classification", "status"
         )
@@ -193,20 +193,22 @@ class TestComputeBatchJobResultsClassification:
 
 
 class TestComputeBatchJobResultsEdgeCases:
-
     def test_empty_csv_returns_no_data(self):
         from core.analyzer import compute_batch_job_results
+
         r = compute_batch_job_results(_EMPTY_CSV, "regression", "price")
         assert r["has_data"] is False
 
     def test_malformed_bytes_returns_no_data(self):
         from core.analyzer import compute_batch_job_results
+
         r = compute_batch_job_results(b"\x00\xff\xfe", "regression", "price")
         assert r["has_data"] is False
 
     def test_fallback_to_last_column_when_no_match(self):
         csv = b"feat_a,feat_b,unknown_col\n1.0,2.0,42.0\n3.0,4.0,99.0\n"
         from core.analyzer import compute_batch_job_results
+
         r = compute_batch_job_results(csv, "regression", "price")
         assert r["has_data"] is True
         assert r["prediction_column"] == "unknown_col"
@@ -218,30 +220,38 @@ class TestComputeBatchJobResultsEdgeCases:
 
 
 class TestBatchResultsPatterns:
-
     @pytest.fixture(autouse=True)
     def _import_pattern(self):
         from api.chat import _BATCH_RESULTS_PATTERNS
+
         self.pattern = _BATCH_RESULTS_PATTERNS
 
-    @pytest.mark.parametrize("phrase", [
-        "show me the batch job results",
-        "batch results",
-        "latest batch results",
-        "batch prediction results",
-        "batch prediction summary",
-        "how did the last batch job go",
-        "view batch run results",
-        "batch run analytics",
-    ])
+    @pytest.mark.parametrize(
+        "phrase",
+        [
+            "show me the batch job results",
+            "batch results",
+            "latest batch results",
+            "batch prediction results",
+            "batch prediction summary",
+            "how did the last batch job go",
+            "view batch run results",
+            "batch run analytics",
+        ],
+    )
     def test_positive_match(self, phrase):
-        assert self.pattern.search(phrase) is not None, f"Expected match for: {phrase!r}"
+        assert self.pattern.search(phrase) is not None, (
+            f"Expected match for: {phrase!r}"
+        )
 
-    @pytest.mark.parametrize("phrase", [
-        "train a model",
-        "show me the correlation matrix",
-        "what is the accuracy?",
-    ])
+    @pytest.mark.parametrize(
+        "phrase",
+        [
+            "train a model",
+            "show me the correlation matrix",
+            "what is the accuracy?",
+        ],
+    )
     def test_negative_no_match(self, phrase):
         assert self.pattern.search(phrase) is None, f"Expected NO match for: {phrase!r}"
 
@@ -290,9 +300,11 @@ def client(tmp_path):
         yield c
 
 
-def _make_deployment(deployment_id, problem_type="regression",
-                     target_column="price", project_id="proj1"):
+def _make_deployment(
+    deployment_id, problem_type="regression", target_column="price", project_id="proj1"
+):
     from models.deployment import Deployment
+
     return Deployment(
         id=deployment_id,
         project_id=project_id,
@@ -306,8 +318,11 @@ def _make_deployment(deployment_id, problem_type="regression",
     )
 
 
-def _make_batch_run(run_id, schedule_id, deployment_id, output_path="", status="success"):
+def _make_batch_run(
+    run_id, schedule_id, deployment_id, output_path="", status="success"
+):
     from models.batch_schedule import BatchJobRun
+
     return BatchJobRun(
         id=run_id,
         schedule_id=schedule_id,
@@ -319,6 +334,7 @@ def _make_batch_run(run_id, schedule_id, deployment_id, output_path="", status="
 
 def _make_schedule(schedule_id, deployment_id):
     from models.batch_schedule import BatchSchedule
+
     return BatchSchedule(
         id=schedule_id,
         deployment_id=deployment_id,
@@ -333,7 +349,6 @@ def _make_schedule(schedule_id, deployment_id):
 
 
 class TestBatchResultsEndpoint:
-
     def test_unknown_deployment_returns_404(self, client):
         r = client.get("/api/deploy/nonexistent/batch-results")
         assert r.status_code == 404
@@ -465,7 +480,6 @@ def _setup_deployed_project(client, tmp_path, problem_type="regression"):
 
 
 class TestBatchResultsChatHandler:
-
     def test_no_batch_event_when_no_jobs(self, client, tmp_path):
         project_id, _ = _setup_deployed_project(client, tmp_path)
         events = _chat_events(client, project_id, "show me batch results")
