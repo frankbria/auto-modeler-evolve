@@ -482,6 +482,116 @@ def explain_prediction(
     }
 
 
+def compute_aggregate_explanations(
+    pipeline_path: str,
+    model_path: str,
+    input_data_list: list[dict],
+) -> dict:
+    """Aggregate feature contribution explanations across multiple production predictions.
+
+    Loads the model/pipeline once and processes all inputs in a single pass.
+
+    Returns:
+        {
+          features: [{feature, avg_abs_contribution, positive_pct, direction_label,
+                      top_driver_pct, sample_count}],
+          sample_count: int,
+          summary: str,
+        }
+    """
+    from core.explainer import compute_feature_importance
+
+    pipeline = load_pipeline(pipeline_path)
+    model = joblib.load(model_path)
+
+    feature_names = pipeline.feature_names
+    importance_list = compute_feature_importance(model, feature_names)
+    imp_map = {item["feature"]: item["importance"] for item in importance_list}
+
+    # Per-feature accumulators: list of signed contributions per sample
+    feature_contribs: dict[str, list[float]] = {f: [] for f in feature_names}
+    # Per-sample top-3 driver counts
+    top3_counts: dict[str, int] = {f: 0 for f in feature_names}
+    valid_count = 0
+
+    for input_data in input_data_list:
+        try:
+            x_vec = pipeline.transform(input_data).flatten()
+        except Exception:  # noqa: BLE001
+            continue
+
+        sample_abs: list[tuple[str, float]] = []
+        for i, col in enumerate(feature_names):
+            imp = imp_map.get(col, 0.0)
+            mean_val = getattr(pipeline, "feature_means", {}).get(col, float(x_vec[i]))
+            std_val = getattr(pipeline, "feature_stds", {}).get(col, 1.0)
+            if std_val < 1e-10:
+                std_val = 1.0
+            deviation = (float(x_vec[i]) - mean_val) / std_val
+            contrib = imp * deviation
+            feature_contribs[col].append(contrib)
+            sample_abs.append((col, abs(contrib)))
+
+        # Record top-3 contributors for this sample
+        sample_abs.sort(key=lambda t: t[1], reverse=True)
+        for col, _ in sample_abs[:3]:
+            top3_counts[col] += 1
+        valid_count += 1
+
+    if valid_count == 0:
+        return {
+            "features": [],
+            "sample_count": 0,
+            "summary": "No predictions available to analyze.",
+        }
+
+    result_features = []
+    for col in feature_names:
+        contribs = feature_contribs[col]
+        if not contribs:
+            continue
+        avg_abs = sum(abs(c) for c in contribs) / len(contribs)
+        positive_count = sum(1 for c in contribs if c > 0)
+        positive_pct = round(positive_count / len(contribs) * 100, 1)
+        top_driver_pct = round(top3_counts.get(col, 0) / valid_count * 100, 1)
+
+        if positive_pct >= 70:
+            direction_label = "mostly positive"
+        elif positive_pct <= 30:
+            direction_label = "mostly negative"
+        else:
+            direction_label = "mixed"
+
+        result_features.append(
+            {
+                "feature": col,
+                "avg_abs_contribution": round(avg_abs, 6),
+                "positive_pct": positive_pct,
+                "direction_label": direction_label,
+                "top_driver_pct": top_driver_pct,
+                "sample_count": len(contribs),
+            }
+        )
+
+    result_features.sort(key=lambda f: f["avg_abs_contribution"], reverse=True)
+
+    top = result_features[0] if result_features else None
+    if top:
+        summary = (
+            f"Across {valid_count} production predictions, '{top['feature']}' "
+            f"had the strongest average influence ({top['direction_label']}, "
+            f"top driver in {top['top_driver_pct']}% of predictions)."
+        )
+    else:
+        summary = f"No feature contributions found across {valid_count} predictions."
+
+    return {
+        "features": result_features,
+        "sample_count": valid_count,
+        "summary": summary,
+    }
+
+
 def run_sensitivity_analysis(
     pipeline_path: str,
     model_path: str,

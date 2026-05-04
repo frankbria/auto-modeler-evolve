@@ -3004,6 +3004,20 @@ _PROD_EXPLAIN_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+_AGGR_EXPLAIN_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"what(?:'s|\s+(?:is|has))\s+(?:been\s+)?driving\s+(?:my\s+)?(?:production\s+)?predictions\b|"
+    r"aggregate\s+(?:explanation|feature\s+importance|contributions?)\b|"
+    r"which\s+features?\s+(?:are|have\s+been)\s+(?:most\s+)?(?:driving|influencing|affecting|impacting)\s+(?:my\s+)?(?:production\s+|live\s+)?predictions\b|"
+    r"feature\s+importance\s+(?:across|over|in)\s+(?:production|live|all)\s+predictions\b|"
+    r"(?:production|live)\s+feature\s+(?:importance|contributions?|impact)\b|"
+    r"patterns?\s+in\s+(?:my\s+)?(?:production\s+|live\s+)?predictions\b|"
+    r"most\s+influential\s+features?\s+(?:in|across|over)\s+(?:production|live|recent)\s+(?:predictions|api\s+calls)\b|"
+    r"what\s+features?\s+(?:drive|influence|affect|impact)\s+(?:my\s+)?(?:production\s+|live\s+)?predictions\b"
+    r")",
+    re.IGNORECASE,
+)
+
 
 def _detect_fairness_col(message: str, df_columns: list[str]) -> str | None:
     """Extract sensitive column name from a fairness-check message.
@@ -10577,6 +10591,71 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Explanation is a nice-to-have; never crash chat
 
+    # Aggregate production explanation (patterns across many predictions)
+    aggr_explain_event: dict | None = None
+    if _AGGR_EXPLAIN_PATTERNS.search(body.message) and ctx["deployment"]:
+        try:
+            from models.prediction_log import PredictionLog as _PredLog3
+            from models.model_run import ModelRun as _ModelRun_ae
+            from db import engine as _ae_engine
+
+            _ae_dep = ctx["deployment"]
+            _ae_dep_id = _ae_dep.id if hasattr(_ae_dep, "id") else str(_ae_dep)
+
+            with Session(_ae_engine) as _ae_session:
+                _ae_logs = _ae_session.exec(
+                    select(_PredLog3)
+                    .where(_PredLog3.deployment_id == _ae_dep_id)
+                    .order_by(_PredLog3.created_at.desc())
+                    .limit(50)
+                ).all()
+
+                _ae_run = _ae_session.exec(
+                    select(_ModelRun_ae)
+                    .where(
+                        _ModelRun_ae.project_id == _ae_dep.project_id,
+                        _ModelRun_ae.status == "done",
+                    )
+                    .order_by(_ModelRun_ae.created_at.desc())
+                ).first()
+
+            if _ae_logs and _ae_run and _ae_dep.pipeline_path and _ae_run.model_path:
+                import json as _json_ae
+
+                _ae_inputs = []
+                for _ae_log in _ae_logs:
+                    try:
+                        _ae_data = _ae_log.input_features
+                        if isinstance(_ae_data, str):
+                            _ae_data = _json_ae.loads(_ae_data)
+                        if isinstance(_ae_data, dict):
+                            _ae_inputs.append(_ae_data)
+                    except Exception:  # noqa: BLE001
+                        pass
+
+                from core.deployer import compute_aggregate_explanations as _comp_ae
+
+                _ae_result = _comp_ae(
+                    _ae_dep.pipeline_path, _ae_run.model_path, _ae_inputs
+                )
+                _ae_result["deployment_id"] = _ae_dep_id
+
+                if _ae_result.get("sample_count", 0) > 0:
+                    aggr_explain_event = _ae_result
+                    _ae_top = _ae_result.get("features", [])[:3]
+                    _ae_top_names = ", ".join(f["feature"] for f in _ae_top)
+                    system_prompt += (
+                        f"\n\n## Aggregate Production Explanation\n"
+                        f"{_ae_result['summary']} "
+                        f"Top features by influence: {_ae_top_names or 'see below'}. "
+                        "Explain which features have been most consistently influencing "
+                        "predictions in production. Mention whether the top features "
+                        "push predictions up (positive) or down (negative) on average. "
+                        "Use plain English — no ML jargon."
+                    )
+        except Exception:  # noqa: BLE001
+            pass  # Aggregate explanation is a nice-to-have; never crash chat
+
     # Class imbalance detection via chat
     class_imbalance_event: dict | None = None
     if _CLASS_IMBALANCE_PATTERNS.search(body.message) and ctx["dataset"]:
@@ -11662,6 +11741,9 @@ def send_message(
 
         if prod_explanation_event:
             yield f"data: {json.dumps({'type': 'prod_prediction_explanation', 'prod_prediction_explanation': prod_explanation_event})}\n\n"
+
+        if aggr_explain_event:
+            yield f"data: {json.dumps({'type': 'aggregate_explanation', 'aggregate_explanation': aggr_explain_event})}\n\n"
 
         # After text stream, opportunistically generate a chart if the
         # message is about data and we have a dataset loaded

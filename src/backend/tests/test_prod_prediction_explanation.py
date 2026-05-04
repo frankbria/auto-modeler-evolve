@@ -68,28 +68,24 @@ def test_prod_explain_pattern_negative(phrase):
 
 @pytest.fixture
 def client(tmp_path):
-    """FastAPI test client with in-memory DB and temp files."""
-    import sys
-
-    # Patch DB path so tests don't touch production data
+    """FastAPI test client with isolated test DB."""
     test_db = str(tmp_path / "test.db")
-    with patch.dict("os.environ", {"DATABASE_URL": f"sqlite:///{test_db}"}):
-        if "db" in sys.modules:
-            del sys.modules["db"]
-        import db as db_mod
+    from sqlmodel import SQLModel, create_engine as _ce
+    import db as db_mod_inner
 
-        db_mod.DATABASE_URL = f"sqlite:///{test_db}"
-        from sqlmodel import SQLModel
+    test_engine = _ce(f"sqlite:///{test_db}")
+    original_engine = db_mod_inner.engine
+    db_mod_inner.engine = test_engine
 
-        SQLModel.metadata.create_all(db_mod.engine)
+    SQLModel.metadata.create_all(test_engine)
+    db_mod_inner._apply_migrations()
 
-        # Apply migrations
-        db_mod._apply_migrations()
+    from fastapi.testclient import TestClient
+    from main import app
 
-        from fastapi.testclient import TestClient
-        from main import app
+    yield TestClient(app)
 
-        yield TestClient(app)
+    db_mod_inner.engine = original_engine
 
 
 def _setup_deployment(session, tmp_path):

@@ -499,6 +499,7 @@ export interface ChatMessage {
   fairness_check?: FairnessCheckResult
   batch_job_results?: BatchJobResultsResult
   prod_prediction_explanation?: ProdPredictionExplanationResult
+  aggregate_explanation?: AggregateExplanationResult
 }
 
 export interface SegmentPerformanceSegment {
@@ -2928,6 +2929,22 @@ export interface ProdPredictionExplanationResult {
   deployment_id: string
   contributions: ProdPredictionContribution[]
   top_drivers: string[]
+  summary: string
+}
+
+export interface AggregateExplanationFeature {
+  feature: string
+  avg_abs_contribution: number
+  positive_pct: number
+  direction_label: "mostly positive" | "mostly negative" | "mixed"
+  top_driver_pct: number
+  sample_count: number
+}
+
+export interface AggregateExplanationResult {
+  deployment_id: string
+  features: AggregateExplanationFeature[]
+  sample_count: number
   summary: string
 }
 

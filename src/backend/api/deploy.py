@@ -999,6 +999,69 @@ def explain_production_prediction(
 
 
 # ---------------------------------------------------------------------------
+# 7c. Aggregate production explanation (patterns across many predictions)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/api/deploy/{deployment_id}/aggregate-explanations")
+def get_aggregate_explanations(
+    deployment_id: str,
+    n: int = Query(50, ge=5, le=200),
+    session: Session = Depends(get_session),
+):
+    """Return aggregated feature contribution statistics across recent production predictions.
+
+    Loads the last `n` PredictionLog entries and runs a single-pass explanation
+    aggregation — which features consistently drive predictions up or down.
+    Returns 404 when the deployment is inactive or no prediction logs exist.
+    """
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment or not deployment.is_active:
+        raise HTTPException(status_code=404, detail="Deployment not found or inactive")
+
+    logs = session.exec(
+        select(PredictionLog)
+        .where(PredictionLog.deployment_id == deployment_id)
+        .order_by(PredictionLog.created_at.desc())
+        .limit(n)
+    ).all()
+
+    if not logs:
+        raise HTTPException(
+            status_code=404, detail="No prediction logs found for this deployment"
+        )
+
+    run = session.get(ModelRun, deployment.model_run_id)
+    if not run or not run.model_path or not Path(run.model_path).exists():
+        raise HTTPException(status_code=500, detail="Model file not found on disk")
+    if not deployment.pipeline_path or not Path(deployment.pipeline_path).exists():
+        raise HTTPException(
+            status_code=500, detail="Prediction pipeline not found on disk"
+        )
+
+    import json as _json_ae
+
+    input_data_list = []
+    for log in logs:
+        try:
+            data = log.input_features
+            if isinstance(data, str):
+                data = _json_ae.loads(data)
+            if isinstance(data, dict):
+                input_data_list.append(data)
+        except Exception:  # noqa: BLE001
+            pass
+
+    from core.deployer import compute_aggregate_explanations
+
+    result = compute_aggregate_explanations(
+        deployment.pipeline_path, run.model_path, input_data_list
+    )
+    result["deployment_id"] = deployment_id
+    return result
+
+
+# ---------------------------------------------------------------------------
 # 8. Prediction analytics
 # ---------------------------------------------------------------------------
 

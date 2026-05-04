@@ -108,6 +108,7 @@ import { FeedbackAccuracyCard } from "@/components/deploy/feedback-accuracy-card
 import { FairnessCheckCard } from "@/components/chat/fairness-check-card"
 import { BatchJobResultCard } from "@/components/chat/batch-job-result-card"
 import { ProductionExplanationCard } from "@/components/chat/production-explanation-card"
+import { AggregateExplanationCard } from "@/components/chat/aggregate-explanation-card"
 import { PairCorrelationCard } from "@/components/data/pair-correlation-card"
 import { StatQueryCard } from "@/components/data/stat-query-card"
 import { SummaryStatsCard } from "@/components/data/summary-stats-card"
@@ -297,6 +298,7 @@ export default function ProjectWorkspace() {
     attachFairnessCheckToLastMessage,
     attachBatchJobResultsToLastMessage,
     attachProdPredictionExplanationToLastMessage,
+    attachAggregateExplanationToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -743,6 +745,8 @@ export default function ProjectWorkspace() {
                 attachBatchJobResultsToLastMessage(json.batch_job_results as import("@/lib/types").BatchJobResultsResult)
               } else if (json.type === "prod_prediction_explanation" && json.prod_prediction_explanation) {
                 attachProdPredictionExplanationToLastMessage(json.prod_prediction_explanation as import("@/lib/types").ProdPredictionExplanationResult)
+              } else if (json.type === "aggregate_explanation" && json.aggregate_explanation) {
+                attachAggregateExplanationToLastMessage(json.aggregate_explanation as import("@/lib/types").AggregateExplanationResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -855,6 +859,7 @@ export default function ProjectWorkspace() {
     attachFairnessCheckToLastMessage,
     attachBatchJobResultsToLastMessage,
     attachProdPredictionExplanationToLastMessage,
+    attachAggregateExplanationToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -1380,6 +1385,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.prod_prediction_explanation && (
                       <ProductionExplanationCard result={msg.prod_prediction_explanation} />
+                    )}
+                    {msg.aggregate_explanation && (
+                      <AggregateExplanationCard result={msg.aggregate_explanation} />
                     )}
                   </div>
                 </div>
