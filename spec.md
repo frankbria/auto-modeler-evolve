@@ -1646,6 +1646,30 @@ guides them forward through the natural flow.
       render wired in `project/[id]/page.tsx`.
       *Day 43 (04:00): 35 backend + 22 frontend tests. Backend lint: clean. Frontend build + lint: clean.*
 
+- [x] **Aggregate Production Explanation Analysis via Chat** — Track D perpetual. Analysts can ask
+      "what's been driving my predictions?", "aggregate explanation", "which features are influencing
+      my live predictions?", "patterns in my production predictions", etc. Pure function
+      `compute_aggregate_explanations(pipeline_path, model_path, input_data_list)` in
+      `core/deployer.py`: loads model/pipeline ONCE, processes all inputs in a single pass, accumulates
+      per-feature contribution lists and top-3-driver counts, returns `{features: [{feature,
+      avg_abs_contribution, positive_pct, direction_label, top_driver_pct, sample_count}],
+      sample_count, summary}`. `direction_label` is "mostly positive" (≥70% positive), "mostly
+      negative" (≤30% positive), or "mixed". REST endpoint `GET
+      /api/deploy/{deployment_id}/aggregate-explanations?n=50` in `api/deploy.py` — returns 404 when
+      no deployment or no prediction logs. Chat handler `_AGGR_EXPLAIN_PATTERNS` (8 NL variant groups)
+      in `api/chat.py`; guards on `ctx["deployment"]`; queries last 50 PredictionLogs; injects top
+      feature names + summary into system prompt; emits `{type:"aggregate_explanation"}` SSE event.
+      Frontend: `AggregateExplanationCard` (violet border, 📊 icon): sample/feature count badges;
+      `FeatureRow` with `DirectionBadge` (sky=positive, rose=negative, gray=mixed), top-driver badge
+      (≥30%), horizontal progress bar proportional to avg_abs_contribution, positive_pct annotation;
+      legend footnote; full ARIA accessibility. `AggregateExplanationFeature` +
+      `AggregateExplanationResult` TypeScript interfaces; `aggregate_explanation?` on `ChatMessage`;
+      `attachAggregateExplanationToLastMessage` Zustand action; SSE handler + render wired in
+      `project/[id]/page.tsx`. Also fixed cross-file test isolation bug: `client` fixtures now patch
+      `db.engine` at module level (instead of sys.modules deletion) so `get_session` always resolves
+      to the test engine.
+      *Day 54 (12:00): 39 backend + 17 frontend tests. Backend lint: clean. Frontend build: clean.*
+
 ---
 
 ## Data Model

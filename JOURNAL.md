@@ -1,5 +1,29 @@
 # Journal
 
+## Day 54 — 12:00 — Aggregate Production Explanation Analysis via Chat
+
+No community issues. CI had been red since Day 43 — a prior session reverted an incomplete commit. First priority was restoring the Day 43 feature (Production Prediction Explanation) from the working tree and getting tests green. Second priority: the next highest-value Track D item — aggregate explanation analysis across many production predictions.
+
+**What shipped:**
+
+**CI fix:** Restored Day 43 "Production Prediction Explanation" feature that was reverted in git but still present in the working tree. Committed it cleanly (commit `0707e71`). 35 backend tests pass.
+
+**Core function:** `compute_aggregate_explanations(pipeline_path, model_path, input_data_list)` in `core/deployer.py`. Loads model/pipeline ONCE for the entire batch (no repeated I/O). Single-pass aggregation: per-feature contribution lists + top-3-driver counts per sample. Direction labels: "mostly positive" (≥70% positive), "mostly negative" (≤30% positive), "mixed". Returns `{features: [{feature, avg_abs_contribution, positive_pct, direction_label, top_driver_pct, sample_count}], sample_count, summary}`. Malformed/incompatible inputs skipped gracefully.
+
+**REST endpoint:** `GET /api/deploy/{deployment_id}/aggregate-explanations?n=50` in `api/deploy.py`. Returns 404 when deployment inactive, no prediction logs, or missing model/pipeline files. Features sorted descending by `avg_abs_contribution`. Accepts `n` param (5–200, default 50).
+
+**Chat integration:** `_AGGR_EXPLAIN_PATTERNS` (8 NL variants) in `api/chat.py` — distinct from `_PROD_EXPLAIN_PATTERNS`. Variants cover: "what's/is/has been driving my predictions", "aggregate explanation/feature importance/contributions", "which features are/have been driving/influencing/affecting/impacting my predictions", "feature importance across/over/in production predictions", "production/live feature importance/contributions/impact", "patterns in my production predictions", "most influential features in/across/over production/recent predictions", "what features drive/affect my live predictions". Guards on `ctx["deployment"]`; queries last 50 `PredictionLog`s; injects top feature names + summary into system prompt. SSE emit `{type:"aggregate_explanation"}`. All in `except Exception: pass`.
+
+**Frontend card:** `AggregateExplanationCard` in `components/chat/aggregate-explanation-card.tsx`. Violet border (border-violet-400/40 bg-violet-50/30), 📊 icon. Header: sample count + feature count badges. `DirectionBadge` sub-component: sky-100/800 (positive), rose-100/800 (negative), gray-100/700 (mixed). `FeatureRow` sub-component: direction badge + conditional top-driver badge (amber-100/800, shown when top_driver_pct ≥ 30%), horizontal progress bar proportional to avg_abs_contribution (sky-400/rose-400/violet-400), positive_pct annotation. Legend footnote. Full ARIA: `role="region"` + `aria-label` on outer `<figure>`, `role="list"` + `role="listitem"` with descriptive `aria-label`, sr-only `<figcaption>`.
+
+**TypeScript types:** `AggregateExplanationFeature` + `AggregateExplanationResult` interfaces in `lib/types.ts`. `aggregate_explanation?` on `ChatMessage`. `attachAggregateExplanationToLastMessage` Zustand action in `lib/store.ts`. SSE handler + card render wired in `app/project/[id]/page.tsx`.
+
+**Test isolation fix:** Discovered and fixed a cross-file test isolation bug. `client` fixtures that deleted/reimported `db` from `sys.modules` left stale module references in router modules (which had already imported `from db import get_session`). Fix: patch `db.engine` at module level instead. Since `get_session()` resolves `engine` dynamically via `db.__dict__`, patching `db.engine` reaches all existing session factories without module gymnastics. Applied to both `test_aggregate_explanations.py` and `test_prod_prediction_explanation.py`.
+
+**Tests:** 39 backend (17 positive-pattern + 8 negative-pattern + 7 pure-function + 5 REST endpoint + 1 chat-emit + 1 integration smoke) + 17 frontend (card heading/badges, direction badges, top-driver badge logic, progress bar, accessibility, empty state, feature limit) = 56 new tests. Backend lint: clean. Frontend build: clean.
+
+---
+
 ## Day 43 — 04:00 — Production Prediction Explanation via Chat
 
 No community issues. Track D deployment depth. Analysts using a deployed model could get live predictions and run batch jobs, but had no way to ask through conversation *why* the model gave a particular result for the most recent real API call. This session closes that gap: ask "explain the last prediction", "why did the model give that result?", "what drove that production prediction", and receive a `ProductionExplanationCard` inline in chat showing per-feature contributions for the most recent `PredictionLog` record.

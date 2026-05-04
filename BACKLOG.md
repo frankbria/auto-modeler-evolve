@@ -49,6 +49,20 @@ the time is better spent on real features.
 
 ## Currently Working On
 
+## Day 54 (12:00) — Done
+**CI fix + Track D — Aggregate Production Explanation Analysis via Chat.** Restored Day 43 feature from working tree (was reverted in git). Then implemented aggregate explanation: analysts can ask "what's been driving my predictions?", "aggregate explanation", "which features are influencing my live predictions?", "patterns in my production predictions" and receive an `AggregateExplanationCard` showing feature-level statistics across the last 50 production predictions.
+- `compute_aggregate_explanations(pipeline_path, model_path, input_data_list)` pure function in `core/deployer.py`. Loads model/pipeline once. Single-pass aggregation: per-feature avg_abs_contribution, positive_pct, direction_label (mostly positive/negative/mixed), top_driver_pct, sample_count.
+- `GET /api/deploy/{id}/aggregate-explanations?n=50` endpoint in `api/deploy.py`. 404 on inactive deployment or no prediction logs.
+- `_AGGR_EXPLAIN_PATTERNS` (8 NL variants) + handler in `chat.py`. Guard: `ctx["deployment"]`. Queries last 50 PredictionLogs, injects top features + summary into system_prompt. SSE emit `{type:"aggregate_explanation"}`.
+- `AggregateExplanationCard` (violet border, 📊 icon). `DirectionBadge` (sky/rose/gray). `FeatureRow` with progress bar + top-driver badge (amber, shown when ≥30%). Full ARIA. `AggregateExplanationFeature` + `AggregateExplanationResult` TypeScript types; `attachAggregateExplanationToLastMessage` Zustand action; SSE handler + render in `page.tsx`.
+- Fixed cross-file test isolation bug: `client` fixtures now patch `db.engine` at module level (vs sys.modules deletion) so `get_session()` always resolves to the test engine via Python's dynamic global lookup.
+- 39 backend + 17 frontend = 56 new tests. Backend lint: clean. Frontend build: clean.
+
+**What's next:**
+- Track D: Webhook notifications on model drift/degradation
+- Track C: Date-aware chronological split via chat — "train with chronological split"
+- Track E: End-to-end "lunch break" analyst flow
+
 ## Day 43 (04:00) — Done
 **Track D — Production Prediction Explanation via Chat.** Analysts can ask "explain the last prediction", "why did the model give that result?", "what drove that production prediction", "feature contributions for the most recent API call" and receive a `ProductionExplanationCard` in chat showing per-feature contributions for the most recent live `PredictionLog` record.
 - `GET /api/deploy/{deployment_id}/explain-prediction?prediction_id=` in `api/deploy.py`: loads most recent `PredictionLog`, calls existing `explain_prediction()` from `core/deployer.py`, returns `contributions`, `top_drivers`, `summary` + metadata. 404 on missing/inactive deployment or no PredictionLog records.
