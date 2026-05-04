@@ -2991,6 +2991,19 @@ _BATCH_RESULTS_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+_PROD_EXPLAIN_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"explain\s+(?:the\s+)?(?:last|latest|most\s+recent)\s+(?:production\s+|live\s+|real\s+)?(?:prediction|api\s+(?:call|result)|request)\b|"
+    r"explain\s+(?:the\s+)?(?:production|live|real)\s+prediction\b|"
+    r"(?:explain|interpret|breakdown)\s+(?:the\s+)?prediction\s+(?:log\b|from\s+(?:the\s+)?(?:log|history)\b)|"
+    r"why\s+did\s+(?:the\s+)?model\s+(?:predict|give|output|return|say)\s+that\b|"
+    r"what\s+(?:drove|caused|influenced|determined)\s+(?:that|the\s+(?:last|latest|most\s+recent))\s+(?:production\s+)?prediction\b|"
+    r"feature\s+contributions?\s+for\s+(?:the\s+)?(?:most\s+recent|last|latest)\s+(?:prediction|api\s+(?:call|result)|request)\b|"
+    r"interpret\s+(?:the\s+)?(?:last|latest|most\s+recent)\s+(?:production\s+)?prediction\b"
+    r")",
+    re.IGNORECASE,
+)
+
 
 def _detect_fairness_col(message: str, df_columns: list[str]) -> str | None:
     """Extract sensitive column name from a fairness-check message.
@@ -10501,6 +10514,69 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Batch results are nice-to-have; never crash chat
 
+    # Production prediction explanation via chat
+    prod_explanation_event: dict | None = None
+    if _PROD_EXPLAIN_PATTERNS.search(body.message) and ctx["deployment"]:
+        try:
+            from models.prediction_log import PredictionLog as _PredLog2
+
+            _pe_dep = ctx["deployment"]
+            _pe_dep_id = _pe_dep.id if hasattr(_pe_dep, "id") else str(_pe_dep)
+
+            from db import engine as _pe_engine
+
+            with Session(_pe_engine) as _pe_session:
+                _pe_log = _pe_session.exec(
+                    select(_PredLog2)
+                    .where(_PredLog2.deployment_id == _pe_dep_id)
+                    .order_by(_PredLog2.created_at.desc())
+                ).first()
+
+            if _pe_log:
+                import json as _json_pe
+
+                _pe_input = _pe_log.input_features
+                if isinstance(_pe_input, str):
+                    _pe_input = _json_pe.loads(_pe_input)
+
+                from models.model_run import ModelRun as _ModelRun_pe
+
+                with Session(_pe_engine) as _pe_session2:
+                    _pe_run = _pe_session2.exec(
+                        select(_ModelRun_pe)
+                        .where(
+                            _ModelRun_pe.project_id == _pe_dep.project_id,
+                            _ModelRun_pe.status == "done",
+                        )
+                        .order_by(_ModelRun_pe.created_at.desc())
+                    ).first()
+
+                if _pe_run and _pe_dep.pipeline_path and _pe_run.model_path:
+                    from core.deployer import explain_prediction as _explain_pe
+
+                    _pe_result = _explain_pe(
+                        _pe_dep.pipeline_path, _pe_run.model_path, _pe_input
+                    )
+                    _pe_result["prediction_log_id"] = _pe_log.id
+                    _pe_result["created_at"] = (
+                        _pe_log.created_at.isoformat() if _pe_log.created_at else None
+                    )
+                    _pe_result["confidence"] = _pe_log.confidence
+                    _pe_result["algorithm"] = getattr(_pe_run, "algorithm", None)
+                    _pe_result["deployment_id"] = _pe_dep_id
+
+                    prod_explanation_event = _pe_result
+                    _pe_top = _pe_result.get("top_drivers", [])[:3]
+                    system_prompt += (
+                        f"\n\n## Production Prediction Explanation\n{_pe_result['summary']} "
+                        f"Top drivers: {', '.join(_pe_top) if _pe_top else 'see contributions below'}. "
+                        "Explain in plain English what drove this specific prediction. "
+                        "Use the feature contributions to describe why the model gave this result. "
+                        "Mention the top factors and whether they pushed the prediction up or down."
+                    )
+        except Exception:  # noqa: BLE001
+            pass  # Explanation is a nice-to-have; never crash chat
+
     # Class imbalance detection via chat
     class_imbalance_event: dict | None = None
     if _CLASS_IMBALANCE_PATTERNS.search(body.message) and ctx["dataset"]:
@@ -11583,6 +11659,9 @@ def send_message(
 
         if batch_results_event:
             yield f"data: {json.dumps({'type': 'batch_job_results', 'batch_job_results': batch_results_event})}\n\n"
+
+        if prod_explanation_event:
+            yield f"data: {json.dumps({'type': 'prod_prediction_explanation', 'prod_prediction_explanation': prod_explanation_event})}\n\n"
 
         # After text stream, opportunistically generate a chart if the
         # message is about data and we have a dataset loaded

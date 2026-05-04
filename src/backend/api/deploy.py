@@ -937,6 +937,68 @@ def explain_single_prediction(
 
 
 # ---------------------------------------------------------------------------
+# 7b. Production prediction explanation (chat-triggered — most recent PredictionLog)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/api/deploy/{deployment_id}/explain-prediction")
+def explain_production_prediction(
+    deployment_id: str,
+    prediction_id: str | None = Query(default=None),
+    session: Session = Depends(get_session),
+):
+    """Return feature-contribution explanation for a production prediction.
+
+    Without prediction_id, explains the most recent PredictionLog record.
+    With prediction_id, explains that specific log entry.
+    Returns 404 when no PredictionLog records exist or deployment is inactive.
+    """
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment or not deployment.is_active:
+        raise HTTPException(status_code=404, detail="Deployment not found or inactive")
+
+    if prediction_id:
+        log_entry = session.get(PredictionLog, prediction_id)
+        if not log_entry or log_entry.deployment_id != deployment_id:
+            raise HTTPException(status_code=404, detail="Prediction log not found")
+    else:
+        log_entry = session.exec(
+            select(PredictionLog)
+            .where(PredictionLog.deployment_id == deployment_id)
+            .order_by(PredictionLog.created_at.desc())
+        ).first()
+        if not log_entry:
+            raise HTTPException(
+                status_code=404, detail="No prediction logs found for this deployment"
+            )
+
+    import json as _json_ep
+
+    input_data = log_entry.input_features
+    if isinstance(input_data, str):
+        input_data = _json_ep.loads(input_data)
+
+    run = session.get(ModelRun, deployment.model_run_id)
+    if not run or not run.model_path or not Path(run.model_path).exists():
+        raise HTTPException(status_code=500, detail="Model file not found on disk")
+
+    if not deployment.pipeline_path or not Path(deployment.pipeline_path).exists():
+        raise HTTPException(
+            status_code=500, detail="Prediction pipeline not found on disk"
+        )
+
+    result = explain_prediction(deployment.pipeline_path, run.model_path, input_data)
+    result["prediction_log_id"] = log_entry.id
+    result["created_at"] = (
+        log_entry.created_at.isoformat() if log_entry.created_at else None
+    )
+    result["confidence"] = log_entry.confidence
+    result["algorithm"] = getattr(run, "algorithm", None)
+    result["deployment_id"] = deployment_id
+    return result
+
+
+# ---------------------------------------------------------------------------
 # 8. Prediction analytics
 # ---------------------------------------------------------------------------
 

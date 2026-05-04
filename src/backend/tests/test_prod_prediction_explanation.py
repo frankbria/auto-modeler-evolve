@@ -267,136 +267,128 @@ def test_explain_by_prediction_id(tmp_path):
 
 def test_explain_no_predictions_404(tmp_path):
     """Returns 404 when no PredictionLog records exist for the deployment."""
+    import json as _j
+
+    import joblib
+    import numpy as np
+    from fastapi.testclient import TestClient
+    from sklearn.linear_model import LinearRegression
+    from sqlmodel import Session, SQLModel, create_engine
+
+    import db as db_mod
+    from core.deployer import PredictionPipeline, save_pipeline
+    from models.dataset import Dataset
+    from models.deployment import Deployment
+    from models.feature_set import FeatureSet
+    from models.model_run import ModelRun
+    from models.project import Project
+
     test_db = str(tmp_path / "test.db")
-    with patch.dict("os.environ", {"DATABASE_URL": f"sqlite:///{test_db}"}):
-        import sys
+    orig_engine = db_mod.engine
+    db_mod.engine = create_engine(
+        f"sqlite:///{test_db}", connect_args={"check_same_thread": False}
+    )
+    SQLModel.metadata.create_all(db_mod.engine)
+    db_mod._apply_migrations()
 
-        for mod in ("db",):
-            if mod in sys.modules:
-                del sys.modules[mod]
+    from main import app
 
-        import db as db_mod
+    with Session(db_mod.engine) as session:
+        project = Project(name="EmptyProject")
+        session.add(project)
+        session.flush()
 
-        db_mod.DATABASE_URL = f"sqlite:///{test_db}"
-        from sqlmodel import Session, SQLModel
+        dataset = Dataset(
+            project_id=project.id,
+            filename="t.csv",
+            file_path=str(tmp_path / "t.csv"),
+            row_count=10,
+            column_count=2,
+        )
+        session.add(dataset)
+        session.flush()
 
-        SQLModel.metadata.create_all(db_mod.engine)
-        db_mod._apply_migrations()
+        fs = FeatureSet(
+            project_id=project.id,
+            dataset_id=dataset.id,
+            target_column="y",
+            problem_type="regression",
+            transformations="[]",
+        )
+        session.add(fs)
+        session.flush()
 
-        import json as _j
+        X = np.random.rand(10, 1)
+        y = X.ravel()
+        model = LinearRegression().fit(X, y)
+        model_path = str(tmp_path / "model2.joblib")
+        joblib.dump(model, model_path)
 
-        from models.dataset import Dataset
-        from models.deployment import Deployment
-        from models.feature_set import FeatureSet
-        from models.model_run import ModelRun
-        from models.project import Project
+        pipeline = PredictionPipeline(
+            feature_names=["x"],
+            column_types={"x": "numeric"},
+            medians={"x": 0.5},
+            target_column="y",
+            problem_type="regression",
+        )
+        pipeline_path = tmp_path / "pipeline2.joblib"
+        save_pipeline(pipeline, pipeline_path)
 
-        # Create a deployment without PredictionLog entries
-        import joblib
-        import numpy as np
-        from sklearn.linear_model import LinearRegression
+        run = ModelRun(
+            project_id=project.id,
+            feature_set_id=fs.id,
+            algorithm="linear_regression",
+            status="done",
+            model_path=model_path,
+            metrics=_j.dumps({"r2": 0.9}),
+        )
+        session.add(run)
+        session.flush()
 
-        from core.deployer import PredictionPipeline, save_pipeline
+        dep = Deployment(
+            model_run_id=run.id,
+            project_id=project.id,
+            endpoint_path=f"/api/predict/{run.id}",
+            dashboard_url=f"/predict/{run.id}",
+            pipeline_path=str(pipeline_path),
+            algorithm="linear_regression",
+            problem_type="regression",
+            target_column="y",
+            feature_names=_j.dumps(["x"]),
+        )
+        session.add(dep)
+        session.commit()
+        dep_id = dep.id
 
-        with Session(db_mod.engine) as session:
-            project = Project(name="EmptyProject")
-            session.add(project)
-            session.flush()
+    client = TestClient(app)
+    resp = client.get(f"/api/deploy/{dep_id}/explain-prediction")
+    assert resp.status_code == 404
 
-            dataset = Dataset(
-                project_id=project.id,
-                filename="t.csv",
-                file_path=str(tmp_path / "t.csv"),
-                row_count=10,
-                column_count=2,
-            )
-            session.add(dataset)
-            session.flush()
-
-            fs = FeatureSet(
-                project_id=project.id,
-                dataset_id=dataset.id,
-                target_column="y",
-                problem_type="regression",
-                transformations="[]",
-            )
-            session.add(fs)
-            session.flush()
-
-            X = np.random.rand(10, 1)
-            y = X.ravel()
-            model = LinearRegression().fit(X, y)
-            model_path = str(tmp_path / "model2.joblib")
-            joblib.dump(model, model_path)
-
-            pipeline = PredictionPipeline(
-                feature_names=["x"],
-                column_types={"x": "numeric"},
-                medians={"x": 0.5},
-                target_column="y",
-                problem_type="regression",
-            )
-            pipeline_path = tmp_path / "pipeline2.joblib"
-            save_pipeline(pipeline, pipeline_path)
-
-            run = ModelRun(
-                project_id=project.id,
-                feature_set_id=fs.id,
-                algorithm="linear_regression",
-                status="done",
-                model_path=model_path,
-                metrics=_j.dumps({"r2": 0.9}),
-            )
-            session.add(run)
-            session.flush()
-
-            dep = Deployment(
-                model_run_id=run.id,
-                project_id=project.id,
-                endpoint_path=f"/api/predict/{run.id}",
-                dashboard_url=f"/predict/{run.id}",
-                pipeline_path=str(pipeline_path),
-                algorithm="linear_regression",
-                problem_type="regression",
-                target_column="y",
-                feature_names=_j.dumps(["x"]),
-            )
-            session.add(dep)
-            session.commit()
-            dep_id = dep.id
-
-        from fastapi.testclient import TestClient
-        from main import app
-
-        client = TestClient(app)
-        resp = client.get(f"/api/deploy/{dep_id}/explain-prediction")
-        assert resp.status_code == 404
+    db_mod.engine = orig_engine
 
 
 def test_explain_inactive_deployment_404(tmp_path):
     """Returns 404 for an inactive or missing deployment."""
+    from fastapi.testclient import TestClient
+    from sqlmodel import SQLModel, create_engine
+
+    import db as db_mod
+
     test_db = str(tmp_path / "test.db")
-    with patch.dict("os.environ", {"DATABASE_URL": f"sqlite:///{test_db}"}):
-        import sys
+    orig_engine = db_mod.engine
+    db_mod.engine = create_engine(
+        f"sqlite:///{test_db}", connect_args={"check_same_thread": False}
+    )
+    SQLModel.metadata.create_all(db_mod.engine)
+    db_mod._apply_migrations()
 
-        for mod in ("db",):
-            if mod in sys.modules:
-                del sys.modules[mod]
+    from main import app
 
-        import db as db_mod
+    client = TestClient(app)
+    resp = client.get("/api/deploy/nonexistent-id/explain-prediction")
+    assert resp.status_code == 404
 
-        db_mod.DATABASE_URL = f"sqlite:///{test_db}"
-        from sqlmodel import SQLModel
-
-        SQLModel.metadata.create_all(db_mod.engine)
-        db_mod._apply_migrations()
-
-        from fastapi.testclient import TestClient
-        from main import app
-
-        client = TestClient(app)
-        resp = client.get("/api/deploy/nonexistent-id/explain-prediction")
-        assert resp.status_code == 404
+    db_mod.engine = orig_engine
 
 
 # ---------------------------------------------------------------------------
