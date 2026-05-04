@@ -135,7 +135,11 @@ def test_aggregate_explanations_direction_labels(tmp_path):
     inputs = [{"units": 8.0, "price": 12.0}] * 5
     result = compute_aggregate_explanations(pp, mp, inputs)
     units_feat = next(f for f in result["features"] if f["feature"] == "units")
-    assert units_feat["direction_label"] in ("mostly positive", "mostly negative", "mixed")
+    assert units_feat["direction_label"] in (
+        "mostly positive",
+        "mostly negative",
+        "mixed",
+    )
     assert 0.0 <= units_feat["positive_pct"] <= 100.0
 
 
@@ -370,6 +374,7 @@ def test_aggr_explain_chat_emits_event(tmp_path):
     client = TestClient(app)
 
     from models.deployment import Deployment as _Dep
+
     with Session(test_engine) as s:
         dep = s.get(_Dep, dep_id)
         project_id = dep.project_id
