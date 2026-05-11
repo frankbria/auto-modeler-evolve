@@ -140,6 +140,10 @@ interface AppState {
   attachBatchJobResultsToLastMessage: (batch_job_results: import("./types").BatchJobResultsResult) => void
   attachProdPredictionExplanationToLastMessage: (prod_prediction_explanation: import("./types").ProdPredictionExplanationResult) => void
   attachAggregateExplanationToLastMessage: (aggregate_explanation: import("./types").AggregateExplanationResult) => void
+  attachWebhookRegisteredToLastMessage: (webhook_registered: import("./types").WebhookRegisteredInfo) => void
+  attachWebhookListChatToLastMessage: (webhook_list_chat: import("./types").WebhookListChatResult) => void
+  attachWebhookRemovedChatToLastMessage: (webhook_removed_chat: import("./types").WebhookRemovedChatInfo) => void
+  attachWebhookTestChatToLastMessage: (webhook_test_chat: import("./types").WebhookTestChatResult) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -1044,6 +1048,42 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, aggregate_explanation }
+      }
+      return { messages }
+    }),
+  attachWebhookRegisteredToLastMessage: (webhook_registered) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, webhook_registered }
+      }
+      return { messages }
+    }),
+  attachWebhookListChatToLastMessage: (webhook_list_chat) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, webhook_list_chat }
+      }
+      return { messages }
+    }),
+  attachWebhookRemovedChatToLastMessage: (webhook_removed_chat) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, webhook_removed_chat }
+      }
+      return { messages }
+    }),
+  attachWebhookTestChatToLastMessage: (webhook_test_chat) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, webhook_test_chat }
       }
       return { messages }
     }),

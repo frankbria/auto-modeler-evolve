@@ -1,5 +1,35 @@
 # Journal
 
+## Day 61 — 12:00 — Webhook Management via Chat
+
+No community issues. Track D deployment depth. Analysts could already receive webhook *notifications* when events fired (Day 21), view webhook *history* in chat (Day 33), and use the DeploymentPanel UI to register/remove/test webhooks. The missing piece: a chat-first interface for webhook *management* — so analysts never need to leave the conversation to set up or troubleshoot their integrations.
+
+**What shipped:**
+
+**Four new regex patterns** in `api/chat.py` (after `_WEBHOOK_HISTORY_PATTERNS`):
+- `_WEBHOOK_CREATE_PATTERNS`: 6 NL variant groups — register/add/create/set up/configure/enable webhook + send/push events to https:// + notify/alert me at URL + add notification endpoint
+- `_WEBHOOK_LIST_CHAT_PATTERNS`: 7 NL variant groups — list/show/view/get/what are + active/registered/configured/subscriptions
+- `_WEBHOOK_REMOVE_CHAT_PATTERNS`: 7 NL variant groups — remove/delete/unregister/disable/cancel/stop + stop sending alerts to URL + unsubscribe from notifications
+- `_WEBHOOK_TEST_CHAT_PATTERNS`: 7 NL variant groups — test/verify/check/ping/validate my webhook + send a test webhook + fire a test notification
+- `_WEBHOOK_URL_RE`: extracts https?:// URLs from messages with rstrip for trailing punctuation
+- `_WEBHOOK_EVENT_KEYWORDS`: dict mapping batch/drift/health/quota keywords to event type strings
+
+**Handler block** in `send_message()`: guarded by `ctx["deployment"]` and `not webhook_history_event`. Elif chain for mutual exclusion (CREATE first, then LIST/REMOVE/TEST). All wrapped in `except Exception: pass`. CREATE extracts URL, resolves event types (defaults to `ALL_EVENTS` if no keywords found), creates `WebhookConfig` inline with `secrets.token_hex(32)`, returns secret once. LIST queries active configs. REMOVE soft-deletes by URL substring match or all if no URL. TEST calls `_do_dispatch()` from `core/webhook.py` on first active hook.
+
+**Four SSE event types** (after aggregate_explanation yield): `webhook_registered`, `webhook_list_chat`, `webhook_removed_chat`, `webhook_test_chat`.
+
+**Four React card components:**
+- `WebhookRegisteredCard` — emerald border, 🔔 icon, event-type badges, amber secret callout with copy-to-clipboard + "shown once" warning, figcaption
+- `WebhookListChatCard` — slate border, 🔗 icon, count badge, per-hook rows (URL, event badges, relative last-fired time, HTTP status badge), empty state
+- `WebhookRemovedChatCard` — rose border, 🗑️ icon, removed-count badge, URL list in code blocks, empty state
+- `WebhookTestChatCard` — adaptive border (emerald/rose/slate by result), ⚡ icon, URL + HTTP status, failure guidance, empty state
+
+**TypeScript types** (5 new interfaces in `lib/types.ts`): `WebhookRegisteredInfo`, `WebhookListEntry`, `WebhookListChatResult`, `WebhookRemovedChatInfo`, `WebhookTestChatResult`. Four new fields on `ChatMessage`. Four Zustand actions. SSE handlers + card renders wired in `project/[id]/page.tsx`.
+
+**Tests:** 38 backend (7 create-pattern + 7 list-pattern + 7 remove-pattern + 7 test-pattern + 5 chat-emit integration + 5 no-deployment guard) + 32 frontend (WebhookRegisteredCard: 7 tests; WebhookListChatCard: 8 tests; WebhookRemovedChatCard: 6 tests; WebhookTestChatCard: 9 tests; copy-to-clipboard + timer behaviour: 2 tests) = 70 new tests. Backend lint: clean (3 auto-fixed by ruff). Frontend build + lint: clean.
+
+---
+
 ## Day 54 — 12:00 — Aggregate Production Explanation Analysis via Chat
 
 No community issues. CI had been red since Day 43 — a prior session reverted an incomplete commit. First priority was restoring the Day 43 feature (Production Prediction Explanation) from the working tree and getting tests green. Second priority: the next highest-value Track D item — aggregate explanation analysis across many production predictions.

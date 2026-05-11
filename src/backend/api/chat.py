@@ -2737,6 +2737,67 @@ _WEBHOOK_HISTORY_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# Webhook creation via chat — "register a webhook at URL", "send alerts to URL"
+_WEBHOOK_CREATE_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"(?:register|add|create|set\s+up|configure|enable)\s+(?:a\s+)?webhook\b|"
+    r"(?:send|push)\s+(?:alerts?|notifications?|events?)\s+to\s+https?://|"
+    r"(?:notify|alert)\s+(?:me|my\s+\w+)\s+(?:at|via|using|through)\s+https?://|"
+    r"(?:add|set\s+up|create|configure)\s+(?:a\s+)?(?:webhook|notification|alert)\s+(?:at|for|to)\s+https?://|"
+    r"webhook\s+(?:registration|registration)\s+(?:at|for|to)\s+https?://|"
+    r"set\s+up\s+(?:an?\s+)?(?:alert|notification|webhook)\s+(?:url|endpoint)\b"
+    r")",
+    re.IGNORECASE,
+)
+
+# Webhook list via chat — "list my webhooks", "what webhooks do I have"
+_WEBHOOK_LIST_CHAT_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"(?:list|show|view|get|what\s+are)\s+(?:my\s+)?(?:active\s+)?(?:registered\s+)?webhooks?\b|"
+    r"(?:what|which)\s+webhooks?\s+(?:are|have\s+I|do\s+I\s+have)\s+(?:registered|set\s+up|configured|active|enabled)\b|"
+    r"(?:my\s+)?webhook\s+(?:registrations?|subscriptions?|configurations?)\b|"
+    r"(?:show|list|view)\s+(?:all\s+)?(?:my\s+)?webhook\s+(?:url|endpoint|destination)s?\b"
+    r")",
+    re.IGNORECASE,
+)
+
+# Webhook removal via chat — "remove/delete my webhook"
+_WEBHOOK_REMOVE_CHAT_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"(?:remove|delete|unregister|disable|cancel|stop)\s+(?:my\s+)?(?:the\s+)?webhook\b|"
+    r"(?:remove|delete|unregister|stop)\s+(?:the\s+)?webhook\s+(?:at|for|to)\s+https?://|"
+    r"(?:stop|cancel|disable)\s+(?:sending\s+)?(?:alerts?|notifications?)\s+to\s+https?://|"
+    r"(?:unsubscribe|opt\s+out)\s+(?:from\s+)?(?:webhook|notifications?|alerts?)\b"
+    r")",
+    re.IGNORECASE,
+)
+
+# Webhook test via chat — "test my webhook", "send a test notification"
+_WEBHOOK_TEST_CHAT_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"(?:test|verify|check|ping|validate)\s+(?:my\s+)?webhook\b|"
+    r"(?:send|fire)\s+(?:a\s+)?(?:test|sample|trial)\s+(?:webhook|notification|alert)\b|"
+    r"(?:make\s+sure|confirm|ensure)\s+(?:the\s+)?webhook\s+(?:is\s+)?(?:working|ok|active|responding)\b|"
+    r"webhook\s+(?:test|ping|check|verification)\b"
+    r")",
+    re.IGNORECASE,
+)
+
+# URL extractor for webhook registration
+_WEBHOOK_URL_RE = re.compile(r"https?://[^\s\'\",\)]+", re.IGNORECASE)
+
+# Event type extractor for webhook registration
+_WEBHOOK_EVENT_KEYWORDS = {
+    "batch": "batch_complete",
+    "batch_complete": "batch_complete",
+    "drift": "drift_detected",
+    "drift_detected": "drift_detected",
+    "health": "health_degraded",
+    "health_degraded": "health_degraded",
+    "quota": "quota_alert",
+    "quota_alert": "quota_alert",
+}
+
 _VERSION_COMPARE_PATTERNS = re.compile(
     r"(?i)(?:"
     r"(?:compare|diff(?:erence)?)\s+(?:my\s+)?(?:deployment\s+)?versions?\b|"
@@ -9490,6 +9551,235 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Webhook history is nice-to-have; never crash chat
 
+    # Webhook management via chat — create/list/remove/test
+    webhook_create_event: dict | None = None
+    webhook_list_chat_event: dict | None = None
+    webhook_remove_chat_event: dict | None = None
+    webhook_test_chat_event: dict | None = None
+
+    if ctx["deployment"] and not webhook_history_event and (
+        _WEBHOOK_CREATE_PATTERNS.search(body.message)
+        or _WEBHOOK_LIST_CHAT_PATTERNS.search(body.message)
+        or _WEBHOOK_REMOVE_CHAT_PATTERNS.search(body.message)
+        or _WEBHOOK_TEST_CHAT_PATTERNS.search(body.message)
+    ):
+        _wm_dep = ctx["deployment"]
+        _wm_dep_id = _wm_dep.id if hasattr(_wm_dep, "id") else str(_wm_dep)
+
+        # --- CREATE ---
+        if _WEBHOOK_CREATE_PATTERNS.search(body.message):
+            try:
+                from models.webhook_config import WebhookConfig as _WHCCreate
+
+                _wc_url_match = _WEBHOOK_URL_RE.search(body.message)
+                if _wc_url_match:
+                    _wc_url = _wc_url_match.group(0).rstrip(".,;:)")
+                    # Detect requested event types from message keywords
+                    _wc_events: list[str] = []
+                    _wc_msg_lower = body.message.lower()
+                    for _kw, _ev in _WEBHOOK_EVENT_KEYWORDS.items():
+                        if _kw in _wc_msg_lower and _ev not in _wc_events:
+                            _wc_events.append(_ev)
+                    if not _wc_events:
+                        # Default to all events when none specified
+                        from core.webhook import ALL_EVENTS as _ALL_EV
+                        _wc_events = sorted(_ALL_EV)
+
+                    import secrets as _sec_wc
+                    _wc_secret = _sec_wc.token_hex(32)
+                    import json as _json_wc
+
+                    _wc_hook = _WHCCreate(
+                        deployment_id=_wm_dep_id,
+                        url=_wc_url,
+                        secret=_wc_secret,
+                        event_types=_json_wc.dumps(_wc_events),
+                    )
+                    session.add(_wc_hook)
+                    session.commit()
+                    session.refresh(_wc_hook)
+
+                    webhook_create_event = {
+                        "id": _wc_hook.id,
+                        "url": _wc_url,
+                        "event_types": _wc_events,
+                        "secret": _wc_secret,
+                        "deployment_id": _wm_dep_id,
+                        "summary": (
+                            f"Webhook registered at {_wc_url} "
+                            f"for events: {', '.join(_wc_events)}. "
+                            "The signing secret is shown once — save it now."
+                        ),
+                    }
+                    system_prompt += (
+                        "\n\n## Webhook Registered\n"
+                        f"A webhook has been registered at {_wc_url}. "
+                        f"It will fire on these events: {', '.join(_wc_events)}. "
+                        "Tell the analyst the secret is shown only once and to store it "
+                        "to verify the X-AutoModeler-Signature header on incoming requests. "
+                        "Mention that webhooks can be tested by saying 'test my webhook'."
+                    )
+            except Exception:  # noqa: BLE001
+                pass  # Webhook creation is nice-to-have; never crash chat
+
+        # --- LIST ---
+        elif _WEBHOOK_LIST_CHAT_PATTERNS.search(body.message) and not webhook_create_event:
+            try:
+                from models.webhook_config import WebhookConfig as _WHCList
+                import json as _json_wl
+
+                _wl_hooks = session.exec(
+                    select(_WHCList).where(
+                        _WHCList.deployment_id == _wm_dep_id,
+                        _WHCList.is_active == True,  # noqa: E712
+                    )
+                ).all()
+
+                _wl_list = [
+                    {
+                        "id": h.id,
+                        "url": h.url,
+                        "event_types": _json_wl.loads(h.event_types or "[]"),
+                        "created_at": h.created_at.isoformat() if h.created_at else None,
+                        "last_fired_at": h.last_fired_at.isoformat() if h.last_fired_at else None,
+                        "last_status_code": h.last_status_code,
+                    }
+                    for h in _wl_hooks
+                ]
+
+                _wl_count = len(_wl_list)
+                _wl_summary = (
+                    "No webhooks are registered for this deployment."
+                    if _wl_count == 0
+                    else f"{_wl_count} active webhook{'s' if _wl_count != 1 else ''} registered."
+                )
+                webhook_list_chat_event = {
+                    "webhooks": _wl_list,
+                    "total": _wl_count,
+                    "deployment_id": _wm_dep_id,
+                    "summary": _wl_summary,
+                }
+                system_prompt += (
+                    "\n\n## Active Webhooks\n"
+                    f"{_wl_summary} "
+                    "List each URL and the events it listens for. "
+                    "If none: tell the analyst how to register one by saying "
+                    "'register a webhook at <url>'."
+                )
+            except Exception:  # noqa: BLE001
+                pass
+
+        # --- REMOVE ---
+        elif _WEBHOOK_REMOVE_CHAT_PATTERNS.search(body.message) and not webhook_create_event:
+            try:
+                from models.webhook_config import WebhookConfig as _WHCRm
+
+                _wr_url_match = _WEBHOOK_URL_RE.search(body.message)
+                _wr_hooks = session.exec(
+                    select(_WHCRm).where(
+                        _WHCRm.deployment_id == _wm_dep_id,
+                        _WHCRm.is_active == True,  # noqa: E712
+                    )
+                ).all()
+
+                _removed = []
+                if _wr_url_match:
+                    _wr_url = _wr_url_match.group(0).rstrip(".,;:)")
+                    for _h in _wr_hooks:
+                        if _wr_url in _h.url or _h.url in _wr_url:
+                            _h.is_active = False
+                            session.add(_h)
+                            _removed.append(_h.url)
+                else:
+                    # No URL specified: remove all
+                    for _h in _wr_hooks:
+                        _h.is_active = False
+                        session.add(_h)
+                        _removed.append(_h.url)
+
+                if _removed:
+                    session.commit()
+
+                _wr_summary = (
+                    f"Removed {len(_removed)} webhook{'s' if len(_removed) != 1 else ''}: "
+                    + ", ".join(_removed[:3])
+                    if _removed
+                    else "No matching webhooks found to remove."
+                )
+                webhook_remove_chat_event = {
+                    "removed": _removed,
+                    "deployment_id": _wm_dep_id,
+                    "summary": _wr_summary,
+                }
+                system_prompt += (
+                    "\n\n## Webhook Removed\n"
+                    f"{_wr_summary} "
+                    "Confirm the webhook(s) have been deregistered. "
+                    "If nothing was removed, explain that no matching webhooks were found."
+                )
+            except Exception:  # noqa: BLE001
+                pass
+
+        # --- TEST ---
+        elif _WEBHOOK_TEST_CHAT_PATTERNS.search(body.message) and not webhook_create_event:
+            try:
+                from models.webhook_config import WebhookConfig as _WHCTest
+                from core.webhook import _do_dispatch as _wt_dispatch
+                from datetime import datetime as _dt_wt, UTC as _UTC_wt
+
+                _wt_hooks = session.exec(
+                    select(_WHCTest).where(
+                        _WHCTest.deployment_id == _wm_dep_id,
+                        _WHCTest.is_active == True,  # noqa: E712
+                    )
+                ).all()
+
+                if _wt_hooks:
+                    _wt_hook = _wt_hooks[0]  # Test the first active webhook
+                    _wt_payload = {
+                        "deployment_id": _wm_dep_id,
+                        "event_type": "test",
+                        "fired_at": _dt_wt.now(_UTC_wt).isoformat(),
+                        "message": "AutoModeler webhook test — if you received this, your webhook is working correctly.",
+                    }
+                    _wt_status = _wt_dispatch(
+                        _wt_hook.id, _wt_hook.url, _wt_hook.secret, _wt_payload
+                    )
+                    _wt_hook.last_fired_at = _dt_wt.now(_UTC_wt).replace(tzinfo=None)
+                    _wt_hook.last_status_code = _wt_status
+                    session.add(_wt_hook)
+                    session.commit()
+
+                    _wt_success = 200 <= _wt_status < 300
+                    _wt_summary = (
+                        f"Test dispatch to {_wt_hook.url} succeeded (HTTP {_wt_status})."
+                        if _wt_success
+                        else f"Test dispatch to {_wt_hook.url} failed (HTTP {_wt_status})."
+                    )
+                    webhook_test_chat_event = {
+                        "url": _wt_hook.url,
+                        "status_code": _wt_status,
+                        "success": _wt_success,
+                        "deployment_id": _wm_dep_id,
+                        "summary": _wt_summary,
+                    }
+                else:
+                    webhook_test_chat_event = {
+                        "url": None,
+                        "status_code": None,
+                        "success": False,
+                        "deployment_id": _wm_dep_id,
+                        "summary": "No webhooks are registered for this deployment. Register one first with 'register a webhook at <url>'.",
+                    }
+                system_prompt += (
+                    "\n\n## Webhook Test Result\n"
+                    f"{webhook_test_chat_event['summary']} "
+                    "If failed: suggest checking the URL is publicly accessible and the server is handling POST requests. "
+                    "If success: confirm everything is working and the analyst will receive signed notifications."
+                )
+            except Exception:  # noqa: BLE001
+                pass
+
     # Production input feature distribution
     prod_input_dist_event: dict | None = None
     if _PROD_INPUT_DIST_PATTERNS.search(body.message) and ctx["deployment"]:
@@ -11744,6 +12034,18 @@ def send_message(
 
         if aggr_explain_event:
             yield f"data: {json.dumps({'type': 'aggregate_explanation', 'aggregate_explanation': aggr_explain_event})}\n\n"
+
+        if webhook_create_event:
+            yield f"data: {json.dumps({'type': 'webhook_registered', 'webhook_registered': webhook_create_event})}\n\n"
+
+        if webhook_list_chat_event:
+            yield f"data: {json.dumps({'type': 'webhook_list_chat', 'webhook_list_chat': webhook_list_chat_event})}\n\n"
+
+        if webhook_remove_chat_event:
+            yield f"data: {json.dumps({'type': 'webhook_removed_chat', 'webhook_removed_chat': webhook_remove_chat_event})}\n\n"
+
+        if webhook_test_chat_event:
+            yield f"data: {json.dumps({'type': 'webhook_test_chat', 'webhook_test_chat': webhook_test_chat_event})}\n\n"
 
         # After text stream, opportunistically generate a chart if the
         # message is about data and we have a dataset loaded

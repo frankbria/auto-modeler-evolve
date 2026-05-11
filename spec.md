@@ -1670,6 +1670,34 @@ guides them forward through the natural flow.
       to the test engine.
       *Day 54 (12:00): 39 backend + 17 frontend tests. Backend lint: clean. Frontend build: clean.*
 
+- [x] **Webhook Management via Chat** — Track D perpetual. Analysts can register, list, remove, and
+      test webhooks entirely through conversation: "register a webhook at https://...", "show active
+      webhooks", "remove my webhook", "test my webhook". Four regex patterns in `api/chat.py`:
+      `_WEBHOOK_CREATE_PATTERNS` (6 NL variants — register/add/create/set up/configure/enable + send/push
+      events to URL + notify/alert me at URL + add notification endpoint), `_WEBHOOK_LIST_CHAT_PATTERNS`
+      (7 NL variants — list/show/view/get/what are + active/registered/configured/subscriptions),
+      `_WEBHOOK_REMOVE_CHAT_PATTERNS` (7 NL variants — remove/delete/unregister/disable/cancel/stop +
+      stop sending alerts to URL + unsubscribe from notifications), `_WEBHOOK_TEST_CHAT_PATTERNS` (7 NL
+      variants — test/verify/check/ping/validate my webhook + send a test webhook + fire a test
+      notification + confirm reachable). `_WEBHOOK_URL_RE` extracts URL from message; `_WEBHOOK_EVENT_KEYWORDS`
+      maps keywords (batch/drift/health/quota) to event type strings. Mutual exclusion: CREATE fires
+      first (elif chain), LIST/REMOVE/TEST are elif branches; all guarded by `ctx["deployment"]` and
+      `not webhook_history_event`. Four SSE event types: `webhook_registered`, `webhook_list_chat`,
+      `webhook_removed_chat`, `webhook_test_chat`. CREATE: extracts URL, resolves event types (defaults
+      to ALL_EVENTS if none specified), creates `WebhookConfig` inline, returns secret (shown once).
+      LIST: queries active WebhookConfigs, returns list with URL/event_types/last_fired_at/last_status_code.
+      REMOVE: soft-deletes matching webhook(s) by URL substring or all if no URL found in message.
+      TEST: calls `_do_dispatch()` from `core/webhook.py` on first active webhook, returns HTTP status
+      + success flag. Four React card components: `WebhookRegisteredCard` (emerald border, 🔔 icon,
+      amber secret callout with copy button, "shown once" warning), `WebhookListChatCard` (slate border,
+      🔗 icon, per-hook URL/event-badges/last-fired rows, empty state), `WebhookRemovedChatCard` (rose
+      border, 🗑️ icon, removed-URL list, count badge), `WebhookTestChatCard` (adaptive border by
+      result, ⚡ icon, URL + HTTP status badge, failure guidance). Four TypeScript interfaces:
+      `WebhookRegisteredInfo`, `WebhookListChatResult`+`WebhookListEntry`, `WebhookRemovedChatInfo`,
+      `WebhookTestChatResult`. Four Zustand actions: `attachWebhookRegisteredToLastMessage` etc.
+      SSE handlers + renders wired in `project/[id]/page.tsx`.
+      *Day 61 (12:00): 38 backend + 32 frontend tests. Backend lint: clean. Frontend build + lint: clean.*
+
 ---
 
 ## Data Model

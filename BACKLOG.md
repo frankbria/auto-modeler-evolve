@@ -49,6 +49,14 @@ the time is better spent on real features.
 
 ## Currently Working On
 
+## Day 61 (12:00) — Done
+**Track D — Webhook Management via Chat.** Analysts can register, list, remove, and test webhooks entirely through conversation — no DeploymentPanel navigation required. Four new chat patterns (`_WEBHOOK_CREATE_PATTERNS`, `_WEBHOOK_LIST_CHAT_PATTERNS`, `_WEBHOOK_REMOVE_CHAT_PATTERNS`, `_WEBHOOK_TEST_CHAT_PATTERNS`) with 6–7 NL variants each. Elif chain ensures mutual exclusion with `webhook_history`. Four SSE events + four React cards: `WebhookRegisteredCard` (emerald, 🔔 icon, secret callout with copy button), `WebhookListChatCard` (slate, 🔗, per-hook rows with event badges + relative last-fired), `WebhookRemovedChatCard` (rose, 🗑️, removed URLs), `WebhookTestChatCard` (adaptive border, ⚡, HTTP status + failure guidance). Reuses existing `WebhookConfig` model + `_do_dispatch()` — no new DB tables. 38 backend + 32 frontend = 70 new tests. Backend lint: clean (3 auto-fixed). Frontend build + lint: clean.
+
+**What's next:**
+- Track C: Date-aware chronological split via chat — "train with chronological split"
+- Track D: API key auth for prediction endpoints
+- Track E: End-to-end "lunch break" analyst flow
+
 ## Day 54 (12:00) — Done
 **CI fix + Track D — Aggregate Production Explanation Analysis via Chat.** Restored Day 43 feature from working tree (was reverted in git). Then implemented aggregate explanation: analysts can ask "what's been driving my predictions?", "aggregate explanation", "which features are influencing my live predictions?", "patterns in my production predictions" and receive an `AggregateExplanationCard` showing feature-level statistics across the last 50 production predictions.
 - `compute_aggregate_explanations(pipeline_path, model_path, input_data_list)` pure function in `core/deployer.py`. Loads model/pipeline once. Single-pass aggregation: per-feature avg_abs_contribution, positive_pct, direction_label (mostly positive/negative/mixed), top_driver_pct, sample_count.

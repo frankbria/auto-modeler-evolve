@@ -500,6 +500,10 @@ export interface ChatMessage {
   batch_job_results?: BatchJobResultsResult
   prod_prediction_explanation?: ProdPredictionExplanationResult
   aggregate_explanation?: AggregateExplanationResult
+  webhook_registered?: WebhookRegisteredInfo
+  webhook_list_chat?: WebhookListChatResult
+  webhook_removed_chat?: WebhookRemovedChatInfo
+  webhook_test_chat?: WebhookTestChatResult
 }
 
 export interface SegmentPerformanceSegment {
@@ -2973,4 +2977,43 @@ export interface BatchJobResultsResult {
   top_pct?: number
   class_distribution?: BatchClassDistributionEntry[]
   avg_confidence?: number | null
+}
+
+export interface WebhookRegisteredInfo {
+  id: string
+  url: string
+  event_types: string[]
+  secret: string
+  deployment_id: string
+  summary: string
+}
+
+export interface WebhookListEntry {
+  id: string
+  url: string
+  event_types: string[]
+  created_at: string | null
+  last_fired_at: string | null
+  last_status_code: number | null
+}
+
+export interface WebhookListChatResult {
+  webhooks: WebhookListEntry[]
+  total: number
+  deployment_id: string
+  summary: string
+}
+
+export interface WebhookRemovedChatInfo {
+  removed: string[]
+  deployment_id: string
+  summary: string
+}
+
+export interface WebhookTestChatResult {
+  url: string | null
+  status_code: number | null
+  success: boolean
+  deployment_id: string
+  summary: string
 }

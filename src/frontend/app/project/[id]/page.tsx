@@ -109,6 +109,10 @@ import { FairnessCheckCard } from "@/components/chat/fairness-check-card"
 import { BatchJobResultCard } from "@/components/chat/batch-job-result-card"
 import { ProductionExplanationCard } from "@/components/chat/production-explanation-card"
 import { AggregateExplanationCard } from "@/components/chat/aggregate-explanation-card"
+import { WebhookRegisteredCard } from "@/components/chat/webhook-registered-card"
+import { WebhookListChatCard } from "@/components/chat/webhook-list-chat-card"
+import { WebhookRemovedChatCard } from "@/components/chat/webhook-removed-chat-card"
+import { WebhookTestChatCard } from "@/components/chat/webhook-test-chat-card"
 import { PairCorrelationCard } from "@/components/data/pair-correlation-card"
 import { StatQueryCard } from "@/components/data/stat-query-card"
 import { SummaryStatsCard } from "@/components/data/summary-stats-card"
@@ -299,6 +303,10 @@ export default function ProjectWorkspace() {
     attachBatchJobResultsToLastMessage,
     attachProdPredictionExplanationToLastMessage,
     attachAggregateExplanationToLastMessage,
+    attachWebhookRegisteredToLastMessage,
+    attachWebhookListChatToLastMessage,
+    attachWebhookRemovedChatToLastMessage,
+    attachWebhookTestChatToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -747,6 +755,14 @@ export default function ProjectWorkspace() {
                 attachProdPredictionExplanationToLastMessage(json.prod_prediction_explanation as import("@/lib/types").ProdPredictionExplanationResult)
               } else if (json.type === "aggregate_explanation" && json.aggregate_explanation) {
                 attachAggregateExplanationToLastMessage(json.aggregate_explanation as import("@/lib/types").AggregateExplanationResult)
+              } else if (json.type === "webhook_registered" && json.webhook_registered) {
+                attachWebhookRegisteredToLastMessage(json.webhook_registered as import("@/lib/types").WebhookRegisteredInfo)
+              } else if (json.type === "webhook_list_chat" && json.webhook_list_chat) {
+                attachWebhookListChatToLastMessage(json.webhook_list_chat as import("@/lib/types").WebhookListChatResult)
+              } else if (json.type === "webhook_removed_chat" && json.webhook_removed_chat) {
+                attachWebhookRemovedChatToLastMessage(json.webhook_removed_chat as import("@/lib/types").WebhookRemovedChatInfo)
+              } else if (json.type === "webhook_test_chat" && json.webhook_test_chat) {
+                attachWebhookTestChatToLastMessage(json.webhook_test_chat as import("@/lib/types").WebhookTestChatResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -860,6 +876,10 @@ export default function ProjectWorkspace() {
     attachBatchJobResultsToLastMessage,
     attachProdPredictionExplanationToLastMessage,
     attachAggregateExplanationToLastMessage,
+    attachWebhookRegisteredToLastMessage,
+    attachWebhookListChatToLastMessage,
+    attachWebhookRemovedChatToLastMessage,
+    attachWebhookTestChatToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -1388,6 +1408,18 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.aggregate_explanation && (
                       <AggregateExplanationCard result={msg.aggregate_explanation} />
+                    )}
+                    {msg.webhook_registered && (
+                      <WebhookRegisteredCard info={msg.webhook_registered} />
+                    )}
+                    {msg.webhook_list_chat && (
+                      <WebhookListChatCard result={msg.webhook_list_chat} />
+                    )}
+                    {msg.webhook_removed_chat && (
+                      <WebhookRemovedChatCard info={msg.webhook_removed_chat} />
+                    )}
+                    {msg.webhook_test_chat && (
+                      <WebhookTestChatCard result={msg.webhook_test_chat} />
                     )}
                   </div>
                 </div>
