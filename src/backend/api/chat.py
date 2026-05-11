@@ -9557,11 +9557,15 @@ def send_message(
     webhook_remove_chat_event: dict | None = None
     webhook_test_chat_event: dict | None = None
 
-    if ctx["deployment"] and not webhook_history_event and (
-        _WEBHOOK_CREATE_PATTERNS.search(body.message)
-        or _WEBHOOK_LIST_CHAT_PATTERNS.search(body.message)
-        or _WEBHOOK_REMOVE_CHAT_PATTERNS.search(body.message)
-        or _WEBHOOK_TEST_CHAT_PATTERNS.search(body.message)
+    if (
+        ctx["deployment"]
+        and not webhook_history_event
+        and (
+            _WEBHOOK_CREATE_PATTERNS.search(body.message)
+            or _WEBHOOK_LIST_CHAT_PATTERNS.search(body.message)
+            or _WEBHOOK_REMOVE_CHAT_PATTERNS.search(body.message)
+            or _WEBHOOK_TEST_CHAT_PATTERNS.search(body.message)
+        )
     ):
         _wm_dep = ctx["deployment"]
         _wm_dep_id = _wm_dep.id if hasattr(_wm_dep, "id") else str(_wm_dep)
@@ -9583,9 +9587,11 @@ def send_message(
                     if not _wc_events:
                         # Default to all events when none specified
                         from core.webhook import ALL_EVENTS as _ALL_EV
+
                         _wc_events = sorted(_ALL_EV)
 
                     import secrets as _sec_wc
+
                     _wc_secret = _sec_wc.token_hex(32)
                     import json as _json_wc
 
@@ -9623,7 +9629,10 @@ def send_message(
                 pass  # Webhook creation is nice-to-have; never crash chat
 
         # --- LIST ---
-        elif _WEBHOOK_LIST_CHAT_PATTERNS.search(body.message) and not webhook_create_event:
+        elif (
+            _WEBHOOK_LIST_CHAT_PATTERNS.search(body.message)
+            and not webhook_create_event
+        ):
             try:
                 from models.webhook_config import WebhookConfig as _WHCList
                 import json as _json_wl
@@ -9640,8 +9649,12 @@ def send_message(
                         "id": h.id,
                         "url": h.url,
                         "event_types": _json_wl.loads(h.event_types or "[]"),
-                        "created_at": h.created_at.isoformat() if h.created_at else None,
-                        "last_fired_at": h.last_fired_at.isoformat() if h.last_fired_at else None,
+                        "created_at": h.created_at.isoformat()
+                        if h.created_at
+                        else None,
+                        "last_fired_at": h.last_fired_at.isoformat()
+                        if h.last_fired_at
+                        else None,
                         "last_status_code": h.last_status_code,
                     }
                     for h in _wl_hooks
@@ -9670,7 +9683,10 @@ def send_message(
                 pass
 
         # --- REMOVE ---
-        elif _WEBHOOK_REMOVE_CHAT_PATTERNS.search(body.message) and not webhook_create_event:
+        elif (
+            _WEBHOOK_REMOVE_CHAT_PATTERNS.search(body.message)
+            and not webhook_create_event
+        ):
             try:
                 from models.webhook_config import WebhookConfig as _WHCRm
 
@@ -9721,7 +9737,10 @@ def send_message(
                 pass
 
         # --- TEST ---
-        elif _WEBHOOK_TEST_CHAT_PATTERNS.search(body.message) and not webhook_create_event:
+        elif (
+            _WEBHOOK_TEST_CHAT_PATTERNS.search(body.message)
+            and not webhook_create_event
+        ):
             try:
                 from models.webhook_config import WebhookConfig as _WHCTest
                 from core.webhook import _do_dispatch as _wt_dispatch

@@ -139,6 +139,7 @@ class TestWebhookCreatePatterns:
     @pytest.fixture(autouse=True)
     def _import(self):
         from api.chat import _WEBHOOK_CREATE_PATTERNS
+
         self.pattern = _WEBHOOK_CREATE_PATTERNS
 
     def test_register_webhook(self):
@@ -176,6 +177,7 @@ class TestWebhookListChatPatterns:
     @pytest.fixture(autouse=True)
     def _import(self):
         from api.chat import _WEBHOOK_LIST_CHAT_PATTERNS
+
         self.pattern = _WEBHOOK_LIST_CHAT_PATTERNS
 
     def test_list_webhooks(self):
@@ -207,6 +209,7 @@ class TestWebhookRemoveChatPatterns:
     @pytest.fixture(autouse=True)
     def _import(self):
         from api.chat import _WEBHOOK_REMOVE_CHAT_PATTERNS
+
         self.pattern = _WEBHOOK_REMOVE_CHAT_PATTERNS
 
     def test_remove_webhook(self):
@@ -238,6 +241,7 @@ class TestWebhookTestChatPatterns:
     @pytest.fixture(autouse=True)
     def _import(self):
         from api.chat import _WEBHOOK_TEST_CHAT_PATTERNS
+
         self.pattern = _WEBHOOK_TEST_CHAT_PATTERNS
 
     def test_test_webhook(self):
@@ -279,7 +283,9 @@ class TestWebhookManagementChatSSE:
         assert wl["webhook_list_chat"]["total"] == 0
         assert wl["webhook_list_chat"]["webhooks"] == []
 
-    def test_register_emits_webhook_registered_event(self, sync_client, deployed_project):
+    def test_register_emits_webhook_registered_event(
+        self, sync_client, deployed_project
+    ):
         """'register a webhook at URL' emits webhook_registered with url and secret."""
         events = _chat_events_sync(
             sync_client,
@@ -301,7 +307,9 @@ class TestWebhookManagementChatSSE:
             sync_client, deployed_project["project_id"], "remove my webhook"
         )
         types = [e.get("type") for e in events]
-        assert "webhook_removed_chat" in types, f"Expected webhook_removed_chat in {types}"
+        assert "webhook_removed_chat" in types, (
+            f"Expected webhook_removed_chat in {types}"
+        )
         wr = next(e for e in events if e.get("type") == "webhook_removed_chat")
         assert wr["webhook_removed_chat"]["removed"] == []
 
@@ -322,5 +330,12 @@ class TestWebhookManagementChatSSE:
         for msg in ["list my webhooks", "remove my webhook", "test my webhook"]:
             events = _chat_events_sync(sync_client, pid, msg)
             types = [e.get("type") for e in events]
-            for et in ("webhook_list_chat", "webhook_registered", "webhook_removed_chat", "webhook_test_chat"):
-                assert et not in types, f"Unexpected {et} for '{msg}' without deployment"
+            for et in (
+                "webhook_list_chat",
+                "webhook_registered",
+                "webhook_removed_chat",
+                "webhook_test_chat",
+            ):
+                assert et not in types, (
+                    f"Unexpected {et} for '{msg}' without deployment"
+                )
