@@ -1,5 +1,27 @@
 # Journal
 
+## Day 62 — 12:00 — Multi-Deployment Status Overview via Chat
+
+No community issues. Track D deployment depth. Analysts had no way to get a bird's-eye view of all their live models at once — every deployment feature was scoped to a single deployment context. This session adds a cross-project operational monitoring card that answers "what's running right now?" in one glance.
+
+**What shipped:**
+
+**`compute_deployments_overview()` pure function** in `core/analyzer.py`: accepts list[dict] of deployment summaries, returns aggregated counts (total, production_count, staging_count, total_predictions, avg_health_score, healthy/warning/critical counts), sorted deployments (production first → health score desc → request_count desc), and a plain-English summary sentence. Fully testable in isolation.
+
+**`GET /api/deploy/overview` REST endpoint** in `api/deploy.py`: registered before `GET /api/deploy/{deployment_id}` to avoid FastAPI path capture (root cause of initial 404 failures — route ordering matters when literal and parameterized paths share a prefix). Queries all active Deployment rows across all projects, computes health via `compute_deployment_health_item()`, enriches with PredictionLog counts (last 7 days + today), then delegates to the pure function.
+
+**`_DEPLOYMENTS_OVERVIEW_PATTERNS` regex** in `api/chat.py` with 8 NL variant groups — show/list/view/get/display deployments; deployment dashboard/overview/status/monitoring/summary/report; which models are live/deployed/running/active; live/active model endpoints; all deployed models/endpoints; deployment health overview/summary/dashboard; active prediction endpoint status; live model status/overview/dashboard. Handler is *not* guarded by `ctx["deployment"]` — this is cross-project by design.
+
+**`DeploymentsOverviewCard`** React component at `components/chat/deployments-overview-card.tsx`: outer figure with health-colored border (rose if any critical, amber if warnings, emerald if all healthy); stats row (total predictions, avg health, staging count); per-deployment rows with algorithm→target label, environment badge, status badge, API key Protected badge (🔑), project name, health bar (emerald/amber/rose by score), request counts (total, last 7 days, today), top_issue in amber italic. `DeploymentStatusRow` + `DeploymentsOverviewResult` TypeScript interfaces; `attachDeploymentsOverviewToLastMessage` Zustand action; SSE type `deployments_overview` wired in `project/[id]/page.tsx`.
+
+**Tests:** 23 backend (11 pure-function, 4 REST integration, 8 regex pattern), 33 frontend. Backend lint: clean. Frontend build: clean.
+
+**Bugs caught:**
+- Route ordering: `GET /api/deploy/overview` must be registered before `GET /api/deploy/{deployment_id}`. Moved from end of file to a dedicated section before the parameterized handler (line 325 → ~330).
+- FastAPI route listing vs. actual match order: `sorted()` on route paths showed `overview` before `{id}`, but actual registration order put `{id}` first — Python dict iteration hides this.
+
+---
+
 ## Day 62 — 04:00 — API Key Management via Chat
 
 No community issues. Track D deployment depth. The API key feature already existed as a REST endpoint and a deployment panel UI — but the chat interface was missing entirely. An analyst could never say "protect my endpoint" and have it just work. That gap is now closed.

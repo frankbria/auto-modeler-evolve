@@ -36,6 +36,8 @@ from core.analyzer import (
     compute_batch_job_results,
     compute_covariate_drift_alert,
     compute_confidence_trend,
+    compute_deployment_health_item,
+    compute_deployments_overview,
     compute_prediction_audit,
     compute_usage_pattern,
 )
@@ -321,7 +323,87 @@ def list_deployments(
 
 
 # ---------------------------------------------------------------------------
-# 3. Deployment detail + feature schema
+# 3. Deployments overview (must be before /api/deploy/{deployment_id})
+# ---------------------------------------------------------------------------
+
+
+@router.get("/api/deploy/overview")
+def deployments_overview(session: Session = Depends(get_session)):
+    """Return a cross-project status overview for all active deployments.
+
+    Aggregates health, request volume, environment, and configuration data
+    for every active Deployment row across all projects.
+    """
+    from datetime import UTC, datetime
+
+    now = datetime.now(UTC).replace(tzinfo=None)
+    active_deployments = list(
+        session.exec(
+            select(Deployment).where(Deployment.is_active == True)  # noqa: E712
+        ).all()
+    )
+
+    deployment_summaries: list[dict] = []
+    for dep in active_deployments:
+        cutoff_7d = now - timedelta(days=7)
+        cutoff_today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+        all_logs = list(
+            session.exec(
+                select(PredictionLog).where(
+                    PredictionLog.deployment_id == dep.id,
+                    PredictionLog.created_at >= cutoff_7d,
+                )
+            ).all()
+        )
+        predictions_last_7d = len(all_logs)
+        predictions_today = sum(
+            1 for lg in all_logs if lg.created_at >= cutoff_today
+        )
+
+        from models.project import Project as _Project
+
+        proj = session.get(_Project, dep.project_id)
+        project_name = proj.name if proj else "Unknown"
+
+        health_item = compute_deployment_health_item(
+            deployment_id=dep.id,
+            algorithm=dep.algorithm,
+            target_column=dep.target_column,
+            created_at=dep.created_at,
+            request_count=dep.request_count,
+            last_predicted_at=dep.last_predicted_at,
+            environment=dep.environment,
+            now=now,
+        )
+
+        deployment_summaries.append(
+            {
+                **health_item,
+                "project_id": dep.project_id,
+                "project_name": project_name,
+                "algorithm": dep.algorithm,
+                "created_at_iso": dep.created_at.isoformat() if dep.created_at else None,
+                "last_predicted_at_iso": (
+                    dep.last_predicted_at.isoformat()
+                    if dep.last_predicted_at
+                    else None
+                ),
+                "api_key_enabled": dep.api_key_enabled,
+                "rate_limit_rpm": dep.rate_limit_rpm,
+                "monthly_quota": dep.monthly_quota,
+                "predictions_last_7d": predictions_last_7d,
+                "predictions_today": predictions_today,
+                "dashboard_url": dep.dashboard_url,
+                "endpoint_path": dep.endpoint_path,
+            }
+        )
+
+    return compute_deployments_overview(deployment_summaries)
+
+
+# ---------------------------------------------------------------------------
+# 4. Deployment detail + feature schema
 # ---------------------------------------------------------------------------
 
 

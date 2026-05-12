@@ -3848,3 +3848,103 @@ def compute_batch_job_results(
         "avg_confidence": avg_confidence,
         "summary": summary,
     }
+
+
+def compute_deployments_overview(deployment_summaries: list[dict]) -> dict:
+    """Aggregate all active deployments into a cross-project status overview.
+
+    Pure function — no database or filesystem access.
+
+    Args:
+        deployment_summaries: List of dicts, one per active deployment, with keys:
+            deployment_id, project_id, project_name, algorithm, algorithm_plain,
+            target_column, environment, created_at_iso, request_count,
+            last_predicted_at_iso, health_score, status, top_issue, recommendation,
+            api_key_enabled, rate_limit_rpm, monthly_quota,
+            predictions_last_7d, predictions_today.
+
+    Returns:
+        Dict with: total_deployments, production_count, staging_count,
+        total_predictions, avg_health_score, healthy_count, warning_count,
+        critical_count, deployments (sorted health desc then request_count desc),
+        summary (plain English).
+    """
+    total = len(deployment_summaries)
+    if total == 0:
+        return {
+            "total_deployments": 0,
+            "production_count": 0,
+            "staging_count": 0,
+            "total_predictions": 0,
+            "avg_health_score": 0,
+            "healthy_count": 0,
+            "warning_count": 0,
+            "critical_count": 0,
+            "deployments": [],
+            "summary": (
+                "No active deployments found. Deploy a trained model to create a "
+                "live prediction endpoint."
+            ),
+        }
+
+    production_count = sum(
+        1 for d in deployment_summaries if d.get("environment") == "production"
+    )
+    staging_count = total - production_count
+    total_predictions = sum(d.get("request_count", 0) for d in deployment_summaries)
+    avg_health_score = int(
+        sum(d.get("health_score", 0) for d in deployment_summaries) / total
+    )
+
+    healthy_count = sum(
+        1 for d in deployment_summaries if d.get("status") == "healthy"
+    )
+    warning_count = sum(
+        1 for d in deployment_summaries if d.get("status") == "warning"
+    )
+    critical_count = sum(
+        1 for d in deployment_summaries if d.get("status") == "critical"
+    )
+
+    # Sort: production first, then by health score desc, then by request count desc
+    sorted_deployments = sorted(
+        deployment_summaries,
+        key=lambda d: (
+            0 if d.get("environment") == "production" else 1,
+            -d.get("health_score", 0),
+            -d.get("request_count", 0),
+        ),
+    )
+
+    # Build plain-English summary
+    parts = [f"You have {total} active deployment{'s' if total > 1 else ''}"]
+    if production_count > 0:
+        parts.append(
+            f"{production_count} in production"
+            + (f", {staging_count} in staging" if staging_count > 0 else "")
+        )
+    if total_predictions > 0:
+        parts.append(
+            f"{total_predictions:,} total prediction{'s' if total_predictions != 1 else ''} served"
+        )
+    if critical_count > 0:
+        parts.append(f"{critical_count} deployment{'s' if critical_count > 1 else ''} need{'s' if critical_count == 1 else ''} attention")
+    elif warning_count > 0:
+        parts.append(f"{warning_count} deployment{'s' if warning_count > 1 else ''} showing warnings")
+    else:
+        parts.append("all deployments healthy")
+
+    summary = ". ".join(parts) + "."
+
+    return {
+        "total_deployments": total,
+        "production_count": production_count,
+        "staging_count": staging_count,
+        "total_predictions": total_predictions,
+        "avg_health_score": avg_health_score,
+        "healthy_count": healthy_count,
+        "warning_count": warning_count,
+        "critical_count": critical_count,
+        "deployments": sorted_deployments,
+        "summary": summary,
+    }

@@ -1745,6 +1745,25 @@ guides them forward through the natural flow.
       `attachApiKeyResultToLastMessage` Zustand action; SSE handler + render wired in `project/[id]/page.tsx`.
       *Day 62 (04:00): 31 backend + 18 frontend tests. Backend lint: clean. Frontend build: clean.*
 
+- [x] **Multi-Deployment Status Overview via Chat** — Track D perpetual. Analysts can ask "show all my
+      deployments", "deployment dashboard", "deployment overview", "deployment status", "deployment monitoring",
+      "which models are live", "all deployed models", "deployment health overview", "live model status", and
+      8 other NL variants. Cross-project: not guarded by `ctx["deployment"]`. Regex:
+      `_DEPLOYMENTS_OVERVIEW_PATTERNS` (8 variants). Handler queries all active `Deployment` rows across all
+      projects, fetches prediction counts (last 7 days, today) from `PredictionLog`, enriches each with
+      `compute_deployment_health_item()`, calls `compute_deployments_overview()` pure function.
+      `compute_deployments_overview()` in `core/analyzer.py`: accepts list[dict], returns aggregated counts
+      (total, production_count, staging_count, total_predictions, avg_health_score, healthy/warning/critical
+      counts), sorted deployments (production first, then health desc, then request_count desc), plain-English
+      summary. REST endpoint `GET /api/deploy/overview` (registered before `GET /api/deploy/{id}` to avoid
+      path capture). SSE event type `deployments_overview`. `DeploymentsOverviewCard` React component:
+      health-colored border (rose/amber/emerald), stats row, per-deployment rows with algorithm→target label,
+      environment badge, status badge, API key Protected badge, project name, health bar, request counts,
+      top_issue. `DeploymentStatusRow` + `DeploymentsOverviewResult` TypeScript interfaces;
+      `attachDeploymentsOverviewToLastMessage` Zustand action; SSE handler + render wired in
+      `project/[id]/page.tsx`.
+      *Day 62 (12:00): 23 backend + 33 frontend tests. Backend lint: clean. Frontend build: clean.*
+
 ---
 
 ## Data Model

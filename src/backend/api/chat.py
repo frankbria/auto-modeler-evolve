@@ -2898,6 +2898,20 @@ _API_KEY_STATUS_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+_DEPLOYMENTS_OVERVIEW_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"(?:show|list|view|get|display)\s+(?:all\s+)?(?:my\s+)?(?:active\s+)?(?:live\s+)?deployments?\b|"
+    r"deployment\s+(?:dashboard|overview|status|monitor(?:ing)?|summary|report)\b|"
+    r"which\s+(?:of\s+my\s+)?models?\s+(?:are|is)\s+(?:live|deployed|running|active)\b|"
+    r"(?:all\s+)?(?:my\s+)?(?:live|active|running)\s+(?:model\s+)?(?:endpoint|api)s?\b|"
+    r"(?:all|my)\s+deployed\s+(?:models?|endpoints?|api)s?\b|"
+    r"deployment\s+health\s+(?:overview|summary|dashboard)\b|"
+    r"(?:all|my)\s+(?:active\s+)?prediction\s+(?:endpoint|api|service)s?\s+(?:status|overview)\b|"
+    r"live\s+model\s+(?:status|overview|dashboard)\b"
+    r")",
+    re.IGNORECASE,
+)
+
 
 def _extract_alert_rule_condition(
     message: str, target_column: str | None
@@ -9159,6 +9173,92 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # SDK generation is nice-to-have; never crash chat
 
+    # Multi-deployment status overview (all active deployments, cross-project)
+    deployments_overview_event: dict | None = None
+    if _DEPLOYMENTS_OVERVIEW_PATTERNS.search(body.message):
+        try:
+            from core.analyzer import (
+                compute_deployment_health_item as _cdhi,
+                compute_deployments_overview as _cdo,
+            )
+
+            _now_ov = datetime.now(UTC).replace(tzinfo=None)
+            _all_deps = list(
+                session.exec(
+                    select(Deployment).where(Deployment.is_active == True)  # noqa: E712
+                ).all()
+            )
+            _dep_summaries: list[dict] = []
+            for _dep_ov in _all_deps:
+                _cutoff_7d = _now_ov - __import__("datetime").timedelta(days=7)
+                _cutoff_today = _now_ov.replace(
+                    hour=0, minute=0, second=0, microsecond=0
+                )
+                _logs_7d = list(
+                    session.exec(
+                        select(PredictionLog).where(
+                            PredictionLog.deployment_id == _dep_ov.id,
+                            PredictionLog.created_at >= _cutoff_7d,
+                        )
+                    ).all()
+                )
+                _pred_7d = len(_logs_7d)
+                _pred_today = sum(
+                    1 for _lg in _logs_7d if _lg.created_at >= _cutoff_today
+                )
+                _proj_ov = session.get(Project, _dep_ov.project_id)
+                _proj_name = _proj_ov.name if _proj_ov else "Unknown"
+                _health = _cdhi(
+                    deployment_id=_dep_ov.id,
+                    algorithm=_dep_ov.algorithm,
+                    target_column=_dep_ov.target_column,
+                    created_at=_dep_ov.created_at,
+                    request_count=_dep_ov.request_count,
+                    last_predicted_at=_dep_ov.last_predicted_at,
+                    environment=_dep_ov.environment,
+                    now=_now_ov,
+                )
+                _dep_summaries.append(
+                    {
+                        **_health,
+                        "project_id": _dep_ov.project_id,
+                        "project_name": _proj_name,
+                        "algorithm": _dep_ov.algorithm,
+                        "created_at_iso": (
+                            _dep_ov.created_at.isoformat()
+                            if _dep_ov.created_at
+                            else None
+                        ),
+                        "last_predicted_at_iso": (
+                            _dep_ov.last_predicted_at.isoformat()
+                            if _dep_ov.last_predicted_at
+                            else None
+                        ),
+                        "api_key_enabled": _dep_ov.api_key_enabled,
+                        "rate_limit_rpm": _dep_ov.rate_limit_rpm,
+                        "monthly_quota": _dep_ov.monthly_quota,
+                        "predictions_last_7d": _pred_7d,
+                        "predictions_today": _pred_today,
+                        "dashboard_url": _dep_ov.dashboard_url,
+                        "endpoint_path": _dep_ov.endpoint_path,
+                    }
+                )
+            deployments_overview_event = _cdo(_dep_summaries)
+            system_prompt += (
+                f"\n\n## Deployment Status Overview\n"
+                f"{deployments_overview_event['summary']}\n"
+                f"Total active deployments: {deployments_overview_event['total_deployments']}. "
+                f"Production: {deployments_overview_event['production_count']}, "
+                f"Staging: {deployments_overview_event['staging_count']}. "
+                f"Healthy: {deployments_overview_event['healthy_count']}, "
+                f"Warning: {deployments_overview_event['warning_count']}, "
+                f"Critical: {deployments_overview_event['critical_count']}. "
+                "Present the overview from the card. Help the analyst understand which "
+                "deployments need attention and what actions to take."
+            )
+        except Exception:  # noqa: BLE001
+            pass  # Overview is nice-to-have; never crash chat
+
     # Cross-project portfolio overview
     portfolio_event: dict | None = None
     if _PORTFOLIO_PATTERNS.search(body.message):
@@ -12478,6 +12578,9 @@ def send_message(
 
         if api_key_chat_event:
             yield f"data: {json.dumps({'type': 'api_key_result', 'api_key_result': api_key_chat_event})}\n\n"
+
+        if deployments_overview_event:
+            yield f"data: {json.dumps({'type': 'deployments_overview', 'deployments_overview': deployments_overview_event})}\n\n"
 
         # After text stream, opportunistically generate a chart if the
         # message is about data and we have a dataset loaded

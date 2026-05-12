@@ -506,6 +506,7 @@ export interface ChatMessage {
   webhook_test_chat?: WebhookTestChatResult
   alert_rule?: AlertRuleEventResult
   api_key_result?: ApiKeyResultInfo
+  deployments_overview?: DeploymentsOverviewResult
 }
 
 export interface SegmentPerformanceSegment {
@@ -3054,5 +3055,42 @@ export interface ApiKeyResultInfo {
   deployment_id: string
   is_protected: boolean
   api_key?: string  // present only when generated/regenerated; shown once
+  summary: string
+}
+
+export interface DeploymentStatusRow {
+  deployment_id: string
+  project_id: string
+  project_name: string
+  name: string
+  algorithm: string | null
+  algorithm_plain: string | null
+  target_column: string | null
+  environment: "staging" | "production" | string
+  health_score: number
+  status: "healthy" | "warning" | "critical" | string
+  top_issue: string | null
+  recommendation: string | null
+  request_count: number
+  predictions_last_7d: number
+  predictions_today: number
+  last_predicted_at_iso: string | null
+  api_key_enabled: boolean
+  rate_limit_rpm: number | null
+  monthly_quota: number | null
+  dashboard_url: string | null
+  endpoint_path: string | null
+}
+
+export interface DeploymentsOverviewResult {
+  total_deployments: number
+  production_count: number
+  staging_count: number
+  total_predictions: number
+  avg_health_score: number
+  healthy_count: number
+  warning_count: number
+  critical_count: number
+  deployments: DeploymentStatusRow[]
   summary: string
 }
