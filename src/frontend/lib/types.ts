@@ -505,6 +505,7 @@ export interface ChatMessage {
   webhook_removed_chat?: WebhookRemovedChatInfo
   webhook_test_chat?: WebhookTestChatResult
   alert_rule?: AlertRuleEventResult
+  api_key_result?: ApiKeyResultInfo
 }
 
 export interface SegmentPerformanceSegment {
@@ -3046,4 +3047,12 @@ export interface AlertRuleEventResult {
   rules?: AlertRuleEntry[]
   deleted_count?: number
   deleted_names?: string[]
+}
+
+export interface ApiKeyResultInfo {
+  action: "generated" | "regenerated" | "disabled" | "status"
+  deployment_id: string
+  is_protected: boolean
+  api_key?: string  // present only when generated/regenerated; shown once
+  summary: string
 }

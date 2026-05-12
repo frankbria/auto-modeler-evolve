@@ -49,6 +49,14 @@ the time is better spent on real features.
 
 ## Currently Working On
 
+## Day 62 (04:00) — Done
+**Track D — API Key Management via Chat.** Analysts can generate, regenerate, disable, and check status of API key protection entirely through conversation — the REST endpoint and DeploymentPanel UI existed but chat was missing. Three regex patterns (8+4+4 NL variants). Elif priority chain: DISABLE > GENERATE > STATUS (resolves pattern conflict where status regex matched "api key protection" messages). GENERATE: `secrets.token_urlsafe(32)` + SHA-256 salted hash stored; raw key in SSE event once. SSE type `api_key_result` with `{action, deployment_id, is_protected, api_key?, summary}`. `ApiKeyChatCard` — four states: generated/regenerated (amber border, 🔑, copy-to-clipboard with "shown once" callout), disabled (slate border, 🔓), status (adaptive). `ApiKeyResultInfo` TypeScript interface; `attachApiKeyResultToLastMessage` Zustand action. 31 backend + 18 frontend tests. Backend lint: clean. Frontend build: clean.
+
+**What's next:**
+- Track C: Date-aware chronological split via chat — "train with chronological split"
+- Track E: End-to-end "lunch break" analyst flow — run the full upload → explore → train → validate → deploy → predict flow as a real user and fix friction points
+- Track D: Deployment comparison dashboard — show side-by-side metric comparison when multiple model versions exist
+
 ## Day 61 (20:00) — Done
 **Track D — Custom Prediction Alert Rules via Chat.** Analysts define business-rule-based alerts on live prediction values through conversation — "alert me when predicted revenue is below $100,000", "notify me when confidence drops below 70%", "alert me when predicted class is churn". Distinct from system-level webhook events: these fire when prediction *content* meets a condition.
 - `PredictionAlertRule` SQLModel table: `condition_type` (prediction_value|confidence|predicted_class), `condition_op`, `condition_value`, `condition_class`, `trigger_count`, `last_triggered_at`.
@@ -60,7 +68,7 @@ the time is better spent on real features.
 
 **What's next:**
 - Track C: Date-aware chronological split via chat — "train with chronological split"
-- Track D: API key auth for prediction endpoints
+- Track D: API key auth for prediction endpoints ✓ (shipped Day 62)
 - Track E: End-to-end "lunch break" analyst flow
 
 ## Day 61 (12:00) — Done

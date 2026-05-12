@@ -1,5 +1,32 @@
 # Journal
 
+## Day 62 — 04:00 — API Key Management via Chat
+
+No community issues. Track D deployment depth. The API key feature already existed as a REST endpoint and a deployment panel UI — but the chat interface was missing entirely. An analyst could never say "protect my endpoint" and have it just work. That gap is now closed.
+
+**What shipped:**
+
+**Three regex patterns** in `api/chat.py`:
+- `_API_KEY_GENERATE_PATTERNS`: 8 NL variant groups — generate/create/add/set up/enable api key; protect/secure/lock down endpoint; require/enforce/enable auth; add key protection; make endpoint private/protected; only let users with a key; regenerate/rotate/refresh/reset key
+- `_API_KEY_DISABLE_PATTERNS`: 4 NL variant groups — remove/delete/disable/revoke/turn off api key; remove key protection; make endpoint public/open/accessible; stop requiring key
+- `_API_KEY_STATUS_PATTERNS`: 4 NL variant groups — show/check/get api key status; is endpoint protected/public/open; do I have an api key; api key status/info
+
+**Handler block** in `send_message()` guarded by `ctx["deployment"]`. Elif chain: DISABLE fires first (avoids conflicts with status pattern matching "api key protection"), GENERATE second, STATUS as else. GENERATE: `secrets.token_urlsafe(32)` for the raw key, `secrets.token_hex(16)` salt, SHA-256 hash stored in `Deployment.api_key_hash`/`api_key_salt`; `api_key_enabled=True`; action="regenerated" if endpoint was already protected. DISABLE: clears hash/salt, sets `api_key_enabled=False`. STATUS: reads flag only, never exposes stored hash. All wrapped in `except Exception: pass`.
+
+**SSE event** type `api_key_result` with `{action, deployment_id, is_protected, api_key?, summary}`. Raw key included only in generate/regenerate events; absent in disable/status.
+
+**`ApiKeyChatCard`** React component (`src/frontend/components/chat/api-key-chat-card.tsx`): four render states. Generated/regenerated: amber border, 🔑, protected badge, amber callout with key value (`data-testid="api-key-value"`), "shown once" warning, copy-to-clipboard button with "Copied!" flash. Disabled: slate border, 🔓, open access badge, re-enable prompt. Status: adaptive border by protection state, summary paragraph, next-action suggestions ("regenerate my API key" or "generate an API key").
+
+**TypeScript interface** `ApiKeyResultInfo` added to `src/frontend/lib/types.ts`; `api_key_result?: ApiKeyResultInfo` on `ChatMessage`.
+
+**Zustand action** `attachApiKeyResultToLastMessage` in `src/frontend/lib/store.ts`.
+
+**SSE handler + render** wired in `src/frontend/app/project/[id]/page.tsx`.
+
+**Tests:** 31 backend (24 pattern + 7 integration; integration uses sync `TestClient` + `mock.patch("anthropic.Anthropic")` matching Day 61 pattern) + 18 frontend (Jest). Backend lint: clean. Frontend build: clean.
+
+**Key fix during implementation:** `_API_KEY_STATUS_PATTERNS` contains `api\s+key\s+(?:status|info|protection|...)` which also matched "remove the API key protection" (containing "api key protection"). Original negation guard `and not _API_KEY_STATUS_PATTERNS.search(...)` blocked the disable path. Fixed by removing the guard and using a pure elif priority chain (disable > generate > status).
+
 ## Day 61 — 20:00 — Custom Prediction Alert Rules via Chat
 
 No community issues. Track D deployment depth. Analysts could already receive webhook notifications when system events fired (batch complete, drift, health degraded, quota). The missing piece: business-rule-based alerts driven by the *content* of predictions themselves — "alert me when predicted revenue is below $100,000", not just when system thresholds trip.

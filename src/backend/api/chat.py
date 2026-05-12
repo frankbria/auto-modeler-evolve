@@ -2861,6 +2861,43 @@ _ALERT_CLASS_RE = re.compile(
     r"class\s*(?:is|=|equals?)?|output\s*(?:is|=|equals?)?)\s+['\"]?(\w[\w\s\-]*?)['\"]?\s*$"
 )
 
+# ---------------------------------------------------------------------------
+# API key management via chat
+# ---------------------------------------------------------------------------
+
+_API_KEY_GENERATE_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"(?:generate|create|add|set\s+up|enable|turn\s+on)\s+(?:an?\s+)?(?:api\s+key|api\s+key\s+(?:protection|auth|security))\b|"
+    r"(?:protect|secure|lock\s+(?:down|up)?)\s+(?:my\s+)?(?:endpoint|model|prediction\s+(?:endpoint|api|url))\b|"
+    r"(?:require|enforce|enable)\s+(?:api\s+key|authentication|auth)\s+(?:on\s+|for\s+)?(?:my\s+)?(?:endpoint|model|prediction\s+(?:endpoint|api))?\b|"
+    r"(?:add|enable)\s+(?:key\s+)?(?:protection|authentication|auth)\s+(?:to|on|for)\s+(?:my\s+)?(?:endpoint|model|api|prediction)\b|"
+    r"make\s+(?:my\s+)?(?:endpoint|api|prediction\s+api)\s+(?:private|protected|secure)\b|"
+    r"only\s+(?:let|allow)\s+(?:people|users?)\s+(?:with\s+)?(?:a\s+)?(?:key|api\s+key)\s+(?:to\s+)?(?:use|call|access)\b|"
+    r"(?:regenerate|rotate|refresh|reset)\s+(?:my\s+)?(?:api\s+)?key\b"
+    r")",
+    re.IGNORECASE,
+)
+
+_API_KEY_DISABLE_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"(?:remove|delete|disable|revoke|turn\s+off|clear)\s+(?:the\s+)?(?:api\s+key|api\s+key\s+(?:protection|auth|security))\b|"
+    r"(?:remove|disable)\s+(?:the\s+)?(?:key\s+)?(?:protection|authentication|auth)\s+(?:from\s+)?(?:my\s+)?(?:endpoint|model|api)?\b|"
+    r"make\s+(?:my\s+)?(?:endpoint|api|prediction\s+api)\s+(?:public|open|accessible)\b|"
+    r"(?:stop\s+requiring|remove\s+the\s+(?:api\s+)?key\s+requirement)\b"
+    r")",
+    re.IGNORECASE,
+)
+
+_API_KEY_STATUS_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"(?:show|check|get|what\s+is|what'?s)\s+(?:my\s+)?(?:api\s+key|api\s+key\s+(?:status|info|protection|settings?))\b|"
+    r"is\s+(?:my\s+)?(?:endpoint|api|model|prediction\s+(?:endpoint|api))\s+(?:protected|secured?|private|public|open)\b|"
+    r"(?:do\s+I\s+have|is\s+there)\s+(?:an?\s+)?(?:api\s+key|key\s+protection|authentication)\s+(?:on|for|enabled)?\s*(?:my\s+)?(?:endpoint|model|api)?\b|"
+    r"api\s+key\s+(?:status|info|protection|enabled|disabled)\b"
+    r")",
+    re.IGNORECASE,
+)
+
 
 def _extract_alert_rule_condition(
     message: str, target_column: str | None
@@ -10075,6 +10112,92 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Alert rules are nice-to-have; never crash chat
 
+    # API key management via chat — generate / disable / status
+    api_key_chat_event: dict | None = None
+    if ctx["deployment"] and (
+        _API_KEY_GENERATE_PATTERNS.search(body.message)
+        or _API_KEY_DISABLE_PATTERNS.search(body.message)
+        or _API_KEY_STATUS_PATTERNS.search(body.message)
+    ):
+        try:
+            import hashlib as _hashlib_ak
+            import secrets as _secrets_ak
+
+            _ak_dep = ctx["deployment"]
+            _ak_dep_id = _ak_dep.id if hasattr(_ak_dep, "id") else str(_ak_dep)
+            _ak_dep_obj = session.get(Deployment, _ak_dep_id)
+
+            if _ak_dep_obj:
+                if _API_KEY_DISABLE_PATTERNS.search(body.message):
+                    # --- DISABLE (highest priority — distinct action) ---
+                    _ak_dep_obj.api_key_enabled = False
+                    _ak_dep_obj.api_key_hash = None
+                    _ak_dep_obj.api_key_salt = None
+                    session.add(_ak_dep_obj)
+                    session.commit()
+                    api_key_chat_event = {
+                        "action": "disabled",
+                        "deployment_id": _ak_dep_id,
+                        "is_protected": False,
+                        "summary": "API key protection removed. Your prediction endpoint is now publicly accessible.",
+                    }
+                    system_prompt += (
+                        "\n\n## API Key Protection Removed\n"
+                        "The analyst's prediction endpoint is now open — no API key required. "
+                        "Explain that anyone with the URL can now make predictions, and advise they can "
+                        "re-enable protection at any time."
+                    )
+                elif _API_KEY_GENERATE_PATTERNS.search(body.message):
+                    # --- GENERATE / REGENERATE ---
+                    _ak_key = _secrets_ak.token_urlsafe(32)
+                    _ak_salt = _secrets_ak.token_hex(16)
+                    _ak_hash = _hashlib_ak.sha256(f"{_ak_salt}:{_ak_key}".encode()).hexdigest()
+                    _ak_was_protected = bool(getattr(_ak_dep_obj, "api_key_enabled", False))
+
+                    _ak_dep_obj.api_key_enabled = True
+                    _ak_dep_obj.api_key_hash = _ak_hash
+                    _ak_dep_obj.api_key_salt = _ak_salt
+                    session.add(_ak_dep_obj)
+                    session.commit()
+                    _ak_action = "regenerated" if _ak_was_protected else "generated"
+                    api_key_chat_event = {
+                        "action": _ak_action,
+                        "deployment_id": _ak_dep_id,
+                        "is_protected": True,
+                        "api_key": _ak_key,  # shown once
+                        "summary": (
+                            f"API key {_ak_action}. Your prediction endpoint is now protected. "
+                            "Share this key with authorised users — it cannot be retrieved again."
+                        ),
+                    }
+                    system_prompt += (
+                        f"\n\n## API Key {_ak_action.capitalize()}\n"
+                        "The prediction endpoint now requires an Authorization: Bearer <key> header. "
+                        "Inform the analyst to copy the key now (shown once), share it with their developer, "
+                        "and add it to any integration snippets or the VP dashboard if they're using API key auth."
+                    )
+                else:
+                    # --- STATUS ---
+                    _ak_is_protected = bool(getattr(_ak_dep_obj, "api_key_enabled", False))
+                    _ak_status_word = "protected" if _ak_is_protected else "open (no key required)"
+                    api_key_chat_event = {
+                        "action": "status",
+                        "deployment_id": _ak_dep_id,
+                        "is_protected": _ak_is_protected,
+                        "summary": f"Prediction endpoint is currently {_ak_status_word}.",
+                    }
+                    system_prompt += (
+                        f"\n\n## API Key Status\n"
+                        f"The prediction endpoint is currently {_ak_status_word}. "
+                        + (
+                            "Remind the analyst they can remove protection to make it public, or regenerate the key."
+                            if _ak_is_protected
+                            else "Suggest generating an API key if they want to restrict access."
+                        )
+                    )
+        except Exception:  # noqa: BLE001
+            pass  # API key mgmt is nice-to-have; never crash chat
+
     # Production input feature distribution
     prod_input_dist_event: dict | None = None
     if _PROD_INPUT_DIST_PATTERNS.search(body.message) and ctx["deployment"]:
@@ -12344,6 +12467,9 @@ def send_message(
 
         if alert_rule_event:
             yield f"data: {json.dumps({'type': 'alert_rule', 'alert_rule': alert_rule_event})}\n\n"
+
+        if api_key_chat_event:
+            yield f"data: {json.dumps({'type': 'api_key_result', 'api_key_result': api_key_chat_event})}\n\n"
 
         # After text stream, opportunistically generate a chart if the
         # message is about data and we have a dataset loaded

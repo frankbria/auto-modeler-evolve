@@ -114,6 +114,7 @@ import { WebhookListChatCard } from "@/components/chat/webhook-list-chat-card"
 import { WebhookRemovedChatCard } from "@/components/chat/webhook-removed-chat-card"
 import { WebhookTestChatCard } from "@/components/chat/webhook-test-chat-card"
 import { AlertRuleCard } from "@/components/chat/alert-rule-card"
+import { ApiKeyChatCard } from "@/components/chat/api-key-chat-card"
 import { PairCorrelationCard } from "@/components/data/pair-correlation-card"
 import { StatQueryCard } from "@/components/data/stat-query-card"
 import { SummaryStatsCard } from "@/components/data/summary-stats-card"
@@ -309,6 +310,7 @@ export default function ProjectWorkspace() {
     attachWebhookRemovedChatToLastMessage,
     attachWebhookTestChatToLastMessage,
     attachAlertRuleToLastMessage,
+    attachApiKeyResultToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -767,6 +769,8 @@ export default function ProjectWorkspace() {
                 attachWebhookTestChatToLastMessage(json.webhook_test_chat as import("@/lib/types").WebhookTestChatResult)
               } else if (json.type === "alert_rule" && json.alert_rule) {
                 attachAlertRuleToLastMessage(json.alert_rule as import("@/lib/types").AlertRuleEventResult)
+              } else if (json.type === "api_key_result" && json.api_key_result) {
+                attachApiKeyResultToLastMessage(json.api_key_result as import("@/lib/types").ApiKeyResultInfo)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -885,6 +889,7 @@ export default function ProjectWorkspace() {
     attachWebhookRemovedChatToLastMessage,
     attachWebhookTestChatToLastMessage,
     attachAlertRuleToLastMessage,
+    attachApiKeyResultToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -1428,6 +1433,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.alert_rule && (
                       <AlertRuleCard result={msg.alert_rule} />
+                    )}
+                    {msg.api_key_result && (
+                      <ApiKeyChatCard result={msg.api_key_result} />
                     )}
                   </div>
                 </div>

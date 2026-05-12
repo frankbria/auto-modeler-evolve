@@ -1722,6 +1722,29 @@ guides them forward through the natural flow.
       `getAlertRules`/`createAlertRule`/`deleteAlertRule`; SSE handler + render wired in page.tsx.
       *Day 61 (20:00): 25 backend + 16 frontend tests. Backend lint: clean. Frontend build: clean.*
 
+- [x] **API Key Management via Chat** — Track D perpetual. Analysts can generate, regenerate, disable,
+      and check status of API key protection on their prediction endpoint entirely through chat:
+      "generate an API key", "protect my endpoint", "secure my prediction API", "regenerate my API key",
+      "make my endpoint private", "remove the API key protection", "make my endpoint public", "is my
+      endpoint protected?", "show my API key status". Three regex patterns: `_API_KEY_GENERATE_PATTERNS`
+      (8 NL variants — generate/create/add/set up/enable/turn on api key; protect/secure/lock down
+      endpoint; require/enforce/enable auth; add key protection; make endpoint private/protected; only
+      allow users with a key; regenerate/rotate/refresh/reset key), `_API_KEY_DISABLE_PATTERNS`
+      (4 variants — remove/delete/disable/revoke/turn off api key; remove key protection; make endpoint
+      public/open/accessible; stop requiring key), `_API_KEY_STATUS_PATTERNS` (4 variants — show/check/get
+      api key status; is endpoint protected/public/open; do I have an api key; api key status/info).
+      Handler block in `send_message()` guarded by `ctx["deployment"]` with elif priority chain (DISABLE >
+      GENERATE > STATUS). GENERATE: `secrets.token_urlsafe(32)` key, `secrets.token_hex(16)` salt,
+      SHA-256 hash stored, raw key returned once in SSE event. Status `"regenerated"` if endpoint was
+      already protected, `"generated"` otherwise. DISABLE: clears `api_key_hash`, `api_key_salt`, sets
+      `api_key_enabled=False`. STATUS: reads current `api_key_enabled` flag, never exposes stored hash.
+      SSE event type `api_key_result` with `{action, deployment_id, is_protected, api_key?, summary}`.
+      `ApiKeyChatCard` React component — four states: generated/regenerated (amber border, 🔑, copy button
+      with "shown once" callout), disabled (slate border, 🔓, re-enable prompt), status (adaptive border
+      by protection state, summary text, next-action suggestions). `ApiKeyResultInfo` TypeScript interface;
+      `attachApiKeyResultToLastMessage` Zustand action; SSE handler + render wired in `project/[id]/page.tsx`.
+      *Day 62 (04:00): 31 backend + 18 frontend tests. Backend lint: clean. Frontend build: clean.*
+
 ---
 
 ## Data Model
