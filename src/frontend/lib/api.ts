@@ -1167,5 +1167,52 @@ export const api = {
       if (!res.ok) throw new Error(await res.text())
       return res.json()
     },
+
+    getAlertRules: async (
+      deploymentId: string
+    ): Promise<{ count: number; rules: import("./types").AlertRuleEntry[] }> => {
+      const res = await fetch(
+        `${API_URL}/api/deploy/${deploymentId}/alert-rules`
+      )
+      if (!res.ok) throw new Error(await res.text())
+      return res.json()
+    },
+
+    createAlertRule: async (
+      deploymentId: string,
+      name: string,
+      conditionType: string,
+      conditionOp: string,
+      conditionValue: number | null,
+      conditionClass: string | null
+    ): Promise<import("./types").AlertRuleEntry> => {
+      const res = await fetch(
+        `${API_URL}/api/deploy/${deploymentId}/alert-rules`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name,
+            condition_type: conditionType,
+            condition_op: conditionOp,
+            condition_value: conditionValue,
+            condition_class: conditionClass,
+          }),
+        }
+      )
+      if (!res.ok) throw new Error(await res.text())
+      return res.json()
+    },
+
+    deleteAlertRule: async (
+      deploymentId: string,
+      ruleId: string
+    ): Promise<void> => {
+      const res = await fetch(
+        `${API_URL}/api/deploy/${deploymentId}/alert-rules/${ruleId}`,
+        { method: "DELETE" }
+      )
+      if (!res.ok) throw new Error(await res.text())
+    },
   },
 }

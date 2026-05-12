@@ -144,6 +144,7 @@ interface AppState {
   attachWebhookListChatToLastMessage: (webhook_list_chat: import("./types").WebhookListChatResult) => void
   attachWebhookRemovedChatToLastMessage: (webhook_removed_chat: import("./types").WebhookRemovedChatInfo) => void
   attachWebhookTestChatToLastMessage: (webhook_test_chat: import("./types").WebhookTestChatResult) => void
+  attachAlertRuleToLastMessage: (alert_rule: import("./types").AlertRuleEventResult) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -1084,6 +1085,15 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, webhook_test_chat }
+      }
+      return { messages }
+    }),
+  attachAlertRuleToLastMessage: (alert_rule) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, alert_rule }
       }
       return { messages }
     }),

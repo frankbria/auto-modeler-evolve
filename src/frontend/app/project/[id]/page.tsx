@@ -113,6 +113,7 @@ import { WebhookRegisteredCard } from "@/components/chat/webhook-registered-card
 import { WebhookListChatCard } from "@/components/chat/webhook-list-chat-card"
 import { WebhookRemovedChatCard } from "@/components/chat/webhook-removed-chat-card"
 import { WebhookTestChatCard } from "@/components/chat/webhook-test-chat-card"
+import { AlertRuleCard } from "@/components/chat/alert-rule-card"
 import { PairCorrelationCard } from "@/components/data/pair-correlation-card"
 import { StatQueryCard } from "@/components/data/stat-query-card"
 import { SummaryStatsCard } from "@/components/data/summary-stats-card"
@@ -307,6 +308,7 @@ export default function ProjectWorkspace() {
     attachWebhookListChatToLastMessage,
     attachWebhookRemovedChatToLastMessage,
     attachWebhookTestChatToLastMessage,
+    attachAlertRuleToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -763,6 +765,8 @@ export default function ProjectWorkspace() {
                 attachWebhookRemovedChatToLastMessage(json.webhook_removed_chat as import("@/lib/types").WebhookRemovedChatInfo)
               } else if (json.type === "webhook_test_chat" && json.webhook_test_chat) {
                 attachWebhookTestChatToLastMessage(json.webhook_test_chat as import("@/lib/types").WebhookTestChatResult)
+              } else if (json.type === "alert_rule" && json.alert_rule) {
+                attachAlertRuleToLastMessage(json.alert_rule as import("@/lib/types").AlertRuleEventResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -880,6 +884,7 @@ export default function ProjectWorkspace() {
     attachWebhookListChatToLastMessage,
     attachWebhookRemovedChatToLastMessage,
     attachWebhookTestChatToLastMessage,
+    attachAlertRuleToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -1420,6 +1425,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.webhook_test_chat && (
                       <WebhookTestChatCard result={msg.webhook_test_chat} />
+                    )}
+                    {msg.alert_rule && (
+                      <AlertRuleCard result={msg.alert_rule} />
                     )}
                   </div>
                 </div>

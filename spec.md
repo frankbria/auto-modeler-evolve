@@ -1698,6 +1698,30 @@ guides them forward through the natural flow.
       SSE handlers + renders wired in `project/[id]/page.tsx`.
       *Day 61 (12:00): 38 backend + 32 frontend tests. Backend lint: clean. Frontend build + lint: clean.*
 
+- [x] **Custom Prediction Alert Rules via Chat** — Track D perpetual. Analysts define business-rule-based
+      alerts on live prediction values through conversation: "alert me when predicted revenue is below
+      $100,000", "notify me when confidence drops below 70%", "alert me when predicted class is churn".
+      Three regex patterns: `_ALERT_RULE_CREATE_PATTERNS` (7 NL variants — alert/notify/warn me when
+      predicted/model output; create/add/set up alert rule; trigger alert when; set alert if; send
+      notification when; flag when result), `_ALERT_RULE_LIST_PATTERNS` (4 variants — show/list/what
+      are my alert rules; my prediction alert rules; list all active alert rules),
+      `_ALERT_RULE_DELETE_PATTERNS` (3 variants — remove/delete/disable alert rule; turn off alert).
+      `_extract_alert_rule_condition(message, target_column)` pure function extracts condition from NL:
+      detects class prediction via `_ALERT_CLASS_RE`, confidence via `_ALERT_CONFIDENCE_RE` (normalizes
+      fractions to %), numeric threshold via `_ALERT_NUM_RE` with `_ALERT_OP_MAP` (below/under→lt,
+      above/over→gt, at least→gte, at most→lte, equals→eq). `PredictionAlertRule` SQLModel table:
+      `condition_type` (prediction_value|confidence|predicted_class), `condition_op`, `condition_value`,
+      `condition_class`, `trigger_count`, `last_triggered_at`. `_evaluate_alert_rule()` pure function
+      evaluates rule against prediction; `_fire_alert_rules()` daemon thread evaluates all active rules
+      post-prediction, dispatches `EVENT_PREDICTION_ALERT` webhooks via `core/webhook.py`. REST endpoints:
+      `POST /api/deploy/{id}/alert-rules` (create with full validation), `GET /api/deploy/{id}/alert-rules`
+      (list active, returns `{deployment_id, count, rules[]}`), `DELETE /api/deploy/{id}/alert-rules/{id}`
+      (soft-delete). Three SSE actions: `{type:"alert_rule", action:"created|list|deleted"}`. `AlertRuleCard`
+      React component renders all three states (violet/slate/rose borders). `AlertRuleEntry` +
+      `AlertRuleEventResult` TypeScript interfaces; Zustand `attachAlertRuleToLastMessage`; API methods
+      `getAlertRules`/`createAlertRule`/`deleteAlertRule`; SSE handler + render wired in page.tsx.
+      *Day 61 (20:00): 25 backend + 16 frontend tests. Backend lint: clean. Frontend build: clean.*
+
 ---
 
 ## Data Model

@@ -2798,6 +2798,128 @@ _WEBHOOK_EVENT_KEYWORDS = {
     "quota_alert": "quota_alert",
 }
 
+# Prediction alert rule management via chat
+_ALERT_RULE_CREATE_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"(?:alert|notify|warn)\s+(?:me\s+)?(?:when|if)\s+(?:(?:the\s+)?(?:prediction|predicted|forecast|model\s+output|revenue|score|confidence)\b|my\b)|"
+    r"(?:create|add|set\s+up|define|configure)\s+(?:an?\s+)?(?:prediction\s+)?(?:alert|notification|rule|threshold)\b|"
+    r"(?:trigger|fire)\s+(?:an?\s+)?(?:alert|notification)\s+(?:when|if)\b|"
+    r"(?:prediction|model)\s+alert\s+(?:rule|threshold|when|if)\b|"
+    r"(?:set\s+)?(?:an?\s+)?alert\s+(?:when|if)\s+(?:prediction|revenue|score|confidence|my\s+model)\b|"
+    r"(?:send\s+)?(?:a\s+)?(?:notification|webhook)\s+when\s+(?:prediction|revenue|score|confidence)\b|"
+    r"(?:flag|trigger)\s+(?:it\s+)?when\s+(?:the\s+)?(?:prediction|model|score|result)\b"
+    r")",
+    re.IGNORECASE,
+)
+
+# Prediction alert rule list — "show my alert rules", "what alerts do I have?"
+_ALERT_RULE_LIST_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"(?:show|list|view|get|what\s+are)\s+(?:my\s+)?(?:prediction\s+)?(?:alert|notification)\s+rules?\b|"
+    r"(?:what|which)\s+(?:prediction\s+)?(?:alerts?|rules?)\s+(?:do\s+I\s+have|are\s+(?:set\s+up|active|configured))\b|"
+    r"(?:my\s+)?prediction\s+alert\s+rules?\b|"
+    r"(?:show|list)\s+(?:all\s+)?(?:active\s+)?alert\s+rules?\b"
+    r")",
+    re.IGNORECASE,
+)
+
+# Prediction alert rule delete — "remove alert rule", "delete my alert"
+_ALERT_RULE_DELETE_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"(?:remove|delete|disable|cancel|clear|deactivate)\s+(?:the\s+)?(?:prediction\s+)?alert\s+rule\b|"
+    r"(?:remove|delete|disable)\s+(?:my\s+)?(?:prediction\s+)?alert\b|"
+    r"(?:stop|turn\s+off)\s+(?:the\s+)?(?:prediction\s+)?alert\s+(?:rule|notification)?\b"
+    r")",
+    re.IGNORECASE,
+)
+
+# Operator word → internal op key
+_ALERT_OP_MAP = {
+    "below": "lt",
+    "under": "lt",
+    "less than": "lt",
+    "lower than": "lt",
+    "above": "gt",
+    "over": "gt",
+    "greater than": "gt",
+    "higher than": "gt",
+    "at least": "gte",
+    "no less than": "gte",
+    "at most": "lte",
+    "no more than": "lte",
+    "equal to": "eq",
+    "equals": "eq",
+    "is": "eq",
+}
+
+_ALERT_NUM_RE = re.compile(r"[-+]?\d*\.?\d+")
+_ALERT_CONFIDENCE_RE = re.compile(
+    r"(?i)\b(?:confidence|model\s+confidence|certainty)\b"
+)
+_ALERT_CLASS_RE = re.compile(
+    r"(?i)\b(?:predicts?|predicting|predicted\s+(?:class|label|category)\s*(?:is|=|equals?)?|"
+    r"class\s*(?:is|=|equals?)?|output\s*(?:is|=|equals?)?)\s+['\"]?(\w[\w\s\-]*?)['\"]?\s*$"
+)
+
+
+def _extract_alert_rule_condition(message: str, target_column: str | None) -> dict | None:
+    """Parse an alert rule condition from a natural-language message.
+
+    Returns a dict with keys: name, condition_type, condition_op, condition_value,
+    condition_class — or None when no condition can be extracted.
+    """
+    msg = message.strip()
+
+    # --- Class prediction rule ---
+    class_match = _ALERT_CLASS_RE.search(msg)
+    if class_match:
+        cls_val = class_match.group(1).strip().rstrip(".'\"")
+        col_label = target_column or "prediction"
+        return {
+            "name": f"Alert when {col_label} = {cls_val}",
+            "condition_type": "predicted_class",
+            "condition_op": "eq",
+            "condition_value": None,
+            "condition_class": cls_val,
+        }
+
+    # --- Confidence rule ---
+    is_confidence = bool(_ALERT_CONFIDENCE_RE.search(msg))
+
+    # --- Find operator and numeric threshold ---
+    op_found: str | None = None
+    for phrase, op_key in sorted(_ALERT_OP_MAP.items(), key=lambda x: -len(x[0])):
+        if re.search(rf"(?i)\b{re.escape(phrase)}\b", msg):
+            op_found = op_key
+            break
+
+    num_match = _ALERT_NUM_RE.search(msg)
+    if num_match is None:
+        return None
+
+    threshold = float(num_match.group())
+    op = op_found or "lt"
+
+    if is_confidence:
+        # Normalize to 0–100 range
+        if threshold <= 1.0:
+            threshold = threshold * 100
+        col_label = "confidence"
+        ctype = "confidence"
+    else:
+        col_label = target_column or "prediction"
+        ctype = "prediction_value"
+
+    op_word = next((w for w, k in _ALERT_OP_MAP.items() if k == op), op)
+    return {
+        "name": f"Alert when {col_label} {op_word} {threshold}",
+        "condition_type": ctype,
+        "condition_op": op,
+        "condition_value": threshold,
+        "condition_class": None,
+    }
+
+
 _VERSION_COMPARE_PATTERNS = re.compile(
     r"(?i)(?:"
     r"(?:compare|diff(?:erence)?)\s+(?:my\s+)?(?:deployment\s+)?versions?\b|"
@@ -9799,6 +9921,158 @@ def send_message(
             except Exception:  # noqa: BLE001
                 pass
 
+    # Prediction alert rules via chat — create / list / delete
+    alert_rule_event: dict | None = None
+    if ctx["deployment"] and (
+        _ALERT_RULE_CREATE_PATTERNS.search(body.message)
+        or _ALERT_RULE_LIST_PATTERNS.search(body.message)
+        or _ALERT_RULE_DELETE_PATTERNS.search(body.message)
+    ):
+        try:
+            from models.prediction_alert_rule import PredictionAlertRule as _PARModel
+
+            _ar_dep = ctx["deployment"]
+            _ar_dep_id = _ar_dep.id if hasattr(_ar_dep, "id") else str(_ar_dep)
+
+            # --- LIST ---
+            if _ALERT_RULE_LIST_PATTERNS.search(body.message):
+                _ar_rules = session.exec(
+                    select(_PARModel).where(
+                        _PARModel.deployment_id == _ar_dep_id,
+                        _PARModel.is_active == True,  # noqa: E712
+                    )
+                ).all()
+                _ar_descs = [
+                    f"{r.name}: {_ar_dep.target_column or 'prediction'} "
+                    f"{'= ' + (r.condition_class or '') if r.condition_type == 'predicted_class' else r.condition_op + ' ' + str(r.condition_value)}"
+                    for r in _ar_rules
+                ]
+                _ar_summary = (
+                    f"{len(_ar_rules)} active prediction alert rule{'s' if len(_ar_rules) != 1 else ''}. "
+                    + (", ".join(_ar_descs[:3]) or "No rules set up yet.")
+                )
+                alert_rule_event = {
+                    "action": "list",
+                    "deployment_id": _ar_dep_id,
+                    "count": len(_ar_rules),
+                    "rules": [
+                        {
+                            "id": r.id,
+                            "name": r.name,
+                            "condition_type": r.condition_type,
+                            "condition_op": r.condition_op,
+                            "condition_value": r.condition_value,
+                            "condition_class": r.condition_class,
+                            "trigger_count": r.trigger_count,
+                            "last_triggered_at": (
+                                r.last_triggered_at.isoformat()
+                                if r.last_triggered_at
+                                else None
+                            ),
+                            "description": (
+                                f"Fires when predicted class = '{r.condition_class}'"
+                                if r.condition_type == "predicted_class"
+                                else (
+                                    f"Fires when {'Prediction value' if r.condition_type == 'prediction_value' else 'Confidence'} "
+                                    f"{'<' if r.condition_op == 'lt' else '>' if r.condition_op == 'gt' else '≤' if r.condition_op == 'lte' else '≥' if r.condition_op == 'gte' else '='} "
+                                    f"{r.condition_value}{'%' if r.condition_type == 'confidence' else ''}"
+                                )
+                            ),
+                        }
+                        for r in _ar_rules
+                    ],
+                    "summary": _ar_summary,
+                }
+                system_prompt += (
+                    f"\n\n## Prediction Alert Rules\n{_ar_summary} "
+                    "Present the rules clearly. If none exist, suggest creating one with 'alert me when predicted revenue is below 50000'."
+                )
+
+            # --- DELETE ---
+            elif _ALERT_RULE_DELETE_PATTERNS.search(body.message):
+                _ar_rules = session.exec(
+                    select(_PARModel).where(
+                        _PARModel.deployment_id == _ar_dep_id,
+                        _PARModel.is_active == True,  # noqa: E712
+                    )
+                ).all()
+                _ar_deleted = []
+                for _r in _ar_rules:
+                    _r.is_active = False
+                    session.add(_r)
+                    _ar_deleted.append(_r.name)
+                if _ar_deleted:
+                    session.commit()
+                _ar_summary = (
+                    f"Removed {len(_ar_deleted)} alert rule{'s' if len(_ar_deleted) != 1 else ''}: "
+                    + ", ".join(_ar_deleted[:5])
+                    if _ar_deleted
+                    else "No active alert rules to remove."
+                )
+                alert_rule_event = {
+                    "action": "deleted",
+                    "deployment_id": _ar_dep_id,
+                    "deleted_count": len(_ar_deleted),
+                    "deleted_names": _ar_deleted,
+                    "summary": _ar_summary,
+                }
+                system_prompt += f"\n\n## Alert Rules Deleted\n{_ar_summary}"
+
+            # --- CREATE ---
+            elif _ALERT_RULE_CREATE_PATTERNS.search(body.message):
+                _ar_target = getattr(ctx["deployment"], "target_column", None)
+                _ar_cond = _extract_alert_rule_condition(body.message, _ar_target)
+                if _ar_cond:
+                    _ar_new = _PARModel(
+                        deployment_id=_ar_dep_id,
+                        name=_ar_cond["name"],
+                        condition_type=_ar_cond["condition_type"],
+                        condition_op=_ar_cond.get("condition_op", "lt"),
+                        condition_value=_ar_cond.get("condition_value"),
+                        condition_class=_ar_cond.get("condition_class"),
+                    )
+                    session.add(_ar_new)
+                    session.commit()
+                    session.refresh(_ar_new)
+                    _ar_desc = (
+                        f"Fires when predicted class = '{_ar_new.condition_class}'"
+                        if _ar_new.condition_type == "predicted_class"
+                        else (
+                            f"Fires when {'Prediction value' if _ar_new.condition_type == 'prediction_value' else 'Confidence'} "
+                            f"{'<' if _ar_new.condition_op == 'lt' else '>' if _ar_new.condition_op == 'gt' else '≤' if _ar_new.condition_op == 'lte' else '≥' if _ar_new.condition_op == 'gte' else '='} "
+                            f"{_ar_new.condition_value}{'%' if _ar_new.condition_type == 'confidence' else ''}"
+                        )
+                    )
+                    _ar_summary = f"Created alert rule '{_ar_new.name}': {_ar_desc}. Will dispatch registered prediction_alert webhooks when triggered."
+                    alert_rule_event = {
+                        "action": "created",
+                        "deployment_id": _ar_dep_id,
+                        "rule_id": _ar_new.id,
+                        "name": _ar_new.name,
+                        "condition_type": _ar_new.condition_type,
+                        "condition_op": _ar_new.condition_op,
+                        "condition_value": _ar_new.condition_value,
+                        "condition_class": _ar_new.condition_class,
+                        "description": _ar_desc,
+                        "summary": _ar_summary,
+                    }
+                    system_prompt += (
+                        f"\n\n## Prediction Alert Rule Created\n{_ar_summary} "
+                        "Explain the rule in plain English and mention that registered webhooks with the 'prediction_alert' "
+                        "event type will fire automatically each time the condition is met."
+                    )
+                else:
+                    # Could not parse condition — guide the user
+                    system_prompt += (
+                        "\n\n## Alert Rule Creation\n"
+                        "The user wants to create a prediction alert rule. "
+                        "Guide them to specify: what to check (prediction value / confidence / predicted class), "
+                        "the threshold or class (e.g., 'below 50000', 'above 90%', 'equals churn'), "
+                        "and optionally a name. Example: 'alert me when predicted revenue is below 50000'."
+                    )
+        except Exception:  # noqa: BLE001
+            pass  # Alert rules are nice-to-have; never crash chat
+
     # Production input feature distribution
     prod_input_dist_event: dict | None = None
     if _PROD_INPUT_DIST_PATTERNS.search(body.message) and ctx["deployment"]:
@@ -12065,6 +12339,9 @@ def send_message(
 
         if webhook_test_chat_event:
             yield f"data: {json.dumps({'type': 'webhook_test_chat', 'webhook_test_chat': webhook_test_chat_event})}\n\n"
+
+        if alert_rule_event:
+            yield f"data: {json.dumps({'type': 'alert_rule', 'alert_rule': alert_rule_event})}\n\n"
 
         # After text stream, opportunistically generate a chart if the
         # message is about data and we have a dataset loaded

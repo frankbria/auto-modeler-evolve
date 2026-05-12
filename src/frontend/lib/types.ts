@@ -504,6 +504,7 @@ export interface ChatMessage {
   webhook_list_chat?: WebhookListChatResult
   webhook_removed_chat?: WebhookRemovedChatInfo
   webhook_test_chat?: WebhookTestChatResult
+  alert_rule?: AlertRuleEventResult
 }
 
 export interface SegmentPerformanceSegment {
@@ -3016,4 +3017,33 @@ export interface WebhookTestChatResult {
   success: boolean
   deployment_id: string
   summary: string
+}
+
+export interface AlertRuleEntry {
+  id: string
+  name: string
+  condition_type: string
+  condition_op: string
+  condition_value: number | null
+  condition_class: string | null
+  trigger_count: number
+  last_triggered_at: string | null
+  description: string
+}
+
+export interface AlertRuleEventResult {
+  action: "created" | "list" | "deleted"
+  deployment_id: string
+  summary: string
+  rule_id?: string
+  name?: string
+  condition_type?: string
+  condition_op?: string
+  condition_value?: number | null
+  condition_class?: string | null
+  description?: string
+  count?: number
+  rules?: AlertRuleEntry[]
+  deleted_count?: number
+  deleted_names?: string[]
 }

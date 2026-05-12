@@ -59,6 +59,7 @@ from models.deployment_preset import DeploymentPreset
 from models.feedback_record import FeedbackRecord
 from models.prediction_log import PredictionLog
 from models.webhook_config import WebhookConfig
+from models.prediction_alert_rule import PredictionAlertRule
 
 router = APIRouter(tags=["deployment"])
 
@@ -840,6 +841,20 @@ def make_prediction(
             daemon=True,
         )
         _t.start()
+
+    # Prediction alert rules: check business-rule-based conditions in background
+    import threading as _threading2
+
+    _predicted_class: str | None = None
+    if result.get("prediction") is not None and numeric_value is None:
+        _predicted_class = str(result["prediction"])
+
+    _t2 = _threading2.Thread(
+        target=_fire_alert_rules,
+        args=(deployment_id, numeric_value, result.get("confidence"), _predicted_class),
+        daemon=True,
+    )
+    _t2.start()
 
     return {
         "deployment_id": deployment_id,
@@ -4559,3 +4574,231 @@ def get_batch_results(
     result["row_count"] = job_run.row_count
     result["schedule_id"] = job_run.schedule_id
     return result
+
+
+# ---------------------------------------------------------------------------
+# Prediction alert rule endpoints
+# ---------------------------------------------------------------------------
+
+_OP_SYMBOLS = {"lt": "<", "gt": ">", "lte": "≤", "gte": "≥", "eq": "="}
+
+
+def _alert_rule_description(rule: PredictionAlertRule) -> str:
+    """Return a plain-English description of the rule condition."""
+    if rule.condition_type == "predicted_class":
+        return f"Fires when predicted class = '{rule.condition_class}'"
+    op = _OP_SYMBOLS.get(rule.condition_op, rule.condition_op)
+    field = (
+        "Prediction value" if rule.condition_type == "prediction_value" else "Confidence"
+    )
+    suffix = "%" if rule.condition_type == "confidence" else ""
+    val = rule.condition_value if rule.condition_value is not None else "?"
+    return f"Fires when {field} {op} {val}{suffix}"
+
+
+def _alert_rule_response(rule: PredictionAlertRule) -> dict:
+    return {
+        "id": rule.id,
+        "deployment_id": rule.deployment_id,
+        "name": rule.name,
+        "condition_type": rule.condition_type,
+        "condition_op": rule.condition_op,
+        "condition_value": rule.condition_value,
+        "condition_class": rule.condition_class,
+        "is_active": rule.is_active,
+        "created_at": rule.created_at.isoformat() if rule.created_at else None,
+        "last_triggered_at": (
+            rule.last_triggered_at.isoformat() if rule.last_triggered_at else None
+        ),
+        "trigger_count": rule.trigger_count,
+        "description": _alert_rule_description(rule),
+    }
+
+
+def _evaluate_alert_rule(
+    rule: PredictionAlertRule,
+    prediction_numeric: float | None,
+    confidence: float | None,
+    predicted_class: str | None,
+) -> bool:
+    """Return True if the rule condition is met for this prediction result."""
+    if rule.condition_type == "predicted_class":
+        return (
+            predicted_class is not None
+            and rule.condition_class is not None
+            and str(predicted_class).lower() == str(rule.condition_class).lower()
+        )
+
+    val = prediction_numeric if rule.condition_type == "prediction_value" else confidence
+    if val is None or rule.condition_value is None:
+        return False
+
+    op = rule.condition_op
+    thresh = rule.condition_value
+    if op == "lt":
+        return val < thresh
+    if op == "gt":
+        return val > thresh
+    if op == "lte":
+        return val <= thresh
+    if op == "gte":
+        return val >= thresh
+    if op == "eq":
+        return abs(val - thresh) < 1e-9
+    return False
+
+
+def _fire_alert_rules(
+    deployment_id: str,
+    prediction_numeric: float | None,
+    confidence: float | None,
+    predicted_class: str | None,
+) -> None:
+    """Check all active alert rules and dispatch webhooks for triggered ones.
+
+    Runs in a daemon thread — never blocks or crashes the prediction path.
+    """
+    try:
+        from core.webhook import EVENT_PREDICTION_ALERT, dispatch_webhooks
+        from db import engine
+        from sqlmodel import Session
+
+        with Session(engine) as session:
+            rules = session.exec(
+                select(PredictionAlertRule).where(
+                    PredictionAlertRule.deployment_id == deployment_id,
+                    PredictionAlertRule.is_active == True,  # noqa: E712
+                )
+            ).all()
+
+            for rule in rules:
+                if not _evaluate_alert_rule(
+                    rule, prediction_numeric, confidence, predicted_class
+                ):
+                    continue
+
+                # Update rule stats
+                rule.last_triggered_at = datetime.now(UTC).replace(tzinfo=None)
+                rule.trigger_count += 1
+                session.add(rule)
+                session.commit()
+
+                dispatch_webhooks(
+                    deployment_id,
+                    EVENT_PREDICTION_ALERT,
+                    {
+                        "alert_rule_id": rule.id,
+                        "alert_rule_name": rule.name,
+                        "condition_description": _alert_rule_description(rule),
+                        "prediction_value": prediction_numeric,
+                        "confidence": confidence,
+                        "predicted_class": predicted_class,
+                    },
+                )
+    except Exception:
+        pass  # Best-effort; never crash the prediction path
+
+
+class AlertRuleRequest(BaseModel):
+    name: str
+    condition_type: str  # "prediction_value" | "confidence" | "predicted_class"
+    condition_op: str = "lt"  # "lt" | "gt" | "lte" | "gte" | "eq"
+    condition_value: float | None = None
+    condition_class: str | None = None
+
+
+@router.post("/api/deploy/{deployment_id}/alert-rules")
+def create_alert_rule(
+    deployment_id: str,
+    req: AlertRuleRequest,
+    session: Session = Depends(get_session),
+):
+    """Create a new prediction alert rule for a deployment."""
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment or not deployment.is_active:
+        raise HTTPException(status_code=404, detail="Deployment not found or inactive")
+
+    if not req.name.strip():
+        raise HTTPException(status_code=422, detail="Rule name cannot be empty")
+
+    valid_types = {"prediction_value", "confidence", "predicted_class"}
+    if req.condition_type not in valid_types:
+        raise HTTPException(
+            status_code=422,
+            detail=f"condition_type must be one of {sorted(valid_types)}",
+        )
+
+    valid_ops = {"lt", "gt", "lte", "gte", "eq"}
+    if req.condition_type != "predicted_class" and req.condition_op not in valid_ops:
+        raise HTTPException(
+            status_code=422,
+            detail=f"condition_op must be one of {sorted(valid_ops)}",
+        )
+
+    if req.condition_type in {"prediction_value", "confidence"} and req.condition_value is None:
+        raise HTTPException(
+            status_code=422,
+            detail="condition_value is required for numeric condition types",
+        )
+
+    if req.condition_type == "predicted_class" and not req.condition_class:
+        raise HTTPException(
+            status_code=422,
+            detail="condition_class is required for predicted_class condition type",
+        )
+
+    rule = PredictionAlertRule(
+        deployment_id=deployment_id,
+        name=req.name.strip(),
+        condition_type=req.condition_type,
+        condition_op=req.condition_op,
+        condition_value=req.condition_value,
+        condition_class=req.condition_class,
+    )
+    session.add(rule)
+    session.commit()
+    session.refresh(rule)
+
+    return _alert_rule_response(rule)
+
+
+@router.get("/api/deploy/{deployment_id}/alert-rules")
+def list_alert_rules(
+    deployment_id: str,
+    session: Session = Depends(get_session),
+):
+    """List all active prediction alert rules for a deployment."""
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment or not deployment.is_active:
+        raise HTTPException(status_code=404, detail="Deployment not found or inactive")
+
+    rules = session.exec(
+        select(PredictionAlertRule).where(
+            PredictionAlertRule.deployment_id == deployment_id,
+            PredictionAlertRule.is_active == True,  # noqa: E712
+        )
+    ).all()
+
+    return {
+        "deployment_id": deployment_id,
+        "count": len(rules),
+        "rules": [_alert_rule_response(r) for r in rules],
+    }
+
+
+@router.delete("/api/deploy/{deployment_id}/alert-rules/{rule_id}")
+def delete_alert_rule(
+    deployment_id: str,
+    rule_id: str,
+    session: Session = Depends(get_session),
+):
+    """Soft-delete (deactivate) a prediction alert rule."""
+    rule = session.get(PredictionAlertRule, rule_id)
+    if not rule or rule.deployment_id != deployment_id:
+        raise HTTPException(status_code=404, detail="Alert rule not found")
+
+    rule.is_active = False
+    session.add(rule)
+    session.commit()
+
+    return {"deleted": True, "rule_id": rule_id}

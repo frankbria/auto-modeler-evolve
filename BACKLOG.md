@@ -49,6 +49,20 @@ the time is better spent on real features.
 
 ## Currently Working On
 
+## Day 61 (20:00) — Done
+**Track D — Custom Prediction Alert Rules via Chat.** Analysts define business-rule-based alerts on live prediction values through conversation — "alert me when predicted revenue is below $100,000", "notify me when confidence drops below 70%", "alert me when predicted class is churn". Distinct from system-level webhook events: these fire when prediction *content* meets a condition.
+- `PredictionAlertRule` SQLModel table: `condition_type` (prediction_value|confidence|predicted_class), `condition_op`, `condition_value`, `condition_class`, `trigger_count`, `last_triggered_at`.
+- `EVENT_PREDICTION_ALERT` added to `core/webhook.py` ALL_EVENTS — dispatches signed HMAC webhooks on trigger.
+- Three regex patterns (7+4+3 NL variants). `_extract_alert_rule_condition()` pure function (class → confidence → numeric, with operator detection + fraction normalization). `_evaluate_alert_rule()` pure function (all 5 ops + all 3 condition types, case-insensitive class match). `_fire_alert_rules()` daemon thread post-prediction.
+- REST: `POST/GET/DELETE /api/deploy/{id}/alert-rules`. Chat handler: LIST / DELETE / CREATE branches. SSE: `{type:"alert_rule", action:"created|list|deleted"}`.
+- `AlertRuleCard` (three states — violet/slate/rose). `AlertRuleEntry` + `AlertRuleEventResult` TypeScript types; `attachAlertRuleToLastMessage` Zustand action; `getAlertRules`/`createAlertRule`/`deleteAlertRule` API methods. Wired in page.tsx.
+- 25 backend + 16 frontend tests. Backend lint: clean. Frontend build: clean.
+
+**What's next:**
+- Track C: Date-aware chronological split via chat — "train with chronological split"
+- Track D: API key auth for prediction endpoints
+- Track E: End-to-end "lunch break" analyst flow
+
 ## Day 61 (12:00) — Done
 **Track D — Webhook Management via Chat.** Analysts can register, list, remove, and test webhooks entirely through conversation — no DeploymentPanel navigation required. Four new chat patterns (`_WEBHOOK_CREATE_PATTERNS`, `_WEBHOOK_LIST_CHAT_PATTERNS`, `_WEBHOOK_REMOVE_CHAT_PATTERNS`, `_WEBHOOK_TEST_CHAT_PATTERNS`) with 6–7 NL variants each. Elif chain ensures mutual exclusion with `webhook_history`. Four SSE events + four React cards: `WebhookRegisteredCard` (emerald, 🔔 icon, secret callout with copy button), `WebhookListChatCard` (slate, 🔗, per-hook rows with event badges + relative last-fired), `WebhookRemovedChatCard` (rose, 🗑️, removed URLs), `WebhookTestChatCard` (adaptive border, ⚡, HTTP status + failure guidance). Reuses existing `WebhookConfig` model + `_do_dispatch()` — no new DB tables. 38 backend + 32 frontend = 70 new tests. Backend lint: clean (3 auto-fixed). Frontend build + lint: clean.
 

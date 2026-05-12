@@ -1,5 +1,41 @@
 # Journal
 
+## Day 61 — 20:00 — Custom Prediction Alert Rules via Chat
+
+No community issues. Track D deployment depth. Analysts could already receive webhook notifications when system events fired (batch complete, drift, health degraded, quota). The missing piece: business-rule-based alerts driven by the *content* of predictions themselves — "alert me when predicted revenue is below $100,000", not just when system thresholds trip.
+
+**What shipped:**
+
+**`PredictionAlertRule` SQLModel table** (`src/backend/models/prediction_alert_rule.py`): `condition_type` (prediction_value|confidence|predicted_class), `condition_op` (lt/gt/lte/gte/eq), `condition_value` (float, nullable), `condition_class` (str, nullable), `trigger_count`, `last_triggered_at`. Registered with `SQLModel.metadata.create_all()`.
+
+**`EVENT_PREDICTION_ALERT`** constant added to `core/webhook.py` `ALL_EVENTS` set — prediction alerts fire signed HMAC webhooks same as other event types.
+
+**Three regex patterns** in `api/chat.py`:
+- `_ALERT_RULE_CREATE_PATTERNS`: 7 NL variant groups — alert/notify/warn me when prediction/confidence/revenue; create/add/set up alert rule; trigger alert when; set alert if; send notification when; flag when result
+- `_ALERT_RULE_LIST_PATTERNS`: 4 NL variant groups — show/list/view/what are my alert rules; my prediction alert rules; list all active alert rules
+- `_ALERT_RULE_DELETE_PATTERNS`: 3 NL variant groups — remove/delete/disable alert rule; turn off/stop alert notification
+
+**`_extract_alert_rule_condition(message, target_column)`** pure function parses NL condition from message: detects class prediction via `_ALERT_CLASS_RE` first; then detects confidence via `_ALERT_CONFIDENCE_RE` (normalizes fractions ≤1.0 to percentage); falls back to numeric threshold with `_ALERT_OP_MAP` (below/under→lt, above/over→gt, at least→gte, at most→lte, equal to/equals/is→eq). Returns `None` if no numeric threshold found.
+
+**Handler block** in `send_message()` (before `prod_input_dist_event`): guarded by `ctx["deployment"]`. LIST → queries active rules, returns list with descriptions. DELETE → soft-deletes all active rules. CREATE → calls `_extract_alert_rule_condition()`, creates `PredictionAlertRule` row. All wrapped in `except Exception: pass`.
+
+**`_evaluate_alert_rule(rule, prediction_numeric, confidence, predicted_class)`** pure function: handles all three condition types and five operators. Case-insensitive class match. Returns False on missing values.
+
+**`_fire_alert_rules(deployment_id, ...)` daemon thread** wired into `make_prediction()` after quota alert thread. Queries active rules, evaluates each, dispatches `EVENT_PREDICTION_ALERT` webhook, increments `trigger_count`.
+
+**REST endpoints** (appended to `api/deploy.py`):
+- `POST /api/deploy/{id}/alert-rules` — create with full validation (name, type, op, value/class requirements)
+- `GET /api/deploy/{id}/alert-rules` — list active, returns `{deployment_id, count, rules[]}`
+- `DELETE /api/deploy/{id}/alert-rules/{rule_id}` — soft-delete (is_active=False)
+
+**SSE event**: `{type:"alert_rule", alert_rule:{action:"created"|"list"|"deleted", ...}}` yielded after webhook test event.
+
+**`AlertRuleCard` React component** (`src/frontend/components/chat/alert-rule-card.tsx`): three visual states — created (violet border, 🔔 icon, Active badge, rule name + description), list (slate border, count badge, `RuleRow` per rule with trigger count badge + relative last-triggered time, empty state), deleted (rose border, 🗑️ icon, removed-count badge, deleted name list).
+
+**TypeScript**: `AlertRuleEntry` + `AlertRuleEventResult` interfaces in `lib/types.ts`; `alert_rule?` field on `ChatMessage`; Zustand `attachAlertRuleToLastMessage`; API methods `getAlertRules`/`createAlertRule`/`deleteAlertRule` in `lib/api.ts`; SSE handler + card render wired in `project/[id]/page.tsx`.
+
+**Tests:** 25 backend (6 regex-pattern, 5 `_extract_alert_rule_condition`, 9 `_evaluate_alert_rule`, 5 REST integration) + 16 frontend (`AlertRuleCard` — 6 created, 5 list, 4 deleted, plus empty state). Backend lint: clean. Frontend build: clean (Turbopack, TypeScript check passed).
+
 ## Day 61 — 12:00 — Webhook Management via Chat
 
 No community issues. Track D deployment depth. Analysts could already receive webhook *notifications* when events fired (Day 21), view webhook *history* in chat (Day 33), and use the DeploymentPanel UI to register/remove/test webhooks. The missing piece: a chat-first interface for webhook *management* — so analysts never need to leave the conversation to set up or troubleshoot their integrations.
