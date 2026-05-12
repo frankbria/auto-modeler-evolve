@@ -133,6 +133,7 @@ def deployed_project(sync_client, tmp_path):
 class TestApiKeyGeneratePatterns:
     def setup_method(self):
         from api.chat import _API_KEY_GENERATE_PATTERNS
+
         self.pattern = _API_KEY_GENERATE_PATTERNS
 
     def test_generate_api_key(self):
@@ -170,6 +171,7 @@ class TestApiKeyGeneratePatterns:
 class TestApiKeyDisablePatterns:
     def setup_method(self):
         from api.chat import _API_KEY_DISABLE_PATTERNS
+
         self.pattern = _API_KEY_DISABLE_PATTERNS
 
     def test_remove_api_key(self):
@@ -197,6 +199,7 @@ class TestApiKeyDisablePatterns:
 class TestApiKeyStatusPatterns:
     def setup_method(self):
         from api.chat import _API_KEY_STATUS_PATTERNS
+
         self.pattern = _API_KEY_STATUS_PATTERNS
 
     def test_show_api_key_status(self):

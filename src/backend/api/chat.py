@@ -10151,8 +10151,12 @@ def send_message(
                     # --- GENERATE / REGENERATE ---
                     _ak_key = _secrets_ak.token_urlsafe(32)
                     _ak_salt = _secrets_ak.token_hex(16)
-                    _ak_hash = _hashlib_ak.sha256(f"{_ak_salt}:{_ak_key}".encode()).hexdigest()
-                    _ak_was_protected = bool(getattr(_ak_dep_obj, "api_key_enabled", False))
+                    _ak_hash = _hashlib_ak.sha256(
+                        f"{_ak_salt}:{_ak_key}".encode()
+                    ).hexdigest()
+                    _ak_was_protected = bool(
+                        getattr(_ak_dep_obj, "api_key_enabled", False)
+                    )
 
                     _ak_dep_obj.api_key_enabled = True
                     _ak_dep_obj.api_key_hash = _ak_hash
@@ -10178,8 +10182,12 @@ def send_message(
                     )
                 else:
                     # --- STATUS ---
-                    _ak_is_protected = bool(getattr(_ak_dep_obj, "api_key_enabled", False))
-                    _ak_status_word = "protected" if _ak_is_protected else "open (no key required)"
+                    _ak_is_protected = bool(
+                        getattr(_ak_dep_obj, "api_key_enabled", False)
+                    )
+                    _ak_status_word = (
+                        "protected" if _ak_is_protected else "open (no key required)"
+                    )
                     api_key_chat_event = {
                         "action": "status",
                         "deployment_id": _ak_dep_id,
