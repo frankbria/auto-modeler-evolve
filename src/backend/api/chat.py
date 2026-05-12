@@ -2862,7 +2862,9 @@ _ALERT_CLASS_RE = re.compile(
 )
 
 
-def _extract_alert_rule_condition(message: str, target_column: str | None) -> dict | None:
+def _extract_alert_rule_condition(
+    message: str, target_column: str | None
+) -> dict | None:
     """Parse an alert rule condition from a natural-language message.
 
     Returns a dict with keys: name, condition_type, condition_op, condition_value,

@@ -135,12 +135,24 @@ async def deployment_id(ac, trained_run_id):
 def test_create_pattern_matches_basic():
     from api.chat import _ALERT_RULE_CREATE_PATTERNS
 
-    assert _ALERT_RULE_CREATE_PATTERNS.search("alert me when predicted revenue is below 100000")
-    assert _ALERT_RULE_CREATE_PATTERNS.search("notify me when the model output is above 500")
-    assert _ALERT_RULE_CREATE_PATTERNS.search("create an alert rule for predictions below 50")
-    assert _ALERT_RULE_CREATE_PATTERNS.search("set up an alert if confidence drops below 70%")
-    assert _ALERT_RULE_CREATE_PATTERNS.search("trigger an alert when score is less than 0.5")
-    assert _ALERT_RULE_CREATE_PATTERNS.search("send a notification when revenue is above 200")
+    assert _ALERT_RULE_CREATE_PATTERNS.search(
+        "alert me when predicted revenue is below 100000"
+    )
+    assert _ALERT_RULE_CREATE_PATTERNS.search(
+        "notify me when the model output is above 500"
+    )
+    assert _ALERT_RULE_CREATE_PATTERNS.search(
+        "create an alert rule for predictions below 50"
+    )
+    assert _ALERT_RULE_CREATE_PATTERNS.search(
+        "set up an alert if confidence drops below 70%"
+    )
+    assert _ALERT_RULE_CREATE_PATTERNS.search(
+        "trigger an alert when score is less than 0.5"
+    )
+    assert _ALERT_RULE_CREATE_PATTERNS.search(
+        "send a notification when revenue is above 200"
+    )
 
 
 def test_create_pattern_no_false_positives():
@@ -302,7 +314,9 @@ def test_evaluate_eq_fires():
 def test_evaluate_confidence_uses_confidence_field():
     from api.deploy import _evaluate_alert_rule
 
-    rule = _make_rule(condition_type="confidence", condition_op="lt", condition_value=70.0)
+    rule = _make_rule(
+        condition_type="confidence", condition_op="lt", condition_value=70.0
+    )
     assert _evaluate_alert_rule(rule, None, 60.0, None) is True
     assert _evaluate_alert_rule(rule, None, 80.0, None) is False
 
@@ -311,8 +325,10 @@ def test_evaluate_predicted_class_case_insensitive():
     from api.deploy import _evaluate_alert_rule
 
     rule = _make_rule(
-        condition_type="predicted_class", condition_op="eq",
-        condition_value=None, condition_class="Churn"
+        condition_type="predicted_class",
+        condition_op="eq",
+        condition_value=None,
+        condition_class="Churn",
     )
     assert _evaluate_alert_rule(rule, None, None, "churn") is True
     assert _evaluate_alert_rule(rule, None, None, "no_churn") is False

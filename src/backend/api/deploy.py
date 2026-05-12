@@ -4589,7 +4589,9 @@ def _alert_rule_description(rule: PredictionAlertRule) -> str:
         return f"Fires when predicted class = '{rule.condition_class}'"
     op = _OP_SYMBOLS.get(rule.condition_op, rule.condition_op)
     field = (
-        "Prediction value" if rule.condition_type == "prediction_value" else "Confidence"
+        "Prediction value"
+        if rule.condition_type == "prediction_value"
+        else "Confidence"
     )
     suffix = "%" if rule.condition_type == "confidence" else ""
     val = rule.condition_value if rule.condition_value is not None else "?"
@@ -4629,7 +4631,9 @@ def _evaluate_alert_rule(
             and str(predicted_class).lower() == str(rule.condition_class).lower()
         )
 
-    val = prediction_numeric if rule.condition_type == "prediction_value" else confidence
+    val = (
+        prediction_numeric if rule.condition_type == "prediction_value" else confidence
+    )
     if val is None or rule.condition_value is None:
         return False
 
@@ -4735,7 +4739,10 @@ def create_alert_rule(
             detail=f"condition_op must be one of {sorted(valid_ops)}",
         )
 
-    if req.condition_type in {"prediction_value", "confidence"} and req.condition_value is None:
+    if (
+        req.condition_type in {"prediction_value", "confidence"}
+        and req.condition_value is None
+    ):
         raise HTTPException(
             status_code=422,
             detail="condition_value is required for numeric condition types",
