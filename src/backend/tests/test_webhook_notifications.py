@@ -391,6 +391,7 @@ def test_all_events_constant_has_expected_entries():
         EVENT_BATCH_COMPLETE,
         EVENT_DRIFT_DETECTED,
         EVENT_HEALTH_DEGRADED,
+        EVENT_PREDICTION_ALERT,
         EVENT_QUOTA_ALERT,
     )
 
@@ -398,4 +399,5 @@ def test_all_events_constant_has_expected_entries():
     assert EVENT_DRIFT_DETECTED in ALL_EVENTS
     assert EVENT_HEALTH_DEGRADED in ALL_EVENTS
     assert EVENT_QUOTA_ALERT in ALL_EVENTS
-    assert len(ALL_EVENTS) == 4
+    assert EVENT_PREDICTION_ALERT in ALL_EVENTS
+    assert len(ALL_EVENTS) == 5
