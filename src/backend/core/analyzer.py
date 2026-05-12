@@ -3896,12 +3896,8 @@ def compute_deployments_overview(deployment_summaries: list[dict]) -> dict:
         sum(d.get("health_score", 0) for d in deployment_summaries) / total
     )
 
-    healthy_count = sum(
-        1 for d in deployment_summaries if d.get("status") == "healthy"
-    )
-    warning_count = sum(
-        1 for d in deployment_summaries if d.get("status") == "warning"
-    )
+    healthy_count = sum(1 for d in deployment_summaries if d.get("status") == "healthy")
+    warning_count = sum(1 for d in deployment_summaries if d.get("status") == "warning")
     critical_count = sum(
         1 for d in deployment_summaries if d.get("status") == "critical"
     )
@@ -3928,9 +3924,13 @@ def compute_deployments_overview(deployment_summaries: list[dict]) -> dict:
             f"{total_predictions:,} total prediction{'s' if total_predictions != 1 else ''} served"
         )
     if critical_count > 0:
-        parts.append(f"{critical_count} deployment{'s' if critical_count > 1 else ''} need{'s' if critical_count == 1 else ''} attention")
+        parts.append(
+            f"{critical_count} deployment{'s' if critical_count > 1 else ''} need{'s' if critical_count == 1 else ''} attention"
+        )
     elif warning_count > 0:
-        parts.append(f"{warning_count} deployment{'s' if warning_count > 1 else ''} showing warnings")
+        parts.append(
+            f"{warning_count} deployment{'s' if warning_count > 1 else ''} showing warnings"
+        )
     else:
         parts.append("all deployments healthy")
 

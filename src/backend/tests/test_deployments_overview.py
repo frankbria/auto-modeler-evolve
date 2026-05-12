@@ -136,7 +136,10 @@ def test_single_healthy_staging_deployment():
     from core.analyzer import compute_deployments_overview
 
     dep = _make_summary(
-        deployment_id="d1", environment="staging", health_score=85, status="healthy",
+        deployment_id="d1",
+        environment="staging",
+        health_score=85,
+        status="healthy",
         request_count=50,
     )
     result = compute_deployments_overview([dep])
@@ -156,7 +159,10 @@ def test_single_critical_production_deployment():
     from core.analyzer import compute_deployments_overview
 
     dep = _make_summary(
-        deployment_id="d2", environment="production", health_score=30, status="critical",
+        deployment_id="d2",
+        environment="production",
+        health_score=30,
+        status="critical",
         request_count=200,
     )
     result = compute_deployments_overview([dep])
@@ -171,10 +177,18 @@ def test_counts_mixed_statuses():
     from core.analyzer import compute_deployments_overview
 
     deps = [
-        _make_summary(deployment_id="d1", status="healthy", health_score=90, request_count=100),
-        _make_summary(deployment_id="d2", status="warning", health_score=60, request_count=50),
-        _make_summary(deployment_id="d3", status="critical", health_score=25, request_count=10),
-        _make_summary(deployment_id="d4", status="healthy", health_score=80, request_count=75),
+        _make_summary(
+            deployment_id="d1", status="healthy", health_score=90, request_count=100
+        ),
+        _make_summary(
+            deployment_id="d2", status="warning", health_score=60, request_count=50
+        ),
+        _make_summary(
+            deployment_id="d3", status="critical", health_score=25, request_count=10
+        ),
+        _make_summary(
+            deployment_id="d4", status="healthy", health_score=80, request_count=75
+        ),
     ]
     result = compute_deployments_overview(deps)
     assert result["total_deployments"] == 4
@@ -189,13 +203,30 @@ def test_production_sorted_before_staging():
     from core.analyzer import compute_deployments_overview
 
     deps = [
-        _make_summary(deployment_id="staging-1", environment="staging", health_score=95, request_count=500),
-        _make_summary(deployment_id="prod-1", environment="production", health_score=70, request_count=10),
-        _make_summary(deployment_id="staging-2", environment="staging", health_score=60, request_count=100),
+        _make_summary(
+            deployment_id="staging-1",
+            environment="staging",
+            health_score=95,
+            request_count=500,
+        ),
+        _make_summary(
+            deployment_id="prod-1",
+            environment="production",
+            health_score=70,
+            request_count=10,
+        ),
+        _make_summary(
+            deployment_id="staging-2",
+            environment="staging",
+            health_score=60,
+            request_count=100,
+        ),
     ]
     result = compute_deployments_overview(deps)
     sorted_ids = [d["deployment_id"] for d in result["deployments"]]
-    assert sorted_ids[0] == "prod-1", "production should come first regardless of health score"
+    assert sorted_ids[0] == "prod-1", (
+        "production should come first regardless of health score"
+    )
     assert set(sorted_ids[1:]) == {"staging-1", "staging-2"}
 
 
@@ -203,9 +234,15 @@ def test_within_environment_sorted_by_health_desc():
     from core.analyzer import compute_deployments_overview
 
     deps = [
-        _make_summary(deployment_id="s1", environment="staging", health_score=60, request_count=10),
-        _make_summary(deployment_id="s2", environment="staging", health_score=90, request_count=10),
-        _make_summary(deployment_id="s3", environment="staging", health_score=75, request_count=10),
+        _make_summary(
+            deployment_id="s1", environment="staging", health_score=60, request_count=10
+        ),
+        _make_summary(
+            deployment_id="s2", environment="staging", health_score=90, request_count=10
+        ),
+        _make_summary(
+            deployment_id="s3", environment="staging", health_score=75, request_count=10
+        ),
     ]
     result = compute_deployments_overview(deps)
     scores = [d["health_score"] for d in result["deployments"]]
@@ -216,8 +253,18 @@ def test_health_tiebreak_by_request_count_desc():
     from core.analyzer import compute_deployments_overview
 
     deps = [
-        _make_summary(deployment_id="low", environment="staging", health_score=80, request_count=10),
-        _make_summary(deployment_id="high", environment="staging", health_score=80, request_count=500),
+        _make_summary(
+            deployment_id="low",
+            environment="staging",
+            health_score=80,
+            request_count=10,
+        ),
+        _make_summary(
+            deployment_id="high",
+            environment="staging",
+            health_score=80,
+            request_count=500,
+        ),
     ]
     result = compute_deployments_overview(deps)
     assert result["deployments"][0]["deployment_id"] == "high"
@@ -276,7 +323,9 @@ def test_production_count_in_mixed_environments():
 # ---------------------------------------------------------------------------
 
 
-async def _create_deployment(ac, project_name: str, environment: str = "staging") -> str:
+async def _create_deployment(
+    ac, project_name: str, environment: str = "staging"
+) -> str:
     """Helper: project → upload → apply → target → train → deploy. Returns deployment id."""
     proj_resp = await ac.post("/api/projects", json={"name": project_name})
     assert proj_resp.status_code == 201, proj_resp.text

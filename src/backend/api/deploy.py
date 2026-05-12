@@ -357,9 +357,7 @@ def deployments_overview(session: Session = Depends(get_session)):
             ).all()
         )
         predictions_last_7d = len(all_logs)
-        predictions_today = sum(
-            1 for lg in all_logs if lg.created_at >= cutoff_today
-        )
+        predictions_today = sum(1 for lg in all_logs if lg.created_at >= cutoff_today)
 
         from models.project import Project as _Project
 
@@ -383,11 +381,11 @@ def deployments_overview(session: Session = Depends(get_session)):
                 "project_id": dep.project_id,
                 "project_name": project_name,
                 "algorithm": dep.algorithm,
-                "created_at_iso": dep.created_at.isoformat() if dep.created_at else None,
+                "created_at_iso": dep.created_at.isoformat()
+                if dep.created_at
+                else None,
                 "last_predicted_at_iso": (
-                    dep.last_predicted_at.isoformat()
-                    if dep.last_predicted_at
-                    else None
+                    dep.last_predicted_at.isoformat() if dep.last_predicted_at else None
                 ),
                 "api_key_enabled": dep.api_key_enabled,
                 "rate_limit_rpm": dep.rate_limit_rpm,
