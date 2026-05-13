@@ -1764,6 +1764,26 @@ guides them forward through the natural flow.
       `project/[id]/page.tsx`.
       *Day 62 (12:00): 23 backend + 33 frontend tests. Backend lint: clean. Frontend build: clean.*
 
+- [x] **End-to-End "Lunch Break" BDD Test Suite** — Track E perpetual. Validates the core vision
+      promise — a business analyst uploads data and, in a lunch break, has a deployed prediction
+      model with a shareable dashboard — in executable BDD form. Six scenarios in
+      `tests/features/analyst_lunch_break.feature` with full step implementations in
+      `tests/test_bdd_analyst_lunch_break.py`:
+      (1) **Upload reveals data insight** — dataset dimensions, column names, numeric min/max/mean
+      stats, profile caching.
+      (2) **Explore via chat** — natural language question returns an answer without stack traces.
+      (3) **Train model** — Linear Regression trains to completion, R² > 0, train/test sizes recorded.
+      (4) **Deploy endpoint** — deployment is active, endpoint follows `/api/predict/{id}` pattern,
+      dashboard URL is set.
+      (5) **Single prediction** — numeric forecast returned, feature_names present.
+      (6) **Batch prediction** — 3-row CSV in → `{target}_prediction` column out, 3 rows out.
+      Uses synchronous `TestClient` (no asyncio scaffolding) with polling for async training completion
+      (max 15 seconds). Discovered and fixed two response-shape gaps during authoring:
+      preview API returns `column_stats` (not `columns`); prediction response echoes `feature_names`
+      list (not an `input_features` dict). Updated `performance_baseline.json` to current counts:
+      4004 backend, 2183 frontend tests.
+      *Day 62 (20:00): 6 BDD scenarios, all passing. Backend lint: clean.*
+
 ---
 
 ## Data Model

@@ -49,6 +49,14 @@ the time is better spent on real features.
 
 ## Currently Working On
 
+## Day 62 (20:00) — Done
+**Track E — End-to-End "Lunch Break" BDD Test Suite.** Closed the loop on the core vision promise with a machine-executable test. Six BDD scenarios in `tests/features/analyst_lunch_break.feature` + `tests/test_bdd_analyst_lunch_break.py` covering the complete analyst journey: upload CSV → data insight visible → explore via chat → train regression model → deploy endpoint → single prediction → batch prediction. Uses synchronous TestClient with polling for async training. Discovered two response-shape gaps during authoring: preview returns `column_stats` (not `columns`); prediction response uses `feature_names` list (not `input_features` dict). Both corrected in step assertions (no backend change needed — the API is correct, the docs were wrong). Updated `performance_baseline.json` to 4004 backend / 2183 frontend tests. 6 BDD scenarios, all passing. Backend lint: clean.
+
+**What's next:**
+- Track D: Production model performance monitoring — detect if live prediction accuracy is degrading vs training metrics (needs user-submitted feedback to compare)
+- Track C: Cross-validation score displayed in training panel — analysts want to know "how stable is this model?" not just point-estimate R²
+- Track B: Multi-project comparison insights — "which of my models is making the best predictions across all my projects?"
+
 ## Day 62 (12:00) — Done
 **Track D — Multi-Deployment Status Overview via Chat.** Analysts can ask "show all my deployments", "deployment dashboard", "deployment overview", "which models are live", and 8 other NL variants to get a cross-project operational monitoring card. Pure function `compute_deployments_overview()` aggregates all active deployments: counts by environment + health status, avg health score, total predictions, sorted list (production first, then health desc). `GET /api/deploy/overview` REST endpoint (registered before `{deployment_id}` path to prevent route capture). SSE type `deployments_overview`. `DeploymentsOverviewCard` component with per-row health bars, status/environment badges, API key Protected badge, top_issue display. 23 backend + 33 frontend tests. Backend lint: clean. Frontend build: clean.
 
