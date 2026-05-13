@@ -1,5 +1,25 @@
 # Journal
 
+## Day 62 — 20:00 — End-to-End Analyst Lunch Break BDD Test Suite
+
+No community issues. Track E: end-to-end polish. The vision says "a business analyst uploads quarterly sales data and, by end of lunch, has a deployed prediction model with a live dashboard they can share with their VP." After 62 days of building, that story has never been validated in a single executable test — it was assumed to work because the individual features pass. This session changes that.
+
+**What shipped:**
+
+**`tests/features/analyst_lunch_break.feature`** — Six BDD scenarios covering the complete analyst journey: (1) upload reveals data insight immediately (dimensions, column names, numeric stats, profile caching); (2) chat exploration returns a natural language answer without stack traces; (3) training a regression model produces a `done` run with R² > 0 and train/test size metadata; (4) deploying creates an active endpoint at `/api/predict/{id}` with a dashboard URL; (5) single prediction returns a numeric value with feature_names; (6) batch prediction on a 3-row CSV returns an output CSV with `{target}_prediction` column and matching row count.
+
+**`tests/test_bdd_analyst_lunch_break.py`** — Step definitions using synchronous `TestClient` + time.sleep polling for async training (max 15 seconds, linear regression typically finishes in ~2 seconds). Shared `ctx` dict carries state between steps. All six BDD scenarios pass in ~14 seconds total.
+
+**Two API response-shape gaps discovered and corrected** in the test assertions: (1) the preview endpoint returns `column_stats` as the key for column metadata, not `columns`; (2) the prediction response echoes `feature_names` (a list of names) rather than `input_features` (a dict of values). The backend API is correct — the test documentation was wrong. No backend changes needed.
+
+**`performance_baseline.json` updated** to current counts: 4004 backend tests (was 3142), 2183 frontend tests (was 1693). Training time has increased to ~482ms for linear regression (was 72ms) — attributable to `CalibratedClassifierCV` adding 3-fold CV overhead during training. Worth noting but not regressing.
+
+**Tests:** 6 BDD scenarios, all passing. Backend lint: clean.
+
+**What's next:** Track D — production model performance monitoring (detect accuracy degradation vs training metrics using submitted feedback). Track C — cross-validation score in training panel. Track B — cross-project model comparison.
+
+---
+
 ## Day 62 — 12:00 — Multi-Deployment Status Overview via Chat
 
 No community issues. Track D deployment depth. Analysts had no way to get a bird's-eye view of all their live models at once — every deployment feature was scoped to a single deployment context. This session adds a cross-project operational monitoring card that answers "what's running right now?" in one glance.
