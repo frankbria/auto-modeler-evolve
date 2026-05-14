@@ -147,6 +147,7 @@ interface AppState {
   attachAlertRuleToLastMessage: (alert_rule: import("./types").AlertRuleEventResult) => void
   attachApiKeyResultToLastMessage: (api_key_result: import("./types").ApiKeyResultInfo) => void
   attachDeploymentsOverviewToLastMessage: (deployments_overview: import("./types").DeploymentsOverviewResult) => void
+  attachProdPerformanceToLastMessage: (prod_performance: import("./types").ProdPerformanceResult) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -1114,6 +1115,15 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, deployments_overview }
+      }
+      return { messages }
+    }),
+  attachProdPerformanceToLastMessage: (prod_performance) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, prod_performance }
       }
       return { messages }
     }),

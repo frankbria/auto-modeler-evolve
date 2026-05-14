@@ -507,6 +507,7 @@ export interface ChatMessage {
   alert_rule?: AlertRuleEventResult
   api_key_result?: ApiKeyResultInfo
   deployments_overview?: DeploymentsOverviewResult
+  prod_performance?: ProdPerformanceResult
 }
 
 export interface SegmentPerformanceSegment {
@@ -3092,5 +3093,34 @@ export interface DeploymentsOverviewResult {
   warning_count: number
   critical_count: number
   deployments: DeploymentStatusRow[]
+  summary: string
+}
+
+// ---------------------------------------------------------------------------
+// Training vs Production Performance Monitor
+// ---------------------------------------------------------------------------
+
+export interface ProdPerformancePeriod {
+  period: string
+  value: number
+  n: number
+}
+
+export interface ProdPerformanceResult {
+  deployment_id: string
+  algorithm: string
+  target_column: string
+  problem_type: string
+  metric_name: string
+  metric_direction?: "higher_is_better" | "lower_is_better"
+  training_value: number | null
+  training_pct?: number
+  live_value?: number
+  live_pct?: number
+  degradation_pct?: number
+  status: "stable" | "warning" | "degrading" | "no_feedback"
+  has_data: boolean
+  n_feedback?: number
+  weekly_timeline?: ProdPerformancePeriod[]
   summary: string
 }

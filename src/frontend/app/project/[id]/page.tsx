@@ -116,6 +116,7 @@ import { WebhookTestChatCard } from "@/components/chat/webhook-test-chat-card"
 import { AlertRuleCard } from "@/components/chat/alert-rule-card"
 import { ApiKeyChatCard } from "@/components/chat/api-key-chat-card"
 import { DeploymentsOverviewCard } from "@/components/chat/deployments-overview-card"
+import { ProdPerformanceCard } from "@/components/chat/prod-performance-card"
 import { PairCorrelationCard } from "@/components/data/pair-correlation-card"
 import { StatQueryCard } from "@/components/data/stat-query-card"
 import { SummaryStatsCard } from "@/components/data/summary-stats-card"
@@ -313,6 +314,7 @@ export default function ProjectWorkspace() {
     attachAlertRuleToLastMessage,
     attachApiKeyResultToLastMessage,
     attachDeploymentsOverviewToLastMessage,
+    attachProdPerformanceToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -775,6 +777,8 @@ export default function ProjectWorkspace() {
                 attachApiKeyResultToLastMessage(json.api_key_result as import("@/lib/types").ApiKeyResultInfo)
               } else if (json.type === "deployments_overview" && json.deployments_overview) {
                 attachDeploymentsOverviewToLastMessage(json.deployments_overview as import("@/lib/types").DeploymentsOverviewResult)
+              } else if (json.type === "prod_performance" && json.prod_performance) {
+                attachProdPerformanceToLastMessage(json.prod_performance as import("@/lib/types").ProdPerformanceResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -895,6 +899,7 @@ export default function ProjectWorkspace() {
     attachAlertRuleToLastMessage,
     attachApiKeyResultToLastMessage,
     attachDeploymentsOverviewToLastMessage,
+    attachProdPerformanceToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -1444,6 +1449,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.deployments_overview && (
                       <DeploymentsOverviewCard result={msg.deployments_overview} />
+                    )}
+                    {msg.prod_performance && (
+                      <ProdPerformanceCard result={msg.prod_performance} />
                     )}
                   </div>
                 </div>

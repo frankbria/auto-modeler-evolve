@@ -4889,3 +4889,68 @@ def delete_alert_rule(
     session.commit()
 
     return {"deleted": True, "rule_id": rule_id}
+
+
+# ---------------------------------------------------------------------------
+# 21. Training vs production performance comparison
+# ---------------------------------------------------------------------------
+
+
+@router.get("/api/deploy/{deployment_id}/training-vs-production")
+def get_training_vs_production(
+    deployment_id: str,
+    session: Session = Depends(get_session),
+):
+    """Compare training accuracy against live production accuracy from feedback.
+
+    Returns degradation_pct, status (stable/warning/degrading), and a
+    weekly timeline of live accuracy so analysts can see performance over time.
+    """
+    from core.analyzer import compute_training_vs_production as _compute_tvp
+
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment or not deployment.is_active:
+        raise HTTPException(status_code=404, detail="Deployment not found or inactive")
+
+    # Find the model run that was deployed
+    model_run: ModelRun | None = None
+    if deployment.model_run_id:
+        model_run = session.get(ModelRun, deployment.model_run_id)
+
+    model_metrics: dict = {}
+    if model_run and model_run.metrics:
+        try:
+            import json as _json
+
+            raw = model_run.metrics
+            model_metrics = _json.loads(raw) if isinstance(raw, str) else dict(raw)
+        except Exception:
+            pass
+
+    feedback_records = list(
+        session.exec(
+            select(FeedbackRecord).where(FeedbackRecord.deployment_id == deployment_id)
+        ).all()
+    )
+
+    # Build prediction_logs_map for regression pairing
+    logs_map: dict = {}
+    log_ids = [
+        fb.prediction_log_id
+        for fb in feedback_records
+        if fb.prediction_log_id is not None
+    ]
+    if log_ids:
+        logs = session.exec(
+            select(PredictionLog).where(
+                PredictionLog.id.in_(log_ids)  # type: ignore[attr-defined]
+            )
+        ).all()
+        logs_map = {log.id: log for log in logs}
+
+    problem_type = deployment.problem_type or "classification"
+    result = _compute_tvp(feedback_records, logs_map, model_metrics, problem_type)
+    result["deployment_id"] = deployment_id
+    result["algorithm"] = deployment.algorithm or ""
+    result["target_column"] = deployment.target_column or ""
+    return result

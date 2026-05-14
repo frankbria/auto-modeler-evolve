@@ -3310,6 +3310,22 @@ _EXPLAIN_ROW_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+_PROD_MONITOR_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"how\s+(?:is|has)\s+(?:my\s+)?model\s+(?:holding\s+up|performing|doing)\s+in\s+production\b|"
+    r"(?:training|train)\s+(?:vs|versus|vs\.)\s+(?:production|live|real.world)\s+(?:performance|accuracy)\b|"
+    r"(?:is\s+)?(?:my\s+)?model\s+(?:degrading|getting\s+worse|declining|drifting|losing\s+accuracy)\b|"
+    r"(?:compare|comparison\s+of)\s+(?:training|train)\s+(?:and|vs\.?|versus)\s+(?:live|production|real.world)\s+(?:accuracy|performance|metrics?)\b|"
+    r"(?:production|live)\s+performance\s+(?:vs|versus|vs\.)\s+training\b|"
+    r"(?:is\s+)?(?:my\s+)?model\s+still\s+(?:accurate|performing|working)\s+in\s+(?:production|practice|the\s+real\s+world)\b|"
+    r"how\s+much\s+has\s+(?:my\s+)?model(?:'s)?\s+(?:accuracy|performance|error)\s+(?:dropped|changed|shifted|degraded)\b|"
+    r"(?:production|live)\s+(?:accuracy|performance)\s+(?:check|monitor|tracking)\b|"
+    r"(?:model\s+)?(?:performance\s+)?degradation\s+(?:check|analysis|report)\b|"
+    r"training\s+(?:vs|versus|vs\.)\s+production\s+(?:gap|difference|comparison)\b"
+    r")",
+    re.IGNORECASE,
+)
+
 
 def _extract_row_index(message: str) -> int:
     """Parse a row / record / index number from the message. Defaults to 0."""
@@ -11029,6 +11045,75 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Nice-to-have; never crash chat
 
+    # Training vs Production Performance Monitor
+    prod_monitor_event: dict | None = None
+    if _PROD_MONITOR_PATTERNS.search(body.message) and ctx["deployment"]:
+        try:
+            from core.analyzer import (
+                compute_training_vs_production as _compute_tvp,
+            )
+            from models.feedback_record import FeedbackRecord as _FeedbackRecord2
+
+            _pm_dep = ctx["deployment"]
+            _pm_dep_id = _pm_dep.id if hasattr(_pm_dep, "id") else str(_pm_dep)
+
+            _pm_feedback = list(
+                session.exec(
+                    select(_FeedbackRecord2).where(
+                        _FeedbackRecord2.deployment_id == _pm_dep_id
+                    )
+                ).all()
+            )
+
+            _pm_logs_map: dict = {}
+            _pm_log_ids = [
+                fb.prediction_log_id
+                for fb in _pm_feedback
+                if fb.prediction_log_id is not None
+            ]
+            if _pm_log_ids:
+                _pm_logs = session.exec(
+                    select(PredictionLog).where(
+                        PredictionLog.id.in_(_pm_log_ids)  # type: ignore[attr-defined]
+                    )
+                ).all()
+                _pm_logs_map = {log.id: log for log in _pm_logs}
+
+            _pm_metrics: dict = {}
+            if _pm_dep.model_run_id:
+                from models.model_run import ModelRun as _ModelRun
+
+                _pm_run = session.get(_ModelRun, _pm_dep.model_run_id)
+                if _pm_run and _pm_run.metrics:
+                    import json as _json2
+
+                    raw = _pm_run.metrics
+                    _pm_metrics = (
+                        _json2.loads(raw) if isinstance(raw, str) else dict(raw)
+                    )
+
+            _pm_problem_type = _pm_dep.problem_type or "classification"
+            _pm_result = _compute_tvp(
+                _pm_feedback, _pm_logs_map, _pm_metrics, _pm_problem_type
+            )
+            _pm_result["deployment_id"] = _pm_dep_id
+            _pm_result["algorithm"] = getattr(_pm_dep, "algorithm", "") or ""
+            _pm_result["target_column"] = getattr(_pm_dep, "target_column", "") or ""
+            prod_monitor_event = _pm_result
+
+            _pm_status = _pm_result.get("status", "")
+            _pm_summary = _pm_result["summary"]
+            system_prompt += (
+                "\n\n## Training vs Production Performance\n"
+                f"{_pm_summary}\n"
+                f"Status: {_pm_status}. "
+                "Tell the analyst whether their model is holding up in production. "
+                "If degrading, recommend retraining with recent data. "
+                "If stable, reassure them the model is performing consistently."
+            )
+        except Exception:  # noqa: BLE001
+            pass  # Nice-to-have; never crash chat
+
     # Confidence Trend — daily average confidence over time with linear trend direction
     confidence_trend_event: dict | None = None
     if _CONFIDENCE_TREND_PATTERNS.search(body.message) and ctx["deployment"]:
@@ -12545,6 +12630,9 @@ def send_message(
         # Emit confidence trend card
         if feedback_accuracy_event:
             yield f"data: {json.dumps({'type': 'feedback_accuracy_report', 'feedback_accuracy_report': feedback_accuracy_event})}\n\n"
+
+        if prod_monitor_event:
+            yield f"data: {json.dumps({'type': 'prod_performance', 'prod_performance': prod_monitor_event})}\n\n"
 
         if confidence_trend_event:
             yield f"data: {json.dumps({'type': 'confidence_trend', 'confidence_trend': confidence_trend_event})}\n\n"

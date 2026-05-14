@@ -3948,3 +3948,221 @@ def compute_deployments_overview(deployment_summaries: list[dict]) -> dict:
         "deployments": sorted_deployments,
         "summary": summary,
     }
+
+
+# ---------------------------------------------------------------------------
+# Training vs production performance comparison
+# ---------------------------------------------------------------------------
+
+
+def compute_training_vs_production(
+    feedback_records: list,
+    prediction_logs_map: dict,
+    model_run_metrics: dict,
+    problem_type: str,
+) -> dict:
+    """Compare training metrics against live production accuracy from feedback.
+
+    Args:
+        feedback_records: List of FeedbackRecord-like objects.
+        prediction_logs_map: Dict mapping prediction_log_id → PredictionLog-like.
+        model_run_metrics: ModelRun.metrics dict from the deployed model run.
+        problem_type: "regression" or "classification".
+
+    Returns a dict with: training_value, live_value, metric_name, degradation_pct,
+    status, weekly_timeline, and plain-English summary.
+    """
+    metrics = model_run_metrics or {}
+
+    if problem_type == "regression":
+        metric_name = "MAE"
+        training_value: float | None = None
+        raw = metrics.get("mae")
+        if raw is not None:
+            try:
+                training_value = float(raw)
+            except (TypeError, ValueError):
+                pass
+
+        # Compute live MAE from feedback pairs
+        pairs = []
+        for fb in feedback_records:
+            if fb.actual_value is not None and fb.prediction_log_id:
+                log_obj = prediction_logs_map.get(fb.prediction_log_id)
+                if log_obj is not None:
+                    pred_num = getattr(log_obj, "prediction_numeric", None)
+                    if pred_num is not None:
+                        pairs.append(
+                            (float(fb.actual_value), float(pred_num), fb.created_at)
+                        )
+
+        if not pairs:
+            return {
+                "has_data": False,
+                "problem_type": problem_type,
+                "metric_name": metric_name,
+                "training_value": training_value,
+                "status": "no_feedback",
+                "summary": (
+                    "No matched feedback yet. Record actual outcomes in the Deployment "
+                    "tab to compare training and production accuracy."
+                ),
+            }
+
+        live_mae = sum(abs(a - p) for a, p, _ in pairs) / len(pairs)
+
+        # Degradation: how much worse is the live MAE vs training?
+        if training_value and training_value > 0:
+            degradation_pct = round((live_mae - training_value) / training_value * 100, 1)
+        else:
+            degradation_pct = 0.0
+
+        if degradation_pct < 10:
+            status = "stable"
+        elif degradation_pct < 30:
+            status = "warning"
+        else:
+            status = "degrading"
+
+        # Weekly timeline (MAE per week)
+        week_buckets: dict[str, list[float]] = {}
+        for actual, predicted, ts in pairs:
+            week = _iso_week_start(ts)
+            week_buckets.setdefault(week, []).append(abs(actual - predicted))
+        weekly_timeline = [
+            {
+                "period": w,
+                "value": round(sum(errs) / len(errs), 4),
+                "n": len(errs),
+            }
+            for w, errs in sorted(week_buckets.items())
+        ]
+
+        if status == "stable":
+            status_msg = "Production performance is stable."
+        elif status == "warning":
+            status_msg = (
+                f"Error has increased by {degradation_pct:.0f}% vs training. "
+                "Consider monitoring closely."
+            )
+        else:
+            status_msg = (
+                f"Error has increased by {degradation_pct:.0f}% vs training. "
+                "Retraining with recent data is recommended."
+            )
+
+        summary = (
+            f"Training MAE: {training_value:.4f} | Live MAE: {live_mae:.4f} "
+            f"(from {len(pairs)} feedback records). {status_msg}"
+        )
+
+        return {
+            "has_data": True,
+            "problem_type": problem_type,
+            "metric_name": metric_name,
+            "metric_direction": "lower_is_better",
+            "training_value": round(training_value, 4) if training_value else None,
+            "live_value": round(live_mae, 4),
+            "degradation_pct": degradation_pct,
+            "status": status,
+            "n_feedback": len(pairs),
+            "weekly_timeline": weekly_timeline,
+            "summary": summary,
+        }
+
+    else:
+        # Classification — compare training accuracy vs live accuracy
+        metric_name = "Accuracy"
+        training_value = None
+        raw = metrics.get("accuracy")
+        if raw is not None:
+            try:
+                training_value = float(raw)
+            except (TypeError, ValueError):
+                pass
+
+        correct = sum(1 for fb in feedback_records if fb.is_correct is True)
+        incorrect = sum(1 for fb in feedback_records if fb.is_correct is False)
+        rated = correct + incorrect
+
+        if rated == 0:
+            return {
+                "has_data": False,
+                "problem_type": problem_type,
+                "metric_name": metric_name,
+                "training_value": training_value,
+                "status": "no_feedback",
+                "summary": (
+                    "No rated feedback yet. After making predictions and seeing outcomes, "
+                    "record them in the Deployment tab to track live accuracy."
+                ),
+            }
+
+        live_accuracy = correct / rated
+
+        # Degradation: how much accuracy dropped vs training
+        if training_value and training_value > 0:
+            degradation_pct = round(
+                (training_value - live_accuracy) / training_value * 100, 1
+            )
+        else:
+            degradation_pct = 0.0
+
+        if degradation_pct < 5:
+            status = "stable"
+        elif degradation_pct < 15:
+            status = "warning"
+        else:
+            status = "degrading"
+
+        # Weekly timeline (accuracy % per week)
+        week_buckets_cls: dict[str, list[bool]] = {}
+        for fb in feedback_records:
+            if fb.is_correct is not None:
+                week = _iso_week_start(fb.created_at)
+                week_buckets_cls.setdefault(week, []).append(fb.is_correct)
+        weekly_timeline = [
+            {
+                "period": w,
+                "value": round(sum(vals) / len(vals) * 100, 1),
+                "n": len(vals),
+            }
+            for w, vals in sorted(week_buckets_cls.items())
+        ]
+
+        live_pct = round(live_accuracy * 100, 1)
+        train_pct = round((training_value or 0) * 100, 1)
+
+        if status == "stable":
+            status_msg = "Production accuracy is stable."
+        elif status == "warning":
+            status_msg = (
+                f"Accuracy dropped {degradation_pct:.0f}% vs training. "
+                "Monitor for further drift."
+            )
+        else:
+            status_msg = (
+                f"Accuracy dropped {degradation_pct:.0f}% vs training. "
+                "Retraining with recent data is recommended."
+            )
+
+        summary = (
+            f"Training accuracy: {train_pct}% | Live accuracy: {live_pct}% "
+            f"(from {rated} rated feedback records). {status_msg}"
+        )
+
+        return {
+            "has_data": True,
+            "problem_type": problem_type,
+            "metric_name": metric_name,
+            "metric_direction": "higher_is_better",
+            "training_value": round(training_value, 4) if training_value else None,
+            "training_pct": train_pct,
+            "live_value": round(live_accuracy, 4),
+            "live_pct": live_pct,
+            "degradation_pct": degradation_pct,
+            "status": status,
+            "n_feedback": rated,
+            "weekly_timeline": weekly_timeline,
+            "summary": summary,
+        }

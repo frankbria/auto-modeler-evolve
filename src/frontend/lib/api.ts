@@ -874,6 +874,9 @@ export const api = {
     feedbackAccuracy: (deploymentId: string): Promise<import("./types").FeedbackAccuracy> =>
       fetch(`${API_URL}/api/deploy/${deploymentId}/feedback-accuracy`).then((r) => r.json()),
 
+    trainingVsProduction: (deploymentId: string): Promise<import("./types").ProdPerformanceResult> =>
+      fetch(`${API_URL}/api/deploy/${deploymentId}/training-vs-production`).then((r) => r.json()),
+
     health: (deploymentId: string): Promise<import("./types").ModelHealth> =>
       fetch(`${API_URL}/api/deploy/${deploymentId}/health`).then((r) => r.json()),
 
