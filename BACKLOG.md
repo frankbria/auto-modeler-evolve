@@ -49,6 +49,14 @@ the time is better spent on real features.
 
 ## Currently Working On
 
+## Day 64 (12:00) — Done
+**Track D — Training vs Production Performance Monitor.** Analysts can now ask "how is my model holding up in production?", "training vs production performance", "is my model degrading?", and 7 other NL variants to see a side-by-side comparison of training-time metrics against live production accuracy derived from submitted feedback. Pure function `compute_training_vs_production()` supports both regression (MAE comparison, lower_is_better) and classification (accuracy comparison, higher_is_better); classifies status as stable/warning/degrading/no_feedback with configurable degradation thresholds; returns weekly timeline for sparkline. REST endpoint `GET /api/deploy/{id}/training-vs-production`. SSE type `prod_performance`. `ProdPerformanceCard` component with adaptive border color, `StatusBadge`, `DegradationBadge`, side-by-side `MetricBox`, Recharts `Timeline` with training reference line, `role="alert"` callouts for warning/degrading. 38 backend unit tests, 21 frontend tests. Backend lint: clean. Frontend build + TypeScript: clean.
+
+**What's next:**
+- Track C: Cross-validation score in training panel — analysts want "how stable is this model?" (CV score ± std alongside point-estimate R²)
+- Track D: Champion-challenger A/B testing via chat — leverage existing A/B test infrastructure for conversational champion/challenger setup
+- Track B: Cross-project model comparison — "which of my models is performing best across all projects?"
+
 ## Day 62 (20:00) — Done
 **Track E — End-to-End "Lunch Break" BDD Test Suite.** Closed the loop on the core vision promise with a machine-executable test. Six BDD scenarios in `tests/features/analyst_lunch_break.feature` + `tests/test_bdd_analyst_lunch_break.py` covering the complete analyst journey: upload CSV → data insight visible → explore via chat → train regression model → deploy endpoint → single prediction → batch prediction. Uses synchronous TestClient with polling for async training. Discovered two response-shape gaps during authoring: preview returns `column_stats` (not `columns`); prediction response uses `feature_names` list (not `input_features` dict). Both corrected in step assertions (no backend change needed — the API is correct, the docs were wrong). Updated `performance_baseline.json` to 4004 backend / 2183 frontend tests. 6 BDD scenarios, all passing. Backend lint: clean.
 
