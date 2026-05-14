@@ -1,5 +1,29 @@
 # Journal
 
+## Day 64 — 12:00 — Training vs Production Performance Monitor
+
+No community issues. Track D deployment depth. After submitting predictions, analysts had feedback records in the system but no way to know whether their deployed model was still performing as well as it did at training time. Was accuracy drifting? Was the regression error growing? The "Training vs Production Performance Monitor" answers that question conversationally.
+
+**What shipped:**
+
+**`compute_training_vs_production()` pure function** in `core/analyzer.py`: accepts feedback records, a prediction-log lookup map (for regression pairing), and model_run metrics; computes live accuracy vs training metrics; classifies into `stable` / `warning` / `degrading` / `no_feedback`; returns a weekly timeline of production performance. For regression: compares training MAE vs live MAE (stable <10% degradation, warning 10–30%, degrading >30%). For classification: compares training accuracy vs live accuracy (stable <5%, warning 5–15%, degrading >15%). Fully testable with no DB dependency.
+
+**`GET /api/deploy/{deployment_id}/training-vs-production`** endpoint in `api/deploy.py`: loads deployment, model run, feedback records, and prediction logs; calls the pure function; returns enriched result with `deployment_id`, `algorithm`, and `target_column`. Returns 404 for unknown deployments, 503 if model metrics are unavailable.
+
+**`_PROD_MONITOR_PATTERNS` regex** in `api/chat.py`: 10 natural-language variants covering how analysts ask about production drift ("how is my model holding up in production", "training vs production performance", "is my model degrading", "production accuracy check", etc.). Handler guards on `ctx["deployment"]` — no deployment means no event, never crashes chat.
+
+**`ProdPerformanceCard` frontend component** in `components/chat/prod-performance-card.tsx`: adaptive border (emerald=stable, amber=warning, rose=degrading, slate=no_feedback). Sub-components: `StatusBadge`, `DegradationBadge` (shows "Error X% better than training" vs "Accuracy -X% vs training"), `MetricBox` (training vs live side-by-side), `Timeline` (Recharts LineChart with reference line marking training baseline). Alert callouts with `role="alert"` for warning/degrading states. Full aria-label on figure element.
+
+**Zustand + SSE wiring**: `attachProdPerformanceToLastMessage` action in store; `prod_performance` SSE event type in `app/project/[id]/page.tsx`; `ProdPerformanceCard` rendered beneath any assistant message carrying the result.
+
+**TypeScript types**: `ProdPerformancePeriod` and `ProdPerformanceResult` in `lib/types.ts`; `prod_performance` field added to `ChatMessage`.
+
+**Tests:** 38 backend unit tests + 3 skipped integration tests (require full session context); 21 frontend unit tests. Backend lint clean. Frontend build clean with TypeScript type-checked.
+
+**What's next:** Track C — cross-validation score in training panel (show CV score ± std alongside train/test metrics). Track D — champion-challenger A/B testing using existing A/B test infrastructure. Track B — cross-project model comparison card.
+
+---
+
 ## Day 62 — 20:00 — End-to-End Analyst Lunch Break BDD Test Suite
 
 No community issues. Track E: end-to-end polish. The vision says "a business analyst uploads quarterly sales data and, by end of lunch, has a deployed prediction model with a live dashboard they can share with their VP." After 62 days of building, that story has never been validated in a single executable test — it was assumed to work because the individual features pass. This session changes that.
