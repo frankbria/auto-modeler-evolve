@@ -64,7 +64,10 @@ class TestComputeTrainingVsProductionRegression:
         assert result["status"] == "no_feedback"
         assert "training_value" in result
         assert result["training_value"] == pytest.approx(10.0)
-        assert "feedback" in result["summary"].lower() or "no matched" in result["summary"].lower()
+        assert (
+            "feedback" in result["summary"].lower()
+            or "no matched" in result["summary"].lower()
+        )
 
     def test_no_paired_logs_returns_no_data(self):
         fb = _mk_feedback(actual_value=105.0)  # no prediction_log_id
@@ -156,14 +159,18 @@ class TestComputeTrainingVsProductionClassification:
 
     def test_no_rated_records_returns_no_data(self):
         fb = _mk_feedback(is_correct=None)  # unrated
-        result = compute_training_vs_production([fb], {}, self._metrics, "classification")
+        result = compute_training_vs_production(
+            [fb], {}, self._metrics, "classification"
+        )
         assert result["has_data"] is False
 
     def test_stable_when_accuracy_close_to_training(self):
         fbs = [_mk_feedback(is_correct=True) for _ in range(85)] + [
             _mk_feedback(is_correct=False) for _ in range(15)
         ]
-        result = compute_training_vs_production(fbs, {}, self._metrics, "classification")
+        result = compute_training_vs_production(
+            fbs, {}, self._metrics, "classification"
+        )
         # live=0.85, training=0.85 → 0% degradation → stable
         assert result["has_data"] is True
         assert result["status"] == "stable"
@@ -173,7 +180,9 @@ class TestComputeTrainingVsProductionClassification:
         fbs = [_mk_feedback(is_correct=True) for _ in range(75)] + [
             _mk_feedback(is_correct=False) for _ in range(25)
         ]
-        result = compute_training_vs_production(fbs, {}, self._metrics, "classification")
+        result = compute_training_vs_production(
+            fbs, {}, self._metrics, "classification"
+        )
         assert result["has_data"] is True
         assert result["status"] == "warning"
 
@@ -182,21 +191,29 @@ class TestComputeTrainingVsProductionClassification:
         fbs = [_mk_feedback(is_correct=True) for _ in range(60)] + [
             _mk_feedback(is_correct=False) for _ in range(40)
         ]
-        result = compute_training_vs_production(fbs, {}, self._metrics, "classification")
+        result = compute_training_vs_production(
+            fbs, {}, self._metrics, "classification"
+        )
         assert result["has_data"] is True
         assert result["status"] == "degrading"
 
     def test_metric_direction_higher_is_better(self):
         fb = _mk_feedback(is_correct=True)
-        result = compute_training_vs_production([fb], {}, self._metrics, "classification")
+        result = compute_training_vs_production(
+            [fb], {}, self._metrics, "classification"
+        )
         assert result["metric_direction"] == "higher_is_better"
 
     def test_summary_contains_accuracy_values(self):
         fbs = [_mk_feedback(is_correct=True) for _ in range(8)] + [
             _mk_feedback(is_correct=False) for _ in range(2)
         ]
-        result = compute_training_vs_production(fbs, {}, self._metrics, "classification")
-        assert "accuracy" in result["summary"].lower() or "Accuracy" in result["summary"]
+        result = compute_training_vs_production(
+            fbs, {}, self._metrics, "classification"
+        )
+        assert (
+            "accuracy" in result["summary"].lower() or "Accuracy" in result["summary"]
+        )
 
     def test_weekly_timeline_populated(self):
         fbs = [
@@ -209,7 +226,9 @@ class TestComputeTrainingVsProductionClassification:
                 created_at=datetime(2026, 1, 12, tzinfo=timezone.utc),
             ),
         ]
-        result = compute_training_vs_production(fbs, {}, self._metrics, "classification")
+        result = compute_training_vs_production(
+            fbs, {}, self._metrics, "classification"
+        )
         assert result["has_data"] is True
         tl = result["weekly_timeline"]
         assert isinstance(tl, list) and len(tl) >= 1
@@ -283,10 +302,7 @@ def _make_app_with_db(db_url: str):
     return app
 
 
-_ENDPOINT_CSV = (
-    b"region,revenue,units\n"
-    b"East,100.0,10\nWest,200.0,20\nNorth,150.0,15\n"
-)
+_ENDPOINT_CSV = b"region,revenue,units\nEast,100.0,10\nWest,200.0,20\nNorth,150.0,15\n"
 
 
 class TestTrainingVsProductionEndpoint:
@@ -311,6 +327,7 @@ class TestTrainingVsProductionEndpoint:
         pid = proj["id"]
 
         import io
+
         client.post(
             "/api/data/upload",
             data={"project_id": pid},
@@ -320,8 +337,8 @@ class TestTrainingVsProductionEndpoint:
         from sqlmodel import Session as _Session
         from models.model_run import ModelRun
         import uuid
-        with _Session(db_module.engine) as session:
 
+        with _Session(db_module.engine) as session:
             run = ModelRun(
                 id=str(uuid.uuid4()),
                 project_id=pid,
@@ -348,7 +365,10 @@ class TestTrainingVsProductionEndpoint:
         assert resp.status_code == 200
         data = resp.json()
         assert "status" in data
-        assert data["has_data"] is False or data["status"] in ("no_feedback", "computed")
+        assert data["has_data"] is False or data["status"] in (
+            "no_feedback",
+            "computed",
+        )
 
 
 # ─── Chat handler integration tests ───────────────────────────────────────────
@@ -408,6 +428,7 @@ async def test_prod_monitor_chat_emits_event():
             import uuid
 
             from sqlmodel import Session as _Sess
+
             with _Sess(db_module.engine) as sess:
                 run = MR(
                     id=str(uuid.uuid4()),
@@ -440,7 +461,9 @@ async def test_prod_monitor_chat_emits_event():
             assert resp.status_code == 200
             events = _parse_events(resp)
             types = [e.get("type") for e in events]
-            assert "prod_performance" in types, f"Expected prod_performance. Got: {types}"
+            assert "prod_performance" in types, (
+                f"Expected prod_performance. Got: {types}"
+            )
             ev = next(e for e in events if e.get("type") == "prod_performance")
             data = ev["prod_performance"]
             assert "status" in data
@@ -485,7 +508,9 @@ async def test_prod_monitor_chat_no_deployment_guard():
                 },
             )
             if resp.status_code != 200:
-                pytest.skip("Chat endpoint not available without initialized session context")
+                pytest.skip(
+                    "Chat endpoint not available without initialized session context"
+                )
             events = _parse_events(resp)
             types = [e.get("type") for e in events]
             assert "prod_performance" not in types

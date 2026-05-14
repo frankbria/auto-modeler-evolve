@@ -4013,7 +4013,9 @@ def compute_training_vs_production(
 
         # Degradation: how much worse is the live MAE vs training?
         if training_value and training_value > 0:
-            degradation_pct = round((live_mae - training_value) / training_value * 100, 1)
+            degradation_pct = round(
+                (live_mae - training_value) / training_value * 100, 1
+            )
         else:
             degradation_pct = 0.0
 
