@@ -1891,6 +1891,118 @@ def get_model_card(project_id: str, session: Session = Depends(get_session)):
     }
 
 
+@router.get("/api/models/{run_id}/export-model-card")
+def export_model_card(run_id: str, session: Session = Depends(get_session)):
+    """Return a self-contained HTML model card document for the given run.
+
+    Suitable for sharing with compliance/governance teams. Distinct from the
+    PDF model report (metrics only) and the inline ModelCardView chat card.
+    """
+    from core.report_generator import generate_model_card_html
+    from fastapi.responses import HTMLResponse
+    from models.deployment import Deployment
+
+    run = session.get(ModelRun, run_id)
+    if not run or run.status != "done":
+        raise HTTPException(status_code=404, detail="Completed model run not found")
+
+    project = session.get(Project, run.project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    metrics = json.loads(run.metrics or "{}")
+    problem_type = (
+        "classification" if run.algorithm in CLASSIFICATION_ALGORITHMS else "regression"
+    )
+
+    # Load feature context
+    dataset = session.exec(
+        select(Dataset).where(Dataset.project_id == run.project_id)
+    ).first()
+    feature_set = None
+    if dataset:
+        feature_set = session.exec(
+            select(FeatureSet).where(
+                FeatureSet.dataset_id == dataset.id,
+                FeatureSet.is_active == True,  # noqa: E712
+            )
+        ).first()
+
+    target_col = (feature_set.target_column if feature_set else None) or "target"
+    col_mapping = json.loads(feature_set.column_mapping or "{}") if feature_set else {}
+    feature_names = list(col_mapping.keys()) if col_mapping else []
+    row_count = dataset.row_count if dataset else 0
+
+    # Feature importances
+    top_features: list[dict] = []
+    if run.model_path and Path(run.model_path).exists():
+        try:
+            pipeline = joblib.load(run.model_path)
+            fitted_model = pipeline.get("model")
+            pipe_features = pipeline.get("feature_names", feature_names)
+            if fitted_model and pipe_features:
+                from core.explainer import compute_feature_importance
+
+                top_features = compute_feature_importance(fitted_model, pipe_features)[
+                    :8
+                ]
+        except Exception:  # noqa: BLE001
+            pass
+
+    algo_name = _algorithm_plain_name(run.algorithm)
+    metric_info = _metric_plain_english(metrics, problem_type)
+    limitations = _build_limitations(
+        metrics, problem_type, row_count, len(feature_names)
+    )
+    summary = (
+        f"Your {algo_name} model predicts '{target_col}' with "
+        f"{metric_info['display']} {metric_info['name']}. {metric_info['plain_english']}."
+    )
+    trained_at = (
+        run.created_at.strftime("%B %d, %Y") if run.created_at else "Unknown date"
+    )
+
+    # Deployment status
+    deployment = session.exec(
+        select(Deployment).where(
+            Deployment.model_run_id == run_id,
+            Deployment.is_active == True,  # noqa: E712
+        )
+    ).first()
+    endpoint = deployment.endpoint_path if deployment else None
+
+    # Calibration data (classification only)
+    brier_score: float | None = metrics.get("brier_score")
+    calibration_note: str | None = metrics.get("calibration_note")
+
+    html_content = generate_model_card_html(
+        project_name=project.name,
+        algorithm_plain=algo_name,
+        problem_type=problem_type,
+        target_column=target_col,
+        metric_name=metric_info["name"],
+        metric_display=metric_info["display"],
+        metric_plain_english=metric_info["plain_english"],
+        row_count=row_count,
+        feature_count=len(feature_names),
+        top_features=top_features,
+        limitations=limitations,
+        trained_at=trained_at,
+        is_deployed=deployment is not None,
+        deployment_endpoint=endpoint,
+        calibration_note=calibration_note,
+        brier_score=brier_score,
+        summary=summary,
+    )
+
+    safe_name = project.name.replace(" ", "_").replace("/", "-")[:40]
+    filename = f"model_card_{safe_name}.html"
+    return HTMLResponse(
+        content=html_content,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @router.get("/api/models/{project_id}/improvement-suggestions")
 def get_improvement_suggestions(
     project_id: str, session: Session = Depends(get_session)

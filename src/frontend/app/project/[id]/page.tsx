@@ -54,6 +54,7 @@ import { ModelImprovementCard } from "@/components/models/model-improvement-card
 import { ModelSelectionCard } from "@/components/models/model-selection-card"
 import { AutoRetrainCard } from "@/components/models/auto-retrain-card"
 import { ConversationExportCard } from "@/components/chat/conversation-export-card"
+import { ModelCardExportCard } from "@/components/chat/model-card-export-card"
 import { ProjectHealthCard } from "@/components/chat/project-health-card"
 import { PredictionOpportunitiesCard } from "@/components/models/prediction-opportunities-card"
 import { DatasetComparisonCard } from "@/components/data/dataset-comparison-card"
@@ -317,6 +318,7 @@ export default function ProjectWorkspace() {
     attachDeploymentsOverviewToLastMessage,
     attachProdPerformanceToLastMessage,
     attachErrorDistributionToLastMessage,
+    attachModelCardExportToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -783,6 +785,8 @@ export default function ProjectWorkspace() {
                 attachProdPerformanceToLastMessage(json.prod_performance as import("@/lib/types").ProdPerformanceResult)
               } else if (json.type === "error_distribution" && json.error_distribution) {
                 attachErrorDistributionToLastMessage(json.error_distribution as import("@/lib/types").ErrorDistributionResult)
+              } else if (json.type === "model_card_export" && json.model_card_export) {
+                attachModelCardExportToLastMessage(json.model_card_export as import("@/lib/types").ModelCardExportInfo)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -905,6 +909,7 @@ export default function ProjectWorkspace() {
     attachDeploymentsOverviewToLastMessage,
     attachProdPerformanceToLastMessage,
     attachErrorDistributionToLastMessage,
+    attachModelCardExportToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -1460,6 +1465,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.error_distribution && (
                       <ErrorDistributionCard result={msg.error_distribution} />
+                    )}
+                    {msg.model_card_export && (
+                      <ModelCardExportCard info={msg.model_card_export} />
                     )}
                   </div>
                 </div>

@@ -509,6 +509,7 @@ export interface ChatMessage {
   deployments_overview?: DeploymentsOverviewResult
   prod_performance?: ProdPerformanceResult
   error_distribution?: ErrorDistributionResult
+  model_card_export?: ModelCardExportInfo
 }
 
 export interface SegmentPerformanceSegment {
@@ -2085,6 +2086,23 @@ export interface ConversationExportInfo {
   download_url: string
   message_count: number
   dataset_name: string | null
+}
+
+export interface ModelCardExportInfo {
+  run_id: string
+  project_name: string
+  algorithm: string
+  algorithm_plain: string
+  problem_type: string
+  target_column: string
+  metric_name: string
+  metric_value: number
+  metric_display: string
+  feature_count: number
+  row_count: number
+  trained_at: string
+  download_url: string
+  summary: string
 }
 
 export interface DeploymentHealthItem {

@@ -1,5 +1,21 @@
 # Journal
 
+## Day 65 — 12:00 — Model Card Export + Calibration Inline in Training Panel
+
+No community issues. Two features shipped: Track D model card export and Track C calibration row in the training panel.
+
+**Model Card Export.** Compliance teams need accountability documents. Analysts were already generating inline `ModelCardView` cards via chat, but those are ephemeral — gone when the tab closes. Today's feature gives them a permanent, downloadable, self-contained HTML model card suitable for sharing with their VP, legal team, or compliance reviewer. `generate_model_card_html()` in `core/report_generator.py` produces a single-file HTML document with six sections: header (project name, problem-type badge, deployment status), overview table (algorithm, target column, training rows, feature count), performance (primary metric, plain-English interpretation, model summary), feature importance (horizontal bars, top 8 features), optional calibration section (Brier score + calibration note when available), and intended use / limitations / deployment endpoint. Every user-supplied string is run through `html_escape()` — a security oversight in the initial build was caught and fixed by the test suite.
+
+The `GET /api/models/{run_id}/export-model-card` REST endpoint loads the run, project, dataset, and feature set; extracts feature importances from the saved joblib pipeline; checks deployment status; calls the generator; and returns `HTMLResponse` with `Content-Disposition: attachment`. `_MODEL_CARD_EXPORT_PATTERNS` (10 NL variants: "export model card", "download model card", "model card for compliance", "share model documentation", "model card document", etc.) in `chat.py` with the standard guard pattern. The chat handler finds the selected or best-completed run, builds the SSE payload, injects context into the system prompt, and emits `{type:"model_card_export"}`. `ModelCardExportCard` (indigo border, 📋 icon) shows algorithm/problem-type/target badges, metric + feature count + row count, training date, and a "Download HTML Model Card" anchor button.
+
+**Calibration Inline in Training Panel.** The Brier score has been computed and stored in `ModelRun.metrics` since Day 23 — but analysts had to ask "how calibrated is my model?" in chat to see it. That's a two-step friction that's now removed. `CalibrationRow` renders beneath `CvScoreRow` in `RunCard`: "🎯 Brier score: 0.08 (excellent)" with the quality label color-coded emerald/amber/rose (thresholds: <0.1 = excellent, <0.2 = good, ≥0.2 = poor). Classification only; regression returns null immediately. Tooltip shows the full `calibration_note`. The cast to `Record<string, unknown>` follows the same pattern as `CvScoreRow` for accessing non-typed extra metrics fields.
+
+25 backend tests (10 pure-function HTML generation, 3 endpoint integration, 12 regex) + 13 frontend tests = 38 new tests. Backend lint: clean. Frontend build + TypeScript + lint: clean.
+
+**What's next:** Track B — automated model comparison summary ("which model is best and why?"). Track D — champion-challenger A/B testing via chat. Track C — what-if scenario analysis panel.
+
+---
+
 ## Day 65 — 04:00 — Prediction Error Distribution Analysis
 
 No community issues. Track D model building depth. Until today, analysts who wanted to understand model errors had only one tool: `PredictionErrorCard` (top-N worst individual predictions). That shows *which* rows the model got wrong — not *how* errors are distributed across the full training set. The two questions are different: one surfaces outliers, the other reveals systematic bias. Now `compute_error_distribution()` in `core/validator.py` bridges the gap.

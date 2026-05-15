@@ -596,6 +596,7 @@ function RunCard({
             )}
             <MetricsRow metrics={run.metrics} problemType={problemType} />
             <CvScoreRow metrics={run.metrics} problemType={problemType} />
+            <CalibrationRow metrics={run.metrics} problemType={problemType} />
             <EnsembleVoteRow metrics={run.metrics} />
             {run.training_duration_ms != null && (
               <p className="text-[10px] text-muted-foreground/60">
@@ -757,6 +758,42 @@ function CvScoreRow({ metrics, problemType }: { metrics: ModelMetrics; problemTy
       </span>
       <span className={`text-[10px] font-medium ${consistencyColor}`}>
         ({consistency})
+      </span>
+      <span className="ml-0.5 text-[10px] text-muted-foreground/70 cursor-help">ⓘ</span>
+    </div>
+  )
+}
+
+
+function CalibrationRow({ metrics, problemType }: { metrics: ModelMetrics; problemType: string }) {
+  if (problemType === "regression") return null
+  const m = metrics as unknown as Record<string, unknown>
+  const brier = m.brier_score as number | undefined | null
+  const note = m.calibration_note as string | undefined
+  if (brier == null) return null
+
+  const quality = brier < 0.1 ? "excellent" : brier < 0.2 ? "good" : "poor"
+  const qualityColor =
+    quality === "excellent"
+      ? "text-emerald-600 dark:text-emerald-400"
+      : quality === "good"
+      ? "text-amber-600 dark:text-amber-400"
+      : "text-rose-600 dark:text-rose-400"
+  const tooltip = note ?? `Brier score measures probability calibration quality (lower is better). Score: ${brier.toFixed(3)}`
+
+  return (
+    <div
+      data-testid="calibration-row"
+      className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground"
+      title={tooltip}
+    >
+      <span aria-hidden="true">🎯</span>
+      <span>
+        Brier score:{" "}
+        <strong className="text-foreground">{brier.toFixed(3)}</strong>
+      </span>
+      <span className={`text-[10px] font-medium ${qualityColor}`}>
+        ({quality})
       </span>
       <span className="ml-0.5 text-[10px] text-muted-foreground/70 cursor-help">ⓘ</span>
     </div>

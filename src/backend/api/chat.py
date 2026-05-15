@@ -2007,6 +2007,24 @@ _CONV_EXPORT_PATTERNS = re.compile(
 )
 
 
+# Keywords that trigger a model card HTML export download
+# Distinct from _MODEL_CARD_PATTERNS (inline view) and _REPORT_PATTERNS (PDF).
+_MODEL_CARD_EXPORT_PATTERNS = re.compile(
+    r"(?i)\b("
+    r"export\s+(?:my\s+)?model\s+card|"
+    r"download\s+(?:my\s+)?model\s+card|"
+    r"model\s+card\s+export|"
+    r"generate\s+(?:a\s+)?model\s+card|"
+    r"create\s+(?:a\s+)?model\s+card|"
+    r"model\s+card\s+(?:for\s+)?(?:compliance|governance|documentation|sharing|review)|"
+    r"share\s+model\s+documentation|"
+    r"model\s+documentation\s+(?:download|export)|"
+    r"export\s+model\s+documentation|"
+    r"model\s+card\s+document"
+    r")\b",
+    re.IGNORECASE,
+)
+
 # Keywords that trigger the auto-retrain status/toggle card
 _AUTO_RETRAIN_PATTERNS = re.compile(
     r"\b(auto.?retrain|automatic.*retrain|retrain.*automatic|"
@@ -4549,6 +4567,85 @@ def send_message(
                 "Tell them their analysis report is ready to download. "
                 "Keep it brief — the download button will appear automatically."
             )
+        except Exception:  # noqa: BLE001
+            pass
+
+    # Model Card Export: generate an HTML model card document for compliance/sharing
+    model_card_export_event: dict | None = None
+    if _MODEL_CARD_EXPORT_PATTERNS.search(body.message) and ctx["model_runs"]:
+        try:
+
+            _mce_runs = ctx["model_runs"]
+            _mce_selected = next(
+                (r for r in _mce_runs if r.is_selected and r.status == "done"), None
+            )
+            if _mce_selected is None:
+                _mce_done = [r for r in _mce_runs if r.status == "done"]
+                if _mce_done:
+
+                    def _mce_metrics_key(r):
+                        m = json.loads(r.metrics or "{}")
+                        return m.get("r2", m.get("accuracy", 0))
+
+                    _mce_selected = max(_mce_done, key=_mce_metrics_key)
+
+            if _mce_selected:
+                _mce_metrics = json.loads(_mce_selected.metrics or "{}")
+                from core.trainer import CLASSIFICATION_ALGORITHMS as _CLS_ALGOS
+
+                _mce_pt = (
+                    "classification"
+                    if _mce_selected.algorithm in _CLS_ALGOS
+                    else "regression"
+                )
+                from api.models import (
+                    _algorithm_plain_name as _apn,
+                    _metric_plain_english as _mpe,
+                )
+
+                _mce_algo = _apn(_mce_selected.algorithm)
+                _mce_metric = _mpe(_mce_metrics, _mce_pt)
+                _mce_fs = ctx["feature_set"]
+                _mce_ds = ctx["dataset"]
+                _mce_target = (_mce_fs.target_column if _mce_fs else None) or "target"
+                _mce_feat_count = (
+                    len(json.loads(_mce_fs.column_mapping or "{}")) if _mce_fs else 0
+                )
+                _mce_rows = _mce_ds.row_count if _mce_ds else 0
+                _mce_trained = (
+                    _mce_selected.created_at.strftime("%B %d, %Y")
+                    if _mce_selected.created_at
+                    else "Unknown date"
+                )
+                model_card_export_event = {
+                    "run_id": _mce_selected.id,
+                    "project_name": project.name if project else "Project",
+                    "algorithm": _mce_selected.algorithm,
+                    "algorithm_plain": _mce_algo,
+                    "problem_type": _mce_pt,
+                    "target_column": _mce_target,
+                    "metric_name": _mce_metric["name"],
+                    "metric_value": _mce_metric["value"],
+                    "metric_display": _mce_metric["display"],
+                    "feature_count": _mce_feat_count,
+                    "row_count": _mce_rows,
+                    "trained_at": _mce_trained,
+                    "download_url": f"/api/models/{_mce_selected.id}/export-model-card",
+                    "summary": (
+                        f"Your {_mce_algo} model predicts '{_mce_target}' with "
+                        f"{_mce_metric['display']} {_mce_metric['name']}."
+                    ),
+                }
+                system_prompt += (
+                    "\n\n## Model Card Export\n"
+                    f"The user wants to export a model card document. "
+                    f"The card is for a {_mce_algo} model predicting '{_mce_target}' "
+                    f"with {_mce_metric['display']} {_mce_metric['name']}. "
+                    "The HTML model card is ready to download. "
+                    "Tell the user their model card document is ready and what it contains "
+                    "(overview, performance, features, limitations, deployment status). "
+                    "Keep it brief — the download button will appear automatically."
+                )
         except Exception:  # noqa: BLE001
             pass
 
@@ -10038,12 +10135,12 @@ def send_message(
                         "id": h.id,
                         "url": h.url,
                         "event_types": _json_wl.loads(h.event_types or "[]"),
-                        "created_at": h.created_at.isoformat()
-                        if h.created_at
-                        else None,
-                        "last_fired_at": h.last_fired_at.isoformat()
-                        if h.last_fired_at
-                        else None,
+                        "created_at": (
+                            h.created_at.isoformat() if h.created_at else None
+                        ),
+                        "last_fired_at": (
+                            h.last_fired_at.isoformat() if h.last_fired_at else None
+                        ),
                         "last_status_code": h.last_status_code,
                     }
                     for h in _wl_hooks
@@ -10739,9 +10836,9 @@ def send_message(
                 "used_this_month": _qr_used_this_month,
                 "remaining": _qr_remaining,
                 "avg_per_day": round(_qr_avg_per_day, 1),
-                "days_left_at_rate": round(_qr_days_left, 1)
-                if _qr_days_left is not None
-                else None,
+                "days_left_at_rate": (
+                    round(_qr_days_left, 1) if _qr_days_left is not None else None
+                ),
                 "est_month_total": _qr_est_month_total,
                 "days_remaining_in_month": _qr_days_remaining,
                 "rate_limit_rpm": _qr_rate_limit_rpm,
@@ -11021,12 +11118,16 @@ def send_message(
                         "id": _rp_log.id[:8],  # short ID for display
                         "created_at": _rp_log.created_at.isoformat(),
                         "prediction": str(_rp_pred_raw),
-                        "confidence": round(_rp_log.confidence * 100, 1)
-                        if _rp_log.confidence is not None
-                        else None,
-                        "response_ms": round(_rp_log.response_ms, 1)
-                        if _rp_log.response_ms is not None
-                        else None,
+                        "confidence": (
+                            round(_rp_log.confidence * 100, 1)
+                            if _rp_log.confidence is not None
+                            else None
+                        ),
+                        "response_ms": (
+                            round(_rp_log.response_ms, 1)
+                            if _rp_log.response_ms is not None
+                            else None
+                        ),
                         "input_summary": _rp_input_summary,
                         "ab_variant": _rp_log.ab_variant,
                     }
@@ -11790,12 +11891,12 @@ def send_message(
                 dataset_filename=_brief_dataset.filename if _brief_dataset else None,
                 row_count=_brief_dataset.row_count if _brief_dataset else None,
                 col_count=_brief_dataset.column_count if _brief_dataset else None,
-                target_column=_brief_feature_set.target_column
-                if _brief_feature_set
-                else None,
-                problem_type=_brief_feature_set.problem_type
-                if _brief_feature_set
-                else None,
+                target_column=(
+                    _brief_feature_set.target_column if _brief_feature_set else None
+                ),
+                problem_type=(
+                    _brief_feature_set.problem_type if _brief_feature_set else None
+                ),
                 algorithm=_brief_algo,
                 primary_metric_name=_brief_metric_name,
                 primary_metric_value=_brief_metric_value,
@@ -11874,11 +11975,11 @@ def send_message(
                     _wh_status = (
                         "no_events"
                         if _n_total == 0
-                        else "healthy"
-                        if _n_failed == 0
-                        else "warning"
-                        if _n_failed / _n_total < 0.1
-                        else "critical"
+                        else (
+                            "healthy"
+                            if _n_failed == 0
+                            else "warning" if _n_failed / _n_total < 0.1 else "critical"
+                        )
                     )
                     _wh_total_events += _n_total
                     _wh_total_failed += _n_failed
@@ -11903,11 +12004,17 @@ def send_message(
                     _dep_status = (
                         "no_events"
                         if all(r["status"] == "no_events" for r in _dep_webhook_rows)
-                        else "critical"
-                        if any(r["status"] == "critical" for r in _dep_webhook_rows)
-                        else "warning"
-                        if any(r["status"] == "warning" for r in _dep_webhook_rows)
-                        else "healthy"
+                        else (
+                            "critical"
+                            if any(r["status"] == "critical" for r in _dep_webhook_rows)
+                            else (
+                                "warning"
+                                if any(
+                                    r["status"] == "warning" for r in _dep_webhook_rows
+                                )
+                                else "healthy"
+                            )
+                        )
                     )
                     _dep_name = (
                         _dep.model_run_id[:8] if _dep.model_run_id else _dep.id[:8]
@@ -11924,13 +12031,15 @@ def send_message(
             _wh_overall = (
                 "no_webhooks"
                 if _wh_total_webhooks == 0
-                else "critical"
-                if any(d["status"] == "critical" for d in _wh_dep_summaries)
-                else "warning"
-                if any(d["status"] == "warning" for d in _wh_dep_summaries)
-                else "no_events"
-                if _wh_total_events == 0
-                else "healthy"
+                else (
+                    "critical"
+                    if any(d["status"] == "critical" for d in _wh_dep_summaries)
+                    else (
+                        "warning"
+                        if any(d["status"] == "warning" for d in _wh_dep_summaries)
+                        else "no_events" if _wh_total_events == 0 else "healthy"
+                    )
+                )
             )
 
             if _wh_total_webhooks == 0:
@@ -12204,9 +12313,11 @@ def send_message(
                                     "current": round(_cur_val, 4),
                                     "delta": round(_delta, 4),
                                     "pct_change": round(_pct, 1),
-                                    "direction": "up"
-                                    if _delta > 0
-                                    else ("down" if _delta < 0 else "flat"),
+                                    "direction": (
+                                        "up"
+                                        if _delta > 0
+                                        else ("down" if _delta < 0 else "flat")
+                                    ),
                                     "improved": _improved,
                                     "higher_is_better": _higher_is_better,
                                 }
@@ -12368,6 +12479,9 @@ def send_message(
 
         if conv_export_event:
             yield f"data: {json.dumps({'type': 'conversation_export', 'conversation_export': conv_export_event})}\n\n"
+
+        if model_card_export_event:
+            yield f"data: {json.dumps({'type': 'model_card_export', 'model_card_export': model_card_export_event})}\n\n"
 
         if health_summary_event:
             yield f"data: {json.dumps({'type': 'health_summary', 'health_summary': health_summary_event})}\n\n"

@@ -49,6 +49,20 @@ the time is better spent on real features.
 
 ## Currently Working On
 
+## Day 65 (12:00) — Done
+**Track D — Model Card Export via Chat + Track C — Calibration Inline in Training Panel.**
+
+Model Card Export: Analysts can ask "export model card", "download model card", "model card for compliance", "share model documentation", and 7 other NL variants to receive a `ModelCardExportCard` in chat with a "Download HTML Model Card" button. `generate_model_card_html()` pure function in `core/report_generator.py` produces a self-contained HTML model card (overview table, performance, feature importance bars, optional calibration section, intended use, limitations, deployment info). XSS-safe via `html_escape()`. `GET /api/models/{run_id}/export-model-card` endpoint returns `HTMLResponse` with `Content-Disposition: attachment`. `_MODEL_CARD_EXPORT_PATTERNS` (10 NL variants) + handler + `{type:"model_card_export"}` SSE event. `ModelCardExportCard` (indigo border, 📋 icon): algorithm/problem-type/target badges, metric + feature count + row count, training date, download anchor. `ModelCardExportInfo` TypeScript interface.
+
+Calibration Inline: `CalibrationRow` sub-component in `RunCard` shows "🎯 Brier score: 0.XX (excellent/good/poor)" with color-coded quality label beneath `CvScoreRow`. Classification only; returns null for regression. Closes "how trustworthy are the confidence scores?" without a chat command.
+
+25 backend (10 HTML unit + 3 endpoint integration + 12 regex) + 13 frontend = 38 new tests. Backend lint: clean. Frontend build + TypeScript + lint: clean.
+
+**What's next:**
+- Track B: Automated model comparison summary — "which model is best and why?" (comparative narrative when multiple runs exist)
+- Track D: Champion-challenger A/B testing via chat — leverage existing A/B test infrastructure for conversational champion/challenger setup
+- Track C: What-if scenario analysis panel — allow analysts to simulate predictions by adjusting feature values
+
 ## Day 65 (04:00) — Done
 **Track D — Prediction Error Distribution Analysis.** Analysts can now ask "show me the error distribution", "residual histogram", "where does my model struggle?", "per class error rate", and 8 other NL variants to see a histogram of ALL prediction errors — distinct from `PredictionErrorCard` (top-N worst individual rows). Pure function `compute_error_distribution()` in `core/validator.py`: regression bins residuals into a 5–30 bar histogram with bias detection (unbiased/over-predicts/under-predicts via normalized mean residual); classification returns per-class error rates sorted highest-to-lowest with decoded class names. REST endpoint `GET /api/models/{run_id}/error-distribution`. `_ERROR_DIST_PATTERNS` (11 NL variants, guarded by `not pred_error_event`). SSE type `error_distribution`. `ErrorDistributionCard` with color-coded Recharts BarChart for regression + per-class table with mini bars for classification. 34 backend + 20 frontend = 54 new tests. Backend lint: clean. Frontend build + TypeScript: clean.
 

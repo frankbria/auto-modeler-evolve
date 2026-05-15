@@ -149,6 +149,7 @@ interface AppState {
   attachDeploymentsOverviewToLastMessage: (deployments_overview: import("./types").DeploymentsOverviewResult) => void
   attachProdPerformanceToLastMessage: (prod_performance: import("./types").ProdPerformanceResult) => void
   attachErrorDistributionToLastMessage: (error_distribution: import("./types").ErrorDistributionResult) => void
+  attachModelCardExportToLastMessage: (model_card_export: import("./types").ModelCardExportInfo) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -1134,6 +1135,15 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, error_distribution }
+      }
+      return { messages }
+    }),
+  attachModelCardExportToLastMessage: (model_card_export) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, model_card_export }
       }
       return { messages }
     }),

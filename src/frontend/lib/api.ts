@@ -747,6 +747,9 @@ export const api = {
     reportUrl: (modelRunId: string): string =>
       `${API_URL}/api/models/${modelRunId}/report`,
 
+    exportModelCardUrl: (runId: string): string =>
+      `${API_URL}/api/models/${runId}/export-model-card`,
+
     trainingStreamUrl: (projectId: string): string =>
       `${API_URL}/api/models/${projectId}/training-stream`,
 
