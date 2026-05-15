@@ -4574,7 +4574,6 @@ def send_message(
     model_card_export_event: dict | None = None
     if _MODEL_CARD_EXPORT_PATTERNS.search(body.message) and ctx["model_runs"]:
         try:
-
             _mce_runs = ctx["model_runs"]
             _mce_selected = next(
                 (r for r in _mce_runs if r.is_selected and r.status == "done"), None
@@ -11978,7 +11977,9 @@ def send_message(
                         else (
                             "healthy"
                             if _n_failed == 0
-                            else "warning" if _n_failed / _n_total < 0.1 else "critical"
+                            else "warning"
+                            if _n_failed / _n_total < 0.1
+                            else "critical"
                         )
                     )
                     _wh_total_events += _n_total
@@ -12037,7 +12038,9 @@ def send_message(
                     else (
                         "warning"
                         if any(d["status"] == "warning" for d in _wh_dep_summaries)
-                        else "no_events" if _wh_total_events == 0 else "healthy"
+                        else "no_events"
+                        if _wh_total_events == 0
+                        else "healthy"
                     )
                 )
             )

@@ -365,7 +365,7 @@ def generate_model_card_html(
             pct = round(imp * 100, 1)
             bar_pct = round((imp / max_imp) * 100)
             rows.append(f"""<tr>
-                  <td style="padding:6px 8px;font-size:0.875rem">{f.get("feature","")}</td>
+                  <td style="padding:6px 8px;font-size:0.875rem">{f.get("feature", "")}</td>
                   <td style="padding:6px 8px;font-size:0.875rem">
                     <div style="background:#e0e7ff;border-radius:3px;height:12px;width:100%">
                       <div style="background:#4f46e5;border-radius:3px;height:12px;width:{bar_pct}%"></div>
@@ -403,7 +403,9 @@ def generate_model_card_html(
         score_color = (
             "#059669"
             if brier_score < 0.1
-            else "#d97706" if brier_score < 0.2 else "#dc2626"
+            else "#d97706"
+            if brier_score < 0.2
+            else "#dc2626"
         )
         cal_html = f"""<h2 style="font-size:1rem;font-weight:600;color:#1e40af;margin:1.5rem 0 0.5rem">
             Calibration
