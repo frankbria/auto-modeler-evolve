@@ -671,7 +671,9 @@ def compute_error_distribution(
         bias_pct = abs(mean_res) / y_range * 100
         if bias_pct < 2:
             bias_label = "unbiased"
-            bias_desc = "The model has no systematic over- or under-prediction tendency."
+            bias_desc = (
+                "The model has no systematic over- or under-prediction tendency."
+            )
         elif mean_res > 0:
             bias_label = "over-predicts"
             bias_desc = (

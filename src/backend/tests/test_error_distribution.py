@@ -76,7 +76,15 @@ class TestComputeErrorDistributionRegression:
         y_pred = y_true + 0.1
         result = self.fn(y_true, y_pred, "regression")
         stats = result["stats"]
-        for key in ["mean", "std", "mae", "bias_label", "bias_pct", "within_1std_pct", "total"]:
+        for key in [
+            "mean",
+            "std",
+            "mae",
+            "bias_label",
+            "bias_pct",
+            "within_1std_pct",
+            "total",
+        ]:
             assert key in stats, f"missing key: {key}"
 
     def test_unbiased_model(self):
@@ -90,7 +98,9 @@ class TestComputeErrorDistributionRegression:
 
     def test_over_predicting_model(self):
         y_true = np.ones(50)
-        y_pred = np.ones(50) * 1.5  # always predicts 0.5 too high → under-predicts (residual negative)
+        y_pred = (
+            np.ones(50) * 1.5
+        )  # always predicts 0.5 too high → under-predicts (residual negative)
         result = self.fn(y_true, y_pred, "regression")
         # residual = actual - pred = 1 - 1.5 = -0.5 → mean < 0 → under-predicts
         assert result["stats"]["bias_label"] == "under-predicts"
@@ -189,7 +199,13 @@ class TestComputeErrorDistributionClassification:
         y_pred = y_true
         result = self.fn(y_true, y_pred, "classification")
         stats = result["stats"]
-        for key in ["total", "total_wrong", "overall_error_rate", "overall_accuracy", "n_classes"]:
+        for key in [
+            "total",
+            "total_wrong",
+            "overall_error_rate",
+            "overall_accuracy",
+            "n_classes",
+        ]:
             assert key in stats, f"missing key: {key}"
 
     def test_empty_classification_returns_gracefully(self):
