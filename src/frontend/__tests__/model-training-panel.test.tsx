@@ -277,4 +277,75 @@ describe("ModelTrainingPanel — run display", () => {
       expect(screen.getByText(/best r²/i)).toBeInTheDocument()
     )
   })
+
+  it("shows CV score row when cv_mean present in metrics", async () => {
+    const runWithCV = makeRun({
+      metrics: {
+        r2: 0.85,
+        mae: 0.12,
+        rmse: 0.18,
+        train_size: 160,
+        test_size: 40,
+        cv_mean: 0.81,
+        cv_std: 0.03,
+        cv_n_splits: 5,
+      },
+    })
+    mockRuns.mockResolvedValue({ project_id: "proj-1", runs: [runWithCV] })
+    render(<ModelTrainingPanel projectId="proj-1" />)
+    await waitFor(() =>
+      expect(screen.getByTestId("cv-score-row")).toBeInTheDocument()
+    )
+    expect(screen.getByText(/5-fold CV/i)).toBeInTheDocument()
+    expect(screen.getByText(/0\.810/)).toBeInTheDocument()
+  })
+
+  it("shows stable label when cv_std < 0.05", async () => {
+    const runWithStableCV = makeRun({
+      metrics: {
+        r2: 0.90,
+        mae: 0.08,
+        rmse: 0.12,
+        train_size: 160,
+        test_size: 40,
+        cv_mean: 0.88,
+        cv_std: 0.02,
+        cv_n_splits: 5,
+      },
+    })
+    mockRuns.mockResolvedValue({ project_id: "proj-1", runs: [runWithStableCV] })
+    render(<ModelTrainingPanel projectId="proj-1" />)
+    await waitFor(() => expect(screen.getByTestId("cv-score-row")).toBeInTheDocument())
+    expect(screen.getByText(/\(stable\)/i)).toBeInTheDocument()
+  })
+
+  it("shows variable label when cv_std >= 0.1", async () => {
+    const runWithVariableCV = makeRun({
+      metrics: {
+        r2: 0.70,
+        mae: 0.25,
+        rmse: 0.35,
+        train_size: 160,
+        test_size: 40,
+        cv_mean: 0.65,
+        cv_std: 0.15,
+        cv_n_splits: 5,
+      },
+    })
+    mockRuns.mockResolvedValue({ project_id: "proj-1", runs: [runWithVariableCV] })
+    render(<ModelTrainingPanel projectId="proj-1" />)
+    await waitFor(() => expect(screen.getByTestId("cv-score-row")).toBeInTheDocument())
+    expect(screen.getByText(/\(variable\)/i)).toBeInTheDocument()
+  })
+
+  it("does not show CV row when cv_mean absent from metrics", async () => {
+    mockRuns.mockResolvedValue({
+      project_id: "proj-1",
+      runs: [makeRun()],  // default metrics have no cv_mean
+    })
+    render(<ModelTrainingPanel projectId="proj-1" />)
+    await waitFor(() =>
+      expect(screen.queryByTestId("cv-score-row")).not.toBeInTheDocument()
+    )
+  })
 })

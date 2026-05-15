@@ -57,6 +57,7 @@ from sklearn.metrics import (
 from sklearn.model_selection import RandomizedSearchCV, train_test_split
 from sklearn.preprocessing import LabelEncoder
 from sklearn.utils.class_weight import compute_sample_weight
+from core.validator import run_cross_validation
 
 try:
     from imblearn.over_sampling import SMOTE as _SMOTE
@@ -1067,6 +1068,21 @@ def train_single_model(
     model_dir.mkdir(parents=True, exist_ok=True)
     model_path = str(model_dir / f"{model_run_id}.joblib")
     joblib.dump(model_to_save, model_path)
+
+    # Run cross-validation on the full dataset so the training panel can show
+    # CV score ± std alongside the train/test split metrics.  Skip for tiny
+    # datasets (CV needs at least 2 rows) and catch all errors so CV never
+    # blocks a successful training result.
+    if len(X) >= 10:
+        try:
+            unfitted = model_class(**params)
+            cv_result = run_cross_validation(unfitted, X, y, problem_type)
+            if cv_result["mean"] is not None:
+                metrics["cv_mean"] = cv_result["mean"]
+                metrics["cv_std"] = cv_result["std"]
+                metrics["cv_n_splits"] = cv_result["n_splits"]
+        except Exception:  # noqa: BLE001
+            pass
 
     return {
         "metrics": metrics,

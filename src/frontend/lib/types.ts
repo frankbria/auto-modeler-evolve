@@ -738,6 +738,9 @@ export interface ModelMetricsRegression {
   rmse: number
   train_size: number
   test_size: number
+  cv_mean?: number
+  cv_std?: number
+  cv_n_splits?: number
 }
 
 export interface ModelMetricsClassification {
@@ -747,6 +750,9 @@ export interface ModelMetricsClassification {
   recall: number
   train_size: number
   test_size: number
+  cv_mean?: number
+  cv_std?: number
+  cv_n_splits?: number
 }
 
 export interface EnsembleMetricsExtra {

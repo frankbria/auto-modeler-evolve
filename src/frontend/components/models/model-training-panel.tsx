@@ -595,6 +595,7 @@ function RunCard({
               <p className="text-xs text-muted-foreground">{run.summary}</p>
             )}
             <MetricsRow metrics={run.metrics} problemType={problemType} />
+            <CvScoreRow metrics={run.metrics} problemType={problemType} />
             <EnsembleVoteRow metrics={run.metrics} />
             {run.training_duration_ms != null && (
               <p className="text-[10px] text-muted-foreground/60">
@@ -719,6 +720,45 @@ function MetricsRow({ metrics, problemType }: { metrics: ModelMetrics; problemTy
         value={m.precision?.toFixed(3) ?? "—"}
         tooltip="Precision — of all positive predictions, what fraction were correct. Closer to 1.0 is better."
       />
+    </div>
+  )
+}
+
+
+function CvScoreRow({ metrics, problemType }: { metrics: ModelMetrics; problemType: string }) {
+  const m = metrics as unknown as Record<string, number | undefined>
+  const cvMean = m.cv_mean
+  const cvStd = m.cv_std
+  const cvN = m.cv_n_splits
+
+  if (cvMean == null || cvStd == null) return null
+
+  const metricLabel = problemType === "regression" ? "R²" : "F1"
+  const consistency = cvStd < 0.05 ? "stable" : cvStd < 0.1 ? "moderate" : "variable"
+  const consistencyColor =
+    consistency === "stable"
+      ? "text-emerald-600 dark:text-emerald-400"
+      : consistency === "moderate"
+      ? "text-amber-600 dark:text-amber-400"
+      : "text-rose-600 dark:text-rose-400"
+  const tooltip = `${cvN ?? 5}-fold cross-validation ${metricLabel}: ${cvMean.toFixed(3)} ± ${cvStd.toFixed(3)}. This measures how consistently the model performs across different data subsets — lower std means more stable predictions on unseen data.`
+
+  return (
+    <div
+      data-testid="cv-score-row"
+      className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground"
+      title={tooltip}
+    >
+      <span aria-hidden="true">📊</span>
+      <span>
+        {cvN ?? 5}-fold CV {metricLabel}:{" "}
+        <strong className="text-foreground">{cvMean.toFixed(3)}</strong>
+        <span className="text-[10px]"> ± {cvStd.toFixed(3)}</span>
+      </span>
+      <span className={`text-[10px] font-medium ${consistencyColor}`}>
+        ({consistency})
+      </span>
+      <span className="ml-0.5 text-[10px] text-muted-foreground/70 cursor-help">ⓘ</span>
     </div>
   )
 }

@@ -304,6 +304,60 @@ class TestTrainSingleModel:
         assert "R²" in result["summary"]
         assert len(result["summary"]) > 20
 
+    def test_cv_score_in_metrics_regression(self, tmp_path, xy_regression):
+        from core.trainer import train_single_model
+
+        X, y = xy_regression
+        result = train_single_model(
+            X, y, "linear_regression", "regression", tmp_path, "cv_run_reg"
+        )
+        metrics = result["metrics"]
+        assert "cv_mean" in metrics, "cv_mean missing from regression metrics"
+        assert "cv_std" in metrics, "cv_std missing from regression metrics"
+        assert "cv_n_splits" in metrics, "cv_n_splits missing from regression metrics"
+        assert isinstance(metrics["cv_mean"], float)
+        assert isinstance(metrics["cv_std"], float)
+        assert metrics["cv_n_splits"] >= 2
+        assert -1.0 <= metrics["cv_mean"] <= 1.0  # R² range
+        assert metrics["cv_std"] >= 0.0
+
+    def test_cv_score_in_metrics_classification(self, tmp_path, xy_classification):
+        from core.trainer import train_single_model
+
+        X, y = xy_classification
+        result = train_single_model(
+            X, y, "logistic_regression", "classification", tmp_path, "cv_run_cls"
+        )
+        metrics = result["metrics"]
+        assert "cv_mean" in metrics, "cv_mean missing from classification metrics"
+        assert "cv_std" in metrics
+        assert 0.0 <= metrics["cv_mean"] <= 1.0  # F1 range
+        assert metrics["cv_std"] >= 0.0
+
+    def test_cv_skipped_for_tiny_dataset(self, tmp_path):
+        from core.trainer import train_single_model
+
+        rng = np.random.default_rng(0)
+        X = rng.normal(0, 1, (8, 2))  # < 10 rows
+        y = rng.normal(0, 1, 8)
+        result = train_single_model(
+            X, y, "linear_regression", "regression", tmp_path, "cv_tiny"
+        )
+        # CV should not be present for tiny datasets (< 10 rows)
+        assert "cv_mean" not in result["metrics"]
+
+    def test_cv_consistency_stable_model(self, tmp_path):
+        from core.trainer import train_single_model
+
+        rng = np.random.default_rng(7)
+        X = rng.normal(0, 1, (100, 3))
+        y = 3 * X[:, 0] + rng.normal(0, 0.05, 100)  # very linear, low noise
+        result = train_single_model(
+            X, y, "linear_regression", "regression", tmp_path, "cv_stable"
+        )
+        # Well-fitting linear model should have low CV std
+        assert result["metrics"]["cv_std"] < 0.1, "Expected stable CV for clean linear data"
+
 
 # ---------------------------------------------------------------------------
 # API endpoint tests
