@@ -1,5 +1,13 @@
 # Journal
 
+## Day 64 — 20:00 — Cross-Validation Score in Training Panel
+
+No community issues. Track C model building depth. After 64 days, every model training run returned a point-estimate R² or accuracy — analysts had to ask "how consistent is my model?" via chat to see cross-validation results. That two-step friction is eliminated: `train_single_model()` now runs 5-fold CV on the full dataset after computing the train/test metrics, stores `cv_mean`/`cv_std`/`cv_n_splits` in `ModelRun.metrics`, and the training panel's `RunCard` renders a `CvScoreRow` inline — "5-fold CV R²: 0.81 ± 0.03 (stable)" with color-coded consistency labels (emerald/amber/rose for stable/moderate/variable). The import from `core.validator` is clean (no circular dependency). CV is skipped for datasets under 10 rows via a guard before the unfitted-model instantiation. TypeScript interfaces updated with optional fields so existing tests don't break. 4 backend unit tests (regression CV present, classification CV present, tiny dataset no CV, stable model low std) + 4 frontend unit tests (row shown with cv_mean, stable label at std < 0.05, variable label at std ≥ 0.1, row absent without cv_mean). Backend lint: clean. Frontend build + TypeScript: clean.
+
+**What's next:** Track D — prediction error distribution analysis ("show me where my model is wrong", histogram of residuals by segment). Track C — calibration display in training panel (Brier score + reliability curve inline for classification models). Track B — model registry export ("export all model metadata as JSON").
+
+---
+
 ## Day 64 — 12:00 — Training vs Production Performance Monitor
 
 No community issues. Track D deployment depth. After submitting predictions, analysts had feedback records in the system but no way to know whether their deployed model was still performing as well as it did at training time. Was accuracy drifting? Was the regression error growing? The "Training vs Production Performance Monitor" answers that question conversationally.

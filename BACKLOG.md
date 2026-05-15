@@ -49,6 +49,14 @@ the time is better spent on real features.
 
 ## Currently Working On
 
+## Day 64 (20:00) — Done
+**Track C — Cross-Validation Score in Training Panel.** After each training run, `train_single_model()` now automatically runs 5-fold cross-validation on the full dataset using an unfitted copy of the same model (reusing `run_cross_validation()` from `core/validator.py`) and stores `cv_mean`, `cv_std`, `cv_n_splits` in `ModelRun.metrics`. CV skipped for datasets < 10 rows. The training panel's `RunCard` now shows a `CvScoreRow` beneath train/test metrics: "5-fold CV R²: 0.81 ± 0.03 (stable)" with color-coded consistency label (emerald=stable std<0.05, amber=moderate <0.1, rose=variable ≥0.1). TypeScript types updated. 4 backend + 4 frontend tests. Backend lint: clean. Frontend build: clean.
+
+**What's next:**
+- Track D: Prediction error distribution analysis — "show me where my model is wrong" (histogram of residuals/misclassifications by segment)
+- Track C: Calibration display in training panel — show calibration curve + Brier score alongside CV score for classification models
+- Track B: Model registry export — "export all my model metadata as JSON for archiving"
+
 ## Day 64 (12:00) — Done
 **Track D — Training vs Production Performance Monitor.** Analysts can now ask "how is my model holding up in production?", "training vs production performance", "is my model degrading?", and 7 other NL variants to see a side-by-side comparison of training-time metrics against live production accuracy derived from submitted feedback. Pure function `compute_training_vs_production()` supports both regression (MAE comparison, lower_is_better) and classification (accuracy comparison, higher_is_better); classifies status as stable/warning/degrading/no_feedback with configurable degradation thresholds; returns weekly timeline for sparkline. REST endpoint `GET /api/deploy/{id}/training-vs-production`. SSE type `prod_performance`. `ProdPerformanceCard` component with adaptive border color, `StatusBadge`, `DegradationBadge`, side-by-side `MetricBox`, Recharts `Timeline` with training reference line, `role="alert"` callouts for warning/degrading. 38 backend unit tests, 21 frontend tests. Backend lint: clean. Frontend build + TypeScript: clean.
 

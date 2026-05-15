@@ -1784,6 +1784,40 @@ guides them forward through the natural flow.
       4004 backend, 2183 frontend tests.
       *Day 62 (20:00): 6 BDD scenarios, all passing. Backend lint: clean.*
 
+- [x] **Training vs Production Performance Monitor via Chat** — Track D perpetual. Analysts can ask
+      "how is my model holding up in production?", "training vs production performance", "is my model
+      degrading?", "production accuracy check", and 7 other NL variants to see a side-by-side
+      comparison of training-time metrics against live production accuracy derived from submitted
+      feedback records. Pure function `compute_training_vs_production(feedback_records,
+      prediction_log_map, model_metrics)` in `core/analyzer.py` supports both regression (MAE
+      comparison, lower_is_better) and classification (accuracy comparison, higher_is_better);
+      classifies status as `stable` / `warning` / `degrading` / `no_feedback` with configurable
+      degradation thresholds (stable <10%/5%, warning 10–30%/5–15%, degrading >30%/15% for
+      regression/classification); returns a weekly timeline of production performance for sparkline.
+      `GET /api/deploy/{id}/training-vs-production` REST endpoint loads deployment, model run,
+      feedback records, and prediction logs; returns enriched result with `deployment_id`,
+      `algorithm`, and `target_column`; 404 for unknown, 503 if model metrics unavailable.
+      `_PROD_MONITOR_PATTERNS` regex (10 NL variants) + handler in `chat.py` guarded by
+      `ctx["deployment"]`. SSE type `prod_performance`. `ProdPerformanceCard` (adaptive border:
+      emerald=stable, amber=warning, rose=degrading, slate=no_feedback): `StatusBadge`,
+      `DegradationBadge` (shows "Error X% better than training" vs "Accuracy -X% vs training"),
+      `MetricBox` (training vs live side-by-side), Recharts `Timeline` with reference line marking
+      training baseline, `role="alert"` callouts for warning/degrading.
+      *Day 64 (12:00): 38 backend + 21 frontend = 59 new tests. Backend lint: clean. Frontend build + TypeScript: clean.*
+
+- [x] **Cross-Validation Score in Training Panel** — Track C perpetual. After each training run,
+      `train_single_model()` automatically runs 5-fold cross-validation on the full dataset using an
+      unfitted copy of the same model (reusing `run_cross_validation()` from `core/validator.py`)
+      and stores `cv_mean`, `cv_std`, and `cv_n_splits` in `ModelRun.metrics`. CV is skipped for
+      datasets with fewer than 10 rows. The training panel's `RunCard` now renders a `CvScoreRow`
+      beneath the train/test metrics: "5-fold CV R²: 0.81 ± 0.03 (stable)" with consistency label
+      color-coded emerald (std < 0.05 = stable), amber (< 0.1 = moderate), rose (≥ 0.1 = variable).
+      Tooltip explains what the range means for future prediction stability. `ModelMetricsRegression`
+      and `ModelMetricsClassification` TypeScript interfaces updated with optional `cv_mean`,
+      `cv_std`, `cv_n_splits` fields. Gives analysts the stability signal directly in the panel
+      without having to ask via chat — closes the "how do I know if my model is consistent?" gap.
+      *Day 64 (20:00): 4 backend unit tests + 4 frontend unit tests = 8 new tests. Backend lint: clean. Frontend build: clean.*
+
 ---
 
 ## Data Model
