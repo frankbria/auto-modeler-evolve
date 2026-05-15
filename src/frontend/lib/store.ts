@@ -148,6 +148,7 @@ interface AppState {
   attachApiKeyResultToLastMessage: (api_key_result: import("./types").ApiKeyResultInfo) => void
   attachDeploymentsOverviewToLastMessage: (deployments_overview: import("./types").DeploymentsOverviewResult) => void
   attachProdPerformanceToLastMessage: (prod_performance: import("./types").ProdPerformanceResult) => void
+  attachErrorDistributionToLastMessage: (error_distribution: import("./types").ErrorDistributionResult) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -1124,6 +1125,15 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, prod_performance }
+      }
+      return { messages }
+    }),
+  attachErrorDistributionToLastMessage: (error_distribution) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, error_distribution }
       }
       return { messages }
     }),

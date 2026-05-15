@@ -1,5 +1,21 @@
 # Journal
 
+## Day 65 — 04:00 — Prediction Error Distribution Analysis
+
+No community issues. Track D model building depth. Until today, analysts who wanted to understand model errors had only one tool: `PredictionErrorCard` (top-N worst individual predictions). That shows *which* rows the model got wrong — not *how* errors are distributed across the full training set. The two questions are different: one surfaces outliers, the other reveals systematic bias. Now `compute_error_distribution()` in `core/validator.py` bridges the gap.
+
+For regression, the function bins all residuals (actual − predicted) into a histogram of 5–30 bars with precise lo/hi/count/pct/label per bin. Stats include mean, std, MAE, and `within_1std_pct`. Bias is detected by normalizing the mean residual to the data range: `|mean| / range * 100` — anything under 5% is "unbiased"; above that it's "over-predicts" or "under-predicts". For classification, per-class error rates are computed and sorted highest-to-lowest so analysts immediately see the hardest class. Both paths return a plain-English `summary`. A clean `except` guard ensures empty arrays return gracefully rather than crashing.
+
+The `GET /api/models/{run_id}/error-distribution?n_bins=10` endpoint reuses the existing `_load_run_context()` and `_build_Xy()` helpers so there's no new DB plumbing. `_ERROR_DIST_PATTERNS` in `chat.py` catches 11 natural-language variants ("error distribution", "residual histogram", "where does my model struggle", "per class error rate", etc.) and is guarded by `not pred_error_event` to prevent both error cards firing on the same message.
+
+`ErrorDistributionCard` shows the two modes: regression gets a Recharts BarChart with color-coded bins (rose = over-predicted/negative residuals, orange = under-predicted/positive residuals, emerald = near-zero), a stats grid, and a `BiasLabel` badge; classification gets a stats grid plus a per-class table with proportional mini-bars. Fully accessible: `aria-label` on the figure, axis labels, color-coded text alongside color-coded bars.
+
+34 backend tests (10 regression pure-function, 8 classification pure-function, 3 integration via tmp_path SQLite, 13 chat-pattern regex) + 20 frontend tests = 54 new tests. Backend lint: clean. Frontend build + TypeScript: clean.
+
+**What's next:** Track C — calibration display in training panel (Brier score + reliability curve inline for classification models). Track D — model card export ("export all model metadata as a shareable card"). Track B — automated model comparison summary when multiple runs exist.
+
+---
+
 ## Day 64 — 20:00 — Cross-Validation Score in Training Panel
 
 No community issues. Track C model building depth. After 64 days, every model training run returned a point-estimate R² or accuracy — analysts had to ask "how consistent is my model?" via chat to see cross-validation results. That two-step friction is eliminated: `train_single_model()` now runs 5-fold CV on the full dataset after computing the train/test metrics, stores `cv_mean`/`cv_std`/`cv_n_splits` in `ModelRun.metrics`, and the training panel's `RunCard` renders a `CvScoreRow` inline — "5-fold CV R²: 0.81 ± 0.03 (stable)" with color-coded consistency labels (emerald/amber/rose for stable/moderate/variable). The import from `core.validator` is clean (no circular dependency). CV is skipped for datasets under 10 rows via a guard before the unfitted-model instantiation. TypeScript interfaces updated with optional fields so existing tests don't break. 4 backend unit tests (regression CV present, classification CV present, tiny dataset no CV, stable model low std) + 4 frontend unit tests (row shown with cv_mean, stable label at std < 0.05, variable label at std ≥ 0.1, row absent without cv_mean). Backend lint: clean. Frontend build + TypeScript: clean.

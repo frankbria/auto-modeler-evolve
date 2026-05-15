@@ -1406,6 +1406,22 @@ _PRED_ERROR_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# Chat intent: error distribution histogram — how are all errors distributed?
+# Distinct from: _PRED_ERROR_PATTERNS (top-N worst rows), _CV_SCORE_DIST_PATTERNS (fold consistency)
+_ERROR_DIST_PATTERNS = re.compile(
+    r"(?i)\b("
+    r"error\s+distribution|residual\s+histogram|residual\s+distribution|"
+    r"distribution\s+of\s+(prediction\s+)?errors?|"
+    r"how\s+are\s+(my\s+)?errors?\s+distributed|"
+    r"histogram\s+of\s+(prediction\s+)?errors?|"
+    r"error\s+histogram|spread\s+of\s+errors?|"
+    r"where\s+does\s+my\s+model\s+(struggle|fail|have\s+trouble)|"
+    r"per.class\s+error\s+rate|class\s+error\s+breakdown|"
+    r"misclassification\s+rate\s+by\s+class|which\s+class(es)?\s+(does\s+)?(my\s+model\s+)?struggle"
+    r")\b",
+    re.IGNORECASE,
+)
+
 # Chat intent: show me the data / peek at rows / display records
 # Intentionally excludes "show me top/bottom" (handled by TOPN) and
 # "show errors/mistakes" (handled by PRED_ERROR above).
@@ -7611,6 +7627,102 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Error analysis is nice-to-have; never crash chat
 
+    # Check for error distribution ("error distribution", "residual histogram", "where does model struggle")
+    # Distinct from pred_error_event (top-N worst rows) — this shows the distribution of ALL errors.
+    error_dist_event: dict | None = None
+    if (
+        _ERROR_DIST_PATTERNS.search(body.message)
+        and ctx["dataset"]
+        and ctx["model_runs"]
+        and not pred_error_event
+    ):
+        try:
+            _ed_done_runs = [r for r in ctx["model_runs"] if r.status == "done"]
+            _ed_sel_run = next((r for r in _ed_done_runs if r.is_selected), None)
+            _ed_best_run = _ed_sel_run or (
+                max(
+                    _ed_done_runs,
+                    key=lambda r: (json.loads(r.metrics) if r.metrics else {}).get(
+                        "r2",
+                        (json.loads(r.metrics) if r.metrics else {}).get("accuracy", 0),
+                    ),
+                )
+                if _ed_done_runs
+                else None
+            )
+            if (
+                _ed_best_run
+                and _ed_best_run.model_path
+                and Path(_ed_best_run.model_path).exists()
+            ):
+                _ed_fs = ctx.get("feature_set")
+                _ed_ds = ctx["dataset"]
+                _ed_file = Path(_ed_ds.file_path)
+                if _ed_fs and _ed_file.exists():
+                    import json as _ed_json
+
+                    _ed_transforms = _ed_json.loads(_ed_fs.transformations or "[]")
+                    _ed_df_raw = pd.read_csv(_ed_file)
+                    _ed_df_t = _ed_df_raw.copy()
+                    if _ed_transforms:
+                        from core.feature_engine import (
+                            apply_transformations as _ed_at,
+                        )
+
+                        _ed_df_t, _ = _ed_at(_ed_df_t, _ed_transforms)
+                    _ed_target = _ed_fs.target_column
+                    _ed_problem = _ed_fs.problem_type or "regression"
+                    _ed_feat_cols = [c for c in _ed_df_t.columns if c != _ed_target]
+                    from core.trainer import prepare_features as _ed_pf
+
+                    _ed_X, _ed_y, _ = _ed_pf(
+                        _ed_df_t, _ed_feat_cols, _ed_target, _ed_problem
+                    )
+                    import joblib as _ed_jl
+
+                    _ed_model = _ed_jl.load(_ed_best_run.model_path)
+                    _ed_y_pred = _ed_model.predict(_ed_X)
+
+                    # Resolve class labels from pipeline if available
+                    _ed_target_classes = None
+                    _ed_pipeline_path = _ed_best_run.model_path.replace(
+                        "_model.joblib", "_pipeline.joblib"
+                    )
+                    if Path(_ed_pipeline_path).exists():
+                        from core.deployer import load_pipeline as _ed_lp
+
+                        _ed_pipe = _ed_lp(_ed_pipeline_path)
+                        _ed_target_classes = getattr(_ed_pipe, "target_classes", None)
+
+                    from core.validator import (
+                        compute_error_distribution as _ed_ced,
+                    )
+
+                    _ed_result = _ed_ced(
+                        y_true=_ed_y,
+                        y_pred=_ed_y_pred,
+                        problem_type=_ed_problem,
+                        target_classes=_ed_target_classes,
+                    )
+                    error_dist_event = {
+                        "algorithm": _ed_best_run.algorithm,
+                        "target_col": _ed_target,
+                        **_ed_result,
+                    }
+                    system_prompt += (
+                        f"\n\n## Prediction Error Distribution\n"
+                        f"Problem type: {_ed_problem}. "
+                        f"Algorithm: {_ed_best_run.algorithm}. "
+                        f"Summary: {_ed_result['summary']}\n"
+                        "An ErrorDistributionCard is shown in chat. "
+                        "Narrate what the distribution reveals: "
+                        "for regression — is the model biased? are errors concentrated in a range? "
+                        "for classification — which classes struggle most and why that might be. "
+                        "Give the analyst an actionable next step."
+                    )
+        except Exception:  # noqa: BLE001
+            pass  # Error distribution is nice-to-have; never crash chat
+
     # Check for what-if / hypothetical prediction request ("what if revenue was 500?", etc.)
     whatif_chat_event: dict | None = None
     if _WHATIF_CHAT_PATTERNS.search(body.message) and ctx["deployment"]:
@@ -12390,6 +12502,10 @@ def send_message(
         # Emit prediction error analysis result
         if pred_error_event:
             yield f"data: {json.dumps({'type': 'prediction_errors', 'pred_errors': pred_error_event})}\n\n"
+
+        # Emit prediction error distribution histogram
+        if error_dist_event:
+            yield f"data: {json.dumps({'type': 'error_distribution', 'error_distribution': error_dist_event})}\n\n"
 
         # Emit onboarding wizard card
         if onboarding_event:

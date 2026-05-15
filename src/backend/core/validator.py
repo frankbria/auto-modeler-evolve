@@ -609,6 +609,183 @@ def compute_prediction_errors(
         }
 
 
+def compute_error_distribution(
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    problem_type: str,
+    n_bins: int = 10,
+    target_classes: list | None = None,
+) -> dict:
+    """Compute the distribution of prediction errors across all training rows.
+
+    For regression: histogram of residuals (actual - predicted), bias stats, shape.
+    For classification: per-class error rates showing which classes the model struggles with.
+
+    Args:
+        y_true: Ground-truth target values.
+        y_pred: Model predictions (same order as y_true).
+        problem_type: "regression" or "classification".
+        n_bins: Histogram bin count for regression (5-30, default 10).
+        target_classes: Class label list for classification decoding.
+
+    Returns:
+        dict with bins, stats, problem_type, summary.
+    """
+    n_bins = max(5, min(30, n_bins))
+    total = len(y_true)
+
+    if total == 0:
+        return {
+            "problem_type": problem_type,
+            "bins": [],
+            "stats": {},
+            "summary": "No training data available.",
+        }
+
+    if problem_type == "regression":
+        residuals = y_true - y_pred
+        mean_res = float(np.mean(residuals))
+        std_res = float(np.std(residuals))
+        mae = float(np.mean(np.abs(residuals)))
+        # Adaptive bin count: fewer bins for small datasets
+        actual_bins = min(n_bins, max(5, total // 10))
+        counts, edges = np.histogram(residuals, bins=actual_bins)
+
+        bins = []
+        for i in range(len(counts)):
+            lo = float(edges[i])
+            hi = float(edges[i + 1])
+            pct = round(float(counts[i]) / total * 100, 1)
+            bins.append(
+                {
+                    "lo": round(lo, 4),
+                    "hi": round(hi, 4),
+                    "count": int(counts[i]),
+                    "pct": pct,
+                    "label": f"{lo:.2f} to {hi:.2f}",
+                }
+            )
+
+        # Bias: if mean residual is far from 0, model is systematically over/under-predicting
+        y_range = float(np.ptp(y_true)) if np.ptp(y_true) != 0 else 1.0
+        bias_pct = abs(mean_res) / y_range * 100
+        if bias_pct < 2:
+            bias_label = "unbiased"
+            bias_desc = "The model has no systematic over- or under-prediction tendency."
+        elif mean_res > 0:
+            bias_label = "over-predicts"
+            bias_desc = (
+                f"The model tends to over-predict by {bias_pct:.1f}% of the data range "
+                f"on average (mean residual = +{mean_res:.3f})."
+            )
+        else:
+            bias_label = "under-predicts"
+            bias_desc = (
+                f"The model tends to under-predict by {bias_pct:.1f}% of the data range "
+                f"on average (mean residual = {mean_res:.3f})."
+            )
+
+        # Shape: are most errors small (tight) or spread out?
+        within_1std = int(np.sum(np.abs(residuals) <= std_res))
+        within_1std_pct = round(within_1std / total * 100, 1)
+
+        summary = (
+            f"Residual distribution across {total} training rows: "
+            f"MAE = {mae:.3f}, std = {std_res:.3f}. "
+            f"{within_1std_pct}% of errors fall within ±{std_res:.3f}. "
+            f"{bias_desc}"
+        )
+
+        stats = {
+            "mean": round(mean_res, 4),
+            "std": round(std_res, 4),
+            "mae": round(mae, 4),
+            "bias_label": bias_label,
+            "bias_pct": round(bias_pct, 2),
+            "within_1std_pct": within_1std_pct,
+            "total": total,
+        }
+
+        return {
+            "problem_type": problem_type,
+            "bins": bins,
+            "stats": stats,
+            "summary": summary,
+        }
+
+    else:
+        # Classification: per-class error rates
+        def _decode(v: float) -> str:
+            idx = int(round(v))
+            if target_classes and 0 <= idx < len(target_classes):
+                return str(target_classes[idx])
+            return str(idx)
+
+        y_true_labels = [_decode(v) for v in y_true]
+        y_pred_labels = [_decode(v) for v in y_pred]
+
+        # Build per-class metrics
+        unique_classes = sorted(set(y_true_labels))
+        class_rows = []
+        for cls in unique_classes:
+            true_mask = [t == cls for t in y_true_labels]
+            cls_total = sum(true_mask)
+            cls_wrong = sum(
+                1
+                for i, is_this in enumerate(true_mask)
+                if is_this and y_pred_labels[i] != cls
+            )
+            cls_error_rate = round(cls_wrong / cls_total, 4) if cls_total > 0 else 0.0
+            class_rows.append(
+                {
+                    "class": cls,
+                    "total": cls_total,
+                    "wrong": cls_wrong,
+                    "error_rate": cls_error_rate,
+                    "error_pct": round(cls_error_rate * 100, 1),
+                }
+            )
+
+        # Sort highest error first
+        class_rows.sort(key=lambda r: r["error_rate"], reverse=True)
+
+        total_wrong = sum(r["wrong"] for r in class_rows)
+        overall_error_rate = round(total_wrong / total, 4) if total > 0 else 0.0
+        overall_accuracy = round(1 - overall_error_rate, 4)
+
+        worst = class_rows[0] if class_rows else None
+        best = class_rows[-1] if class_rows else None
+
+        if worst and best and worst["class"] != best["class"]:
+            summary = (
+                f"The model is {overall_accuracy:.0%} accurate across {total} training rows. "
+                f"Hardest class: '{worst['class']}' ({worst['error_pct']:.0f}% errors). "
+                f"Easiest class: '{best['class']}' ({best['error_pct']:.0f}% errors). "
+                "Large gaps between classes may indicate data imbalance or feature gaps."
+            )
+        else:
+            summary = (
+                f"The model is {overall_accuracy:.0%} accurate across {total} training rows "
+                f"({total_wrong} misclassifications)."
+            )
+
+        stats = {
+            "total": total,
+            "total_wrong": total_wrong,
+            "overall_error_rate": overall_error_rate,
+            "overall_accuracy": overall_accuracy,
+            "n_classes": len(unique_classes),
+        }
+
+        return {
+            "problem_type": problem_type,
+            "bins": [],
+            "class_breakdown": class_rows,
+            "stats": stats,
+            "summary": summary,
+        }
+
+
 def _overall_confidence(
     metrics: dict,
     problem_type: str,

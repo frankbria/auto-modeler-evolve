@@ -31,6 +31,7 @@ from core.trainer import (
 from core.validator import (
     assess_confidence_limitations,
     compute_confusion_matrix,
+    compute_error_distribution,
     compute_fairness_metrics,
     compute_prediction_errors,
     compute_residuals,
@@ -391,7 +392,63 @@ def get_prediction_errors(
 
 
 # ---------------------------------------------------------------------------
-# 5. Partial dependence plot
+# 5. Prediction error distribution
+# ---------------------------------------------------------------------------
+
+
+@router.get("/api/models/{model_run_id}/error-distribution")
+def get_error_distribution(
+    model_run_id: str,
+    n_bins: int = 10,
+    session: Session = Depends(get_session),
+):
+    """Return the distribution of prediction errors across all training rows.
+
+    For regression: histogram of residuals with bias and spread stats.
+    For classification: per-class error rates showing which classes struggle.
+
+    Query params:
+        n_bins: Histogram bin count for regression (5-30, default 10).
+    """
+    n_bins = max(5, min(30, n_bins))
+    run, feature_set, dataset, file_path = _load_run_context(model_run_id, session)
+
+    problem_type = feature_set.problem_type or "regression"
+    X, y, feature_cols = _build_Xy(file_path, feature_set)
+
+    fitted_model = joblib.load(run.model_path)
+    y_pred = fitted_model.predict(X)
+
+    # Resolve class labels from pipeline if available
+    target_classes = None
+    if run.model_path:
+        pipeline_path = run.model_path.replace("_model.joblib", "_pipeline.joblib")
+        try:
+            from core.deployer import load_pipeline as _lp
+
+            if Path(pipeline_path).exists():
+                _pipe = _lp(pipeline_path)
+                target_classes = getattr(_pipe, "target_classes", None)
+        except Exception:  # noqa: BLE001
+            pass
+
+    result = compute_error_distribution(
+        y_true=y,
+        y_pred=y_pred,
+        problem_type=problem_type,
+        n_bins=n_bins,
+        target_classes=target_classes,
+    )
+
+    result["model_run_id"] = model_run_id
+    result["algorithm"] = run.algorithm
+    result["target_col"] = feature_set.target_column
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# 6. Partial dependence plot
 # ---------------------------------------------------------------------------
 
 

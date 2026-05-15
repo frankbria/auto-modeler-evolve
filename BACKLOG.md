@@ -49,6 +49,14 @@ the time is better spent on real features.
 
 ## Currently Working On
 
+## Day 65 (04:00) — Done
+**Track D — Prediction Error Distribution Analysis.** Analysts can now ask "show me the error distribution", "residual histogram", "where does my model struggle?", "per class error rate", and 8 other NL variants to see a histogram of ALL prediction errors — distinct from `PredictionErrorCard` (top-N worst individual rows). Pure function `compute_error_distribution()` in `core/validator.py`: regression bins residuals into a 5–30 bar histogram with bias detection (unbiased/over-predicts/under-predicts via normalized mean residual); classification returns per-class error rates sorted highest-to-lowest with decoded class names. REST endpoint `GET /api/models/{run_id}/error-distribution`. `_ERROR_DIST_PATTERNS` (11 NL variants, guarded by `not pred_error_event`). SSE type `error_distribution`. `ErrorDistributionCard` with color-coded Recharts BarChart for regression + per-class table with mini bars for classification. 34 backend + 20 frontend = 54 new tests. Backend lint: clean. Frontend build + TypeScript: clean.
+
+**What's next:**
+- Track C: Calibration display in training panel — show calibration curve + Brier score alongside CV score for classification models
+- Track D: Model card export — "export all my model metadata as a shareable card"
+- Track B: Automated model comparison summary — when multiple runs exist, "which model is best and why?"
+
 ## Day 64 (20:00) — Done
 **Track C — Cross-Validation Score in Training Panel.** After each training run, `train_single_model()` now automatically runs 5-fold cross-validation on the full dataset using an unfitted copy of the same model (reusing `run_cross_validation()` from `core/validator.py`) and stores `cv_mean`, `cv_std`, `cv_n_splits` in `ModelRun.metrics`. CV skipped for datasets < 10 rows. The training panel's `RunCard` now shows a `CvScoreRow` beneath train/test metrics: "5-fold CV R²: 0.81 ± 0.03 (stable)" with color-coded consistency label (emerald=stable std<0.05, amber=moderate <0.1, rose=variable ≥0.1). TypeScript types updated. 4 backend + 4 frontend tests. Backend lint: clean. Frontend build: clean.
 

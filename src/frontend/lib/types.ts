@@ -508,6 +508,7 @@ export interface ChatMessage {
   api_key_result?: ApiKeyResultInfo
   deployments_overview?: DeploymentsOverviewResult
   prod_performance?: ProdPerformanceResult
+  error_distribution?: ErrorDistributionResult
 }
 
 export interface SegmentPerformanceSegment {
@@ -3129,4 +3130,50 @@ export interface ProdPerformanceResult {
   n_feedback?: number
   weekly_timeline?: ProdPerformancePeriod[]
   summary: string
+}
+
+// ---------------------------------------------------------------------------
+// Error distribution (histogram of residuals / per-class error rates)
+// ---------------------------------------------------------------------------
+
+export interface ErrorDistributionBin {
+  lo: number
+  hi: number
+  count: number
+  pct: number
+  label: string
+}
+
+export interface ErrorDistributionClassRow {
+  class: string
+  total: number
+  wrong: number
+  error_rate: number
+  error_pct: number
+}
+
+export interface ErrorDistributionStats {
+  // Regression fields
+  mean?: number
+  std?: number
+  mae?: number
+  bias_label?: "unbiased" | "over-predicts" | "under-predicts"
+  bias_pct?: number
+  within_1std_pct?: number
+  total?: number
+  // Classification fields
+  total_wrong?: number
+  overall_error_rate?: number
+  overall_accuracy?: number
+  n_classes?: number
+}
+
+export interface ErrorDistributionResult {
+  problem_type: "regression" | "classification"
+  bins: ErrorDistributionBin[]
+  class_breakdown?: ErrorDistributionClassRow[]
+  stats: ErrorDistributionStats
+  summary: string
+  algorithm?: string
+  target_col?: string
 }
