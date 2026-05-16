@@ -512,6 +512,7 @@ export interface ChatMessage {
   model_card_export?: ModelCardExportInfo
   model_comparison_summary?: ModelComparisonSummaryResult
   cross_model_features?: CrossModelFeatureResult
+  accuracy_alert_config?: AccuracyAlertConfig
 }
 
 export interface SegmentPerformanceSegment {
@@ -1018,6 +1019,18 @@ export interface QuotaAlertConfig {
   monthly_quota: number | null
   used_this_month: number
   pct_used: number | null
+  summary: string
+}
+
+export interface AccuracyAlertConfig {
+  deployment_id: string
+  accuracy_alert_enabled: boolean
+  accuracy_alert_threshold: number | null
+  accuracy_alert_fired: boolean
+  problem_type: string
+  metric_label: string
+  current_metric: number | null
+  n_feedback: number
   summary: string
 }
 

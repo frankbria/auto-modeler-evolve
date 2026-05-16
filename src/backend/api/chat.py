@@ -2625,6 +2625,29 @@ _DISABLE_QUOTA_ALERT_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Keywords that trigger accuracy degradation alert configuration via chat
+_ACCURACY_ALERT_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"alert\s+(?:me\s+)?when\s+(?:my\s+)?(?:model\s+)?(?:feedback\s+)?accuracy\s+(?:drops?|falls?|goes?)\s+below|"
+    r"notify\s+(?:me\s+)?when\s+(?:my\s+)?(?:feedback\s+)?accuracy\s+(?:drops?|falls?|goes?)\s+(?:below|under)|"
+    r"(?:set|configure|add)\s+(?:an?\s+)?accuracy\s+(?:degradation\s+)?alert|"
+    r"accuracy\s+(?:degradation\s+)?(?:alert|warning|threshold|notification)\b|"
+    r"model\s+(?:performance|accuracy)\s+(?:alert|warning|threshold)\b|"
+    r"(?:alert|warn|notify)\s+(?:me\s+)?(?:if|when)\s+(?:my\s+)?(?:model|feedback)\s+(?:accuracy|performance)\s+(?:drops?|falls?|degrades?|declines?)|"
+    r"(?:disable|remove|turn\s+off|clear)\s+(?:the\s+)?accuracy\s+(?:degradation\s+)?alert|"
+    r"(?:check|show|get)\s+(?:my\s+)?accuracy\s+(?:degradation\s+)?(?:alert|threshold|warning)\b"
+    r")",
+    re.IGNORECASE,
+)
+
+_ACCURACY_ALERT_THRESHOLD_RE = re.compile(
+    r"\b(\d+(?:\.\d+)?)\s*(?:%|percent)?\b", re.IGNORECASE
+)
+_DISABLE_ACCURACY_ALERT_RE = re.compile(
+    r"\b(?:disable|remove|turn\s+off|clear)\s+(?:the\s+)?accuracy\s+(?:degradation\s+)?alert",
+    re.IGNORECASE,
+)
+
 # Keywords that trigger class imbalance detection via chat
 _CLASS_IMBALANCE_PATTERNS = re.compile(
     r"(?i)\b("
@@ -9987,6 +10010,93 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Quota alert events are nice-to-have; never crash chat
 
+    # Accuracy degradation alert configuration
+    accuracy_alert_event: dict | None = None
+    if _ACCURACY_ALERT_PATTERNS.search(body.message) and ctx["deployment"]:
+        try:
+            from api.deploy import (
+                _compute_feedback_accuracy_simple as _comp_acc,
+            )
+
+            _acc_dep = ctx["deployment"]
+            _acc_dep_id = _acc_dep.id if hasattr(_acc_dep, "id") else str(_acc_dep)
+            _acc_dep_obj = session.get(Deployment, _acc_dep_id)
+
+            if _acc_dep_obj:
+                _disable_acc = bool(_DISABLE_ACCURACY_ALERT_RE.search(body.message))
+                _thr_m = _ACCURACY_ALERT_THRESHOLD_RE.search(body.message)
+                _new_thr_raw: float | None = float(_thr_m.group(1)) if _thr_m else None
+
+                _prob_type = _acc_dep_obj.problem_type or "regression"
+
+                # Normalize: if user says "80%" for classification, convert to 0.8
+                _new_thr: float | None = None
+                if _new_thr_raw is not None:
+                    if _prob_type == "classification" and _new_thr_raw > 1.0:
+                        _new_thr = _new_thr_raw / 100.0
+                    else:
+                        _new_thr = _new_thr_raw
+
+                if _disable_acc:
+                    _acc_dep_obj.accuracy_alert_threshold = None
+                    _acc_dep_obj.accuracy_alert_fired = False
+                    session.add(_acc_dep_obj)
+                    session.commit()
+                    session.refresh(_acc_dep_obj)
+                elif _new_thr is not None:
+                    # Validate range
+                    _valid = (
+                        0.0 <= _new_thr <= 1.0
+                        if _prob_type == "classification"
+                        else 0 <= _new_thr <= 100
+                    )
+                    if _valid:
+                        _acc_dep_obj.accuracy_alert_threshold = _new_thr
+                        _acc_dep_obj.accuracy_alert_fired = False
+                        session.add(_acc_dep_obj)
+                        session.commit()
+                        session.refresh(_acc_dep_obj)
+
+                _thr_now = getattr(_acc_dep_obj, "accuracy_alert_threshold", None)
+                _fired = bool(getattr(_acc_dep_obj, "accuracy_alert_fired", False))
+                _, _cur_metric, _n_fb = _comp_acc(session, _acc_dep_obj)
+                _metric_label = "pct_error" if _prob_type == "regression" else "accuracy"
+
+                accuracy_alert_event = {
+                    "deployment_id": _acc_dep_id,
+                    "accuracy_alert_enabled": _thr_now is not None,
+                    "accuracy_alert_threshold": _thr_now,
+                    "accuracy_alert_fired": _fired,
+                    "problem_type": _prob_type,
+                    "metric_label": _metric_label,
+                    "current_metric": _cur_metric,
+                    "n_feedback": _n_fb,
+                    "summary": (
+                        f"Accuracy alert active: webhook fires when {_metric_label} "
+                        + (
+                            f"drops below {_thr_now:.0%}."
+                            if _prob_type == "classification" and _thr_now is not None
+                            else f"exceeds {_thr_now:.1f}%."
+                            if _thr_now is not None
+                            else ""
+                        )
+                        if _thr_now is not None
+                        else "Accuracy alert disabled."
+                    ),
+                }
+                system_prompt += (
+                    f"\n\n## Accuracy Degradation Alert\n"
+                    f"{accuracy_alert_event['summary']} "
+                    "Tell the analyst the current accuracy alert setting in plain English. "
+                    "If a threshold was just set, confirm it. "
+                    "Explain that when feedback shows real-world accuracy crosses the threshold, "
+                    "a webhook notification will fire. "
+                    "If disabled, confirm and suggest they can set one at any time. "
+                    "Remind them that webhooks must be registered first."
+                )
+        except Exception:  # noqa: BLE001
+            pass  # Accuracy alert events are nice-to-have; never crash chat
+
     # A/B test status / promote / end
     ab_test_result_event: dict | None = None
     if _AB_TEST_PATTERNS.search(body.message) and ctx["deployment"]:
@@ -12941,6 +13051,10 @@ def send_message(
         # Emit quota alert configuration card
         if quota_alert_event:
             yield f"data: {json.dumps({'type': 'quota_alert_config', 'quota_alert_config': quota_alert_event})}\n\n"
+
+        # Emit accuracy degradation alert configuration card
+        if accuracy_alert_event:
+            yield f"data: {json.dumps({'type': 'accuracy_alert_config', 'accuracy_alert_config': accuracy_alert_event})}\n\n"
 
         # Emit batch prediction schedule event
         if schedule_event:

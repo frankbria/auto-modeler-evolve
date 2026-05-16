@@ -1,5 +1,31 @@
 # Journal
 
+## Day 66 — 12:00 — Model Accuracy Degradation Alert via Chat
+
+No community issues. Track D feature: analysts can now configure accuracy-based webhook alerts entirely through chat — "alert me when my model accuracy drops below 80%", "set accuracy alert at 0.75", "configure accuracy degradation alert", "disable accuracy alert", "check accuracy alert threshold", or any of 8 NL variants. After each feedback submission, the system automatically checks aggregate feedback accuracy against the threshold and fires an `accuracy_alert` webhook exactly once on first threshold crossing (alert-once semantics with a `fired` flag that resets when the threshold changes).
+
+**The gap this closes.** Two prior alert systems cover different scenarios: `CustomPredictionAlertRule` fires on individual predicted values ("alert when revenue < $100k"), and `ProactiveCovariateDriftAlert` monitors input feature distributions. Neither covers "is my model actually getting predictions right over time?" — the question analysts ask after collecting a few weeks of real-world feedback. This feature closes that gap by computing a live accuracy metric from `FeedbackRecord` rows and firing a webhook when it degrades below the analyst's tolerance.
+
+**Backend: `_compute_feedback_accuracy_simple(session, deployment)`.** Returns `(problem_type, metric_value, n_feedback)`. For classification, metric_value is accuracy (0–1, ratio of `is_correct=True` records). For regression, metric_value is pct_error (0–100), computed from paired (actual_value, prediction_log.prediction_numeric) rows — MAE divided by mean actual magnitude. Returns `metric_value=None` when no usable feedback exists (classification: no records with `is_correct` set; regression: no records with a linked PredictionLog). Problem type comes from `deployment.problem_type`.
+
+**`_check_and_fire_accuracy_alert(deployment_id, problem_type, metric_value, threshold)`.** Fires `EVENT_ACCURACY_ALERT` webhook when metric breaches threshold: classification fires when `accuracy < threshold`, regression fires when `pct_error > threshold`. Best-effort: entire function wrapped in `try/except`, never crashes anything. Webhook payload includes deployment_id, problem_type, metric_value, threshold, and a plain-English explanation.
+
+**Alert-once semantics wired into `submit_feedback()`.** After committing each FeedbackRecord, the feedback endpoint reads `accuracy_alert_threshold` and `accuracy_alert_fired` from the deployment. If threshold is set and not yet fired: computes the metric, checks for breach, sets `accuracy_alert_fired=True` in DB, then starts a daemon thread calling `_check_and_fire_accuracy_alert`. The `fired` flag ensures only the first crossing triggers a webhook — subsequent feedback submissions while still below threshold do nothing. `PUT /api/deploy/{id}/accuracy-alert` always resets `fired=False` so re-configuration gets a fresh alert.
+
+**Model field + inline migration.** `Deployment` SQLModel gains `accuracy_alert_threshold: Optional[float]` and `accuracy_alert_fired: bool = Field(default=False)`. `db.py` `_apply_migrations()` adds both columns to pre-existing databases with `ALTER TABLE deployment ADD COLUMN ...`.
+
+**Endpoints.** `PUT /api/deploy/{id}/accuracy-alert` validates threshold range (0–1 for classification, 0–100 for regression), persists threshold and resets fired flag, returns full config + live metric. `GET /api/deploy/{id}/accuracy-alert-status` returns current threshold, fired flag, live metric, n_feedback, summary.
+
+**Chat integration.** `_ACCURACY_ALERT_PATTERNS` regex (8 NL variants including set/configure/disable/check/show intents) in `chat.py`. `_ACCURACY_ALERT_THRESHOLD_RE` extracts numeric thresholds (handles "80%" → 0.8 for classification, "15" → 15.0 for regression). `_DISABLE_ACCURACY_ALERT_RE` detects disable intent. Handler detects disable/set/status intent, normalizes % → decimal for classification, validates range, writes to DB, builds `accuracy_alert_event` dict, injects summary into system prompt, emits `{type:"accuracy_alert_config"}` SSE event.
+
+**Frontend.** `AccuracyAlertConfig` TypeScript interface; `accuracy_alert_config?` on `ChatMessage`; `attachAccuracyAlertConfigToLastMessage()` Zustand action; `api.deploy.accuracyAlertStatus(id)` + `api.deploy.setAccuracyAlert(id, threshold)` client methods; `AccuracyAlertCard` (amber border, 🎯 icon): header with enabled/disabled badge + "Alert fired" badge when triggered, summary paragraph, threshold explanation row, current metric display with breach color coding (red when breaching, emerald when healthy), feedback count, help text footer. SSE handler + card render wired in workspace `page.tsx`.
+
+**Tests.** 21 backend tests: regex pattern set (13 phrases) + no false positives + threshold extraction + disable detection; PUT endpoint (set, clear, reset-fired, invalid-deployment, out-of-range); GET endpoint (no-threshold, with-threshold, invalid); `_compute_feedback_accuracy_simple` (no-feedback, regression-with-data); `_check_and_fire_accuracy_alert` (classification breach, classification no-breach, regression breach, regression no-breach, respects-fired-flag); DB flag persistence round-trip. 20 frontend tests: aria-label, icon, heading, enabled badge, disabled badge, fired badge, threshold explanation, regression threshold label, current metric classification, current metric regression, red breach badge, green healthy badge, "Below threshold" text, no-feedback message, summary, help footer, regression exceeds language, store attach, store user-skip, store empty. All 41 pass.
+
+*Day 66 (12:00): 21 backend + 20 frontend = 41 new tests. Total: 4171 backend + 2291 frontend = 6462, all passing. Backend lint: clean. Frontend build: clean.*
+
+---
+
 ## Day 66 — 04:00 — Cross-Model Feature Importance Comparison via Chat
 
 No community issues. Track B feature: analysts can now ask "which features matter most across all my models?", "feature importance comparison", "what drives predictions?", "feature consensus", or any of 13 NL variants and receive an inline `CrossModelFeaturesCard` that compares feature importances across all completed model runs.

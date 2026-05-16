@@ -49,6 +49,18 @@ the time is better spent on real features.
 
 ## Currently Working On
 
+---
+
+## Day 66 (12:00) — Done
+**Track D — Model Accuracy Degradation Alert via Chat.**
+
+Analysts configure accuracy-based webhook alerts entirely through chat: "alert me when my model accuracy drops below 80%", "notify me when feedback accuracy falls under 75%", "check my accuracy alert", "disable accuracy alert". After each feedback submission, system checks aggregate feedback accuracy vs. threshold, fires webhook once on first crossing. `_compute_feedback_accuracy_simple()` computes live metric from FeedbackRecord table — classification: accuracy (0–1), regression: pct_error (0–100). `accuracy_alert_fired` flag prevents repeated alerts; resets when threshold changes. `PUT /api/deploy/{id}/accuracy-alert` + `GET /api/deploy/{id}/accuracy-alert-status`. `AccuracyAlertCard` (amber border, 🎯 icon): breach color coding, fired badge. 21 backend + 20 frontend = 41 new tests. Backend lint: clean. Frontend build: clean.
+
+**What's next:**
+- Track D: Champion-challenger A/B testing via chat — leverage existing A/B test infrastructure for conversational champion/challenger setup
+- Track C: What-if scenario analysis panel — allow analysts to simulate predictions by adjusting feature values interactively
+- Track D: Deployment rollback to previous version via chat — "roll back my model", "revert to version 2"
+
 ## Day 66 (04:00) — Done
 **Track B — Cross-Model Feature Importance Comparison via Chat.**
 

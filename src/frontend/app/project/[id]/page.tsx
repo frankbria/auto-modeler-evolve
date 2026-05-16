@@ -57,6 +57,7 @@ import { ConversationExportCard } from "@/components/chat/conversation-export-ca
 import { ModelCardExportCard } from "@/components/chat/model-card-export-card"
 import { ModelComparisonSummaryCard } from "@/components/chat/model-comparison-summary-card"
 import { CrossModelFeaturesCard } from "@/components/chat/cross-model-features-card"
+import { AccuracyAlertCard } from "@/components/deploy/accuracy-alert-card"
 import { ProjectHealthCard } from "@/components/chat/project-health-card"
 import { PredictionOpportunitiesCard } from "@/components/models/prediction-opportunities-card"
 import { DatasetComparisonCard } from "@/components/data/dataset-comparison-card"
@@ -323,6 +324,7 @@ export default function ProjectWorkspace() {
     attachModelCardExportToLastMessage,
     attachModelComparisonSummaryToLastMessage,
     attachCrossModelFeaturesToLastMessage,
+    attachAccuracyAlertConfigToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -795,6 +797,8 @@ export default function ProjectWorkspace() {
                 attachModelComparisonSummaryToLastMessage(json.model_comparison_summary as import("@/lib/types").ModelComparisonSummaryResult)
               } else if (json.type === "cross_model_features" && json.cross_model_features) {
                 attachCrossModelFeaturesToLastMessage(json.cross_model_features as import("@/lib/types").CrossModelFeatureResult)
+              } else if (json.type === "accuracy_alert_config" && json.accuracy_alert_config) {
+                attachAccuracyAlertConfigToLastMessage(json.accuracy_alert_config as import("@/lib/types").AccuracyAlertConfig)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -920,6 +924,7 @@ export default function ProjectWorkspace() {
     attachModelCardExportToLastMessage,
     attachModelComparisonSummaryToLastMessage,
     attachCrossModelFeaturesToLastMessage,
+    attachAccuracyAlertConfigToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -1484,6 +1489,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.cross_model_features && (
                       <CrossModelFeaturesCard result={msg.cross_model_features} />
+                    )}
+                    {msg.accuracy_alert_config && (
+                      <AccuracyAlertCard config={msg.accuracy_alert_config} />
                     )}
                   </div>
                 </div>

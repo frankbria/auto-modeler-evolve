@@ -1226,5 +1226,26 @@ export const api = {
       )
       if (!res.ok) throw new Error(await res.text())
     },
+
+    accuracyAlertStatus: async (deploymentId: string) => {
+      const res = await fetch(
+        `${API_URL}/api/deploy/${deploymentId}/accuracy-alert-status`
+      )
+      if (!res.ok) throw new Error(await res.text())
+      return res.json()
+    },
+
+    setAccuracyAlert: async (deploymentId: string, threshold: number | null) => {
+      const res = await fetch(
+        `${API_URL}/api/deploy/${deploymentId}/accuracy-alert`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ threshold }),
+        }
+      )
+      if (!res.ok) throw new Error(await res.text())
+      return res.json()
+    },
   },
 }

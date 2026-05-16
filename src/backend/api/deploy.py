@@ -2103,6 +2103,30 @@ def submit_feedback(
     session.commit()
     session.refresh(record)
 
+    # Check accuracy alert threshold after each feedback submission
+    _acc_thr = getattr(deployment, "accuracy_alert_threshold", None)
+    _acc_fired = bool(getattr(deployment, "accuracy_alert_fired", False))
+    if _acc_thr is not None and not _acc_fired:
+        try:
+            _prob, _metric, _n = _compute_feedback_accuracy_simple(session, deployment)
+            if _metric is not None:
+                _breach = (
+                    (_prob == "regression" and _metric > _acc_thr)
+                    or (_prob != "regression" and _metric < _acc_thr)
+                )
+                if _breach:
+                    deployment.accuracy_alert_fired = True
+                    session.add(deployment)
+                    session.commit()
+                    import threading as _t
+                    _t.Thread(
+                        target=_check_and_fire_accuracy_alert,
+                        args=(deployment_id, _prob, _metric, _acc_thr),
+                        daemon=True,
+                    ).start()
+        except Exception:
+            pass  # Never crash the feedback path
+
     return {
         "id": record.id,
         "deployment_id": deployment_id,
@@ -2288,6 +2312,211 @@ def get_feedback_accuracy(
             ),
             "problem_type": problem_type,
         }
+
+
+# ---------------------------------------------------------------------------
+# 12b. Accuracy degradation alert configuration
+# ---------------------------------------------------------------------------
+
+
+def _compute_feedback_accuracy_simple(
+    session: Session, deployment: Deployment
+) -> tuple[str, float | None, int]:
+    """Return (problem_type, metric_value, n_feedback) for accuracy alert checks.
+
+    For classification: metric_value is accuracy (0-1, higher = better).
+    For regression: metric_value is pct_error (0-100, lower = better).
+    Returns metric_value=None when no usable feedback exists.
+    """
+    problem_type = deployment.problem_type or "regression"
+    feedback_records = session.exec(
+        select(FeedbackRecord).where(FeedbackRecord.deployment_id == deployment.id)
+    ).all()
+
+    n = len(feedback_records)
+    if n == 0:
+        return problem_type, None, 0
+
+    if problem_type == "regression":
+        pairs = []
+        for fb in feedback_records:
+            if fb.actual_value is not None and fb.prediction_log_id:
+                log_entry = session.get(PredictionLog, fb.prediction_log_id)
+                if log_entry and log_entry.prediction_numeric is not None:
+                    pairs.append((fb.actual_value, log_entry.prediction_numeric))
+        if not pairs:
+            return problem_type, None, n
+        mae = sum(abs(a - p) for a, p in pairs) / len(pairs)
+        avg_actual = sum(a for a, _ in pairs) / len(pairs)
+        pct_error = (mae / (abs(avg_actual) + 1e-9)) * 100
+        return problem_type, round(pct_error, 4), n
+    else:
+        rated = [fb for fb in feedback_records if fb.is_correct is not None]
+        if not rated:
+            return problem_type, None, n
+        accuracy = sum(1 for fb in rated if fb.is_correct is True) / len(rated)
+        return problem_type, round(accuracy, 4), n
+
+
+def _check_and_fire_accuracy_alert(
+    deployment_id: str,
+    problem_type: str,
+    metric_value: float,
+    threshold: float,
+) -> None:
+    """Fire accuracy_alert webhook once when metric crosses the threshold.
+
+    For classification: fires when accuracy drops below threshold (lower = worse).
+    For regression: fires when pct_error exceeds threshold (higher = worse).
+    Dispatched in a daemon thread — never blocks the feedback path.
+    """
+    try:
+        from core.webhook import EVENT_ACCURACY_ALERT, dispatch_webhooks
+
+        if problem_type == "regression":
+            triggered = metric_value > threshold
+            direction = "above"
+            metric_label = "pct_error"
+        else:
+            triggered = metric_value < threshold
+            direction = "below"
+            metric_label = "accuracy"
+
+        if not triggered:
+            return
+
+        payload = {
+            "deployment_id": deployment_id,
+            "metric_label": metric_label,
+            "metric_value": metric_value,
+            "threshold": threshold,
+            "direction": direction,
+            "message": (
+                f"Accuracy alert: {metric_label} is {metric_value:.4f}, which is "
+                f"{direction} your configured threshold of {threshold:.4f}. "
+                "Consider reviewing your model or collecting more training data."
+            ),
+        }
+        dispatch_webhooks(deployment_id, EVENT_ACCURACY_ALERT, payload)
+    except Exception:
+        pass  # Best-effort; never crash the feedback path
+
+
+class AccuracyAlertRequest(BaseModel):
+    threshold: float | None = None  # 0.0-1.0 for classification, 0-100 for regression (% error)
+
+
+@router.put("/api/deploy/{deployment_id}/accuracy-alert")
+def set_accuracy_alert(
+    deployment_id: str,
+    body: AccuracyAlertRequest,
+    session: Session = Depends(get_session),
+):
+    """Configure an accuracy degradation alert for a deployed model.
+
+    For classification models: ``threshold`` is the minimum acceptable accuracy
+    (0.0–1.0). Alert fires when feedback accuracy falls below this value.
+
+    For regression models: ``threshold`` is the maximum acceptable % error
+    (0–100). Alert fires when feedback pct_error rises above this value.
+
+    Pass ``threshold=null`` or omit to disable the alert.
+    """
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment:
+        raise HTTPException(status_code=404, detail="Deployment not found")
+
+    thr = body.threshold
+    problem_type = deployment.problem_type or "regression"
+
+    if thr is not None:
+        if problem_type == "regression":
+            if not (0 <= thr <= 100):
+                raise HTTPException(
+                    status_code=422,
+                    detail="threshold must be between 0 and 100 for regression (% error).",
+                )
+        else:
+            if not (0.0 <= thr <= 1.0):
+                raise HTTPException(
+                    status_code=422,
+                    detail="threshold must be between 0.0 and 1.0 for classification (accuracy).",
+                )
+
+    deployment.accuracy_alert_threshold = thr if thr is not None else None
+    # Reset fired flag when threshold changes so the alert can fire again
+    deployment.accuracy_alert_fired = False
+    session.add(deployment)
+    session.commit()
+    session.refresh(deployment)
+
+    _, current_metric, n_feedback = _compute_feedback_accuracy_simple(session, deployment)
+    threshold_set = deployment.accuracy_alert_threshold is not None
+    metric_label = "pct_error" if problem_type == "regression" else "accuracy"
+
+    return {
+        "deployment_id": deployment_id,
+        "accuracy_alert_enabled": threshold_set,
+        "accuracy_alert_threshold": deployment.accuracy_alert_threshold,
+        "accuracy_alert_fired": bool(deployment.accuracy_alert_fired),
+        "problem_type": problem_type,
+        "metric_label": metric_label,
+        "current_metric": current_metric,
+        "n_feedback": n_feedback,
+        "summary": (
+            f"Accuracy alert set: webhook fires when {metric_label} "
+            + (
+                f"drops below {thr:.0%}."
+                if problem_type == "classification" and thr is not None
+                else f"exceeds {thr:.1f}%."
+                if thr is not None
+                else ""
+            )
+            if threshold_set
+            else "Accuracy alert disabled."
+        ),
+    }
+
+
+@router.get("/api/deploy/{deployment_id}/accuracy-alert-status")
+def get_accuracy_alert_status(
+    deployment_id: str,
+    session: Session = Depends(get_session),
+):
+    """Return the current accuracy alert configuration and live metric."""
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment:
+        raise HTTPException(status_code=404, detail="Deployment not found")
+
+    threshold = getattr(deployment, "accuracy_alert_threshold", None)
+    fired = bool(getattr(deployment, "accuracy_alert_fired", False))
+    problem_type = deployment.problem_type or "regression"
+    metric_label = "pct_error" if problem_type == "regression" else "accuracy"
+
+    _, current_metric, n_feedback = _compute_feedback_accuracy_simple(session, deployment)
+
+    return {
+        "deployment_id": deployment_id,
+        "accuracy_alert_enabled": threshold is not None,
+        "accuracy_alert_threshold": threshold,
+        "accuracy_alert_fired": fired,
+        "problem_type": problem_type,
+        "metric_label": metric_label,
+        "current_metric": current_metric,
+        "n_feedback": n_feedback,
+        "summary": (
+            f"Alert enabled: fires when {metric_label} "
+            + (
+                f"drops below {threshold:.0%}"
+                if problem_type == "classification"
+                else f"exceeds {threshold:.1f}%"
+            )
+            + (f" (currently {current_metric:.4f})" if current_metric is not None else "")
+            + ("." if threshold is not None else "")
+            if threshold is not None
+            else "No accuracy alert configured."
+        ),
+    }
 
 
 # ---------------------------------------------------------------------------

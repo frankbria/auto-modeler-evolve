@@ -152,6 +152,7 @@ interface AppState {
   attachModelCardExportToLastMessage: (model_card_export: import("./types").ModelCardExportInfo) => void
   attachModelComparisonSummaryToLastMessage: (model_comparison_summary: import("./types").ModelComparisonSummaryResult) => void
   attachCrossModelFeaturesToLastMessage: (cross_model_features: import("./types").CrossModelFeatureResult) => void
+  attachAccuracyAlertConfigToLastMessage: (accuracy_alert_config: import("./types").AccuracyAlertConfig) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -1164,6 +1165,15 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, cross_model_features }
+      }
+      return { messages }
+    }),
+  attachAccuracyAlertConfigToLastMessage: (accuracy_alert_config) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, accuracy_alert_config }
       }
       return { messages }
     }),
