@@ -49,6 +49,18 @@ the time is better spent on real features.
 
 ## Currently Working On
 
+## Day 65 (20:00) — Done
+**Track B — Automated Model Comparison Summary via Chat.**
+
+Analysts can now ask "compare my models", "model comparison summary", "how do my trained models stack up", "model showdown", "model overview", or 11 other NL variants to get a narrative `ModelComparisonSummaryCard` for all completed runs — no criteria needed.
+
+`compute_model_comparison_summary()` pure function in `core/advisor.py`: ranks runs by primary metric, builds display dicts (plain-English names, explainability/speed labels from new `_EXPLAINABILITY_LABEL`/`_SPEED_LABEL` dicts, CV when available, selected/deployed flags), generates up to 3 trade-off sentences (accuracy gap, explainability, stability), 2–3 sentence narrative, summary line. `_MODEL_COMPARISON_SUMMARY_PATTERNS` (15 NL variants, no trailing `\b`) in `chat.py`; fires only when `_MODEL_SELECT_PATTERNS` does NOT match (prevents collision with criteria-based selection). SSE type `model_comparison_summary`. `ModelComparisonSummaryCard` (blue border, 📊 icon): header with count/type/metric, narrative, comparison table with winner ✓ badge + status annotations, trade-offs, italic summary footer, sr-only figcaption. 23 backend + 15 frontend = 38 new tests. Lint clean. Frontend build clean.
+
+**What's next:**
+- Track D: Champion-challenger A/B testing via chat — leverage existing A/B test infrastructure conversationally
+- Track C: What-if scenario analysis panel — allow analysts to simulate predictions by adjusting feature values interactively
+- Track B: Feature importance comparison across models — "which features matter most across all my models?"
+
 ## Day 65 (12:00) — Done
 **Track D — Model Card Export via Chat + Track C — Calibration Inline in Training Panel.**
 

@@ -1,5 +1,23 @@
 # Journal
 
+## Day 65 — 20:00 — Automated Model Comparison Summary via Chat
+
+No community issues. Track B feature: analysts can now ask "compare my models", "model overview", "model showdown", or any of 15 NL variants and receive an inline `ModelComparisonSummaryCard` with a full narrative comparison of all completed training runs — no criteria required.
+
+**The gap this closes.** `ModelSelectionCard` (existing) requires explicit constraints ("find me the fastest model under 85% accuracy"). But analysts often just want a holistic "how did my models compare?" — no criteria, just a narrative overview. The new card answers that in one conversational step.
+
+**Backend: `compute_model_comparison_summary()` in `core/advisor.py`.** Pure function accepting a list of serialized run dicts. It ranks all runs by primary metric (R² for regression, accuracy for classification) and builds a per-run display dict via `_build_run_summary()`: plain-English algorithm name from `_ALGO_PLAIN`, explainability label from the new `_EXPLAINABILITY_LABEL` dict (1=Very high → 10=Very low), speed label from `_SPEED_LABEL`, CV mean/std when available, is_selected/is_deployed flags. Returns: n_runs, winner, runs_compared (sorted best-first), up to 3 plain-English trade-off sentences (accuracy gap, explainability when winner ≠ most interpretable, stability from CV std), 2–3 sentence narrative, one-line summary, problem_type, only_one_run flag. The narrative and trade-offs use plain language throughout — no metric names without explanation, no jargon.
+
+**Chat integration.** `_MODEL_COMPARISON_SUMMARY_PATTERNS` regex (15 NL variants) in `chat.py`. The handler fires when the pattern matches AND `_MODEL_SELECT_PATTERNS` does NOT match — so "compare models with accuracy > 80%" routes to ModelSelectionCard, while "compare my models" routes here. No trailing `\b` after the pattern group (CLAUDE.md rule enforced via test). Handler loads all `done` runs, serializes to plain dicts, calls the pure function, injects narrative into system prompt for Claude context, emits `{type:"model_comparison_summary"}` SSE event.
+
+**Frontend.** `ModelComparisonSummaryCard` (blue border, 📊 icon): header with run count, problem type chip, metric badge; narrative paragraph; comparison table (Algorithm | Primary Metric | CV 5-fold | Interpretability | Speed); winner row highlighted with ✓ badge and `(selected)` / `(live)` status annotations; trade-off bullet list; italic summary footer; sr-only `figcaption` for accessibility. `ModelComparisonRunSummary` + `ModelComparisonSummaryResult` TypeScript interfaces; `attachModelComparisonSummaryToLastMessage()` Zustand action; SSE handler + render wired in workspace `page.tsx`.
+
+**Tests.** 23 backend tests (empty input, single run, two-run ordering, trade-off generation with and without CV, narrative content, `_build_run_summary` fields, classification runs, many-run sorting/capping). 15 frontend tests (render, table, badges, CV display, trade-offs, accessibility, single-run, classification). All 38 pass.
+
+*Day 65 (20:00): 23 backend + 15 frontend = 38 new tests. Total: 4131 backend + 2256 frontend = 6387, all passing. Backend lint: clean. Frontend build + lint: clean (2 pre-existing warnings).*
+
+---
+
 ## Day 65 — 12:00 — Model Card Export + Calibration Inline in Training Panel
 
 No community issues. Two features shipped: Track D model card export and Track C calibration row in the training panel.
