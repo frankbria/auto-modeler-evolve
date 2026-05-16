@@ -1,7 +1,5 @@
 """Tests for compute_model_comparison_summary in core/advisor.py."""
 
-import pytest
-
 from core.advisor import compute_model_comparison_summary, _build_run_summary
 
 
