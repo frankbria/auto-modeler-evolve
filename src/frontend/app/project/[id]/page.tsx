@@ -56,6 +56,7 @@ import { AutoRetrainCard } from "@/components/models/auto-retrain-card"
 import { ConversationExportCard } from "@/components/chat/conversation-export-card"
 import { ModelCardExportCard } from "@/components/chat/model-card-export-card"
 import { ModelComparisonSummaryCard } from "@/components/chat/model-comparison-summary-card"
+import { CrossModelFeaturesCard } from "@/components/chat/cross-model-features-card"
 import { ProjectHealthCard } from "@/components/chat/project-health-card"
 import { PredictionOpportunitiesCard } from "@/components/models/prediction-opportunities-card"
 import { DatasetComparisonCard } from "@/components/data/dataset-comparison-card"
@@ -321,6 +322,7 @@ export default function ProjectWorkspace() {
     attachErrorDistributionToLastMessage,
     attachModelCardExportToLastMessage,
     attachModelComparisonSummaryToLastMessage,
+    attachCrossModelFeaturesToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -791,6 +793,8 @@ export default function ProjectWorkspace() {
                 attachModelCardExportToLastMessage(json.model_card_export as import("@/lib/types").ModelCardExportInfo)
               } else if (json.type === "model_comparison_summary" && json.model_comparison_summary) {
                 attachModelComparisonSummaryToLastMessage(json.model_comparison_summary as import("@/lib/types").ModelComparisonSummaryResult)
+              } else if (json.type === "cross_model_features" && json.cross_model_features) {
+                attachCrossModelFeaturesToLastMessage(json.cross_model_features as import("@/lib/types").CrossModelFeatureResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -915,6 +919,7 @@ export default function ProjectWorkspace() {
     attachErrorDistributionToLastMessage,
     attachModelCardExportToLastMessage,
     attachModelComparisonSummaryToLastMessage,
+    attachCrossModelFeaturesToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -1476,6 +1481,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.model_comparison_summary && (
                       <ModelComparisonSummaryCard result={msg.model_comparison_summary} />
+                    )}
+                    {msg.cross_model_features && (
+                      <CrossModelFeaturesCard result={msg.cross_model_features} />
                     )}
                   </div>
                 </div>

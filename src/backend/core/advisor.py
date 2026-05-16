@@ -1012,3 +1012,132 @@ def _build_comparison_summary(
         f"{winner['algorithm_plain']} wins across {n} models "
         f"({metric_pct:.1f}% {metric_name})."
     )
+
+
+def compute_cross_model_feature_importance(
+    runs_with_importances: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Compare feature importances across multiple trained model runs.
+
+    Each entry in runs_with_importances must have:
+      run_id, algorithm, algorithm_plain,
+      importances: [{feature, importance, rank}]
+
+    Returns a dict with n_models, features (capped at 15 entries),
+    consensus_features, top_feature, and a narrative summary string.
+    """
+    n_models = len(runs_with_importances)
+    if n_models == 0:
+        return {
+            "n_models": 0,
+            "features": [],
+            "consensus_features": [],
+            "top_feature": None,
+            "summary": "No trained models with feature importances found.",
+        }
+
+    # Accumulate per-feature data across models
+    feature_data: dict[str, list[dict[str, Any]]] = {}
+    for run in runs_with_importances:
+        algo_plain = run.get("algorithm_plain", "")
+        for item in run.get("importances", []):
+            fname = item.get("feature", "")
+            if not fname:
+                continue
+            if fname not in feature_data:
+                feature_data[fname] = []
+            feature_data[fname].append(
+                {
+                    "algorithm_plain": algo_plain,
+                    "importance": item.get("importance", 0.0),
+                    "rank": item.get("rank", 999),
+                }
+            )
+
+    if not feature_data:
+        return {
+            "n_models": n_models,
+            "features": [],
+            "consensus_features": [],
+            "top_feature": None,
+            "summary": "Models were trained but returned no feature importances.",
+        }
+
+    features: list[dict[str, Any]] = []
+    for fname, model_imps in feature_data.items():
+        imp_vals = [x["importance"] for x in model_imps]
+        n_with_data = len(imp_vals)
+        mean_imp = sum(imp_vals) / n_with_data if n_with_data else 0.0
+        if n_with_data > 1:
+            variance = sum((v - mean_imp) ** 2 for v in imp_vals) / n_with_data
+            std_dev = variance**0.5
+            cov = std_dev / mean_imp if mean_imp > 0 else 1.0
+        else:
+            cov = 0.0
+        consistency = "high" if cov < 0.3 else ("medium" if cov <= 0.7 else "variable")
+        agreement_count = sum(1 for x in model_imps if x["rank"] <= 5)
+        features.append(
+            {
+                "feature": fname,
+                "mean_importance": mean_imp,
+                "n_models_with_data": n_with_data,
+                "agreement_count": agreement_count,
+                "consistency": consistency,
+                "per_model": model_imps,
+            }
+        )
+
+    features.sort(key=lambda x: x["mean_importance"], reverse=True)
+    features = features[:15]
+
+    consensus_features = [
+        f["feature"]
+        for f in features
+        if f["agreement_count"] == n_models and f["n_models_with_data"] == n_models
+    ]
+
+    top_feature = features[0]["feature"] if features else None
+    summary = _build_cross_model_summary(
+        n_models, features, consensus_features, top_feature
+    )
+
+    return {
+        "n_models": n_models,
+        "features": features,
+        "consensus_features": consensus_features,
+        "top_feature": top_feature,
+        "summary": summary,
+    }
+
+
+def _build_cross_model_summary(
+    n_models: int,
+    features: list[dict[str, Any]],
+    consensus_features: list[str],
+    top_feature: str | None,
+) -> str:
+    if not features or not top_feature:
+        return "No feature importance data available."
+    n_feat = len(features)
+    if n_models == 1:
+        return (
+            f"Across your 1 trained model, '{top_feature}' is the most important feature "
+            f"out of {n_feat} shown. Train more models to see cross-model agreement."
+        )
+    if consensus_features:
+        agreed = ", ".join(f"'{f}'" for f in consensus_features[:3])
+        suffix = (
+            f" and {len(consensus_features) - 3} more"
+            if len(consensus_features) > 3
+            else ""
+        )
+        return (
+            f"Across {n_models} models, {agreed}{suffix} consistently rank in the top 5 "
+            f"— these are your most robust predictors."
+        )
+    top5 = [f["feature"] for f in features[:3]]
+    listed = ", ".join(f"'{f}'" for f in top5)
+    return (
+        f"Across {n_models} models, {listed} tend to rank highest, "
+        f"though different algorithms weight them differently."
+    )

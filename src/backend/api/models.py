@@ -2309,3 +2309,79 @@ def get_learning_curve(project_id: str, session: Session = Depends(get_session))
 
     result["project_id"] = project_id
     return result
+
+
+# ---------------------------------------------------------------------------
+# Cross-Model Feature Importance Comparison
+# ---------------------------------------------------------------------------
+
+
+@router.get("/api/models/{project_id}/cross-model-features")
+def get_cross_model_features(project_id: str, session: Session = Depends(get_session)):
+    """Compare feature importances across all completed model runs."""
+    import joblib
+
+    from core.advisor import compute_cross_model_feature_importance
+    from core.explainer import compute_feature_importance
+
+    project = session.get(Project, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    completed_runs = session.exec(
+        select(ModelRun).where(
+            ModelRun.project_id == project_id,
+            ModelRun.status == "done",
+        )
+    ).all()
+    if not completed_runs:
+        raise HTTPException(status_code=404, detail="No completed model runs found")
+
+    feature_set = session.exec(
+        select(FeatureSet).where(FeatureSet.project_id == project_id)
+    ).first()
+    dataset = session.exec(
+        select(Dataset).where(Dataset.project_id == project_id)
+    ).first()
+    if not feature_set or not dataset:
+        raise HTTPException(status_code=404, detail="Dataset or feature set not found")
+
+    target_col = feature_set.target_column or ""
+    transformations = json.loads(feature_set.transformations or "[]")
+
+    import pandas as pd
+
+    df = pd.read_csv(dataset.file_path)
+    if transformations:
+        from core.feature_engine import apply_transformations
+
+        df, _ = apply_transformations(df, transformations)
+    feat_cols = [c for c in df.columns if c != target_col]
+
+    runs_wi: list[dict] = []
+    for run in completed_runs:
+        if not run.model_path:
+            continue
+        try:
+            model = joblib.load(run.model_path)
+            imps = compute_feature_importance(model, feat_cols)
+            runs_wi.append(
+                {
+                    "run_id": run.id,
+                    "algorithm": run.algorithm,
+                    "algorithm_plain": _algorithm_plain_name(run.algorithm),
+                    "importances": imps,
+                }
+            )
+        except Exception:  # noqa: BLE001
+            pass
+
+    if not runs_wi:
+        raise HTTPException(
+            status_code=422,
+            detail="No model files with feature importances found.",
+        )
+
+    result = compute_cross_model_feature_importance(runs_wi)
+    result["project_id"] = project_id
+    return result

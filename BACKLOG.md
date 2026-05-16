@@ -49,6 +49,18 @@ the time is better spent on real features.
 
 ## Currently Working On
 
+## Day 66 (04:00) — Done
+**Track B — Cross-Model Feature Importance Comparison via Chat.**
+
+Analysts can now ask "which features matter most across all my models?", "feature importance comparison", "what drives predictions?", "feature consensus", or 11 other NL variants to get a `CrossModelFeaturesCard` comparing feature importances across all completed model runs.
+
+`compute_cross_model_feature_importance()` pure function in `core/advisor.py`: accepts runs_with_importances list, computes per-feature mean_importance/consistency (CoV-based: high/medium/variable)/agreement_count (models ranking feature ≤ 5)/n_models_with_data; caps at 15; identifies consensus_features. `_CROSS_MODEL_FEAT_PATTERNS` (13 NL variants) in `chat.py`. SSE type `cross_model_features`. `GET /api/models/{project_id}/cross-model-features` REST endpoint. `CrossModelFeaturesCard` (violet border, 🔍 icon): consensus chip callout, feature table with importance bars + consistency badges. 19 backend + 15 frontend = 34 new tests. Backend lint: clean. Frontend build: clean.
+
+**What's next:**
+- Track D: Champion-challenger A/B testing via chat — leverage existing A/B test infrastructure for conversational champion/challenger setup
+- Track C: What-if scenario analysis panel — allow analysts to simulate predictions by adjusting feature values interactively
+- Track B: Model drift detection alerts — "alert me when my model's accuracy drops below X%"
+
 ## Day 65 (20:00) — Done
 **Track B — Automated Model Comparison Summary via Chat.**
 
@@ -59,7 +71,7 @@ Analysts can now ask "compare my models", "model comparison summary", "how do my
 **What's next:**
 - Track D: Champion-challenger A/B testing via chat — leverage existing A/B test infrastructure conversationally
 - Track C: What-if scenario analysis panel — allow analysts to simulate predictions by adjusting feature values interactively
-- Track B: Feature importance comparison across models — "which features matter most across all my models?"
+- Track B: Feature importance comparison across models — "which features matter most across all my models?" ✓ Done Day 66
 
 ## Day 65 (12:00) — Done
 **Track D — Model Card Export via Chat + Track C — Calibration Inline in Training Panel.**

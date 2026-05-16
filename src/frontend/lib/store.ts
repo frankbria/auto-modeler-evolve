@@ -151,6 +151,7 @@ interface AppState {
   attachErrorDistributionToLastMessage: (error_distribution: import("./types").ErrorDistributionResult) => void
   attachModelCardExportToLastMessage: (model_card_export: import("./types").ModelCardExportInfo) => void
   attachModelComparisonSummaryToLastMessage: (model_comparison_summary: import("./types").ModelComparisonSummaryResult) => void
+  attachCrossModelFeaturesToLastMessage: (cross_model_features: import("./types").CrossModelFeatureResult) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -1154,6 +1155,15 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, model_comparison_summary }
+      }
+      return { messages }
+    }),
+  attachCrossModelFeaturesToLastMessage: (cross_model_features) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, cross_model_features }
       }
       return { messages }
     }),

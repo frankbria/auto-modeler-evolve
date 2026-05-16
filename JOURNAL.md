@@ -1,5 +1,25 @@
 # Journal
 
+## Day 66 — 04:00 — Cross-Model Feature Importance Comparison via Chat
+
+No community issues. Track B feature: analysts can now ask "which features matter most across all my models?", "feature importance comparison", "what drives predictions?", "feature consensus", or any of 13 NL variants and receive an inline `CrossModelFeaturesCard` that compares feature importances across all completed model runs.
+
+**The gap this closes.** Per-model feature importance has existed since Day 3 (SHAP/native importances). But analysts with multiple trained models have had no way to ask "do all my algorithms agree on which features matter?" — a key question when deciding which features to trust before deploying. This feature answers that in one conversational step: here are your robust predictors (all models agree), here are the contested ones (algorithms weight them differently).
+
+**Backend: `compute_cross_model_feature_importance()` in `core/advisor.py`.** Pure function accepting `[{run_id, algorithm, algorithm_plain, importances:[{feature,importance,rank}]}]`. For each feature it computes: mean_importance (average across all models that include the feature), coefficient of variation (std/mean), consistency label ("high" when CoV < 0.3, "medium" 0.3–0.7, "variable" > 0.7 — signals whether algorithms agree on the feature's weight), agreement_count (models where the feature ranks in the top 5), n_models_with_data. Features are sorted by mean_importance descending and capped at 15 (UI readability). consensus_features are those appearing in the top 5 of every model — the most robust predictors. `_build_cross_model_summary()` leads with consensus features when they exist ("'age' and 'income' consistently rank in the top 5 — these are your most robust predictors"), otherwise lists the top-3 by mean importance with a caveat about disagreement.
+
+**Chat integration.** `_CROSS_MODEL_FEAT_PATTERNS` regex (13 NL variants including "feature importance", "which features matter", "top features", "key features", "predictor importance", "feature agreement", "feature consensus") in `chat.py`. Handler guards on `ctx["model_runs"]`, `ctx["feature_set"]`, and `ctx["dataset"]`; loads CSV, applies stored transformations, extracts feature columns (all except target), loops through done runs loading each joblib model, calls `compute_feature_importance()` from `core/explainer.py`, accumulates the `runs_with_importances` list, calls the pure function, injects summary and top-feature into system prompt. Standard guard: `except Exception: pass` — rich card is enhancement, never crashes chat. Emits `{type:"cross_model_features"}` SSE event.
+
+**REST endpoint.** `GET /api/models/{project_id}/cross-model-features` in `api/models.py` provides programmatic access — same logic as the chat handler, same pure function call. Returns 404 when no completed runs exist, 422 when no runs have loadable model files.
+
+**Frontend.** `CrossModelFeaturesCard` (violet border, 🔍 icon): header with model count + consensus count chip; summary paragraph; consensus callout box (violet-100 background) with feature chips (pill badges, one per consensus feature) only when consensus features exist; feature table (# | Feature | mean importance bar | "Top-5 in X/N models" | consistency badge). `ConsistencyBadge` component: emerald = Consistent, amber = Moderate, rose = Variable. `ImportanceBar` renders a linear gradient bar (0–100%) with font-mono percentage label. Consensus features get a ★ star glyph and violet row highlight. Legend footer: "★ = appears in top 5 across all models · Top-5 in = models where this feature ranks ≤ 5". SR-accessible: `aria-label` on figure, sr-only figcaption. `CrossModelFeaturePerModel`/`CrossModelFeatureEntry`/`CrossModelFeatureResult` TypeScript interfaces; `attachCrossModelFeaturesToLastMessage()` Zustand action; `api.models.crossModelFeatures(projectId)` client; SSE handler + card render wired in `page.tsx`.
+
+**Tests.** 19 backend tests (empty, no importances, missing key, single-model, two-model mean/agreement/consensus, three-model top feature + summary, high/variable consistency, 15-feature cap, sort order, return shape). 15 frontend tests (null guard, zero-models guard, heading, model count, summary, feature rows, consistency badges, consensus callout, consensus chip render, no-consensus suppression, accessibility, single-model variant). All 34 pass.
+
+*Day 66 (04:00): 19 backend + 15 frontend = 34 new tests. Total: 4150 backend + 2271 frontend = 6421, all passing. Backend lint: clean. Frontend build + lint: clean.*
+
+---
+
 ## Day 65 — 20:00 — Automated Model Comparison Summary via Chat
 
 No community issues. Track B feature: analysts can now ask "compare my models", "model overview", "model showdown", or any of 15 NL variants and receive an inline `ModelComparisonSummaryCard` with a full narrative comparison of all completed training runs — no criteria required.

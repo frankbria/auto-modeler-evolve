@@ -511,6 +511,7 @@ export interface ChatMessage {
   error_distribution?: ErrorDistributionResult
   model_card_export?: ModelCardExportInfo
   model_comparison_summary?: ModelComparisonSummaryResult
+  cross_model_features?: CrossModelFeatureResult
 }
 
 export interface SegmentPerformanceSegment {
@@ -3225,4 +3226,28 @@ export interface ModelComparisonSummaryResult {
   summary: string
   problem_type: string
   only_one_run: boolean
+}
+
+export interface CrossModelFeaturePerModel {
+  algorithm_plain: string
+  importance: number
+  rank: number
+}
+
+export interface CrossModelFeatureEntry {
+  feature: string
+  mean_importance: number
+  n_models_with_data: number
+  agreement_count: number
+  consistency: 'high' | 'medium' | 'variable'
+  per_model: CrossModelFeaturePerModel[]
+}
+
+export interface CrossModelFeatureResult {
+  project_id?: string
+  n_models: number
+  features: CrossModelFeatureEntry[]
+  consensus_features: string[]
+  top_feature: string | null
+  summary: string
 }

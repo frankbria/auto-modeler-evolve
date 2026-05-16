@@ -707,6 +707,12 @@ export const api = {
         return r.json()
       }),
 
+    crossModelFeatures: (projectId: string): Promise<import("./types").CrossModelFeatureResult> =>
+      fetch(`${API_URL}/api/models/${projectId}/cross-model-features`).then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        return r.json()
+      }),
+
     train: (
       projectId: string,
       algorithms: string[],

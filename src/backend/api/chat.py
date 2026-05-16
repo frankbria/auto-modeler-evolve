@@ -166,6 +166,16 @@ _MODEL_COMPARISON_SUMMARY_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# Keywords that trigger cross-model feature importance comparison
+_CROSS_MODEL_FEAT_PATTERNS = re.compile(
+    r"\b(feature.*importan|importan.*feature|which.*feature.*matter|"
+    r"feature.*across.*model|compare.*feature|feature.*comparison|"
+    r"what.*drive|which.*variable.*important|most.*importan.*variable|"
+    r"variable.*importan|top.*feature|key.*feature|importan.*predictor|"
+    r"predictor.*importan|feature.*agreement|feature.*consensus)",
+    re.IGNORECASE,
+)
+
 # Keywords that trigger model selection advisor
 # Distinct from _IMPROVEMENT_PATTERNS (improve existing) — these ask "which model to use"
 _MODEL_SELECT_PATTERNS = re.compile(
@@ -4477,6 +4487,75 @@ def send_message(
                     "and the most important trade-off. Keep it non-technical and "
                     "actionable — the analyst needs to decide which model to use."
                 )
+            except Exception:  # noqa: BLE001
+                pass  # Nice-to-have; never crash chat
+
+    # Cross-model feature importance comparison
+    cross_model_feat_event: dict | None = None
+    if _CROSS_MODEL_FEAT_PATTERNS.search(body.message) and ctx["model_runs"]:
+        done_runs = [mr for mr in ctx["model_runs"] if mr.status == "done"]
+        if len(done_runs) >= 1 and ctx["feature_set"] and ctx["dataset"]:
+            try:
+                from core.advisor import (
+                    compute_cross_model_feature_importance as _cmcfi,
+                )
+                from core.explainer import compute_feature_importance as _cfi
+
+                _cmf_fs = ctx["feature_set"]
+                _cmf_ds = ctx["dataset"]
+                _cmf_target = _cmf_fs.target_column or ""
+                _cmf_tfms = json.loads(_cmf_fs.transformations or "[]")
+
+                import pandas as _pd_cmf
+
+                _cmf_df = _pd_cmf.read_csv(_cmf_ds.file_path)
+                if _cmf_tfms:
+                    from core.feature_engine import apply_transformations as _apply_cmf
+
+                    _cmf_df, _ = _apply_cmf(_cmf_df, _cmf_tfms)
+                _cmf_feat_cols = [c for c in _cmf_df.columns if c != _cmf_target]
+
+                import joblib as _jl_cmf
+
+                from api.models import _algorithm_plain_name as _apn_cmf
+
+                _runs_wi: list[dict] = []
+                for _cmf_run in done_runs:
+                    if not _cmf_run.model_path:
+                        continue
+                    try:
+                        _cmf_model = _jl_cmf.load(_cmf_run.model_path)
+                        _imps = _cfi(_cmf_model, _cmf_feat_cols)
+                        _runs_wi.append(
+                            {
+                                "run_id": _cmf_run.id,
+                                "algorithm": _cmf_run.algorithm,
+                                "algorithm_plain": _apn_cmf(_cmf_run.algorithm),
+                                "importances": _imps,
+                            }
+                        )
+                    except Exception:  # noqa: BLE001
+                        pass
+
+                if _runs_wi:
+                    cross_model_feat_event = _cmcfi(_runs_wi)
+                    cross_model_feat_event["project_id"] = body.project_id
+
+                    _cmf_top = cross_model_feat_event.get("top_feature", "")
+                    _cmf_consensus = cross_model_feat_event.get(
+                        "consensus_features", []
+                    )
+                    _cmf_summary = cross_model_feat_event.get("summary", "")
+                    system_prompt += (
+                        f"\n\n## Cross-Model Feature Importance ({len(_runs_wi)} models)\n"
+                        f"Top feature: {_cmf_top}\n"
+                        f"Consensus features (top-5 in ALL models): "
+                        f"{', '.join(_cmf_consensus) if _cmf_consensus else 'none'}\n"
+                        f"Summary: {_cmf_summary}\n\n"
+                        "Present the feature importance comparison conversationally. "
+                        "Highlight which features matter most, especially any that "
+                        "all models agree on. Use plain language — no statistics jargon."
+                    )
             except Exception:  # noqa: BLE001
                 pass  # Nice-to-have; never crash chat
 
@@ -12547,6 +12626,10 @@ def send_message(
         # Emit model comparison summary if computed
         if model_comparison_summary_event:
             yield f"data: {json.dumps({'type': 'model_comparison_summary', 'model_comparison_summary': model_comparison_summary_event})}\n\n"
+
+        # Emit cross-model feature importance if computed
+        if cross_model_feat_event:
+            yield f"data: {json.dumps({'type': 'cross_model_features', 'cross_model_features': cross_model_feat_event})}\n\n"
 
         # Emit model selection recommendation if computed
         if model_select_event:
