@@ -925,12 +925,8 @@ def _build_trade_offs(
     # Stability trade-off: CV score variance (if available)
     runs_with_cv = [r for r in runs_compared if r["cv_mean"] is not None]
     if len(runs_with_cv) >= 2:
-        most_stable = min(
-            runs_with_cv, key=lambda r: (r["cv_std"] or 1.0)
-        )
-        least_stable = max(
-            runs_with_cv, key=lambda r: (r["cv_std"] or 0.0)
-        )
+        most_stable = min(runs_with_cv, key=lambda r: r["cv_std"] or 1.0)
+        least_stable = max(runs_with_cv, key=lambda r: r["cv_std"] or 0.0)
         if (
             most_stable["algorithm"] != least_stable["algorithm"]
             and (least_stable["cv_std"] or 0) - (most_stable["cv_std"] or 0) > 0.01

@@ -10,7 +10,9 @@ from core.advisor import compute_model_comparison_summary, _build_run_summary
 # ---------------------------------------------------------------------------
 
 
-def _regression_run(algo: str, r2: float, cv_mean: float | None = None, cv_std: float | None = None) -> dict:
+def _regression_run(
+    algo: str, r2: float, cv_mean: float | None = None, cv_std: float | None = None
+) -> dict:
     metrics: dict = {"r2": r2, "mae": 50.0}
     if cv_mean is not None:
         metrics["cv_mean"] = cv_mean
@@ -56,9 +58,9 @@ def test_empty_runs_returns_no_winner():
 
 
 def test_single_run_only_one_run_flag():
-    result = compute_model_comparison_summary([
-        _regression_run("linear_regression", 0.75)
-    ])
+    result = compute_model_comparison_summary(
+        [_regression_run("linear_regression", 0.75)]
+    )
     assert result["only_one_run"] is True
     assert result["n_runs"] == 1
     assert result["winner"]["algorithm"] == "linear_regression"
@@ -67,9 +69,9 @@ def test_single_run_only_one_run_flag():
 
 
 def test_single_run_summary_mentions_algorithm():
-    result = compute_model_comparison_summary([
-        _regression_run("random_forest_regressor", 0.82)
-    ])
+    result = compute_model_comparison_summary(
+        [_regression_run("random_forest_regressor", 0.82)]
+    )
     assert "Random Forest" in result["summary"]
     assert result["only_one_run"] is True
 
@@ -91,10 +93,12 @@ def test_two_runs_winner_is_best_metric():
 
 
 def test_two_runs_not_only_one():
-    result = compute_model_comparison_summary([
-        _regression_run("linear_regression", 0.60),
-        _regression_run("random_forest_regressor", 0.85),
-    ])
+    result = compute_model_comparison_summary(
+        [
+            _regression_run("linear_regression", 0.60),
+            _regression_run("random_forest_regressor", 0.85),
+        ]
+    )
     assert result["only_one_run"] is False
     assert len(result["trade_offs"]) >= 1
 
@@ -178,13 +182,16 @@ def test_narrative_explainability_when_winner_is_not_most_explainable():
     ]
     result = compute_model_comparison_summary(runs)
     # Should mention Linear Regression as most interpretable alternative
-    assert "Linear Regression" in result["narrative"] or "interpretable" in result["narrative"]
+    assert (
+        "Linear Regression" in result["narrative"]
+        or "interpretable" in result["narrative"]
+    )
 
 
 def test_narrative_single_run_no_runner_up():
-    result = compute_model_comparison_summary([
-        _regression_run("linear_regression", 0.75)
-    ])
+    result = compute_model_comparison_summary(
+        [_regression_run("linear_regression", 0.75)]
+    )
     assert "Linear Regression" in result["narrative"]
     # No second model mentioned in a way that implies comparison
     assert "edging out" not in result["narrative"]
@@ -206,7 +213,10 @@ def test_build_run_summary_regression_fields():
     assert summary["cv_mean"] is not None
     assert summary["cv_std"] is not None
     assert summary["explainability_label"] == "Very high"
-    assert "fast" in summary["speed_label"].lower() or "very fast" in summary["speed_label"].lower()
+    assert (
+        "fast" in summary["speed_label"].lower()
+        or "very fast" in summary["speed_label"].lower()
+    )
 
 
 def test_build_run_summary_classification_fields():
@@ -248,10 +258,12 @@ def test_summary_mentions_winner_algorithm():
 
 
 def test_summary_single_run_train_more_hint():
-    result = compute_model_comparison_summary([
-        _regression_run("linear_regression", 0.72)
-    ])
-    assert "train more" in result["summary"].lower() or "only" in result["summary"].lower()
+    result = compute_model_comparison_summary(
+        [_regression_run("linear_regression", 0.72)]
+    )
+    assert (
+        "train more" in result["summary"].lower() or "only" in result["summary"].lower()
+    )
 
 
 # ---------------------------------------------------------------------------
