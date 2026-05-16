@@ -118,7 +118,11 @@ async def regression_project(ac):
     assert resp.status_code == 201, resp.text
     deployment_id = resp.json()["id"]
 
-    return {"project_id": project_id, "dataset_id": dataset_id, "deployment_id": deployment_id}
+    return {
+        "project_id": project_id,
+        "dataset_id": dataset_id,
+        "deployment_id": deployment_id,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -158,7 +162,9 @@ def test_accuracy_alert_patterns_no_false_positives():
         "what is the drift score",
     ]
     for phrase in non_matches:
-        assert not _ACCURACY_ALERT_PATTERNS.search(phrase), f"False positive: {phrase!r}"
+        assert not _ACCURACY_ALERT_PATTERNS.search(phrase), (
+            f"False positive: {phrase!r}"
+        )
 
 
 def test_accuracy_alert_threshold_re_extracts_percent():
@@ -208,7 +214,9 @@ async def test_put_accuracy_alert_sets_threshold(regression_project, ac):
 async def test_put_accuracy_alert_clears_threshold(regression_project, ac):
     dep_id = regression_project["deployment_id"]
     await ac.put(f"/api/deploy/{dep_id}/accuracy-alert", json={"threshold": 0.8})
-    resp = await ac.put(f"/api/deploy/{dep_id}/accuracy-alert", json={"threshold": None})
+    resp = await ac.put(
+        f"/api/deploy/{dep_id}/accuracy-alert", json={"threshold": None}
+    )
     assert resp.status_code == 200
     data = resp.json()
     assert data["accuracy_alert_threshold"] is None
@@ -220,7 +228,9 @@ async def test_put_accuracy_alert_resets_fired_flag(regression_project, ac):
     # Set a threshold
     await ac.put(f"/api/deploy/{dep_id}/accuracy-alert", json={"threshold": 0.9})
     # Simulate fired (direct DB write not needed — changing threshold resets it)
-    resp = await ac.put(f"/api/deploy/{dep_id}/accuracy-alert", json={"threshold": 0.85})
+    resp = await ac.put(
+        f"/api/deploy/{dep_id}/accuracy-alert", json={"threshold": 0.85}
+    )
     assert resp.status_code == 200
     assert resp.json()["accuracy_alert_fired"] is False
 
@@ -328,7 +338,9 @@ async def test_compute_feedback_accuracy_regression_with_data(regression_project
 
     with Session(engine) as session:
         deployment = session.get(Deployment, dep_id)
-        problem_type, metric_value, n = _compute_feedback_accuracy_simple(session, deployment)
+        problem_type, metric_value, n = _compute_feedback_accuracy_simple(
+            session, deployment
+        )
 
     assert problem_type == "regression"
     # No prediction_log_id linked, so metric is None (no paired actual/predicted)
@@ -342,12 +354,18 @@ async def test_compute_feedback_accuracy_regression_with_data(regression_project
 
 
 @pytest.mark.anyio
-async def test_check_and_fire_accuracy_alert_classification_breach(regression_project, ac, monkeypatch):
+async def test_check_and_fire_accuracy_alert_classification_breach(
+    regression_project, ac, monkeypatch
+):
     import core.webhook as webhook_mod
     from api.deploy import _check_and_fire_accuracy_alert
 
     fired_events = []
-    monkeypatch.setattr(webhook_mod, "dispatch_webhooks", lambda dep, evt, payload: fired_events.append((dep, evt)))
+    monkeypatch.setattr(
+        webhook_mod,
+        "dispatch_webhooks",
+        lambda dep, evt, payload: fired_events.append((dep, evt)),
+    )
 
     dep_id = regression_project["deployment_id"]
     _check_and_fire_accuracy_alert(dep_id, "classification", 0.5, 0.8)
@@ -357,12 +375,18 @@ async def test_check_and_fire_accuracy_alert_classification_breach(regression_pr
 
 
 @pytest.mark.anyio
-async def test_check_and_fire_accuracy_alert_classification_no_breach(regression_project, ac, monkeypatch):
+async def test_check_and_fire_accuracy_alert_classification_no_breach(
+    regression_project, ac, monkeypatch
+):
     import core.webhook as webhook_mod
     from api.deploy import _check_and_fire_accuracy_alert
 
     fired_events = []
-    monkeypatch.setattr(webhook_mod, "dispatch_webhooks", lambda dep, evt, payload: fired_events.append((dep, evt)))
+    monkeypatch.setattr(
+        webhook_mod,
+        "dispatch_webhooks",
+        lambda dep, evt, payload: fired_events.append((dep, evt)),
+    )
 
     dep_id = regression_project["deployment_id"]
     _check_and_fire_accuracy_alert(dep_id, "classification", 0.9, 0.8)
@@ -371,12 +395,18 @@ async def test_check_and_fire_accuracy_alert_classification_no_breach(regression
 
 
 @pytest.mark.anyio
-async def test_check_and_fire_accuracy_alert_regression_breach(regression_project, ac, monkeypatch):
+async def test_check_and_fire_accuracy_alert_regression_breach(
+    regression_project, ac, monkeypatch
+):
     import core.webhook as webhook_mod
     from api.deploy import _check_and_fire_accuracy_alert
 
     fired_events = []
-    monkeypatch.setattr(webhook_mod, "dispatch_webhooks", lambda dep, evt, payload: fired_events.append((dep, evt)))
+    monkeypatch.setattr(
+        webhook_mod,
+        "dispatch_webhooks",
+        lambda dep, evt, payload: fired_events.append((dep, evt)),
+    )
 
     dep_id = regression_project["deployment_id"]
     _check_and_fire_accuracy_alert(dep_id, "regression", 25.0, 20.0)
@@ -385,12 +415,18 @@ async def test_check_and_fire_accuracy_alert_regression_breach(regression_projec
 
 
 @pytest.mark.anyio
-async def test_check_and_fire_accuracy_alert_regression_no_breach(regression_project, ac, monkeypatch):
+async def test_check_and_fire_accuracy_alert_regression_no_breach(
+    regression_project, ac, monkeypatch
+):
     import core.webhook as webhook_mod
     from api.deploy import _check_and_fire_accuracy_alert
 
     fired_events = []
-    monkeypatch.setattr(webhook_mod, "dispatch_webhooks", lambda dep, evt, payload: fired_events.append((dep, evt)))
+    monkeypatch.setattr(
+        webhook_mod,
+        "dispatch_webhooks",
+        lambda dep, evt, payload: fired_events.append((dep, evt)),
+    )
 
     dep_id = regression_project["deployment_id"]
     _check_and_fire_accuracy_alert(dep_id, "regression", 10.0, 20.0)
@@ -431,12 +467,18 @@ async def test_put_accuracy_alert_fired_flag_persists_in_db(regression_project, 
 
 
 @pytest.mark.anyio
-async def test_check_and_fire_accuracy_alert_respects_fired_flag(regression_project, ac, monkeypatch):
+async def test_check_and_fire_accuracy_alert_respects_fired_flag(
+    regression_project, ac, monkeypatch
+):
     import core.webhook as webhook_mod
     from api.deploy import _check_and_fire_accuracy_alert
 
     fired_count = [0]
-    monkeypatch.setattr(webhook_mod, "dispatch_webhooks", lambda *a, **k: fired_count.__setitem__(0, fired_count[0] + 1))
+    monkeypatch.setattr(
+        webhook_mod,
+        "dispatch_webhooks",
+        lambda *a, **k: fired_count.__setitem__(0, fired_count[0] + 1),
+    )
 
     dep_id = regression_project["deployment_id"]
     _check_and_fire_accuracy_alert(dep_id, "classification", 0.5, 0.8)

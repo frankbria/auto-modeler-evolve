@@ -2110,15 +2110,15 @@ def submit_feedback(
         try:
             _prob, _metric, _n = _compute_feedback_accuracy_simple(session, deployment)
             if _metric is not None:
-                _breach = (
-                    (_prob == "regression" and _metric > _acc_thr)
-                    or (_prob != "regression" and _metric < _acc_thr)
+                _breach = (_prob == "regression" and _metric > _acc_thr) or (
+                    _prob != "regression" and _metric < _acc_thr
                 )
                 if _breach:
                     deployment.accuracy_alert_fired = True
                     session.add(deployment)
                     session.commit()
                     import threading as _t
+
                     _t.Thread(
                         target=_check_and_fire_accuracy_alert,
                         args=(deployment_id, _prob, _metric, _acc_thr),
@@ -2403,7 +2403,9 @@ def _check_and_fire_accuracy_alert(
 
 
 class AccuracyAlertRequest(BaseModel):
-    threshold: float | None = None  # 0.0-1.0 for classification, 0-100 for regression (% error)
+    threshold: float | None = (
+        None  # 0.0-1.0 for classification, 0-100 for regression (% error)
+    )
 
 
 @router.put("/api/deploy/{deployment_id}/accuracy-alert")
@@ -2450,7 +2452,9 @@ def set_accuracy_alert(
     session.commit()
     session.refresh(deployment)
 
-    _, current_metric, n_feedback = _compute_feedback_accuracy_simple(session, deployment)
+    _, current_metric, n_feedback = _compute_feedback_accuracy_simple(
+        session, deployment
+    )
     threshold_set = deployment.accuracy_alert_threshold is not None
     metric_label = "pct_error" if problem_type == "regression" else "accuracy"
 
@@ -2493,7 +2497,9 @@ def get_accuracy_alert_status(
     problem_type = deployment.problem_type or "regression"
     metric_label = "pct_error" if problem_type == "regression" else "accuracy"
 
-    _, current_metric, n_feedback = _compute_feedback_accuracy_simple(session, deployment)
+    _, current_metric, n_feedback = _compute_feedback_accuracy_simple(
+        session, deployment
+    )
 
     return {
         "deployment_id": deployment_id,
@@ -2511,7 +2517,11 @@ def get_accuracy_alert_status(
                 if problem_type == "classification"
                 else f"exceeds {threshold:.1f}%"
             )
-            + (f" (currently {current_metric:.4f})" if current_metric is not None else "")
+            + (
+                f" (currently {current_metric:.4f})"
+                if current_metric is not None
+                else ""
+            )
             + ("." if threshold is not None else "")
             if threshold is not None
             else "No accuracy alert configured."

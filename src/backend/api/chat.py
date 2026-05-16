@@ -10060,7 +10060,9 @@ def send_message(
                 _thr_now = getattr(_acc_dep_obj, "accuracy_alert_threshold", None)
                 _fired = bool(getattr(_acc_dep_obj, "accuracy_alert_fired", False))
                 _, _cur_metric, _n_fb = _comp_acc(session, _acc_dep_obj)
-                _metric_label = "pct_error" if _prob_type == "regression" else "accuracy"
+                _metric_label = (
+                    "pct_error" if _prob_type == "regression" else "accuracy"
+                )
 
                 accuracy_alert_event = {
                     "deployment_id": _acc_dep_id,

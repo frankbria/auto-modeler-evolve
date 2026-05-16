@@ -38,8 +38,12 @@ class Deployment(SQLModel, table=True):
     # Quota alert: fire webhooks when usage crosses this % of monthly_quota (None = disabled)
     quota_alert_threshold_pct: Optional[int] = None
     # Accuracy degradation alert
-    accuracy_alert_threshold: Optional[float] = None  # 0-1 (classification) or 0-100 (regression); None = disabled
-    accuracy_alert_fired: bool = Field(default=False)  # True after first alert fires; reset when threshold changes
+    accuracy_alert_threshold: Optional[float] = (
+        None  # 0-1 (classification) or 0-100 (regression); None = disabled
+    )
+    accuracy_alert_fired: bool = Field(
+        default=False
+    )  # True after first alert fires; reset when threshold changes
     # Versioning — monotonically incremented each time the deployment is updated
     current_version_number: int = Field(default=1)
     # Environment: "staging" (default) or "production"
