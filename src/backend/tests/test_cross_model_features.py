@@ -1,7 +1,5 @@
 """Tests for compute_cross_model_feature_importance in core/advisor.py."""
 
-import pytest
-
 from core.advisor import compute_cross_model_feature_importance
 
 

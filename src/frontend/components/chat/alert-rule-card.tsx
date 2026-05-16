@@ -4,14 +4,6 @@ import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import type { AlertRuleEntry, AlertRuleEventResult } from "@/lib/types"
 
-const OP_LABELS: Record<string, string> = {
-  lt: "<",
-  gt: ">",
-  lte: "≤",
-  gte: "≥",
-  eq: "=",
-}
-
 function formatRelative(iso: string | null): string {
   if (!iso) return "never"
   const diff = Date.now() - new Date(iso).getTime()

@@ -149,7 +149,7 @@ export function CrossModelFeaturesCard({ result }: CrossModelFeaturesCardProps) 
       </div>
 
       <p className="text-xs text-violet-600 italic">
-        ★ = appears in top 5 across all models · "Top-5 in" = models where this feature ranks ≤ 5
+        ★ = appears in top 5 across all models · &quot;Top-5 in&quot; = models where this feature ranks ≤ 5
       </p>
 
       <figcaption className="sr-only">

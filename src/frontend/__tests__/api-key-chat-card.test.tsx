@@ -3,7 +3,7 @@
  */
 
 import React from "react"
-import { render, screen, fireEvent } from "@testing-library/react"
+import { render, screen } from "@testing-library/react"
 import { ApiKeyChatCard } from "@/components/chat/api-key-chat-card"
 import type { ApiKeyResultInfo } from "@/lib/types"
 
