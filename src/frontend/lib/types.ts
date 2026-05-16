@@ -510,6 +510,7 @@ export interface ChatMessage {
   prod_performance?: ProdPerformanceResult
   error_distribution?: ErrorDistributionResult
   model_card_export?: ModelCardExportInfo
+  model_comparison_summary?: ModelComparisonSummaryResult
 }
 
 export interface SegmentPerformanceSegment {
@@ -3194,4 +3195,34 @@ export interface ErrorDistributionResult {
   summary: string
   algorithm?: string
   target_col?: string
+}
+
+export interface ModelComparisonRunSummary {
+  run_id: string
+  algorithm: string
+  algorithm_plain: string
+  primary_metric: number
+  primary_metric_name: string
+  primary_metric_pct: number
+  cv_mean: number | null
+  cv_std: number | null
+  explainability_rank: number
+  explainability_label: string
+  speed_rank: number
+  speed_label: string
+  is_selected: boolean
+  is_deployed: boolean
+  secondary: Record<string, number>
+}
+
+export interface ModelComparisonSummaryResult {
+  project_id?: string
+  n_runs: number
+  winner: ModelComparisonRunSummary | null
+  runs_compared: ModelComparisonRunSummary[]
+  trade_offs: string[]
+  narrative: string
+  summary: string
+  problem_type: string
+  only_one_run: boolean
 }

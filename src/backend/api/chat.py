@@ -153,6 +153,19 @@ def _extract_goal_target(message: str, problem_type: str) -> tuple[str, float] |
     return None
 
 
+# Keywords that trigger narrative model comparison summary (distinct from _MODEL_SELECT_PATTERNS
+# which requires explicit criteria; this answers "compare my models" without criteria)
+_MODEL_COMPARISON_SUMMARY_PATTERNS = re.compile(
+    r"\b(compare.*model|model.*comparison|how.*model.*compare|"
+    r"model.*stack.*up|how.*train.*model.*stack|"
+    r"summary.*model|model.*summary|summarize.*model|"
+    r"tell.*me.*about.*model|what.*model.*train|which.*model.*train|"
+    r"model.*showdown|model.*overview|overview.*model|"
+    r"all.*model|model.*run.*summary|compare.*algorithm|"
+    r"model.*performance.*overview|how.*model.*perform.*overall)",
+    re.IGNORECASE,
+)
+
 # Keywords that trigger model selection advisor
 # Distinct from _IMPROVEMENT_PATTERNS (improve existing) — these ask "which model to use"
 _MODEL_SELECT_PATTERNS = re.compile(
@@ -4401,6 +4414,68 @@ def send_message(
                     + "\n\nPresent the top 2-3 suggestions to the user in a helpful, "
                     "encouraging tone. Each suggestion should explain what to do and why "
                     "it will help — reference the specific metric values above."
+                )
+            except Exception:  # noqa: BLE001
+                pass  # Nice-to-have; never crash chat
+
+    # Narrative model comparison summary — "compare my models", no criteria required
+    # Fires before _MODEL_SELECT_PATTERNS so the simpler intent is caught first
+    model_comparison_summary_event: dict | None = None
+    if (
+        _MODEL_COMPARISON_SUMMARY_PATTERNS.search(body.message)
+        and not _MODEL_SELECT_PATTERNS.search(body.message)
+        and ctx["model_runs"]
+    ):
+        completed_runs = [mr for mr in ctx["model_runs"] if mr.status == "done"]
+        if len(completed_runs) >= 1:
+            try:
+                from core.advisor import (
+                    compute_model_comparison_summary as _compute_mcs,
+                )
+
+                _mcs_runs_data = []
+                for _mr in completed_runs:
+                    _m = json.loads(_mr.metrics or "{}")
+                    _pt = (
+                        "classification"
+                        if _mr.algorithm.endswith("_classifier")
+                        or _mr.algorithm in {"logistic_regression"}
+                        else "regression"
+                    )
+                    _mcs_runs_data.append(
+                        {
+                            "run_id": _mr.id,
+                            "algorithm": _mr.algorithm,
+                            "metrics": _m,
+                            "problem_type": _pt,
+                            "is_selected": _mr.is_selected,
+                            "is_deployed": _mr.is_deployed,
+                        }
+                    )
+
+                model_comparison_summary_event = _compute_mcs(_mcs_runs_data)
+                model_comparison_summary_event["project_id"] = body.project_id
+
+                _mcs_winner = model_comparison_summary_event.get("winner") or {}
+                _mcs_n = model_comparison_summary_event.get("n_runs", 0)
+                _mcs_narrative = model_comparison_summary_event.get("narrative", "")
+                _mcs_trade_offs = model_comparison_summary_event.get("trade_offs", [])
+
+                system_prompt += (
+                    f"\n\n## Model Comparison Summary ({_mcs_n} completed runs)\n"
+                    f"Winner: {_mcs_winner.get('algorithm_plain', '')} "
+                    f"({_mcs_winner.get('primary_metric_name', '')}: "
+                    f"{_mcs_winner.get('primary_metric_pct', 0):.1f}%)\n"
+                    f"Narrative: {_mcs_narrative}\n"
+                )
+                if _mcs_trade_offs:
+                    system_prompt += "Key trade-offs:\n" + "\n".join(
+                        f"- {t}" for t in _mcs_trade_offs
+                    )
+                system_prompt += (
+                    "\n\nPresent this comparison conversationally. Highlight the winner "
+                    "and the most important trade-off. Keep it non-technical and "
+                    "actionable — the analyst needs to decide which model to use."
                 )
             except Exception:  # noqa: BLE001
                 pass  # Nice-to-have; never crash chat
@@ -12468,6 +12543,10 @@ def send_message(
         # Emit model improvement suggestions if computed
         if improvement_event:
             yield f"data: {json.dumps({'type': 'model_improvement', 'model_improvement': improvement_event})}\n\n"
+
+        # Emit model comparison summary if computed
+        if model_comparison_summary_event:
+            yield f"data: {json.dumps({'type': 'model_comparison_summary', 'model_comparison_summary': model_comparison_summary_event})}\n\n"
 
         # Emit model selection recommendation if computed
         if model_select_event:

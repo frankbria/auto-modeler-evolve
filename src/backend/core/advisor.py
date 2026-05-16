@@ -1,11 +1,13 @@
 """advisor.py
 
-Model Advisor — two capabilities:
+Model Advisor — three capabilities:
 1. Improvement Advisor: analyses a trained model and returns ranked plain-English
    suggestions for making it better.
 2. Model Selection Advisor: given multiple completed runs, scores each one against
    an analyst-chosen criteria (accuracy, explainability, stability, speed, balanced)
    and returns a ranked recommendation.
+3. Model Comparison Summary: given multiple completed runs, generates a narrative
+   comparison — which model won, key trade-offs, and a plain-English summary.
 
 Design:
 - Pure functions with no database dependencies (accepts pre-loaded dicts)
@@ -572,6 +574,32 @@ _CRITERIA_DESCRIPTIONS: dict[str, str] = {
     "balanced": "Best overall — balances accuracy, explainability, and stability",
 }
 
+_EXPLAINABILITY_LABEL: dict[int, str] = {
+    1: "Very high",
+    2: "Very high",
+    3: "High",
+    4: "High",
+    5: "Medium",
+    6: "Medium",
+    7: "Low",
+    8: "Low",
+    9: "Very low",
+    10: "Very low",
+}
+
+_SPEED_LABEL: dict[int, str] = {
+    1: "Very fast",
+    2: "Fast",
+    3: "Fast",
+    4: "Medium",
+    5: "Medium",
+    6: "Medium",
+    7: "Slower",
+    8: "Slower",
+    9: "Slow",
+    10: "Slow",
+}
+
 _MAX_EXPLAINABILITY_RANK = max(_EXPLAINABILITY_RANK.values())
 _MAX_SPEED_RANK = max(_SPEED_RANK.values())
 
@@ -737,4 +765,254 @@ def _selection_summary(winner: dict[str, Any], criteria: str) -> str:
         f"{name} scores best overall ({score_pct}/100) — "
         f"a strong balance of accuracy ({metric_val}% {metric_name}), "
         f"explainability, and stability."
+    )
+
+
+# ---------------------------------------------------------------------------
+# Model Comparison Summary
+# ---------------------------------------------------------------------------
+
+
+def compute_model_comparison_summary(
+    runs: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Generate a narrative comparison of all completed model runs.
+
+    Unlike compute_model_selection (criteria-based ranking), this produces a
+    prose summary that highlights key differences, trade-offs, and a winner
+    recommendation without requiring the analyst to specify criteria.
+
+    Parameters
+    ----------
+    runs:
+        List of run dicts with keys: run_id, algorithm, metrics, problem_type,
+        is_selected, is_deployed.
+
+    Returns
+    -------
+    dict with n_runs, winner, runs_compared, trade_offs, narrative, summary,
+    problem_type, only_one_run (bool).
+    """
+    if not runs:
+        return {
+            "n_runs": 0,
+            "winner": None,
+            "runs_compared": [],
+            "trade_offs": [],
+            "narrative": "No completed model runs to compare yet.",
+            "summary": "Train some models first, then ask me to compare them.",
+            "problem_type": "regression",
+            "only_one_run": False,
+        }
+
+    problem_type = runs[0].get("problem_type", "regression")
+
+    # Build per-run summary dicts sorted best → worst by primary metric
+    runs_compared = [_build_run_summary(r) for r in runs]
+    runs_compared.sort(key=lambda x: x["primary_metric"], reverse=True)
+
+    winner = runs_compared[0]
+    only_one_run = len(runs_compared) == 1
+
+    trade_offs = [] if only_one_run else _build_trade_offs(runs_compared, problem_type)
+    narrative = _build_comparison_narrative(
+        winner, runs_compared, problem_type, only_one_run
+    )
+    summary = _build_comparison_summary(winner, runs_compared, problem_type)
+
+    return {
+        "n_runs": len(runs_compared),
+        "winner": winner,
+        "runs_compared": runs_compared,
+        "trade_offs": trade_offs,
+        "narrative": narrative,
+        "summary": summary,
+        "problem_type": problem_type,
+        "only_one_run": only_one_run,
+    }
+
+
+def _build_run_summary(run: dict[str, Any]) -> dict[str, Any]:
+    """Return a display-ready summary dict for one run."""
+    algo = run.get("algorithm", "")
+    metrics = run.get("metrics") or {}
+    problem_type = run.get("problem_type", "regression")
+
+    primary_metric, metric_name = _primary_metric(metrics, problem_type)
+
+    expl_rank = _EXPLAINABILITY_RANK.get(algo, _MAX_EXPLAINABILITY_RANK)
+    speed_rank = _SPEED_RANK.get(algo, _MAX_SPEED_RANK)
+    algo_plain = _ALGO_PLAIN.get(algo, algo.replace("_", " ").title())
+
+    cv_mean = metrics.get("cv_mean")
+    cv_std = metrics.get("cv_std")
+
+    # Secondary metrics for table
+    secondary: dict[str, Any] = {}
+    if problem_type == "regression":
+        if "mae" in metrics:
+            secondary["mae"] = round(float(metrics["mae"]), 4)
+        if "r2" in metrics:
+            secondary["r2"] = round(float(metrics["r2"]), 4)
+    else:
+        if "f1" in metrics:
+            secondary["f1"] = round(float(metrics["f1"]), 4)
+        if "precision" in metrics:
+            secondary["precision"] = round(float(metrics["precision"]), 4)
+        if "recall" in metrics:
+            secondary["recall"] = round(float(metrics["recall"]), 4)
+
+    return {
+        "run_id": run.get("run_id", run.get("id", "")),
+        "algorithm": algo,
+        "algorithm_plain": algo_plain,
+        "primary_metric": round(primary_metric, 4),
+        "primary_metric_name": metric_name,
+        "primary_metric_pct": round(primary_metric * 100, 1),
+        "cv_mean": round(float(cv_mean), 4) if cv_mean is not None else None,
+        "cv_std": round(float(cv_std), 4) if cv_std is not None else None,
+        "explainability_rank": expl_rank,
+        "explainability_label": _EXPLAINABILITY_LABEL.get(expl_rank, "Medium"),
+        "speed_rank": speed_rank,
+        "speed_label": _SPEED_LABEL.get(speed_rank, "Medium"),
+        "is_selected": run.get("is_selected", False),
+        "is_deployed": run.get("is_deployed", False),
+        "secondary": secondary,
+    }
+
+
+def _build_trade_offs(
+    runs_compared: list[dict[str, Any]], problem_type: str
+) -> list[str]:
+    """Return up to 3 plain-English trade-off sentences comparing the top runs."""
+    if len(runs_compared) < 2:
+        return []
+
+    best = runs_compared[0]
+    second = runs_compared[1]
+    trade_offs: list[str] = []
+
+    # Accuracy gap between first and second
+    gap = best["primary_metric_pct"] - second["primary_metric_pct"]
+    metric_name = best["primary_metric_name"]
+    if gap >= 0.5:
+        trade_offs.append(
+            f"{best['algorithm_plain']} leads on {metric_name} "
+            f"({best['primary_metric_pct']:.1f}% vs "
+            f"{second['primary_metric_pct']:.1f}% — a {gap:.1f}% gap)."
+        )
+    else:
+        trade_offs.append(
+            f"{best['algorithm_plain']} and {second['algorithm_plain']} "
+            f"are neck-and-neck on {metric_name} "
+            f"({best['primary_metric_pct']:.1f}% vs "
+            f"{second['primary_metric_pct']:.1f}%)."
+        )
+
+    # Explainability trade-off: best accuracy vs most explainable
+    most_explainable = min(runs_compared, key=lambda r: r["explainability_rank"])
+    if most_explainable["algorithm"] != best["algorithm"]:
+        expl_gap = best["primary_metric_pct"] - most_explainable["primary_metric_pct"]
+        direction = "more accurate" if expl_gap > 0 else "similar in accuracy"
+        trade_offs.append(
+            f"{most_explainable['algorithm_plain']} is the most interpretable option "
+            f"(easier to explain to stakeholders), "
+            f"while {best['algorithm_plain']} is {direction} "
+            f"({best['primary_metric_pct']:.1f}% vs "
+            f"{most_explainable['primary_metric_pct']:.1f}%)."
+        )
+
+    # Stability trade-off: CV score variance (if available)
+    runs_with_cv = [r for r in runs_compared if r["cv_mean"] is not None]
+    if len(runs_with_cv) >= 2:
+        most_stable = min(
+            runs_with_cv, key=lambda r: (r["cv_std"] or 1.0)
+        )
+        least_stable = max(
+            runs_with_cv, key=lambda r: (r["cv_std"] or 0.0)
+        )
+        if (
+            most_stable["algorithm"] != least_stable["algorithm"]
+            and (least_stable["cv_std"] or 0) - (most_stable["cv_std"] or 0) > 0.01
+        ):
+            trade_offs.append(
+                f"{most_stable['algorithm_plain']} is the most stable "
+                f"(CV std ±{most_stable['cv_std']:.2f}), "  # type: ignore[str-format]
+                f"while {least_stable['algorithm_plain']} shows more variability "
+                f"(±{least_stable['cv_std']:.2f})."  # type: ignore[str-format]
+            )
+
+    return trade_offs[:3]
+
+
+def _build_comparison_narrative(
+    winner: dict[str, Any],
+    runs_compared: list[dict[str, Any]],
+    problem_type: str,
+    only_one_run: bool,
+) -> str:
+    """Return a 2–3 sentence plain-English narrative."""
+    n = len(runs_compared)
+    metric_name = winner["primary_metric_name"]
+    metric_pct = winner["primary_metric_pct"]
+
+    if only_one_run:
+        expl = winner["explainability_label"].lower()
+        return (
+            f"You have trained one model: {winner['algorithm_plain']}, "
+            f"which achieves {metric_pct:.1f}% {metric_name}. "
+            f"Explainability is {expl} — "
+            f"{'easy to explain to stakeholders' if expl in ('very high', 'high') else 'may need SHAP charts for stakeholder explanations'}. "
+            f"Train more algorithms and ask me to compare them for a full picture."
+        )
+
+    runner_up = runs_compared[1] if n >= 2 else None
+    gap = metric_pct - (runner_up["primary_metric_pct"] if runner_up else 0)
+
+    intro = (
+        f"You trained {n} models. "
+        f"{winner['algorithm_plain']} comes out ahead "
+        f"with {metric_pct:.1f}% {metric_name}"
+    )
+    if runner_up:
+        intro += (
+            f", edging out {runner_up['algorithm_plain']} "
+            f"by {gap:.1f} percentage points"
+        )
+    intro += "."
+
+    # Explainability note
+    most_explainable = min(runs_compared, key=lambda r: r["explainability_rank"])
+    if most_explainable["algorithm"] != winner["algorithm"]:
+        expl_note = (
+            f" If you need to explain predictions to your VP, "
+            f"{most_explainable['algorithm_plain']} is the most interpretable option "
+            f"({most_explainable['primary_metric_pct']:.1f}% {metric_name})."
+        )
+    else:
+        expl_note = (
+            f" {winner['algorithm_plain']} is also the most interpretable here, "
+            f"so it's a strong choice for VP presentations."
+        )
+
+    return intro + expl_note
+
+
+def _build_comparison_summary(
+    winner: dict[str, Any],
+    runs_compared: list[dict[str, Any]],
+    problem_type: str,
+) -> str:
+    """Return a one-sentence takeaway."""
+    n = len(runs_compared)
+    metric_name = winner["primary_metric_name"]
+    metric_pct = winner["primary_metric_pct"]
+    if n == 1:
+        return (
+            f"{winner['algorithm_plain']} is your only trained model "
+            f"({metric_pct:.1f}% {metric_name}) — train more to compare."
+        )
+    return (
+        f"{winner['algorithm_plain']} wins across {n} models "
+        f"({metric_pct:.1f}% {metric_name})."
     )

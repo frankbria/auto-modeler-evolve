@@ -55,6 +55,7 @@ import { ModelSelectionCard } from "@/components/models/model-selection-card"
 import { AutoRetrainCard } from "@/components/models/auto-retrain-card"
 import { ConversationExportCard } from "@/components/chat/conversation-export-card"
 import { ModelCardExportCard } from "@/components/chat/model-card-export-card"
+import { ModelComparisonSummaryCard } from "@/components/chat/model-comparison-summary-card"
 import { ProjectHealthCard } from "@/components/chat/project-health-card"
 import { PredictionOpportunitiesCard } from "@/components/models/prediction-opportunities-card"
 import { DatasetComparisonCard } from "@/components/data/dataset-comparison-card"
@@ -319,6 +320,7 @@ export default function ProjectWorkspace() {
     attachProdPerformanceToLastMessage,
     attachErrorDistributionToLastMessage,
     attachModelCardExportToLastMessage,
+    attachModelComparisonSummaryToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -787,6 +789,8 @@ export default function ProjectWorkspace() {
                 attachErrorDistributionToLastMessage(json.error_distribution as import("@/lib/types").ErrorDistributionResult)
               } else if (json.type === "model_card_export" && json.model_card_export) {
                 attachModelCardExportToLastMessage(json.model_card_export as import("@/lib/types").ModelCardExportInfo)
+              } else if (json.type === "model_comparison_summary" && json.model_comparison_summary) {
+                attachModelComparisonSummaryToLastMessage(json.model_comparison_summary as import("@/lib/types").ModelComparisonSummaryResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -910,6 +914,7 @@ export default function ProjectWorkspace() {
     attachProdPerformanceToLastMessage,
     attachErrorDistributionToLastMessage,
     attachModelCardExportToLastMessage,
+    attachModelComparisonSummaryToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -1468,6 +1473,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.model_card_export && (
                       <ModelCardExportCard info={msg.model_card_export} />
+                    )}
+                    {msg.model_comparison_summary && (
+                      <ModelComparisonSummaryCard result={msg.model_comparison_summary} />
                     )}
                   </div>
                 </div>

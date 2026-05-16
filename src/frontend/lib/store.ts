@@ -150,6 +150,7 @@ interface AppState {
   attachProdPerformanceToLastMessage: (prod_performance: import("./types").ProdPerformanceResult) => void
   attachErrorDistributionToLastMessage: (error_distribution: import("./types").ErrorDistributionResult) => void
   attachModelCardExportToLastMessage: (model_card_export: import("./types").ModelCardExportInfo) => void
+  attachModelComparisonSummaryToLastMessage: (model_comparison_summary: import("./types").ModelComparisonSummaryResult) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -1144,6 +1145,15 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, model_card_export }
+      }
+      return { messages }
+    }),
+  attachModelComparisonSummaryToLastMessage: (model_comparison_summary) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, model_comparison_summary }
       }
       return { messages }
     }),
