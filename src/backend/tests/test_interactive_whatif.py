@@ -71,7 +71,9 @@ def client(tmp_path):
         yield c
 
 
-def _deploy(client, csv_data=SAMPLE_CSV, target="revenue", algorithm="linear_regression"):
+def _deploy(
+    client, csv_data=SAMPLE_CSV, target="revenue", algorithm="linear_regression"
+):
     """Set up upload → train → deploy. Returns deployment_id."""
     proj = client.post("/api/projects", json={"name": "WhatIf Test"})
     project_id = proj.json()["id"]
@@ -86,7 +88,9 @@ def _deploy(client, csv_data=SAMPLE_CSV, target="revenue", algorithm="linear_reg
     client.post(f"/api/features/{dataset_id}/apply", json={"transformations": []})
     client.post(f"/api/features/{dataset_id}/target", json={"target_column": target})
 
-    train_resp = client.post(f"/api/models/{project_id}/train", json={"algorithms": [algorithm]})
+    train_resp = client.post(
+        f"/api/models/{project_id}/train", json={"algorithms": [algorithm]}
+    )
     run_id = train_resp.json()["model_run_ids"][0]
 
     for _ in range(30):
@@ -167,8 +171,12 @@ class TestFeatureSchemaRanges:
 
         for entry in cat_entries:
             assert "options" in entry, f"categorical {entry['name']} missing 'options'"
-            assert "min" not in entry, f"categorical {entry['name']} should not have 'min'"
-            assert "p5" not in entry, f"categorical {entry['name']} should not have 'p5'"
+            assert "min" not in entry, (
+                f"categorical {entry['name']} should not have 'min'"
+            )
+            assert "p5" not in entry, (
+                f"categorical {entry['name']} should not have 'p5'"
+            )
 
     def test_numeric_values_are_floats(self, client):
         """min/max/p5/p95 are numeric (float/int), not None."""
