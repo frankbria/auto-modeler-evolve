@@ -1,11 +1,11 @@
 "use client"
 
-import { useState, useCallback, useEffect } from "react"
+import { useState, useCallback, useEffect, useRef, useMemo } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { api } from "@/lib/api"
-import type { Deployment, DeploymentAnalytics, ModelReadiness, DriftReport, WhatIfResult, FeedbackAccuracy, ModelHealth, ProjectAlerts, ProjectAlert, SlaData } from "@/lib/types"
+import type { Deployment, DeploymentAnalytics, ModelReadiness, DriftReport, WhatIfResult, FeedbackAccuracy, ModelHealth, ProjectAlerts, ProjectAlert, SlaData, FeatureSchemaEntry, PredictionResult } from "@/lib/types"
 import { IntegrationCard } from "./integration-card"
 import { ExportServiceCard } from "./export-service-card"
 import { ScheduleCard } from "./schedule-card"
@@ -260,102 +260,190 @@ function DriftCard({ drift }: { drift: DriftReport }) {
   )
 }
 
+function fmtNum(v: number | null | undefined, decimals = 3): string {
+  if (v === null || v === undefined) return "—"
+  return v.toLocaleString(undefined, { maximumFractionDigits: decimals })
+}
+
+function buildDefaults(schema: FeatureSchemaEntry[]): Record<string, number | string> {
+  const vals: Record<string, number | string> = {}
+  for (const f of schema) {
+    vals[f.name] = f.type === "categorical" ? (f.options?.[0] ?? "") : (f.mean ?? f.median ?? 0)
+  }
+  return vals
+}
+
 function WhatIfCard({ deployment }: { deployment: Deployment }) {
-  const featureNames = deployment.feature_names ?? []
-  const [baseValues, setBaseValues] = useState<Record<string, string>>({})
-  const [overrideKey, setOverrideKey] = useState(featureNames[0] ?? "")
-  const [overrideValue, setOverrideValue] = useState("")
-  const [result, setResult] = useState<WhatIfResult | null>(null)
+  const schema = deployment.feature_schema ?? []
+  const defaults = useMemo(() => buildDefaults(schema), [schema])
+  const [values, setValues] = useState<Record<string, number | string>>(defaults)
+  const [baseline, setBaseline] = useState<PredictionResult | null>(null)
+  const [current, setCurrent] = useState<PredictionResult | null>(null)
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [showAll, setShowAll] = useState(false)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  if (featureNames.length === 0) return null
+  useEffect(() => {
+    if (schema.length === 0) return
+    api.deploy.predict(deployment.id, defaults)
+      .then((r) => setBaseline(r))
+      .catch(() => {})
+  }, [deployment.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleCompare = async () => {
-    if (!overrideKey || !overrideValue) return
-    setLoading(true)
-    setError(null)
-    try {
-      const base: Record<string, unknown> = {}
-      featureNames.forEach((f) => { base[f] = baseValues[f] ?? "" })
-      const overrides: Record<string, unknown> = { [overrideKey]: overrideValue }
-      const r = await api.deploy.whatif(deployment.id, base, overrides)
-      setResult(r)
-    } catch {
-      setError("What-if analysis failed. Check that base values are filled in.")
-    } finally {
-      setLoading(false)
-    }
+  const triggerPrediction = useCallback((vals: Record<string, number | string>) => {
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(async () => {
+      setLoading(true)
+      try {
+        const r = await api.deploy.predict(deployment.id, vals)
+        setCurrent(r)
+      } catch {
+        // non-fatal
+      } finally {
+        setLoading(false)
+      }
+    }, 400)
+  }, [deployment.id])
+
+  const handleChange = (name: string, val: number | string) => {
+    const next = { ...values, [name]: val }
+    setValues(next)
+    triggerPrediction(next)
   }
 
+  if (schema.length === 0) return null
+
+  const baseVal = baseline?.prediction ?? null
+  const currVal = current?.prediction ?? null
+  const baseNum = typeof baseVal === "number" ? baseVal : null
+  const currNum = typeof currVal === "number" ? currVal : null
+  const delta = baseNum !== null && currNum !== null ? currNum - baseNum : null
+  const pctChange = delta !== null && baseNum !== null && baseNum !== 0 ? (delta / Math.abs(baseNum)) * 100 : null
+  const ci = current?.confidence_interval ?? null
+
+  const displaySchema = showAll ? schema : schema.slice(0, 8)
+
   return (
-    <Card>
+    <Card data-testid="interactive-whatif-card">
       <CardHeader className="pb-2">
-        <CardTitle className="text-sm">What-if Analysis</CardTitle>
+        <CardTitle className="text-sm flex items-center gap-2">
+          What-if Scenario Explorer
+          {loading && <span className="text-[10px] text-muted-foreground animate-pulse" aria-live="polite">Updating…</span>}
+        </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
         <p className="text-xs text-muted-foreground">
-          Fill in your base values, then change one feature to see how the prediction shifts.
+          Drag the sliders to explore how input values affect predictions in real time.
         </p>
-        <div className="space-y-1.5">
-          {featureNames.slice(0, 4).map((f) => (
-            <div key={f} className="flex items-center gap-2 text-xs">
-              <label className="w-24 shrink-0 truncate text-muted-foreground">{f}</label>
-              <input
-                className="flex-1 rounded border bg-background px-2 py-0.5 text-xs"
-                placeholder="value"
-                value={baseValues[f] ?? ""}
-                onChange={(e) => setBaseValues((prev) => ({ ...prev, [f]: e.target.value }))}
-              />
+
+        <div className="grid grid-cols-2 gap-2" data-testid="whatif-prediction-boxes">
+          <div className="rounded border bg-muted/30 p-2 text-center">
+            <div className="text-[10px] text-muted-foreground mb-1">Baseline (means)</div>
+            <div className="font-mono text-sm font-semibold" data-testid="whatif-baseline">
+              {baseline === null
+                ? <span className="text-muted-foreground/50 text-[10px]">Loading…</span>
+                : baseNum !== null ? fmtNum(baseNum) : String(baseVal ?? "—")}
             </div>
-          ))}
-          {featureNames.length > 4 && (
-            <p className="text-[10px] text-muted-foreground">+{featureNames.length - 4} more features use defaults (median value from training data)</p>
-          )}
-        </div>
-        <div className="flex items-center gap-2 text-xs">
-          <span className="text-muted-foreground">Change</span>
-          <select
-            className="flex-1 rounded border bg-background px-2 py-0.5 text-xs"
-            value={overrideKey}
-            onChange={(e) => setOverrideKey(e.target.value)}
-          >
-            {featureNames.map((f) => <option key={f} value={f}>{f}</option>)}
-          </select>
-          <span className="text-muted-foreground">to</span>
-          <input
-            className="w-24 rounded border bg-background px-2 py-0.5 text-xs"
-            placeholder="new value"
-            value={overrideValue}
-            onChange={(e) => setOverrideValue(e.target.value)}
-          />
-        </div>
-        <Button size="sm" className="w-full" onClick={handleCompare} disabled={loading || !overrideKey || !overrideValue}>
-          {loading ? "Comparing..." : "Compare Predictions"}
-        </Button>
-        {error && <p className="text-xs text-destructive">{error}</p>}
-        {result && (
-          <div className="rounded border bg-muted/30 p-3 space-y-1 text-xs">
-            <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">Original</span>
-              <span className="font-mono font-medium">{String(result.original_prediction)}</span>
+          </div>
+          <div className={`rounded border p-2 text-center transition-colors ${
+            delta === null ? "bg-muted/30" :
+            delta > 0 ? "bg-emerald-50 border-emerald-200" :
+            delta < 0 ? "bg-rose-50 border-rose-200" : "bg-muted/30"
+          }`}>
+            <div className="text-[10px] text-muted-foreground mb-1">Your Scenario</div>
+            <div className="font-mono text-sm font-semibold" data-testid="whatif-current">
+              {currVal === null
+                ? <span className="text-muted-foreground/50 text-[10px]">Adjust a slider</span>
+                : currNum !== null ? fmtNum(currNum) : String(currVal)}
             </div>
-            <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">Modified</span>
-              <span className="font-mono font-medium">{String(result.modified_prediction)}</span>
-            </div>
-            {result.delta !== null && result.delta !== 0 && (
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">Change</span>
-                <span className={`font-mono font-medium ${result.delta > 0 ? "text-green-600" : "text-red-600"}`}>
-                  {result.delta > 0 ? "+" : ""}{result.delta}
-                  {result.percent_change !== null && ` (${result.percent_change > 0 ? "+" : ""}${result.percent_change}%)`}
-                </span>
+            {delta !== null && (
+              <div className={`text-[10px] font-medium mt-0.5 ${delta > 0 ? "text-emerald-600" : delta < 0 ? "text-rose-600" : "text-muted-foreground"}`} data-testid="whatif-delta">
+                {delta > 0 ? "▲" : delta < 0 ? "▼" : "→"}{" "}
+                {delta > 0 ? "+" : ""}{fmtNum(delta, 2)}
+                {pctChange !== null && ` (${pctChange > 0 ? "+" : ""}${pctChange.toFixed(1)}%)`}
               </div>
             )}
-            <p className="text-muted-foreground pt-1 border-t">{result.summary}</p>
           </div>
+        </div>
+
+        {ci && (
+          <p className="text-[10px] text-muted-foreground text-center" data-testid="whatif-ci">
+            95% CI: {fmtNum(ci.lower)} – {fmtNum(ci.upper)}
+          </p>
         )}
+
+        <div className="space-y-3 max-h-72 overflow-y-auto pr-1" data-testid="whatif-sliders">
+          {displaySchema.map((f) => {
+            if (f.type === "categorical") {
+              return (
+                <div key={f.name} className="space-y-0.5">
+                  <label htmlFor={`whatif-${f.name}`} className="text-[11px] text-muted-foreground block truncate">{f.name}</label>
+                  <select
+                    id={`whatif-${f.name}`}
+                    className="w-full rounded border bg-background px-2 py-1 text-xs"
+                    value={String(values[f.name] ?? "")}
+                    onChange={(e) => handleChange(f.name, e.target.value)}
+                    aria-label={f.name}
+                    data-testid={`whatif-select-${f.name}`}
+                  >
+                    {(f.options ?? []).map((opt) => <option key={opt} value={opt}>{opt}</option>)}
+                  </select>
+                </div>
+              )
+            }
+            const sliderMin = f.p5 ?? f.min ?? 0
+            const sliderMax = f.p95 ?? f.max ?? 100
+            const range = sliderMax - sliderMin || 1
+            const step = range / 100
+            const val = Number(values[f.name] ?? f.mean ?? 0)
+            return (
+              <div key={f.name} className="space-y-0.5">
+                <div className="flex items-center justify-between">
+                  <label htmlFor={`whatif-${f.name}`} className="text-[11px] text-muted-foreground truncate max-w-[140px]">{f.name}</label>
+                  <span className="font-mono text-[11px] font-medium" data-testid={`whatif-val-${f.name}`}>{fmtNum(val, 2)}</span>
+                </div>
+                <input
+                  id={`whatif-${f.name}`}
+                  type="range"
+                  min={sliderMin}
+                  max={sliderMax}
+                  step={step}
+                  value={val}
+                  onChange={(e) => handleChange(f.name, parseFloat(e.target.value))}
+                  className="w-full h-1.5 accent-primary cursor-pointer"
+                  aria-label={f.name}
+                  aria-valuenow={val}
+                  aria-valuemin={sliderMin}
+                  aria-valuemax={sliderMax}
+                  data-testid={`whatif-slider-${f.name}`}
+                />
+                <div className="flex justify-between text-[9px] text-muted-foreground/60">
+                  <span>{fmtNum(sliderMin, 1)}</span>
+                  {f.mean !== undefined && (
+                    <span className="text-primary/60">avg: {fmtNum(f.mean, 1)}</span>
+                  )}
+                  <span>{fmtNum(sliderMax, 1)}</span>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+
+        {schema.length > 8 && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="w-full text-xs"
+            onClick={() => setShowAll(!showAll)}
+            aria-expanded={showAll}
+          >
+            {showAll ? "Show less" : `Show ${schema.length - 8} more features`}
+          </Button>
+        )}
+
+        <p className="text-[10px] text-muted-foreground/70 text-center">
+          Slider range shows typical training values (5th–95th percentile)
+        </p>
       </CardContent>
     </Card>
   )

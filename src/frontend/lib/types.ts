@@ -919,6 +919,10 @@ export interface FeatureSchemaEntry {
   median?: number      // numeric default
   mean?: number        // training average (for hints)
   std?: number         // training std dev (for hints)
+  min?: number         // training minimum
+  max?: number         // training maximum
+  p5?: number          // 5th percentile (slider lower bound)
+  p95?: number         // 95th percentile (slider upper bound)
 }
 
 export interface Deployment {

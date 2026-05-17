@@ -386,6 +386,12 @@ def get_feature_schema(pipeline_path: str) -> list[dict]:
             entry["median"] = pipeline.medians.get(col, 0.0)
             entry["mean"] = pipeline.feature_means.get(col, None)
             entry["std"] = pipeline.feature_stds.get(col, None)
+            ranges = getattr(pipeline, "feature_ranges", {}).get(col, {})
+            if ranges:
+                entry["min"] = ranges.get("min")
+                entry["max"] = ranges.get("max")
+                entry["p5"] = ranges.get("p5")
+                entry["p95"] = ranges.get("p95")
         schema.append(entry)
     return schema
 
