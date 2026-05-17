@@ -2663,9 +2663,7 @@ _ROLLBACK_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
-_ROLLBACK_VERSION_RE = re.compile(
-    r"\b(?:version|v)\s*(\d+)\b", re.IGNORECASE
-)
+_ROLLBACK_VERSION_RE = re.compile(r"\b(?:version|v)\s*(\d+)\b", re.IGNORECASE)
 
 # Keywords that trigger class imbalance detection via chat
 _CLASS_IMBALANCE_PATTERNS = re.compile(
@@ -10170,12 +10168,21 @@ def send_message(
                     if _rb_target_ver is not None and _rb_target_ver != _current_ver:
                         # Find target version
                         _target_v = next(
-                            (v for v in _rb_versions if v.version_number == _rb_target_ver),
+                            (
+                                v
+                                for v in _rb_versions
+                                if v.version_number == _rb_target_ver
+                            ),
                             None,
                         )
                         if _target_v is None:
                             _error_msg = f"Version {_rb_target_ver} not found for this deployment."
-                        elif not _target_v.pipeline_path or not __import__("pathlib").Path(_target_v.pipeline_path).exists():
+                        elif (
+                            not _target_v.pipeline_path
+                            or not __import__("pathlib")
+                            .Path(_target_v.pipeline_path)
+                            .exists()
+                        ):
                             _error_msg = f"Pipeline file for version {_rb_target_ver} is no longer available on disk."
                         else:
                             # Perform the rollback inline
@@ -10223,7 +10230,9 @@ def send_message(
                             _current_ver = _new_ver_num
                             _rolled_back = True
                     elif _rb_target_ver == _current_ver:
-                        _error_msg = f"Version {_rb_target_ver} is already the current version."
+                        _error_msg = (
+                            f"Version {_rb_target_ver} is already the current version."
+                        )
                     elif _rb_target_ver is None and len(_rb_versions) < 2:
                         _error_msg = "No previous versions available to roll back to."
 
@@ -10233,11 +10242,19 @@ def send_message(
                     if not metrics_json:
                         return None
                     try:
-                        _m = _json_mod.loads(metrics_json) if isinstance(metrics_json, str) else metrics_json
+                        _m = (
+                            _json_mod.loads(metrics_json)
+                            if isinstance(metrics_json, str)
+                            else metrics_json
+                        )
                         for _k in ("r2", "accuracy", "f1"):
                             if _k in _m:
                                 _v = _m[_k]
-                                return f"{_k.upper() if _k != 'accuracy' else 'Accuracy'} {_v:.2%}" if isinstance(_v, float) else str(_v)
+                                return (
+                                    f"{_k.upper() if _k != 'accuracy' else 'Accuracy'} {_v:.2%}"
+                                    if isinstance(_v, float)
+                                    else str(_v)
+                                )
                     except Exception:  # noqa: BLE001
                         pass
                     return None
@@ -10247,7 +10264,9 @@ def send_message(
                         "version_number": v.version_number,
                         "algorithm": v.algorithm,
                         "is_current": v.is_current,
-                        "deployed_at": v.deployed_at.isoformat() if v.deployed_at else None,
+                        "deployed_at": v.deployed_at.isoformat()
+                        if v.deployed_at
+                        else None,
                         "metric_display": _fmt_metric(v.metrics),
                     }
                     for v in _rb_versions

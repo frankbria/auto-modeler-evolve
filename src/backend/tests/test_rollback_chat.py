@@ -161,7 +161,9 @@ def _setup_project_with_deployment(client):
 
     for _ in range(30):
         runs_r = client.get(f"/api/models/{proj_id}/runs")
-        run = next((x for x in runs_r.json().get("runs", []) if x["id"] == run_id), None)
+        run = next(
+            (x for x in runs_r.json().get("runs", []) if x["id"] == run_id), None
+        )
         if run and run["status"] == "done":
             break
         time.sleep(0.3)
@@ -247,7 +249,9 @@ def test_chat_rollback_to_previous_version(client):
 
     runs_r = client.get(f"/api/models/{proj_id}/runs")
     run2_id = next(
-        r["id"] for r in runs_r.json()["runs"] if r["status"] == "done" and r["id"] != run_id
+        r["id"]
+        for r in runs_r.json()["runs"]
+        if r["status"] == "done" and r["id"] != run_id
     )
     dep_r2 = client.post(f"/api/deploy/{run2_id}", json={})
     assert dep_r2.status_code in (200, 201)
