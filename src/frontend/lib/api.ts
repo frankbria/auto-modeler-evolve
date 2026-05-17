@@ -1247,5 +1247,26 @@ export const api = {
       if (!res.ok) throw new Error(await res.text())
       return res.json()
     },
+
+    setConfidenceThreshold: async (deploymentId: string, threshold: number | null) => {
+      const res = await fetch(
+        `${API_URL}/api/deploy/${deploymentId}/confidence-threshold`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ threshold }),
+        }
+      )
+      if (!res.ok) throw new Error(await res.text())
+      return res.json()
+    },
+
+    getConfidenceThresholdStatus: async (deploymentId: string): Promise<import("./types").ConfidenceThresholdConfig> => {
+      const res = await fetch(
+        `${API_URL}/api/deploy/${deploymentId}/confidence-threshold-status`
+      )
+      if (!res.ok) throw new Error(await res.text())
+      return res.json()
+    },
   },
 }

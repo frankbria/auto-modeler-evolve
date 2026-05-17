@@ -31,6 +31,7 @@ def _apply_migrations():
         ("deployment", "quota_alert_threshold_pct", "INTEGER"),
         ("deployment", "accuracy_alert_threshold", "REAL"),
         ("deployment", "accuracy_alert_fired", "INTEGER NOT NULL DEFAULT 0"),
+        ("deployment", "confidence_threshold", "REAL"),
     ]
     with engine.connect() as conn:
         for table, col, definition in migrations:

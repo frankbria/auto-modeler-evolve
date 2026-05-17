@@ -48,3 +48,5 @@ class Deployment(SQLModel, table=True):
     current_version_number: int = Field(default=1)
     # Environment: "staging" (default) or "production"
     environment: str = Field(default="staging")
+    # Confidence threshold: reject/flag predictions below this value (0-1, classification only)
+    confidence_threshold: Optional[float] = None

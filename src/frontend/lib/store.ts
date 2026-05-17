@@ -154,6 +154,7 @@ interface AppState {
   attachCrossModelFeaturesToLastMessage: (cross_model_features: import("./types").CrossModelFeatureResult) => void
   attachAccuracyAlertConfigToLastMessage: (accuracy_alert_config: import("./types").AccuracyAlertConfig) => void
   attachRollbackChatToLastMessage: (rollback_chat: import("./types").RollbackChatResult) => void
+  attachConfidenceThresholdConfigToLastMessage: (confidence_threshold_config: import("./types").ConfidenceThresholdConfig) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -1185,6 +1186,16 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, rollback_chat }
+      }
+      return { messages }
+    }),
+
+  attachConfidenceThresholdConfigToLastMessage: (confidence_threshold_config) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, confidence_threshold_config }
       }
       return { messages }
     }),

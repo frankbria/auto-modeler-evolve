@@ -1,5 +1,27 @@
 # Journal
 
+## Day 67 — 12:00 — Prediction Confidence Thresholding via Chat
+
+No community issues. Track D feature: analysts can now set a minimum confidence threshold so uncertain classification predictions are flagged with `below_threshold=True` rather than silently served at whatever confidence the model has.
+
+**The gap this closes.** A logistic regression might predict "approved" with only 53% confidence — that prediction is technically the most likely class, but it's barely better than a coin flip. Without a confidence threshold, that uncertainty is invisible: the API returns "approved" and the analyst acts on it. With a threshold set to 80%, any sub-80% prediction now comes back with `below_threshold=True` and a plain-English explanation ("Model confidence 53% is below the minimum threshold of 80%. This prediction may be unreliable — consider providing more specific feature values."). The analyst knows to treat this case differently.
+
+**Backend: `_CONFIDENCE_THRESHOLD_PATTERNS` + handler.** Nine NL variants cover every natural way an analyst would phrase this: "set confidence threshold to 80%", "minimum confidence filter", "only accept predictions above 90% confidence", "reject low-confidence predictions", "filter out predictions with low confidence", "confidence cutoff/gate/guard/minimum", disable/remove/clear variants, and check/show status variants. `_CONFIDENCE_THRESHOLD_VALUE_RE` normalizes "80%" → 0.8 (same pattern as accuracy alert handler). `_DISABLE_CONFIDENCE_THRESHOLD_RE` detects the disable intent. Handler detects enable vs disable vs status-only intent, validates 0.0–1.0 range, persists to `Deployment.confidence_threshold`, counts recent below-threshold predictions for context, emits `{type:"confidence_threshold_config"}` SSE with `below_threshold_count_30d`, `total_predictions_30d`, `below_threshold_pct`, and summary.
+
+**Backend: `make_prediction()` threshold check.** After `predict_single()`, when `confidence_threshold` is set and `problem_type == "classification"`: compares `result["confidence"]` (the `max(predict_proba)` already computed) against the threshold. Below → `below_threshold=True` + `threshold_message`. At or above → `below_threshold=False`. Classification-only: regression has no `predict_proba` and meaningful confidence is undefined; the code guards on `problem_type == "classification"` before touching the result.
+
+**REST endpoints.** `PUT /api/deploy/{id}/confidence-threshold` (set or clear threshold; validates 0–1 range; returns summary message). `GET /api/deploy/{id}/confidence-threshold-status` (threshold, enabled, below_count_30d, total_30d, below_pct, summary). Both wired into the deploy router before existing cross-deployment compare routes.
+
+**Frontend: `ConfidenceThresholdCard`.** Amber border, 🎯 icon. "Min X% confidence" badge when enabled, "Disabled" when not. Amber paragraph explaining that below-threshold predictions get `below_threshold: true` in the API. 30-day stats when threshold is active and predictions exist: total count, below count, percentage. "All recent predictions met the confidence threshold" green message when zero below. Help text footer with example phrases. `predict/[id]/page.tsx` renders an amber "Low-confidence prediction" callout below the confidence badge when `below_threshold=True`, including the full `threshold_message` from the API response.
+
+**Inline migration.** `("deployment", "confidence_threshold", "REAL")` added to `_apply_migrations()` in `db.py` — pre-existing deployments get `NULL` (no threshold) without schema breakage.
+
+**Tests.** 17 backend: regex match for all 9 NL variants, disable regex, status regex, value normalization (80% → 0.8, 0.75 decimal), deployment field present and null by default, PUT set/persist/clear, PUT out-of-range → 422, PUT nonexistent → 404, GET status without/with threshold, prediction without threshold has no flag, prediction above very-low threshold → `below_threshold=False`, prediction below max-threshold → `below_threshold=True` + `threshold_message`. 15 frontend: aria-label, 🎯 icon, heading, enabled badge, disabled badge, amber warning, below count + pct, all-passed message, no-activity message, summary, footer, pct formatting, 3 Zustand store tests.
+
+*Day 67 (12:00): 17 backend + 15 frontend = 32 new tests. Total: 4205 backend + 2342 frontend = 6547. Backend lint: clean. Frontend build + lint: clean.*
+
+---
+
 ## Day 67 — 04:00 — Interactive What-if Scenario Explorer with Sliders
 
 No community issues. Track C feature: the `WhatIfCard` in `DeploymentPanel` is now a fully interactive slider panel — analysts can drag sliders to explore "what if units = 18?" scenarios and see predictions update in real time, without needing to type feature values.

@@ -59,6 +59,7 @@ import { ModelComparisonSummaryCard } from "@/components/chat/model-comparison-s
 import { CrossModelFeaturesCard } from "@/components/chat/cross-model-features-card"
 import { AccuracyAlertCard } from "@/components/deploy/accuracy-alert-card"
 import { RollbackChatCard } from "@/components/deploy/rollback-chat-card"
+import { ConfidenceThresholdCard } from "@/components/deploy/confidence-threshold-card"
 import { ProjectHealthCard } from "@/components/chat/project-health-card"
 import { PredictionOpportunitiesCard } from "@/components/models/prediction-opportunities-card"
 import { DatasetComparisonCard } from "@/components/data/dataset-comparison-card"
@@ -327,6 +328,7 @@ export default function ProjectWorkspace() {
     attachCrossModelFeaturesToLastMessage,
     attachAccuracyAlertConfigToLastMessage,
     attachRollbackChatToLastMessage,
+    attachConfidenceThresholdConfigToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -803,6 +805,8 @@ export default function ProjectWorkspace() {
                 attachAccuracyAlertConfigToLastMessage(json.accuracy_alert_config as import("@/lib/types").AccuracyAlertConfig)
               } else if (json.type === "rollback_chat" && json.rollback_chat) {
                 attachRollbackChatToLastMessage(json.rollback_chat as import("@/lib/types").RollbackChatResult)
+              } else if (json.type === "confidence_threshold_config" && json.confidence_threshold_config) {
+                attachConfidenceThresholdConfigToLastMessage(json.confidence_threshold_config as import("@/lib/types").ConfidenceThresholdConfig)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -930,6 +934,7 @@ export default function ProjectWorkspace() {
     attachCrossModelFeaturesToLastMessage,
     attachAccuracyAlertConfigToLastMessage,
     attachRollbackChatToLastMessage,
+    attachConfidenceThresholdConfigToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -1500,6 +1505,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.rollback_chat && (
                       <RollbackChatCard result={msg.rollback_chat} />
+                    )}
+                    {msg.confidence_threshold_config && (
+                      <ConfidenceThresholdCard config={msg.confidence_threshold_config} />
                     )}
                   </div>
                 </div>

@@ -690,6 +690,112 @@ def set_quota_alert(
 
 
 # ---------------------------------------------------------------------------
+# 4e. Confidence threshold configuration
+# ---------------------------------------------------------------------------
+
+
+class ConfidenceThresholdRequest(BaseModel):
+    threshold: float | None = None  # 0.0–1.0; None = remove threshold
+
+
+@router.put("/api/deploy/{deployment_id}/confidence-threshold")
+def set_confidence_threshold(
+    deployment_id: str,
+    body: ConfidenceThresholdRequest,
+    session: Session = Depends(get_session),
+):
+    """Set or clear a minimum confidence threshold for a classification deployment.
+
+    When set, prediction responses include ``below_threshold=True`` and a plain-English
+    message when the model's confidence (max predict_proba) falls below the threshold.
+    This prevents silently serving unreliable predictions to VP dashboards.
+
+    Pass threshold=0.0–1.0 to enable; pass threshold=null to disable.
+    Only meaningful for classification deployments (ignored for regression).
+    """
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment or not deployment.is_active:
+        raise HTTPException(status_code=404, detail="Deployment not found or inactive")
+
+    thr = body.threshold
+    if thr is not None and not (0.0 <= thr <= 1.0):
+        raise HTTPException(
+            status_code=422, detail="threshold must be between 0.0 and 1.0"
+        )
+
+    deployment.confidence_threshold = thr
+    session.add(deployment)
+    session.commit()
+
+    problem_type = deployment.problem_type or "unknown"
+    enabled = thr is not None
+    return {
+        "deployment_id": deployment_id,
+        "confidence_threshold": thr,
+        "threshold_enabled": enabled,
+        "problem_type": problem_type,
+        "message": (
+            f"Confidence threshold set to {thr:.0%}. Predictions below this confidence "
+            "will be flagged with below_threshold=true in the API response."
+            if enabled
+            else "Confidence threshold removed — all predictions will be returned regardless of confidence."
+        ),
+    }
+
+
+@router.get("/api/deploy/{deployment_id}/confidence-threshold-status")
+def get_confidence_threshold_status(
+    deployment_id: str,
+    session: Session = Depends(get_session),
+):
+    """Return the current confidence threshold configuration and recent below-threshold stats."""
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment or not deployment.is_active:
+        raise HTTPException(status_code=404, detail="Deployment not found or inactive")
+
+    thr = getattr(deployment, "confidence_threshold", None)
+    problem_type = deployment.problem_type or "unknown"
+
+    # Count recent predictions below threshold (last 30 days, classification only)
+    below_count: int = 0
+    total_count: int = 0
+    if thr is not None and problem_type == "classification":
+        cutoff = datetime.now(UTC).replace(tzinfo=None) - timedelta(days=30)
+        logs = session.exec(
+            select(PredictionLog).where(
+                PredictionLog.deployment_id == deployment_id,
+                PredictionLog.created_at >= cutoff,
+                PredictionLog.confidence.is_not(None),
+            )
+        ).all()
+        total_count = len(logs)
+        below_count = sum(1 for lg in logs if (lg.confidence or 1.0) < thr)
+
+    below_pct = round(below_count / total_count * 100, 1) if total_count > 0 else None
+
+    return {
+        "deployment_id": deployment_id,
+        "confidence_threshold": thr,
+        "threshold_enabled": thr is not None,
+        "problem_type": problem_type,
+        "below_threshold_count_30d": below_count,
+        "total_predictions_30d": total_count,
+        "below_threshold_pct": below_pct,
+        "summary": (
+            f"Confidence threshold active at {thr:.0%}. "
+            f"{below_count} of {total_count} recent predictions ({below_pct}%) "
+            "fell below the threshold."
+            if thr is not None and total_count > 0
+            else (
+                f"Confidence threshold active at {thr:.0%} — no predictions yet."
+                if thr is not None
+                else "No confidence threshold configured."
+            )
+        ),
+    }
+
+
+# ---------------------------------------------------------------------------
 # 5a. Cross-deployment model comparison (must appear before parameterised routes)
 # ---------------------------------------------------------------------------
 
@@ -873,6 +979,20 @@ def make_prediction(
         serving_pipeline, serving_model, input_data, provided_features=input_data
     )
     response_ms = round((time.monotonic() - _t0) * 1000, 2)
+
+    # Confidence threshold: flag predictions that fall below the analyst-configured minimum
+    _conf_thr = getattr(deployment, "confidence_threshold", None)
+    if _conf_thr is not None and result.get("problem_type") == "classification":
+        _conf = result.get("confidence", 1.0) or 1.0
+        if _conf < _conf_thr:
+            result["below_threshold"] = True
+            result["threshold_message"] = (
+                f"Model confidence {_conf:.0%} is below the minimum threshold "
+                f"of {_conf_thr:.0%}. This prediction may be unreliable — "
+                "consider providing more specific feature values."
+            )
+        else:
+            result["below_threshold"] = False
 
     # Update usage stats (always on champion endpoint — that's the URL the analyst shared)
     deployment.request_count += 1
@@ -2925,6 +3045,7 @@ def _deployment_response(d: Deployment) -> dict:
         "environment": getattr(d, "environment", "staging"),
         "rate_limit_rpm": getattr(d, "rate_limit_rpm", None),
         "monthly_quota": getattr(d, "monthly_quota", None),
+        "confidence_threshold": getattr(d, "confidence_threshold", None),
     }
 
 

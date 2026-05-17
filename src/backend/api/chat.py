@@ -2648,6 +2648,29 @@ _DISABLE_ACCURACY_ALERT_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Confidence threshold configuration via chat
+_CONFIDENCE_THRESHOLD_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"(?:set|configure|add|enable)\s+(?:a\s+)?confidence\s+threshold|"
+    r"(?:minimum|min)\s+confidence\s+(?:threshold|filter|cutoff|level)|"
+    r"only\s+(?:accept|return|show|use)\s+(?:predictions?\s+)?(?:above|over|with)\s+\d+\%?\s+confidence|"
+    r"reject\s+(?:low[-\s]?confidence|uncertain)\s+predictions?|"
+    r"filter\s+(?:out\s+)?(?:predictions?\s+(?:with|below)|uncertain)\s+(?:low\s+)?confidence|"
+    r"confidence\s+(?:filter|cutoff|gate|guard|minimum)\b|"
+    r"(?:disable|remove|turn\s+off|clear)\s+(?:the\s+)?confidence\s+threshold|"
+    r"(?:check|show|what\s+is|get)\s+(?:my\s+)?confidence\s+threshold\b|"
+    r"don.t\s+(?:return|show|accept)\s+(?:predictions?\s+)?(?:below|under)\s+\d+\%?\s+confidence"
+    r")",
+    re.IGNORECASE,
+)
+_CONFIDENCE_THRESHOLD_VALUE_RE = re.compile(
+    r"\b(\d+(?:\.\d+)?)\s*(?:%|percent)?\b", re.IGNORECASE
+)
+_DISABLE_CONFIDENCE_THRESHOLD_RE = re.compile(
+    r"\b(?:disable|remove|turn\s+off|clear)\s+(?:the\s+)?confidence\s+threshold",
+    re.IGNORECASE,
+)
+
 # Deployment rollback via chat — "roll back to version 2", "revert my model"
 _ROLLBACK_PATTERNS = re.compile(
     r"(?i)(?:"
@@ -10315,6 +10338,99 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Rollback is nice-to-have; never crash chat
 
+    # Confidence threshold configuration via chat
+    confidence_threshold_event: dict | None = None
+    if _CONFIDENCE_THRESHOLD_PATTERNS.search(body.message) and ctx["deployment"]:
+        try:
+            _ct_dep = ctx["deployment"]
+            _ct_dep_id = _ct_dep.id if hasattr(_ct_dep, "id") else str(_ct_dep)
+            _ct_dep_obj = session.get(Deployment, _ct_dep_id)
+
+            if _ct_dep_obj:
+                _disable_ct = bool(
+                    _DISABLE_CONFIDENCE_THRESHOLD_RE.search(body.message)
+                )
+                _ct_m = _CONFIDENCE_THRESHOLD_VALUE_RE.search(body.message)
+                _new_ct_raw: float | None = float(_ct_m.group(1)) if _ct_m else None
+
+                # Normalize: "80%" → 0.8
+                _new_ct: float | None = None
+                if _new_ct_raw is not None and not _disable_ct:
+                    _new_ct = (
+                        _new_ct_raw / 100.0 if _new_ct_raw > 1.0 else _new_ct_raw
+                    )
+
+                _prob_type_ct = _ct_dep_obj.problem_type or "regression"
+
+                if _disable_ct:
+                    _ct_dep_obj.confidence_threshold = None
+                    session.add(_ct_dep_obj)
+                    session.commit()
+                    session.refresh(_ct_dep_obj)
+                elif _new_ct is not None and 0.0 <= _new_ct <= 1.0:
+                    _ct_dep_obj.confidence_threshold = _new_ct
+                    session.add(_ct_dep_obj)
+                    session.commit()
+                    session.refresh(_ct_dep_obj)
+
+                _thr_now_ct = getattr(_ct_dep_obj, "confidence_threshold", None)
+                _enabled_ct = _thr_now_ct is not None
+
+                # Count recent below-threshold predictions for context
+                _ct_below = 0
+                _ct_total = 0
+                if _thr_now_ct is not None and _prob_type_ct == "classification":
+                    from datetime import timedelta as _td_ct
+
+                    _ct_cutoff = datetime.now(UTC).replace(tzinfo=None) - _td_ct(
+                        days=30
+                    )
+                    _ct_logs = session.exec(
+                        select(PredictionLog).where(
+                            PredictionLog.deployment_id == _ct_dep_id,
+                            PredictionLog.created_at >= _ct_cutoff,
+                            PredictionLog.confidence.is_not(None),
+                        )
+                    ).all()
+                    _ct_total = len(_ct_logs)
+                    _ct_below = sum(
+                        1 for lg in _ct_logs if (lg.confidence or 1.0) < _thr_now_ct
+                    )
+
+                confidence_threshold_event = {
+                    "deployment_id": _ct_dep_id,
+                    "confidence_threshold": _thr_now_ct,
+                    "threshold_enabled": _enabled_ct,
+                    "problem_type": _prob_type_ct,
+                    "below_threshold_count_30d": _ct_below,
+                    "total_predictions_30d": _ct_total,
+                    "below_threshold_pct": (
+                        round(_ct_below / _ct_total * 100, 1) if _ct_total > 0 else None
+                    ),
+                    "summary": (
+                        f"Confidence threshold set to {_thr_now_ct:.0%}. "
+                        "Predictions below this level will be flagged in the API response."
+                        if _enabled_ct
+                        else "Confidence threshold removed — all predictions returned."
+                    ),
+                }
+                _ct_guidance = (
+                    f"Confidence threshold is now {_thr_now_ct:.0%}. "
+                    if _enabled_ct
+                    else "Confidence threshold is disabled. "
+                )
+                system_prompt += (
+                    f"\n\n## Confidence Threshold\n"
+                    f"{_ct_guidance}"
+                    "Tell the analyst what this means in plain English. "
+                    "If classification: when the model's max class probability is below the threshold, "
+                    "the API returns below_threshold=true and a plain-English message instead of a silent uncertain prediction. "
+                    "Remind them this only applies to classification models (not regression). "
+                    "Suggest they test a prediction to see how the flag works."
+                )
+        except Exception:  # noqa: BLE001
+            pass  # Confidence threshold events are nice-to-have; never crash chat
+
     # A/B test status / promote / end
     ab_test_result_event: dict | None = None
     if _AB_TEST_PATTERNS.search(body.message) and ctx["deployment"]:
@@ -13277,6 +13393,10 @@ def send_message(
         # Emit deployment rollback / version history card
         if rollback_chat_event:
             yield f"data: {json.dumps({'type': 'rollback_chat', 'rollback_chat': rollback_chat_event})}\n\n"
+
+        # Emit confidence threshold configuration card
+        if confidence_threshold_event:
+            yield f"data: {json.dumps({'type': 'confidence_threshold_config', 'confidence_threshold_config': confidence_threshold_event})}\n\n"
 
         # Emit batch prediction schedule event
         if schedule_event:

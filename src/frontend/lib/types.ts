@@ -514,6 +514,7 @@ export interface ChatMessage {
   cross_model_features?: CrossModelFeatureResult
   accuracy_alert_config?: AccuracyAlertConfig
   rollback_chat?: RollbackChatResult
+  confidence_threshold_config?: ConfidenceThresholdConfig
 }
 
 export interface RollbackVersionEntry {
@@ -968,6 +969,8 @@ export interface PredictionResult {
   confidence?: number
   confidence_interval?: ConfidenceInterval
   guard_rail_warnings?: GuardRailWarning[]
+  below_threshold?: boolean
+  threshold_message?: string
 }
 
 // ---------------------------------------------------------------------------
@@ -1056,6 +1059,16 @@ export interface AccuracyAlertConfig {
   metric_label: string
   current_metric: number | null
   n_feedback: number
+  summary: string
+}
+
+export interface ConfidenceThresholdConfig {
+  deployment_id: string
+  confidence_threshold: number | null
+  threshold_enabled: boolean
+  below_threshold_count_30d: number
+  total_predictions_30d: number
+  below_threshold_pct: number | null
   summary: string
 }
 

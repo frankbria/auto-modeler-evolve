@@ -710,6 +710,20 @@ export default function PredictionDashboard() {
                 </div>
               )}
 
+              {result.below_threshold && (
+                <div
+                  className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 dark:border-amber-700 dark:bg-amber-950/30"
+                  data-testid="below-threshold-warning"
+                >
+                  <p className="text-xs font-semibold text-amber-800 dark:text-amber-300">
+                    ⚠ Low-confidence prediction
+                  </p>
+                  <p className="mt-0.5 text-xs text-amber-700 dark:text-amber-400">
+                    {result.threshold_message ?? "This prediction is below the configured confidence threshold and may be unreliable."}
+                  </p>
+                </div>
+              )}
+
               {result.probabilities && (
                 <div>
                   <p className="mb-2 text-xs font-medium">Probability per outcome</p>

@@ -53,6 +53,18 @@ the time is better spent on real features.
 
 ---
 
+## Day 67 (12:00) — Done
+**Track D — Prediction Confidence Thresholding via Chat.**
+
+Analysts can now set a minimum confidence threshold so uncertain classification predictions are flagged with `below_threshold=True` rather than silently served. "set confidence threshold to 80%", "reject low-confidence predictions", "only accept predictions above 90% confidence", 9 NL variants total. `_CONFIDENCE_THRESHOLD_PATTERNS` + `_CONFIDENCE_THRESHOLD_VALUE_RE` + `_DISABLE_CONFIDENCE_THRESHOLD_RE` in `chat.py`. Handler persists `Deployment.confidence_threshold`; `make_prediction()` compares `max(predict_proba)` against threshold — below → `below_threshold=True` + plain-English `threshold_message`; at or above → `below_threshold=False`. `PUT /api/deploy/{id}/confidence-threshold` + `GET /api/deploy/{id}/confidence-threshold-status`. `ConfidenceThresholdCard` (amber border, 🎯 icon): enabled/disabled badge, amber explanation, 30-day below-count stats. `predict/[id]/page.tsx` shows amber callout when `below_threshold=True`. Inline migration for `confidence_threshold REAL` in `db.py`. Classification-only (no-op for regression). 17 backend + 15 frontend = 32 new tests. Backend lint: clean. Frontend build + lint: clean.
+
+**What's next:**
+- Track D: Prediction SLA / latency monitoring — chat query "is my model responding fast enough?", `response_ms` already logged in `PredictionLog`
+- Track E: "What's next?" guidance cards at key step transitions (after upload, after training, after deploy)
+- Track C: Ensemble methods (voting classifier / stacking) for better model accuracy
+
+---
+
 ## Day 67 (04:00) — Done
 **Track C — Interactive What-if Scenario Explorer with Sliders.**
 
