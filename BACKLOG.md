@@ -53,6 +53,18 @@ the time is better spent on real features.
 
 ---
 
+## Day 67 (04:00) — Done
+**Track C — Interactive What-if Scenario Explorer with Sliders.**
+
+Upgraded the basic text-input `WhatIfCard` in `DeploymentPanel` into a real-time interactive slider panel. Analysts can drag sliders for numeric features (bounded by p5/p95 training-data percentiles), choose from dropdowns for categorical features, and see the predicted outcome update in ~400ms. Side-by-side "Baseline (means)" vs "Your Scenario" comparison with delta badge (▲/▼/→ + % change) and confidence interval band. "Show more" toggle for >8 features. Backend: extended `get_feature_schema()` in `core/deployer.py` to include `min`, `max`, `p5`, `p95` from stored `feature_ranges`; `FeatureSchemaEntry` TypeScript type extended with optional range fields. Frontend uses debounced `api.deploy.predict()` call. 7 backend + 17 frontend = 24 new tests. Backend lint: clean. Frontend build + lint: clean.
+
+**What's next:**
+- Track D: Prediction SLA / latency monitoring — chat query "is my model responding fast enough?", dashboard metric
+- Track E: "What's next?" guidance cards at key step transitions (after upload, after training, after deploy)
+- Track C: Ensemble methods (voting classifier / stacking) for better model accuracy
+
+---
+
 ## Day 66 (20:00) — Done
 **Track D — Deployment Rollback via Chat.**
 

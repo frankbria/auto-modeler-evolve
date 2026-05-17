@@ -8,10 +8,10 @@
  */
 
 import React from "react"
-import { render, screen, fireEvent, waitFor, act } from "@testing-library/react"
+import { render, screen } from "@testing-library/react"
 import { DeploymentPanel } from "../components/deploy/deployment-panel"
 import { api } from "../lib/api"
-import type { Deployment, FeatureSchemaEntry, PredictionResult } from "../lib/types"
+import type { FeatureSchemaEntry, PredictionResult } from "../lib/types"
 
 // ---------------------------------------------------------------------------
 // Mock entire api module
@@ -84,24 +84,6 @@ const BASELINE_RESULT: PredictionResult = {
   confidence_interval: { lower: 1200, upper: 1800, level: 0.95, label: "95% prediction interval" },
 }
 
-const makeDeployment = (schema?: FeatureSchemaEntry[]): Deployment => ({
-  id: "dep-1",
-  model_run_id: "run-1",
-  project_id: "proj-1",
-  endpoint_path: "/api/predict/dep-1",
-  dashboard_url: "/predict/dep-1",
-  is_active: true,
-  request_count: 42,
-  algorithm: "Random Forest",
-  problem_type: "regression",
-  feature_names: ["units", "price", "region", "product"],
-  target_column: "revenue",
-  metrics: { r2: 0.85 },
-  created_at: "2026-01-01T00:00:00",
-  last_predicted_at: "2026-01-02T12:00:00",
-  api_key_enabled: false,
-  feature_schema: schema,
-})
 
 beforeEach(() => {
   jest.clearAllMocks()
@@ -117,8 +99,7 @@ beforeEach(() => {
 
 describe("WhatIfCard — no schema", () => {
   it("renders nothing when feature_schema is absent", () => {
-    const dep = makeDeployment(undefined)
-    const { container } = render(
+    render(
       <DeploymentPanel projectId="proj-1" selectedRunId="run-1" algorithmName="Random Forest" />
     )
     // The card appears only with a schema; without schema it's null
@@ -127,23 +108,7 @@ describe("WhatIfCard — no schema", () => {
 })
 
 describe("WhatIfCard — numeric features", () => {
-  async function renderWithSchema(schema: FeatureSchemaEntry[]) {
-    const dep = makeDeployment(schema)
-    // Render the panel with a deployed model
-    const { unmount } = render(
-      <DeploymentPanel
-        projectId="proj-1"
-        selectedRunId="run-1"
-        algorithmName="Random Forest"
-      />
-    )
-    // We can't easily inject the deployment directly into DeploymentPanel without mocking
-    // the full fetch flow — instead, test the WhatIfCard in isolation by extracting it.
-    unmount()
-    return dep
-  }
-
-  it("renders sliders for numeric features", async () => {
+  it("renders sliders for numeric features", () => {
     // Render WhatIfCard directly via a wrapper that provides the deployment prop
     // by importing the internal component after mocking the module.
     // Since WhatIfCard is not exported, we verify via the parent panel's rendered output.
@@ -220,9 +185,7 @@ describe("WhatIfCard — buildDefaults helper", () => {
     const schema: FeatureSchemaEntry[] = [
       { name: "units", type: "numeric", mean: 12, median: 10 },
     ]
-    // buildDefaults returns mean for numeric
-    const expected = { units: 12 }
-    // We can only test this indirectly via the type contract
+    // buildDefaults returns mean for numeric; tested indirectly via type contract
     expect(schema[0].mean).toBe(12)
   })
 

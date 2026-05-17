@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { api } from "@/lib/api"
-import type { Deployment, DeploymentAnalytics, ModelReadiness, DriftReport, WhatIfResult, FeedbackAccuracy, ModelHealth, ProjectAlerts, ProjectAlert, SlaData, FeatureSchemaEntry, PredictionResult } from "@/lib/types"
+import type { Deployment, DeploymentAnalytics, ModelReadiness, DriftReport, FeedbackAccuracy, ModelHealth, ProjectAlerts, ProjectAlert, SlaData, FeatureSchemaEntry, PredictionResult } from "@/lib/types"
 import { IntegrationCard } from "./integration-card"
 import { ExportServiceCard } from "./export-service-card"
 import { ScheduleCard } from "./schedule-card"
@@ -274,7 +274,7 @@ function buildDefaults(schema: FeatureSchemaEntry[]): Record<string, number | st
 }
 
 function WhatIfCard({ deployment }: { deployment: Deployment }) {
-  const schema = deployment.feature_schema ?? []
+  const schema = useMemo(() => deployment.feature_schema ?? [], [deployment.feature_schema])
   const defaults = useMemo(() => buildDefaults(schema), [schema])
   const [values, setValues] = useState<Record<string, number | string>>(defaults)
   const [baseline, setBaseline] = useState<PredictionResult | null>(null)
