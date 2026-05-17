@@ -236,7 +236,6 @@ def test_chat_rollback_to_previous_version(client):
         json={"algorithms": ["linear_regression"], "feature_set_id": fs_id2},
     )
     assert train_r2.status_code == 202
-    run2_candidates = train_r2.json()["model_run_ids"]
 
     for _ in range(30):
         runs_r = client.get(f"/api/models/{proj_id}/runs")
