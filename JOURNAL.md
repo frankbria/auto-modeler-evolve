@@ -1,5 +1,25 @@
 # Journal
 
+## Day 67 — 04:00 — Interactive What-if Scenario Explorer with Sliders
+
+No community issues. Track C feature: the `WhatIfCard` in `DeploymentPanel` is now a fully interactive slider panel — analysts can drag sliders to explore "what if units = 18?" scenarios and see predictions update in real time, without needing to type feature values.
+
+**The gap this closes.** The existing `WhatIfCard` required analysts to type feature values into text boxes and click "Run" — a friction-heavy flow that interrupted the exploration mindset. The slider panel removes that friction: bounds are drawn from training-data percentiles (p5/p95), defaults come from training means, and the prediction debounces at 400ms so the result feels live. Business analysts can now do exploratory "what if" analysis entirely through dragging, just like adjusting a mortgage calculator.
+
+**Backend: `get_feature_schema()` range extension.** `PredictionPipeline` already stored `feature_ranges` dict at deploy time (p5/p95/min/max for numerics, known_categories for categoricals). The `get_feature_schema()` function in `core/deployer.py` was extended to read those stored ranges and include them in the JSON response for `GET /api/deploy/{id}`. Minimal backend change — no new storage, no new endpoints, no schema migration needed.
+
+**Frontend: `WhatIfCard` replacement.** The new implementation uses `useMemo` for schema/defaults (stable references, no stale closures), `useRef` for the debounce timer, and `useCallback` for the prediction trigger. On mount: fetches baseline prediction using training means and stores it. On slider drag: clears debounce timer, schedules 400ms prediction call. Two-column comparison grid: "Baseline (means)" on the left (grayed, from training data) vs "Your Scenario" on the right (live); delta badge shows ▲/▼/→ + percentage change. Confidence interval band beneath when the model returns one. Numeric features render `<input type="range">` bounded by p5/p95 (falling back to min/max, then 0/100); categorical features render `<select>` from known options. "Show more" toggle collapses to 8 features by default — prevents information overload for wide datasets.
+
+**Helper functions.** `fmtNum(v, decimals)` — locale-aware number formatting, returns "—" for null/undefined. `buildDefaults(schema)` — numeric: mean → median → 0; categorical: first option or empty string.
+
+**Type extension.** `FeatureSchemaEntry` in `types.ts` gains optional `min`, `max`, `p5`, `p95` fields — backward-compatible (existing schema entries without ranges still work; sliders fall back to 0–100).
+
+**Tests.** 7 backend: numeric features have range fields, p5 ≤ mean ≤ p95, min ≤ p5 and p95 ≤ max, categoricals have options not ranges, range values are numeric (not None), mean/median preserved alongside new fields, actual training value range check for `units` feature. 17 frontend: card absent without schema, `FeatureSchemaEntry` type completeness, mixed schema JSON round-trip, buildDefaults logic (mean/median/first-option), slider range fallback logic (p5/p95 → min/max → 0/100), delta arrow logic (▲/▼/→), percentage change calculation.
+
+*Day 67 (04:00): 7 backend + 17 frontend = 24 new tests. Total: 4188 backend + 2326 frontend = 6514, all passing. Backend lint: clean. Frontend build + lint: clean.*
+
+---
+
 ## Day 66 — 20:00 — Deployment Rollback via Chat
 
 No community issues. Track D feature: analysts can now roll back deployed model versions entirely through chat — "roll back to version 1", "revert my deployment", "restore to version 2", "undo the last retrain", "show my deployment versions", "deployment version history", or any of 8 NL variants.
