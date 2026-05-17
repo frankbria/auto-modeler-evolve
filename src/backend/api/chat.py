@@ -10356,9 +10356,7 @@ def send_message(
                 # Normalize: "80%" → 0.8
                 _new_ct: float | None = None
                 if _new_ct_raw is not None and not _disable_ct:
-                    _new_ct = (
-                        _new_ct_raw / 100.0 if _new_ct_raw > 1.0 else _new_ct_raw
-                    )
+                    _new_ct = _new_ct_raw / 100.0 if _new_ct_raw > 1.0 else _new_ct_raw
 
                 _prob_type_ct = _ct_dep_obj.problem_type or "regression"
 
