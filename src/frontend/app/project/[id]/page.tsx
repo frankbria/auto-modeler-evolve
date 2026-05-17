@@ -58,6 +58,7 @@ import { ModelCardExportCard } from "@/components/chat/model-card-export-card"
 import { ModelComparisonSummaryCard } from "@/components/chat/model-comparison-summary-card"
 import { CrossModelFeaturesCard } from "@/components/chat/cross-model-features-card"
 import { AccuracyAlertCard } from "@/components/deploy/accuracy-alert-card"
+import { RollbackChatCard } from "@/components/deploy/rollback-chat-card"
 import { ProjectHealthCard } from "@/components/chat/project-health-card"
 import { PredictionOpportunitiesCard } from "@/components/models/prediction-opportunities-card"
 import { DatasetComparisonCard } from "@/components/data/dataset-comparison-card"
@@ -325,6 +326,7 @@ export default function ProjectWorkspace() {
     attachModelComparisonSummaryToLastMessage,
     attachCrossModelFeaturesToLastMessage,
     attachAccuracyAlertConfigToLastMessage,
+    attachRollbackChatToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -799,6 +801,8 @@ export default function ProjectWorkspace() {
                 attachCrossModelFeaturesToLastMessage(json.cross_model_features as import("@/lib/types").CrossModelFeatureResult)
               } else if (json.type === "accuracy_alert_config" && json.accuracy_alert_config) {
                 attachAccuracyAlertConfigToLastMessage(json.accuracy_alert_config as import("@/lib/types").AccuracyAlertConfig)
+              } else if (json.type === "rollback_chat" && json.rollback_chat) {
+                attachRollbackChatToLastMessage(json.rollback_chat as import("@/lib/types").RollbackChatResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -925,6 +929,7 @@ export default function ProjectWorkspace() {
     attachModelComparisonSummaryToLastMessage,
     attachCrossModelFeaturesToLastMessage,
     attachAccuracyAlertConfigToLastMessage,
+    attachRollbackChatToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -1492,6 +1497,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.accuracy_alert_config && (
                       <AccuracyAlertCard config={msg.accuracy_alert_config} />
+                    )}
+                    {msg.rollback_chat && (
+                      <RollbackChatCard result={msg.rollback_chat} />
                     )}
                   </div>
                 </div>

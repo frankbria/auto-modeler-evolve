@@ -2648,6 +2648,25 @@ _DISABLE_ACCURACY_ALERT_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Deployment rollback via chat — "roll back to version 2", "revert my model"
+_ROLLBACK_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"(?:roll\s*back|rollback|revert|restore|undo\s+(?:the\s+)?(?:last\s+)?deploy(?:ment)?)\b|"
+    r"(?:go\s+back\s+to|switch\s+back\s+to|use)\s+(?:version|v)\s*\d+\b|"
+    r"(?:restore|revert|roll\s*back)\s+to\s+(?:version|v)\s*\d+\b|"
+    r"(?:restore|revert)\s+(?:my\s+)?(?:model|deployment)\s+to\s+(?:previous|earlier|old(?:er)?)\b|"
+    r"(?:previous|earlier|old(?:er)?)\s+(?:version|model|deployment)\s+(?:please|now)?\b|"
+    r"(?:show|list|what(?:\s+are)?)\s+(?:my\s+)?(?:deployment\s+)?versions?\b|"
+    r"(?:deployment\s+)?version\s+(?:history|timeline|list)\b|"
+    r"(?:undo|cancel)\s+(?:the\s+)?(?:last\s+)?(?:retrain|redeploy)\b"
+    r")",
+    re.IGNORECASE,
+)
+
+_ROLLBACK_VERSION_RE = re.compile(
+    r"\b(?:version|v)\s*(\d+)\b", re.IGNORECASE
+)
+
 # Keywords that trigger class imbalance detection via chat
 _CLASS_IMBALANCE_PATTERNS = re.compile(
     r"(?i)\b("
@@ -10099,6 +10118,184 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Accuracy alert events are nice-to-have; never crash chat
 
+    # Deployment rollback via chat — "roll back to version 2", "show my versions"
+    rollback_chat_event: dict | None = None
+    if _ROLLBACK_PATTERNS.search(body.message) and ctx["deployment"]:
+        try:
+            from models.deployment_version import DeploymentVersion as _DepVer
+
+            _rb_dep = ctx["deployment"]
+            _rb_dep_id = _rb_dep.id if hasattr(_rb_dep, "id") else str(_rb_dep)
+            _rb_dep_obj = session.get(Deployment, _rb_dep_id)
+
+            if _rb_dep_obj:
+                # Fetch version history
+                _rb_versions = session.exec(
+                    select(_DepVer)
+                    .where(_DepVer.deployment_id == _rb_dep_id)
+                    .order_by(_DepVer.version_number.desc())
+                ).all()
+
+                _current_ver = getattr(_rb_dep_obj, "current_version_number", 1)
+                _rb_action = "list"  # default: show versions
+                _rb_target_ver: int | None = None
+                _rolled_back = False
+                _error_msg: str | None = None
+
+                # Detect if user wants to actually rollback vs just show versions
+                _show_only_re = re.compile(
+                    r"(?i)(?:show|list|view|what(?:\s+are)?|history|timeline)\s+",
+                    re.IGNORECASE,
+                )
+                _wants_rollback = bool(
+                    re.search(
+                        r"(?i)(?:roll\s*back|rollback|revert|restore|go\s+back|switch\s+back|undo|cancel\s+(?:the\s+)?(?:last\s+)?(?:retrain|redeploy))",
+                        body.message,
+                    )
+                    or re.search(
+                        r"(?i)(?:previous|earlier|old(?:er)?)\s+(?:version|model|deployment)\s+(?:please|now)?",
+                        body.message,
+                    )
+                ) and not bool(_show_only_re.match(body.message.strip()))
+
+                if _wants_rollback:
+                    _rb_action = "rollback"
+                    _ver_m = _ROLLBACK_VERSION_RE.search(body.message)
+                    if _ver_m:
+                        _rb_target_ver = int(_ver_m.group(1))
+                    elif len(_rb_versions) >= 2:
+                        # Default to previous version (second in desc list)
+                        _rb_target_ver = _rb_versions[1].version_number
+
+                    if _rb_target_ver is not None and _rb_target_ver != _current_ver:
+                        # Find target version
+                        _target_v = next(
+                            (v for v in _rb_versions if v.version_number == _rb_target_ver),
+                            None,
+                        )
+                        if _target_v is None:
+                            _error_msg = f"Version {_rb_target_ver} not found for this deployment."
+                        elif not _target_v.pipeline_path or not __import__("pathlib").Path(_target_v.pipeline_path).exists():
+                            _error_msg = f"Pipeline file for version {_rb_target_ver} is no longer available on disk."
+                        else:
+                            # Perform the rollback inline
+                            _cur_vers_to_archive = session.exec(
+                                select(_DepVer).where(
+                                    _DepVer.deployment_id == _rb_dep_id,
+                                    _DepVer.is_current == True,  # noqa: E712
+                                )
+                            ).all()
+                            for _cv in _cur_vers_to_archive:
+                                _cv.is_current = False
+                                session.add(_cv)
+
+                            _new_ver_num = _current_ver + 1
+                            _rb_dep_obj.model_run_id = _target_v.model_run_id
+                            _rb_dep_obj.pipeline_path = _target_v.pipeline_path
+                            _rb_dep_obj.algorithm = _target_v.algorithm
+                            _rb_dep_obj.problem_type = _target_v.problem_type
+                            _rb_dep_obj.target_column = _target_v.target_column
+                            _rb_dep_obj.metrics = _target_v.metrics
+                            _rb_dep_obj.current_version_number = _new_ver_num
+                            session.add(_rb_dep_obj)
+
+                            _rollback_ver_obj = _DepVer(
+                                deployment_id=_rb_dep_id,
+                                version_number=_new_ver_num,
+                                model_run_id=_target_v.model_run_id,
+                                algorithm=_target_v.algorithm,
+                                problem_type=_target_v.problem_type,
+                                target_column=_target_v.target_column,
+                                metrics=_target_v.metrics,
+                                pipeline_path=_target_v.pipeline_path,
+                                is_current=True,
+                            )
+                            session.add(_rollback_ver_obj)
+                            session.commit()
+                            session.refresh(_rb_dep_obj)
+
+                            # Refresh version list after rollback
+                            _rb_versions = session.exec(
+                                select(_DepVer)
+                                .where(_DepVer.deployment_id == _rb_dep_id)
+                                .order_by(_DepVer.version_number.desc())
+                            ).all()
+                            _current_ver = _new_ver_num
+                            _rolled_back = True
+                    elif _rb_target_ver == _current_ver:
+                        _error_msg = f"Version {_rb_target_ver} is already the current version."
+                    elif _rb_target_ver is None and len(_rb_versions) < 2:
+                        _error_msg = "No previous versions available to roll back to."
+
+                import json as _json_mod
+
+                def _fmt_metric(metrics_json: str | None) -> str | None:
+                    if not metrics_json:
+                        return None
+                    try:
+                        _m = _json_mod.loads(metrics_json) if isinstance(metrics_json, str) else metrics_json
+                        for _k in ("r2", "accuracy", "f1"):
+                            if _k in _m:
+                                _v = _m[_k]
+                                return f"{_k.upper() if _k != 'accuracy' else 'Accuracy'} {_v:.2%}" if isinstance(_v, float) else str(_v)
+                    except Exception:  # noqa: BLE001
+                        pass
+                    return None
+
+                _ver_list = [
+                    {
+                        "version_number": v.version_number,
+                        "algorithm": v.algorithm,
+                        "is_current": v.is_current,
+                        "deployed_at": v.deployed_at.isoformat() if v.deployed_at else None,
+                        "metric_display": _fmt_metric(v.metrics),
+                    }
+                    for v in _rb_versions
+                ]
+
+                rollback_chat_event = {
+                    "action": _rb_action,
+                    "deployment_id": _rb_dep_id,
+                    "current_version_number": _current_ver,
+                    "rolled_back": _rolled_back,
+                    "rolled_back_to_version": _rb_target_ver if _rolled_back else None,
+                    "new_version_number": _current_ver if _rolled_back else None,
+                    "error_message": _error_msg,
+                    "versions": _ver_list,
+                    "total_versions": len(_ver_list),
+                }
+
+                if _rolled_back:
+                    _algo_plain = (
+                        _rb_dep_obj.algorithm.replace("_", " ").title()
+                        if _rb_dep_obj.algorithm
+                        else "the model"
+                    )
+                    system_prompt += (
+                        f"\n\n## Deployment Rollback\n"
+                        f"Successfully rolled back to version {_rb_target_ver}. "
+                        f"Now serving {_algo_plain}. "
+                        "Tell the analyst the rollback succeeded and their endpoint URL is unchanged. "
+                        "Mention the version they're now on."
+                    )
+                elif _rb_action == "list" or (_rb_action == "rollback" and _error_msg):
+                    _summary_parts = []
+                    if _error_msg:
+                        _summary_parts.append(f"Error: {_error_msg}")
+                    _summary_parts.append(
+                        f"Deployment has {len(_ver_list)} version{'s' if len(_ver_list) != 1 else ''}. "
+                        f"Currently on version {_current_ver}."
+                    )
+                    system_prompt += (
+                        "\n\n## Deployment Version History\n"
+                        + " ".join(_summary_parts)
+                        + " List the versions briefly. "
+                        "If the analyst wants to roll back, say 'roll back to version N' and specify the version number."
+                    )
+
+        except Exception:  # noqa: BLE001
+            pass  # Rollback is nice-to-have; never crash chat
+
     # A/B test status / promote / end
     ab_test_result_event: dict | None = None
     if _AB_TEST_PATTERNS.search(body.message) and ctx["deployment"]:
@@ -13057,6 +13254,10 @@ def send_message(
         # Emit accuracy degradation alert configuration card
         if accuracy_alert_event:
             yield f"data: {json.dumps({'type': 'accuracy_alert_config', 'accuracy_alert_config': accuracy_alert_event})}\n\n"
+
+        # Emit deployment rollback / version history card
+        if rollback_chat_event:
+            yield f"data: {json.dumps({'type': 'rollback_chat', 'rollback_chat': rollback_chat_event})}\n\n"
 
         # Emit batch prediction schedule event
         if schedule_event:

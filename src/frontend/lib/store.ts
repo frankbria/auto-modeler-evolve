@@ -153,6 +153,7 @@ interface AppState {
   attachModelComparisonSummaryToLastMessage: (model_comparison_summary: import("./types").ModelComparisonSummaryResult) => void
   attachCrossModelFeaturesToLastMessage: (cross_model_features: import("./types").CrossModelFeatureResult) => void
   attachAccuracyAlertConfigToLastMessage: (accuracy_alert_config: import("./types").AccuracyAlertConfig) => void
+  attachRollbackChatToLastMessage: (rollback_chat: import("./types").RollbackChatResult) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -1174,6 +1175,16 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, accuracy_alert_config }
+      }
+      return { messages }
+    }),
+
+  attachRollbackChatToLastMessage: (rollback_chat) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, rollback_chat }
       }
       return { messages }
     }),

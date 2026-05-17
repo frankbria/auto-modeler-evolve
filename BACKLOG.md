@@ -49,6 +49,20 @@ the time is better spent on real features.
 
 ## Currently Working On
 
+*Nothing — pick from What's Next below.*
+
+---
+
+## Day 66 (20:00) — Done
+**Track D — Deployment Rollback via Chat.**
+
+Analysts can now list deployment version history and roll back to any previous version entirely through chat: "roll back to version 1", "revert my deployment", "show my deployment versions", "deployment version history". `_ROLLBACK_PATTERNS` (8 NL variants) + `_ROLLBACK_VERSION_RE` in `chat.py`. List mode returns all versions; rollback mode archives current version, restores target model files onto Deployment row, creates new DeploymentVersion entry keeping endpoint URL stable. `RollbackChatCard` (indigo/emerald/rose borders for list/success/error): version history table with Current/Restored badges, algorithm name, metric, date; footer guidance. 10 backend + 18 frontend = 28 new tests. Backend lint: clean. Frontend build: clean.
+
+**What's next:**
+- Track C: What-if scenario analysis panel — simulate predictions by adjusting feature sliders interactively
+- Track D: Prediction SLA / latency monitoring — chat query "is my model responding fast enough?", dashboard metric
+- Track E: "What's next?" guidance cards at key step transitions (after upload, after training, after deploy)
+
 ---
 
 ## Day 66 (12:00) — Done

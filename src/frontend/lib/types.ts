@@ -513,6 +513,27 @@ export interface ChatMessage {
   model_comparison_summary?: ModelComparisonSummaryResult
   cross_model_features?: CrossModelFeatureResult
   accuracy_alert_config?: AccuracyAlertConfig
+  rollback_chat?: RollbackChatResult
+}
+
+export interface RollbackVersionEntry {
+  version_number: number
+  algorithm: string | null
+  is_current: boolean
+  deployed_at: string | null
+  metric_display: string | null
+}
+
+export interface RollbackChatResult {
+  action: "rollback" | "list"
+  deployment_id: string
+  current_version_number: number
+  rolled_back: boolean
+  rolled_back_to_version: number | null
+  new_version_number: number | null
+  error_message: string | null
+  versions: RollbackVersionEntry[]
+  total_versions: number
 }
 
 export interface SegmentPerformanceSegment {
