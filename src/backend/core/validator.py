@@ -1034,3 +1034,115 @@ def _fairness_regression_summary(
         )
 
     return f"MAE by group: {groups_desc}. MAE disparity ratio: {mae_disparity:.2f}. {verdict}"
+
+
+# ---------------------------------------------------------------------------
+# Input validation rules — pure function, no DB dependencies
+# ---------------------------------------------------------------------------
+
+
+def validate_prediction_inputs(
+    inputs: dict,
+    rules: list[dict],
+) -> tuple[bool, list[dict]]:
+    """Check prediction inputs against a list of validation rules.
+
+    Args:
+        inputs: dict of feature_name → value from the prediction request.
+        rules: list of dicts with keys: feature_name, rule_type,
+               min_val (float|None), max_val (float|None),
+               allowed_values (list[str]|None).
+
+    Returns:
+        (is_valid, violations) where violations is a list of
+        {feature_name, value, rule_type, message} dicts.
+    """
+    import json as _json
+
+    violations: list[dict] = []
+
+    for rule in rules:
+        feature = rule["feature_name"]
+        rule_type = rule["rule_type"]
+        value = inputs.get(feature)
+
+        if rule_type == "not_null":
+            if value is None or (isinstance(value, str) and value.strip() == ""):
+                violations.append(
+                    {
+                        "feature_name": feature,
+                        "value": value,
+                        "rule_type": rule_type,
+                        "message": f"'{feature}' is required but was not provided.",
+                    }
+                )
+
+        elif rule_type == "range":
+            min_val = rule.get("min_val")
+            max_val = rule.get("max_val")
+            try:
+                numeric = float(value)  # type: ignore[arg-type]
+            except (TypeError, ValueError):
+                violations.append(
+                    {
+                        "feature_name": feature,
+                        "value": value,
+                        "rule_type": rule_type,
+                        "message": (
+                            f"'{feature}' must be a number"
+                            + (
+                                f" between {min_val} and {max_val}"
+                                if min_val is not None and max_val is not None
+                                else ""
+                            )
+                            + f" — received '{value}'."
+                        ),
+                    }
+                )
+                continue
+
+            lo_ok = min_val is None or numeric >= min_val
+            hi_ok = max_val is None or numeric <= max_val
+            if not (lo_ok and hi_ok):
+                bounds = (
+                    f"between {min_val} and {max_val}"
+                    if min_val is not None and max_val is not None
+                    else (f"≥ {min_val}" if min_val is not None else f"≤ {max_val}")
+                )
+                violations.append(
+                    {
+                        "feature_name": feature,
+                        "value": value,
+                        "rule_type": rule_type,
+                        "message": (
+                            f"'{feature}' must be {bounds} — received {numeric}."
+                        ),
+                    }
+                )
+
+        elif rule_type == "one_of":
+            allowed_raw = rule.get("allowed_values")
+            if allowed_raw:
+                allowed: list[str] = (
+                    _json.loads(allowed_raw)
+                    if isinstance(allowed_raw, str)
+                    else list(allowed_raw)
+                )
+                str_value = str(value).strip() if value is not None else ""
+                if str_value not in [str(a).strip() for a in allowed]:
+                    allowed_display = ", ".join(f"'{a}'" for a in allowed[:6])
+                    if len(allowed) > 6:
+                        allowed_display += f", … ({len(allowed)} total)"
+                    violations.append(
+                        {
+                            "feature_name": feature,
+                            "value": value,
+                            "rule_type": rule_type,
+                            "message": (
+                                f"'{feature}' must be one of: {allowed_display} "
+                                f"— received '{value}'."
+                            ),
+                        }
+                    )
+
+    return len(violations) == 0, violations

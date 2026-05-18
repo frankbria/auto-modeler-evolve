@@ -50,6 +50,7 @@ from core.deployer import (
     save_pipeline,
 )
 from core.feature_engine import apply_transformations
+from core.validator import validate_prediction_inputs
 from db import get_session
 from models.dataset import Dataset
 from models.deployment import Deployment
@@ -62,6 +63,7 @@ from models.feedback_record import FeedbackRecord
 from models.prediction_log import PredictionLog
 from models.webhook_config import WebhookConfig
 from models.prediction_alert_rule import PredictionAlertRule
+from models.input_validation_rule import InputValidationRule
 
 router = APIRouter(tags=["deployment"])
 
@@ -937,6 +939,31 @@ def make_prediction(
                 "in the last 30 days). Contact the model owner to increase the limit."
             ),
         )
+
+    # Input validation rules — guard the model from out-of-range or unexpected inputs
+    _iv_rules = session.exec(
+        select(InputValidationRule).where(
+            InputValidationRule.deployment_id == deployment_id
+        )
+    ).all()
+    if _iv_rules:
+        _iv_rule_dicts = [
+            {
+                "feature_name": r.feature_name,
+                "rule_type": r.rule_type,
+                "min_val": r.min_val,
+                "max_val": r.max_val,
+                "allowed_values": r.allowed_values,
+            }
+            for r in _iv_rules
+        ]
+        _iv_valid, _iv_violations = validate_prediction_inputs(input_data, _iv_rule_dicts)
+        if not _iv_valid:
+            _iv_messages = "; ".join(v["message"] for v in _iv_violations)
+            raise HTTPException(
+                status_code=422,
+                detail=f"Input validation failed: {_iv_messages}",
+            )
 
     if not deployment.pipeline_path or not Path(deployment.pipeline_path).exists():
         raise HTTPException(
@@ -5314,3 +5341,159 @@ def get_training_vs_production(
     result["algorithm"] = deployment.algorithm or ""
     result["target_column"] = deployment.target_column or ""
     return result
+
+
+# ---------------------------------------------------------------------------
+# 22. Input validation rules — guard prediction inputs with business rules
+# ---------------------------------------------------------------------------
+
+
+class InputValidationRuleRequest(BaseModel):
+    feature_name: str
+    rule_type: str  # "range" | "one_of" | "not_null"
+    min_val: float | None = None
+    max_val: float | None = None
+    allowed_values: list[str] | None = None  # for rule_type="one_of"
+
+
+@router.post("/api/deploy/{deployment_id}/input-validation-rules")
+def create_input_validation_rule(
+    deployment_id: str,
+    body: InputValidationRuleRequest,
+    session: Session = Depends(get_session),
+):
+    """Create a validation rule for incoming prediction inputs.
+
+    rule_type values:
+      "range"    — feature must be a number between min_val and max_val.
+      "one_of"   — feature must be one of the strings in allowed_values.
+      "not_null" — feature must be present and non-empty.
+    """
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment:
+        raise HTTPException(status_code=404, detail="Deployment not found")
+
+    valid_types = {"range", "one_of", "not_null"}
+    if body.rule_type not in valid_types:
+        raise HTTPException(
+            status_code=422,
+            detail=f"rule_type must be one of: {', '.join(sorted(valid_types))}",
+        )
+
+    if body.rule_type == "range":
+        if body.min_val is None and body.max_val is None:
+            raise HTTPException(
+                status_code=422,
+                detail="range rule requires at least one of min_val or max_val.",
+            )
+    elif body.rule_type == "one_of":
+        if not body.allowed_values:
+            raise HTTPException(
+                status_code=422,
+                detail="one_of rule requires a non-empty allowed_values list.",
+            )
+
+    rule = InputValidationRule(
+        deployment_id=deployment_id,
+        feature_name=body.feature_name.strip(),
+        rule_type=body.rule_type,
+        min_val=body.min_val,
+        max_val=body.max_val,
+        allowed_values=(
+            json.dumps(body.allowed_values) if body.allowed_values else None
+        ),
+    )
+    session.add(rule)
+    session.commit()
+    session.refresh(rule)
+
+    return _serialise_iv_rule(rule)
+
+
+@router.get("/api/deploy/{deployment_id}/input-validation-rules")
+def list_input_validation_rules(
+    deployment_id: str,
+    session: Session = Depends(get_session),
+):
+    """Return all input validation rules for a deployment."""
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment:
+        raise HTTPException(status_code=404, detail="Deployment not found")
+
+    rules = session.exec(
+        select(InputValidationRule).where(
+            InputValidationRule.deployment_id == deployment_id
+        )
+    ).all()
+
+    return {
+        "deployment_id": deployment_id,
+        "count": len(rules),
+        "rules": [_serialise_iv_rule(r) for r in rules],
+    }
+
+
+@router.delete("/api/deploy/{deployment_id}/input-validation-rules/{rule_id}")
+def delete_input_validation_rule(
+    deployment_id: str,
+    rule_id: str,
+    session: Session = Depends(get_session),
+):
+    """Delete a specific input validation rule."""
+    rule = session.get(InputValidationRule, rule_id)
+    if not rule or rule.deployment_id != deployment_id:
+        raise HTTPException(status_code=404, detail="Validation rule not found")
+
+    session.delete(rule)
+    session.commit()
+    return {"deleted": True, "rule_id": rule_id}
+
+
+def _serialise_iv_rule(rule: InputValidationRule) -> dict:
+    """Convert an InputValidationRule to a plain dict for API responses."""
+    allowed: list[str] | None = None
+    if rule.allowed_values:
+        try:
+            allowed = json.loads(rule.allowed_values)
+        except (ValueError, TypeError):
+            allowed = None
+
+    description = _iv_rule_description(
+        rule.feature_name, rule.rule_type, rule.min_val, rule.max_val, allowed
+    )
+
+    return {
+        "id": rule.id,
+        "deployment_id": rule.deployment_id,
+        "feature_name": rule.feature_name,
+        "rule_type": rule.rule_type,
+        "min_val": rule.min_val,
+        "max_val": rule.max_val,
+        "allowed_values": allowed,
+        "description": description,
+        "created_at": rule.created_at.isoformat() if rule.created_at else None,
+    }
+
+
+def _iv_rule_description(
+    feature: str,
+    rule_type: str,
+    min_val: float | None,
+    max_val: float | None,
+    allowed: list[str] | None,
+) -> str:
+    """Return a plain-English description of a validation rule."""
+    if rule_type == "not_null":
+        return f"'{feature}' must be provided."
+    if rule_type == "range":
+        if min_val is not None and max_val is not None:
+            return f"'{feature}' must be between {min_val} and {max_val}."
+        if min_val is not None:
+            return f"'{feature}' must be ≥ {min_val}."
+        return f"'{feature}' must be ≤ {max_val}."
+    if rule_type == "one_of" and allowed:
+        values = ", ".join(f"'{v}'" for v in allowed[:5])
+        if len(allowed) > 5:
+            values += f", … ({len(allowed)} total)"
+        return f"'{feature}' must be one of: {values}."
+    return f"Validation rule for '{feature}'."

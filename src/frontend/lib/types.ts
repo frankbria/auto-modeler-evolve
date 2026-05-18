@@ -515,6 +515,7 @@ export interface ChatMessage {
   accuracy_alert_config?: AccuracyAlertConfig
   rollback_chat?: RollbackChatResult
   confidence_threshold_config?: ConfidenceThresholdConfig
+  input_validation_rule?: InputValidationRuleResult
 }
 
 export interface RollbackVersionEntry {
@@ -3300,5 +3301,41 @@ export interface CrossModelFeatureResult {
   features: CrossModelFeatureEntry[]
   consensus_features: string[]
   top_feature: string | null
+  summary: string
+}
+
+// ---------------------------------------------------------------------------
+// Input Validation Rules
+// ---------------------------------------------------------------------------
+
+export interface InputValidationRuleEntry {
+  id: string
+  deployment_id: string
+  feature_name: string
+  rule_type: "range" | "one_of" | "not_null"
+  min_val: number | null
+  max_val: number | null
+  allowed_values: string[] | null
+  description: string
+  created_at: string | null
+}
+
+export interface InputValidationRuleResult {
+  action: "created" | "list" | "deleted" | "guidance"
+  deployment_id: string
+  // created
+  rule_id?: string
+  feature_name?: string
+  rule_type?: "range" | "one_of" | "not_null"
+  min_val?: number | null
+  max_val?: number | null
+  allowed_values?: string[] | null
+  description?: string
+  total_rules?: number
+  // list
+  count?: number
+  rules?: InputValidationRuleEntry[]
+  // deleted
+  deleted_count?: number
   summary: string
 }

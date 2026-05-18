@@ -60,6 +60,7 @@ import { CrossModelFeaturesCard } from "@/components/chat/cross-model-features-c
 import { AccuracyAlertCard } from "@/components/deploy/accuracy-alert-card"
 import { RollbackChatCard } from "@/components/deploy/rollback-chat-card"
 import { ConfidenceThresholdCard } from "@/components/deploy/confidence-threshold-card"
+import { InputValidationRuleCard } from "@/components/deploy/input-validation-rule-card"
 import { ProjectHealthCard } from "@/components/chat/project-health-card"
 import { PredictionOpportunitiesCard } from "@/components/models/prediction-opportunities-card"
 import { DatasetComparisonCard } from "@/components/data/dataset-comparison-card"
@@ -329,6 +330,7 @@ export default function ProjectWorkspace() {
     attachAccuracyAlertConfigToLastMessage,
     attachRollbackChatToLastMessage,
     attachConfidenceThresholdConfigToLastMessage,
+    attachInputValidationRuleToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -807,6 +809,8 @@ export default function ProjectWorkspace() {
                 attachRollbackChatToLastMessage(json.rollback_chat as import("@/lib/types").RollbackChatResult)
               } else if (json.type === "confidence_threshold_config" && json.confidence_threshold_config) {
                 attachConfidenceThresholdConfigToLastMessage(json.confidence_threshold_config as import("@/lib/types").ConfidenceThresholdConfig)
+              } else if (json.type === "input_validation_rule" && json.input_validation_rule) {
+                attachInputValidationRuleToLastMessage(json.input_validation_rule as import("@/lib/types").InputValidationRuleResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -935,6 +939,7 @@ export default function ProjectWorkspace() {
     attachAccuracyAlertConfigToLastMessage,
     attachRollbackChatToLastMessage,
     attachConfidenceThresholdConfigToLastMessage,
+    attachInputValidationRuleToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -1508,6 +1513,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.confidence_threshold_config && (
                       <ConfidenceThresholdCard config={msg.confidence_threshold_config} />
+                    )}
+                    {msg.input_validation_rule && (
+                      <InputValidationRuleCard result={msg.input_validation_rule} />
                     )}
                   </div>
                 </div>

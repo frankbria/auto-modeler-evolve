@@ -1268,5 +1268,39 @@ export const api = {
       if (!res.ok) throw new Error(await res.text())
       return res.json()
     },
+
+    listInputValidationRules: async (deploymentId: string) => {
+      const res = await fetch(`${API_URL}/api/deploy/${deploymentId}/input-validation-rules`)
+      if (!res.ok) throw new Error(await res.text())
+      return res.json()
+    },
+
+    createInputValidationRule: async (
+      deploymentId: string,
+      rule: {
+        feature_name: string
+        rule_type: "range" | "one_of" | "not_null"
+        min_val?: number | null
+        max_val?: number | null
+        allowed_values?: string[] | null
+      }
+    ) => {
+      const res = await fetch(`${API_URL}/api/deploy/${deploymentId}/input-validation-rules`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(rule),
+      })
+      if (!res.ok) throw new Error(await res.text())
+      return res.json()
+    },
+
+    deleteInputValidationRule: async (deploymentId: string, ruleId: string) => {
+      const res = await fetch(
+        `${API_URL}/api/deploy/${deploymentId}/input-validation-rules/${ruleId}`,
+        { method: "DELETE" }
+      )
+      if (!res.ok) throw new Error(await res.text())
+      return res.json()
+    },
   },
 }

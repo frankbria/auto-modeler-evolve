@@ -869,6 +869,30 @@ _TRAIN_TARGET_EXTRACT = re.compile(
 )
 
 
+def _iv_describe_rule(
+    feature: str,
+    rule_type: str,
+    min_val: float | None,
+    max_val: float | None,
+    allowed: list[str] | None,
+) -> str:
+    """Return a plain-English description of an input validation rule."""
+    if rule_type == "not_null":
+        return f"'{feature}' must be provided."
+    if rule_type == "range":
+        if min_val is not None and max_val is not None:
+            return f"'{feature}' must be between {min_val} and {max_val}."
+        if min_val is not None:
+            return f"'{feature}' must be ≥ {min_val}."
+        return f"'{feature}' must be ≤ {max_val}."
+    if rule_type == "one_of" and allowed:
+        vals = ", ".join(f"'{v}'" for v in allowed[:5])
+        if len(allowed) > 5:
+            vals += f", … ({len(allowed)} total)"
+        return f"'{feature}' must be one of: {vals}."
+    return f"Validation rule for '{feature}'."
+
+
 def _detect_selection_criteria(message: str) -> str:
     """Detect analyst criteria intent from a model selection message.
 
@@ -2668,6 +2692,51 @@ _CONFIDENCE_THRESHOLD_VALUE_RE = re.compile(
 )
 _DISABLE_CONFIDENCE_THRESHOLD_RE = re.compile(
     r"\b(?:disable|remove|turn\s+off|clear)\s+(?:the\s+)?confidence\s+threshold",
+    re.IGNORECASE,
+)
+
+# Input validation rules via chat — "validate that age is between 0 and 120"
+_INPUT_VALIDATION_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"(?:add|create|set|define|configure|set\s+up)\s+(?:a\s+)?(?:input\s+)?validation\s+rule|"
+    r"(?:validate|require|enforce)\s+(?:that\s+)?(?:\w+\s+){0,3}(?:is\s+)?(?:between|above|below|one\s+of|in\s+the\s+range)|"
+    r"(?:reject|block|refuse)\s+(?:predictions?\s+)?(?:where|when|if)\s+\w+\s+(?:is|are)\s+(?:negative|invalid|out\s+of\s+range)|"
+    r"(?:input|prediction)\s+validation\s+(?:rule|constraint|check|guard)|"
+    r"(?:show|list|get|what\s+are)\s+(?:my\s+)?(?:input\s+)?validation\s+rules|"
+    r"(?:remove|delete|clear|disable)\s+(?:the\s+)?(?:input\s+)?validation\s+(?:rule|constraint|check|guard)|"
+    r"(?:only\s+accept|require)\s+(?:\w+\s+){0,2}(?:values?\s+)?(?:between|above|below|greater\s+than|less\s+than)|"
+    r"(?:\w+)\s+must\s+be\s+(?:between|one\s+of|greater\s+than|less\s+than|not\s+null)|"
+    r"(?:guard|protect)\s+(?:my\s+)?(?:model|api|endpoint)\s+(?:from|against)\s+(?:invalid|bad|garbage)\s+inputs?"
+    r")",
+    re.IGNORECASE,
+)
+_IV_LIST_RE = re.compile(
+    r"\b(?:show|list|get|what\s+are|check)\s+(?:my\s+)?(?:input\s+)?validation\s+rules?\b",
+    re.IGNORECASE,
+)
+_IV_DELETE_RE = re.compile(
+    r"\b(?:remove|delete|clear|disable)\s+(?:the\s+)?(?:input\s+)?validation\s+(?:rule|constraint|check|guard)?\b",
+    re.IGNORECASE,
+)
+# Extracts: "validate that <feature> is between <lo> and <hi>"
+_IV_RANGE_RE = re.compile(
+    r"\b(?P<feature>\w+)\s+(?:is\s+)?(?:must\s+be\s+)?(?:between|in\s+(?:the\s+)?range)\s+"
+    r"(?P<lo>-?\d+(?:\.\d+)?)\s+(?:and|to|-)\s+(?P<hi>-?\d+(?:\.\d+)?)",
+    re.IGNORECASE,
+)
+# Extracts: "feature above/below/greater than/less than X"
+_IV_BOUND_RE = re.compile(
+    r"\b(?P<feature>\w+)\s+(?:must\s+be\s+)?(?P<op>above|below|greater\s+than|more\s+than|less\s+than|at\s+least|at\s+most)\s+(?P<val>-?\d+(?:\.\d+)?)",
+    re.IGNORECASE,
+)
+# Extracts: "feature must be one of A, B, C"
+_IV_ONE_OF_RE = re.compile(
+    r"\b(?P<feature>\w+)\s+(?:must\s+be\s+|is\s+)?(?:one\s+of|in)\s+\[?(?P<vals>[^\]]+)\]?",
+    re.IGNORECASE,
+)
+# Extracts feature name for not-null rule: "require feature_name"
+_IV_NOT_NULL_RE = re.compile(
+    r"\b(?:require|enforce|ensure)\s+(?:that\s+)?(?P<feature>\w+)\s+is\s+(?:not\s+null|required|present|provided)",
     re.IGNORECASE,
 )
 
@@ -10338,6 +10407,203 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Rollback is nice-to-have; never crash chat
 
+    # Input validation rules via chat — "validate that age is between 0 and 120"
+    input_validation_rule_event: dict | None = None
+    if _INPUT_VALIDATION_PATTERNS.search(body.message) and ctx["deployment"]:
+        try:
+            from models.input_validation_rule import InputValidationRule as _IVRule
+
+            _iv_dep = ctx["deployment"]
+            _iv_dep_id = _iv_dep.id if hasattr(_iv_dep, "id") else str(_iv_dep)
+
+            if _IV_LIST_RE.search(body.message):
+                # LIST intent
+                _iv_rules_q = session.exec(
+                    select(_IVRule).where(_IVRule.deployment_id == _iv_dep_id)
+                ).all()
+                _iv_serialised = []
+                for _r in _iv_rules_q:
+                    _allowed_iv = None
+                    if _r.allowed_values:
+                        try:
+                            import json as _json_iv
+                            _allowed_iv = _json_iv.loads(_r.allowed_values)
+                        except Exception:
+                            pass
+                    _iv_serialised.append({
+                        "id": _r.id,
+                        "feature_name": _r.feature_name,
+                        "rule_type": _r.rule_type,
+                        "min_val": _r.min_val,
+                        "max_val": _r.max_val,
+                        "allowed_values": _allowed_iv,
+                        "description": _iv_describe_rule(
+                            _r.feature_name, _r.rule_type,
+                            _r.min_val, _r.max_val, _allowed_iv
+                        ),
+                    })
+                input_validation_rule_event = {
+                    "action": "list",
+                    "deployment_id": _iv_dep_id,
+                    "count": len(_iv_serialised),
+                    "rules": _iv_serialised,
+                    "summary": (
+                        f"{len(_iv_serialised)} validation rule(s) active on this deployment."
+                        if _iv_serialised
+                        else "No input validation rules configured yet."
+                    ),
+                }
+
+            elif _IV_DELETE_RE.search(body.message):
+                # DELETE intent — remove all rules or the most recent one
+                _iv_rules_to_del = session.exec(
+                    select(_IVRule).where(_IVRule.deployment_id == _iv_dep_id)
+                ).all()
+                _deleted_count = 0
+                for _rd in _iv_rules_to_del:
+                    session.delete(_rd)
+                    _deleted_count += 1
+                session.commit()
+                input_validation_rule_event = {
+                    "action": "deleted",
+                    "deployment_id": _iv_dep_id,
+                    "deleted_count": _deleted_count,
+                    "summary": (
+                        f"Removed {_deleted_count} validation rule(s). "
+                        "The prediction API will now accept any input values."
+                        if _deleted_count > 0
+                        else "No validation rules were active to remove."
+                    ),
+                }
+
+            else:
+                # CREATE intent — parse rule from message
+                import json as _json_iv2
+
+                _new_rule: dict | None = None
+                _rule_desc_iv = ""
+
+                _range_m = _IV_RANGE_RE.search(body.message)
+                _bound_m = _IV_BOUND_RE.search(body.message)
+                _one_of_m = _IV_ONE_OF_RE.search(body.message)
+                _not_null_m = _IV_NOT_NULL_RE.search(body.message)
+
+                if _range_m:
+                    _feat_iv = _range_m.group("feature")
+                    _lo_iv = float(_range_m.group("lo"))
+                    _hi_iv = float(_range_m.group("hi"))
+                    _new_rule = {
+                        "feature_name": _feat_iv,
+                        "rule_type": "range",
+                        "min_val": _lo_iv,
+                        "max_val": _hi_iv,
+                    }
+                    _rule_desc_iv = f"'{_feat_iv}' must be between {_lo_iv} and {_hi_iv}."
+
+                elif _bound_m:
+                    _feat_iv = _bound_m.group("feature")
+                    _op_iv = _bound_m.group("op").lower()
+                    _val_iv = float(_bound_m.group("val"))
+                    _min_iv: float | None = None
+                    _max_iv: float | None = None
+                    if _op_iv in ("above", "greater than", "more than", "at least"):
+                        _min_iv = _val_iv
+                        _rule_desc_iv = f"'{_feat_iv}' must be ≥ {_val_iv}."
+                    else:
+                        _max_iv = _val_iv
+                        _rule_desc_iv = f"'{_feat_iv}' must be ≤ {_val_iv}."
+                    _new_rule = {
+                        "feature_name": _feat_iv,
+                        "rule_type": "range",
+                        "min_val": _min_iv,
+                        "max_val": _max_iv,
+                    }
+
+                elif _one_of_m:
+                    _feat_iv = _one_of_m.group("feature")
+                    _raw_vals = _one_of_m.group("vals")
+                    _allowed_list = [
+                        v.strip().strip("'\"") for v in _raw_vals.split(",") if v.strip()
+                    ]
+                    _new_rule = {
+                        "feature_name": _feat_iv,
+                        "rule_type": "one_of",
+                        "allowed_values": _allowed_list,
+                    }
+                    _vals_display = ", ".join(f"'{v}'" for v in _allowed_list[:5])
+                    _rule_desc_iv = f"'{_feat_iv}' must be one of: {_vals_display}."
+
+                elif _not_null_m:
+                    _feat_iv = _not_null_m.group("feature")
+                    _new_rule = {
+                        "feature_name": _feat_iv,
+                        "rule_type": "not_null",
+                    }
+                    _rule_desc_iv = f"'{_feat_iv}' is required."
+
+                if _new_rule:
+                    _iv_obj = _IVRule(
+                        deployment_id=_iv_dep_id,
+                        feature_name=_new_rule["feature_name"],
+                        rule_type=_new_rule["rule_type"],
+                        min_val=_new_rule.get("min_val"),
+                        max_val=_new_rule.get("max_val"),
+                        allowed_values=(
+                            _json_iv2.dumps(_new_rule["allowed_values"])
+                            if "allowed_values" in _new_rule
+                            else None
+                        ),
+                    )
+                    session.add(_iv_obj)
+                    session.commit()
+                    session.refresh(_iv_obj)
+
+                    _total_iv = session.exec(
+                        select(_IVRule).where(_IVRule.deployment_id == _iv_dep_id)
+                    ).all()
+
+                    input_validation_rule_event = {
+                        "action": "created",
+                        "deployment_id": _iv_dep_id,
+                        "rule_id": _iv_obj.id,
+                        "feature_name": _iv_obj.feature_name,
+                        "rule_type": _iv_obj.rule_type,
+                        "min_val": _iv_obj.min_val,
+                        "max_val": _iv_obj.max_val,
+                        "allowed_values": _new_rule.get("allowed_values"),
+                        "description": _rule_desc_iv,
+                        "total_rules": len(_total_iv),
+                        "summary": (
+                            f"Validation rule created: {_rule_desc_iv} "
+                            f"The prediction API will now reject inputs that violate this rule "
+                            f"with a plain-English error message."
+                        ),
+                    }
+                else:
+                    # Parsed intent but couldn't extract rule params — guidance only
+                    input_validation_rule_event = {
+                        "action": "guidance",
+                        "deployment_id": _iv_dep_id,
+                        "summary": (
+                            "To add a validation rule, try: "
+                            "'validate that age is between 0 and 120', "
+                            "'require region to be one of East, West, South', "
+                            "or 'require customer_id is not null'."
+                        ),
+                    }
+
+            if input_validation_rule_event:
+                _iv_ctx = input_validation_rule_event.get("summary", "")
+                system_prompt += (
+                    f"\n\n## Input Validation Rules\n{_iv_ctx} "
+                    "Explain in plain English that the prediction API now enforces these "
+                    "business rules on incoming inputs — invalid values get a 422 error "
+                    "with a clear explanation. This prevents garbage inputs from silently "
+                    "producing unreliable predictions."
+                )
+        except Exception:  # noqa: BLE001
+            pass  # Validation rules are nice-to-have; never crash chat
+
     # Confidence threshold configuration via chat
     confidence_threshold_event: dict | None = None
     if _CONFIDENCE_THRESHOLD_PATTERNS.search(body.message) and ctx["deployment"]:
@@ -13395,6 +13661,10 @@ def send_message(
         # Emit confidence threshold configuration card
         if confidence_threshold_event:
             yield f"data: {json.dumps({'type': 'confidence_threshold_config', 'confidence_threshold_config': confidence_threshold_event})}\n\n"
+
+        # Emit input validation rule card
+        if input_validation_rule_event:
+            yield f"data: {json.dumps({'type': 'input_validation_rule', 'input_validation_rule': input_validation_rule_event})}\n\n"
 
         # Emit batch prediction schedule event
         if schedule_event:

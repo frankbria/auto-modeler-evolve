@@ -14,6 +14,7 @@ from models.deployment_version import DeploymentVersion
 from models.webhook_config import WebhookConfig
 from models.webhook_event import WebhookEvent
 from models.analysis_template import AnalysisTemplate
+from models.input_validation_rule import InputValidationRule
 
 __all__ = [
     "Project",
@@ -31,4 +32,5 @@ __all__ = [
     "WebhookConfig",
     "WebhookEvent",
     "AnalysisTemplate",
+    "InputValidationRule",
 ]

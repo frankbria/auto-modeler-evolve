@@ -155,6 +155,7 @@ interface AppState {
   attachAccuracyAlertConfigToLastMessage: (accuracy_alert_config: import("./types").AccuracyAlertConfig) => void
   attachRollbackChatToLastMessage: (rollback_chat: import("./types").RollbackChatResult) => void
   attachConfidenceThresholdConfigToLastMessage: (confidence_threshold_config: import("./types").ConfidenceThresholdConfig) => void
+  attachInputValidationRuleToLastMessage: (input_validation_rule: import("./types").InputValidationRuleResult) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -1196,6 +1197,16 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, confidence_threshold_config }
+      }
+      return { messages }
+    }),
+
+  attachInputValidationRuleToLastMessage: (input_validation_rule) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, input_validation_rule }
       }
       return { messages }
     }),
