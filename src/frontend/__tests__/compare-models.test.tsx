@@ -106,6 +106,7 @@ const comparisonResponse = {
 async function renderWithDeployments(projectDeployments: object[]) {
   fetchMock.mockResponseOnce(JSON.stringify(currentDeployment))
   fetchMock.mockResponseOnce(JSON.stringify([])) // getPresets
+  fetchMock.mockResponseOnce(JSON.stringify({ deployment_id: "deploy-current", fields: [], total_count: 0, visible_count: 0, locked_count: 0 })) // getDashboardConfig
   fetchMock.mockResponseOnce(JSON.stringify(projectDeployments))
 
   const { default: PredictionDashboard } = await import("../app/predict/[id]/page")

@@ -258,6 +258,7 @@ describe("PredictionDashboard", () => {
   it("sends prediction request when predict button clicked", async () => {
     fetchMock.mockResponseOnce(JSON.stringify(mockDeployment))
     fetchMock.mockResponseOnce(JSON.stringify([])) // getPresets
+    fetchMock.mockResponseOnce(JSON.stringify({ deployment_id: "deployment-123", fields: [], total_count: 0, visible_count: 0, locked_count: 0 })) // getDashboardConfig
     fetchMock.mockResponseOnce(JSON.stringify([])) // listByProject for CompareModelsCard
     fetchMock.mockResponseOnce(
       JSON.stringify({ prediction: 1200.5, deployment_id: "deployment-123" })
@@ -272,7 +273,7 @@ describe("PredictionDashboard", () => {
     if (predictButton) {
       await act(async () => { fireEvent.click(predictButton) })
       await waitFor(() => {
-        expect(fetchMock).toHaveBeenCalledTimes(4)
+        expect(fetchMock).toHaveBeenCalledTimes(5)
       })
     }
   })
@@ -280,6 +281,7 @@ describe("PredictionDashboard", () => {
   it("shows prediction result after successful prediction", async () => {
     fetchMock.mockResponseOnce(JSON.stringify(mockDeployment))
     fetchMock.mockResponseOnce(JSON.stringify([])) // getPresets
+    fetchMock.mockResponseOnce(JSON.stringify({ deployment_id: "deployment-123", fields: [], total_count: 0, visible_count: 0, locked_count: 0 })) // getDashboardConfig
     fetchMock.mockResponseOnce(JSON.stringify([])) // listByProject for CompareModelsCard
     fetchMock.mockResponseOnce(
       JSON.stringify({ prediction: 1200.5, deployment_id: "deployment-123" })
@@ -300,7 +302,7 @@ describe("PredictionDashboard", () => {
         // After prediction, the result value or prediction-related text should appear
         const allText = document.body.textContent ?? ""
         expect(allText.length).toBeGreaterThan(0)
-        expect(fetchMock).toHaveBeenCalledTimes(4)
+        expect(fetchMock).toHaveBeenCalledTimes(5)
       })
     }
   })
@@ -308,6 +310,7 @@ describe("PredictionDashboard", () => {
   it("handles prediction API error", async () => {
     fetchMock.mockResponseOnce(JSON.stringify(mockDeployment))
     fetchMock.mockResponseOnce(JSON.stringify([])) // getPresets
+    fetchMock.mockResponseOnce(JSON.stringify({ deployment_id: "deployment-123", fields: [], total_count: 0, visible_count: 0, locked_count: 0 })) // getDashboardConfig
     fetchMock.mockResponseOnce(JSON.stringify([])) // listByProject for CompareModelsCard
     fetchMock.mockResponseOnce(
       JSON.stringify({ detail: "Prediction failed" }),
@@ -325,7 +328,7 @@ describe("PredictionDashboard", () => {
       await act(async () => { fireEvent.click(predictButton) })
       await waitFor(() => {
         // Error message or fallback render
-        expect(fetchMock).toHaveBeenCalledTimes(4)
+        expect(fetchMock).toHaveBeenCalledTimes(5)
       })
     }
   })
@@ -337,6 +340,7 @@ describe("PredictionDashboard", () => {
   it("shows session history section after first successful prediction", async () => {
     fetchMock.mockResponseOnce(JSON.stringify(mockDeployment))
     fetchMock.mockResponseOnce(JSON.stringify([])) // getPresets
+    fetchMock.mockResponseOnce(JSON.stringify({ deployment_id: "deployment-123", fields: [], total_count: 0, visible_count: 0, locked_count: 0 })) // getDashboardConfig
     fetchMock.mockResponseOnce(JSON.stringify([])) // listByProject
     fetchMock.mockResponseOnce(
       JSON.stringify({ prediction: 1500.0, deployment_id: "deployment-123" })

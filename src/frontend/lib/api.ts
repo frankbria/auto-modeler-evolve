@@ -1302,5 +1302,8 @@ export const api = {
       if (!res.ok) throw new Error(await res.text())
       return res.json()
     },
+
+    getDashboardConfig: (deploymentId: string): Promise<import("@/lib/types").DashboardConfigResponse> =>
+      fetch(`${API_URL}/api/deploy/${deploymentId}/dashboard-config`).then((r) => r.json()),
   },
 }

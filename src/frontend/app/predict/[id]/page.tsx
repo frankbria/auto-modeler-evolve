@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { api } from "@/lib/api"
-import type { Deployment, FeatureSchemaEntry, PredictionResult, PredictionExplanation, FeatureContribution, ConfidenceInterval, ModelComparisonResult, ComparisonResponse, GuardRailWarning } from "@/lib/types"
+import type { Deployment, FeatureSchemaEntry, PredictionResult, PredictionExplanation, FeatureContribution, ConfidenceInterval, ModelComparisonResult, ComparisonResponse, GuardRailWarning, DashboardFieldEntry } from "@/lib/types"
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -416,6 +416,7 @@ export default function PredictionDashboard() {
   const [history, setHistory] = useState<PredictionHistoryRecord[]>([])
   const [, setHistoryCounter] = useState(0)
   const [presets, setPresets] = useState<import("@/lib/types").DeploymentPreset[]>([])
+  const [dashboardConfig, setDashboardConfig] = useState<DashboardFieldEntry[]>([])
 
   useEffect(() => {
     api.deploy
@@ -443,6 +444,13 @@ export default function PredictionDashboard() {
     api.deploy.getPresets(deploymentId).then(setPresets).catch(() => {})
   }, [deploymentId])
 
+  useEffect(() => {
+    api.deploy
+      .getDashboardConfig(deploymentId)
+      .then((cfg) => setDashboardConfig(cfg.fields ?? []))
+      .catch(() => {})
+  }, [deploymentId])
+
   const loadPreset = (featureValues: Record<string, string | number>) => {
     const next = { ...inputs }
     for (const [key, val] of Object.entries(featureValues)) {
@@ -454,10 +462,23 @@ export default function PredictionDashboard() {
     setShowExplanation(false)
   }
 
+  const cfgMap = Object.fromEntries(
+    dashboardConfig.map((f) => [f.feature_name, f])
+  )
+  const hiddenCount = dashboardConfig.filter((f) => !f.is_visible).length
+  const lockedCount = dashboardConfig.filter((f) => f.is_locked).length
+
   const buildPayload = () => {
     if (!deployment) return {}
     const payload: Record<string, unknown> = {}
     for (const entry of deployment.feature_schema ?? []) {
+      const cfg = cfgMap[entry.name]
+      // Inject locked value from config — bypasses user input for locked fields
+      if (cfg?.is_locked && cfg.locked_value != null) {
+        payload[entry.name] =
+          entry.type === "numeric" ? parseFloat(cfg.locked_value) : cfg.locked_value
+        continue
+      }
       const raw = inputs[entry.name] ?? ""
       if (entry.type === "numeric") {
         payload[entry.name] = raw === "" ? null : parseFloat(raw)
@@ -546,9 +567,12 @@ export default function PredictionDashboard() {
     )
   }
 
-  const schema = deployment.feature_schema ?? []
+  const rawSchema = deployment.feature_schema ?? []
+  // Filter out fields hidden by the analyst's dashboard config
+  const schema = rawSchema.filter((e) => cfgMap[e.name]?.is_visible !== false)
   const targetLabel = colLabel(deployment.target_column ?? "Output")
   const pageTitle = `${targetLabel} Predictor`
+  const isSimplifiedView = hiddenCount > 0 || lockedCount > 0
 
   return (
     <div className="min-h-screen bg-background px-4 py-8">
@@ -604,7 +628,18 @@ export default function PredictionDashboard() {
         {/* Input form */}
         <Card>
           <CardHeader>
-            <CardTitle>Your Scenario</CardTitle>
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <CardTitle>Your Scenario</CardTitle>
+              {isSimplifiedView && (
+                <Badge
+                  variant="outline"
+                  className="border-sky-300 text-sky-700 text-xs"
+                  data-testid="simplified-view-badge"
+                >
+                  Simplified view
+                </Badge>
+              )}
+            </div>
             <p className="text-xs text-muted-foreground mt-0.5">
               Fields are pre-filled with training averages — adjust them for your specific situation.
             </p>
@@ -615,46 +650,66 @@ export default function PredictionDashboard() {
                 No feature schema available for this deployment.
               </p>
             )}
-            {schema.map((entry: FeatureSchemaEntry) => (
-              <div key={entry.name}>
-                <label className="mb-1 block text-sm font-medium">
-                  {colLabel(entry.name)}
-                  {entry.type === "numeric" && entry.mean !== undefined && entry.mean !== null && (
-                    <span className="ml-1.5 text-xs font-normal text-muted-foreground">
-                      (avg: {fmtNum(entry.mean)})
-                    </span>
+            {schema.map((entry: FeatureSchemaEntry) => {
+              const fieldCfg = cfgMap[entry.name]
+              const isLocked = fieldCfg?.is_locked === true
+              const lockedVal = fieldCfg?.locked_value ?? null
+              const displayLabel = fieldCfg?.display_label
+                ? fieldCfg.display_label
+                : colLabel(entry.name)
+              return (
+                <div key={entry.name}>
+                  <label className="mb-1 block text-sm font-medium">
+                    {displayLabel}
+                    {isLocked && (
+                      <span className="ml-1.5 text-xs font-normal text-amber-600">(locked)</span>
+                    )}
+                    {!isLocked && entry.type === "numeric" && entry.mean !== undefined && entry.mean !== null && (
+                      <span className="ml-1.5 text-xs font-normal text-muted-foreground">
+                        (avg: {fmtNum(entry.mean)})
+                      </span>
+                    )}
+                  </label>
+                  {isLocked ? (
+                    <Input
+                      type="text"
+                      value={lockedVal ?? ""}
+                      disabled
+                      className="text-sm bg-amber-50 border-amber-200"
+                      aria-label={`${displayLabel} (locked)`}
+                      data-testid={`locked-field-${entry.name}`}
+                    />
+                  ) : entry.type === "categorical" && entry.options ? (
+                    <select
+                      className="w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                      value={inputs[entry.name] ?? ""}
+                      onChange={(e) =>
+                        setInputs((prev) => ({ ...prev, [entry.name]: e.target.value }))
+                      }
+                      aria-label={displayLabel}
+                    >
+                      {entry.options.map((opt) => (
+                        <option key={opt} value={opt}>
+                          {opt}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <Input
+                      type="number"
+                      step="any"
+                      placeholder={entry.median != null ? `Default: ${fmtNum(entry.median)}` : "Enter a value"}
+                      value={inputs[entry.name] ?? ""}
+                      onChange={(e) =>
+                        setInputs((prev) => ({ ...prev, [entry.name]: e.target.value }))
+                      }
+                      className="text-sm"
+                      aria-label={displayLabel}
+                    />
                   )}
-                </label>
-                {entry.type === "categorical" && entry.options ? (
-                  <select
-                    className="w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                    value={inputs[entry.name] ?? ""}
-                    onChange={(e) =>
-                      setInputs((prev) => ({ ...prev, [entry.name]: e.target.value }))
-                    }
-                    aria-label={colLabel(entry.name)}
-                  >
-                    {entry.options.map((opt) => (
-                      <option key={opt} value={opt}>
-                        {opt}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <Input
-                    type="number"
-                    step="any"
-                    placeholder={entry.median != null ? `Default: ${fmtNum(entry.median)}` : "Enter a value"}
-                    value={inputs[entry.name] ?? ""}
-                    onChange={(e) =>
-                      setInputs((prev) => ({ ...prev, [entry.name]: e.target.value }))
-                    }
-                    className="text-sm"
-                    aria-label={colLabel(entry.name)}
-                  />
-                )}
-              </div>
-            ))}
+                </div>
+              )
+            })}
           </CardContent>
         </Card>
 

@@ -53,6 +53,18 @@ the time is better spent on real features.
 
 ---
 
+## Day 68 (12:00) — Done
+**CI fix: Dashboard Config Integration.**
+
+Fixed 21 backend + 11 frontend test failures from the Day 68 04:00 revert. The revert removed backend implementations (regex constants, handler, REST endpoints, model registration) while leaving test files in place. Re-implemented all missing backend pieces with corrected regex patterns. Updated `predict/[id]/page.tsx` mock sequences in `pages.test.tsx`, `confidence-interval.test.tsx`, and `compare-models.test.tsx` to account for the new `getDashboardConfig` fetch call (4→5 call counts, added dashboard config mock response). CI is green.
+
+**What's next:**
+- Track E: "What's next?" guidance cards at key step transitions (after upload, after training, after deploy)
+- Track C: Ensemble methods (voting classifier / stacking) for better accuracy
+- Track D: Per-field display labels via chat ("rename units to 'Monthly Units Sold'")
+
+---
+
 ## Day 68 (04:00) — Done
 **Track D — Prediction Dashboard Field Configuration via Chat.**
 

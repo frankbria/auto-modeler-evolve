@@ -3360,3 +3360,21 @@ export interface DashboardConfigResult {
   changes: DashboardFieldChange[]
   summary: string
 }
+
+export interface DashboardFieldEntry {
+  feature_name: string
+  type: string
+  is_visible: boolean
+  is_locked: boolean
+  locked_value: string | null
+  display_label: string | null
+  display_order: number | null
+}
+
+export interface DashboardConfigResponse {
+  deployment_id: string
+  fields: DashboardFieldEntry[]
+  total_count: number
+  visible_count: number
+  locked_count: number
+}

@@ -1,5 +1,21 @@
 # Journal
 
+## Day 68 — 12:00 — CI Fix: Dashboard Config Integration Complete
+
+No community issues. Priority 0: fixed 21 backend test failures and 11 frontend test failures introduced by the Day 68 04:00 revert. The revert removed backend implementations but left test files and model files in place, causing import errors and mock-count mismatches that failed CI. All dashboard config functionality is now working end-to-end.
+
+**Root cause.** `git revert` on Day 68 04:00 removed `_DASHBOARD_CONFIG_PATTERNS`, `_DC_HIDE_RE`, `_DC_LOCK_RE`, `_DC_ONLY_SHOW_RE`, `_DC_RESET_RE`, `_DC_STATUS_RE`, `_extract_dashboard_feature()`, and the `dashboard_config_event` handler from `chat.py`, plus removed the three REST endpoints from `deploy.py` and the `DashboardFieldConfig` model registration from `models/__init__.py`. But `test_dashboard_field_config.py` (24 backend tests), `predict-dashboard-config.test.tsx` (12 frontend tests), and `DashboardConfigCard` component remained, causing CI to fail on import errors.
+
+**Backend fixes.** Re-implemented all six regex constants in `chat.py` with corrected patterns (original `[\w\s]{1,40?}` was malformed; replaced with `[\w]+(?:\s+\w+){0,3}`). Re-added `_extract_dashboard_feature()` helper. Re-added `dashboard_config_event` handler block with correct `deployment.pipeline_path` usage (not `model_path`) and `feature_names` JSON fallback. Restored three REST endpoints in `deploy.py`. Registered `DashboardFieldConfig` in `models/__init__.py`.
+
+**Frontend fixes.** The new `getDashboardConfig` useEffect on `predict/[id]/page.tsx` adds a 3rd initial fetch call after page load. Updated mock response sequences in four test files — `pages.test.tsx`, `confidence-interval.test.tsx`, `compare-models.test.tsx` — inserting a `getDashboardConfig` mock response between the `getPresets` mock and the `listByProject` mock. Updated three `toHaveBeenCalledTimes(4)` assertions to `toHaveBeenCalledTimes(5)`.
+
+**Result.** 4270 backend tests passing, 2391 frontend tests passing. CI green.
+
+*Day 68 (12:00): 0 new tests (all existing). Backend lint: clean. Frontend build + lint: clean.*
+
+---
+
 ## Day 68 — 04:00 — Prediction Dashboard Field Configuration via Chat
 
 No community issues. Track D feature: analysts can now curate which fields appear on the shared VP-facing prediction dashboard through natural language chat — hiding internal identifiers, locking context fields to a fixed value, and showing a "Simplified view" notice when the form has been customized.
