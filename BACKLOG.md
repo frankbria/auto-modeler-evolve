@@ -53,6 +53,18 @@ the time is better spent on real features.
 
 ---
 
+## Day 68 (04:00) — Done
+**Track D — Prediction Dashboard Field Configuration via Chat.**
+
+Analysts can now curate which fields appear on the VP-facing prediction dashboard through natural language: "hide units from the dashboard", "lock region to North", "only show units and revenue", "show all fields", "what's visible on my dashboard". `DashboardFieldConfig` SQLModel table (deployment_id indexed, is_visible/is_locked/locked_value). `GET/PUT/DELETE /api/deploy/{id}/dashboard-config` REST endpoints. Six regex constants + `_extract_dashboard_feature()` helper + handler in `chat.py` (reset/status/only-show/hide/lock intents). `DashboardConfigCard` (emerald/sky/slate borders for updated/status/reset); `FieldRow` with Hidden/Locked/Visible badges. `predict/[id]/page.tsx` filters hidden fields, renders locked fields as read-only inputs, injects locked values into prediction payload, shows "Simplified view" notice. 24 backend + 16 frontend = 40 new tests. Backend lint: clean. Frontend build + lint: clean.
+
+**What's next:**
+- Track E: "What's next?" guidance cards at key step transitions (after upload, after training, after deploy)
+- Track C: Ensemble methods (voting classifier / stacking) for better accuracy
+- Track D: Per-field display labels via chat ("rename units to 'Monthly Units Sold'")
+
+---
+
 ## Day 67 (20:00) — Done
 **Track D — Prediction Input Validation Rules via Chat.**
 

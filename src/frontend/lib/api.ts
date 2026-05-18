@@ -1302,5 +1302,39 @@ export const api = {
       if (!res.ok) throw new Error(await res.text())
       return res.json()
     },
+
+    getDashboardConfig: async (deploymentId: string) => {
+      const res = await fetch(`${API_URL}/api/deploy/${deploymentId}/dashboard-config`)
+      if (!res.ok) throw new Error(await res.text())
+      return res.json()
+    },
+
+    updateDashboardConfig: async (
+      deploymentId: string,
+      fields: Array<{
+        feature_name: string
+        is_visible?: boolean
+        is_locked?: boolean
+        locked_value?: string | null
+        display_label?: string | null
+        display_order?: number | null
+      }>
+    ) => {
+      const res = await fetch(`${API_URL}/api/deploy/${deploymentId}/dashboard-config`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fields }),
+      })
+      if (!res.ok) throw new Error(await res.text())
+      return res.json()
+    },
+
+    resetDashboardConfig: async (deploymentId: string) => {
+      const res = await fetch(`${API_URL}/api/deploy/${deploymentId}/dashboard-config`, {
+        method: "DELETE",
+      })
+      if (!res.ok) throw new Error(await res.text())
+      return res.json()
+    },
   },
 }

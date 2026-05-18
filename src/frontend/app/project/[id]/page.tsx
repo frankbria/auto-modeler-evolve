@@ -61,6 +61,7 @@ import { AccuracyAlertCard } from "@/components/deploy/accuracy-alert-card"
 import { RollbackChatCard } from "@/components/deploy/rollback-chat-card"
 import { ConfidenceThresholdCard } from "@/components/deploy/confidence-threshold-card"
 import { InputValidationRuleCard } from "@/components/deploy/input-validation-rule-card"
+import { DashboardConfigCard } from "@/components/deploy/dashboard-config-card"
 import { ProjectHealthCard } from "@/components/chat/project-health-card"
 import { PredictionOpportunitiesCard } from "@/components/models/prediction-opportunities-card"
 import { DatasetComparisonCard } from "@/components/data/dataset-comparison-card"
@@ -331,6 +332,7 @@ export default function ProjectWorkspace() {
     attachRollbackChatToLastMessage,
     attachConfidenceThresholdConfigToLastMessage,
     attachInputValidationRuleToLastMessage,
+    attachDashboardConfigToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -811,6 +813,8 @@ export default function ProjectWorkspace() {
                 attachConfidenceThresholdConfigToLastMessage(json.confidence_threshold_config as import("@/lib/types").ConfidenceThresholdConfig)
               } else if (json.type === "input_validation_rule" && json.input_validation_rule) {
                 attachInputValidationRuleToLastMessage(json.input_validation_rule as import("@/lib/types").InputValidationRuleResult)
+              } else if (json.type === "dashboard_config" && json.dashboard_config) {
+                attachDashboardConfigToLastMessage(json.dashboard_config as import("@/lib/types").DashboardConfigResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -940,6 +944,7 @@ export default function ProjectWorkspace() {
     attachRollbackChatToLastMessage,
     attachConfidenceThresholdConfigToLastMessage,
     attachInputValidationRuleToLastMessage,
+    attachDashboardConfigToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -1516,6 +1521,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.input_validation_rule && (
                       <InputValidationRuleCard result={msg.input_validation_rule} />
+                    )}
+                    {msg.dashboard_config && (
+                      <DashboardConfigCard config={msg.dashboard_config} />
                     )}
                   </div>
                 </div>

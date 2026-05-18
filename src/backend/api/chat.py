@@ -2757,6 +2757,59 @@ _ROLLBACK_PATTERNS = re.compile(
 
 _ROLLBACK_VERSION_RE = re.compile(r"\b(?:version|v)\s*(\d+)\b", re.IGNORECASE)
 
+# ---------------------------------------------------------------------------
+# Dashboard field configuration via chat
+# ---------------------------------------------------------------------------
+_DASHBOARD_CONFIG_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"(?:hide|remove|exclude)\s+\w+\s+from\s+(?:the\s+)?(?:dashboard|prediction\s+form|public\s+form|shared\s+page)|"
+    r"(?:lock|set|pin|fix)\s+\w+\s+to\s+.+?\s+on\s+(?:the\s+)?(?:dashboard|form|prediction\s+page)|"
+    r"only\s+show\s+.+?\s+on\s+(?:the\s+)?(?:dashboard|form)|"
+    r"show\s+only\s+.+?\s+on\s+(?:the\s+)?(?:dashboard|form)|"
+    r"(?:hide|remove|exclude)\s+\w+\s+(?:field|column)\s+from\s+(?:the\s+)?dashboard|"
+    r"(?:simplify|customize|configure)\s+(?:the\s+)?(?:dashboard|prediction\s+form|public\s+form)|"
+    r"(?:show\s+all\s+fields|reset\s+(?:the\s+)?dashboard(?:\s+config(?:uration)?)?|restore\s+all\s+fields)|"
+    r"(?:what(?:'s|\s+is)\s+(?:visible|shown)\s+on\s+(?:my\s+)?(?:dashboard|prediction\s+form|shared\s+(?:page|link)))|"
+    r"(?:dashboard|prediction\s+form)\s+(?:config(?:uration)?|fields|settings|visibility)|"
+    r"(?:which|what)\s+fields\s+(?:are\s+)?(?:visible|shown)\s+(?:on\s+)?(?:the\s+)?(?:dashboard|form|prediction\s+form)"
+    r")"
+)
+
+# Extracts: hide/remove/exclude <feature>
+_DC_HIDE_RE = re.compile(
+    r"(?i)(?:hide|remove|exclude)\s+([A-Za-z_]\w*)\s+(?:from|field\s+from|column\s+from)",
+)
+
+# Extracts: lock/set/pin <feature> to <value>
+_DC_LOCK_RE = re.compile(
+    r"(?i)(?:lock|set|pin|fix)\s+([A-Za-z_]\w*)\s+to\s+([^\s,;]+(?:\s+[^\s,;]+)*?)(?:\s+on\s+|\s*$)",
+)
+
+# Extracts: only show X and Y / show only X, Y, Z
+_DC_ONLY_SHOW_RE = re.compile(
+    r"(?i)(?:only\s+show|show\s+only)\s+([\w,\s]+?)(?:\s+on\s+|\s*$)",
+)
+
+# Reset / show all
+_DC_RESET_RE = re.compile(
+    r"(?i)(?:show\s+all\s+fields|reset\s+(?:the\s+)?dashboard(?:\s+config(?:uration)?)?|restore\s+all\s+fields)",
+)
+
+# Status query
+_DC_STATUS_RE = re.compile(
+    r"(?i)(?:what(?:'s|\s+is)\s+(?:visible|shown)|(?:dashboard|prediction\s+form)\s+(?:config|fields|settings|visibility)|(?:which|what)\s+fields\s+(?:are\s+)?(?:visible|shown))",
+)
+
+
+def _extract_dashboard_feature(msg: str, feature_names: list[str]) -> str | None:
+    """Find the longest matching feature name in the message (case-insensitive)."""
+    msg_lower = msg.lower()
+    matches = [f for f in feature_names if f.lower() in msg_lower]
+    if not matches:
+        return None
+    return max(matches, key=len)
+
+
 # Keywords that trigger class imbalance detection via chat
 _CLASS_IMBALANCE_PATTERNS = re.compile(
     r"(?i)\b("
@@ -10614,6 +10667,216 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Validation rules are nice-to-have; never crash chat
 
+    # Dashboard field configuration via chat
+    dashboard_config_event: dict | None = None
+    if _DASHBOARD_CONFIG_PATTERNS.search(body.message) and ctx["deployment"]:
+        try:
+            from core.deployer import get_feature_schema as _dc_get_schema
+            from models.dashboard_field_config import (
+                DashboardFieldConfig as _DFC,
+            )
+
+            _dc_dep = ctx["deployment"]
+            _dc_dep_id = _dc_dep.id if hasattr(_dc_dep, "id") else str(_dc_dep)
+            _dc_dep_obj = session.get(Deployment, _dc_dep_id)
+
+            if _dc_dep_obj:
+                _dc_schema = (
+                    _dc_get_schema(_dc_dep_obj.pipeline_path)
+                    if _dc_dep_obj.pipeline_path
+                    else []
+                )
+                _dc_feature_names = [e["name"] for e in _dc_schema]
+
+                # Determine action
+                _dc_is_reset = bool(_DC_RESET_RE.search(body.message))
+                _dc_is_status = bool(_DC_STATUS_RE.search(body.message))
+                _dc_only_m = _DC_ONLY_SHOW_RE.search(body.message)
+                _dc_hide_m = _DC_HIDE_RE.search(body.message)
+                _dc_lock_m = _DC_LOCK_RE.search(body.message)
+
+                if _dc_is_reset:
+                    # Remove all configs
+                    _dc_rows = session.exec(
+                        select(_DFC).where(_DFC.deployment_id == _dc_dep_id)
+                    ).all()
+                    for _r in _dc_rows:
+                        session.delete(_r)
+                    session.commit()
+                    dashboard_config_event = {
+                        "action": "reset",
+                        "visible_count": len(_dc_feature_names),
+                        "locked_count": 0,
+                        "total_count": len(_dc_feature_names),
+                        "changes": [],
+                        "summary": f"Dashboard reset — all {len(_dc_feature_names)} fields are now visible.",
+                    }
+
+                elif _dc_is_status:
+                    _dc_rows = session.exec(
+                        select(_DFC).where(_DFC.deployment_id == _dc_dep_id)
+                    ).all()
+                    _dc_cfg = {r.feature_name: r for r in _dc_rows}
+                    _dc_fields = []
+                    for _fn in _dc_feature_names:
+                        _cfg = _dc_cfg.get(_fn)
+                        _dc_fields.append(
+                            {
+                                "feature_name": _fn,
+                                "is_visible": _cfg.is_visible if _cfg else True,
+                                "is_locked": _cfg.is_locked if _cfg else False,
+                                "locked_value": _cfg.locked_value if _cfg else None,
+                            }
+                        )
+                    _vis = sum(1 for f in _dc_fields if f["is_visible"])
+                    _lck = sum(1 for f in _dc_fields if f["is_locked"])
+                    dashboard_config_event = {
+                        "action": "status",
+                        "visible_count": _vis,
+                        "locked_count": _lck,
+                        "total_count": len(_dc_feature_names),
+                        "changes": _dc_fields,
+                        "summary": f"Dashboard shows {_vis} of {len(_dc_feature_names)} fields; {_lck} locked.",
+                    }
+
+                elif _dc_only_m:
+                    # "only show X and Y" → hide everything else
+                    _raw_only = _dc_only_m.group(1)
+                    _visible_set = {
+                        f.lower()
+                        for f in re.split(r"[\s,]+(?:and\s+)?", _raw_only)
+                        if f.strip()
+                    }
+                    # Match against actual feature names
+                    _vis_names = {
+                        fn
+                        for fn in _dc_feature_names
+                        if any(v in fn.lower() for v in _visible_set)
+                        or any(fn.lower() in v for v in _visible_set)
+                    }
+                    _changes = []
+                    for _fn in _dc_feature_names:
+                        _should_show = _fn in _vis_names
+                        _existing = session.exec(
+                            select(_DFC).where(
+                                _DFC.deployment_id == _dc_dep_id,
+                                _DFC.feature_name == _fn,
+                            )
+                        ).first()
+                        if _existing:
+                            _existing.is_visible = _should_show
+                            session.add(_existing)
+                        else:
+                            session.add(
+                                _DFC(
+                                    deployment_id=_dc_dep_id,
+                                    feature_name=_fn,
+                                    is_visible=_should_show,
+                                )
+                            )
+                        _changes.append({"feature_name": _fn, "is_visible": _should_show, "is_locked": False, "locked_value": None})
+                    session.commit()
+                    _vis_count = len(_vis_names)
+                    dashboard_config_event = {
+                        "action": "updated",
+                        "visible_count": _vis_count,
+                        "locked_count": 0,
+                        "total_count": len(_dc_feature_names),
+                        "changes": _changes,
+                        "summary": f"Dashboard simplified — showing {_vis_count} of {len(_dc_feature_names)} fields.",
+                    }
+
+                elif _dc_hide_m:
+                    _fn_raw = _dc_hide_m.group(1)
+                    _fn_match = _extract_dashboard_feature(body.message, _dc_feature_names)
+                    _fn_to_hide = _fn_match or _fn_raw
+                    if _fn_to_hide in _dc_feature_names:
+                        _existing = session.exec(
+                            select(_DFC).where(
+                                _DFC.deployment_id == _dc_dep_id,
+                                _DFC.feature_name == _fn_to_hide,
+                            )
+                        ).first()
+                        if _existing:
+                            _existing.is_visible = False
+                            session.add(_existing)
+                        else:
+                            session.add(
+                                _DFC(
+                                    deployment_id=_dc_dep_id,
+                                    feature_name=_fn_to_hide,
+                                    is_visible=False,
+                                )
+                            )
+                        session.commit()
+                        _dc_all = session.exec(
+                            select(_DFC).where(_DFC.deployment_id == _dc_dep_id)
+                        ).all()
+                        _hidden = {r.feature_name for r in _dc_all if not r.is_visible}
+                        _vis_count = len(_dc_feature_names) - len(_hidden)
+                        dashboard_config_event = {
+                            "action": "updated",
+                            "visible_count": _vis_count,
+                            "locked_count": 0,
+                            "total_count": len(_dc_feature_names),
+                            "changes": [{"feature_name": _fn_to_hide, "is_visible": False, "is_locked": False, "locked_value": None}],
+                            "summary": f"'{_fn_to_hide}' is now hidden from the prediction dashboard.",
+                        }
+
+                elif _dc_lock_m:
+                    _fn_lock = _dc_lock_m.group(1)
+                    _val_lock = _dc_lock_m.group(2).strip().rstrip(".")
+                    _fn_match = _extract_dashboard_feature(body.message, _dc_feature_names)
+                    _fn_to_lock = _fn_match or _fn_lock
+                    if _fn_to_lock in _dc_feature_names:
+                        _existing = session.exec(
+                            select(_DFC).where(
+                                _DFC.deployment_id == _dc_dep_id,
+                                _DFC.feature_name == _fn_to_lock,
+                            )
+                        ).first()
+                        if _existing:
+                            _existing.is_locked = True
+                            _existing.locked_value = _val_lock
+                            _existing.is_visible = True
+                            session.add(_existing)
+                        else:
+                            session.add(
+                                _DFC(
+                                    deployment_id=_dc_dep_id,
+                                    feature_name=_fn_to_lock,
+                                    is_locked=True,
+                                    locked_value=_val_lock,
+                                    is_visible=True,
+                                )
+                            )
+                        session.commit()
+                        _dc_all = session.exec(
+                            select(_DFC).where(_DFC.deployment_id == _dc_dep_id)
+                        ).all()
+                        _locked = {r.feature_name for r in _dc_all if r.is_locked}
+                        _hidden = {r.feature_name for r in _dc_all if not r.is_visible}
+                        _vis_count = len(_dc_feature_names) - len(_hidden)
+                        dashboard_config_event = {
+                            "action": "updated",
+                            "visible_count": _vis_count,
+                            "locked_count": len(_locked),
+                            "total_count": len(_dc_feature_names),
+                            "changes": [{"feature_name": _fn_to_lock, "is_visible": True, "is_locked": True, "locked_value": _val_lock}],
+                            "summary": f"'{_fn_to_lock}' is now locked to '{_val_lock}' on the prediction dashboard.",
+                        }
+
+                if dashboard_config_event:
+                    _dc_summary = dashboard_config_event.get("summary", "")
+                    system_prompt += (
+                        f"\n\n## Dashboard Configuration\n{_dc_summary} "
+                        "Tell the analyst which fields are now visible and which are locked, "
+                        "and explain that the shared prediction URL will reflect these changes. "
+                        "Remind them they can say 'show all fields' to restore the defaults."
+                    )
+        except Exception:  # noqa: BLE001
+            pass  # Dashboard config is nice-to-have; never crash chat
+
     # Confidence threshold configuration via chat
     confidence_threshold_event: dict | None = None
     if _CONFIDENCE_THRESHOLD_PATTERNS.search(body.message) and ctx["deployment"]:
@@ -13798,6 +14061,10 @@ def send_message(
 
         if deployments_overview_event:
             yield f"data: {json.dumps({'type': 'deployments_overview', 'deployments_overview': deployments_overview_event})}\n\n"
+
+        # Emit dashboard field configuration card
+        if dashboard_config_event:
+            yield f"data: {json.dumps({'type': 'dashboard_config', 'dashboard_config': dashboard_config_event})}\n\n"
 
         # After text stream, opportunistically generate a chart if the
         # message is about data and we have a dataset loaded

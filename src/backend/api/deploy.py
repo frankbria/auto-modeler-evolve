@@ -5499,3 +5499,137 @@ def _iv_rule_description(
             values += f", … ({len(allowed)} total)"
         return f"'{feature}' must be one of: {values}."
     return f"Validation rule for '{feature}'."
+
+
+# ---------------------------------------------------------------------------
+# 23. Dashboard field configuration — control which fields appear on the
+#     public prediction dashboard (hide, lock, reorder, relabel)
+# ---------------------------------------------------------------------------
+
+from models.dashboard_field_config import DashboardFieldConfig  # noqa: E402
+
+
+class DashboardFieldBody(BaseModel):
+    feature_name: str
+    is_visible: bool = True
+    is_locked: bool = False
+    locked_value: str | None = None  # JSON-encoded
+    display_label: str | None = None
+    display_order: int | None = None
+
+
+class DashboardConfigBatchBody(BaseModel):
+    fields: list[DashboardFieldBody]
+
+
+@router.get("/api/deploy/{deployment_id}/dashboard-config")
+def get_dashboard_config(
+    deployment_id: str,
+    session: Session = Depends(get_session),
+) -> dict:
+    """Return all field configs for the dashboard, merged with the feature schema."""
+    dep = session.get(Deployment, deployment_id)
+    if dep is None or not dep.is_active:
+        raise HTTPException(status_code=404, detail="Deployment not found")
+    rows = session.exec(
+        select(DashboardFieldConfig).where(
+            DashboardFieldConfig.deployment_id == deployment_id
+        )
+    ).all()
+    configs = {r.feature_name: r for r in rows}
+
+    # Merge with known feature schema so caller sees all features
+    schema = get_feature_schema(dep.pipeline_path) if dep.pipeline_path else []
+    result = []
+    for i, entry in enumerate(schema):
+        fname = entry["name"]
+        cfg = configs.get(fname)
+        result.append(
+            {
+                "feature_name": fname,
+                "is_visible": cfg.is_visible if cfg else True,
+                "is_locked": cfg.is_locked if cfg else False,
+                "locked_value": cfg.locked_value if cfg else None,
+                "display_label": cfg.display_label if cfg else None,
+                "display_order": cfg.display_order if cfg else i,
+            }
+        )
+    result.sort(key=lambda x: (x["display_order"] is None, x["display_order"]))
+    visible = sum(1 for r in result if r["is_visible"])
+    locked = sum(1 for r in result if r["is_locked"])
+    return {
+        "deployment_id": deployment_id,
+        "fields": result,
+        "visible_count": visible,
+        "locked_count": locked,
+        "total_count": len(result),
+    }
+
+
+@router.put("/api/deploy/{deployment_id}/dashboard-config")
+def update_dashboard_config(
+    deployment_id: str,
+    body: DashboardConfigBatchBody,
+    session: Session = Depends(get_session),
+) -> dict:
+    """Upsert field configs for the dashboard."""
+    dep = session.get(Deployment, deployment_id)
+    if dep is None or not dep.is_active:
+        raise HTTPException(status_code=404, detail="Deployment not found")
+    changed = []
+    for field in body.fields:
+        existing = session.exec(
+            select(DashboardFieldConfig).where(
+                DashboardFieldConfig.deployment_id == deployment_id,
+                DashboardFieldConfig.feature_name == field.feature_name,
+            )
+        ).first()
+        if existing:
+            existing.is_visible = field.is_visible
+            existing.is_locked = field.is_locked
+            existing.locked_value = field.locked_value
+            existing.display_label = field.display_label
+            existing.display_order = field.display_order
+            session.add(existing)
+        else:
+            cfg = DashboardFieldConfig(
+                deployment_id=deployment_id,
+                feature_name=field.feature_name,
+                is_visible=field.is_visible,
+                is_locked=field.is_locked,
+                locked_value=field.locked_value,
+                display_label=field.display_label,
+                display_order=field.display_order,
+            )
+            session.add(cfg)
+        changed.append(
+            {
+                "feature_name": field.feature_name,
+                "is_visible": field.is_visible,
+                "is_locked": field.is_locked,
+                "locked_value": field.locked_value,
+            }
+        )
+    session.commit()
+    return {"updated": len(changed), "changes": changed}
+
+
+@router.delete("/api/deploy/{deployment_id}/dashboard-config")
+def reset_dashboard_config(
+    deployment_id: str,
+    session: Session = Depends(get_session),
+) -> dict:
+    """Remove all field configs, restoring default (show all) behaviour."""
+    dep = session.get(Deployment, deployment_id)
+    if dep is None or not dep.is_active:
+        raise HTTPException(status_code=404, detail="Deployment not found")
+    rows = session.exec(
+        select(DashboardFieldConfig).where(
+            DashboardFieldConfig.deployment_id == deployment_id
+        )
+    ).all()
+    removed = len(rows)
+    for row in rows:
+        session.delete(row)
+    session.commit()
+    return {"removed": removed, "message": "Dashboard config reset — all fields are now visible."}

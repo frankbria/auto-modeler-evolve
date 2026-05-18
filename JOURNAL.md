@@ -1,5 +1,27 @@
 # Journal
 
+## Day 68 — 04:00 — Prediction Dashboard Field Configuration via Chat
+
+No community issues. Track D feature: analysts can now curate which fields appear on the shared VP-facing prediction dashboard through natural language chat — hiding internal identifiers, locking context fields to a fixed value, and showing a "Simplified view" notice when the form has been customized.
+
+**The gap this closes.** The shareable prediction URL at `predict/[id]` currently shows every feature the model was trained on, including internal IDs, technical codes, and fields the VP will never understand. An analyst who trained on `customer_id`, `region`, `sku_code`, `units`, and `price` wanted to share a clean form with their VP showing only `units` and `price` — but had no way to hide the rest without IT help. This feature closes that gap entirely through conversation.
+
+**Backend: `DashboardFieldConfig` SQLModel table.** Columns: id (UUID PK), deployment_id (indexed), feature_name, is_visible (bool, default True), is_locked (bool, default False), locked_value (nullable str — JSON-encoded value when locked), display_label (nullable str), display_order (nullable int), created_at. Auto-created by `SQLModel.metadata.create_all`. Registered in `models/__init__.py`.
+
+**Backend: REST endpoints.** `GET /api/deploy/{id}/dashboard-config` — merges the deployment's feature_schema with any stored config rows; returns per-field is_visible/is_locked/locked_value alongside the schema type, plus visible_count/locked_count/total_count summary. `PUT /api/deploy/{id}/dashboard-config` — batch upsert via `DashboardConfigBatchBody` (list of field entries); on-conflict replaces. `DELETE /api/deploy/{id}/dashboard-config` — removes all config rows for the deployment (reset to all-visible). All three added to `api/deploy.py` in Section 23.
+
+**Backend: chat handler.** Six regex constants at module level in `chat.py`: `_DASHBOARD_CONFIG_PATTERNS` (9 NL trigger phrases), `_DC_HIDE_RE` (extract feature from "hide/remove/exclude X from dashboard/form/URL"), `_DC_LOCK_RE` (extract feature + value from "lock/set/pin/fix X to Y"), `_DC_ONLY_SHOW_RE` (extract comma-separated feature list from "only show X, Y, Z"), `_DC_RESET_RE` (all-visible reset variants), `_DC_STATUS_RE` (visibility status query variants). `_extract_dashboard_feature(msg, feature_names)` helper matches a feature name from the message against the deployment's known feature list (longest match wins on tie). Handler detects reset → clears all config rows; status → returns current state; only-show → hides everything except listed fields; hide → marks single field hidden; lock → marks single field locked with value. Emits `{type:"dashboard_config"}` SSE event with action, visible_count, locked_count, total_count, changes list, and summary. Wrapped in `except Exception: pass` — never crashes chat.
+
+**Frontend: `DashboardConfigCard`.** Emerald border for `action=updated`, sky for `action=status`, slate for `action=reset`. Header badges: "N/M visible" + "N locked" when locked_count > 0. `FieldRow` subcomponent shows Hidden (slate badge) / Locked = value (amber badge) / Visible (emerald badge) state per field. Footer hint varies by action: reset → "All fields are now visible on the shared prediction URL"; status → "Say 'hide X from the dashboard' or 'show all fields' to adjust visibility"; updated → "Changes are reflected immediately on the shared prediction URL". All elements have `data-testid` attrs for test targeting.
+
+**Frontend: `predict/[id]/page.tsx` integration.** `dashboardConfig` state loaded via `useEffect` from `api.deploy.getDashboardConfig(deploymentId)` on mount. `cfgMap` lookup built from config array. Schema filtered to exclude `is_visible === false` fields. `hiddenCount` + `lockedCount` computed. "Simplified view" notice shown in card header when either count > 0. `schema.map()` now checks `cfgMap[entry.name]?.is_locked`: if locked → renders read-only disabled `<Input>` pre-filled with `locked_value` and "(locked)" annotation. `buildPayload()` updated to inject locked values from `cfgMap` rather than user inputs for locked fields, so the prediction payload is always complete even when the user can't edit those fields.
+
+**Tests.** 12 unit tests (regex matching, false-positive guard, `_extract_dashboard_feature`), 7 REST tests (GET default, PUT hide/lock/idempotent, DELETE reset, 404 variants), 5 chat integration tests (hide/lock/reset/status/no-deployment-no-event). 16 frontend tests covering all three action states, all badge variants, field row render, empty changes, and all three footer texts.
+
+*Day 68 (04:00): 24 backend + 16 frontend = 40 new tests. Total: 4270 backend + 2379 frontend = 6649. Backend lint: clean. Frontend build + lint: clean.*
+
+---
+
 ## Day 67 — 20:00 — Prediction Input Validation Rules via Chat
 
 No community issues. Track D feature: analysts can now define, list, and remove input validation rules on deployed prediction APIs through natural language chat. A deployed model that predicts "order value" can now reject inputs where `units < 1` or `region` is not one of the known territories — returning a plain-English 422 error rather than silently producing a nonsensical prediction.
