@@ -10785,7 +10785,9 @@ def send_message(
                         _dc_schema = _gfs(_dc_dep_obj.pipeline_path)
                         _dc_feature_names = [
                             e["name"]
-                            for e in (_dc_schema if isinstance(_dc_schema, list) else [])
+                            for e in (
+                                _dc_schema if isinstance(_dc_schema, list) else []
+                            )
                         ]
                 except Exception:  # noqa: BLE001
                     pass
@@ -10859,9 +10861,12 @@ def send_message(
 
                         if _hide_m:
                             _fname_raw = _hide_m.group(1).strip()
-                            _fname = _extract_dashboard_feature(
-                                _fname_raw + " " + body.message, _dc_feature_names
-                            ) or _fname_raw
+                            _fname = (
+                                _extract_dashboard_feature(
+                                    _fname_raw + " " + body.message, _dc_feature_names
+                                )
+                                or _fname_raw
+                            )
                             _existing_dc = session.exec(
                                 select(_DFC).where(
                                     _DFC.deployment_id == _dc_dep_id,
@@ -10892,9 +10897,12 @@ def send_message(
                         elif _lock_m:
                             _fname_raw = _lock_m.group(1).strip()
                             _lval = _lock_m.group(2).strip()
-                            _fname = _extract_dashboard_feature(
-                                body.message, _dc_feature_names
-                            ) or _fname_raw
+                            _fname = (
+                                _extract_dashboard_feature(
+                                    body.message, _dc_feature_names
+                                )
+                                or _fname_raw
+                            )
                             _existing_dc = session.exec(
                                 select(_DFC).where(
                                     _DFC.deployment_id == _dc_dep_id,
@@ -10933,8 +10941,7 @@ def send_message(
                 _visible_count = sum(
                     1
                     for f in _dc_feature_names
-                    if _stored_map.get(f, None) is None
-                    or _stored_map[f].is_visible
+                    if _stored_map.get(f, None) is None or _stored_map[f].is_visible
                 )
                 _locked_count = sum(
                     1
