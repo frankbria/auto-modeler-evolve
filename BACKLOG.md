@@ -53,6 +53,18 @@ the time is better spent on real features.
 
 ---
 
+## Day 67 (20:00) — Done
+**Track D — Prediction Input Validation Rules via Chat.**
+
+Analysts can now define, list, and remove input validation rules on deployed prediction APIs through natural language: "validate that units is between 1 and 10000", "require region to be one of East, West, Central", "ensure customer_id is not null", "show my validation rules", "remove all validation rules". `InputValidationRule` SQLModel table (deployment_id indexed, rule_type/feature_name/min_val/max_val/allowed_values). `validate_prediction_inputs()` pure function in `core/validator.py`: range/one_of/not_null checks, returns (is_valid, violations). `make_prediction()` hook loads rules per deployment, raises HTTP 422 with plain-English violation messages. `POST/GET/DELETE /api/deploy/{id}/input-validation-rules` REST endpoints. Seven regex constants + handler in `chat.py` (LIST/DELETE/CREATE intents, range/bound/one_of/not_null extraction). `InputValidationRuleCard` (violet/slate/rose/slate borders for created/list/deleted/guidance); `RuleTypeBadge` subcomponent; `RuleRow` with `data-testid`. 41 backend + 22 frontend = 63 new tests. Backend lint: clean. Frontend build + lint: clean.
+
+**What's next:**
+- Track D: Prediction SLA / latency monitoring — "is my model responding fast enough?", `response_ms` already in `PredictionLog`
+- Track E: "What's next?" guidance cards at key step transitions (after upload, after training, after deploy)
+- Track C: Ensemble methods (voting classifier / stacking) for better accuracy
+
+---
+
 ## Day 67 (12:00) — Done
 **Track D — Prediction Confidence Thresholding via Chat.**
 

@@ -1,5 +1,29 @@
 # Journal
 
+## Day 67 — 20:00 — Prediction Input Validation Rules via Chat
+
+No community issues. Track D feature: analysts can now define, list, and remove input validation rules on deployed prediction APIs through natural language chat. A deployed model that predicts "order value" can now reject inputs where `units < 1` or `region` is not one of the known territories — returning a plain-English 422 error rather than silently producing a nonsensical prediction.
+
+**The gap this closes.** Deployed prediction APIs currently accept any input the caller sends. A model trained on `units` in the range 1–10,000 will happily produce a prediction for `units = -500` without complaint — and the analyst has no visibility that something upstream went wrong. This feature lets analysts encode the business rules they already know ("units must be positive", "region must be one of our sales territories") directly into the API, in plain English, without writing any code.
+
+**Backend: `InputValidationRule` SQLModel table.** Columns: id (UUID PK), deployment_id (indexed), feature_name, rule_type ("range"|"one_of"|"not_null"), min_val (nullable float), max_val (nullable float), allowed_values (JSON-encoded list as text), created_at. Registered in `models/__init__.py` so `SQLModel.metadata.create_all` picks it up — missing this caused the first test run to fail with "no such table".
+
+**Backend: `validate_prediction_inputs()` pure function.** Added to `core/validator.py`. Accepts `inputs: dict` and `rules: list[dict]`; returns `(is_valid: bool, violations: list[dict])`. Range check: bounds-inclusive, rejects non-numeric values with a type-specific message. One-of check: decodes JSON-encoded allowed list, case-insensitive string comparison. Not-null check: rejects missing or None values. No database dependencies — fully testable in isolation.
+
+**Backend: `make_prediction()` hook.** After the monthly quota check, loads all `InputValidationRule` rows for the deployment, serializes them to plain dicts, calls the pure function. If any violations → raises HTTP 422 with joined plain-English violation messages. Zero rules → passes through unchanged (no performance hit, one DB query with empty result).
+
+**Backend: REST endpoints.** `POST /api/deploy/{id}/input-validation-rules` (creates a rule; validates rule_type and required params — range needs min/max, one_of needs allowed_values). `GET /api/deploy/{id}/input-validation-rules` (lists all rules with full detail). `DELETE /api/deploy/{id}/input-validation-rules/{rule_id}` (deletes one by ID; 404 if not found). All three added to `api/deploy.py` in section 22.
+
+**Backend: chat handler.** Seven regex constants at module level in `chat.py`: `_INPUT_VALIDATION_PATTERNS` (9 NL create variants), `_IV_LIST_RE` (show/list/get variants), `_IV_DELETE_RE` (remove/delete/clear variants), `_IV_RANGE_RE` (extracts feature + lo/hi from "X is between A and B"), `_IV_BOUND_RE` (extracts feature + op + val from "X above/below/greater than/less than N"), `_IV_ONE_OF_RE` (extracts feature + values from "X must be one of A, B, C"), `_IV_NOT_NULL_RE` (extracts feature from "require X is not null / is required"). Handler detects LIST → returns all rules. DELETE → deletes all rules, returns count. CREATE → attempts rule extraction in order (range → bound → one_of → not_null); if extraction fails, returns `action="guidance"` with NL hint. Emits `{type:"input_validation_rule"}` SSE event. Wrapped in `except Exception: pass` — never crashes chat.
+
+**Frontend: `InputValidationRuleCard`.** Four visual states: created (violet border, 🛡️), list (slate border, 📋), deleted (rose border, 🗑️), guidance (slate border, 💡). Subcomponents: `RuleTypeBadge` (Range/One of/Required in violet pill), `RuleRow` with `data-testid="validation-rule-row-{feature_name}"` for testing. Header badges: "N rules active" (created), "N rules" (list), "N removed" (deleted). Footer hints differ by action: created → "The prediction API now rejects inputs that violate this rule with a plain-English 422 error."; list/guidance → NL example phrases.
+
+**Tests.** 12 pure-function tests (range/one_of/not_null pass and fail cases), 7 pattern-match tests, 13 REST endpoint tests (create/list/delete + error cases + 422 on prediction violation), 4 `make_prediction` enforcement tests, 5 chat integration tests. 22 frontend tests: aria-label, all four action states, rule type badges, Zustand store actions, guidance action via `guidanceResult`.
+
+*Day 67 (20:00): 41 backend + 22 frontend = 63 new tests. Total: 4246 backend + 2363 frontend = 6609. Backend lint: clean. Frontend build + lint: clean.*
+
+---
+
 ## Day 67 — 12:00 — Prediction Confidence Thresholding via Chat
 
 No community issues. Track D feature: analysts can now set a minimum confidence threshold so uncertain classification predictions are flagged with `below_threshold=True` rather than silently served at whatever confidence the model has.
