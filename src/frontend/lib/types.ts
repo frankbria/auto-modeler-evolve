@@ -516,7 +516,6 @@ export interface ChatMessage {
   rollback_chat?: RollbackChatResult
   confidence_threshold_config?: ConfidenceThresholdConfig
   input_validation_rule?: InputValidationRuleResult
-  dashboard_config?: DashboardConfigResult
 }
 
 export interface RollbackVersionEntry {
@@ -3338,25 +3337,5 @@ export interface InputValidationRuleResult {
   rules?: InputValidationRuleEntry[]
   // deleted
   deleted_count?: number
-  summary: string
-}
-
-// ---------------------------------------------------------------------------
-// Dashboard Field Configuration
-// ---------------------------------------------------------------------------
-
-export interface DashboardFieldChange {
-  feature_name: string
-  is_visible: boolean
-  is_locked: boolean
-  locked_value: string | null
-}
-
-export interface DashboardConfigResult {
-  action: "updated" | "reset" | "status"
-  visible_count: number
-  locked_count: number
-  total_count: number
-  changes: DashboardFieldChange[]
   summary: string
 }

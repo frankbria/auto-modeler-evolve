@@ -15,7 +15,6 @@ from models.webhook_config import WebhookConfig
 from models.webhook_event import WebhookEvent
 from models.analysis_template import AnalysisTemplate
 from models.input_validation_rule import InputValidationRule
-from models.dashboard_field_config import DashboardFieldConfig
 
 __all__ = [
     "Project",
@@ -34,5 +33,4 @@ __all__ = [
     "WebhookEvent",
     "AnalysisTemplate",
     "InputValidationRule",
-    "DashboardFieldConfig",
 ]

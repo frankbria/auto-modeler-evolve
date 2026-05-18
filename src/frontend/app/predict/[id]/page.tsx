@@ -412,7 +412,6 @@ export default function PredictionDashboard() {
   const [predError, setPredError] = useState<string | null>(null)
   const [showExplanation, setShowExplanation] = useState(false)
   const [fetchingExplanation, setFetchingExplanation] = useState(false)
-  const [dashboardConfig, setDashboardConfig] = useState<import("@/lib/types").DashboardFieldChange[]>([])
   const [explanationError, setExplanationError] = useState(false)
   const [history, setHistory] = useState<PredictionHistoryRecord[]>([])
   const [, setHistoryCounter] = useState(0)
@@ -444,13 +443,6 @@ export default function PredictionDashboard() {
     api.deploy.getPresets(deploymentId).then(setPresets).catch(() => {})
   }, [deploymentId])
 
-  useEffect(() => {
-    api.deploy
-      .getDashboardConfig(deploymentId)
-      .then((cfg) => setDashboardConfig(cfg.fields ?? []))
-      .catch(() => {})
-  }, [deploymentId])
-
   const loadPreset = (featureValues: Record<string, string | number>) => {
     const next = { ...inputs }
     for (const [key, val] of Object.entries(featureValues)) {
@@ -464,12 +456,9 @@ export default function PredictionDashboard() {
 
   const buildPayload = () => {
     if (!deployment) return {}
-    const cfgLookup = Object.fromEntries(dashboardConfig.map((c) => [c.feature_name, c]))
     const payload: Record<string, unknown> = {}
     for (const entry of deployment.feature_schema ?? []) {
-      const cfg = cfgLookup[entry.name]
-      // Use locked value if field is locked; otherwise use user input
-      const raw = cfg?.is_locked ? (cfg.locked_value ?? "") : (inputs[entry.name] ?? "")
+      const raw = inputs[entry.name] ?? ""
       if (entry.type === "numeric") {
         payload[entry.name] = raw === "" ? null : parseFloat(raw)
       } else {
@@ -557,21 +546,7 @@ export default function PredictionDashboard() {
     )
   }
 
-  const rawSchema = deployment.feature_schema ?? []
-
-  // Apply dashboard config: build a lookup from feature_name → config entry
-  const cfgMap = Object.fromEntries(dashboardConfig.map((c) => [c.feature_name, c]))
-  const hasConfig = dashboardConfig.length > 0
-
-  // Visible fields = not explicitly hidden; locked fields are pre-filled and read-only
-  const schema = rawSchema.filter((e) => {
-    const cfg = cfgMap[e.name]
-    return cfg ? cfg.is_visible !== false : true
-  })
-
-  const hiddenCount = rawSchema.length - schema.length
-  const lockedCount = dashboardConfig.filter((c) => c.is_locked).length
-
+  const schema = deployment.feature_schema ?? []
   const targetLabel = colLabel(deployment.target_column ?? "Output")
   const pageTitle = `${targetLabel} Predictor`
 
@@ -633,14 +608,6 @@ export default function PredictionDashboard() {
             <p className="text-xs text-muted-foreground mt-0.5">
               Fields are pre-filled with training averages — adjust them for your specific situation.
             </p>
-            {(hiddenCount > 0 || lockedCount > 0) && (
-              <p className="text-xs text-amber-700 mt-1" data-testid="simplified-view-note">
-                Simplified view:{" "}
-                {hiddenCount > 0 && `${hiddenCount} field${hiddenCount !== 1 ? "s" : ""} hidden`}
-                {hiddenCount > 0 && lockedCount > 0 && ", "}
-                {lockedCount > 0 && `${lockedCount} field${lockedCount !== 1 ? "s" : ""} locked`}
-              </p>
-            )}
           </CardHeader>
           <CardContent className="space-y-4">
             {schema.length === 0 && (
@@ -648,65 +615,46 @@ export default function PredictionDashboard() {
                 No feature schema available for this deployment.
               </p>
             )}
-            {schema.map((entry: FeatureSchemaEntry) => {
-              const fieldCfg = cfgMap[entry.name]
-              const isLocked = fieldCfg?.is_locked === true
-              const lockedVal = fieldCfg?.locked_value ?? null
-              return (
-                <div key={entry.name}>
-                  <label className="mb-1 block text-sm font-medium">
-                    {colLabel(entry.name)}
-                    {isLocked ? (
-                      <span className="ml-1.5 text-xs font-normal text-amber-600">(locked)</span>
-                    ) : (
-                      entry.type === "numeric" && entry.mean !== undefined && entry.mean !== null && (
-                        <span className="ml-1.5 text-xs font-normal text-muted-foreground">
-                          (avg: {fmtNum(entry.mean)})
-                        </span>
-                      )
-                    )}
-                  </label>
-                  {isLocked ? (
-                    <Input
-                      type="text"
-                      value={lockedVal ?? ""}
-                      readOnly
-                      disabled
-                      className="text-sm bg-muted text-muted-foreground cursor-not-allowed"
-                      aria-label={`${colLabel(entry.name)} (locked)`}
-                      data-testid={`locked-field-${entry.name}`}
-                    />
-                  ) : entry.type === "categorical" && entry.options ? (
-                    <select
-                      className="w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                      value={inputs[entry.name] ?? ""}
-                      onChange={(e) =>
-                        setInputs((prev) => ({ ...prev, [entry.name]: e.target.value }))
-                      }
-                      aria-label={colLabel(entry.name)}
-                    >
-                      {entry.options.map((opt) => (
-                        <option key={opt} value={opt}>
-                          {opt}
-                        </option>
-                      ))}
-                    </select>
-                  ) : (
-                    <Input
-                      type="number"
-                      step="any"
-                      placeholder={entry.median != null ? `Default: ${fmtNum(entry.median)}` : "Enter a value"}
-                      value={inputs[entry.name] ?? ""}
-                      onChange={(e) =>
-                        setInputs((prev) => ({ ...prev, [entry.name]: e.target.value }))
-                      }
-                      className="text-sm"
-                      aria-label={colLabel(entry.name)}
-                    />
+            {schema.map((entry: FeatureSchemaEntry) => (
+              <div key={entry.name}>
+                <label className="mb-1 block text-sm font-medium">
+                  {colLabel(entry.name)}
+                  {entry.type === "numeric" && entry.mean !== undefined && entry.mean !== null && (
+                    <span className="ml-1.5 text-xs font-normal text-muted-foreground">
+                      (avg: {fmtNum(entry.mean)})
+                    </span>
                   )}
-                </div>
-              )
-            })}
+                </label>
+                {entry.type === "categorical" && entry.options ? (
+                  <select
+                    className="w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                    value={inputs[entry.name] ?? ""}
+                    onChange={(e) =>
+                      setInputs((prev) => ({ ...prev, [entry.name]: e.target.value }))
+                    }
+                    aria-label={colLabel(entry.name)}
+                  >
+                    {entry.options.map((opt) => (
+                      <option key={opt} value={opt}>
+                        {opt}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <Input
+                    type="number"
+                    step="any"
+                    placeholder={entry.median != null ? `Default: ${fmtNum(entry.median)}` : "Enter a value"}
+                    value={inputs[entry.name] ?? ""}
+                    onChange={(e) =>
+                      setInputs((prev) => ({ ...prev, [entry.name]: e.target.value }))
+                    }
+                    className="text-sm"
+                    aria-label={colLabel(entry.name)}
+                  />
+                )}
+              </div>
+            ))}
           </CardContent>
         </Card>
 
