@@ -64,6 +64,7 @@ from models.prediction_log import PredictionLog
 from models.webhook_config import WebhookConfig
 from models.prediction_alert_rule import PredictionAlertRule
 from models.input_validation_rule import InputValidationRule
+from models.dashboard_field_config import DashboardFieldConfig
 
 router = APIRouter(tags=["deployment"])
 
@@ -5499,3 +5500,151 @@ def _iv_rule_description(
             values += f", … ({len(allowed)} total)"
         return f"'{feature}' must be one of: {values}."
     return f"Validation rule for '{feature}'."
+
+
+# ---------------------------------------------------------------------------
+# Section 23 — Dashboard field configuration
+# ---------------------------------------------------------------------------
+
+
+class _DashboardFieldEntry(BaseModel):
+    feature_name: str
+    is_visible: bool = True
+    is_locked: bool = False
+    locked_value: str | None = None
+    display_label: str | None = None
+    display_order: int | None = None
+
+
+class DashboardConfigBatchBody(BaseModel):
+    fields: list[_DashboardFieldEntry]
+
+
+@router.get("/api/deploy/{deployment_id}/dashboard-config")
+def get_dashboard_config(
+    deployment_id: str,
+    session: Session = Depends(get_session),
+):
+    """Return per-field visibility config merged with the deployment feature schema."""
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment:
+        raise HTTPException(status_code=404, detail="Deployment not found")
+
+    # Load the feature schema to get canonical field names and types
+    feature_schema: list[dict] = []
+    try:
+        if deployment.pipeline_path and Path(deployment.pipeline_path).exists():
+            schema_raw = get_feature_schema(deployment.pipeline_path)
+            feature_schema = schema_raw if isinstance(schema_raw, list) else []
+    except Exception:  # noqa: BLE001
+        pass
+    # Fallback: use feature_names JSON if schema loading failed
+    if not feature_schema and deployment.feature_names:
+        try:
+            names = json.loads(deployment.feature_names)
+            feature_schema = [{"name": n, "type": "unknown"} for n in names]
+        except Exception:  # noqa: BLE001
+            pass
+
+    # Load stored config rows
+    stored = session.exec(
+        select(DashboardFieldConfig).where(
+            DashboardFieldConfig.deployment_id == deployment_id
+        )
+    ).all()
+    stored_map = {r.feature_name: r for r in stored}
+
+    fields_out = []
+    for entry in feature_schema:
+        fname = entry.get("name", "")
+        cfg = stored_map.get(fname)
+        fields_out.append(
+            {
+                "feature_name": fname,
+                "type": entry.get("type", "unknown"),
+                "is_visible": cfg.is_visible if cfg else True,
+                "is_locked": cfg.is_locked if cfg else False,
+                "locked_value": cfg.locked_value if cfg else None,
+                "display_label": cfg.display_label if cfg else None,
+                "display_order": cfg.display_order if cfg else None,
+            }
+        )
+
+    visible_count = sum(1 for f in fields_out if f["is_visible"])
+    locked_count = sum(1 for f in fields_out if f["is_locked"])
+
+    return {
+        "deployment_id": deployment_id,
+        "fields": fields_out,
+        "total_count": len(fields_out),
+        "visible_count": visible_count,
+        "locked_count": locked_count,
+    }
+
+
+@router.put("/api/deploy/{deployment_id}/dashboard-config")
+def put_dashboard_config(
+    deployment_id: str,
+    body: DashboardConfigBatchBody,
+    session: Session = Depends(get_session),
+):
+    """Batch upsert field visibility/lock config for a deployment."""
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment:
+        raise HTTPException(status_code=404, detail="Deployment not found")
+
+    updated = 0
+    for entry in body.fields:
+        existing = session.exec(
+            select(DashboardFieldConfig).where(
+                DashboardFieldConfig.deployment_id == deployment_id,
+                DashboardFieldConfig.feature_name == entry.feature_name,
+            )
+        ).first()
+
+        if existing:
+            existing.is_visible = entry.is_visible
+            existing.is_locked = entry.is_locked
+            existing.locked_value = entry.locked_value
+            if entry.display_label is not None:
+                existing.display_label = entry.display_label
+            if entry.display_order is not None:
+                existing.display_order = entry.display_order
+            session.add(existing)
+        else:
+            row = DashboardFieldConfig(
+                deployment_id=deployment_id,
+                feature_name=entry.feature_name,
+                is_visible=entry.is_visible,
+                is_locked=entry.is_locked,
+                locked_value=entry.locked_value,
+                display_label=entry.display_label,
+                display_order=entry.display_order,
+            )
+            session.add(row)
+        updated += 1
+
+    session.commit()
+    return {"deployment_id": deployment_id, "updated": updated}
+
+
+@router.delete("/api/deploy/{deployment_id}/dashboard-config")
+def delete_dashboard_config(
+    deployment_id: str,
+    session: Session = Depends(get_session),
+):
+    """Remove all field config rows for a deployment (reset to all-visible)."""
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment:
+        raise HTTPException(status_code=404, detail="Deployment not found")
+
+    rows = session.exec(
+        select(DashboardFieldConfig).where(
+            DashboardFieldConfig.deployment_id == deployment_id
+        )
+    ).all()
+    count = len(rows)
+    for row in rows:
+        session.delete(row)
+    session.commit()
+    return {"deployment_id": deployment_id, "removed": count}
