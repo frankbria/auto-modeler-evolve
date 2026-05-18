@@ -10427,21 +10427,27 @@ def send_message(
                     if _r.allowed_values:
                         try:
                             import json as _json_iv
+
                             _allowed_iv = _json_iv.loads(_r.allowed_values)
                         except Exception:
                             pass
-                    _iv_serialised.append({
-                        "id": _r.id,
-                        "feature_name": _r.feature_name,
-                        "rule_type": _r.rule_type,
-                        "min_val": _r.min_val,
-                        "max_val": _r.max_val,
-                        "allowed_values": _allowed_iv,
-                        "description": _iv_describe_rule(
-                            _r.feature_name, _r.rule_type,
-                            _r.min_val, _r.max_val, _allowed_iv
-                        ),
-                    })
+                    _iv_serialised.append(
+                        {
+                            "id": _r.id,
+                            "feature_name": _r.feature_name,
+                            "rule_type": _r.rule_type,
+                            "min_val": _r.min_val,
+                            "max_val": _r.max_val,
+                            "allowed_values": _allowed_iv,
+                            "description": _iv_describe_rule(
+                                _r.feature_name,
+                                _r.rule_type,
+                                _r.min_val,
+                                _r.max_val,
+                                _allowed_iv,
+                            ),
+                        }
+                    )
                 input_validation_rule_event = {
                     "action": "list",
                     "deployment_id": _iv_dep_id,
@@ -10498,7 +10504,9 @@ def send_message(
                         "min_val": _lo_iv,
                         "max_val": _hi_iv,
                     }
-                    _rule_desc_iv = f"'{_feat_iv}' must be between {_lo_iv} and {_hi_iv}."
+                    _rule_desc_iv = (
+                        f"'{_feat_iv}' must be between {_lo_iv} and {_hi_iv}."
+                    )
 
                 elif _bound_m:
                     _feat_iv = _bound_m.group("feature")
@@ -10523,7 +10531,9 @@ def send_message(
                     _feat_iv = _one_of_m.group("feature")
                     _raw_vals = _one_of_m.group("vals")
                     _allowed_list = [
-                        v.strip().strip("'\"") for v in _raw_vals.split(",") if v.strip()
+                        v.strip().strip("'\"")
+                        for v in _raw_vals.split(",")
+                        if v.strip()
                     ]
                     _new_rule = {
                         "feature_name": _feat_iv,

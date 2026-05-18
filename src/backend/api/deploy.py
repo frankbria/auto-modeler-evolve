@@ -957,7 +957,9 @@ def make_prediction(
             }
             for r in _iv_rules
         ]
-        _iv_valid, _iv_violations = validate_prediction_inputs(input_data, _iv_rule_dicts)
+        _iv_valid, _iv_violations = validate_prediction_inputs(
+            input_data, _iv_rule_dicts
+        )
         if not _iv_valid:
             _iv_messages = "; ".join(v["message"] for v in _iv_violations)
             raise HTTPException(

@@ -57,7 +57,15 @@ Widget C,South,7,670.0
 def test_validate_range_pass():
     from core.validator import validate_prediction_inputs
 
-    rules = [{"feature_name": "age", "rule_type": "range", "min_val": 0.0, "max_val": 120.0, "allowed_values": None}]
+    rules = [
+        {
+            "feature_name": "age",
+            "rule_type": "range",
+            "min_val": 0.0,
+            "max_val": 120.0,
+            "allowed_values": None,
+        }
+    ]
     valid, violations = validate_prediction_inputs({"age": 35}, rules)
     assert valid
     assert violations == []
@@ -66,7 +74,15 @@ def test_validate_range_pass():
 def test_validate_range_fail_below():
     from core.validator import validate_prediction_inputs
 
-    rules = [{"feature_name": "age", "rule_type": "range", "min_val": 0.0, "max_val": 120.0, "allowed_values": None}]
+    rules = [
+        {
+            "feature_name": "age",
+            "rule_type": "range",
+            "min_val": 0.0,
+            "max_val": 120.0,
+            "allowed_values": None,
+        }
+    ]
     valid, violations = validate_prediction_inputs({"age": -5}, rules)
     assert not valid
     assert len(violations) == 1
@@ -77,7 +93,15 @@ def test_validate_range_fail_below():
 def test_validate_range_fail_above():
     from core.validator import validate_prediction_inputs
 
-    rules = [{"feature_name": "units", "rule_type": "range", "min_val": 1.0, "max_val": 10000.0, "allowed_values": None}]
+    rules = [
+        {
+            "feature_name": "units",
+            "rule_type": "range",
+            "min_val": 1.0,
+            "max_val": 10000.0,
+            "allowed_values": None,
+        }
+    ]
     valid, violations = validate_prediction_inputs({"units": 99999}, rules)
     assert not valid
     assert "units" in violations[0]["feature_name"]
@@ -86,7 +110,15 @@ def test_validate_range_fail_above():
 def test_validate_range_min_only():
     from core.validator import validate_prediction_inputs
 
-    rules = [{"feature_name": "price", "rule_type": "range", "min_val": 0.01, "max_val": None, "allowed_values": None}]
+    rules = [
+        {
+            "feature_name": "price",
+            "rule_type": "range",
+            "min_val": 0.01,
+            "max_val": None,
+            "allowed_values": None,
+        }
+    ]
     valid, violations = validate_prediction_inputs({"price": -1.0}, rules)
     assert not valid
     valid2, _ = validate_prediction_inputs({"price": 0.01}, rules)
@@ -96,7 +128,15 @@ def test_validate_range_min_only():
 def test_validate_range_non_numeric():
     from core.validator import validate_prediction_inputs
 
-    rules = [{"feature_name": "age", "rule_type": "range", "min_val": 0.0, "max_val": 120.0, "allowed_values": None}]
+    rules = [
+        {
+            "feature_name": "age",
+            "rule_type": "range",
+            "min_val": 0.0,
+            "max_val": 120.0,
+            "allowed_values": None,
+        }
+    ]
     valid, violations = validate_prediction_inputs({"age": "not-a-number"}, rules)
     assert not valid
     assert "must be a number" in violations[0]["message"]
@@ -105,7 +145,15 @@ def test_validate_range_non_numeric():
 def test_validate_one_of_pass():
     from core.validator import validate_prediction_inputs
 
-    rules = [{"feature_name": "region", "rule_type": "one_of", "min_val": None, "max_val": None, "allowed_values": '["East","West","North","South"]'}]
+    rules = [
+        {
+            "feature_name": "region",
+            "rule_type": "one_of",
+            "min_val": None,
+            "max_val": None,
+            "allowed_values": '["East","West","North","South"]',
+        }
+    ]
     valid, violations = validate_prediction_inputs({"region": "East"}, rules)
     assert valid
 
@@ -113,7 +161,15 @@ def test_validate_one_of_pass():
 def test_validate_one_of_fail():
     from core.validator import validate_prediction_inputs
 
-    rules = [{"feature_name": "region", "rule_type": "one_of", "min_val": None, "max_val": None, "allowed_values": '["East","West","North","South"]'}]
+    rules = [
+        {
+            "feature_name": "region",
+            "rule_type": "one_of",
+            "min_val": None,
+            "max_val": None,
+            "allowed_values": '["East","West","North","South"]',
+        }
+    ]
     valid, violations = validate_prediction_inputs({"region": "Unknown"}, rules)
     assert not valid
     assert "must be one of" in violations[0]["message"]
@@ -122,7 +178,15 @@ def test_validate_one_of_fail():
 def test_validate_not_null_pass():
     from core.validator import validate_prediction_inputs
 
-    rules = [{"feature_name": "customer_id", "rule_type": "not_null", "min_val": None, "max_val": None, "allowed_values": None}]
+    rules = [
+        {
+            "feature_name": "customer_id",
+            "rule_type": "not_null",
+            "min_val": None,
+            "max_val": None,
+            "allowed_values": None,
+        }
+    ]
     valid, violations = validate_prediction_inputs({"customer_id": "abc123"}, rules)
     assert valid
 
@@ -130,18 +194,41 @@ def test_validate_not_null_pass():
 def test_validate_not_null_fail():
     from core.validator import validate_prediction_inputs
 
-    rules = [{"feature_name": "customer_id", "rule_type": "not_null", "min_val": None, "max_val": None, "allowed_values": None}]
+    rules = [
+        {
+            "feature_name": "customer_id",
+            "rule_type": "not_null",
+            "min_val": None,
+            "max_val": None,
+            "allowed_values": None,
+        }
+    ]
     valid, violations = validate_prediction_inputs({"customer_id": None}, rules)
     assert not valid
-    assert "required" in violations[0]["message"].lower() or "not provided" in violations[0]["message"].lower()
+    assert (
+        "required" in violations[0]["message"].lower()
+        or "not provided" in violations[0]["message"].lower()
+    )
 
 
 def test_validate_multiple_rules_all_pass():
     from core.validator import validate_prediction_inputs
 
     rules = [
-        {"feature_name": "age", "rule_type": "range", "min_val": 0.0, "max_val": 120.0, "allowed_values": None},
-        {"feature_name": "region", "rule_type": "one_of", "min_val": None, "max_val": None, "allowed_values": '["East","West"]'},
+        {
+            "feature_name": "age",
+            "rule_type": "range",
+            "min_val": 0.0,
+            "max_val": 120.0,
+            "allowed_values": None,
+        },
+        {
+            "feature_name": "region",
+            "rule_type": "one_of",
+            "min_val": None,
+            "max_val": None,
+            "allowed_values": '["East","West"]',
+        },
     ]
     valid, violations = validate_prediction_inputs({"age": 30, "region": "East"}, rules)
     assert valid
@@ -151,10 +238,24 @@ def test_validate_multiple_rules_both_fail():
     from core.validator import validate_prediction_inputs
 
     rules = [
-        {"feature_name": "age", "rule_type": "range", "min_val": 0.0, "max_val": 120.0, "allowed_values": None},
-        {"feature_name": "region", "rule_type": "one_of", "min_val": None, "max_val": None, "allowed_values": '["East","West"]'},
+        {
+            "feature_name": "age",
+            "rule_type": "range",
+            "min_val": 0.0,
+            "max_val": 120.0,
+            "allowed_values": None,
+        },
+        {
+            "feature_name": "region",
+            "rule_type": "one_of",
+            "min_val": None,
+            "max_val": None,
+            "allowed_values": '["East","West"]',
+        },
     ]
-    valid, violations = validate_prediction_inputs({"age": 999, "region": "Nowhere"}, rules)
+    valid, violations = validate_prediction_inputs(
+        {"age": 999, "region": "Nowhere"}, rules
+    )
     assert not valid
     assert len(violations) == 2
 
@@ -187,13 +288,17 @@ def test_pattern_validate_between():
 def test_pattern_require_one_of():
     from api.chat import _INPUT_VALIDATION_PATTERNS
 
-    assert _INPUT_VALIDATION_PATTERNS.search("require region to be one of East, West, South")
+    assert _INPUT_VALIDATION_PATTERNS.search(
+        "require region to be one of East, West, South"
+    )
 
 
 def test_pattern_reject_negative():
     from api.chat import _INPUT_VALIDATION_PATTERNS
 
-    assert _INPUT_VALIDATION_PATTERNS.search("reject predictions where units is negative")
+    assert _INPUT_VALIDATION_PATTERNS.search(
+        "reject predictions where units is negative"
+    )
 
 
 def test_pattern_list_rules():
@@ -321,14 +426,24 @@ def deployed_project(client, tmp_path, monkeypatch):
     assert deploy_resp.status_code == 201
     deployment_id = deploy_resp.json()["id"]
 
-    return {"project_id": project_id, "dataset_id": dataset_id, "run_id": run_id, "deployment_id": deployment_id}
+    return {
+        "project_id": project_id,
+        "dataset_id": dataset_id,
+        "run_id": run_id,
+        "deployment_id": deployment_id,
+    }
 
 
 def test_create_range_rule(client, deployed_project):
     dep_id = deployed_project["deployment_id"]
     resp = client.post(
         f"/api/deploy/{dep_id}/input-validation-rules",
-        json={"feature_name": "units", "rule_type": "range", "min_val": 1.0, "max_val": 10000.0},
+        json={
+            "feature_name": "units",
+            "rule_type": "range",
+            "min_val": 1.0,
+            "max_val": 10000.0,
+        },
     )
     assert resp.status_code == 200
     data = resp.json()
@@ -343,7 +458,11 @@ def test_create_one_of_rule(client, deployed_project):
     dep_id = deployed_project["deployment_id"]
     resp = client.post(
         f"/api/deploy/{dep_id}/input-validation-rules",
-        json={"feature_name": "region", "rule_type": "one_of", "allowed_values": ["East", "West", "North", "South"]},
+        json={
+            "feature_name": "region",
+            "rule_type": "one_of",
+            "allowed_values": ["East", "West", "North", "South"],
+        },
     )
     assert resp.status_code == 200
     data = resp.json()
@@ -409,7 +528,12 @@ def test_list_rules_after_creation(client, deployed_project):
     dep_id = deployed_project["deployment_id"]
     client.post(
         f"/api/deploy/{dep_id}/input-validation-rules",
-        json={"feature_name": "units", "rule_type": "range", "min_val": 1.0, "max_val": 1000.0},
+        json={
+            "feature_name": "units",
+            "rule_type": "range",
+            "min_val": 1.0,
+            "max_val": 1000.0,
+        },
     )
     client.post(
         f"/api/deploy/{dep_id}/input-validation-rules",
@@ -463,7 +587,12 @@ def test_prediction_blocked_by_range_rule(client, deployed_project):
     dep_id = deployed_project["deployment_id"]
     client.post(
         f"/api/deploy/{dep_id}/input-validation-rules",
-        json={"feature_name": "units", "rule_type": "range", "min_val": 1.0, "max_val": 100.0},
+        json={
+            "feature_name": "units",
+            "rule_type": "range",
+            "min_val": 1.0,
+            "max_val": 100.0,
+        },
     )
     resp = client.post(
         f"/api/predict/{dep_id}",
@@ -478,7 +607,11 @@ def test_prediction_blocked_by_one_of_rule(client, deployed_project):
     dep_id = deployed_project["deployment_id"]
     client.post(
         f"/api/deploy/{dep_id}/input-validation-rules",
-        json={"feature_name": "region", "rule_type": "one_of", "allowed_values": ["East", "West", "North", "South"]},
+        json={
+            "feature_name": "region",
+            "rule_type": "one_of",
+            "allowed_values": ["East", "West", "North", "South"],
+        },
     )
     resp = client.post(
         f"/api/predict/{dep_id}",
@@ -492,7 +625,12 @@ def test_prediction_passes_with_valid_inputs(client, deployed_project):
     dep_id = deployed_project["deployment_id"]
     client.post(
         f"/api/deploy/{dep_id}/input-validation-rules",
-        json={"feature_name": "units", "rule_type": "range", "min_val": 1.0, "max_val": 10000.0},
+        json={
+            "feature_name": "units",
+            "rule_type": "range",
+            "min_val": 1.0,
+            "max_val": 10000.0,
+        },
     )
     resp = client.post(
         f"/api/predict/{dep_id}",
@@ -533,7 +671,9 @@ def _chat_events(client, project_id: str, message: str) -> list[dict]:
 
 def test_chat_creates_range_rule(client, deployed_project):
     project_id = deployed_project["project_id"]
-    events = _chat_events(client, project_id, "validate that units is between 1 and 10000")
+    events = _chat_events(
+        client, project_id, "validate that units is between 1 and 10000"
+    )
     iv_events = [e for e in events if e.get("type") == "input_validation_rule"]
     assert len(iv_events) == 1
     ev = iv_events[0]["input_validation_rule"]
