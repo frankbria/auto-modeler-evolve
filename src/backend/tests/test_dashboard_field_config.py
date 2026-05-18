@@ -72,7 +72,9 @@ def test_dashboard_config_patterns_lock():
 def test_dashboard_config_patterns_only_show():
     from api.chat import _DASHBOARD_CONFIG_PATTERNS
 
-    assert _DASHBOARD_CONFIG_PATTERNS.search("only show units and region on the dashboard")
+    assert _DASHBOARD_CONFIG_PATTERNS.search(
+        "only show units and region on the dashboard"
+    )
     assert _DASHBOARD_CONFIG_PATTERNS.search("show only region on the form")
 
 
@@ -90,7 +92,9 @@ def test_dashboard_config_patterns_status():
 
     assert _DASHBOARD_CONFIG_PATTERNS.search("what's visible on my dashboard")
     assert _DASHBOARD_CONFIG_PATTERNS.search("dashboard config")
-    assert _DASHBOARD_CONFIG_PATTERNS.search("what fields are visible on the prediction form")
+    assert _DASHBOARD_CONFIG_PATTERNS.search(
+        "what fields are visible on the prediction form"
+    )
     assert _DASHBOARD_CONFIG_PATTERNS.search("dashboard fields")
 
 
@@ -152,11 +156,16 @@ def test_extract_dashboard_feature():
     from api.chat import _extract_dashboard_feature
 
     features = ["product", "region", "units", "revenue"]
-    assert _extract_dashboard_feature("hide units from the dashboard", features) == "units"
+    assert (
+        _extract_dashboard_feature("hide units from the dashboard", features) == "units"
+    )
     assert _extract_dashboard_feature("lock region to North", features) == "region"
     assert _extract_dashboard_feature("hide the product column", features) == "product"
     # longest match wins (product = 7 chars > region = 6 chars)
-    assert _extract_dashboard_feature("hide product_region from dashboard", features) == "product"
+    assert (
+        _extract_dashboard_feature("hide product_region from dashboard", features)
+        == "product"
+    )
     assert _extract_dashboard_feature("no feature here", features) is None
 
 
@@ -277,7 +286,16 @@ def test_put_dashboard_config_lock_field(client, deployed_project):
 
     r = client.put(
         f"/api/deploy/{dep_id}/dashboard-config",
-        json={"fields": [{"feature_name": first_feature, "is_visible": True, "is_locked": True, "locked_value": "TestValue"}]},
+        json={
+            "fields": [
+                {
+                    "feature_name": first_feature,
+                    "is_visible": True,
+                    "is_locked": True,
+                    "locked_value": "TestValue",
+                }
+            ]
+        },
     )
     assert r.status_code == 200
 
@@ -385,6 +403,7 @@ def _chat(client, project_id, message):
             if line.startswith("data: "):
                 try:
                     import json
+
                     events.append(json.loads(line[6:]))
                 except Exception:
                     pass
@@ -411,7 +430,9 @@ def test_chat_hide_field(chat_client):
     assert dc_events, "Expected a dashboard_config SSE event"
     ev = dc_events[0]["dashboard_config"]
     assert ev["action"] == "updated"
-    assert any(c["feature_name"] == "units" and not c["is_visible"] for c in ev["changes"])
+    assert any(
+        c["feature_name"] == "units" and not c["is_visible"] for c in ev["changes"]
+    )
 
 
 def test_chat_lock_field(chat_client):

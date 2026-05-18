@@ -5632,4 +5632,7 @@ def reset_dashboard_config(
     for row in rows:
         session.delete(row)
     session.commit()
-    return {"removed": removed, "message": "Dashboard config reset — all fields are now visible."}
+    return {
+        "removed": removed,
+        "message": "Dashboard config reset — all fields are now visible.",
+    }

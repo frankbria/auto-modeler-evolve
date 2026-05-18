@@ -10774,7 +10774,14 @@ def send_message(
                                     is_visible=_should_show,
                                 )
                             )
-                        _changes.append({"feature_name": _fn, "is_visible": _should_show, "is_locked": False, "locked_value": None})
+                        _changes.append(
+                            {
+                                "feature_name": _fn,
+                                "is_visible": _should_show,
+                                "is_locked": False,
+                                "locked_value": None,
+                            }
+                        )
                     session.commit()
                     _vis_count = len(_vis_names)
                     dashboard_config_event = {
@@ -10788,7 +10795,9 @@ def send_message(
 
                 elif _dc_hide_m:
                     _fn_raw = _dc_hide_m.group(1)
-                    _fn_match = _extract_dashboard_feature(body.message, _dc_feature_names)
+                    _fn_match = _extract_dashboard_feature(
+                        body.message, _dc_feature_names
+                    )
                     _fn_to_hide = _fn_match or _fn_raw
                     if _fn_to_hide in _dc_feature_names:
                         _existing = session.exec(
@@ -10819,14 +10828,23 @@ def send_message(
                             "visible_count": _vis_count,
                             "locked_count": 0,
                             "total_count": len(_dc_feature_names),
-                            "changes": [{"feature_name": _fn_to_hide, "is_visible": False, "is_locked": False, "locked_value": None}],
+                            "changes": [
+                                {
+                                    "feature_name": _fn_to_hide,
+                                    "is_visible": False,
+                                    "is_locked": False,
+                                    "locked_value": None,
+                                }
+                            ],
                             "summary": f"'{_fn_to_hide}' is now hidden from the prediction dashboard.",
                         }
 
                 elif _dc_lock_m:
                     _fn_lock = _dc_lock_m.group(1)
                     _val_lock = _dc_lock_m.group(2).strip().rstrip(".")
-                    _fn_match = _extract_dashboard_feature(body.message, _dc_feature_names)
+                    _fn_match = _extract_dashboard_feature(
+                        body.message, _dc_feature_names
+                    )
                     _fn_to_lock = _fn_match or _fn_lock
                     if _fn_to_lock in _dc_feature_names:
                         _existing = session.exec(
@@ -10862,7 +10880,14 @@ def send_message(
                             "visible_count": _vis_count,
                             "locked_count": len(_locked),
                             "total_count": len(_dc_feature_names),
-                            "changes": [{"feature_name": _fn_to_lock, "is_visible": True, "is_locked": True, "locked_value": _val_lock}],
+                            "changes": [
+                                {
+                                    "feature_name": _fn_to_lock,
+                                    "is_visible": True,
+                                    "is_locked": True,
+                                    "locked_value": _val_lock,
+                                }
+                            ],
                             "summary": f"'{_fn_to_lock}' is now locked to '{_val_lock}' on the prediction dashboard.",
                         }
 
