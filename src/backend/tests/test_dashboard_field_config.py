@@ -625,7 +625,9 @@ def test_chat_label_field(chat_client):
         mock_stream_cm.text_stream = mock_stream
 
         events = _chat(
-            chat_client, project_id, "label units as Monthly Units Sold on the dashboard"
+            chat_client,
+            project_id,
+            "label units as Monthly Units Sold on the dashboard",
         )
 
     dc_events = [e for e in events if e.get("type") == "dashboard_config"]
@@ -653,12 +655,12 @@ def test_chat_label_persists_in_db(chat_client):
         mock_stream_cm = mock_inst.messages.stream.return_value.__enter__.return_value
         mock_stream_cm.text_stream = mock_stream
 
-        _chat(chat_client, project_id, "rename units as Quarterly Sales on the dashboard")
+        _chat(
+            chat_client, project_id, "rename units as Quarterly Sales on the dashboard"
+        )
 
     cfg = chat_client.get(f"/api/deploy/{dep_id}/dashboard-config").json()
-    rev_field = next(
-        (f for f in cfg["fields"] if f["feature_name"] == "units"), None
-    )
+    rev_field = next((f for f in cfg["fields"] if f["feature_name"] == "units"), None)
     assert rev_field is not None
     assert rev_field["display_label"] == "Quarterly Sales"
 
