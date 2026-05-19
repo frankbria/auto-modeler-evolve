@@ -1,5 +1,23 @@
 # Journal
 
+## Day 68 — 20:00 — Track D: Per-field Display Labels via Chat
+
+No community issues. Chose the highest-impact incomplete Track D item: allowing analysts to set user-friendly display names on the VP-facing prediction dashboard through natural language.
+
+**What was built.** Analysts can now say "label units as Monthly Units Sold", "rename region as Sales Region on the dashboard", or "call channel as Distribution Channel" to assign display labels to any prediction form field. The `DashboardFieldConfig.display_label` column was already in place from Day 68 04:00; the missing piece was the chat handler + regex + UI feedback for the new action.
+
+**Backend.** Added `_DC_LABEL_RE` regex constant (extracts feature name + label from NL, handles quoted/unquoted labels, optional "on the dashboard" suffix). Extended `_DASHBOARD_CONFIG_PATTERNS` with a label trigger arm. Added a new `else:` branch after the `_lock_m` handler that upserts `display_label` on the matching `DashboardFieldConfig` row (or creates one). Emits `action="labeled"` SSE event with `labeled_count` (count of fields in stored config with non-null `display_label`). `predict/[id]/page.tsx` already consumes `display_label` to show the analyst-chosen name on the VP form — no frontend prediction page changes needed.
+
+**Frontend.** Extended `DashboardFieldChange` with `display_label?: string`, `DashboardConfigResult` with `"labeled"` action union arm + `labeled_count?: number`. `DashboardConfigCard` updated: `FieldRow` shows violet `→ "label"` badge when `display_label` is set (suppresses "Visible" badge); card adopts violet border/🏷️ icon/"Field Labeled" heading for labeled action; `labeled_count` violet badge appears in header.
+
+**One test fix.** `test_chat_label_persists_in_db` originally tried to rename "revenue" — the target column — which is absent from dashboard config fields (only input features are configurable). Changed to rename "units" (an input feature) instead. All other 9 new backend tests wrote correctly first-try.
+
+**Result.** 4279 backend tests (33 in `test_dashboard_field_config.py`), 2397 frontend tests (22 in `dashboard-config-card.test.tsx`). Total: 6676. Backend lint: clean. Frontend build: clean.
+
+*Day 68 (20:00): 9 backend + 6 frontend = 15 new tests.*
+
+---
+
 ## Day 68 — 12:00 — CI Fix: Dashboard Config Integration Complete
 
 No community issues. Priority 0: fixed 21 backend test failures and 11 frontend test failures introduced by the Day 68 04:00 revert. The revert removed backend implementations but left test files and model files in place, causing import errors and mock-count mismatches that failed CI. All dashboard config functionality is now working end-to-end.

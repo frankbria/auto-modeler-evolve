@@ -53,6 +53,18 @@ the time is better spent on real features.
 
 ---
 
+## Day 68 (20:00) — Done
+**Track D — Per-field display labels via chat.**
+
+Analysts can now rename any VP-facing dashboard field through natural language: "label units as Monthly Units Sold", "rename region as Sales Region on the dashboard", "call channel as Distribution Channel". `_DC_LABEL_RE` regex extracts feature name + label from NL. Handler upserts `DashboardFieldConfig.display_label`, emits `action="labeled"` SSE event with `labeled_count`. `DashboardConfigCard` updated: violet `→ "label"` badge in `FieldRow`, "Field Labeled" heading/violet border/🏷️ icon for labeled action, `labeled_count` violet badge in header. `predict/[id]/page.tsx` already consumed `display_label` (Day 68 04:00). 9 backend + 6 frontend = 15 new tests. Total: 4279 backend + 2397 frontend = 6676. Backend lint: clean. Frontend build: clean.
+
+**What's next:**
+- Track E: "What's next?" guidance cards at key step transitions (after upload, after training, after deploy)
+- Track C: Ensemble methods (voting classifier / stacking) for better accuracy
+- Track D: Prediction SLA / latency monitoring — "is my model responding fast enough?"
+
+---
+
 ## Day 68 (12:00) — Done
 **CI fix: Dashboard Config Integration.**
 

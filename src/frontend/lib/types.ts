@@ -3349,13 +3349,15 @@ export interface DashboardFieldChange {
   is_visible: boolean
   is_locked: boolean
   locked_value: string | null
+  display_label?: string
 }
 
 export interface DashboardConfigResult {
-  action: "updated" | "reset" | "status"
+  action: "updated" | "reset" | "status" | "labeled"
   deployment_id: string
   visible_count: number
   locked_count: number
+  labeled_count?: number
   total_count: number
   changes: DashboardFieldChange[]
   summary: string

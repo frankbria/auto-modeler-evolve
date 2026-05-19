@@ -532,3 +532,158 @@ def test_chat_no_deployment_no_event(chat_client):
 
     dc_events = [e for e in events if e.get("type") == "dashboard_config"]
     assert not dc_events
+
+
+# ---------------------------------------------------------------------------
+# Label feature — regex tests
+# ---------------------------------------------------------------------------
+
+
+def test_dashboard_config_patterns_label():
+    from api.chat import _DASHBOARD_CONFIG_PATTERNS
+
+    assert _DASHBOARD_CONFIG_PATTERNS.search("label units as 'Monthly Units Sold'")
+    assert _DASHBOARD_CONFIG_PATTERNS.search("rename units as Monthly Units")
+    assert _DASHBOARD_CONFIG_PATTERNS.search("call region as Sales Region")
+    assert _DASHBOARD_CONFIG_PATTERNS.search("display revenue as Quarterly Revenue")
+
+
+def test_dc_label_re_basic():
+    from api.chat import _DC_LABEL_RE
+
+    m = _DC_LABEL_RE.search("label units as Monthly Units Sold")
+    assert m
+    assert "units" in m.group(1).lower()
+    assert "Monthly Units Sold" in m.group(2)
+
+
+def test_dc_label_re_quoted():
+    from api.chat import _DC_LABEL_RE
+
+    m = _DC_LABEL_RE.search("label revenue as 'Quarterly Revenue'")
+    assert m
+    assert "revenue" in m.group(1).lower()
+
+
+def test_dc_label_re_rename():
+    from api.chat import _DC_LABEL_RE
+
+    m = _DC_LABEL_RE.search("rename region as Sales Region on the dashboard")
+    assert m
+    assert "region" in m.group(1).lower()
+    assert "Sales Region" in m.group(2)
+
+
+def test_dc_label_re_no_match():
+    from api.chat import _DC_LABEL_RE
+
+    assert _DC_LABEL_RE.search("hide units from the dashboard") is None
+    assert _DC_LABEL_RE.search("lock region to North") is None
+    assert _DC_LABEL_RE.search("train my model") is None
+
+
+# ---------------------------------------------------------------------------
+# Label feature — REST endpoint test
+# ---------------------------------------------------------------------------
+
+
+def test_put_dashboard_config_label_field(client, deployed_project):
+    dep_id = deployed_project["deployment_id"]
+    cfg = client.get(f"/api/deploy/{dep_id}/dashboard-config").json()
+    fname = cfg["fields"][0]["feature_name"]
+
+    r = client.put(
+        f"/api/deploy/{dep_id}/dashboard-config",
+        json={"fields": [{"feature_name": fname, "display_label": "Friendly Name"}]},
+    )
+    assert r.status_code == 200
+
+    cfg2 = client.get(f"/api/deploy/{dep_id}/dashboard-config").json()
+    target = next(f for f in cfg2["fields"] if f["feature_name"] == fname)
+    assert target["display_label"] == "Friendly Name"
+    # Visibility unchanged
+    assert target["is_visible"] is True
+
+
+# ---------------------------------------------------------------------------
+# Label feature — chat integration tests
+# ---------------------------------------------------------------------------
+
+
+def test_chat_label_field(chat_client):
+    from unittest.mock import patch
+
+    project_id, _, dep_id = _deploy_project(chat_client)
+    if not dep_id:
+        pytest.skip("training did not complete")
+
+    mock_stream = iter(["Units will now show as 'Monthly Units Sold'."])
+
+    with patch("anthropic.Anthropic") as mock_cls:
+        mock_inst = mock_cls.return_value
+        mock_stream_cm = mock_inst.messages.stream.return_value.__enter__.return_value
+        mock_stream_cm.text_stream = mock_stream
+
+        events = _chat(
+            chat_client, project_id, "label units as Monthly Units Sold on the dashboard"
+        )
+
+    dc_events = [e for e in events if e.get("type") == "dashboard_config"]
+    assert dc_events, "Expected a dashboard_config SSE event"
+    ev = dc_events[0]["dashboard_config"]
+    assert ev["action"] == "labeled"
+    assert ev["changes"], "Expected at least one change"
+    change = ev["changes"][0]
+    assert change["feature_name"] == "units"
+    assert "Monthly Units Sold" in change.get("display_label", "")
+
+
+def test_chat_label_persists_in_db(chat_client):
+    """After labeling via chat, GET dashboard-config returns the new label."""
+    from unittest.mock import patch
+
+    project_id, _, dep_id = _deploy_project(chat_client)
+    if not dep_id:
+        pytest.skip("training did not complete")
+
+    mock_stream = iter(["Revenue labeled."])
+
+    with patch("anthropic.Anthropic") as mock_cls:
+        mock_inst = mock_cls.return_value
+        mock_stream_cm = mock_inst.messages.stream.return_value.__enter__.return_value
+        mock_stream_cm.text_stream = mock_stream
+
+        _chat(chat_client, project_id, "rename units as Quarterly Sales on the dashboard")
+
+    cfg = chat_client.get(f"/api/deploy/{dep_id}/dashboard-config").json()
+    rev_field = next(
+        (f for f in cfg["fields"] if f["feature_name"] == "units"), None
+    )
+    assert rev_field is not None
+    assert rev_field["display_label"] == "Quarterly Sales"
+
+
+def test_chat_label_event_has_labeled_count(chat_client):
+    """The SSE event includes labeled_count after labeling a field."""
+    from unittest.mock import patch
+
+    project_id, _, dep_id = _deploy_project(chat_client)
+    if not dep_id:
+        pytest.skip("training did not complete")
+
+    mock_stream = iter(["Labeled."])
+
+    with patch("anthropic.Anthropic") as mock_cls:
+        mock_inst = mock_cls.return_value
+        mock_stream_cm = mock_inst.messages.stream.return_value.__enter__.return_value
+        mock_stream_cm.text_stream = mock_stream
+
+        events = _chat(
+            chat_client, project_id, "call units as Total Units on the dashboard"
+        )
+
+    dc_events = [e for e in events if e.get("type") == "dashboard_config"]
+    assert dc_events
+    ev = dc_events[0]["dashboard_config"]
+    assert "labeled_count" in ev
+    assert ev["labeled_count"] >= 1

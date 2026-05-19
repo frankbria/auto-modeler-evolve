@@ -104,4 +104,51 @@ describe("DashboardConfigCard", () => {
     render(<DashboardConfigCard config={base} />)
     expect(screen.getByText(/Changes are reflected immediately/)).toBeInTheDocument()
   })
+
+  it("shows labeled heading for action=labeled", () => {
+    render(<DashboardConfigCard config={{ ...base, action: "labeled" }} />)
+    expect(screen.getByText("Field Labeled")).toBeInTheDocument()
+  })
+
+  it("shows labeled footer text for action=labeled", () => {
+    render(<DashboardConfigCard config={{ ...base, action: "labeled" }} />)
+    expect(screen.getByText(/new label is shown on the shared prediction URL/)).toBeInTheDocument()
+  })
+
+  it("shows labeled_count badge when labeled_count > 0", () => {
+    render(<DashboardConfigCard config={{ ...base, labeled_count: 2 }} />)
+    expect(screen.getByText("2 labeled")).toBeInTheDocument()
+  })
+
+  it("does not show labeled badge when labeled_count is 0", () => {
+    render(<DashboardConfigCard config={{ ...base, labeled_count: 0 }} />)
+    expect(screen.queryByText(/labeled/)).not.toBeInTheDocument()
+  })
+
+  it("shows display_label badge in field row", () => {
+    const withLabel: DashboardConfigResult = {
+      ...base,
+      action: "labeled",
+      labeled_count: 1,
+      changes: [
+        { feature_name: "units", is_visible: true, is_locked: false, locked_value: null, display_label: "Monthly Units Sold" },
+      ],
+    }
+    render(<DashboardConfigCard config={withLabel} />)
+    expect(screen.getByTestId("field-row-units")).toHaveTextContent('→ "Monthly Units Sold"')
+  })
+
+  it("suppresses Visible badge when display_label is set", () => {
+    const withLabel: DashboardConfigResult = {
+      ...base,
+      action: "labeled",
+      labeled_count: 1,
+      changes: [
+        { feature_name: "units", is_visible: true, is_locked: false, locked_value: null, display_label: "Monthly Units Sold" },
+      ],
+    }
+    render(<DashboardConfigCard config={withLabel} />)
+    const row = screen.getByTestId("field-row-units")
+    expect(row).not.toHaveTextContent("Visible")
+  })
 })

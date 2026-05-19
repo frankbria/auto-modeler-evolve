@@ -20,6 +20,11 @@ function FieldRow({ field }: { field: DashboardFieldChange }) {
     >
       <span className="font-medium text-foreground">{colLabel(field.feature_name)}</span>
       <div className="flex items-center gap-1.5">
+        {field.display_label && (
+          <Badge variant="outline" className="border-violet-300 text-violet-700 text-xs">
+            {`→ "${field.display_label}"`}
+          </Badge>
+        )}
         {!field.is_visible && (
           <Badge variant="outline" className="border-slate-300 text-slate-500 text-xs">
             Hidden
@@ -31,7 +36,7 @@ function FieldRow({ field }: { field: DashboardFieldChange }) {
             {field.locked_value ? ` = ${field.locked_value}` : ""}
           </Badge>
         )}
-        {field.is_visible && !field.is_locked && (
+        {field.is_visible && !field.is_locked && !field.display_label && (
           <Badge variant="outline" className="border-emerald-300 text-emerald-700 text-xs">
             Visible
           </Badge>
@@ -52,20 +57,25 @@ interface DashboardConfigCardProps {
 export function DashboardConfigCard({ config }: DashboardConfigCardProps) {
   const isReset = config.action === "reset"
   const isStatus = config.action === "status"
+  const isLabeled = config.action === "labeled"
 
   const borderClass = isReset
     ? "border-slate-200 bg-slate-50"
     : isStatus
       ? "border-sky-200 bg-sky-50"
-      : "border-emerald-200 bg-emerald-50"
+      : isLabeled
+        ? "border-violet-200 bg-violet-50"
+        : "border-emerald-200 bg-emerald-50"
 
-  const icon = isReset ? "🔄" : isStatus ? "🔍" : "⚙️"
+  const icon = isReset ? "🔄" : isStatus ? "🔍" : isLabeled ? "🏷️" : "⚙️"
 
   const heading = isReset
     ? "Dashboard Reset"
     : isStatus
       ? "Dashboard Config"
-      : "Dashboard Configured"
+      : isLabeled
+        ? "Field Labeled"
+        : "Dashboard Configured"
 
   return (
     <Card
@@ -83,6 +93,11 @@ export function DashboardConfigCard({ config }: DashboardConfigCardProps) {
           {config.locked_count > 0 && (
             <Badge variant="outline" className="border-amber-300 text-amber-700 text-xs">
               {config.locked_count} locked
+            </Badge>
+          )}
+          {(config.labeled_count ?? 0) > 0 && (
+            <Badge variant="outline" className="border-violet-300 text-violet-700 text-xs">
+              {config.labeled_count} labeled
             </Badge>
           )}
         </CardTitle>
@@ -104,7 +119,9 @@ export function DashboardConfigCard({ config }: DashboardConfigCardProps) {
             ? "All fields are now visible on the shared prediction URL."
             : isStatus
               ? "Say 'hide X from the dashboard' or 'show all fields' to adjust visibility."
-              : "Changes are reflected immediately on the shared prediction URL."}
+              : isLabeled
+                ? "The new label is shown on the shared prediction URL immediately."
+                : "Changes are reflected immediately on the shared prediction URL."}
         </p>
       </CardContent>
     </Card>

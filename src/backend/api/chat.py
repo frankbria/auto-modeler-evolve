@@ -2762,6 +2762,7 @@ _DASHBOARD_CONFIG_PATTERNS = re.compile(
     r"(?i)(?:"
     r"(?:hide|remove|exclude)\s+[\w]+(?:\s+\w+){0,3}\s+(?:from|off)\s+(?:the\s+)?(?:dashboard|form|prediction(?:\s+form)?|public(?:\s+form)?)|"
     r"(?:lock|set|pin|fix)\s+[\w]+\s+to\s+\S+|"
+    r"(?:label|rename|call|display)\s+[\w]+(?:\s+\w+){0,3}\s+(?:as|with\s+label)\s+\S+|"
     r"(?:only\s+show|show\s+only)\s+[\w,\s]+\s+on\s+(?:the\s+)?(?:dashboard|form|prediction)|"
     r"\bshow\s+all\s+fields\b|"
     r"\brestore\s+all\s+fields\b|"
@@ -2796,6 +2797,11 @@ _DC_RESET_RE = re.compile(
 # Status query for dashboard visibility
 _DC_STATUS_RE = re.compile(
     r"\b(?:what(?:'s|\s+is)\s+(?:visible|showing)\s+on\s+(?:my\s+)?(?:dashboard|form)|dashboard\s+config(?:uration)?|dashboard\s+fields|(?:what\s+)?fields?\s+(?:are\s+)?visible\s+on\s+(?:the\s+)?(?:prediction\s+)?form)\b",
+    re.IGNORECASE,
+)
+# Extract feature + display label from "label/rename/call <feature> as/with label <label>"
+_DC_LABEL_RE = re.compile(
+    r"\b(?:label|rename|call|display)\s+([\w]+(?:\s+\w+){0,3}?)\s+(?:as|with\s+label)\s+[\"']?([^\"']+?)[\"']?\s*(?:on\s+(?:the\s+)?(?:dashboard|form|prediction(?:\s+form)?|public)|$)",
     re.IGNORECASE,
 )
 
@@ -10933,6 +10939,46 @@ def send_message(
                                 }
                             )
 
+                        else:
+                            _label_m = _DC_LABEL_RE.search(body.message)
+                            if _label_m:
+                                _fname_raw = _label_m.group(1).strip()
+                                _new_label = _label_m.group(2).strip().strip("\"'")
+                                _fname = (
+                                    _extract_dashboard_feature(
+                                        body.message, _dc_feature_names
+                                    )
+                                    or _fname_raw
+                                )
+                                _existing_dc = session.exec(
+                                    select(_DFC).where(
+                                        _DFC.deployment_id == _dc_dep_id,
+                                        _DFC.feature_name == _fname,
+                                    )
+                                ).first()
+                                if _existing_dc:
+                                    _existing_dc.display_label = _new_label
+                                    session.add(_existing_dc)
+                                else:
+                                    session.add(
+                                        _DFC(
+                                            deployment_id=_dc_dep_id,
+                                            feature_name=_fname,
+                                            display_label=_new_label,
+                                        )
+                                    )
+                                session.commit()
+                                _dc_action = "labeled"
+                                _dc_changes.append(
+                                    {
+                                        "feature_name": _fname,
+                                        "is_visible": True,
+                                        "is_locked": False,
+                                        "locked_value": None,
+                                        "display_label": _new_label,
+                                    }
+                                )
+
                 # Build summary counts
                 _all_dc_rows = session.exec(
                     select(_DFC).where(_DFC.deployment_id == _dc_dep_id)
@@ -10950,22 +10996,38 @@ def send_message(
                 )
                 _total_count = len(_dc_feature_names)
 
+                _labeled_count = sum(
+                    1
+                    for f in _dc_feature_names
+                    if _stored_map.get(f) and _stored_map[f].display_label
+                )
+                if _dc_action == "labeled" and _dc_changes:
+                    _changed_feat = _dc_changes[0]["feature_name"]
+                    _changed_label = _dc_changes[0].get("display_label", "")
+                    _dc_summary = (
+                        f"Field '{_changed_feat}' will now appear as '{_changed_label}' "
+                        f"on the shared prediction URL. {_labeled_count} field(s) have custom labels."
+                    )
+                else:
+                    _dc_summary = (
+                        f"Dashboard configuration updated: {_visible_count} of {_total_count} "
+                        f"fields visible, {_locked_count} locked."
+                    )
                 dashboard_config_event = {
                     "action": _dc_action,
                     "deployment_id": _dc_dep_id,
                     "visible_count": _visible_count,
                     "locked_count": _locked_count,
+                    "labeled_count": _labeled_count,
                     "total_count": _total_count,
                     "changes": _dc_changes,
-                    "summary": (
-                        f"Dashboard configuration updated: {_visible_count} of {_total_count} "
-                        f"fields visible, {_locked_count} locked."
-                    ),
+                    "summary": _dc_summary,
                 }
                 system_prompt += (
                     f"\n\n## Dashboard Field Configuration\n"
                     f"Action: {_dc_action}. "
-                    f"{_visible_count}/{_total_count} fields visible, {_locked_count} locked. "
+                    f"{_visible_count}/{_total_count} fields visible, {_locked_count} locked, "
+                    f"{_labeled_count} with custom labels. "
                     "Explain these changes in plain English to the analyst."
                 )
         except Exception:  # noqa: BLE001
