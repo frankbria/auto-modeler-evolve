@@ -156,6 +156,8 @@ interface AppState {
   attachRollbackChatToLastMessage: (rollback_chat: import("./types").RollbackChatResult) => void
   attachConfidenceThresholdConfigToLastMessage: (confidence_threshold_config: import("./types").ConfidenceThresholdConfig) => void
   attachInputValidationRuleToLastMessage: (input_validation_rule: import("./types").InputValidationRuleResult) => void
+  attachDashboardConfigToLastMessage: (dashboard_config: import("./types").DashboardConfigResult) => void
+  attachDashboardMetadataToLastMessage: (dashboard_metadata: import("./types").DashboardMetadataResult) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -1207,6 +1209,26 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, input_validation_rule }
+      }
+      return { messages }
+    }),
+
+  attachDashboardConfigToLastMessage: (dashboard_config) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, dashboard_config }
+      }
+      return { messages }
+    }),
+
+  attachDashboardMetadataToLastMessage: (dashboard_metadata) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, dashboard_metadata }
       }
       return { messages }
     }),

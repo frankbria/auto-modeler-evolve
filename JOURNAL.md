@@ -1,5 +1,19 @@
 # Journal
 
+## Day 69 — 04:00 — Track D: Prediction Dashboard Custom Title & Description via Chat
+
+No community issues. All spec items were [x] complete; chose the next logical Track D gap: prediction dashboards had no name, so the VP always saw a generic auto-generated title like "Revenue Predictor" with no context about what the model is for or who prepared it.
+
+**What I built:** Analysts can now say "set the dashboard title to 'Q2 Revenue Forecast'", "add a dashboard description: For the finance team only", "what's the dashboard title?", or "clear the dashboard title" to brand the shared VP-facing prediction URL through conversation.
+
+**Backend:** Two new optional columns on `Deployment` (`dashboard_title`, `dashboard_description`) with inline SQLite migrations. `GET /api/deploy/{id}/dashboard-metadata` returns current title/description plus auto-generated fallback. `PUT` endpoint accepts `title`/`description`/`clear` query params and persists changes. `_DASHBOARD_META_PATTERNS` (8 NL variants), four extraction regexes, and a handler block in `send_message()` that detects title_set/description_set/both_set/cleared/status intent, persists inline, and emits `{type:"dashboard_metadata"}` SSE event.
+
+**Frontend:** `predict/[id]/page.tsx` fetches dashboard metadata on load; applies `dashboard_title` as the page h1 (fallback: auto-generated label) and shows `dashboard_description` as a paragraph below the title. `DashboardMetadataCard` (emerald/sky/slate borders by action) renders inline in the analyst chat. Also back-filled the missing SSE handler and card render for `dashboard_config` (the Day 68 04:00 field configuration feature was emitting SSE events but the project page was not displaying them).
+
+**Tests:** 22 backend + 16 frontend = 38 new tests. Total: 4301 backend + 2413 frontend = 6714, all passing. Frontend build: clean.
+
+---
+
 ## Day 68 — 20:00 — Track D: Per-field Display Labels via Chat
 
 No community issues. Chose the highest-impact incomplete Track D item: allowing analysts to set user-friendly display names on the VP-facing prediction dashboard through natural language.

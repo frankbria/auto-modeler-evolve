@@ -417,6 +417,7 @@ export default function PredictionDashboard() {
   const [, setHistoryCounter] = useState(0)
   const [presets, setPresets] = useState<import("@/lib/types").DeploymentPreset[]>([])
   const [dashboardConfig, setDashboardConfig] = useState<DashboardFieldEntry[]>([])
+  const [dashboardMeta, setDashboardMeta] = useState<{ title: string | null; description: string | null; autoTitle: string } | null>(null)
 
   useEffect(() => {
     api.deploy
@@ -448,6 +449,19 @@ export default function PredictionDashboard() {
     api.deploy
       .getDashboardConfig(deploymentId)
       .then((cfg) => setDashboardConfig(cfg.fields ?? []))
+      .catch(() => {})
+  }, [deploymentId])
+
+  useEffect(() => {
+    api.deploy
+      .getDashboardMetadata(deploymentId)
+      .then((m) =>
+        setDashboardMeta({
+          title: m.dashboard_title,
+          description: m.dashboard_description,
+          autoTitle: m.auto_title,
+        })
+      )
       .catch(() => {})
   }, [deploymentId])
 
@@ -571,7 +585,9 @@ export default function PredictionDashboard() {
   // Filter out fields hidden by the analyst's dashboard config
   const schema = rawSchema.filter((e) => cfgMap[e.name]?.is_visible !== false)
   const targetLabel = colLabel(deployment.target_column ?? "Output")
-  const pageTitle = `${targetLabel} Predictor`
+  const autoPageTitle = `${targetLabel} Predictor`
+  const pageTitle = dashboardMeta?.title ?? autoPageTitle
+  const pageDescription = dashboardMeta?.description ?? null
   const isSimplifiedView = hiddenCount > 0 || lockedCount > 0
 
   return (
@@ -594,6 +610,11 @@ export default function PredictionDashboard() {
               </Badge>
             )}
           </div>
+          {pageDescription && (
+            <p className="mt-1 text-sm font-medium text-foreground" data-testid="page-description">
+              {pageDescription}
+            </p>
+          )}
           <p className="mt-1 text-sm text-muted-foreground">
             Enter your data below to get a predicted{" "}
             <strong>{deployment.target_column}</strong> value.

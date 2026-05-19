@@ -516,6 +516,8 @@ export interface ChatMessage {
   rollback_chat?: RollbackChatResult
   confidence_threshold_config?: ConfidenceThresholdConfig
   input_validation_rule?: InputValidationRuleResult
+  dashboard_config?: DashboardConfigResult
+  dashboard_metadata?: DashboardMetadataResult
 }
 
 export interface RollbackVersionEntry {
@@ -3379,4 +3381,20 @@ export interface DashboardConfigResponse {
   total_count: number
   visible_count: number
   locked_count: number
+}
+
+export interface DashboardMetadata {
+  deployment_id: string
+  dashboard_title: string | null
+  dashboard_description: string | null
+  auto_title: string
+}
+
+export interface DashboardMetadataResult {
+  action: "title_set" | "description_set" | "both_set" | "cleared" | "status"
+  deployment_id: string
+  dashboard_title: string | null
+  dashboard_description: string | null
+  auto_title: string
+  summary: string
 }

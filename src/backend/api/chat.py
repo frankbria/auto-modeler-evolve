@@ -2805,6 +2805,41 @@ _DC_LABEL_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Dashboard metadata: custom title / description for the VP-facing prediction page
+_DASHBOARD_META_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"(?:set|change|update|give(?:\s+the)?)\s+(?:the\s+)?dashboard\s+(?:title|name|header|heading)\b|"
+    r"(?:set|change|update|give(?:\s+the)?)\s+(?:the\s+)?prediction\s+(?:title|name|header|heading)\b|"
+    r"(?:set|add|update|change)\s+(?:a\s+)?(?:the\s+)?dashboard\s+description\b|"
+    r"(?:set|add|update|change)\s+(?:a\s+)?(?:the\s+)?prediction\s+(?:page\s+)?description\b|"
+    r"title\s+this\s+(?:dashboard|prediction(?:\s+tool)?|tool|page)\b|"
+    r"name\s+this\s+(?:dashboard|prediction(?:\s+tool)?|tool|page)\b|"
+    r"(?:what(?:'s|\s+is)|show)\s+(?:the\s+)?dashboard\s+(?:title|name|header|description)\b|"
+    r"(?:clear|remove|reset)\s+(?:the\s+)?dashboard\s+(?:title|description|header)\b"
+    r")",
+    re.IGNORECASE,
+)
+# Extract the new title from "set dashboard title to 'Foo'" or "... title: Foo"
+_DC_META_TITLE_RE = re.compile(
+    r"\b(?:set|change|update|give(?:\s+the)?|title\s+this|name\s+this)\s+(?:the\s+)?(?:dashboard|prediction(?:\s+tool)?|tool|page)?\s*(?:title|name|header|heading)?\s*(?:to|as|:)\s*[\"']?(.+?)[\"']?\s*$",
+    re.IGNORECASE,
+)
+# Extract description from "set dashboard description to/: <text>"
+_DC_META_DESC_RE = re.compile(
+    r"\b(?:set|add|update|change)\s+(?:a\s+)?(?:the\s+)?(?:dashboard|prediction(?:\s+page)?)\s+description\s*(?:to|as|:)\s*[\"']?(.+?)[\"']?\s*$",
+    re.IGNORECASE,
+)
+# Detect clear/remove intent
+_DC_META_CLEAR_RE = re.compile(
+    r"\b(?:clear|remove|reset)\s+(?:the\s+)?dashboard\s+(?:title|description|header|metadata|branding)\b",
+    re.IGNORECASE,
+)
+# Detect status / show intent
+_DC_META_STATUS_RE = re.compile(
+    r"\b(?:what(?:'s|\s+is)|show)\s+(?:the\s+)?dashboard\s+(?:title|name|header|description)\b",
+    re.IGNORECASE,
+)
+
 
 def _extract_dashboard_feature(message: str, feature_names: list[str]) -> str | None:
     """Find the feature name from a dashboard config message (longest match wins)."""
@@ -11033,6 +11068,79 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Dashboard config is nice-to-have; never crash chat
 
+    # Dashboard metadata: custom title / description
+    dashboard_metadata_event: dict | None = None
+    if _DASHBOARD_META_PATTERNS.search(body.message) and ctx["deployment"]:
+        try:
+            _dm_dep = ctx["deployment"]
+            _dm_dep_id = _dm_dep.id if hasattr(_dm_dep, "id") else str(_dm_dep)
+            _dm_dep_obj = session.get(Deployment, _dm_dep_id)
+            if _dm_dep_obj:
+                _dm_action = "status"
+                _dm_title = getattr(_dm_dep_obj, "dashboard_title", None)
+                _dm_desc = getattr(_dm_dep_obj, "dashboard_description", None)
+                _dm_auto_title = (
+                    f"{_dm_dep_obj.target_column.replace('_', ' ').title()} Predictor"
+                    if _dm_dep_obj.target_column
+                    else "Prediction Dashboard"
+                )
+
+                if _DC_META_CLEAR_RE.search(body.message):
+                    _dm_dep_obj.dashboard_title = None
+                    _dm_dep_obj.dashboard_description = None
+                    session.add(_dm_dep_obj)
+                    session.commit()
+                    session.refresh(_dm_dep_obj)
+                    _dm_title = None
+                    _dm_desc = None
+                    _dm_action = "cleared"
+                elif not _DC_META_STATUS_RE.search(body.message):
+                    # Try to extract title
+                    _dm_title_m = _DC_META_TITLE_RE.search(body.message)
+                    _dm_desc_m = _DC_META_DESC_RE.search(body.message)
+                    if _dm_title_m:
+                        _new_title = _dm_title_m.group(1).strip().strip("\"'")
+                        if _new_title:
+                            _dm_dep_obj.dashboard_title = _new_title
+                            _dm_title = _new_title
+                            _dm_action = "title_set"
+                    if _dm_desc_m:
+                        _new_desc = _dm_desc_m.group(1).strip().strip("\"'")
+                        if _new_desc:
+                            _dm_dep_obj.dashboard_description = _new_desc
+                            _dm_desc = _new_desc
+                            _dm_action = "description_set" if _dm_action == "status" else "both_set"
+                    if _dm_action not in ("status",):
+                        session.add(_dm_dep_obj)
+                        session.commit()
+                        session.refresh(_dm_dep_obj)
+
+                _dm_summary = {
+                    "title_set": f"Dashboard title set to '{_dm_title}'. The VP-facing prediction page now shows this as the heading.",
+                    "description_set": f"Dashboard description set. The VP-facing prediction page now shows: '{_dm_desc}'",
+                    "both_set": f"Dashboard title set to '{_dm_title}' and description updated. The VP-facing page has been updated.",
+                    "cleared": f"Custom title and description removed. The dashboard will show the auto-generated title '{_dm_auto_title}'.",
+                    "status": f"Current dashboard title: '{_dm_title or _dm_auto_title}'. Description: {repr(_dm_desc) if _dm_desc else 'not set'}.",
+                }.get(_dm_action, "Dashboard metadata updated.")
+
+                dashboard_metadata_event = {
+                    "action": _dm_action,
+                    "deployment_id": _dm_dep_id,
+                    "dashboard_title": _dm_title,
+                    "dashboard_description": _dm_desc,
+                    "auto_title": _dm_auto_title,
+                    "summary": _dm_summary,
+                }
+                system_prompt += (
+                    f"\n\n## Dashboard Metadata\n"
+                    f"Action: {_dm_action}. "
+                    f"Title: {_dm_title or _dm_auto_title}. "
+                    f"Description: {_dm_desc or 'not set'}. "
+                    "Explain this change to the analyst in plain English."
+                )
+        except Exception:  # noqa: BLE001
+            pass  # Dashboard metadata is nice-to-have; never crash chat
+
     # A/B test status / promote / end
     ab_test_result_event: dict | None = None
     if _AB_TEST_PATTERNS.search(body.message) and ctx["deployment"]:
@@ -14129,6 +14237,9 @@ def send_message(
 
         if dashboard_config_event:
             yield f"data: {json.dumps({'type': 'dashboard_config', 'dashboard_config': dashboard_config_event})}\n\n"
+
+        if dashboard_metadata_event:
+            yield f"data: {json.dumps({'type': 'dashboard_metadata', 'dashboard_metadata': dashboard_metadata_event})}\n\n"
 
         # After text stream, opportunistically generate a chart if the
         # message is about data and we have a dataset loaded

@@ -50,3 +50,6 @@ class Deployment(SQLModel, table=True):
     environment: str = Field(default="staging")
     # Confidence threshold: reject/flag predictions below this value (0-1, classification only)
     confidence_threshold: Optional[float] = None
+    # Custom VP-facing dashboard metadata (overrides auto-generated title/description)
+    dashboard_title: Optional[str] = None
+    dashboard_description: Optional[str] = None

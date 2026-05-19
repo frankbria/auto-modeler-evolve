@@ -259,6 +259,7 @@ describe("PredictionDashboard", () => {
     fetchMock.mockResponseOnce(JSON.stringify(mockDeployment))
     fetchMock.mockResponseOnce(JSON.stringify([])) // getPresets
     fetchMock.mockResponseOnce(JSON.stringify({ deployment_id: "deployment-123", fields: [], total_count: 0, visible_count: 0, locked_count: 0 })) // getDashboardConfig
+    fetchMock.mockResponseOnce(JSON.stringify({ deployment_id: "deployment-123", dashboard_title: null, dashboard_description: null, auto_title: "Output Predictor" })) // getDashboardMetadata
     fetchMock.mockResponseOnce(JSON.stringify([])) // listByProject for CompareModelsCard
     fetchMock.mockResponseOnce(
       JSON.stringify({ prediction: 1200.5, deployment_id: "deployment-123" })
@@ -273,7 +274,7 @@ describe("PredictionDashboard", () => {
     if (predictButton) {
       await act(async () => { fireEvent.click(predictButton) })
       await waitFor(() => {
-        expect(fetchMock).toHaveBeenCalledTimes(5)
+        expect(fetchMock).toHaveBeenCalledTimes(6)
       })
     }
   })
@@ -282,6 +283,7 @@ describe("PredictionDashboard", () => {
     fetchMock.mockResponseOnce(JSON.stringify(mockDeployment))
     fetchMock.mockResponseOnce(JSON.stringify([])) // getPresets
     fetchMock.mockResponseOnce(JSON.stringify({ deployment_id: "deployment-123", fields: [], total_count: 0, visible_count: 0, locked_count: 0 })) // getDashboardConfig
+    fetchMock.mockResponseOnce(JSON.stringify({ deployment_id: "deployment-123", dashboard_title: null, dashboard_description: null, auto_title: "Output Predictor" })) // getDashboardMetadata
     fetchMock.mockResponseOnce(JSON.stringify([])) // listByProject for CompareModelsCard
     fetchMock.mockResponseOnce(
       JSON.stringify({ prediction: 1200.5, deployment_id: "deployment-123" })
@@ -302,7 +304,7 @@ describe("PredictionDashboard", () => {
         // After prediction, the result value or prediction-related text should appear
         const allText = document.body.textContent ?? ""
         expect(allText.length).toBeGreaterThan(0)
-        expect(fetchMock).toHaveBeenCalledTimes(5)
+        expect(fetchMock).toHaveBeenCalledTimes(6)
       })
     }
   })
@@ -311,6 +313,7 @@ describe("PredictionDashboard", () => {
     fetchMock.mockResponseOnce(JSON.stringify(mockDeployment))
     fetchMock.mockResponseOnce(JSON.stringify([])) // getPresets
     fetchMock.mockResponseOnce(JSON.stringify({ deployment_id: "deployment-123", fields: [], total_count: 0, visible_count: 0, locked_count: 0 })) // getDashboardConfig
+    fetchMock.mockResponseOnce(JSON.stringify({ deployment_id: "deployment-123", dashboard_title: null, dashboard_description: null, auto_title: "Output Predictor" })) // getDashboardMetadata
     fetchMock.mockResponseOnce(JSON.stringify([])) // listByProject for CompareModelsCard
     fetchMock.mockResponseOnce(
       JSON.stringify({ detail: "Prediction failed" }),
@@ -328,7 +331,7 @@ describe("PredictionDashboard", () => {
       await act(async () => { fireEvent.click(predictButton) })
       await waitFor(() => {
         // Error message or fallback render
-        expect(fetchMock).toHaveBeenCalledTimes(5)
+        expect(fetchMock).toHaveBeenCalledTimes(6)
       })
     }
   })
@@ -341,6 +344,7 @@ describe("PredictionDashboard", () => {
     fetchMock.mockResponseOnce(JSON.stringify(mockDeployment))
     fetchMock.mockResponseOnce(JSON.stringify([])) // getPresets
     fetchMock.mockResponseOnce(JSON.stringify({ deployment_id: "deployment-123", fields: [], total_count: 0, visible_count: 0, locked_count: 0 })) // getDashboardConfig
+    fetchMock.mockResponseOnce(JSON.stringify({ deployment_id: "deployment-123", dashboard_title: null, dashboard_description: null, auto_title: "Output Predictor" })) // getDashboardMetadata
     fetchMock.mockResponseOnce(JSON.stringify([])) // listByProject
     fetchMock.mockResponseOnce(
       JSON.stringify({ prediction: 1500.0, deployment_id: "deployment-123" })
@@ -375,6 +379,8 @@ describe("PredictionDashboard", () => {
   it("history section shows Download CSV button", async () => {
     fetchMock.mockResponseOnce(JSON.stringify(mockDeployment))
     fetchMock.mockResponseOnce(JSON.stringify([])) // getPresets
+    fetchMock.mockResponseOnce(JSON.stringify({ deployment_id: "deployment-123", fields: [], total_count: 0, visible_count: 0, locked_count: 0 })) // getDashboardConfig
+    fetchMock.mockResponseOnce(JSON.stringify({ deployment_id: "deployment-123", dashboard_title: null, dashboard_description: null, auto_title: "Output Predictor" })) // getDashboardMetadata
     fetchMock.mockResponseOnce(JSON.stringify([])) // listByProject
     fetchMock.mockResponseOnce(
       JSON.stringify({ prediction: 900.0, deployment_id: "deployment-123" })
@@ -494,6 +500,8 @@ describe("PredictionDashboard", () => {
   it("history table shows key inputs column", async () => {
     fetchMock.mockResponseOnce(JSON.stringify(mockDeployment))
     fetchMock.mockResponseOnce(JSON.stringify([])) // getPresets
+    fetchMock.mockResponseOnce(JSON.stringify({ deployment_id: "deployment-123", fields: [], total_count: 0, visible_count: 0, locked_count: 0 })) // getDashboardConfig
+    fetchMock.mockResponseOnce(JSON.stringify({ deployment_id: "deployment-123", dashboard_title: null, dashboard_description: null, auto_title: "Output Predictor" })) // getDashboardMetadata
     fetchMock.mockResponseOnce(JSON.stringify([])) // listByProject
     fetchMock.mockResponseOnce(JSON.stringify({ prediction: 999.0 }))
     const { default: PredictionDashboard } = await import("../app/predict/[id]/page")
@@ -513,6 +521,8 @@ describe("PredictionDashboard", () => {
   it("history counter increments on successive predictions", async () => {
     fetchMock.mockResponseOnce(JSON.stringify(mockDeployment))
     fetchMock.mockResponseOnce(JSON.stringify([])) // getPresets
+    fetchMock.mockResponseOnce(JSON.stringify({ deployment_id: "deployment-123", fields: [], total_count: 0, visible_count: 0, locked_count: 0 })) // getDashboardConfig
+    fetchMock.mockResponseOnce(JSON.stringify({ deployment_id: "deployment-123", dashboard_title: null, dashboard_description: null, auto_title: "Output Predictor" })) // getDashboardMetadata
     fetchMock.mockResponseOnce(JSON.stringify([])) // listByProject
     fetchMock.mockResponseOnce(JSON.stringify({ prediction: 100.0 }))
     fetchMock.mockResponseOnce(JSON.stringify({ prediction: 200.0 }))

@@ -53,6 +53,18 @@ the time is better spent on real features.
 
 ---
 
+## Day 69 (04:00) — Done
+**Track D — Prediction Dashboard Custom Title & Description via Chat.**
+
+Analysts can now brand the VP-facing prediction URL through natural language: "set the dashboard title to 'Q2 Revenue Forecast'", "add a dashboard description: For the finance team only", "what's the dashboard title?", "clear the dashboard title". Two new columns on `Deployment` (`dashboard_title`, `dashboard_description`) with inline migrations. `GET/PUT /api/deploy/{id}/dashboard-metadata` REST endpoints. `_DASHBOARD_META_PATTERNS` (8 NL arms) + 4 extraction regexes + handler in `chat.py` (title_set/description_set/both_set/cleared/status intents). `DashboardMetadataCard` (emerald/sky/slate borders). `predict/[id]/page.tsx` loads title/description on mount, applies custom title as page h1, shows description below title. Also back-filled missing `dashboard_config` SSE handler + `DashboardConfigCard` render in `project/[id]/page.tsx` (was emitting but never rendering). 22 backend + 16 frontend = 38 new tests. Total: 4301 backend + 2413 frontend = 6714. Backend lint: clean. Frontend build: clean.
+
+**What's next:**
+- Track E: "What's next?" guidance cards at key step transitions (after upload, after training, after deploy)
+- Track C: Ensemble methods (voting classifier / stacking) for better accuracy
+- Track D: Prediction SLA / latency monitoring — "is my model responding fast enough?"
+
+---
+
 ## Day 68 (20:00) — Done
 **Track D — Per-field display labels via chat.**
 

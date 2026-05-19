@@ -1305,5 +1305,23 @@ export const api = {
 
     getDashboardConfig: (deploymentId: string): Promise<import("@/lib/types").DashboardConfigResponse> =>
       fetch(`${API_URL}/api/deploy/${deploymentId}/dashboard-config`).then((r) => r.json()),
+
+    getDashboardMetadata: (deploymentId: string): Promise<import("@/lib/types").DashboardMetadata> =>
+      fetch(`${API_URL}/api/deploy/${deploymentId}/dashboard-metadata`).then((r) => r.json()),
+
+    updateDashboardMetadata: async (
+      deploymentId: string,
+      opts: { title?: string; description?: string; clear?: boolean }
+    ): Promise<import("@/lib/types").DashboardMetadata> => {
+      const params = new URLSearchParams()
+      if (opts.title !== undefined) params.set("title", opts.title)
+      if (opts.description !== undefined) params.set("description", opts.description)
+      if (opts.clear) params.set("clear", "true")
+      const r = await fetch(
+        `${API_URL}/api/deploy/${deploymentId}/dashboard-metadata?${params}`,
+        { method: "PUT" }
+      )
+      return r.json()
+    },
   },
 }

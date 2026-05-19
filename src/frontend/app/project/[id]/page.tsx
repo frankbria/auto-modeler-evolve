@@ -112,6 +112,8 @@ import { RecentPredictionsCard } from "@/components/deploy/recent-predictions-ca
 import { PredictionAuditCard } from "@/components/deploy/prediction-audit-card"
 import { ConfidenceTrendCard } from "@/components/deploy/confidence-trend-card"
 import { FeedbackAccuracyCard } from "@/components/deploy/feedback-accuracy-card"
+import { DashboardConfigCard } from "@/components/deploy/dashboard-config-card"
+import { DashboardMetadataCard } from "@/components/deploy/dashboard-metadata-card"
 import { FairnessCheckCard } from "@/components/chat/fairness-check-card"
 import { BatchJobResultCard } from "@/components/chat/batch-job-result-card"
 import { ProductionExplanationCard } from "@/components/chat/production-explanation-card"
@@ -331,6 +333,8 @@ export default function ProjectWorkspace() {
     attachRollbackChatToLastMessage,
     attachConfidenceThresholdConfigToLastMessage,
     attachInputValidationRuleToLastMessage,
+    attachDashboardConfigToLastMessage,
+    attachDashboardMetadataToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -811,6 +815,10 @@ export default function ProjectWorkspace() {
                 attachConfidenceThresholdConfigToLastMessage(json.confidence_threshold_config as import("@/lib/types").ConfidenceThresholdConfig)
               } else if (json.type === "input_validation_rule" && json.input_validation_rule) {
                 attachInputValidationRuleToLastMessage(json.input_validation_rule as import("@/lib/types").InputValidationRuleResult)
+              } else if (json.type === "dashboard_config" && json.dashboard_config) {
+                attachDashboardConfigToLastMessage(json.dashboard_config as import("@/lib/types").DashboardConfigResult)
+              } else if (json.type === "dashboard_metadata" && json.dashboard_metadata) {
+                attachDashboardMetadataToLastMessage(json.dashboard_metadata as import("@/lib/types").DashboardMetadataResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -1516,6 +1524,12 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.input_validation_rule && (
                       <InputValidationRuleCard result={msg.input_validation_rule} />
+                    )}
+                    {msg.dashboard_config && (
+                      <DashboardConfigCard config={msg.dashboard_config} />
+                    )}
+                    {msg.dashboard_metadata && (
+                      <DashboardMetadataCard result={msg.dashboard_metadata} />
                     )}
                   </div>
                 </div>
