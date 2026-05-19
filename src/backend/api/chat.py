@@ -11109,7 +11109,11 @@ def send_message(
                         if _new_desc:
                             _dm_dep_obj.dashboard_description = _new_desc
                             _dm_desc = _new_desc
-                            _dm_action = "description_set" if _dm_action == "status" else "both_set"
+                            _dm_action = (
+                                "description_set"
+                                if _dm_action == "status"
+                                else "both_set"
+                            )
                     if _dm_action not in ("status",):
                         session.add(_dm_dep_obj)
                         session.commit()

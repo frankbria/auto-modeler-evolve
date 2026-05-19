@@ -57,10 +57,14 @@ def test_dashboard_meta_patterns_set_title():
         "set the dashboard title to 'Q2 Revenue Forecast'"
     )
     assert _DASHBOARD_META_PATTERNS.search("change the prediction title to Sales Tool")
-    assert _DASHBOARD_META_PATTERNS.search("update dashboard header to Revenue Forecast")
+    assert _DASHBOARD_META_PATTERNS.search(
+        "update dashboard header to Revenue Forecast"
+    )
     assert _DASHBOARD_META_PATTERNS.search("give the dashboard name: My Tool")
     assert _DASHBOARD_META_PATTERNS.search("title this dashboard to Q2 Forecast")
-    assert _DASHBOARD_META_PATTERNS.search("name this prediction tool Revenue Predictor")
+    assert _DASHBOARD_META_PATTERNS.search(
+        "name this prediction tool Revenue Predictor"
+    )
 
 
 def test_dashboard_meta_patterns_set_description():
