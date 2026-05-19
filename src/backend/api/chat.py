@@ -11052,16 +11052,12 @@ def send_message(
                                     _order_m.group(3) or _order_m.group(4)
                                 )
                                 _parsed_names = [
-                                    w.strip()
-                                    for w in _raw_fields
-                                    if w.strip()
+                                    w.strip() for w in _raw_fields if w.strip()
                                 ]
 
                                 # Match against known feature names (case-insensitive)
                                 _ordered_features: list[str] = []
-                                _feat_lower = {
-                                    f.lower(): f for f in _dc_feature_names
-                                }
+                                _feat_lower = {f.lower(): f for f in _dc_feature_names}
                                 for _pn in _parsed_names:
                                     _matched = _feat_lower.get(_pn.lower())
                                     if _matched and _matched not in _ordered_features:
@@ -11071,9 +11067,7 @@ def send_message(
                                     # Move the named field to position 0, keep rest in schema order
                                     _first = _ordered_features[0]
                                     _rest = [
-                                        f
-                                        for f in _dc_feature_names
-                                        if f != _first
+                                        f for f in _dc_feature_names if f != _first
                                     ]
                                     _ordered_features = [_first] + _rest
 
