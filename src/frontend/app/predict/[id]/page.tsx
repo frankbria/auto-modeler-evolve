@@ -582,8 +582,14 @@ export default function PredictionDashboard() {
   }
 
   const rawSchema = deployment.feature_schema ?? []
-  // Filter out fields hidden by the analyst's dashboard config
-  const schema = rawSchema.filter((e) => cfgMap[e.name]?.is_visible !== false)
+  // Filter out hidden fields, then sort by display_order (nulls last = natural schema order)
+  const schema = rawSchema
+    .filter((e) => cfgMap[e.name]?.is_visible !== false)
+    .sort((a, b) => {
+      const aOrder = cfgMap[a.name]?.display_order ?? Infinity
+      const bOrder = cfgMap[b.name]?.display_order ?? Infinity
+      return aOrder - bOrder
+    })
   const targetLabel = colLabel(deployment.target_column ?? "Output")
   const autoPageTitle = `${targetLabel} Predictor`
   const pageTitle = dashboardMeta?.title ?? autoPageTitle

@@ -3352,14 +3352,16 @@ export interface DashboardFieldChange {
   is_locked: boolean
   locked_value: string | null
   display_label?: string
+  display_order?: number | null
 }
 
 export interface DashboardConfigResult {
-  action: "updated" | "reset" | "status" | "labeled"
+  action: "updated" | "reset" | "status" | "labeled" | "ordered"
   deployment_id: string
   visible_count: number
   locked_count: number
   labeled_count?: number
+  ordered_count?: number
   total_count: number
   changes: DashboardFieldChange[]
   summary: string

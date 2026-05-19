@@ -2770,7 +2770,12 @@ _DASHBOARD_CONFIG_PATTERNS = re.compile(
     r"\bdashboard\s+config(?:uration)?\b|"
     r"\bdashboard\s+fields\b|"
     r"\bwhat(?:'s|\s+is)\s+(?:visible|showing)\s+on\s+(?:my\s+)?(?:dashboard|form)\b|"
-    r"\b(?:what\s+)?fields?\s+(?:are\s+)?visible\s+on\s+(?:the\s+)?(?:prediction\s+)?form\b"
+    r"\b(?:what\s+)?fields?\s+(?:are\s+)?visible\s+on\s+(?:the\s+)?(?:prediction\s+)?form\b|"
+    r"\breorder\s+(?:the\s+)?(?:fields?|inputs?|form)\b|"
+    r"\border\s+(?:the\s+)?(?:fields?|inputs?|form)\s+as\b|"
+    r"\bfield\s+order\b|"
+    r"\bput\s+[\w]+\s+first\b|"
+    r"\bmove\s+[\w]+\s+(?:to\s+(?:position|slot|the\s+top|first))\b"
     r")",
     re.IGNORECASE,
 )
@@ -2802,6 +2807,17 @@ _DC_STATUS_RE = re.compile(
 # Extract feature + display label from "label/rename/call <feature> as/with label <label>"
 _DC_LABEL_RE = re.compile(
     r"\b(?:label|rename|call|display)\s+([\w]+(?:\s+\w+){0,3}?)\s+(?:as|with\s+label)\s+[\"']?([^\"']+?)[\"']?\s*(?:on\s+(?:the\s+)?(?:dashboard|form|prediction(?:\s+form)?|public)|$)",
+    re.IGNORECASE,
+)
+# Extract ordered field list from "reorder fields: X, Y, Z" / "order fields as X, Y, Z"
+# / "put X first" / "field order: X, Y, Z"
+_DC_ORDER_RE = re.compile(
+    r"(?:"
+    r"(?:reorder|order)\s+(?:the\s+)?(?:fields?|inputs?|form)\s*(?:as|:)\s*([\w,\s]+)|"
+    r"field\s+order\s*:\s*([\w,\s]+)|"
+    r"put\s+([\w]+)\s+first|"
+    r"move\s+([\w]+)\s+(?:to\s+)?(?:position\s+1|first|the\s+top)"
+    r")",
     re.IGNORECASE,
 )
 
@@ -10976,6 +10992,7 @@ def send_message(
 
                         else:
                             _label_m = _DC_LABEL_RE.search(body.message)
+                            _order_m = _DC_ORDER_RE.search(body.message)
                             if _label_m:
                                 _fname_raw = _label_m.group(1).strip()
                                 _new_label = _label_m.group(2).strip().strip("\"'")
@@ -11014,6 +11031,89 @@ def send_message(
                                     }
                                 )
 
+                            elif _order_m:
+                                # Parse the ordered field list from the message
+                                # Groups: 1=reorder list, 2=field order list, 3=put X first, 4=move X first
+                                _raw_list = (
+                                    _order_m.group(1)
+                                    or _order_m.group(2)
+                                    or _order_m.group(3)
+                                    or _order_m.group(4)
+                                    or ""
+                                )
+                                # Split on commas / "and" / "then"
+                                import re as _re_ord
+
+                                _raw_fields = _re_ord.split(
+                                    r"[,\s]+(?:and|then)?\s*|[,]", _raw_list
+                                )
+                                # If it was a single "put X first" match, treat remaining feature_names after X as implicit tail
+                                _is_put_first = bool(
+                                    _order_m.group(3) or _order_m.group(4)
+                                )
+                                _parsed_names = [
+                                    w.strip()
+                                    for w in _raw_fields
+                                    if w.strip()
+                                ]
+
+                                # Match against known feature names (case-insensitive)
+                                _ordered_features: list[str] = []
+                                _feat_lower = {
+                                    f.lower(): f for f in _dc_feature_names
+                                }
+                                for _pn in _parsed_names:
+                                    _matched = _feat_lower.get(_pn.lower())
+                                    if _matched and _matched not in _ordered_features:
+                                        _ordered_features.append(_matched)
+
+                                if _is_put_first and _ordered_features:
+                                    # Move the named field to position 0, keep rest in schema order
+                                    _first = _ordered_features[0]
+                                    _rest = [
+                                        f
+                                        for f in _dc_feature_names
+                                        if f != _first
+                                    ]
+                                    _ordered_features = [_first] + _rest
+
+                                # Assign display_order: position in explicit list, then remaining features get None
+                                _order_map: dict[str, int] = {}
+                                for _idx, _fn in enumerate(_ordered_features):
+                                    _order_map[_fn] = _idx
+
+                                for _fn in _dc_feature_names:
+                                    _new_order = _order_map.get(_fn)
+                                    _existing_dc = session.exec(
+                                        select(_DFC).where(
+                                            _DFC.deployment_id == _dc_dep_id,
+                                            _DFC.feature_name == _fn,
+                                        )
+                                    ).first()
+                                    if _existing_dc:
+                                        _existing_dc.display_order = _new_order
+                                        session.add(_existing_dc)
+                                    elif _new_order is not None:
+                                        session.add(
+                                            _DFC(
+                                                deployment_id=_dc_dep_id,
+                                                feature_name=_fn,
+                                                display_order=_new_order,
+                                            )
+                                        )
+                                session.commit()
+                                _dc_action = "ordered"
+                                _dc_changes = [
+                                    {
+                                        "feature_name": _fn,
+                                        "is_visible": True,
+                                        "is_locked": False,
+                                        "locked_value": None,
+                                        "display_order": _order_map.get(_fn),
+                                    }
+                                    for _fn in _ordered_features
+                                ]
+
                 # Build summary counts
                 _all_dc_rows = session.exec(
                     select(_DFC).where(_DFC.deployment_id == _dc_dep_id)
@@ -11036,12 +11136,26 @@ def send_message(
                     for f in _dc_feature_names
                     if _stored_map.get(f) and _stored_map[f].display_label
                 )
+                _ordered_count = sum(
+                    1
+                    for f in _dc_feature_names
+                    if _stored_map.get(f) and _stored_map[f].display_order is not None
+                )
                 if _dc_action == "labeled" and _dc_changes:
                     _changed_feat = _dc_changes[0]["feature_name"]
                     _changed_label = _dc_changes[0].get("display_label", "")
                     _dc_summary = (
                         f"Field '{_changed_feat}' will now appear as '{_changed_label}' "
                         f"on the shared prediction URL. {_labeled_count} field(s) have custom labels."
+                    )
+                elif _dc_action == "ordered" and _dc_changes:
+                    _ord_names = [c["feature_name"] for c in _dc_changes[:3]]
+                    _ord_preview = ", ".join(_ord_names)
+                    if len(_dc_changes) > 3:
+                        _ord_preview += f", +{len(_dc_changes) - 3} more"
+                    _dc_summary = (
+                        f"Field order updated: {_ord_preview}. "
+                        f"The shared prediction form will show fields in this order."
                     )
                 else:
                     _dc_summary = (
@@ -11054,6 +11168,7 @@ def send_message(
                     "visible_count": _visible_count,
                     "locked_count": _locked_count,
                     "labeled_count": _labeled_count,
+                    "ordered_count": _ordered_count,
                     "total_count": _total_count,
                     "changes": _dc_changes,
                     "summary": _dc_summary,
@@ -11062,7 +11177,7 @@ def send_message(
                     f"\n\n## Dashboard Field Configuration\n"
                     f"Action: {_dc_action}. "
                     f"{_visible_count}/{_total_count} fields visible, {_locked_count} locked, "
-                    f"{_labeled_count} with custom labels. "
+                    f"{_labeled_count} with custom labels, {_ordered_count} with custom order. "
                     "Explain these changes in plain English to the analyst."
                 )
         except Exception:  # noqa: BLE001

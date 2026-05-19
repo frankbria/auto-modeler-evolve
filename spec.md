@@ -1853,6 +1853,18 @@ guides them forward through the natural flow.
 - [x] **Prediction Dashboard Custom Title & Description via Chat** — Track D perpetual. Analysts say "set the dashboard title to 'Q2 Revenue Forecast'", "add a dashboard description: For the finance team", "what's the dashboard title?", or "clear the dashboard title" to brand the VP-facing prediction URL without any code. Two new fields on `Deployment`: `dashboard_title` (TEXT, nullable) + `dashboard_description` (TEXT, nullable); inline SQLite migrations in `db.py._apply_migrations()`. REST: `GET /api/deploy/{id}/dashboard-metadata` returns `{deployment_id, dashboard_title, dashboard_description, target_column, auto_title}`; `PUT /api/deploy/{id}/dashboard-metadata` accepts `title`/`description`/`clear` query params. `_DASHBOARD_META_PATTERNS` (8 NL arms) + `_DC_META_TITLE_RE` / `_DC_META_DESC_RE` / `_DC_META_CLEAR_RE` / `_DC_META_STATUS_RE` in `chat.py`. Handler detects title/description/both/clear/status intent, persists to `Deployment` inline, emits `{type:"dashboard_metadata"}` SSE event. `predict/[id]/page.tsx` fetches dashboard metadata on load; uses `dashboard_title` as page title (falls back to auto-generated `"{target} Predictor"`); shows `dashboard_description` as a paragraph below the h1. `DashboardMetadataResult` TypeScript interface; `dashboard_metadata?` on `ChatMessage`; `attachDashboardMetadataToLastMessage` Zustand action; `api.deploy.getDashboardMetadata()` + `updateDashboardMetadata()` client methods; `DashboardMetadataCard` (emerald/sky/slate border per action): icon, heading, current title or auto-generated fallback, description row, summary, footer hint. SSE handler + card render wired in workspace `page.tsx`. Also wired `dashboard_config` SSE handler + `DashboardConfigCard` render in `page.tsx` (these were missing from Day 68). Closes the "anonymous dashboard" gap — analysts can now name their VP-facing dashboard professionally.
       *Day 69 (04:00): 22 backend + 16 frontend = 38 new tests. Total: 4301 backend + 2413 frontend = 6714. Backend lint: clean. Frontend build: clean.*
 
+- [x] **Dashboard Field Ordering via Chat** — Track D perpetual. Analysts can say "reorder fields:
+      units, region, product", "order the form as revenue, units", "field order: region, units,
+      product", "put units first", or "move region to the top" to control the presentation order of
+      input fields on the shared VP-facing prediction form. `_DC_ORDER_RE` extracts ordered field
+      lists or single "put X first" targets. `display_order` (pre-existing column on
+      `DashboardFieldConfig`) persisted per field; `predict/[id]/page.tsx` sorts the schema array by
+      `display_order ?? Infinity` before rendering. SSE event emits `action="ordered"` with
+      `ordered_count`. `DashboardConfigCard` shows cyan `#N` position badges in field rows, cyan
+      border + 🔢 icon + "Fields Reordered" heading for ordered state, and `ordered_count` badge.
+      `_DASHBOARD_CONFIG_PATTERNS` extended with 5 ordering arms.
+      *Day 69 (12:00): 9 backend + 6 frontend = 15 new tests. Total: 4310 backend + 2419 frontend = 6729. Backend lint: clean. Frontend build: clean.*
+
 ---
 
 ## Data Model

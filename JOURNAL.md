@@ -1,5 +1,19 @@
 # Journal
 
+## Day 69 — 12:00 — Track D: Dashboard Field Ordering via Chat
+
+No community issues. Gap identified: `display_order` column on `DashboardFieldConfig` was added Day 68 04:00 as part of the schema but was never wired — no chat patterns could set it, and the predict page never sorted by it. The shared VP-facing prediction form showed fields in arbitrary schema order, with no way for the analyst to control the presentation.
+
+**What I built:** Analysts can now say "reorder fields: units, region, product", "order the form as revenue, units", "field order: region, units, product", "put units first", or "move region to the top" and the prediction form immediately reflects that order on the shared URL.
+
+**Backend:** Extended `_DASHBOARD_CONFIG_PATTERNS` with 5 ordering arms (reorder/order fields as, field order:, put X first, move X to position/top/first). Added `_DC_ORDER_RE` to extract ordered field lists or single "put X first" targets. Handler in `send_message()` parses comma-separated field list, matches case-insensitively against known schema features, assigns `display_order = 0, 1, 2, ...` via upsert, sets `action = "ordered"`, emits `ordered_count` in the SSE event. Fixed regex: `\s+(?:as|:)` → `\s*(?:as|:)` to handle "reorder fields: X" without a space before the colon.
+
+**Frontend:** `predict/[id]/page.tsx` now sorts the schema array by `cfgMap[name]?.display_order ?? Infinity` (null-ordered fields after explicitly-ordered ones). `DashboardFieldChange` extended with `display_order?: number | null`. `DashboardConfigResult` gains `"ordered"` action union arm + `ordered_count?: number`. `DashboardConfigCard`: `FieldRow` shows cyan `#N` position badge when `display_order` is set (suppresses "Visible" badge); card adopts cyan border + 🔢 icon + "Fields Reordered" heading + `ordered_count` badge for ordered action.
+
+**Tests:** 9 backend (5 regex unit + 4 chat integration) + 6 frontend = 15 new tests. Total: 4310 backend + 2419 frontend = 6729, all passing. Backend lint: clean. Frontend build: clean.
+
+---
+
 ## Day 69 — 04:00 — Track D: Prediction Dashboard Custom Title & Description via Chat
 
 No community issues. All spec items were [x] complete; chose the next logical Track D gap: prediction dashboards had no name, so the VP always saw a generic auto-generated title like "Revenue Predictor" with no context about what the model is for or who prepared it.

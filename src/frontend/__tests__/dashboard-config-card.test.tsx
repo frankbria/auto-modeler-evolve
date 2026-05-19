@@ -151,4 +151,54 @@ describe("DashboardConfigCard", () => {
     const row = screen.getByTestId("field-row-units")
     expect(row).not.toHaveTextContent("Visible")
   })
+
+  // ordered action tests
+  it("shows 'Fields Reordered' heading for action=ordered", () => {
+    render(<DashboardConfigCard config={{ ...base, action: "ordered" }} />)
+    expect(screen.getByText("Fields Reordered")).toBeInTheDocument()
+  })
+
+  it("shows ordered footer text for action=ordered", () => {
+    render(<DashboardConfigCard config={{ ...base, action: "ordered" }} />)
+    expect(screen.getByText(/shared prediction form will display fields in this order/)).toBeInTheDocument()
+  })
+
+  it("shows ordered_count badge when ordered_count > 0", () => {
+    render(<DashboardConfigCard config={{ ...base, action: "ordered", ordered_count: 3 }} />)
+    expect(screen.getByTestId("ordered-count-badge")).toHaveTextContent("3 ordered")
+  })
+
+  it("does not show ordered_count badge when ordered_count is 0", () => {
+    render(<DashboardConfigCard config={{ ...base, action: "ordered", ordered_count: 0 }} />)
+    expect(screen.queryByTestId("ordered-count-badge")).not.toBeInTheDocument()
+  })
+
+  it("shows position badge #1 in field row when display_order=0", () => {
+    const ordered: DashboardConfigResult = {
+      ...base,
+      action: "ordered",
+      ordered_count: 2,
+      changes: [
+        { feature_name: "units", is_visible: true, is_locked: false, locked_value: null, display_order: 0 },
+        { feature_name: "region", is_visible: true, is_locked: false, locked_value: null, display_order: 1 },
+      ],
+    }
+    render(<DashboardConfigCard config={ordered} />)
+    expect(screen.getByTestId("order-badge-units")).toHaveTextContent("#1")
+    expect(screen.getByTestId("order-badge-region")).toHaveTextContent("#2")
+  })
+
+  it("suppresses Visible badge when display_order is set", () => {
+    const ordered: DashboardConfigResult = {
+      ...base,
+      action: "ordered",
+      ordered_count: 1,
+      changes: [
+        { feature_name: "units", is_visible: true, is_locked: false, locked_value: null, display_order: 0 },
+      ],
+    }
+    render(<DashboardConfigCard config={ordered} />)
+    const row = screen.getByTestId("field-row-units")
+    expect(row).not.toHaveTextContent("Visible")
+  })
 })

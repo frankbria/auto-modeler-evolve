@@ -689,3 +689,176 @@ def test_chat_label_event_has_labeled_count(chat_client):
     ev = dc_events[0]["dashboard_config"]
     assert "labeled_count" in ev
     assert ev["labeled_count"] >= 1
+
+
+# ---------------------------------------------------------------------------
+# Ordering tests
+# ---------------------------------------------------------------------------
+
+
+def test_dashboard_config_patterns_order():
+    """_DASHBOARD_CONFIG_PATTERNS matches ordering phrases."""
+    from api.chat import _DASHBOARD_CONFIG_PATTERNS
+
+    matches = [
+        "reorder fields: units, region, product",
+        "reorder the form as units, region",
+        "order the fields as revenue, units",
+        "field order: region, units, product",
+        "put units first",
+        "move region to position 1",
+        "move units to the top",
+        "move product to first",
+    ]
+    for phrase in matches:
+        assert _DASHBOARD_CONFIG_PATTERNS.search(phrase), f"Should match: {phrase!r}"
+
+
+def test_dc_order_re_list():
+    """_DC_ORDER_RE captures comma-separated list from 'reorder fields: X, Y, Z'."""
+    from api.chat import _DC_ORDER_RE
+
+    m = _DC_ORDER_RE.search("reorder fields: units, region, product")
+    assert m is not None
+    raw = next(g for g in m.groups() if g)
+    names = [n.strip() for n in raw.split(",") if n.strip()]
+    assert names == ["units", "region", "product"]
+
+
+def test_dc_order_re_put_first():
+    """_DC_ORDER_RE captures field name from 'put X first'."""
+    from api.chat import _DC_ORDER_RE
+
+    m = _DC_ORDER_RE.search("put units first")
+    assert m is not None
+    raw = next(g for g in m.groups() if g)
+    assert raw.strip() == "units"
+
+
+def test_dc_order_re_field_order():
+    """_DC_ORDER_RE captures list from 'field order: X, Y, Z'."""
+    from api.chat import _DC_ORDER_RE
+
+    m = _DC_ORDER_RE.search("field order: region, units, product")
+    assert m is not None
+    raw = next(g for g in m.groups() if g)
+    names = [n.strip() for n in raw.split(",") if n.strip()]
+    assert names == ["region", "units", "product"]
+
+
+def test_dc_order_re_no_false_positives():
+    """Non-ordering messages don't match _DC_ORDER_RE."""
+    from api.chat import _DC_ORDER_RE
+
+    negatives = [
+        "show all fields on the dashboard",
+        "hide revenue from the form",
+        "lock price at 99",
+        "what fields are on the dashboard",
+    ]
+    for phrase in negatives:
+        assert _DC_ORDER_RE.search(phrase) is None, f"Should not match: {phrase!r}"
+
+
+def test_chat_reorder_fields(chat_client):
+    """Sending 'reorder fields' sets display_order on the named fields."""
+    from unittest.mock import patch
+
+    project_id, _, dep_id = _deploy_project(chat_client)
+    if not dep_id:
+        pytest.skip("training did not complete")
+
+    mock_stream = iter(["Fields reordered."])
+
+    with patch("anthropic.Anthropic") as mock_cls:
+        mock_inst = mock_cls.return_value
+        mock_stream_cm = mock_inst.messages.stream.return_value.__enter__.return_value
+        mock_stream_cm.text_stream = mock_stream
+
+        events = _chat(
+            chat_client, project_id, "reorder fields: units, region, product"
+        )
+
+    dc_events = [e for e in events if e.get("type") == "dashboard_config"]
+    assert dc_events, "Expected dashboard_config event"
+    ev = dc_events[0]["dashboard_config"]
+    assert ev["action"] == "ordered"
+    changes = {c["feature_name"]: c["display_order"] for c in ev["changes"]}
+    assert changes["units"] == 0
+    assert changes["region"] == 1
+    assert changes["product"] == 2
+
+
+def test_chat_put_first(chat_client):
+    """Sending 'put X first' gives X display_order=0."""
+    from unittest.mock import patch
+
+    project_id, _, dep_id = _deploy_project(chat_client)
+    if not dep_id:
+        pytest.skip("training did not complete")
+
+    mock_stream = iter(["Units moved to first position."])
+
+    with patch("anthropic.Anthropic") as mock_cls:
+        mock_inst = mock_cls.return_value
+        mock_stream_cm = mock_inst.messages.stream.return_value.__enter__.return_value
+        mock_stream_cm.text_stream = mock_stream
+
+        events = _chat(chat_client, project_id, "put units first")
+
+    dc_events = [e for e in events if e.get("type") == "dashboard_config"]
+    assert dc_events, "Expected dashboard_config event"
+    ev = dc_events[0]["dashboard_config"]
+    assert ev["action"] == "ordered"
+    changes = {c["feature_name"]: c["display_order"] for c in ev["changes"]}
+    assert changes["units"] == 0
+
+
+def test_chat_order_persists_in_db(chat_client):
+    """display_order set via chat is visible in GET /api/deploy/{id}/dashboard-config."""
+    from unittest.mock import patch
+
+    project_id, _, dep_id = _deploy_project(chat_client)
+    if not dep_id:
+        pytest.skip("training did not complete")
+
+    mock_stream = iter(["Reordered."])
+
+    with patch("anthropic.Anthropic") as mock_cls:
+        mock_inst = mock_cls.return_value
+        mock_stream_cm = mock_inst.messages.stream.return_value.__enter__.return_value
+        mock_stream_cm.text_stream = mock_stream
+
+        _chat(chat_client, project_id, "reorder fields: units, region, product")
+
+    cfg = chat_client.get(f"/api/deploy/{dep_id}/dashboard-config").json()
+    by_name = {f["feature_name"]: f for f in cfg["fields"]}
+    assert by_name["units"]["display_order"] == 0
+    assert by_name["region"]["display_order"] == 1
+    assert by_name["product"]["display_order"] == 2
+
+
+def test_chat_order_event_has_ordered_count(chat_client):
+    """The SSE event includes ordered_count after reordering fields."""
+    from unittest.mock import patch
+
+    project_id, _, dep_id = _deploy_project(chat_client)
+    if not dep_id:
+        pytest.skip("training did not complete")
+
+    mock_stream = iter(["Fields reordered."])
+
+    with patch("anthropic.Anthropic") as mock_cls:
+        mock_inst = mock_cls.return_value
+        mock_stream_cm = mock_inst.messages.stream.return_value.__enter__.return_value
+        mock_stream_cm.text_stream = mock_stream
+
+        events = _chat(
+            chat_client, project_id, "order the fields as units, region, product"
+        )
+
+    dc_events = [e for e in events if e.get("type") == "dashboard_config"]
+    assert dc_events
+    ev = dc_events[0]["dashboard_config"]
+    assert "ordered_count" in ev
+    assert ev["ordered_count"] >= 1

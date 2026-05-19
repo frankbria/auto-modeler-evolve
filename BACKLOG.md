@@ -53,6 +53,18 @@ the time is better spent on real features.
 
 ---
 
+## Day 69 (12:00) — Done
+**Track D — Dashboard Field Ordering via Chat.**
+
+Analysts can now control the presentation order of fields on the VP-facing prediction form through natural language: "reorder fields: units, region, product", "put units first", "move region to the top", "field order: region, units, product". `_DC_ORDER_RE` extracts ordered lists or single "put X first" targets. Handler in `send_message()` assigns `display_order = 0, 1, 2, ...` via upsert on `DashboardFieldConfig` (field was pre-existing from Day 68 04:00 but never wired). `predict/[id]/page.tsx` sorts schema by `display_order ?? Infinity`. SSE emits `action="ordered"` + `ordered_count`. `DashboardConfigCard` shows cyan `#N` position badges, cyan border + 🔢 icon + "Fields Reordered" heading + `ordered_count` badge. `_DASHBOARD_CONFIG_PATTERNS` extended with 5 ordering arms; fixed `\s+(?:as|:)` → `\s*(?:as|:)` to handle "reorder fields: X" (no space before colon). 9 backend + 6 frontend = 15 new tests. Total: 4310 backend + 2419 frontend = 6729. Backend lint: clean. Frontend build: clean.
+
+**What's next:**
+- Track E: "What's next?" guidance cards at key step transitions (after upload, after training, after deploy)
+- Track C: Ensemble methods (voting classifier / stacking) for better accuracy
+- Track D: Prediction SLA / latency monitoring — "is my model responding fast enough?"
+
+---
+
 ## Day 69 (04:00) — Done
 **Track D — Prediction Dashboard Custom Title & Description via Chat.**
 

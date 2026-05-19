@@ -20,6 +20,11 @@ function FieldRow({ field }: { field: DashboardFieldChange }) {
     >
       <span className="font-medium text-foreground">{colLabel(field.feature_name)}</span>
       <div className="flex items-center gap-1.5">
+        {field.display_order != null && (
+          <Badge variant="outline" className="border-cyan-300 text-cyan-700 text-xs" data-testid={`order-badge-${field.feature_name}`}>
+            #{field.display_order + 1}
+          </Badge>
+        )}
         {field.display_label && (
           <Badge variant="outline" className="border-violet-300 text-violet-700 text-xs">
             {`→ "${field.display_label}"`}
@@ -36,7 +41,7 @@ function FieldRow({ field }: { field: DashboardFieldChange }) {
             {field.locked_value ? ` = ${field.locked_value}` : ""}
           </Badge>
         )}
-        {field.is_visible && !field.is_locked && !field.display_label && (
+        {field.is_visible && !field.is_locked && !field.display_label && field.display_order == null && (
           <Badge variant="outline" className="border-emerald-300 text-emerald-700 text-xs">
             Visible
           </Badge>
@@ -58,6 +63,7 @@ export function DashboardConfigCard({ config }: DashboardConfigCardProps) {
   const isReset = config.action === "reset"
   const isStatus = config.action === "status"
   const isLabeled = config.action === "labeled"
+  const isOrdered = config.action === "ordered"
 
   const borderClass = isReset
     ? "border-slate-200 bg-slate-50"
@@ -65,9 +71,11 @@ export function DashboardConfigCard({ config }: DashboardConfigCardProps) {
       ? "border-sky-200 bg-sky-50"
       : isLabeled
         ? "border-violet-200 bg-violet-50"
-        : "border-emerald-200 bg-emerald-50"
+        : isOrdered
+          ? "border-cyan-200 bg-cyan-50"
+          : "border-emerald-200 bg-emerald-50"
 
-  const icon = isReset ? "🔄" : isStatus ? "🔍" : isLabeled ? "🏷️" : "⚙️"
+  const icon = isReset ? "🔄" : isStatus ? "🔍" : isLabeled ? "🏷️" : isOrdered ? "🔢" : "⚙️"
 
   const heading = isReset
     ? "Dashboard Reset"
@@ -75,7 +83,9 @@ export function DashboardConfigCard({ config }: DashboardConfigCardProps) {
       ? "Dashboard Config"
       : isLabeled
         ? "Field Labeled"
-        : "Dashboard Configured"
+        : isOrdered
+          ? "Fields Reordered"
+          : "Dashboard Configured"
 
   return (
     <Card
@@ -100,6 +110,11 @@ export function DashboardConfigCard({ config }: DashboardConfigCardProps) {
               {config.labeled_count} labeled
             </Badge>
           )}
+          {(config.ordered_count ?? 0) > 0 && (
+            <Badge variant="outline" className="border-cyan-300 text-cyan-700 text-xs" data-testid="ordered-count-badge">
+              {config.ordered_count} ordered
+            </Badge>
+          )}
         </CardTitle>
       </CardHeader>
 
@@ -121,7 +136,9 @@ export function DashboardConfigCard({ config }: DashboardConfigCardProps) {
               ? "Say 'hide X from the dashboard' or 'show all fields' to adjust visibility."
               : isLabeled
                 ? "The new label is shown on the shared prediction URL immediately."
-                : "Changes are reflected immediately on the shared prediction URL."}
+                : isOrdered
+                  ? "The shared prediction form will display fields in this order."
+                  : "Changes are reflected immediately on the shared prediction URL."}
         </p>
       </CardContent>
     </Card>
