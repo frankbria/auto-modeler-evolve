@@ -78,7 +78,9 @@ def test_embed_code_patterns_match(phrase: str) -> None:
 def test_embed_code_patterns_no_false_positives(phrase: str) -> None:
     from api.chat import _EMBED_CODE_PATTERNS
 
-    assert not _EMBED_CODE_PATTERNS.search(phrase), f"Pattern falsely matched: {phrase!r}"
+    assert not _EMBED_CODE_PATTERNS.search(phrase), (
+        f"Pattern falsely matched: {phrase!r}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -310,7 +312,9 @@ def test_embed_code_iframe_variant(chat_client):
         mock_stream_cm.text_stream = mock_stream
 
         events = _chat(
-            chat_client, project_id, "can I get an iframe snippet for embedding my dashboard?"
+            chat_client,
+            project_id,
+            "can I get an iframe snippet for embedding my dashboard?",
         )
 
     embed_events = [e for e in events if e.get("type") == "embed_code"]
@@ -332,7 +336,9 @@ def test_embed_code_sharepoint_variant(chat_client):
         mock_stream_cm.text_stream = mock_stream
 
         events = _chat(
-            chat_client, project_id, "how do I add a SharePoint embed for this dashboard?"
+            chat_client,
+            project_id,
+            "how do I add a SharePoint embed for this dashboard?",
         )
 
     embed_events = [e for e in events if e.get("type") == "embed_code"]
