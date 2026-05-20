@@ -2,6 +2,7 @@ import React from "react"
 import { render, screen, fireEvent } from "@testing-library/react"
 import { EmbedCodeCard } from "@/components/deploy/embed-code-card"
 import type { EmbedCodeResult } from "@/lib/types"
+import { useAppStore } from "@/lib/store"
 
 const base: EmbedCodeResult = {
   deployment_id: "dep-abc",
@@ -110,7 +111,6 @@ describe("EmbedCodeCard", () => {
 
 describe("EmbedCodeCard Zustand store", () => {
   it("attachEmbedCodeToLastMessage attaches to the last assistant message", () => {
-    const { useAppStore } = require("@/lib/store")
     const store = useAppStore.getState()
     store.setMessages([
       { role: "user", content: "give me embed code" },
@@ -122,7 +122,6 @@ describe("EmbedCodeCard Zustand store", () => {
   })
 
   it("does not attach when last message is user", () => {
-    const { useAppStore } = require("@/lib/store")
     const store = useAppStore.getState()
     store.setMessages([{ role: "user", content: "give me embed code" }])
     store.attachEmbedCodeToLastMessage(base)

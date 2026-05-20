@@ -952,6 +952,9 @@ export default function ProjectWorkspace() {
     attachRollbackChatToLastMessage,
     attachConfidenceThresholdConfigToLastMessage,
     attachInputValidationRuleToLastMessage,
+    attachDashboardConfigToLastMessage,
+    attachDashboardMetadataToLastMessage,
+    attachEmbedCodeToLastMessage,
   ])
 
   const onDrop = useCallback(
