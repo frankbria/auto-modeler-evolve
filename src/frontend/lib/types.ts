@@ -518,6 +518,7 @@ export interface ChatMessage {
   input_validation_rule?: InputValidationRuleResult
   dashboard_config?: DashboardConfigResult
   dashboard_metadata?: DashboardMetadataResult
+  embed_code?: EmbedCodeResult
 }
 
 export interface RollbackVersionEntry {
@@ -3399,4 +3400,13 @@ export interface DashboardMetadataResult {
   dashboard_description: string | null
   auto_title: string
   summary: string
+}
+
+export interface EmbedCodeResult {
+  deployment_id: string
+  dashboard_url: string
+  title: string
+  width: string
+  height: string
+  summary?: string
 }

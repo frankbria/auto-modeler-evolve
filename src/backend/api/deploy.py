@@ -5705,3 +5705,35 @@ def update_dashboard_metadata(
         "dashboard_title": getattr(deployment, "dashboard_title", None),
         "dashboard_description": getattr(deployment, "dashboard_description", None),
     }
+
+
+# ---------------------------------------------------------------------------
+# Section 25 — Embed Code Generator
+# ---------------------------------------------------------------------------
+
+
+@router.get("/api/deploy/{deployment_id}/embed-code")
+def get_embed_code(
+    deployment_id: str,
+    session: Session = Depends(get_session),
+):
+    """Return embed code metadata for the VP-facing prediction dashboard.
+
+    The dashboard_url is a relative path (/predict/{id}).  The caller should
+    combine it with the frontend origin to build the full iframe src.
+    """
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment:
+        raise HTTPException(status_code=404, detail="Deployment not found")
+    title = getattr(deployment, "dashboard_title", None) or (
+        f"{deployment.target_column.replace('_', ' ').title()} Predictor"
+        if deployment.target_column
+        else "Prediction Dashboard"
+    )
+    return {
+        "deployment_id": deployment_id,
+        "dashboard_url": deployment.dashboard_url,
+        "title": title,
+        "width": "100%",
+        "height": "700",
+    }

@@ -114,6 +114,7 @@ import { ConfidenceTrendCard } from "@/components/deploy/confidence-trend-card"
 import { FeedbackAccuracyCard } from "@/components/deploy/feedback-accuracy-card"
 import { DashboardConfigCard } from "@/components/deploy/dashboard-config-card"
 import { DashboardMetadataCard } from "@/components/deploy/dashboard-metadata-card"
+import { EmbedCodeCard } from "@/components/deploy/embed-code-card"
 import { FairnessCheckCard } from "@/components/chat/fairness-check-card"
 import { BatchJobResultCard } from "@/components/chat/batch-job-result-card"
 import { ProductionExplanationCard } from "@/components/chat/production-explanation-card"
@@ -335,6 +336,7 @@ export default function ProjectWorkspace() {
     attachInputValidationRuleToLastMessage,
     attachDashboardConfigToLastMessage,
     attachDashboardMetadataToLastMessage,
+    attachEmbedCodeToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -819,6 +821,8 @@ export default function ProjectWorkspace() {
                 attachDashboardConfigToLastMessage(json.dashboard_config as import("@/lib/types").DashboardConfigResult)
               } else if (json.type === "dashboard_metadata" && json.dashboard_metadata) {
                 attachDashboardMetadataToLastMessage(json.dashboard_metadata as import("@/lib/types").DashboardMetadataResult)
+              } else if (json.type === "embed_code" && json.embed_code) {
+                attachEmbedCodeToLastMessage(json.embed_code as import("@/lib/types").EmbedCodeResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -1530,6 +1534,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.dashboard_metadata && (
                       <DashboardMetadataCard result={msg.dashboard_metadata} />
+                    )}
+                    {msg.embed_code && (
+                      <EmbedCodeCard result={msg.embed_code} />
                     )}
                   </div>
                 </div>

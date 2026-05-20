@@ -158,6 +158,7 @@ interface AppState {
   attachInputValidationRuleToLastMessage: (input_validation_rule: import("./types").InputValidationRuleResult) => void
   attachDashboardConfigToLastMessage: (dashboard_config: import("./types").DashboardConfigResult) => void
   attachDashboardMetadataToLastMessage: (dashboard_metadata: import("./types").DashboardMetadataResult) => void
+  attachEmbedCodeToLastMessage: (embed_code: import("./types").EmbedCodeResult) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -1229,6 +1230,16 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, dashboard_metadata }
+      }
+      return { messages }
+    }),
+
+  attachEmbedCodeToLastMessage: (embed_code) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, embed_code }
       }
       return { messages }
     }),

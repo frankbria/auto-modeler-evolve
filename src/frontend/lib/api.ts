@@ -1323,5 +1323,8 @@ export const api = {
       )
       return r.json()
     },
+
+    getEmbedCode: (deploymentId: string): Promise<import("@/lib/types").EmbedCodeResult> =>
+      fetch(`${API_URL}/api/deploy/${deploymentId}/embed-code`).then((r) => r.json()),
   },
 }

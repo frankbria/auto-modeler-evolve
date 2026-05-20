@@ -2856,6 +2856,20 @@ _DC_META_STATUS_RE = re.compile(
     re.IGNORECASE,
 )
 
+_EMBED_CODE_PATTERNS = re.compile(
+    r"(?i)\b("
+    r"embed(?:\s+code|\s+snippet)?|"
+    r"iframe(?:\s+code|\s+snippet)?|"
+    r"embed\s+(?:this|my|the)\s+(?:dashboard|prediction\s+form|form|page)|"
+    r"(?:how\s+(?:do\s+I|can\s+I|to))\s+embed|"
+    r"put\s+(?:this|my)\s+(?:dashboard|form)\s+on|"
+    r"sharepoint\s+embed|intranet\s+embed|"
+    r"embed\s+(?:in|into|on)\s+(?:our|my|the)\s+(?:portal|intranet|sharepoint|notion|confluence|page|website|site)|"
+    r"(?:portal|intranet|website|sharepoint|notion|confluence)\s+embed"
+    r")\b",
+    re.IGNORECASE,
+)
+
 
 def _extract_dashboard_feature(message: str, feature_names: list[str]) -> str | None:
     """Find the feature name from a dashboard config message (longest match wins)."""
@@ -11254,6 +11268,43 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Dashboard metadata is nice-to-have; never crash chat
 
+    # Embed code generator
+    embed_code_event: dict | None = None
+    if _EMBED_CODE_PATTERNS.search(body.message) and ctx["deployment"]:
+        try:
+            _ec_dep = ctx["deployment"]
+            _ec_dep_id = _ec_dep.id if hasattr(_ec_dep, "id") else str(_ec_dep)
+            _ec_dep_obj = session.get(Deployment, _ec_dep_id)
+            if _ec_dep_obj:
+                _ec_title = getattr(_ec_dep_obj, "dashboard_title", None) or (
+                    f"{_ec_dep_obj.target_column.replace('_', ' ').title()} Predictor"
+                    if _ec_dep_obj.target_column
+                    else "Prediction Dashboard"
+                )
+                embed_code_event = {
+                    "deployment_id": _ec_dep_id,
+                    "dashboard_url": _ec_dep_obj.dashboard_url,
+                    "title": _ec_title,
+                    "width": "100%",
+                    "height": "700",
+                    "summary": (
+                        f"Here is the embed code for '{_ec_title}'. "
+                        "Paste it into any HTML page, SharePoint web part, Notion embed block, "
+                        "or Confluence page to let your team run predictions without leaving "
+                        "their existing tools."
+                    ),
+                }
+                system_prompt += (
+                    f"\n\n## Embed Code Request\n"
+                    f"The analyst wants to embed the prediction dashboard '{_ec_title}' "
+                    "in an internal portal or website. "
+                    "Tell them they can paste the iframe code into any HTML page, "
+                    "SharePoint web part, Notion embed block, or Confluence page. "
+                    "The prediction form works fully inside the iframe — no login required."
+                )
+        except Exception:  # noqa: BLE001
+            pass  # Embed code is nice-to-have; never crash chat
+
     # A/B test status / promote / end
     ab_test_result_event: dict | None = None
     if _AB_TEST_PATTERNS.search(body.message) and ctx["deployment"]:
@@ -14353,6 +14404,9 @@ def send_message(
 
         if dashboard_metadata_event:
             yield f"data: {json.dumps({'type': 'dashboard_metadata', 'dashboard_metadata': dashboard_metadata_event})}\n\n"
+
+        if embed_code_event:
+            yield f"data: {json.dumps({'type': 'embed_code', 'embed_code': embed_code_event})}\n\n"
 
         # After text stream, opportunistically generate a chart if the
         # message is about data and we have a dataset loaded
