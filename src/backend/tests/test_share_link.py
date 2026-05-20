@@ -291,7 +291,9 @@ def test_share_link_chat_event_emitted(chat_client):
         mock_stream_cm = mock_inst.messages.stream.return_value.__enter__.return_value
         mock_stream_cm.text_stream = mock_stream
 
-        events = _chat(chat_client, project_id, "create a shareable link for this scenario")
+        events = _chat(
+            chat_client, project_id, "create a shareable link for this scenario"
+        )
 
     share_events = [e for e in events if e.get("type") == "share_link"]
     assert share_events, "No share_link SSE event emitted"

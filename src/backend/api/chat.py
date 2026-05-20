@@ -11339,7 +11339,11 @@ def send_message(
             if _sl_dep_obj:
                 # Extract feature=value pairs from the analyst's message
                 _sl_feature_values: dict[str, str] = {}
-                _sl_feature_schema = json.loads(_sl_dep_obj.feature_schema_json or "[]") if hasattr(_sl_dep_obj, "feature_schema_json") else []
+                _sl_feature_schema = (
+                    json.loads(_sl_dep_obj.feature_schema_json or "[]")
+                    if hasattr(_sl_dep_obj, "feature_schema_json")
+                    else []
+                )
                 _sl_known_names = {
                     str(f.get("name", "")).lower(): str(f.get("name", ""))
                     for f in _sl_feature_schema
@@ -11359,7 +11363,9 @@ def send_message(
                     if _sl_matched:
                         _sl_feature_values[_sl_matched] = _sl_val
                 # Build URL query params
-                _sl_dashboard_url = _sl_dep_obj.dashboard_url or f"/predict/{_sl_dep_id}"
+                _sl_dashboard_url = (
+                    _sl_dep_obj.dashboard_url or f"/predict/{_sl_dep_id}"
+                )
                 if _sl_feature_values:
                     _sl_params = "&".join(
                         f"{k}={v}" for k, v in _sl_feature_values.items()

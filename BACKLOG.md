@@ -53,6 +53,18 @@ the time is better spent on real features.
 
 ---
 
+## Day 70 (04:00) — Done
+**Track D — Prediction form "Copy as link".**
+
+VPs can now bookmark or share exact prediction scenarios as pre-filled URLs. The "Your Scenario" form card on `predict/[id]` has a new 🔗 "Copy as link" button — clicking it encodes all current input values as URL query params (`?units=100&region=North`) and copies the full URL to the clipboard (flashes "Copied!" for 2s). Loading that URL pre-fills the form so the VP arrives with their values ready. Analysts can also say "generate a pre-filled link for units=100, region=North", "create a shareable link", "copy this scenario as a link", "bookmark this scenario" (9 NL variants) to receive a `ShareLinkCard` (orange border, 🔗 icon) in chat with the full URL, feature-value chips, and a copy button. `GET /api/deploy/{id}/share-link?features={"units":"100"}` REST endpoint. `_SHARE_LINK_PATTERNS` + `_SHARE_LINK_VALUE_RE` regexes in `chat.py`. `ShareLinkResult` type; `api.deploy.getShareLink()` method; `attachShareLinkToLastMessage` Zustand action; SSE handler + card render in project page. URL param parsing reads `window.location.search` on mount (no re-render loops). 24 backend + 18 frontend = 42 new tests. Total: 4356 backend + 2454 frontend = 6810. Backend lint: clean. Frontend build + lint: clean.
+
+**What's next:**
+- Track D: Deployment usage report via chat — "how many predictions did I get this week?", trend breakdown by day, top input patterns
+- Track B: Cross-project model comparison — "how does my revenue model compare to my churn model?"
+- Track E: "What's next?" guidance cards at key step transitions (after upload, after training, after deploy)
+
+---
+
 ## Day 69 (20:00) — Done
 **Track D — Embed Code Generator via Chat.**
 

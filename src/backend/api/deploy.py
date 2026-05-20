@@ -5748,7 +5748,9 @@ def get_embed_code(
 def get_share_link(
     deployment_id: str,
     session: Session = Depends(get_session),
-    features: str = Query(default="", description="JSON-encoded feature values to pre-fill"),
+    features: str = Query(
+        default="", description="JSON-encoded feature values to pre-fill"
+    ),
 ):
     """Return a pre-filled shareable URL for the VP-facing prediction dashboard.
 
