@@ -1,5 +1,19 @@
 # Journal
 
+## Day 69 — 20:00 — Track D: Embed Code Generator via Chat
+
+No community issues. All spec items were [x] and BACKLOG "What's Next" items (SLA monitoring, ensemble methods, guidance chips) were already completed in earlier sessions. Identified a genuine remaining gap: analysts could share the VP-facing prediction dashboard as a URL but had no way to embed it inside their company's existing portals (SharePoint, Notion, Confluence, HTML pages). The vision explicitly mentions "an API their developer can plug into the company's reporting tool" — embed code is the no-code equivalent that lets analysts skip the developer entirely.
+
+**What I built:** Analysts can now say "give me embed code for my dashboard", "iframe snippet for my dashboard", "SharePoint embed", "how do I embed on our intranet", or any of 9 NL variants to receive an `EmbedCodeCard` in chat with a ready-to-paste `<iframe>` snippet. Three size presets (Full Width / Fixed 960×700 / Compact 600×500) let the analyst match their portal's layout requirements. The copy button flashes "Copied!" for 2 seconds. A "Where to paste this" callout lists SharePoint / Notion / Confluence / HTML as targets with no guesswork required.
+
+**Backend:** `_EMBED_CODE_PATTERNS` (9 NL variants covering embed/iframe/portal/intranet/SharePoint/Notion/Confluence) added to `chat.py`. Handler block guarded by `ctx["deployment"]` reads `dashboard_title` (or auto-generates from `target_column`), emits `{type:"embed_code"}` SSE event with `dashboard_url`, `title`, `width`, `height`, `summary`. `GET /api/deploy/{id}/embed-code` REST endpoint returns same payload with 404 for unknown deployments.
+
+**Frontend:** `EmbedCodeCard` (indigo border, 🖼️ icon) — three `aria-pressed` preset buttons that update iframe dimensions in the code block; `<pre><code>` block generates well-formed HTML with `frameborder=0`, `allow="clipboard-write"`, CSS border-radius; `window.location.origin + dashboard_url` produces the correct full URL for any host. `EmbedCodeResult` TypeScript type; `api.deploy.getEmbedCode()` client method; `attachEmbedCodeToLastMessage` Zustand action; SSE handler + card render wired in workspace page.
+
+**Tests:** 22 backend (9 regex pattern matches, 4 false-positive guards, 5 REST endpoint tests, 4 chat integration tests) + 17 frontend (card render, icon, heading, title display, badge, code block content, 3 size presets, aria-pressed toggling, dimension update on preset change, copy button accessibility, summary, summary omission, portal instructions, footer, 2 Zustand store tests) = 39 new tests. Total: 4332 backend + 2436 frontend = 6768. Backend lint: clean. Frontend build: clean.
+
+---
+
 ## Day 69 — 12:00 — Track D: Dashboard Field Ordering via Chat
 
 No community issues. Gap identified: `display_order` column on `DashboardFieldConfig` was added Day 68 04:00 as part of the schema but was never wired — no chat patterns could set it, and the predict page never sorted by it. The shared VP-facing prediction form showed fields in arbitrary schema order, with no way for the analyst to control the presentation.
