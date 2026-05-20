@@ -2,15 +2,6 @@
 
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
-  Cell,
-} from "recharts"
 import type {
   WeeklyUsageReportResult,
   TopInputPattern,
@@ -177,7 +168,7 @@ export function WeeklyUsageReportCard({ result }: WeeklyUsageReportCardProps) {
 
           {top_input_patterns.length === 0 && (
             <p className="text-xs text-gray-400 italic">
-              No categorical input patterns found in this week's predictions.
+              No categorical input patterns found in this week&apos;s predictions.
             </p>
           )}
         </CardContent>
