@@ -520,6 +520,7 @@ export interface ChatMessage {
   dashboard_metadata?: DashboardMetadataResult
   embed_code?: EmbedCodeResult
   share_link?: ShareLinkResult
+  weekly_usage_report?: WeeklyUsageReportResult
 }
 
 export interface RollbackVersionEntry {
@@ -3420,4 +3421,32 @@ export interface ShareLinkResult {
   feature_count: number
   title: string
   summary?: string
+}
+
+export interface TopInputPatternValue {
+  value: string
+  count: number
+  pct: number
+}
+
+export interface TopInputPattern {
+  feature: string
+  top_values: TopInputPatternValue[]
+}
+
+export interface WeeklyUsageDayEntry {
+  date: string
+  count: number
+}
+
+export interface WeeklyUsageReportResult {
+  deployment_id: string
+  this_week_count: number
+  last_week_count: number
+  change_pct: number | null
+  trend: "up" | "down" | "flat"
+  by_day: WeeklyUsageDayEntry[]
+  top_input_patterns: TopInputPattern[]
+  sample_size: number
+  summary: string
 }

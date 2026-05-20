@@ -2895,6 +2895,21 @@ _SHARE_LINK_VALUE_RE = re.compile(
 )
 
 
+# Weekly deployment usage report — trend + top input patterns in one card
+_WEEKLY_USAGE_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"weekly\s+(?:usage|prediction|report|summary|stats?|statistics|overview|briefing)\b|"
+    r"(?:usage|prediction)\s+(?:report|summary|trend|weekly)\b|"
+    r"how\s+(?:am\s+I|did\s+I|did\s+the\s+model)\s+do(?:ing)?\s+this\s+week\b|"
+    r"(?:this|last)\s+week(?:'?s?)?\s+(?:predictions?|usage|summary|report|stats?)\b|"
+    r"week[\s-]over[\s-]week\s+(?:prediction|usage|trend|comparison)\b|"
+    r"(?:prediction|usage)\s+trend\s+(?:this\s+week|weekly|over\s+time)\b|"
+    r"how\s+many\s+predictions?\s+(?:did\s+I\s+get\s+)?(?:this|last)\s+week\b"
+    r")",
+    re.IGNORECASE,
+)
+
+
 def _extract_dashboard_feature(message: str, feature_names: list[str]) -> str | None:
     """Find the feature name from a dashboard config message (longest match wins)."""
     msg_lower = message.lower()
@@ -11409,6 +11424,127 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Share link is nice-to-have; never crash chat
 
+    # Weekly deployment usage report — week-over-week trend + top input patterns
+    weekly_usage_event: dict | None = None
+    if _WEEKLY_USAGE_PATTERNS.search(body.message) and ctx["deployment"]:
+        try:
+            from datetime import timedelta as _wu_td
+
+            _wu_dep = ctx["deployment"]
+            _wu_dep_id = _wu_dep.id if hasattr(_wu_dep, "id") else str(_wu_dep)
+            _wu_now = datetime.now(UTC).replace(tzinfo=None)
+            _wu_week_start = _wu_now - _wu_td(days=7)
+            _wu_prev_start = _wu_now - _wu_td(days=14)
+
+            _wu_logs = session.exec(
+                select(PredictionLog).where(
+                    PredictionLog.deployment_id == _wu_dep_id,
+                    PredictionLog.created_at >= _wu_prev_start,
+                )
+            ).all()
+
+            # Week-over-week volumes
+            _wu_this_week = sum(1 for lg in _wu_logs if lg.created_at >= _wu_week_start)
+            _wu_last_week = sum(
+                1 for lg in _wu_logs
+                if _wu_prev_start <= lg.created_at < _wu_week_start
+            )
+            if _wu_last_week > 0:
+                _wu_change_pct = round(
+                    (_wu_this_week - _wu_last_week) / _wu_last_week * 100, 1
+                )
+            else:
+                _wu_change_pct = None
+            _wu_trend = (
+                "up" if (_wu_change_pct or 0) > 5
+                else "down" if (_wu_change_pct or 0) < -5
+                else "flat"
+            )
+
+            # Per-day breakdown for the current week (7 entries)
+            _wu_by_day: list[dict] = []
+            for _d in range(6, -1, -1):
+                _day_dt = _wu_now - _wu_td(days=_d)
+                _day_str = _day_dt.strftime("%Y-%m-%d")
+                _day_count = sum(
+                    1 for lg in _wu_logs
+                    if lg.created_at.strftime("%Y-%m-%d") == _day_str
+                )
+                _wu_by_day.append({"date": _day_str, "count": _day_count})
+
+            # Top input patterns — parse input_features JSON, tally categorical values
+            _wu_feature_tally: dict[str, dict[str, int]] = {}
+            _wu_recent_logs = [
+                lg for lg in _wu_logs if lg.created_at >= _wu_week_start
+            ][:100]  # cap to last 100 for performance
+            for _wl in _wu_recent_logs:
+                try:
+                    _feat_dict: dict = json.loads(_wl.input_features or "{}")
+                    for _fname, _fval in _feat_dict.items():
+                        _fval_str = str(_fval).strip()
+                        # Only tally strings/booleans (skip long numerics — not meaningful to count)
+                        try:
+                            float(_fval_str)
+                            continue  # numeric — skip for categorical tally
+                        except ValueError:
+                            pass
+                        if len(_fval_str) > 50:
+                            continue  # too long
+                        _wu_feature_tally.setdefault(_fname, {})
+                        _wu_feature_tally[_fname][_fval_str] = (
+                            _wu_feature_tally[_fname].get(_fval_str, 0) + 1
+                        )
+                except Exception:  # noqa: BLE001
+                    pass
+
+            # Build top patterns: per feature, show the top-2 values
+            _wu_top_patterns: list[dict] = []
+            for _fname, _val_counts in list(_wu_feature_tally.items())[:6]:
+                _top_vals = sorted(_val_counts.items(), key=lambda x: x[1], reverse=True)[:2]
+                _wu_top_patterns.append({
+                    "feature": _fname,
+                    "top_values": [
+                        {"value": v, "count": c, "pct": round(c / max(1, _wu_this_week) * 100, 0)}
+                        for v, c in _top_vals
+                    ],
+                })
+
+            # Plain-English summary
+            if _wu_change_pct is not None:
+                _wu_trend_phrase = (
+                    f"up {_wu_change_pct}% vs last week"
+                    if _wu_trend == "up"
+                    else f"down {abs(_wu_change_pct)}% vs last week"
+                    if _wu_trend == "down"
+                    else "roughly the same as last week"
+                )
+            else:
+                _wu_trend_phrase = "no prior week data for comparison"
+            _wu_summary = (
+                f"This week: {_wu_this_week} predictions ({_wu_trend_phrase}). "
+                f"Last week: {_wu_last_week} predictions."
+            )
+
+            weekly_usage_event = {
+                "deployment_id": _wu_dep_id,
+                "this_week_count": _wu_this_week,
+                "last_week_count": _wu_last_week,
+                "change_pct": _wu_change_pct,
+                "trend": _wu_trend,
+                "by_day": _wu_by_day,
+                "top_input_patterns": _wu_top_patterns,
+                "sample_size": len(_wu_recent_logs),
+                "summary": _wu_summary,
+            }
+            system_prompt += (
+                f"\n\n## Weekly Usage Report\n"
+                f"{_wu_summary} "
+                "A WeeklyUsageReportCard is shown with the day-by-day breakdown and "
+                "top input patterns. Describe the trend in one sentence and mention any standout pattern."
+            )
+        except Exception:  # noqa: BLE001
+            pass  # Weekly report is enhancement; never crash chat
+
     # A/B test status / promote / end
     ab_test_result_event: dict | None = None
     if _AB_TEST_PATTERNS.search(body.message) and ctx["deployment"]:
@@ -14514,6 +14650,9 @@ def send_message(
 
         if share_link_event:
             yield f"data: {json.dumps({'type': 'share_link', 'share_link': share_link_event})}\n\n"
+
+        if weekly_usage_event:
+            yield f"data: {json.dumps({'type': 'weekly_usage_report', 'weekly_usage_report': weekly_usage_event})}\n\n"
 
         # After text stream, opportunistically generate a chart if the
         # message is about data and we have a dataset loaded

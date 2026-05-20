@@ -116,6 +116,7 @@ import { DashboardConfigCard } from "@/components/deploy/dashboard-config-card"
 import { DashboardMetadataCard } from "@/components/deploy/dashboard-metadata-card"
 import { EmbedCodeCard } from "@/components/deploy/embed-code-card"
 import { ShareLinkCard } from "@/components/deploy/share-link-card"
+import { WeeklyUsageReportCard } from "@/components/deploy/weekly-usage-report-card"
 import { FairnessCheckCard } from "@/components/chat/fairness-check-card"
 import { BatchJobResultCard } from "@/components/chat/batch-job-result-card"
 import { ProductionExplanationCard } from "@/components/chat/production-explanation-card"
@@ -339,6 +340,7 @@ export default function ProjectWorkspace() {
     attachDashboardMetadataToLastMessage,
     attachEmbedCodeToLastMessage,
     attachShareLinkToLastMessage,
+    attachWeeklyUsageReportToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -827,6 +829,8 @@ export default function ProjectWorkspace() {
                 attachEmbedCodeToLastMessage(json.embed_code as import("@/lib/types").EmbedCodeResult)
               } else if (json.type === "share_link" && json.share_link) {
                 attachShareLinkToLastMessage(json.share_link as import("@/lib/types").ShareLinkResult)
+              } else if (json.type === "weekly_usage_report" && json.weekly_usage_report) {
+                attachWeeklyUsageReportToLastMessage(json.weekly_usage_report as import("@/lib/types").WeeklyUsageReportResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -960,6 +964,7 @@ export default function ProjectWorkspace() {
     attachDashboardMetadataToLastMessage,
     attachEmbedCodeToLastMessage,
     attachShareLinkToLastMessage,
+    attachWeeklyUsageReportToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -1548,6 +1553,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.share_link && (
                       <ShareLinkCard result={msg.share_link} />
+                    )}
+                    {msg.weekly_usage_report && (
+                      <WeeklyUsageReportCard result={msg.weekly_usage_report} />
                     )}
                   </div>
                 </div>
