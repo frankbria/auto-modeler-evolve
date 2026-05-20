@@ -1,5 +1,17 @@
 # Journal
 
+## Day 70 — 04:00 — Track D: Prediction Form Copy as Link
+
+No community issues. Identified the final low-friction Track D gap: analysts could share the prediction URL verbally or through email, but had no conversational shortcut to grab it with one click. Users would naturally ask "give me the link", "copy the prediction URL", "share this form", or similar to avoid manually reconstructing the URL from the browser bar.
+
+**What I built:** Analysts can now say "give me a link to this prediction form", "copy the prediction URL", "share this prediction", or any of 5 NL variants to receive a `CopyLinkCard` in chat with a one-click copy button. The copy button flashes "Copied!" for 2 seconds and the card shows the full shareable URL inline, letting them verify it before sending to the VP.
+
+**Backend:** `_COPY_LINK_PATTERNS` (5 NL variants: link/URL/share/copy + form/prediction) added to `chat.py`. Handler block guarded by `ctx["deployment"]` reads `deployment.id` and `target_column` to construct the full shareable URL, emits `{type:"copy_link"}` SSE event with the formatted URL and a plain-English summary.
+
+**Frontend:** `CopyLinkCard` (sky border, 🔗 icon) displays the prediction URL in a read-only code block with a copy button matching the embed code card's UX. `predict/[id]/page.tsx` already wires the SSE handler + card render. Tests: 6 backend (regex patterns + chat integration) + 8 frontend (card render, copy button, URL display, accessibility). Total: 4276 backend + 2444 frontend = 6720, all passing. Backend lint: clean. Frontend build: clean.
+
+---
+
 ## Day 69 — 20:00 — Track D: Embed Code Generator via Chat
 
 No community issues. All spec items were [x] and BACKLOG "What's Next" items (SLA monitoring, ensemble methods, guidance chips) were already completed in earlier sessions. Identified a genuine remaining gap: analysts could share the VP-facing prediction dashboard as a URL but had no way to embed it inside their company's existing portals (SharePoint, Notion, Confluence, HTML pages). The vision explicitly mentions "an API their developer can plug into the company's reporting tool" — embed code is the no-code equivalent that lets analysts skip the developer entirely.
