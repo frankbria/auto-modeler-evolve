@@ -159,6 +159,7 @@ interface AppState {
   attachDashboardConfigToLastMessage: (dashboard_config: import("./types").DashboardConfigResult) => void
   attachDashboardMetadataToLastMessage: (dashboard_metadata: import("./types").DashboardMetadataResult) => void
   attachEmbedCodeToLastMessage: (embed_code: import("./types").EmbedCodeResult) => void
+  attachShareLinkToLastMessage: (share_link: import("./types").ShareLinkResult) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -1240,6 +1241,16 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, embed_code }
+      }
+      return { messages }
+    }),
+
+  attachShareLinkToLastMessage: (share_link) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, share_link }
       }
       return { messages }
     }),

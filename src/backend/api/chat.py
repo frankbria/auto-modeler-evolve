@@ -2870,6 +2870,30 @@ _EMBED_CODE_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# Keywords that trigger generating a pre-filled shareable scenario link
+_SHARE_LINK_PATTERNS = re.compile(
+    r"(?i)\b("
+    r"(?:generate|create|make|build|give\s+me)\s+(?:a\s+)?pre-?filled?\s+(?:url|link)|"
+    r"(?:generate|create|make|build|give\s+me)\s+(?:a\s+)?(?:share(?:able)?|scenario)\s+link|"
+    r"(?:copy|share)\s+(?:this\s+)?(?:scenario|prediction|form)\s+as\s+(?:a\s+)?link|"
+    r"(?:url|link)\s+(?:with\s+(?:these\s+)?(?:values?|inputs?|parameters?|params?)|for\s+(?:this\s+)?scenario)|"
+    r"bookmark(?:\s+this)?(?:\s+scenario|\s+prediction)?|"
+    r"shareable\s+(?:prediction\s+)?(?:url|link)|"
+    r"share\s+(?:this|my)\s+(?:prediction\s+)?(?:url|link|scenario)|"
+    r"link\s+(?:to|for)\s+(?:this|my)\s+(?:scenario|prediction)|"
+    r"scenario\s+(?:url|link)|"
+    r"pre-?filled?\s+(?:dashboard|prediction)\s+(?:url|link)"
+    r")\b",
+    re.IGNORECASE,
+)
+
+# Extract feature=value or feature: value pairs from a share-link request
+# e.g. "units=100, region=North" or "units: 100 region: South"
+_SHARE_LINK_VALUE_RE = re.compile(
+    r"(\w[\w\s]{0,30}?)\s*[=:]\s*([^\s,;]+(?:\s+[^\s,;=:]+){0,3}?)(?=[,;\n]|$|\s+\w[\w\s]{0,30}?\s*[=:])",
+    re.IGNORECASE,
+)
+
 
 def _extract_dashboard_feature(message: str, feature_names: list[str]) -> str | None:
     """Find the feature name from a dashboard config message (longest match wins)."""
@@ -11305,6 +11329,80 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Embed code is nice-to-have; never crash chat
 
+    # Pre-filled scenario share link
+    share_link_event: dict | None = None
+    if _SHARE_LINK_PATTERNS.search(body.message) and ctx["deployment"]:
+        try:
+            _sl_dep = ctx["deployment"]
+            _sl_dep_id = _sl_dep.id if hasattr(_sl_dep, "id") else str(_sl_dep)
+            _sl_dep_obj = session.get(Deployment, _sl_dep_id)
+            if _sl_dep_obj:
+                # Extract feature=value pairs from the analyst's message
+                _sl_feature_values: dict[str, str] = {}
+                _sl_feature_schema = json.loads(_sl_dep_obj.feature_schema_json or "[]") if hasattr(_sl_dep_obj, "feature_schema_json") else []
+                _sl_known_names = {
+                    str(f.get("name", "")).lower(): str(f.get("name", ""))
+                    for f in _sl_feature_schema
+                    if isinstance(f, dict) and f.get("name")
+                }
+                for _sl_m in _SHARE_LINK_VALUE_RE.finditer(body.message):
+                    _sl_raw_key = _sl_m.group(1).strip().lower().replace(" ", "_")
+                    _sl_val = _sl_m.group(2).strip()
+                    # Match against known feature names (exact or partial)
+                    _sl_matched = _sl_known_names.get(_sl_raw_key)
+                    if not _sl_matched:
+                        # Try partial match
+                        for _sl_kn in _sl_known_names:
+                            if _sl_raw_key in _sl_kn or _sl_kn in _sl_raw_key:
+                                _sl_matched = _sl_known_names[_sl_kn]
+                                break
+                    if _sl_matched:
+                        _sl_feature_values[_sl_matched] = _sl_val
+                # Build URL query params
+                _sl_dashboard_url = _sl_dep_obj.dashboard_url or f"/predict/{_sl_dep_id}"
+                if _sl_feature_values:
+                    _sl_params = "&".join(
+                        f"{k}={v}" for k, v in _sl_feature_values.items()
+                    )
+                    _sl_prefilled_url = f"{_sl_dashboard_url}?{_sl_params}"
+                else:
+                    _sl_prefilled_url = _sl_dashboard_url
+                _sl_feature_count = len(_sl_feature_values)
+                _sl_title = getattr(_sl_dep_obj, "dashboard_title", None) or (
+                    f"{_sl_dep_obj.target_column.replace('_', ' ').title()} Predictor"
+                    if _sl_dep_obj.target_column
+                    else "Prediction Dashboard"
+                )
+                share_link_event = {
+                    "deployment_id": _sl_dep_id,
+                    "dashboard_url": _sl_dashboard_url,
+                    "prefilled_url": _sl_prefilled_url,
+                    "feature_values": _sl_feature_values,
+                    "feature_count": _sl_feature_count,
+                    "title": _sl_title,
+                    "summary": (
+                        f"Here is a pre-filled link for '{_sl_title}' "
+                        + (
+                            f"with {_sl_feature_count} value{'s' if _sl_feature_count != 1 else ''} pre-loaded. "
+                            if _sl_feature_count
+                            else "with no specific values (opens at defaults). "
+                        )
+                        + "Anyone with this link will see the prediction form ready to use."
+                    ),
+                }
+                system_prompt += (
+                    f"\n\n## Share Link Request\n"
+                    f"The analyst wants a pre-filled shareable URL for '{_sl_title}'. "
+                    + (
+                        f"The link includes these values: {_sl_feature_values}. "
+                        if _sl_feature_values
+                        else "No specific values were extracted from the message. "
+                    )
+                    + "Tell the analyst the pre-filled link is ready and they can copy it to share with their VP."
+                )
+        except Exception:  # noqa: BLE001
+            pass  # Share link is nice-to-have; never crash chat
+
     # A/B test status / promote / end
     ab_test_result_event: dict | None = None
     if _AB_TEST_PATTERNS.search(body.message) and ctx["deployment"]:
@@ -14407,6 +14505,9 @@ def send_message(
 
         if embed_code_event:
             yield f"data: {json.dumps({'type': 'embed_code', 'embed_code': embed_code_event})}\n\n"
+
+        if share_link_event:
+            yield f"data: {json.dumps({'type': 'share_link', 'share_link': share_link_event})}\n\n"
 
         # After text stream, opportunistically generate a chart if the
         # message is about data and we have a dataset loaded

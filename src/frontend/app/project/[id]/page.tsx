@@ -115,6 +115,7 @@ import { FeedbackAccuracyCard } from "@/components/deploy/feedback-accuracy-card
 import { DashboardConfigCard } from "@/components/deploy/dashboard-config-card"
 import { DashboardMetadataCard } from "@/components/deploy/dashboard-metadata-card"
 import { EmbedCodeCard } from "@/components/deploy/embed-code-card"
+import { ShareLinkCard } from "@/components/deploy/share-link-card"
 import { FairnessCheckCard } from "@/components/chat/fairness-check-card"
 import { BatchJobResultCard } from "@/components/chat/batch-job-result-card"
 import { ProductionExplanationCard } from "@/components/chat/production-explanation-card"
@@ -337,6 +338,7 @@ export default function ProjectWorkspace() {
     attachDashboardConfigToLastMessage,
     attachDashboardMetadataToLastMessage,
     attachEmbedCodeToLastMessage,
+    attachShareLinkToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -823,6 +825,8 @@ export default function ProjectWorkspace() {
                 attachDashboardMetadataToLastMessage(json.dashboard_metadata as import("@/lib/types").DashboardMetadataResult)
               } else if (json.type === "embed_code" && json.embed_code) {
                 attachEmbedCodeToLastMessage(json.embed_code as import("@/lib/types").EmbedCodeResult)
+              } else if (json.type === "share_link" && json.share_link) {
+                attachShareLinkToLastMessage(json.share_link as import("@/lib/types").ShareLinkResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -955,6 +959,7 @@ export default function ProjectWorkspace() {
     attachDashboardConfigToLastMessage,
     attachDashboardMetadataToLastMessage,
     attachEmbedCodeToLastMessage,
+    attachShareLinkToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -1540,6 +1545,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.embed_code && (
                       <EmbedCodeCard result={msg.embed_code} />
+                    )}
+                    {msg.share_link && (
+                      <ShareLinkCard result={msg.share_link} />
                     )}
                   </div>
                 </div>

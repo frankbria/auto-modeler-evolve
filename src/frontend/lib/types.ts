@@ -519,6 +519,7 @@ export interface ChatMessage {
   dashboard_config?: DashboardConfigResult
   dashboard_metadata?: DashboardMetadataResult
   embed_code?: EmbedCodeResult
+  share_link?: ShareLinkResult
 }
 
 export interface RollbackVersionEntry {
@@ -3408,5 +3409,15 @@ export interface EmbedCodeResult {
   title: string
   width: string
   height: string
+  summary?: string
+}
+
+export interface ShareLinkResult {
+  deployment_id: string
+  dashboard_url: string
+  prefilled_url: string
+  feature_values: Record<string, string>
+  feature_count: number
+  title: string
   summary?: string
 }

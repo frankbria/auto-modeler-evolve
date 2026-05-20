@@ -1326,5 +1326,19 @@ export const api = {
 
     getEmbedCode: (deploymentId: string): Promise<import("@/lib/types").EmbedCodeResult> =>
       fetch(`${API_URL}/api/deploy/${deploymentId}/embed-code`).then((r) => r.json()),
+
+    getShareLink: (
+      deploymentId: string,
+      featureValues?: Record<string, string>
+    ): Promise<import("@/lib/types").ShareLinkResult> => {
+      const params = new URLSearchParams()
+      if (featureValues && Object.keys(featureValues).length > 0) {
+        params.set("features", JSON.stringify(featureValues))
+      }
+      const qs = params.toString()
+      return fetch(
+        `${API_URL}/api/deploy/${deploymentId}/share-link${qs ? `?${qs}` : ""}`
+      ).then((r) => r.json())
+    },
   },
 }

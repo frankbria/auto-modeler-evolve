@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -418,6 +418,9 @@ export default function PredictionDashboard() {
   const [presets, setPresets] = useState<import("@/lib/types").DeploymentPreset[]>([])
   const [dashboardConfig, setDashboardConfig] = useState<DashboardFieldEntry[]>([])
   const [dashboardMeta, setDashboardMeta] = useState<{ title: string | null; description: string | null; autoTitle: string } | null>(null)
+  const [copyLinkCopied, setCopyLinkCopied] = useState(false)
+  // Track if query-param pre-fill has been applied (run once after deployment loads)
+  const queryParamApplied = useRef(false)
 
   useEffect(() => {
     api.deploy
@@ -434,6 +437,15 @@ export default function PredictionDashboard() {
           } else {
             defaults[entry.name] = ""
           }
+        }
+        // Override defaults with any values passed as URL query params (share-link pre-fill)
+        // Read from window.location.search so this only fires once and avoids re-render loops
+        if (!queryParamApplied.current && typeof window !== "undefined") {
+          queryParamApplied.current = true
+          const urlParams = new URLSearchParams(window.location.search)
+          urlParams.forEach((value, key) => {
+            defaults[key] = value
+          })
         }
         setInputs(defaults)
       })
@@ -554,6 +566,20 @@ export default function PredictionDashboard() {
     }
   }
 
+  const handleCopyLink = () => {
+    // Build a pre-filled URL from current visible (non-locked) inputs
+    const params = new URLSearchParams()
+    for (const [key, value] of Object.entries(inputs)) {
+      if (value !== "") params.set(key, value)
+    }
+    const qs = params.toString()
+    const url = `${window.location.origin}/predict/${deploymentId}${qs ? `?${qs}` : ""}`
+    navigator.clipboard.writeText(url).then(() => {
+      setCopyLinkCopied(true)
+      setTimeout(() => setCopyLinkCopied(false), 2000)
+    })
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen bg-background px-4 py-8">
@@ -657,15 +683,25 @@ export default function PredictionDashboard() {
           <CardHeader>
             <div className="flex items-center justify-between flex-wrap gap-2">
               <CardTitle>Your Scenario</CardTitle>
-              {isSimplifiedView && (
-                <Badge
-                  variant="outline"
-                  className="border-sky-300 text-sky-700 text-xs"
-                  data-testid="simplified-view-badge"
+              <div className="flex items-center gap-2 flex-wrap">
+                {isSimplifiedView && (
+                  <Badge
+                    variant="outline"
+                    className="border-sky-300 text-sky-700 text-xs"
+                    data-testid="simplified-view-badge"
+                  >
+                    Simplified view
+                  </Badge>
+                )}
+                <button
+                  onClick={handleCopyLink}
+                  className="inline-flex items-center gap-1 rounded border border-orange-200 bg-orange-50 px-2.5 py-1 text-xs font-medium text-orange-700 transition-colors hover:bg-orange-100"
+                  aria-label="Copy pre-filled scenario link to clipboard"
+                  data-testid="copy-link-button"
                 >
-                  Simplified view
-                </Badge>
-              )}
+                  🔗 {copyLinkCopied ? "Copied!" : "Copy as link"}
+                </button>
+              </div>
             </div>
             <p className="text-xs text-muted-foreground mt-0.5">
               Fields are pre-filled with training averages — adjust them for your specific situation.

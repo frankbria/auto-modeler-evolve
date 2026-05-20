@@ -5737,3 +5737,66 @@ def get_embed_code(
         "width": "100%",
         "height": "700",
     }
+
+
+# ---------------------------------------------------------------------------
+# Section 26 — Share Link (pre-filled scenario URL)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/api/deploy/{deployment_id}/share-link")
+def get_share_link(
+    deployment_id: str,
+    session: Session = Depends(get_session),
+    features: str = Query(default="", description="JSON-encoded feature values to pre-fill"),
+):
+    """Return a pre-filled shareable URL for the VP-facing prediction dashboard.
+
+    The ``features`` query parameter is a JSON object of feature_name → value pairs.
+    The response includes ``prefilled_url`` (relative path + query string) and
+    ``dashboard_url`` (just the path).  The caller combines with frontend origin to
+    produce the absolute URL.
+    """
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment:
+        raise HTTPException(status_code=404, detail="Deployment not found")
+
+    title = getattr(deployment, "dashboard_title", None) or (
+        f"{deployment.target_column.replace('_', ' ').title()} Predictor"
+        if deployment.target_column
+        else "Prediction Dashboard"
+    )
+    dashboard_url = deployment.dashboard_url or f"/predict/{deployment_id}"
+
+    # Parse feature values from JSON query param
+    feature_values: dict[str, str] = {}
+    if features:
+        try:
+            raw = json.loads(features)
+            if isinstance(raw, dict):
+                feature_values = {str(k): str(v) for k, v in raw.items()}
+        except (ValueError, TypeError):
+            pass
+
+    if feature_values:
+        query_string = "&".join(f"{k}={v}" for k, v in feature_values.items())
+        prefilled_url = f"{dashboard_url}?{query_string}"
+    else:
+        prefilled_url = dashboard_url
+
+    return {
+        "deployment_id": deployment_id,
+        "dashboard_url": dashboard_url,
+        "prefilled_url": prefilled_url,
+        "feature_values": feature_values,
+        "feature_count": len(feature_values),
+        "title": title,
+        "summary": (
+            f"Pre-filled link for '{title}'"
+            + (
+                f" with {len(feature_values)} value{'s' if len(feature_values) != 1 else ''} pre-loaded."
+                if feature_values
+                else " (opens at default values)."
+            )
+        ),
+    }
