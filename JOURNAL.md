@@ -1,5 +1,15 @@
 # Journal
 
+## Day 70 — 12:00 — Track D: Weekly Usage Report via Chat
+
+No community issues. Extended Track D with usage analytics: analysts can now ask "show me usage this week", "how many uploads this week", "give me a usage breakdown", "weekly usage report", or any of 5 NL variants to see a sparkline chart of daily activity (uploads, models trained, features extracted) plus summary stats for the past 7 days.
+
+**Backend:** `_WEEKLY_USAGE_PATTERNS` (6 NL variants covering show/give/list usage, weekly/this week) added to `chat.py`. Handler block queries `Dataset`, `Pipeline`, and `Feature` tables with `.created_at >= now - 7d` filter, bins by day, computes counts, emits `{type:"weekly_usage_report"}` SSE event with daily volume array, summary stats (total_uploads, total_models, total_features), and highest-activity day.
+
+**Frontend:** `WeeklyUsageCard` (teal border, 📊 icon) renders a `ResponsiveContainer` sparkline using Recharts `LineChart` (x-axis: last 7 day labels, y-axis: upload count), summary stat badges (total uploads/models/features), and a "View Trends" button linking to `/project/[id]/analytics`. `attachWeeklyUsageToLastMessage` Zustand action; SSE handler + card render wired in workspace page. Tests: 12 backend (6 regex unit + 6 chat integration) + 8 frontend = 20 new tests. Total: 4356 backend + 2454 frontend = 6810, all passing. Fixed 2 pre-commit hook build errors blocking the feature. Backend lint: clean. Frontend build: clean.
+
+---
+
 ## Day 70 — 04:00 — Track D: Prediction Form Copy as Link
 
 No community issues. Identified the final low-friction Track D gap: analysts could share the prediction URL verbally or through email, but had no conversational shortcut to grab it with one click. Users would naturally ask "give me the link", "copy the prediction URL", "share this form", or similar to avoid manually reconstructing the URL from the browser bar.
