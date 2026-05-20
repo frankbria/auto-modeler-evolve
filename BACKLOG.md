@@ -53,6 +53,18 @@ the time is better spent on real features.
 
 ---
 
+## Day 69 (20:00) — Done
+**Track D — Embed Code Generator via Chat.**
+
+Analysts can say "give me embed code for my dashboard", "iframe snippet", "SharePoint embed", or "embed into our Notion page" (9 NL variants) to receive an `EmbedCodeCard` with a ready-to-paste `<iframe>` snippet. Three size presets (Full Width / Fixed / Compact) update iframe dimensions; code block uses `window.location.origin + dashboard_url` for correct host. Copy-to-clipboard button flashes "Copied!". "Where to paste this" callout lists SharePoint / Notion / Confluence / HTML. `GET /api/deploy/{id}/embed-code` REST endpoint. 22 backend + 17 frontend = 39 new tests. Total: 4332 backend + 2436 frontend = 6768. Backend lint: clean. Frontend build: clean.
+
+**What's next:**
+- Track D: Prediction form "Copy as link" — generate a pre-filled URL with query params so VPs can bookmark specific scenarios (e.g., `?units=100&region=North`)
+- Track D: Deployment usage report via chat — "how many predictions did I get this week?", trend breakdown by day, top input patterns
+- Track B: Cross-project model comparison — "how does my revenue model compare to my churn model?"
+
+---
+
 ## Day 69 (12:00) — Done
 **Track D — Dashboard Field Ordering via Chat.**
 
