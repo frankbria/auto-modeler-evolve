@@ -1865,6 +1865,27 @@ guides them forward through the natural flow.
       `_DASHBOARD_CONFIG_PATTERNS` extended with 5 ordering arms.
       *Day 69 (12:00): 9 backend + 6 frontend = 15 new tests. Total: 4310 backend + 2419 frontend = 6729. Backend lint: clean. Frontend build: clean.*
 
+- [x] **Embed Code Generator via Chat** — Track D perpetual. Analysts can say "give me embed code
+      for my dashboard", "iframe snippet for my dashboard", "SharePoint embed", "embed into our Notion
+      page", or 5 other NL variants and receive an `EmbedCodeCard` in chat with a ready-to-paste
+      iframe snippet. Closes the final "share with leadership" gap: the VP-facing prediction form can
+      now be embedded in any company portal without developer involvement. `_EMBED_CODE_PATTERNS` (9 NL
+      variants: embed code/snippet, iframe code/snippet, embed this/my dashboard, how to embed, put
+      dashboard on intranet, SharePoint embed, intranet embed, embed in/into/on portal/intranet/
+      sharepoint/notion/confluence/page/website, portal/website/sharepoint/notion embed) + handler in
+      `send_message()` guarded by `ctx["deployment"]`. Handler reads `dashboard_title` (or auto-
+      generates from `target_column`), returns `dashboard_url`, `width="100%"`, `height="700"`, and
+      plain-English `summary`. Emits `{type:"embed_code"}` SSE event. `GET /api/deploy/{id}/embed-code`
+      REST endpoint returns same payload. `EmbedCodeCard` (indigo border, 🖼️ icon): three size presets
+      (Full Width/Fixed 960×700/Compact 600×500) with `aria-pressed` state; copyable `<pre><code>`
+      block with iframe HTML (title, frameborder=0, allow="clipboard-write", CSS border-radius);
+      "Where to paste" callout listing SharePoint/Notion/Confluence; copy-to-clipboard button with
+      "Copy" → "Copied!" feedback; summary paragraph; footer explainer. iframe `src` uses
+      `window.location.origin + dashboard_url` so embed reflects actual host. SSE handler +
+      `attachEmbedCodeToLastMessage` Zustand action + card render wired in `project/[id]/page.tsx`.
+      `EmbedCodeResult` TypeScript type; `api.deploy.getEmbedCode()` client method.
+      *Day 69 (20:00): 22 backend + 17 frontend = 39 new tests. Total: 4332 backend + 2436 frontend = 6768. Backend lint: clean. Frontend build: clean.*
+
 ---
 
 ## Data Model
