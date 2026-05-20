@@ -70,9 +70,7 @@ def test_weekly_usage_patterns_match(phrase):
     """NL variants that should trigger the weekly usage report."""
     from api.chat import _WEEKLY_USAGE_PATTERNS
 
-    assert _WEEKLY_USAGE_PATTERNS.search(phrase), (
-        f"Pattern should match: {phrase!r}"
-    )
+    assert _WEEKLY_USAGE_PATTERNS.search(phrase), f"Pattern should match: {phrase!r}"
 
 
 @pytest.mark.parametrize(

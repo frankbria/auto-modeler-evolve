@@ -11446,8 +11446,7 @@ def send_message(
             # Week-over-week volumes
             _wu_this_week = sum(1 for lg in _wu_logs if lg.created_at >= _wu_week_start)
             _wu_last_week = sum(
-                1 for lg in _wu_logs
-                if _wu_prev_start <= lg.created_at < _wu_week_start
+                1 for lg in _wu_logs if _wu_prev_start <= lg.created_at < _wu_week_start
             )
             if _wu_last_week > 0:
                 _wu_change_pct = round(
@@ -11456,8 +11455,10 @@ def send_message(
             else:
                 _wu_change_pct = None
             _wu_trend = (
-                "up" if (_wu_change_pct or 0) > 5
-                else "down" if (_wu_change_pct or 0) < -5
+                "up"
+                if (_wu_change_pct or 0) > 5
+                else "down"
+                if (_wu_change_pct or 0) < -5
                 else "flat"
             )
 
@@ -11467,7 +11468,8 @@ def send_message(
                 _day_dt = _wu_now - _wu_td(days=_d)
                 _day_str = _day_dt.strftime("%Y-%m-%d")
                 _day_count = sum(
-                    1 for lg in _wu_logs
+                    1
+                    for lg in _wu_logs
                     if lg.created_at.strftime("%Y-%m-%d") == _day_str
                 )
                 _wu_by_day.append({"date": _day_str, "count": _day_count})
@@ -11500,14 +11502,22 @@ def send_message(
             # Build top patterns: per feature, show the top-2 values
             _wu_top_patterns: list[dict] = []
             for _fname, _val_counts in list(_wu_feature_tally.items())[:6]:
-                _top_vals = sorted(_val_counts.items(), key=lambda x: x[1], reverse=True)[:2]
-                _wu_top_patterns.append({
-                    "feature": _fname,
-                    "top_values": [
-                        {"value": v, "count": c, "pct": round(c / max(1, _wu_this_week) * 100, 0)}
-                        for v, c in _top_vals
-                    ],
-                })
+                _top_vals = sorted(
+                    _val_counts.items(), key=lambda x: x[1], reverse=True
+                )[:2]
+                _wu_top_patterns.append(
+                    {
+                        "feature": _fname,
+                        "top_values": [
+                            {
+                                "value": v,
+                                "count": c,
+                                "pct": round(c / max(1, _wu_this_week) * 100, 0),
+                            }
+                            for v, c in _top_vals
+                        ],
+                    }
+                )
 
             # Plain-English summary
             if _wu_change_pct is not None:
