@@ -163,6 +163,7 @@ interface AppState {
   attachShareLinkToLastMessage: (share_link: import("./types").ShareLinkResult) => void
   attachWeeklyUsageReportToLastMessage: (weekly_usage_report: import("./types").WeeklyUsageReportResult) => void
   attachWhatNextToLastMessage: (what_next: import("./types").WhatNextResult) => void
+  attachMilestoneToLastMessage: (milestone: import("./types").MilestoneResult) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -1283,6 +1284,16 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, what_next }
+      }
+      return { messages }
+    }),
+
+  attachMilestoneToLastMessage: (milestone) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, milestone }
       }
       return { messages }
     }),

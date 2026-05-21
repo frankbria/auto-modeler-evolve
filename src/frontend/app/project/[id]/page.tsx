@@ -119,6 +119,7 @@ import { ShareLinkCard } from "@/components/deploy/share-link-card"
 import { WeeklyUsageReportCard } from "@/components/deploy/weekly-usage-report-card"
 import { CrossProjectComparisonCard } from "@/components/chat/cross-project-comparison-card"
 import { WhatNextCard } from "@/components/chat/what-next-card"
+import { MilestoneCard } from "@/components/chat/milestone-card"
 import { FairnessCheckCard } from "@/components/chat/fairness-check-card"
 import { BatchJobResultCard } from "@/components/chat/batch-job-result-card"
 import { ProductionExplanationCard } from "@/components/chat/production-explanation-card"
@@ -345,6 +346,7 @@ export default function ProjectWorkspace() {
     attachWeeklyUsageReportToLastMessage,
     attachCrossProjectComparisonToLastMessage,
     attachWhatNextToLastMessage,
+    attachMilestoneToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -839,6 +841,8 @@ export default function ProjectWorkspace() {
                 attachCrossProjectComparisonToLastMessage(json.cross_project_comparison as import("@/lib/types").CrossProjectComparisonResult)
               } else if (json.type === "what_next" && json.what_next) {
                 attachWhatNextToLastMessage(json.what_next as import("@/lib/types").WhatNextResult)
+              } else if (json.type === "milestone" && json.milestone) {
+                attachMilestoneToLastMessage(json.milestone as import("@/lib/types").MilestoneResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -975,6 +979,7 @@ export default function ProjectWorkspace() {
     attachWeeklyUsageReportToLastMessage,
     attachCrossProjectComparisonToLastMessage,
     attachWhatNextToLastMessage,
+    attachMilestoneToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -1575,6 +1580,14 @@ export default function ProjectWorkspace() {
                         result={msg.what_next}
                         onActionClick={(action) => {
                           setChatInput(action)
+                        }}
+                      />
+                    )}
+                    {msg.milestone && (
+                      <MilestoneCard
+                        result={msg.milestone}
+                        onActionClick={(prompt) => {
+                          setChatInput(prompt)
                         }}
                       />
                     )}

@@ -18,3 +18,6 @@ class Project(SQLModel, table=True):
     status: str = Field(default="exploring")
     settings: Optional[str] = None  # JSON string for preferences
     auto_retrain: bool = Field(default=False)
+    last_milestone_state: Optional[str] = Field(
+        default=None
+    )  # None | "upload" | "train" | "deploy"

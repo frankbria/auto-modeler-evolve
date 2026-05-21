@@ -523,6 +523,7 @@ export interface ChatMessage {
   share_link?: ShareLinkResult
   weekly_usage_report?: WeeklyUsageReportResult
   what_next?: WhatNextResult
+  milestone?: MilestoneResult
 }
 
 export interface RollbackVersionEntry {
@@ -3490,4 +3491,19 @@ export interface WhatNextResult {
   progress: number
   summary: string
   steps: WhatNextStep[]
+}
+
+export interface MilestoneAction {
+  label: string
+  prompt: string
+}
+
+export interface MilestoneResult {
+  milestone_type: "upload" | "train" | "deploy"
+  icon: string
+  title: string
+  subtitle: string
+  summary: string
+  progress: number
+  actions: MilestoneAction[]
 }

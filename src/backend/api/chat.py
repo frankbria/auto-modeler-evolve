@@ -2940,6 +2940,22 @@ _WHAT_NEXT_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# Proactive milestone state machine
+# None < "upload" < "train" < "deploy"  (order matters for comparison)
+_MILESTONE_ORDER: list = [None, "upload", "train", "deploy"]
+
+
+def _get_current_milestone_state(ctx: dict) -> str | None:
+    """Derive the highest workflow milestone the project has reached."""
+    if ctx.get("deployment"):
+        return "deploy"
+    completed = [r for r in (ctx.get("model_runs") or []) if r.status == "done"]
+    if completed:
+        return "train"
+    if ctx.get("dataset"):
+        return "upload"
+    return None
+
 
 def _extract_dashboard_feature(message: str, feature_names: list[str]) -> str | None:
     """Find the feature name from a dashboard config message (longest match wins)."""
@@ -11698,6 +11714,153 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Weekly report is enhancement; never crash chat
 
+    # ── Proactive Milestone Card ──────────────────────────────────────────────
+    # Fires automatically on the first chat message after a workflow transition:
+    # no-data → upload, upload → train, train → deploy.
+    # The analyst does NOT need to ask — this is the "shoulder tap" from AutoModeler.
+    milestone_event: dict | None = None
+    try:
+        _ms_current = _get_current_milestone_state(ctx)
+        _ms_last = project.last_milestone_state  # type: ignore[attr-defined]
+        _ms_last_idx = _MILESTONE_ORDER.index(_ms_last) if _ms_last in _MILESTONE_ORDER else 0
+        _ms_curr_idx = _MILESTONE_ORDER.index(_ms_current) if _ms_current in _MILESTONE_ORDER else 0
+
+        if _ms_current is not None and _ms_curr_idx > _ms_last_idx:
+            # Only announce the NEXT milestone (don't skip ahead)
+            _ms_next = _MILESTONE_ORDER[_ms_last_idx + 1]
+
+            if _ms_next == "upload":
+                _ms_ds = ctx["dataset"]
+                _ms_rows = (
+                    f"{_ms_ds.row_count:,}" if (_ms_ds and _ms_ds.row_count) else "your"
+                )
+                _ms_col_str = (
+                    f" and {_ms_ds.column_count} columns"
+                    if (_ms_ds and _ms_ds.column_count)
+                    else ""
+                )
+                milestone_event = {
+                    "milestone_type": "upload",
+                    "icon": "🎉",
+                    "title": "Your data is loaded!",
+                    "subtitle": "Step 1 of 4 — Explore",
+                    "summary": (
+                        f"You've uploaded {_ms_rows} rows{_ms_col_str}. "
+                        "Explore your data, then tell me what outcome you want to predict."
+                    ),
+                    "progress": 20,
+                    "actions": [
+                        {
+                            "label": "Explore my data",
+                            "prompt": "Show me what's interesting in my data",
+                        },
+                        {
+                            "label": "Check data quality",
+                            "prompt": "Is my data ready for modeling?",
+                        },
+                    ],
+                }
+                system_prompt += (
+                    "\n\n## Milestone: First Upload\n"
+                    f"The analyst just uploaded a dataset ({_ms_rows} rows{_ms_col_str}). "
+                    "A celebratory 'Your data is loaded!' milestone card is shown. "
+                    "In 1 sentence, welcome them and suggest exploring the data or asking questions."
+                )
+
+            elif _ms_next == "train":
+                _ms_done_runs = [
+                    r for r in (ctx.get("model_runs") or []) if r.status == "done"
+                ]
+                _ms_best = _ms_done_runs[-1] if _ms_done_runs else None
+                _ms_algo = (
+                    _ms_best.algorithm.replace("_", " ").title()
+                    if _ms_best
+                    else "model"
+                )
+                _ms_metric_str = ""
+                if _ms_best:
+                    try:
+                        import json as _json_ms
+
+                        _ms_metrics = _ms_best.metrics or {}
+                        if isinstance(_ms_metrics, str):
+                            _ms_metrics = _json_ms.loads(_ms_metrics)
+                        _ms_val = _ms_metrics.get("r2") or _ms_metrics.get("accuracy")
+                        if _ms_val is not None:
+                            _ms_lbl = (
+                                "accuracy" if "accuracy" in _ms_metrics else "R²"
+                            )
+                            _ms_metric_str = (
+                                f" with {round(float(_ms_val) * 100, 1)}% {_ms_lbl}"
+                            )
+                    except Exception:  # noqa: BLE001
+                        pass
+                milestone_event = {
+                    "milestone_type": "train",
+                    "icon": "🎯",
+                    "title": "First model trained!",
+                    "subtitle": "Step 3 of 4 — Validate",
+                    "summary": (
+                        f"Your {_ms_algo} is trained{_ms_metric_str}. "
+                        "Validate it to build confidence, then deploy it as a live prediction API."
+                    ),
+                    "progress": 65,
+                    "actions": [
+                        {
+                            "label": "Validate my model",
+                            "prompt": "Show me my model's accuracy and where it makes mistakes",
+                        },
+                        {
+                            "label": "Deploy for predictions",
+                            "prompt": "Deploy my model",
+                        },
+                    ],
+                }
+                system_prompt += (
+                    "\n\n## Milestone: First Model Trained\n"
+                    f"The analyst just trained their first model "
+                    f"({_ms_algo}{_ms_metric_str}). "
+                    "A 'First model trained!' milestone card is shown. "
+                    "In 1 sentence, celebrate and suggest validating or comparing models before deploying."
+                )
+
+            elif _ms_next == "deploy":
+                milestone_event = {
+                    "milestone_type": "deploy",
+                    "icon": "🚀",
+                    "title": "Your model is live!",
+                    "subtitle": "Step 4 of 4 — Monitor",
+                    "summary": (
+                        "Your prediction endpoint is active. Share the dashboard link with your "
+                        "team or embed it in your company portal."
+                    ),
+                    "progress": 100,
+                    "actions": [
+                        {
+                            "label": "Share the dashboard",
+                            "prompt": "Show me the prediction dashboard link",
+                        },
+                        {
+                            "label": "Monitor performance",
+                            "prompt": "Show me a prediction audit",
+                        },
+                    ],
+                }
+                system_prompt += (
+                    "\n\n## Milestone: First Deployment\n"
+                    "The analyst just deployed their model for the first time. "
+                    "A '🚀 Your model is live!' milestone card is shown. "
+                    "In 1 sentence, celebrate and suggest sharing or monitoring the model."
+                )
+
+            # Persist the new milestone state so it only fires once
+            if milestone_event:
+                project.last_milestone_state = _ms_next  # type: ignore[attr-defined]
+                session.add(project)
+                session.commit()
+    except Exception:  # noqa: BLE001
+        pass  # Milestone card is enhancement; never crash chat
+
     # "What's Next?" workflow guidance card
     what_next_event: dict | None = None
     if _WHAT_NEXT_PATTERNS.search(body.message):
@@ -14982,6 +15145,9 @@ def send_message(
 
         if weekly_usage_event:
             yield f"data: {json.dumps({'type': 'weekly_usage_report', 'weekly_usage_report': weekly_usage_event})}\n\n"
+
+        if milestone_event:
+            yield f"data: {json.dumps({'type': 'milestone', 'milestone': milestone_event})}\n\n"
 
         if what_next_event:
             yield f"data: {json.dumps({'type': 'what_next', 'what_next': what_next_event})}\n\n"

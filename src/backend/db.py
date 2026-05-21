@@ -34,6 +34,7 @@ def _apply_migrations():
         ("deployment", "confidence_threshold", "REAL"),
         ("deployment", "dashboard_title", "TEXT"),
         ("deployment", "dashboard_description", "TEXT"),
+        ("project", "last_milestone_state", "TEXT"),
     ]
     with engine.connect() as conn:
         for table, col, definition in migrations:
