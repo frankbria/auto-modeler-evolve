@@ -53,6 +53,32 @@ the time is better spent on real features.
 
 ---
 
+## Day 71 (04:00) — Done
+**Track E — "What's Next?" Workflow Guidance Card via Chat.**
+
+Analysts can now ask "what's my next step?", "what should I do next?", "guide me", "show me my options", "where do I go from here?", "help me get started" (10 NL variants) and receive a `WhatNextCard` in chat — a rich milestone card that tells the analyst exactly where they are in the workflow and what to do next, with context-aware guidance.
+
+The card detects the analyst's current workflow stage from context:
+- **Upload stage** (no dataset) → explains how to get started, what AutoModeler can do
+- **Explore stage** (has dataset, no trained model) → summarises the dataset, suggests exploring data + applying features + training a model; mentions target column if set
+- **Validate stage** (has trained model, not deployed) → celebrates the model, shows algorithm + accuracy, suggests validating → deploying → comparing
+- **Monitor stage** (has live deployment) → guides to sharing, monitoring, and retraining
+
+Each card shows: stage badge, progress bar (5%/25%/65%/100% per stage), data-aware summary sentence, and 3 prioritised step rows. Each step row has an icon, title, description, and a "Try this →" button that pre-fills the chat input with the step's action string so analysts can execute it with one click.
+
+**Backend:** `_WHAT_NEXT_PATTERNS` (10 NL variant groups) in `chat.py`. Handler block reads `ctx["dataset"]`, `ctx["model_runs"]`, `ctx["deployment"]`, `ctx["feature_set"]` to determine stage. Pure in-handler stage logic (no new DB queries). Emits `{type:"what_next"}` SSE event with `stage`, `stage_label`, `progress`, `summary`, `steps` (list of `{icon, title, description, action}`). Injects guidance summary into system_prompt so LLM acknowledges the stage in its response.
+
+**Frontend:** `WhatNextStep` + `WhatNextResult` TypeScript interfaces in `types.ts`. `what_next?: WhatNextResult` field added to `ChatMessage`. `attachWhatNextToLastMessage` Zustand action in `store.ts`. `WhatNextCard` component (color-coded border/badge/progress-bar per stage: blue=upload, emerald=explore, amber=validate, violet=monitor). `StepRow` subcomponent with icon, title+description, "Try this →" button (`aria-label`, `data-testid`). `role="progressbar"` + `aria-valuenow/min/max`. `sr-only figcaption` for screen readers. SSE handler + card render wired in `project/[id]/page.tsx`. `onActionClick` prop calls `setChatInput(action)` so clicking "Try this →" pre-fills the chat input.
+
+**Tests:** 34 backend (20 regex unit + 8 handler integration: upload/explore/stage-label/steps-fields/no-false-positive/summary/progress/explore-summary) + 12 frontend (heading, stage badge, progress bar, summary, 3 step rows, step content, try buttons, click handler, figcaption, upload render, monitor render, Zustand store) = 46 new tests. Total: **4423 backend + 2500 frontend = 6923**, all passing. Backend lint: clean. Frontend build + lint: clean.
+
+**What's next:**
+- Track D: Export as self-contained prediction service via chat improvement (ZIP + uvicorn, already done as REST but chat-triggered download card could be richer)
+- Track E: Proactive "nice job!" milestone messages on completion (upload complete, model trained) — auto-inject a brief guide into the LLM context on key state transitions without the analyst asking
+- Track C: Date-aware chronological train/test split promotion — surface it proactively when date columns are detected
+
+---
+
 ## Day 70 (20:00) — Done
 **Track B — Cross-Project Model Comparison via Chat.**
 

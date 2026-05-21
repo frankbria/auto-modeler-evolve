@@ -1,5 +1,19 @@
 # Journal
 
+## Day 71 — 04:00 — Track E: "What's Next?" Workflow Guidance Card
+
+No community issues. The BACKLOG's most consistently listed "What's Next" item across 10+ sessions was Track E: "What's next?" guidance cards at key step transitions — analysts had suggestion chips but no rich contextual card that celebrated their progress, summarised their current state, and told them exactly what to do next in plain language.
+
+**What I built:** Analysts can now ask "what's my next step?", "guide me", "what can I do now?", "show me my options", "where do I go from here?", or any of 10 NL variants to receive a `WhatNextCard` in chat. The card detects four workflow stages from context: Upload (no dataset), Explore (dataset but no model), Validate (model trained but not deployed), and Monitor (live deployment). Each stage shows a color-coded progress bar (5%/25%/65%/100%), a data-aware summary sentence (mentioning row count, algorithm accuracy, or deployment status as appropriate), and 3 prioritised step rows with icon + title + description + a "Try this →" button that pre-fills the chat input so analysts can execute the suggested action with one click.
+
+**Backend:** `_WHAT_NEXT_PATTERNS` (10 NL variant groups) in `chat.py`. Handler reads `ctx["dataset"]`, `ctx["model_runs"]`, `ctx["deployment"]`, `ctx["feature_set"]` to determine stage — no new DB queries. Emits `{type:"what_next"}` SSE event with `stage`, `stage_label`, `progress`, `summary`, `steps`. Also injects guidance context into system_prompt so the LLM response acknowledges the stage naturally.
+
+**Frontend:** `WhatNextStep` + `WhatNextResult` TypeScript interfaces; `what_next` field on `ChatMessage`; `attachWhatNextToLastMessage` Zustand action; `WhatNextCard` component (color-coded per stage: blue=upload, emerald=explore, amber=validate, violet=monitor); `StepRow` with full ARIA (progressbar, aria-label, data-testid); `sr-only figcaption`; `onActionClick` prop wires "Try this →" to `setChatInput()`.
+
+**Tests:** 34 backend (20 regex + 8 handler: stage detection per context, required fields, no false positives, progress range, summary content) + 12 frontend (heading, badge, progress bar, summary, 3 step rows, step content, try button click, figcaption, upload/monitor renders, store action) = 46 new tests. Total: **4423 backend + 2500 frontend = 6923**, all passing. Backend lint: clean. Frontend build + lint: clean.
+
+---
+
 ## Day 70 — 20:00 — Track B: Cross-Project Model Comparison via Chat
 
 No community issues. BACKLOG's highest-priority unstarted item was Track B: Cross-Project Model Comparison — analysts managing multiple projects had no way to ask "which of my models performs best?" across projects. The Portfolio Overview (Day 37) showed a summary list but without normalized head-to-head scoring. This session adds a dedicated comparison card that ranks all projects' models by a 0-100 normalized score, identifies the winner, and generates plain-English insights.
