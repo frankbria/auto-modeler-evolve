@@ -522,6 +522,7 @@ export interface ChatMessage {
   embed_code?: EmbedCodeResult
   share_link?: ShareLinkResult
   weekly_usage_report?: WeeklyUsageReportResult
+  what_next?: WhatNextResult
 }
 
 export interface RollbackVersionEntry {
@@ -3474,4 +3475,19 @@ export interface CrossProjectComparisonResult {
   projects_compared: CrossProjectComparisonRow[]
   insights: string[]
   summary: string
+}
+
+export interface WhatNextStep {
+  icon: string
+  title: string
+  description: string
+  action: string
+}
+
+export interface WhatNextResult {
+  stage: "upload" | "explore" | "validate" | "monitor"
+  stage_label: string
+  progress: number
+  summary: string
+  steps: WhatNextStep[]
 }

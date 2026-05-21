@@ -118,6 +118,7 @@ import { EmbedCodeCard } from "@/components/deploy/embed-code-card"
 import { ShareLinkCard } from "@/components/deploy/share-link-card"
 import { WeeklyUsageReportCard } from "@/components/deploy/weekly-usage-report-card"
 import { CrossProjectComparisonCard } from "@/components/chat/cross-project-comparison-card"
+import { WhatNextCard } from "@/components/chat/what-next-card"
 import { FairnessCheckCard } from "@/components/chat/fairness-check-card"
 import { BatchJobResultCard } from "@/components/chat/batch-job-result-card"
 import { ProductionExplanationCard } from "@/components/chat/production-explanation-card"
@@ -343,6 +344,7 @@ export default function ProjectWorkspace() {
     attachShareLinkToLastMessage,
     attachWeeklyUsageReportToLastMessage,
     attachCrossProjectComparisonToLastMessage,
+    attachWhatNextToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -835,6 +837,8 @@ export default function ProjectWorkspace() {
                 attachWeeklyUsageReportToLastMessage(json.weekly_usage_report as import("@/lib/types").WeeklyUsageReportResult)
               } else if (json.type === "cross_project_comparison" && json.cross_project_comparison) {
                 attachCrossProjectComparisonToLastMessage(json.cross_project_comparison as import("@/lib/types").CrossProjectComparisonResult)
+              } else if (json.type === "what_next" && json.what_next) {
+                attachWhatNextToLastMessage(json.what_next as import("@/lib/types").WhatNextResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -970,6 +974,7 @@ export default function ProjectWorkspace() {
     attachShareLinkToLastMessage,
     attachWeeklyUsageReportToLastMessage,
     attachCrossProjectComparisonToLastMessage,
+    attachWhatNextToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -1564,6 +1569,14 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.cross_project_comparison && (
                       <CrossProjectComparisonCard result={msg.cross_project_comparison} />
+                    )}
+                    {msg.what_next && (
+                      <WhatNextCard
+                        result={msg.what_next}
+                        onActionClick={(action) => {
+                          setChatInput(action)
+                        }}
+                      />
                     )}
                   </div>
                 </div>

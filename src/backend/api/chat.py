@@ -2923,6 +2923,23 @@ _WEEKLY_USAGE_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# Keywords that trigger "What's Next?" workflow guidance card
+_WHAT_NEXT_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"what(?:'s|\s+is)?\s+(?:my\s+)?next\s+(?:step|move|action|thing\s+to\s+do)\b|"
+    r"what\s+(?:should|can)\s+I\s+do\s+(?:next|now)\b|"
+    r"what\s+(?:are\s+my\s+(?:options|next\s+steps)|can\s+I\s+do(?:\s+now|next)?)\b|"
+    r"guide\s+me(?:\s+through(?:\s+next\s+steps)?)?\b|"
+    r"help\s+me\s+(?:get\s+started|understand\s+(?:the\s+)?next\s+steps|navigate|proceed)\b|"
+    r"I(?:'m|\s+am)\s+(?:not\s+sure|confused|stuck|lost)\s+(?:what\s+to\s+do|where\s+to\s+go)\b|"
+    r"show\s+me\s+(?:my\s+options|(?:the\s+)?next\s+steps|what\s+to\s+do\s+next)\b|"
+    r"where\s+do\s+I\s+(?:go|start)\s+(?:from\s+here|next)\b|"
+    r"how\s+do\s+I\s+(?:get\s+started|proceed\s+from\s+here|continue\s+from\s+here)\b|"
+    r"what\s+(?:should|do)\s+I\s+(?:work\s+on|focus\s+on)\s+(?:next|now)\b"
+    r")",
+    re.IGNORECASE,
+)
+
 
 def _extract_dashboard_feature(message: str, feature_names: list[str]) -> str | None:
     """Find the feature name from a dashboard config message (longest match wins)."""
@@ -11677,6 +11694,177 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Weekly report is enhancement; never crash chat
 
+    # "What's Next?" workflow guidance card
+    what_next_event: dict | None = None
+    if _WHAT_NEXT_PATTERNS.search(body.message):
+        try:
+            _wn_dataset = ctx["dataset"]
+            _wn_runs = ctx["model_runs"] or []
+            _wn_dep = ctx["deployment"]
+            _wn_fs = ctx["feature_set"]
+            _wn_done_runs = [r for r in _wn_runs if r.status == "done"]
+
+            if not _wn_dataset:
+                # Stage: Upload — user has no dataset yet
+                _wn_stage = "upload"
+                _wn_label = "Getting Started"
+                _wn_progress = 5
+                _wn_summary = (
+                    "Start by uploading your data. AutoModeler works with any CSV file — "
+                    "no code required."
+                )
+                _wn_steps = [
+                    {
+                        "icon": "📤",
+                        "title": "Upload your data",
+                        "description": "Drag a CSV file into the chat or use the upload panel on the right to get started.",
+                        "action": "How do I upload my data?",
+                    },
+                    {
+                        "icon": "🔍",
+                        "title": "Explore and ask questions",
+                        "description": "Once uploaded, ask me anything — patterns, trends, outliers, correlations.",
+                        "action": "Walk me through the workflow",
+                    },
+                    {
+                        "icon": "🤖",
+                        "title": "Build a prediction model",
+                        "description": "Tell me what outcome you want to forecast and I'll train a model in minutes.",
+                        "action": "What kinds of predictions can AutoModeler make?",
+                    },
+                ]
+            elif not _wn_done_runs:
+                # Stage: Explore — has data but no trained model
+                _wn_stage = "explore"
+                _wn_label = "Exploring Your Data"
+                _wn_progress = 25
+                _wn_rows = (
+                    f"{_wn_dataset.row_count:,}" if _wn_dataset.row_count else "your"
+                )
+                _wn_target = (
+                    _wn_fs.target_column
+                    if _wn_fs and _wn_fs.target_column
+                    else None
+                )
+                if _wn_target:
+                    _wn_summary = (
+                        f"You've uploaded {_wn_rows} rows and set '{_wn_target}' as your target. "
+                        f"Ready to train a model!"
+                    )
+                else:
+                    _wn_summary = (
+                        f"You've uploaded {_wn_rows} rows of data. "
+                        f"Explore it, then set a target column and train a model."
+                    )
+                _wn_steps = [
+                    {
+                        "icon": "🔍",
+                        "title": "Explore your data",
+                        "description": "Ask questions like 'what are the trends?' or 'which column has the most outliers?'",
+                        "action": "Show me what's interesting in my data",
+                    },
+                    {
+                        "icon": "✨",
+                        "title": "Set a target and apply features",
+                        "description": "Tell me what to predict, then let me suggest transformations to improve accuracy.",
+                        "action": "I want to predict " + (_wn_target or "a column") + " — help me set up a model",
+                    },
+                    {
+                        "icon": "🚀",
+                        "title": "Train a model",
+                        "description": "Once your target is set, train multiple algorithms and compare them side by side.",
+                        "action": "Train a model" + (f" to predict {_wn_target}" if _wn_target else ""),
+                    },
+                ]
+            elif not _wn_dep:
+                # Stage: Validate — has trained model but not deployed
+                _wn_stage = "validate"
+                _wn_label = "Model Trained"
+                _wn_progress = 65
+                _best = _wn_done_runs[-1]
+                _algo_name = _best.algorithm or "model"
+                _metric_str = ""
+                try:
+                    _metrics = _best.metrics or {}
+                    if isinstance(_metrics, str):
+                        import json as _json_wn
+
+                        _metrics = _json_wn.loads(_metrics)
+                    _m_val = _metrics.get("r2") or _metrics.get("accuracy")
+                    if _m_val is not None:
+                        _metric_str = f" ({round(float(_m_val) * 100, 1)}% {'accuracy' if 'accuracy' in _metrics else 'R²'})"
+                except Exception:  # noqa: BLE001
+                    pass
+                _wn_summary = (
+                    f"Your {_algo_name} is trained{_metric_str}. "
+                    f"Next: validate it and deploy it as a live prediction API."
+                )
+                _wn_steps = [
+                    {
+                        "icon": "✅",
+                        "title": "Validate your model",
+                        "description": "Review accuracy, check where it makes mistakes, and build confidence before sharing.",
+                        "action": "Show me my model's accuracy and where it makes mistakes",
+                    },
+                    {
+                        "icon": "🚀",
+                        "title": "Deploy for live predictions",
+                        "description": "One click creates a live API and a shareable prediction dashboard for your VP.",
+                        "action": "Deploy my model",
+                    },
+                    {
+                        "icon": "📊",
+                        "title": "Compare models",
+                        "description": "Train another algorithm and compare metrics to pick the best one for your use case.",
+                        "action": "Compare my trained models",
+                    },
+                ]
+            else:
+                # Stage: Monitor — has live deployment
+                _wn_stage = "monitor"
+                _wn_label = "Model Live"
+                _wn_progress = 100
+                _wn_summary = (
+                    "Your model is live and accepting predictions. "
+                    "Here's how to get the most out of it."
+                )
+                _wn_steps = [
+                    {
+                        "icon": "🔗",
+                        "title": "Share your prediction dashboard",
+                        "description": "Send your VP a shareable link or embed the form in your company portal.",
+                        "action": "Show me the prediction dashboard link",
+                    },
+                    {
+                        "icon": "📈",
+                        "title": "Monitor predictions",
+                        "description": "Track volume, confidence, latency, and accuracy trends over time.",
+                        "action": "Show me a prediction audit",
+                    },
+                    {
+                        "icon": "🔄",
+                        "title": "Keep your model fresh",
+                        "description": "Retrain with new data when accuracy dips or your data changes seasonally.",
+                        "action": "How do I retrain my model?",
+                    },
+                ]
+
+            what_next_event = {
+                "stage": _wn_stage,
+                "stage_label": _wn_label,
+                "progress": _wn_progress,
+                "summary": _wn_summary,
+                "steps": _wn_steps,
+            }
+            system_prompt += (
+                f"\n\n## Workflow Guidance Context\n"
+                f"Stage: {_wn_label}. {_wn_summary} "
+                f"A 'What to Do Next' card is shown with 3 prioritised steps. "
+                f"Briefly acknowledge where they are and highlight the first recommended action in 1-2 sentences."
+            )
+        except Exception:  # noqa: BLE001
+            pass  # Guidance card is nice-to-have; never crash chat
+
     # A/B test status / promote / end
     ab_test_result_event: dict | None = None
     if _AB_TEST_PATTERNS.search(body.message) and ctx["deployment"]:
@@ -14789,6 +14977,9 @@ def send_message(
 
         if weekly_usage_event:
             yield f"data: {json.dumps({'type': 'weekly_usage_report', 'weekly_usage_report': weekly_usage_event})}\n\n"
+
+        if what_next_event:
+            yield f"data: {json.dumps({'type': 'what_next', 'what_next': what_next_event})}\n\n"
 
         # After text stream, opportunistically generate a chart if the
         # message is about data and we have a dataset loaded
