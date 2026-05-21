@@ -26,9 +26,7 @@ from core.advisor import _normalize_metric, compute_cross_project_comparison
 
 
 def test_cross_project_pattern_compare_my_models():
-    assert _CROSS_PROJECT_PATTERNS.search(
-        "compare my revenue model vs my churn model"
-    )
+    assert _CROSS_PROJECT_PATTERNS.search("compare my revenue model vs my churn model")
 
 
 def test_cross_project_pattern_cross_project_comparison():
@@ -36,27 +34,19 @@ def test_cross_project_pattern_cross_project_comparison():
 
 
 def test_cross_project_pattern_compare_models_across_all_projects():
-    assert _CROSS_PROJECT_PATTERNS.search(
-        "compare models across my projects"
-    )
+    assert _CROSS_PROJECT_PATTERNS.search("compare models across my projects")
 
 
 def test_cross_project_pattern_head_to_head():
-    assert _CROSS_PROJECT_PATTERNS.search(
-        "head-to-head project comparison"
-    )
+    assert _CROSS_PROJECT_PATTERNS.search("head-to-head project comparison")
 
 
 def test_cross_project_pattern_which_model_is_best_overall():
-    assert _CROSS_PROJECT_PATTERNS.search(
-        "which of my models performs best overall"
-    )
+    assert _CROSS_PROJECT_PATTERNS.search("which of my models performs best overall")
 
 
 def test_cross_project_pattern_rank_all_my_models():
-    assert _CROSS_PROJECT_PATTERNS.search(
-        "rank all my models side by side"
-    )
+    assert _CROSS_PROJECT_PATTERNS.search("rank all my models side by side")
 
 
 def test_cross_project_pattern_how_do_models_compare():
@@ -70,9 +60,7 @@ def test_cross_project_pattern_no_match_train():
 
 
 def test_cross_project_pattern_no_match_show_chart():
-    assert not _CROSS_PROJECT_PATTERNS.search(
-        "show me a bar chart of revenue"
-    )
+    assert not _CROSS_PROJECT_PATTERNS.search("show me a bar chart of revenue")
 
 
 # ---------------------------------------------------------------------------
@@ -227,7 +215,9 @@ def test_cross_compare_deployment_insight():
         _make_project("NotDeployed", best_metric_value=0.80, has_deployment=False),
     ]
     result = compute_cross_project_comparison(summaries)
-    assert any("deployment" in i.lower() or "NotDeployed" in i for i in result["insights"])
+    assert any(
+        "deployment" in i.lower() or "NotDeployed" in i for i in result["insights"]
+    )
 
 
 def test_cross_compare_summary_text():
@@ -258,7 +248,10 @@ def test_cross_compare_mixed_problem_types():
     result = compute_cross_project_comparison(summaries)
     assert result["n_with_models"] == 2
     # regression and classification insights generated
-    assert any("regression" in i.lower() or "classification" in i.lower() for i in result["insights"])
+    assert any(
+        "regression" in i.lower() or "classification" in i.lower()
+        for i in result["insights"]
+    )
 
 
 # ---------------------------------------------------------------------------
