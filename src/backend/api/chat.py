@@ -11722,8 +11722,14 @@ def send_message(
     try:
         _ms_current = _get_current_milestone_state(ctx)
         _ms_last = project.last_milestone_state  # type: ignore[attr-defined]
-        _ms_last_idx = _MILESTONE_ORDER.index(_ms_last) if _ms_last in _MILESTONE_ORDER else 0
-        _ms_curr_idx = _MILESTONE_ORDER.index(_ms_current) if _ms_current in _MILESTONE_ORDER else 0
+        _ms_last_idx = (
+            _MILESTONE_ORDER.index(_ms_last) if _ms_last in _MILESTONE_ORDER else 0
+        )
+        _ms_curr_idx = (
+            _MILESTONE_ORDER.index(_ms_current)
+            if _ms_current in _MILESTONE_ORDER
+            else 0
+        )
 
         if _ms_current is not None and _ms_curr_idx > _ms_last_idx:
             # Only announce the NEXT milestone (don't skip ahead)
@@ -11787,9 +11793,7 @@ def send_message(
                             _ms_metrics = _json_ms.loads(_ms_metrics)
                         _ms_val = _ms_metrics.get("r2") or _ms_metrics.get("accuracy")
                         if _ms_val is not None:
-                            _ms_lbl = (
-                                "accuracy" if "accuracy" in _ms_metrics else "R²"
-                            )
+                            _ms_lbl = "accuracy" if "accuracy" in _ms_metrics else "R²"
                             _ms_metric_str = (
                                 f" with {round(float(_ms_val) * 100, 1)}% {_ms_lbl}"
                             )

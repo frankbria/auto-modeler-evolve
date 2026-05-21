@@ -129,7 +129,9 @@ def _upload_csv(client: TestClient, project_id: str) -> str:
         data={"project_id": project_id},
         files={"file": ("sales.csv", io.BytesIO(SAMPLE_CSV), "text/csv")},
     )
-    assert resp.status_code in (200, 201), f"Upload failed ({resp.status_code}): {resp.text[:200]}"
+    assert resp.status_code in (200, 201), (
+        f"Upload failed ({resp.status_code}): {resp.text[:200]}"
+    )
     return resp.json()["dataset_id"]
 
 
