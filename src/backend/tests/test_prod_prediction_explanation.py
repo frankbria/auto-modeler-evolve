@@ -211,9 +211,9 @@ def test_explain_most_recent_prediction(tmp_path):
 
     client = TestClient(app)
     resp = client.get(f"/api/deploy/{dep_id}/explain-prediction")
-    assert (
-        resp.status_code == 200
-    ), f"Expected 200 but got {resp.status_code}: {resp.text}"
+    assert resp.status_code == 200, (
+        f"Expected 200 but got {resp.status_code}: {resp.text}"
+    )
     data = resp.json()
     assert "contributions" in data
     assert isinstance(data["contributions"], list)
@@ -250,9 +250,9 @@ def test_explain_by_prediction_id(tmp_path):
 
     client = TestClient(app)
     resp = client.get(f"/api/deploy/{dep_id}/explain-prediction?prediction_id={log_id}")
-    assert (
-        resp.status_code == 200
-    ), f"Expected 200 but got {resp.status_code}: {resp.text}"
+    assert resp.status_code == 200, (
+        f"Expected 200 but got {resp.status_code}: {resp.text}"
+    )
     data = resp.json()
     assert data["prediction_log_id"] == log_id
 
@@ -437,9 +437,9 @@ def test_chat_emits_prod_explain_event(tmp_path, anthropic_mock):
         f"/api/chat/{project_id}",
         json={"message": "explain the most recent production prediction"},
     )
-    assert (
-        resp.status_code == 200
-    ), f"Expected 200 but got {resp.status_code}: {resp.text}"
+    assert resp.status_code == 200, (
+        f"Expected 200 but got {resp.status_code}: {resp.text}"
+    )
     body = resp.text
     assert "prod_prediction_explanation" in body
 
@@ -475,9 +475,9 @@ def test_chat_no_event_without_deployment(tmp_path, anthropic_mock):
         f"/api/chat/{project_id}",
         json={"message": "explain the last prediction"},
     )
-    assert (
-        resp.status_code == 200
-    ), f"Expected 200 but got {resp.status_code}: {resp.text}"
+    assert resp.status_code == 200, (
+        f"Expected 200 but got {resp.status_code}: {resp.text}"
+    )
     assert "prod_prediction_explanation" not in resp.text
 
     db_mod.engine = orig_engine

@@ -245,9 +245,9 @@ def test_scatter_chat_emits_chart_event(client, project_and_dataset):
             pass
 
     assert "chart" in event_types, f"Expected chart event. Got: {event_types}"
-    assert (
-        "scatter" in chart_types
-    ), f"Expected scatter chart. Got chart_types: {chart_types}"
+    assert "scatter" in chart_types, (
+        f"Expected scatter chart. Got chart_types: {chart_types}"
+    )
 
 
 def test_scatter_chat_no_dataset_no_crash(client):
