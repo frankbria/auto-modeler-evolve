@@ -62,9 +62,7 @@ def test_pattern_matches(phrase: str) -> None:
 
 @pytest.mark.parametrize("phrase", SHOULD_NOT_MATCH)
 def test_pattern_no_false_positives(phrase: str) -> None:
-    assert _WHAT_NEXT_PATTERNS.search(phrase) is None, (
-        f"Unexpected match: {phrase!r}"
-    )
+    assert _WHAT_NEXT_PATTERNS.search(phrase) is None, f"Unexpected match: {phrase!r}"
 
 
 # ---------------------------------------------------------------------------

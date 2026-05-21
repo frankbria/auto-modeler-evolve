@@ -5,7 +5,6 @@ import pytest
 
 from core.validator import compute_confusion_matrix
 
-
 # ---------------------------------------------------------------------------
 # Unit tests for enhanced compute_confusion_matrix
 # ---------------------------------------------------------------------------

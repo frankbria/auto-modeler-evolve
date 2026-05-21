@@ -6,7 +6,6 @@ import pytest
 from fastapi.testclient import TestClient
 from unittest.mock import MagicMock, patch
 
-
 # ---------------------------------------------------------------------------
 # Unit tests for _extract_row_index helper
 # ---------------------------------------------------------------------------

@@ -3808,9 +3808,11 @@ def compute_batch_job_results(
         {
             "class_name": str(cls),
             "count": int(cnt),
-            "pct": round(100.0 * int(cnt) / total_classified, 1)
-            if total_classified > 0
-            else 0.0,
+            "pct": (
+                round(100.0 * int(cnt) / total_classified, 1)
+                if total_classified > 0
+                else 0.0
+            ),
         }
         for cls, cnt in class_counts.items()
     ]

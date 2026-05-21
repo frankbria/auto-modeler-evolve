@@ -22,7 +22,6 @@ from sqlmodel import SQLModel, create_engine
 import db as db_module
 from core.analyzer import compute_training_vs_production
 
-
 # ─── helpers ──────────────────────────────────────────────────────────────────
 
 
@@ -461,9 +460,9 @@ async def test_prod_monitor_chat_emits_event():
             assert resp.status_code == 200
             events = _parse_events(resp)
             types = [e.get("type") for e in events]
-            assert "prod_performance" in types, (
-                f"Expected prod_performance. Got: {types}"
-            )
+            assert (
+                "prod_performance" in types
+            ), f"Expected prod_performance. Got: {types}"
             ev = next(e for e in events if e.get("type") == "prod_performance")
             data = ev["prod_performance"]
             assert "status" in data

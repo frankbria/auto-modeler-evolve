@@ -10491,9 +10491,11 @@ def send_message(
                         + (
                             f"drops below {_thr_now:.0%}."
                             if _prob_type == "classification" and _thr_now is not None
-                            else f"exceeds {_thr_now:.1f}%."
-                            if _thr_now is not None
-                            else ""
+                            else (
+                                f"exceeds {_thr_now:.1f}%."
+                                if _thr_now is not None
+                                else ""
+                            )
                         )
                         if _thr_now is not None
                         else "Accuracy alert disabled."
@@ -10660,9 +10662,9 @@ def send_message(
                         "version_number": v.version_number,
                         "algorithm": v.algorithm,
                         "is_current": v.is_current,
-                        "deployed_at": v.deployed_at.isoformat()
-                        if v.deployed_at
-                        else None,
+                        "deployed_at": (
+                            v.deployed_at.isoformat() if v.deployed_at else None
+                        ),
                         "metric_display": _fmt_metric(v.metrics),
                     }
                     for v in _rb_versions
@@ -11596,9 +11598,7 @@ def send_message(
             _wu_trend = (
                 "up"
                 if (_wu_change_pct or 0) > 5
-                else "down"
-                if (_wu_change_pct or 0) < -5
-                else "flat"
+                else "down" if (_wu_change_pct or 0) < -5 else "flat"
             )
 
             # Per-day breakdown for the current week (7 entries)
@@ -11617,7 +11617,9 @@ def send_message(
             _wu_feature_tally: dict[str, dict[str, int]] = {}
             _wu_recent_logs = [
                 lg for lg in _wu_logs if lg.created_at >= _wu_week_start
-            ][:100]  # cap to last 100 for performance
+            ][
+                :100
+            ]  # cap to last 100 for performance
             for _wl in _wu_recent_logs:
                 try:
                     _feat_dict: dict = json.loads(_wl.input_features or "{}")
@@ -11663,9 +11665,11 @@ def send_message(
                 _wu_trend_phrase = (
                     f"up {_wu_change_pct}% vs last week"
                     if _wu_trend == "up"
-                    else f"down {abs(_wu_change_pct)}% vs last week"
-                    if _wu_trend == "down"
-                    else "roughly the same as last week"
+                    else (
+                        f"down {abs(_wu_change_pct)}% vs last week"
+                        if _wu_trend == "down"
+                        else "roughly the same as last week"
+                    )
                 )
             else:
                 _wu_trend_phrase = "no prior week data for comparison"
@@ -11742,9 +11746,7 @@ def send_message(
                     f"{_wn_dataset.row_count:,}" if _wn_dataset.row_count else "your"
                 )
                 _wn_target = (
-                    _wn_fs.target_column
-                    if _wn_fs and _wn_fs.target_column
-                    else None
+                    _wn_fs.target_column if _wn_fs and _wn_fs.target_column else None
                 )
                 if _wn_target:
                     _wn_summary = (
@@ -11767,13 +11769,16 @@ def send_message(
                         "icon": "✨",
                         "title": "Set a target and apply features",
                         "description": "Tell me what to predict, then let me suggest transformations to improve accuracy.",
-                        "action": "I want to predict " + (_wn_target or "a column") + " — help me set up a model",
+                        "action": "I want to predict "
+                        + (_wn_target or "a column")
+                        + " — help me set up a model",
                     },
                     {
                         "icon": "🚀",
                         "title": "Train a model",
                         "description": "Once your target is set, train multiple algorithms and compare them side by side.",
-                        "action": "Train a model" + (f" to predict {_wn_target}" if _wn_target else ""),
+                        "action": "Train a model"
+                        + (f" to predict {_wn_target}" if _wn_target else ""),
                     },
                 ]
             elif not _wn_dep:
@@ -14009,9 +14014,7 @@ def send_message(
                         else (
                             "healthy"
                             if _n_failed == 0
-                            else "warning"
-                            if _n_failed / _n_total < 0.1
-                            else "critical"
+                            else "warning" if _n_failed / _n_total < 0.1 else "critical"
                         )
                     )
                     _wh_total_events += _n_total
@@ -14070,9 +14073,7 @@ def send_message(
                     else (
                         "warning"
                         if any(d["status"] == "warning" for d in _wh_dep_summaries)
-                        else "no_events"
-                        if _wh_total_events == 0
-                        else "healthy"
+                        else "no_events" if _wh_total_events == 0 else "healthy"
                     )
                 )
             )

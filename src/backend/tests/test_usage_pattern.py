@@ -16,7 +16,6 @@ import db as db_module
 from api.chat import _USAGE_PATTERN_PATTERNS
 from core.analyzer import compute_usage_pattern
 
-
 # ---------------------------------------------------------------------------
 # Pattern tests
 # ---------------------------------------------------------------------------

@@ -219,9 +219,9 @@ class TestBalanceTrainChatHandler:
         pid = _setup_classification(sync_client, tmp_path)
         events = _chat_events(sync_client, pid, "train with class weighting")
         started = [e for e in events if e.get("type") == "training_started"]
-        assert len(started) == 1, (
-            f"Expected training_started, got: {[e.get('type') for e in events]}"
-        )
+        assert (
+            len(started) == 1
+        ), f"Expected training_started, got: {[e.get('type') for e in events]}"
         payload = started[0]["training"]
         assert payload["imbalance_strategy"] == "class_weight"
         assert payload["problem_type"] == "classification"
@@ -256,9 +256,9 @@ class TestBalanceTrainChatHandler:
         pid = _setup_regression(sync_client, tmp_path)
         events = _chat_events(sync_client, pid, "train with class weighting")
         started = [e for e in events if e.get("type") == "training_started"]
-        assert len(started) == 0, (
-            "Should not start training for regression with imbalance correction"
-        )
+        assert (
+            len(started) == 0
+        ), "Should not start training for regression with imbalance correction"
 
     def test_fix_imbalance_variant_works(self, sync_client, tmp_path):
         """'fix the imbalance and train' phrase triggers balanced training."""

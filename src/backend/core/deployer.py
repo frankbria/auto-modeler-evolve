@@ -1043,9 +1043,7 @@ def compute_prediction_cohort(
         direction_label = (
             "higher"
             if top_mean > overall_mean
-            else "lower"
-            if top_mean < overall_mean
-            else "similar"
+            else "lower" if top_mean < overall_mean else "similar"
         )
         numeric_profile.append(
             {

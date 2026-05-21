@@ -307,9 +307,9 @@ class TestWebhookManagementChatSSE:
             sync_client, deployed_project["project_id"], "remove my webhook"
         )
         types = [e.get("type") for e in events]
-        assert "webhook_removed_chat" in types, (
-            f"Expected webhook_removed_chat in {types}"
-        )
+        assert (
+            "webhook_removed_chat" in types
+        ), f"Expected webhook_removed_chat in {types}"
         wr = next(e for e in events if e.get("type") == "webhook_removed_chat")
         assert wr["webhook_removed_chat"]["removed"] == []
 
@@ -336,6 +336,6 @@ class TestWebhookManagementChatSSE:
                 "webhook_removed_chat",
                 "webhook_test_chat",
             ):
-                assert et not in types, (
-                    f"Unexpected {et} for '{msg}' without deployment"
-                )
+                assert (
+                    et not in types
+                ), f"Unexpected {et} for '{msg}' without deployment"

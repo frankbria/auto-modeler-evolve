@@ -384,9 +384,9 @@ def deployments_overview(session: Session = Depends(get_session)):
                 "project_id": dep.project_id,
                 "project_name": project_name,
                 "algorithm": dep.algorithm,
-                "created_at_iso": dep.created_at.isoformat()
-                if dep.created_at
-                else None,
+                "created_at_iso": (
+                    dep.created_at.isoformat() if dep.created_at else None
+                ),
                 "last_predicted_at_iso": (
                     dep.last_predicted_at.isoformat() if dep.last_predicted_at else None
                 ),
@@ -1482,12 +1482,14 @@ def get_recent_predictions(
                 "id": log.id[:8],
                 "created_at": log.created_at.isoformat(),
                 "prediction": str(pred_raw),
-                "confidence": round(log.confidence * 100, 1)
-                if log.confidence is not None
-                else None,
-                "response_ms": round(log.response_ms, 1)
-                if log.response_ms is not None
-                else None,
+                "confidence": (
+                    round(log.confidence * 100, 1)
+                    if log.confidence is not None
+                    else None
+                ),
+                "response_ms": (
+                    round(log.response_ms, 1) if log.response_ms is not None else None
+                ),
                 "input_summary": input_summary,
                 "ab_variant": log.ab_variant,
             }
@@ -2622,9 +2624,7 @@ def set_accuracy_alert(
             + (
                 f"drops below {thr:.0%}."
                 if problem_type == "classification" and thr is not None
-                else f"exceeds {thr:.1f}%."
-                if thr is not None
-                else ""
+                else f"exceeds {thr:.1f}%." if thr is not None else ""
             )
             if threshold_set
             else "Accuracy alert disabled."
@@ -5669,9 +5669,11 @@ def get_dashboard_metadata(
         "dashboard_title": getattr(deployment, "dashboard_title", None),
         "dashboard_description": getattr(deployment, "dashboard_description", None),
         "target_column": deployment.target_column,
-        "auto_title": f"{deployment.target_column.replace('_', ' ').title()} Predictor"
-        if deployment.target_column
-        else "Prediction Dashboard",
+        "auto_title": (
+            f"{deployment.target_column.replace('_', ' ').title()} Predictor"
+            if deployment.target_column
+            else "Prediction Dashboard"
+        ),
     }
 
 
