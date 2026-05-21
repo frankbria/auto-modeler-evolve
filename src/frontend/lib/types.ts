@@ -467,6 +467,7 @@ export interface ChatMessage {
   preset_list?: PresetListInfo
   sdk_download?: SdkDownloadInfo
   portfolio?: PortfolioResult
+  cross_project_comparison?: CrossProjectComparisonResult
   rate_limit?: RateLimitInfo
   partial_dependence?: PartialDependenceResult
   calibration_check?: CalibrationCheckResult
@@ -3448,5 +3449,29 @@ export interface WeeklyUsageReportResult {
   by_day: WeeklyUsageDayEntry[]
   top_input_patterns: TopInputPattern[]
   sample_size: number
+  summary: string
+}
+
+export interface CrossProjectComparisonRow {
+  project_id: string
+  name: string
+  target_column: string
+  algorithm: string
+  algorithm_plain: string
+  problem_type: string
+  metric_name: string
+  metric_value: number | null
+  performance_score: number
+  has_deployment: boolean
+  prediction_count: number
+  rank: number
+}
+
+export interface CrossProjectComparisonResult {
+  n_projects: number
+  n_with_models: number
+  winner: CrossProjectComparisonRow | null
+  projects_compared: CrossProjectComparisonRow[]
+  insights: string[]
   summary: string
 }

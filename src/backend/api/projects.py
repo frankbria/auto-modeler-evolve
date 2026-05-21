@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
+from core.advisor import compute_cross_project_comparison
 from core.analyzer import compute_portfolio_summary, compute_project_health_summary
 from core.onboarding import compute_onboarding_state
 from db import get_session
@@ -189,6 +190,89 @@ def get_portfolio(session: Session = Depends(get_session)):
         )
 
     return compute_portfolio_summary(project_summaries)
+
+
+@router.get("/cross-comparison")
+def get_cross_project_comparison(session: Session = Depends(get_session)):
+    """Return a head-to-head normalized comparison of models across all projects.
+
+    Unlike /portfolio (flat list), this ranks each project's best model by a
+    normalized 0-100 performance score and generates plain-English comparison
+    insights — answering "how does my revenue model compare to my churn model?"
+    """
+    projects = session.exec(select(Project)).all()
+    project_summaries = []
+
+    for project in projects:
+        dataset = session.exec(
+            select(Dataset).where(Dataset.project_id == project.id)
+        ).first()
+
+        completed_runs = session.exec(
+            select(ModelRun).where(
+                ModelRun.project_id == project.id,
+                ModelRun.status == "done",
+            )
+        ).all()
+
+        deployment = session.exec(
+            select(Deployment).where(
+                Deployment.project_id == project.id,
+                Deployment.is_active == True,  # noqa: E712
+            )
+        ).first()
+
+        prediction_count = 0
+        if deployment:
+            prediction_count = len(
+                session.exec(
+                    select(PredictionLog).where(
+                        PredictionLog.deployment_id == deployment.id
+                    )
+                ).all()
+            )
+
+        best_run = None
+        best_metric_value = None
+        best_metric_name = None
+        for run in completed_runs:
+            metrics = json.loads(run.metrics or "{}")
+            metric_val = metrics.get("r2") or metrics.get("accuracy")
+            metric_name = (
+                "r2"
+                if "r2" in metrics
+                else "accuracy"
+                if "accuracy" in metrics
+                else None
+            )
+            if metric_val is not None and (
+                best_metric_value is None or metric_val > best_metric_value
+            ):
+                best_metric_value = metric_val
+                best_metric_name = metric_name
+                best_run = run
+
+        project_summaries.append(
+            {
+                "project_id": project.id,
+                "name": project.name,
+                "dataset_filename": dataset.filename if dataset else None,
+                "row_count": dataset.row_count if dataset else None,
+                "model_count": len(list(completed_runs)),
+                "best_algorithm": best_run.algorithm if best_run else None,
+                "best_metric_name": best_metric_name,
+                "best_metric_value": best_metric_value,
+                "best_problem_type": best_run.problem_type if best_run else None,
+                "best_target_column": best_run.target_column if best_run else None,
+                "has_deployment": deployment is not None,
+                "prediction_count": prediction_count,
+                "last_activity_at": (
+                    project.updated_at.isoformat() if project.updated_at else None
+                ),
+            }
+        )
+
+    return compute_cross_project_comparison(project_summaries)
 
 
 @router.get("/{project_id}", response_model=ProjectWithStats)

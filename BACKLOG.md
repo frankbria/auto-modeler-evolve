@@ -53,6 +53,29 @@ the time is better spent on real features.
 
 ---
 
+## Day 70 (20:00) — Done
+**Track B — Cross-Project Model Comparison via Chat.**
+
+Analysts can now ask "cross-project comparison", "compare my revenue model vs my churn model", "rank all my models side by side", "which of my models performs best overall" (8 NL variants) to receive a `CrossProjectComparisonCard` with normalized 0-100 performance scores ranked head-to-head across all projects. Normalization: R²/accuracy/F1 → ×100; error metrics (MAE/RMSE) → 1/(1+x)×100. `_normalize_metric()` helper + `compute_cross_project_comparison()` pure function in `core/advisor.py`. `GET /api/projects/cross-comparison` REST endpoint (registered before `/{project_id}` to avoid path capture). `_CROSS_PROJECT_PATTERNS` regex + handler + SSE emit in `chat.py`. `CrossProjectComparisonResult` / `CrossProjectComparisonRow` TypeScript types; `api.projects.crossComparison()` method; `attachCrossProjectComparisonToLastMessage` Zustand action; `CrossProjectComparisonCard` component (indigo border, 🏆, winner highlight, score bars, rank medals 🥇🥈🥉, deployment badges, insights list, sr-only figcaption). 33 backend + 23 frontend = 56 new tests. Total: 4389 backend + 2477 frontend = 6866. Backend lint: clean. Frontend build: clean.
+
+**What's next:**
+- Track E: "What's next?" guidance cards at key step transitions (after upload, after training, after deploy)
+- Track C: Ensemble methods (voting classifier / stacking) for better accuracy
+- Track D: Prediction SLA / latency monitoring — "is my model responding fast enough?"
+
+---
+
+## Day 70 (12:00) — Done
+**Track D — Weekly Usage Report via Chat.**
+
+Analysts can now ask "how many predictions did I get this week?", "weekly prediction summary", "weekly report", "how did I do this week" (8 NL variants) to receive a `WeeklyUsageReportCard` with this-week vs last-week count, trend (↑/↓/→), 7-day breakdown bar chart, and top input patterns table. `_WEEKLY_USAGE_PATTERNS` regex + handler in `chat.py`. `WeeklyUsageReportResult` type; `attachWeeklyUsageReportToLastMessage` Zustand action; SSE handler + card render. 21 backend + 16 frontend = 37 new tests. Total: 4356 backend + 2454 frontend = 6810. Backend lint: clean. Frontend build: clean.
+
+**What's next:**
+- Track B: Cross-project model comparison — "how does my revenue model compare to my churn model?"
+- Track E: "What's next?" guidance cards at key step transitions
+
+---
+
 ## Day 70 (04:00) — Done
 **Track D — Prediction form "Copy as link".**
 

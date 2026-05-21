@@ -105,6 +105,9 @@ export const api = {
       fetch(`${API_URL}/api/projects/${projectId}/analysis-templates/${templateId}`, {
         method: "DELETE",
       }).then(() => undefined),
+
+    crossComparison: (): Promise<import("./types").CrossProjectComparisonResult> =>
+      fetch(`${API_URL}/api/projects/cross-comparison`).then((r) => r.json()),
   },
 
   data: {

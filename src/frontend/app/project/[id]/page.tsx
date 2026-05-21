@@ -117,6 +117,7 @@ import { DashboardMetadataCard } from "@/components/deploy/dashboard-metadata-ca
 import { EmbedCodeCard } from "@/components/deploy/embed-code-card"
 import { ShareLinkCard } from "@/components/deploy/share-link-card"
 import { WeeklyUsageReportCard } from "@/components/deploy/weekly-usage-report-card"
+import { CrossProjectComparisonCard } from "@/components/chat/cross-project-comparison-card"
 import { FairnessCheckCard } from "@/components/chat/fairness-check-card"
 import { BatchJobResultCard } from "@/components/chat/batch-job-result-card"
 import { ProductionExplanationCard } from "@/components/chat/production-explanation-card"
@@ -341,6 +342,7 @@ export default function ProjectWorkspace() {
     attachEmbedCodeToLastMessage,
     attachShareLinkToLastMessage,
     attachWeeklyUsageReportToLastMessage,
+    attachCrossProjectComparisonToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -831,6 +833,8 @@ export default function ProjectWorkspace() {
                 attachShareLinkToLastMessage(json.share_link as import("@/lib/types").ShareLinkResult)
               } else if (json.type === "weekly_usage_report" && json.weekly_usage_report) {
                 attachWeeklyUsageReportToLastMessage(json.weekly_usage_report as import("@/lib/types").WeeklyUsageReportResult)
+              } else if (json.type === "cross_project_comparison" && json.cross_project_comparison) {
+                attachCrossProjectComparisonToLastMessage(json.cross_project_comparison as import("@/lib/types").CrossProjectComparisonResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -965,6 +969,7 @@ export default function ProjectWorkspace() {
     attachEmbedCodeToLastMessage,
     attachShareLinkToLastMessage,
     attachWeeklyUsageReportToLastMessage,
+    attachCrossProjectComparisonToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -1556,6 +1561,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.weekly_usage_report && (
                       <WeeklyUsageReportCard result={msg.weekly_usage_report} />
+                    )}
+                    {msg.cross_project_comparison && (
+                      <CrossProjectComparisonCard result={msg.cross_project_comparison} />
                     )}
                   </div>
                 </div>

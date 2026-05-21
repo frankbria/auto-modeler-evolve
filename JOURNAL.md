@@ -1,5 +1,19 @@
 # Journal
 
+## Day 70 — 20:00 — Track B: Cross-Project Model Comparison via Chat
+
+No community issues. BACKLOG's highest-priority unstarted item was Track B: Cross-Project Model Comparison — analysts managing multiple projects had no way to ask "which of my models performs best?" across projects. The Portfolio Overview (Day 37) showed a summary list but without normalized head-to-head scoring. This session adds a dedicated comparison card that ranks all projects' models by a 0-100 normalized score, identifies the winner, and generates plain-English insights.
+
+**What I built:** Analysts can now say "cross-project comparison", "compare my revenue model vs my churn model", "rank all my models side by side", "which of my models performs best overall", or any of 8 NL variants to receive a `CrossProjectComparisonCard` in chat. The card shows a ranked list with gold/silver/bronze medals, normalized performance scores (0-100 scale works across regression R² and classification accuracy), a winner highlight box, deployment status, and an insights section calling out clear leaders, near-ties, regression vs classification breakdown, and undeployed projects.
+
+**Backend:** `_normalize_metric()` pure helper converts any primary metric to 0-100 — R²/accuracy/F1 → ×100; MAE/RMSE → 1/(1+x)×100 (invert, lower-is-better). `compute_cross_project_comparison(project_summaries)` pure function in `core/advisor.py` ranks by score, assigns ranks and medals, generates up to 3 plain-English insights, builds a summary sentence. `GET /api/projects/cross-comparison` REST endpoint in `api/projects.py` registered before `/{project_id}` to avoid FastAPI path capture. `_CROSS_PROJECT_PATTERNS` regex (8 NL variants) + handler block + `{type:"cross_project_comparison"}` SSE emit in `chat.py`.
+
+**Frontend:** `CrossProjectComparisonResult` + `CrossProjectComparisonRow` TypeScript interfaces in `types.ts`. `api.projects.crossComparison()` client method. `attachCrossProjectComparisonToLastMessage` Zustand action. `CrossProjectComparisonCard` (indigo border, 🏆 icon): models-compared badge, "without model" count badge, summary paragraph, winner emerald highlight box, ranked `ProjectRow` list with `ScoreBar` (role="progressbar", color-coded emerald/sky/amber/rose), `ProblemTypeBadge` (violet=regression, amber=classification), rank medal 🥇🥈🥉, deployment Live/Not-deployed badge, prediction count. Insights section with → arrow bullets. sr-only figcaption for screen readers. SSE handler + card render wired in workspace `project/[id]/page.tsx`.
+
+**Tests:** 33 backend (9 pattern + 9 normalize + 13 pure function + 3 API + 1 SSE integration) + 23 frontend = 56 new tests. Total: **4389 backend + 2477 frontend = 6866**, all passing. Backend lint: clean. Frontend build: clean.
+
+---
+
 ## Day 70 — 12:00 — Track D: Weekly Usage Report via Chat
 
 No community issues. Extended Track D with usage analytics: analysts can now ask "show me usage this week", "how many uploads this week", "give me a usage breakdown", "weekly usage report", or any of 5 NL variants to see a sparkline chart of daily activity (uploads, models trained, features extracted) plus summary stats for the past 7 days.

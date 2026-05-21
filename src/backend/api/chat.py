@@ -2580,6 +2580,20 @@ _PORTFOLIO_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+_CROSS_PROJECT_PATTERNS = re.compile(
+    r"\b("
+    r"(?:compare|how\s+does?)\s+my\s+\w+\s+model\s+(?:compare\s+to|vs|versus|against)\s+my\s+\w+\s+model|"
+    r"cross[\s-]project\s+(?:model\s+)?comparison|"
+    r"(?:compare|contrast)\s+(?:models?\s+)?across\s+(?:my\s+)?(?:all\s+)?(?:projects|models)|"
+    r"head[\s-]to[\s-]head\s+(?:project|model)\s+comparison|"
+    r"which\s+(?:of\s+my\s+)?(?:projects?|models?)\s+(?:performs?|is)\s+best\s+overall|"
+    r"model\s+performance\s+comparison\s+across\s+projects|"
+    r"(?:compare|rank)\s+(?:all\s+)?my\s+(?:project\s+)?models\s+(?:together|side[\s-]by[\s-]side)|"
+    r"how\s+do\s+(?:all\s+)?my\s+models\s+compare\s+(?:to\s+each\s+other\s+)?across\s+projects"
+    r")\b",
+    re.IGNORECASE,
+)
+
 _RATE_LIMIT_PATTERNS = re.compile(
     r"\b("
     r"(?:set|add|enable|configure|apply|create)\s+(?:a\s+)?rate\s+(?:limit|limiting)|"
@@ -9934,6 +9948,114 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Overview is nice-to-have; never crash chat
 
+    # Cross-project model comparison (head-to-head, normalized scores)
+    cross_project_event: dict | None = None
+    if _CROSS_PROJECT_PATTERNS.search(body.message):
+        try:
+            from core.advisor import (
+                compute_cross_project_comparison as _ccpc,
+            )
+
+            _cpc_projects = list(session.exec(select(Project)).all())
+            _cpc_summaries: list[dict] = []
+            for _cpc_proj in _cpc_projects:
+                _cpc_ds = session.exec(
+                    select(Dataset).where(Dataset.project_id == _cpc_proj.id)
+                ).first()
+                _cpc_runs = list(
+                    session.exec(
+                        select(ModelRun).where(
+                            ModelRun.project_id == _cpc_proj.id,
+                            ModelRun.status == "done",
+                        )
+                    ).all()
+                )
+                _cpc_dep = session.exec(
+                    select(Deployment).where(
+                        Deployment.project_id == _cpc_proj.id,
+                        Deployment.is_active == True,  # noqa: E712
+                    )
+                ).first()
+                _cpc_pred_count = 0
+                if _cpc_dep:
+                    _cpc_pred_count = len(
+                        list(
+                            session.exec(
+                                select(PredictionLog).where(
+                                    PredictionLog.deployment_id == _cpc_dep.id
+                                )
+                            ).all()
+                        )
+                    )
+                _cpc_best_run = None
+                _cpc_best_val: float | None = None
+                _cpc_best_metric: str | None = None
+                for _cpc_run in _cpc_runs:
+                    _cpc_m = json.loads(_cpc_run.metrics or "{}")
+                    _cpc_v = _cpc_m.get("r2") or _cpc_m.get("accuracy")
+                    _cpc_mn = (
+                        "r2"
+                        if "r2" in _cpc_m
+                        else ("accuracy" if "accuracy" in _cpc_m else None)
+                    )
+                    if _cpc_v is not None and (
+                        _cpc_best_val is None or _cpc_v > _cpc_best_val
+                    ):
+                        _cpc_best_val = _cpc_v
+                        _cpc_best_metric = _cpc_mn
+                        _cpc_best_run = _cpc_run
+                _cpc_summaries.append(
+                    {
+                        "project_id": _cpc_proj.id,
+                        "name": _cpc_proj.name,
+                        "dataset_filename": _cpc_ds.filename if _cpc_ds else None,
+                        "row_count": _cpc_ds.row_count if _cpc_ds else None,
+                        "model_count": len(_cpc_runs),
+                        "best_algorithm": (
+                            _cpc_best_run.algorithm if _cpc_best_run else None
+                        ),
+                        "best_metric_name": _cpc_best_metric,
+                        "best_metric_value": _cpc_best_val,
+                        "best_problem_type": (
+                            _cpc_best_run.problem_type if _cpc_best_run else None
+                        ),
+                        "best_target_column": (
+                            _cpc_best_run.target_column if _cpc_best_run else None
+                        ),
+                        "has_deployment": _cpc_dep is not None,
+                        "prediction_count": _cpc_pred_count,
+                        "last_activity_at": (
+                            _cpc_proj.updated_at.isoformat()
+                            if _cpc_proj.updated_at
+                            else None
+                        ),
+                    }
+                )
+            cross_project_event = _ccpc(_cpc_summaries)
+            _cpc_winner = cross_project_event.get("winner")
+            _cpc_n = cross_project_event.get("n_with_models", 0)
+            _cpc_insights = cross_project_event.get("insights", [])
+            system_prompt += (
+                f"\n\n## Cross-Project Model Comparison\n"
+                f"{cross_project_event['summary']}\n"
+            )
+            if _cpc_winner:
+                system_prompt += (
+                    f"Top performer: '{_cpc_winner['name']}' "
+                    f"(score {_cpc_winner['performance_score']:.0f}/100, "
+                    f"{_cpc_winner['algorithm_plain']}, "
+                    f"predicting '{_cpc_winner['target_column']}').\n"
+                )
+            if _cpc_insights:
+                system_prompt += "\n".join(_cpc_insights) + "\n"
+            system_prompt += (
+                f"Compared {_cpc_n} project{'s' if _cpc_n != 1 else ''} with trained models. "
+                "Present the comparison from the card. Help the analyst understand which "
+                "project performs best and why, using the normalized score and insights."
+            )
+        except Exception:  # noqa: BLE001
+            pass  # Comparison is nice-to-have; never crash chat
+
     # Cross-project portfolio overview
     portfolio_event: dict | None = None
     if _PORTFOLIO_PATTERNS.search(body.message):
@@ -14493,6 +14615,10 @@ def send_message(
         # Emit SDK download card
         if sdk_event:
             yield f"data: {json.dumps({'type': 'sdk_download', 'sdk_download': sdk_event})}\n\n"
+
+        # Emit cross-project model comparison card
+        if cross_project_event:
+            yield f"data: {json.dumps({'type': 'cross_project_comparison', 'cross_project_comparison': cross_project_event})}\n\n"
 
         # Emit cross-project portfolio overview
         if portfolio_event:

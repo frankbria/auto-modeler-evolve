@@ -1141,3 +1141,163 @@ def _build_cross_model_summary(
         f"Across {n_models} models, {listed} tend to rank highest, "
         f"though different algorithms weight them differently."
     )
+
+
+# ---------------------------------------------------------------------------
+# Cross-Project Model Comparison
+# ---------------------------------------------------------------------------
+
+
+def _normalize_metric(metric_name: str | None, metric_value: float | None) -> float:
+    """Normalize a primary metric to a 0-100 performance score.
+
+    R², accuracy, F1, precision, recall are all in 0–1 → multiply by 100.
+    MAE/RMSE are error metrics (lower is better) → invert via 1/(1+x)*100.
+    Unknown metrics default to 50.
+    """
+    if metric_value is None:
+        return 0.0
+    mn = (metric_name or "").lower()
+    if mn in ("r2", "accuracy", "f1", "f1_score", "precision", "recall", "auc"):
+        return round(max(0.0, min(100.0, metric_value * 100)), 1)
+    if mn in ("mae", "mse", "rmse", "mape"):
+        # Error metric: smaller is better; map via 1/(1+x)*100
+        return round(max(0.0, min(100.0, 1.0 / (1.0 + abs(metric_value)) * 100)), 1)
+    # Fallback: treat as 0-1 probability-style metric
+    if 0.0 <= metric_value <= 1.0:
+        return round(metric_value * 100, 1)
+    return 50.0
+
+
+def compute_cross_project_comparison(
+    project_summaries: list[dict],
+) -> dict:
+    """Compare model performance across multiple projects with normalized scores.
+
+    Unlike portfolio_summary (which gives a list), this produces a head-to-head
+    comparison with ranked normalized scores, a winner, and plain-English insights.
+
+    Args:
+        project_summaries: Same format as for compute_portfolio_summary — each dict
+            has project_id, name, best_algorithm, best_metric_name, best_metric_value,
+            best_problem_type, best_target_column, has_deployment, prediction_count,
+            model_count.
+
+    Returns:
+        Dict with: n_projects, n_with_models, winner, projects_compared (ranked list),
+        insights (list[str]), summary.
+    """
+    n_total = len(project_summaries)
+    with_models = [
+        p
+        for p in project_summaries
+        if p.get("best_metric_value") is not None and p.get("model_count", 0) > 0
+    ]
+    n_with_models = len(with_models)
+
+    if n_with_models == 0:
+        return {
+            "n_projects": n_total,
+            "n_with_models": 0,
+            "winner": None,
+            "projects_compared": [],
+            "insights": [],
+            "summary": (
+                "No trained models found across your projects. "
+                "Upload data and train a model to start comparing."
+            ),
+        }
+
+    # Build comparison rows with normalized scores
+    algo_plain = _ALGO_PLAIN  # reuse existing map
+    rows = []
+    for p in with_models:
+        score = _normalize_metric(p.get("best_metric_name"), p.get("best_metric_value"))
+        algo = p.get("best_algorithm") or ""
+        rows.append(
+            {
+                "project_id": p["project_id"],
+                "name": p["name"],
+                "target_column": p.get("best_target_column") or "",
+                "algorithm": algo,
+                "algorithm_plain": algo_plain.get(algo, algo.replace("_", " ").title()),
+                "problem_type": p.get("best_problem_type") or "regression",
+                "metric_name": p.get("best_metric_name") or "score",
+                "metric_value": p.get("best_metric_value"),
+                "performance_score": score,
+                "has_deployment": bool(p.get("has_deployment")),
+                "prediction_count": int(p.get("prediction_count") or 0),
+            }
+        )
+
+    # Rank by normalized score descending
+    rows.sort(key=lambda r: r["performance_score"], reverse=True)
+    for i, r in enumerate(rows):
+        r["rank"] = i + 1
+
+    winner = rows[0]
+
+    # Generate plain-English insights
+    insights: list[str] = []
+    if len(rows) >= 2:
+        second = rows[1]
+        gap = winner["performance_score"] - second["performance_score"]
+        if gap > 10:
+            insights.append(
+                f"'{winner['name']}' leads by {gap:.0f} points — a clear winner."
+            )
+        elif gap < 3:
+            insights.append(
+                f"'{winner['name']}' and '{second['name']}' are very close "
+                f"({winner['performance_score']:.0f} vs {second['performance_score']:.0f}) — "
+                "both strong performers."
+            )
+        else:
+            insights.append(
+                f"'{winner['name']}' edges out '{second['name']}' "
+                f"({winner['performance_score']:.0f} vs {second['performance_score']:.0f} score)."
+            )
+
+    # Regression vs classification breakdown
+    reg_projects = [r for r in rows if r["problem_type"] == "regression"]
+    cls_projects = [r for r in rows if r["problem_type"] == "classification"]
+    if reg_projects and cls_projects:
+        best_reg = reg_projects[0]
+        best_cls = cls_projects[0]
+        insights.append(
+            f"Best regression: '{best_reg['name']}' (R² {best_reg['metric_value']:.2f}). "
+            f"Best classification: '{best_cls['name']}' "
+            f"({int(best_cls['metric_value'] * 100)}% accuracy)."
+        )
+
+    # Deployment insight
+    deployed = [r for r in rows if r["has_deployment"]]
+    not_deployed = [r for r in rows if not r["has_deployment"]]
+    if not_deployed and deployed:
+        not_dep_names = ", ".join(f"'{r['name']}'" for r in not_deployed[:2])
+        insights.append(
+            f"{not_dep_names} "
+            f"{'have' if len(not_deployed) > 1 else 'has'} no live deployment yet."
+        )
+
+    # Summary sentence
+    winner_metric_str = (
+        f"{int(winner['metric_value'] * 100)}% {winner['metric_name']}"
+        if winner["metric_name"] not in ("mae", "mse", "rmse")
+        else f"{winner['metric_name']} {winner['metric_value']:.4f}"
+    )
+    summary = (
+        f"Compared {n_with_models} project{'s' if n_with_models != 1 else ''} "
+        f"with trained models. "
+        f"Top performer: '{winner['name']}' predicting '{winner['target_column']}' "
+        f"({winner['algorithm_plain']}, {winner_metric_str})."
+    )
+
+    return {
+        "n_projects": n_total,
+        "n_with_models": n_with_models,
+        "winner": winner,
+        "projects_compared": rows,
+        "insights": insights,
+        "summary": summary,
+    }

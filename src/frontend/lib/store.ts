@@ -107,6 +107,7 @@ interface AppState {
   attachPresetListToLastMessage: (preset_list: import("./types").PresetListInfo) => void
   attachSdkDownloadToLastMessage: (sdk_download: import("./types").SdkDownloadInfo) => void
   attachPortfolioToLastMessage: (portfolio: import("./types").PortfolioResult) => void
+  attachCrossProjectComparisonToLastMessage: (cross_project_comparison: import("./types").CrossProjectComparisonResult) => void
   attachRateLimitToLastMessage: (rate_limit: import("./types").RateLimitInfo) => void
   attachPartialDependenceToLastMessage: (partial_dependence: import("./types").PartialDependenceResult) => void
   attachCalibrationCheckToLastMessage: (calibration_check: import("./types").CalibrationCheckResult) => void
@@ -759,6 +760,15 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, portfolio }
+      }
+      return { messages }
+    }),
+  attachCrossProjectComparisonToLastMessage: (cross_project_comparison) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, cross_project_comparison }
       }
       return { messages }
     }),
