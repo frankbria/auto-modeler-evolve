@@ -1,5 +1,19 @@
 # Journal
 
+## Day 71 — 12:00 — Track E: Proactive Milestone Messages
+
+No community issues. All spec items remain [x]. BACKLOG Day 71 identified "Proactive milestone messages" as the highest-impact remaining Track E gap — Day 71 04:00 built the *reactive* WhatNextCard (analyst asks "what's next?"), but the vision's "smart colleague" principle also requires *proactive* acknowledgment: a colleague who taps you on the shoulder and says "nice job training your first model!" without being prompted.
+
+**What I built:** When a business analyst sends their first chat message after a workflow state transition (upload/train/deploy), a `MilestoneCard` appears automatically in the conversation — no asking required. Three milestone types: 🎉 "Your data is loaded!" (emerald, 20% progress, fires after first CSV upload — shows row/column count in summary), 🎯 "First model trained!" (amber, 65% progress, fires after first completed model run — names algorithm and accuracy), 🚀 "Your model is live!" (violet, 100% progress, fires after first deployment — suggests sharing and monitoring). Each card has 2 compact action chips that pre-fill the chat input for one-click next steps.
+
+**Backend:** `Project.last_milestone_state` field (TEXT, inline SQLite migration) tracks what's been announced (None → "upload" → "train" → "deploy"). `_MILESTONE_ORDER` list and `_get_current_milestone_state(ctx)` pure function in `chat.py`. Handler in `send_message()` checks current vs last state, emits `{type:"milestone"}` SSE event for the next unannounced milestone, injects LLM context so Claude narrates the achievement naturally, and persists the updated `last_milestone_state` before the generator runs. Milestone fires exactly once per transition and never repeats.
+
+**Frontend:** `MilestoneResult`/`MilestoneAction` TypeScript interfaces in `types.ts`; `milestone?: MilestoneResult` on `ChatMessage`; `attachMilestoneToLastMessage` Zustand action; `MilestoneCard` component (color-coded per milestone type); SSE handler + card render wired in `project/[id]/page.tsx`. Action chips call `setChatInput(prompt)` for one-click follow-through.
+
+**Tests:** 13 backend (6 pure function: milestone order, state detection from ctx, failed-run handling; 7 integration: fires after upload, includes row count, only fires once, no event when no data, required fields, action structure, progress range) + 12 frontend (title, icon, subtitle, progress bar aria, summary, action chips, click handler, sr-only figcaption, 3 milestone type border colors, Zustand store) = 25 new tests. Total: **4436 backend + 2512 frontend = 6948**, all passing. Backend lint: clean. Frontend build + lint: clean.
+
+---
+
 ## Day 71 — 04:00 — Track E: "What's Next?" Workflow Guidance Card
 
 No community issues. The BACKLOG's most consistently listed "What's Next" item across 10+ sessions was Track E: "What's next?" guidance cards at key step transitions — analysts had suggestion chips but no rich contextual card that celebrated their progress, summarised their current state, and told them exactly what to do next in plain language.
