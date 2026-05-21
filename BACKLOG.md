@@ -53,6 +53,26 @@ the time is better spent on real features.
 
 ---
 
+## Day 71 (12:00) — Done
+**Track E — Proactive Milestone Messages.**
+
+AutoModeler now celebrates workflow achievements with a "shoulder tap" — without the analyst asking. When the analyst sends their first chat message after a key state transition (upload, first model trained, first deployment), a `MilestoneCard` appears automatically in the chat.
+
+- **Upload milestone** 🎉 "Your data is loaded!" (20% progress, emerald border): fires on first message after CSV upload; mentions row/column counts; 2 action chips (Explore my data / Check data quality)
+- **Train milestone** 🎯 "First model trained!" (65% progress, amber border): fires on first message after first completed model run; names the algorithm and shows accuracy; 2 action chips (Validate / Deploy)
+- **Deploy milestone** 🚀 "Your model is live!" (100% progress, violet border): fires on first message after first deployment; 2 action chips (Share dashboard / Monitor performance)
+
+Detection: `_get_current_milestone_state()` derives upload/train/deploy from ctx. `Project.last_milestone_state` tracks what's been announced — only advances one step per message, never repeats. `_MILESTONE_ORDER` = `[None, "upload", "train", "deploy"]`. Inline DB migration adds `last_milestone_state TEXT` to project table. `{type:"milestone"}` SSE event. `MilestoneCard` component (color-coded per type). `MilestoneResult`/`MilestoneAction` TypeScript types; `attachMilestoneToLastMessage` Zustand action. SSE handler + card render wired in `project/[id]/page.tsx`.
+
+**Tests:** 13 backend (6 pure function + 7 integration) + 12 frontend (render, icon, title, subtitle, progress bar, summary, actions, click handler, a11y figcaption, 3 milestone type colors, store action) = 25 new tests. Total: **4436 backend + 2512 frontend = 6948**, all passing. Backend lint: clean. Frontend build + lint: clean.
+
+**What's next:**
+- Track D: API key auth enhancement — let analysts rotate/revoke keys via chat ("regenerate my API key", "disable API key for this deployment")
+- Track C: Ensemble methods improvement — surface ensemble automatically when individual models plateau below 0.75 R² or 75% accuracy
+- Track E: "Proactive insight on upload" — when a dataset is uploaded, immediately analyze it and emit 1-2 interesting findings in the first assistant message (no asking needed)
+
+---
+
 ## Day 71 (04:00) — Done
 **Track E — "What's Next?" Workflow Guidance Card via Chat.**
 
