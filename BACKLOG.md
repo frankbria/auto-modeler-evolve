@@ -49,7 +49,17 @@ the time is better spent on real features.
 
 ## Currently Working On
 
-*(nothing — Day 71 20:00 session complete)*
+*(nothing — Day 72 12:00 session complete)*
+
+---
+
+## Day 72 (12:00) — Done
+
+**Track B: Goal Seek / Reverse Prediction via Chat** — complete.
+
+`run_goal_seek()` pure function using scipy L-BFGS-B (regression: minimise |predict(x) − target|; classification: maximise predict_proba). REST endpoint `POST /api/deploy/{id}/goal-seek`. Chat handler with `_GOAL_SEEK_PATTERNS` (8 NL variants) + `_extract_goal_seek_target()` (handles K/M/B suffixes, quoted class names). `GoalSeekCard` frontend component with target/achieved grid, gap indicator, ranked suggestions, feasibility note. 30 backend + 25 frontend = 55 new tests. Total: **4453 backend + 2568 frontend = 7021**, all passing.
+
+Key learning: Python walrus operator `:=` in statement context requires parens. Nested f-strings with `\"` escapes are invalid in Python 3.12 — extract to variable. Deployment model uses `is_active` (bool) not `status` (str); `endpoint_path` (not `endpoint_url`); no `model_path` field (lives on `ModelRun`).
 
 ---
 
@@ -63,16 +73,21 @@ Key learning: Python `\b` doesn't work for underscore-delimited column names —
 
 ---
 
-## What's Next (Day 72+)
+## What's Next (Day 73+)
+
+**Track B extension (goal-seek UX depth):**
+- Goal seek with user-pinned features — "keep price fixed at $99, what else do I change?" (frontend form with per-feature lock toggles → POST fixed_features map)
+- Goal seek history — remember last 3 goal-seek results per deployment so analysts can compare scenarios
 
 **Track D candidates (deployment depth — highest priority):**
-- Webhook notifications on model drift/degradation — alert analysts when live model performance degrades
 - Export as self-contained prediction service (ZIP + uvicorn) — portability for non-technical stakeholders
 - Prediction SLA / latency monitoring — p50/p95/p99 latency badges on deployment card
+- Chat-driven API key rotation — "regenerate my API key" / "disable API protection"
 
 **Track C candidates (model building depth):**
 - Date-aware chronological train/test splits — prevents data leakage for time-series targets
 - Feature selection automation — drop near-zero-importance columns with explanation
+- Ensemble methods — surface automatically when individual models plateau below 0.75 R²
 
 **Track E candidates (polish):**
 - "Explain this finding" — clicking an insight card finding triggers a detailed LLM explanation
