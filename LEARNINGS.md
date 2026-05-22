@@ -2,6 +2,27 @@
 
 Cached knowledge from research. Check here before searching the web.
 
+## Python Regex `\b` Does Not Work for Underscore-Delimited Column Names (Day 71, 20:00)
+
+Python treats `_` as a word character (`\w`), so `\b` (word boundary) does NOT fire between `_` and a letter. This means `re.search(r"\bdate\b", "order_date")` returns **None** — there is no word boundary between the `_` and `d`.
+
+**Fix:** Split the column name on `[_\-\s]+` and check individual tokens against a frozenset:
+
+```python
+_DATE_TOKENS = frozenset({
+    "date", "datetime", "time", "timestamp", "created", "updated",
+    "year", "month", "day", "week", "period", "quarter",
+})
+
+def _has_date_token(col_name: str) -> bool:
+    tokens = re.split(r"[_\-\s]+", col_name.lower())
+    return bool(_DATE_TOKENS & set(tokens))
+```
+
+This correctly matches `order_date`, `created_at`, `updated_timestamp`, `report_week`, etc.
+
+**Applies to:** Any regex that needs to match tokens inside underscore-delimited identifiers (column names, variable names, field names).
+
 ## XGBoost and LightGBM Integration (Day 3, 04:31)
 
 - Both xgboost and lightgbm are sklearn-compatible — they implement `fit()`, `predict()`, `predict_proba()`, and `feature_importances_`
