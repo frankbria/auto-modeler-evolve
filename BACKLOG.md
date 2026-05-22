@@ -49,11 +49,34 @@ the time is better spent on real features.
 
 ## Currently Working On
 
-**Day 71 (20:00) — Track E: Auto-Insight on New Dataset.**
+*(nothing — Day 71 20:00 session complete)*
 
-Fires automatically on the analyst's first chat message after uploading a dataset. No asking required. AutoModeler scans the profile for 1-2 specific findings (correlations, date columns, class imbalance, missing data, high cardinality, skew) and emits an `AutoInsightCard` in chat — the "smart colleague who taps you on the shoulder and says I noticed something interesting."
+---
 
-Tracking field: `Project.last_insight_dataset_id` (fires once per dataset). Pure function `compute_auto_insights()` in `core/analyzer.py`. SSE event type `auto_insight`. Frontend: `AutoInsightCard` (sky/cyan border, 🔍 icon), `AutoInsightResult`/`AutoInsightFinding` types, `attachAutoInsightToLastMessage` store action.
+## Day 71 (20:00) — Done
+
+**Track E: Auto-Insight on New Dataset** — complete.
+
+`compute_auto_insights()` pure function (6 finding types), `Project.last_insight_dataset_id` migration, handler + SSE emit in `chat.py`, `AutoInsightCard` frontend component. 18 backend + 14 frontend = 32 new tests. Total: 4407 backend + 2491 frontend = 6898, all passing.
+
+Key learning: Python `\b` doesn't work for underscore-delimited column names — use token-split + frozenset instead.
+
+---
+
+## What's Next (Day 72+)
+
+**Track D candidates (deployment depth — highest priority):**
+- Webhook notifications on model drift/degradation — alert analysts when live model performance degrades
+- Export as self-contained prediction service (ZIP + uvicorn) — portability for non-technical stakeholders
+- Prediction SLA / latency monitoring — p50/p95/p99 latency badges on deployment card
+
+**Track C candidates (model building depth):**
+- Date-aware chronological train/test splits — prevents data leakage for time-series targets
+- Feature selection automation — drop near-zero-importance columns with explanation
+
+**Track E candidates (polish):**
+- "Explain this finding" — clicking an insight card finding triggers a detailed LLM explanation
+- Auto-suggest column types — proactively flag columns that look like the wrong dtype (e.g. numeric stored as text)
 
 ---
 
