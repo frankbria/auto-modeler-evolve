@@ -525,6 +525,7 @@ export interface ChatMessage {
   what_next?: WhatNextResult
   milestone?: MilestoneResult
   auto_insight?: AutoInsightResult
+  column_type_suggestions?: ColumnTypeSuggestionResult
 }
 
 export interface RollbackVersionEntry {
@@ -3522,5 +3523,24 @@ export interface AutoInsightResult {
   row_count: number
   column_count: number
   findings: AutoInsightFinding[]
+  summary: string
+}
+
+export interface ColumnTypeSuggestion {
+  column: string
+  current_dtype: string
+  suggested_dtype: string
+  reason: string
+  confidence: string
+  sample_values: string[]
+  suggested_action: string
+}
+
+export interface ColumnTypeSuggestionResult {
+  dataset_name: string
+  suggestions: ColumnTypeSuggestion[]
+  has_suggestions: boolean
+  dataset_rows: number
+  dataset_cols: number
   summary: string
 }

@@ -2940,6 +2940,20 @@ _WHAT_NEXT_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# Keywords that trigger an explicit column type check
+_COLUMN_TYPE_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"(?:check|review|scan|inspect|validate|verify)\s+(?:my\s+)?(?:column\s+)?(?:data\s+)?types?\b|"
+    r"(?:are|is)\s+(?:my\s+|the\s+)?(?:column\s+)?(?:data\s+)?types?\s+(?:correct|right|ok|good|proper|wrong|bad)\b|"
+    r"(?:wrong|bad|incorrect|mismatched)\s+(?:column\s+|data\s+)?types?\b|"
+    r"(?:data\s+type|dtype|column\s+type)\s+(?:issues?|problems?|errors?|check|scan)\b|"
+    r"any\s+(?:type|dtype)\s+(?:issues?|problems?|mismatches?)\b|"
+    r"(?:fix|convert|cast)\s+(?:column\s+|data\s+)?types?\b|"
+    r"(?:column|data)\s+types?\s+(?:look|seem|appear)\s+(?:wrong|off|bad|incorrect)\b"
+    r")",
+    re.IGNORECASE,
+)
+
 # Proactive milestone state machine
 # None < "upload" < "train" < "deploy"  (order matters for comparison)
 _MILESTONE_ORDER: list = [None, "upload", "train", "deploy"]
@@ -11908,6 +11922,55 @@ def send_message(
     except Exception:  # noqa: BLE001
         pass  # Auto-insight is enhancement; never crash chat
 
+    # Column type suggestions — proactive once per dataset + explicit chat trigger
+    column_type_event: dict | None = None
+    try:
+        _ct_dataset = ctx["dataset"]
+        _ct_last_ds_id = project.last_type_check_dataset_id  # type: ignore[attr-defined]
+        _ct_explicit = _COLUMN_TYPE_PATTERNS.search(body.message)
+        if _ct_dataset and (_ct_explicit or _ct_last_ds_id != _ct_dataset.id):
+            from core.analyzer import compute_column_type_suggestions as _compute_cts
+
+            _ct_profile = json.loads(_ct_dataset.profile or "{}")
+            _ct_result = _compute_cts(_ct_profile)
+            # Build event (emit even when no suggestions — tells analyst all types look good)
+            _ct_suggestions = _ct_result.get("suggestions", [])
+            column_type_event = {
+                "dataset_name": _ct_dataset.filename,
+                "suggestions": _ct_suggestions,
+                "has_suggestions": _ct_result.get("has_suggestions", False),
+                "dataset_rows": _ct_result.get("dataset_rows", 0),
+                "dataset_cols": _ct_result.get("dataset_cols", 0),
+                "summary": (
+                    f"Found {len(_ct_suggestions)} column type "
+                    + ("issue" if len(_ct_suggestions) == 1 else "issues")
+                    + f" in **{_ct_dataset.filename}**."
+                    if _ct_suggestions
+                    else f"All column types in **{_ct_dataset.filename}** look correct."
+                ),
+            }
+            if _ct_suggestions:
+                _ct_col_list = ", ".join(s["column"] for s in _ct_suggestions[:3])
+                system_prompt += (
+                    "\n\n## Column Type Issues Detected\n"
+                    f"AutoModeler found {len(_ct_suggestions)} column(s) with potential type mismatches: "
+                    f"{_ct_col_list}. A ColumnTypeSuggestionCard is shown. "
+                    "In 1 sentence, briefly flag this and offer to help fix the types."
+                )
+            else:
+                system_prompt += (
+                    "\n\n## Column Types Look Good\n"
+                    "AutoModeler scanned all column types and found no issues. "
+                    "In 1 sentence, confirm this and suggest what to explore next."
+                )
+            # Persist so proactive auto-fire happens only once per dataset
+            if not _ct_explicit:
+                project.last_type_check_dataset_id = _ct_dataset.id  # type: ignore[attr-defined]
+                session.add(project)
+                session.commit()
+    except Exception:  # noqa: BLE001
+        pass  # Column type check is enhancement; never crash chat
+
     # "What's Next?" workflow guidance card
     what_next_event: dict | None = None
     if _WHAT_NEXT_PATTERNS.search(body.message):
@@ -15201,6 +15264,9 @@ def send_message(
 
         if auto_insight_event:
             yield f"data: {json.dumps({'type': 'auto_insight', 'auto_insight': auto_insight_event})}\n\n"
+
+        if column_type_event:
+            yield f"data: {json.dumps({'type': 'column_type_suggestions', 'column_type_suggestions': column_type_event})}\n\n"
 
         # After text stream, opportunistically generate a chart if the
         # message is about data and we have a dataset loaded

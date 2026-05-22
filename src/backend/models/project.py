@@ -24,3 +24,6 @@ class Project(SQLModel, table=True):
     last_insight_dataset_id: Optional[str] = Field(
         default=None
     )  # dataset.id of the most-recently auto-analyzed dataset
+    last_type_check_dataset_id: Optional[str] = Field(
+        default=None
+    )  # dataset.id of the most-recently type-checked dataset

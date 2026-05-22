@@ -121,6 +121,7 @@ import { CrossProjectComparisonCard } from "@/components/chat/cross-project-comp
 import { WhatNextCard } from "@/components/chat/what-next-card"
 import { MilestoneCard } from "@/components/chat/milestone-card"
 import { AutoInsightCard } from "@/components/chat/auto-insight-card"
+import { ColumnTypeSuggestionCard } from "@/components/chat/column-type-suggestion-card"
 import { FairnessCheckCard } from "@/components/chat/fairness-check-card"
 import { BatchJobResultCard } from "@/components/chat/batch-job-result-card"
 import { ProductionExplanationCard } from "@/components/chat/production-explanation-card"
@@ -349,6 +350,7 @@ export default function ProjectWorkspace() {
     attachWhatNextToLastMessage,
     attachMilestoneToLastMessage,
     attachAutoInsightToLastMessage,
+    attachColumnTypeSuggestionsToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -847,6 +849,8 @@ export default function ProjectWorkspace() {
                 attachMilestoneToLastMessage(json.milestone as import("@/lib/types").MilestoneResult)
               } else if (json.type === "auto_insight" && json.auto_insight) {
                 attachAutoInsightToLastMessage(json.auto_insight as import("@/lib/types").AutoInsightResult)
+              } else if (json.type === "column_type_suggestions" && json.column_type_suggestions) {
+                attachColumnTypeSuggestionsToLastMessage(json.column_type_suggestions as import("@/lib/types").ColumnTypeSuggestionResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -985,6 +989,7 @@ export default function ProjectWorkspace() {
     attachWhatNextToLastMessage,
     attachMilestoneToLastMessage,
     attachAutoInsightToLastMessage,
+    attachColumnTypeSuggestionsToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -1599,6 +1604,14 @@ export default function ProjectWorkspace() {
                     {msg.auto_insight && (
                       <AutoInsightCard
                         result={msg.auto_insight}
+                        onActionClick={(prompt) => {
+                          setChatInput(prompt)
+                        }}
+                      />
+                    )}
+                    {msg.column_type_suggestions && (
+                      <ColumnTypeSuggestionCard
+                        result={msg.column_type_suggestions}
                         onActionClick={(prompt) => {
                           setChatInput(prompt)
                         }}

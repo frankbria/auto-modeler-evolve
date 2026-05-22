@@ -4394,3 +4394,196 @@ def compute_auto_insights(profile: dict, col_names: list[str]) -> list[dict]:
     # Sort by priority (ascending = most important first), cap at 3
     findings.sort(key=lambda f: f["priority"])
     return findings[:3]
+
+
+# ---------------------------------------------------------------------------
+# Column type suggestion helpers
+# ---------------------------------------------------------------------------
+
+_BOOL_VALUES = frozenset({"true", "false", "yes", "no", "0", "1", "y", "n", "t", "f"})
+
+_NUMERIC_COL_NAME_RE = re.compile(
+    r"\b(price|amount|cost|revenue|salary|wage|qty|quantity|count|total|"
+    r"score|rate|ratio|pct|percent|age|weight|height|distance|duration|"
+    r"budget|spend|value|profit|loss|margin|balance|units|volume)\b",
+    re.IGNORECASE,
+)
+
+
+def _sample_looks_numeric(sample_values: list) -> bool:
+    """Return True if all non-empty sample values parse as float."""
+    if not sample_values:
+        return False
+    valid = [str(v).strip() for v in sample_values if str(v).strip()]
+    if not valid:
+        return False
+    parsed = 0
+    for v in valid:
+        try:
+            float(v.replace(",", "").replace("$", "").replace("%", ""))
+            parsed += 1
+        except ValueError:
+            return False
+    return parsed > 0
+
+
+def _sample_looks_boolean(sample_values: list, unique_count: int) -> bool:
+    """Return True if all sample values are boolean-like."""
+    if unique_count > 3 or not sample_values:
+        return False
+    lower_vals = {str(v).strip().lower() for v in sample_values if str(v).strip()}
+    return bool(lower_vals) and lower_vals.issubset(_BOOL_VALUES)
+
+
+def _sample_looks_datetime(col_name: str, sample_values: list) -> bool:
+    """Return True if the column name has a date token and sample values look like dates."""
+    if not _has_date_token(col_name):
+        return False
+    if not sample_values:
+        return False
+    try:
+        import pandas as _pd_dt
+
+        for v in sample_values[:3]:
+            _pd_dt.to_datetime(str(v))  # No deprecated infer_datetime_format arg
+        return True
+    except Exception:
+        return False
+
+
+def _sample_all_whole_numbers(sample_values: list) -> bool:
+    """Return True if all sample float values are whole numbers (e.g. 1.0, 2.0)."""
+    if not sample_values:
+        return False
+    for v in sample_values:
+        try:
+            f = float(v)
+            if f != int(f):
+                return False
+        except (TypeError, ValueError):
+            return False
+    return True
+
+
+def compute_column_type_suggestions(profile: dict) -> dict:
+    """Scan dataset column profiles and return type mismatch suggestions.
+
+    Works purely from the stored profile dict — no DataFrame or file access.
+    Each suggestion describes a column whose stored dtype does not match what
+    the data actually looks like, with a plain-English reason and a one-click
+    fix action.
+
+    Returns::
+        {
+          "suggestions": list[dict],   # each has column/current_dtype/suggested_dtype/...
+          "has_suggestions": bool,
+          "dataset_rows": int,
+          "dataset_cols": int,
+        }
+    """
+    columns: list[dict] = profile.get("columns", [])
+    row_count: int = profile.get("row_count", 0)
+    suggestions: list[dict] = []
+
+    for col in columns:
+        col_name: str = col.get("name", "")
+        dtype: str = str(col.get("dtype", "object"))
+        unique_count: int = col.get("unique_count", 0)
+        null_pct: float = col.get("null_pct", 0.0)
+        sample_values: list = col.get("sample_values", [])
+
+        # Skip columns with very high null rate — unreliable sample
+        if null_pct > 90:
+            continue
+
+        # ---- Rule 1: object dtype that looks numeric ----
+        if dtype == "object" and not _has_date_token(col_name):
+            if _sample_looks_numeric(sample_values):
+                suggestions.append(
+                    {
+                        "column": col_name,
+                        "current_dtype": "text",
+                        "suggested_dtype": "numeric",
+                        "reason": (
+                            f"The values in **{col_name}** look like numbers "
+                            f"(e.g. {', '.join(str(v) for v in sample_values[:3])}), "
+                            "but the column is stored as text. "
+                            "Keeping it as text prevents AutoModeler from computing "
+                            "statistics, correlations, and predictions with this column."
+                        ),
+                        "confidence": "high",
+                        "sample_values": [str(v) for v in sample_values[:4]],
+                        "suggested_action": f"Convert {col_name} to numeric",
+                    }
+                )
+                continue  # Don't double-report this column
+
+        # ---- Rule 2: object dtype that looks boolean ----
+        if dtype == "object" and _sample_looks_boolean(sample_values, unique_count):
+            suggestions.append(
+                {
+                    "column": col_name,
+                    "current_dtype": "text",
+                    "suggested_dtype": "boolean",
+                    "reason": (
+                        f"**{col_name}** only contains values like "
+                        f"{', '.join(repr(str(v)) for v in sample_values[:3])}, "
+                        "which look like True/False flags. "
+                        "Converting to boolean allows AutoModeler to use this column "
+                        "as a classification target or binary feature."
+                    ),
+                    "confidence": "high",
+                    "sample_values": [str(v) for v in sample_values[:4]],
+                    "suggested_action": f"Convert {col_name} to boolean",
+                }
+            )
+            continue
+
+        # ---- Rule 3: object dtype that looks like dates ----
+        if dtype == "object" and _sample_looks_datetime(col_name, sample_values):
+            suggestions.append(
+                {
+                    "column": col_name,
+                    "current_dtype": "text",
+                    "suggested_dtype": "datetime",
+                    "reason": (
+                        f"**{col_name}** contains date-like values "
+                        f"(e.g. {', '.join(str(v) for v in sample_values[:2])}). "
+                        "Parsing it as a proper date lets AutoModeler extract "
+                        "day-of-week, month, and seasonal patterns automatically."
+                    ),
+                    "confidence": "medium",
+                    "sample_values": [str(v) for v in sample_values[:4]],
+                    "suggested_action": f"Parse {col_name} as a date column",
+                }
+            )
+            continue
+
+        # ---- Rule 4: float64 where all sample values are whole numbers ----
+        if dtype in ("float64", "float32") and _sample_all_whole_numbers(sample_values):
+            # Only flag if not an ID column (IDs can legitimately be floats)
+            if not _ID_NAME_RE.search(col_name):
+                suggestions.append(
+                    {
+                        "column": col_name,
+                        "current_dtype": "decimal",
+                        "suggested_dtype": "integer",
+                        "reason": (
+                            f"**{col_name}** is stored as a decimal number "
+                            f"(e.g. {', '.join(str(v) for v in sample_values[:3])}), "
+                            "but all values are whole numbers. "
+                            "Converting to integer makes the column cleaner and "
+                            "prevents unexpected .0 suffixes in predictions."
+                        ),
+                        "confidence": "medium",
+                        "sample_values": [str(v) for v in sample_values[:4]],
+                        "suggested_action": f"Convert {col_name} to integer",
+                    }
+                )
+
+    return {
+        "suggestions": suggestions,
+        "has_suggestions": bool(suggestions),
+        "dataset_rows": row_count,
+        "dataset_cols": len(columns),
+    }
