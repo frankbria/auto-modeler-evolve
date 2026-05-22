@@ -406,9 +406,11 @@ def anthropic_mock():
     mock_stream.__iter__ = MagicMock(return_value=iter([mock_event]))
     mock_client.messages.stream.return_value = mock_stream
 
-    with patch("api.chat.anthropic") as mock_anthropic_module:
-        mock_anthropic_module.Anthropic.return_value = mock_client
-        yield mock_client
+    patcher = patch("api.chat.anthropic")
+    mock_anthropic_module = patcher.start()
+    mock_anthropic_module.Anthropic.return_value = mock_client
+    yield mock_client
+    patcher.stop()
 
 
 def test_chat_emits_prod_explain_event(tmp_path, anthropic_mock):
