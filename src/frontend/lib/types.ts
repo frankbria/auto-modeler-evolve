@@ -524,6 +524,7 @@ export interface ChatMessage {
   weekly_usage_report?: WeeklyUsageReportResult
   what_next?: WhatNextResult
   milestone?: MilestoneResult
+  auto_insight?: AutoInsightResult
 }
 
 export interface RollbackVersionEntry {
@@ -3506,4 +3507,20 @@ export interface MilestoneResult {
   summary: string
   progress: number
   actions: MilestoneAction[]
+}
+
+export interface AutoInsightFinding {
+  insight_type: string
+  icon: string
+  finding: string
+  suggested_action: string
+  priority: number
+}
+
+export interface AutoInsightResult {
+  dataset_name: string
+  row_count: number
+  column_count: number
+  findings: AutoInsightFinding[]
+  summary: string
 }

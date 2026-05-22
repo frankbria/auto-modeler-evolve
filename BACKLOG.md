@@ -49,7 +49,11 @@ the time is better spent on real features.
 
 ## Currently Working On
 
-*Nothing — pick from What's Next below.*
+**Day 71 (20:00) — Track E: Auto-Insight on New Dataset.**
+
+Fires automatically on the analyst's first chat message after uploading a dataset. No asking required. AutoModeler scans the profile for 1-2 specific findings (correlations, date columns, class imbalance, missing data, high cardinality, skew) and emits an `AutoInsightCard` in chat — the "smart colleague who taps you on the shoulder and says I noticed something interesting."
+
+Tracking field: `Project.last_insight_dataset_id` (fires once per dataset). Pure function `compute_auto_insights()` in `core/analyzer.py`. SSE event type `auto_insight`. Frontend: `AutoInsightCard` (sky/cyan border, 🔍 icon), `AutoInsightResult`/`AutoInsightFinding` types, `attachAutoInsightToLastMessage` store action.
 
 ---
 

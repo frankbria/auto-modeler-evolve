@@ -4170,3 +4170,230 @@ def compute_training_vs_production(
             "weekly_timeline": weekly_timeline,
             "summary": summary,
         }
+
+
+# ---------------------------------------------------------------------------
+# Auto-insight on new dataset upload (Track E — proactive data findings)
+# ---------------------------------------------------------------------------
+
+# Token-set of date-related words for column name detection.
+# We split on underscores/hyphens and check individual tokens rather than
+# using \b which fails on underscore-separated names like "order_date".
+_DATE_TOKENS = frozenset(
+    {
+        "date",
+        "datetime",
+        "time",
+        "timestamp",
+        "created",
+        "updated",
+        "year",
+        "month",
+        "day",
+        "week",
+        "period",
+        "quarter",
+    }
+)
+
+
+def _has_date_token(col_name: str) -> bool:
+    """Return True if any underscore/hyphen-separated token in col_name is a date keyword."""
+    tokens = re.split(r"[_\-\s]+", col_name.lower())
+    return bool(_DATE_TOKENS & set(tokens))
+
+# Column name patterns that suggest an ID / key column
+_ID_NAME_RE = re.compile(
+    r"(^id$|_id$|^id_|_key$|^pk$|_pk$|^uuid$|^guid$)",
+    re.IGNORECASE,
+)
+
+
+def compute_auto_insights(profile: dict, col_names: list[str]) -> list[dict]:
+    """Return up to 3 ranked interesting findings from a dataset profile.
+
+    Each finding is a dict with:
+        insight_type:     str  (slug for the finding category)
+        icon:             str  (emoji)
+        finding:          str  (plain-English description of what was found)
+        suggested_action: str  (one-click follow-up question for the analyst)
+        priority:         int  (1=high, 2=medium, 3=low)
+
+    Returns sorted by priority (ascending), capped at 3 entries.
+    Designed to be called as a pure function — no database access.
+    """
+    findings: list[dict] = []
+    columns: list[dict] = profile.get("columns", [])
+    row_count: int = profile.get("row_count", 0)
+
+    # 1. Strong correlation between two numeric columns
+    correlations: list[dict] = profile.get("correlations", [])
+    if correlations:
+        # correlations is a list of {col1, col2, r} sorted by |r|
+        for corr in correlations[:5]:
+            r_val = float(corr.get("r", 0))
+            if abs(r_val) >= 0.65:
+                col1 = corr.get("col1", "")
+                col2 = corr.get("col2", "")
+                direction = "positively" if r_val > 0 else "negatively"
+                strength = "very strongly" if abs(r_val) >= 0.85 else "strongly"
+                findings.append(
+                    {
+                        "insight_type": "strong_correlation",
+                        "icon": "🔗",
+                        "finding": (
+                            f"**{col1}** and **{col2}** are {strength} {direction} "
+                            f"correlated (r = {r_val:+.2f}) — they tend to move together."
+                        ),
+                        "suggested_action": f"Show me the relationship between {col1} and {col2}",
+                        "priority": 1,
+                    }
+                )
+                break  # Only report the strongest correlation
+
+    # 2. Date / time column detected → temporal analysis possible
+    date_cols = [
+        col
+        for col in columns
+        if _has_date_token(col.get("name", ""))
+        or str(col.get("dtype", "")).startswith("datetime")
+    ]
+    numeric_cols = [
+        col
+        for col in columns
+        if pd.api.types.is_numeric_dtype(pd.Series(dtype=col.get("dtype", "object")))
+        and not _ID_NAME_RE.search(col.get("name", ""))
+    ]
+    if date_cols and numeric_cols:
+        date_col_name = date_cols[0].get("name", "date")
+        num_col_name = numeric_cols[0].get("name", "value")
+        findings.append(
+            {
+                "insight_type": "date_column",
+                "icon": "📅",
+                "finding": (
+                    f"I found a **{date_col_name}** column — this data has a time dimension. "
+                    f"Temporal patterns (trends, seasonality) can reveal a lot."
+                ),
+                "suggested_action": f"Show me {num_col_name} trends over time",
+                "priority": 1,
+            }
+        )
+
+    # 3. Class imbalance in a binary-ish categorical column
+    for col in columns:
+        dtype = str(col.get("dtype", "object"))
+        unique_count = col.get("unique_count", 0)
+        if unique_count not in (2, 3):
+            continue
+        if "int" in dtype or "float" in dtype:
+            continue
+        dist: list = col.get("value_counts", [])
+        if not dist or len(dist) < 2:
+            continue
+        # dist is list of {value, count} sorted by count desc
+        total_in_dist = sum(item.get("count", 0) for item in dist)
+        if total_in_dist == 0:
+            continue
+        top_pct = round(dist[0].get("count", 0) / total_in_dist * 100, 1)
+        if top_pct >= 75:
+            col_name = col.get("name", "")
+            minority_pct = round(100 - top_pct, 1)
+            findings.append(
+                {
+                    "insight_type": "class_imbalance",
+                    "icon": "⚖️",
+                    "finding": (
+                        f"Column **{col_name}** is imbalanced: {top_pct}% "
+                        f'"{dist[0].get("value", "")}" vs {minority_pct}% other. '
+                        "Imbalanced targets can make models biased toward the majority class."
+                    ),
+                    "suggested_action": f"How do I handle class imbalance in {col_name}?",
+                    "priority": 1,
+                }
+            )
+            break  # Report only the most imbalanced column
+
+    # 4. High missing values in an important column
+    high_missing = [
+        col
+        for col in columns
+        if col.get("null_pct", 0) >= 20
+        and not _ID_NAME_RE.search(col.get("name", ""))
+    ]
+    if high_missing:
+        worst = max(high_missing, key=lambda c: c.get("null_pct", 0))
+        col_name = worst.get("name", "")
+        pct = worst.get("null_pct", 0)
+        severity = "critical" if pct >= 50 else "notable"
+        findings.append(
+            {
+                "insight_type": "high_missing",
+                "icon": "⚠️",
+                "finding": (
+                    f"Column **{col_name}** is missing **{pct:.0f}%** of its values "
+                    f"— that's {severity}. Missing data can reduce model accuracy."
+                ),
+                "suggested_action": f"How should I handle missing values in {col_name}?",
+                "priority": 2,
+            }
+        )
+
+    # 5. Likely ID column included in dataset
+    id_cols = [
+        col
+        for col in columns
+        if _ID_NAME_RE.search(col.get("name", ""))
+        or (
+            col.get("unique_count", 0) >= max(row_count * 0.9, 50)
+            and row_count > 0
+        )
+    ]
+    if id_cols:
+        id_col_name = id_cols[0].get("name", "")
+        findings.append(
+            {
+                "insight_type": "high_cardinality",
+                "icon": "🔑",
+                "finding": (
+                    f"Column **{id_col_name}** looks like an ID field "
+                    f"({id_cols[0].get('unique_count', 0):,} unique values) — "
+                    "it should probably be excluded from model features."
+                ),
+                "suggested_action": f"Should I include {id_col_name} in my model?",
+                "priority": 3,
+            }
+        )
+
+    # 6. Highly skewed numeric column (right-tail — suggests log transform)
+    for col in columns:
+        mean_val = col.get("mean")
+        std_val = col.get("std")
+        min_val = col.get("min")
+        if mean_val is None or std_val is None or min_val is None:
+            continue
+        if mean_val <= 0 or std_val <= 0:
+            continue
+        # Coefficient of variation > 2 with non-negative values → high right skew
+        if std_val > 2 * mean_val and min_val >= 0:
+            col_name = col.get("name", "")
+            if _ID_NAME_RE.search(col_name):
+                continue
+            findings.append(
+                {
+                    "insight_type": "numeric_skew",
+                    "icon": "📊",
+                    "finding": (
+                        f"Column **{col_name}** is heavily right-skewed "
+                        f"(std {std_val:.1f} >> mean {mean_val:.1f}). "
+                        "A log transform often improves model accuracy for skewed targets."
+                    ),
+                    "suggested_action": f"Should I apply a log transform to {col_name}?",
+                    "priority": 3,
+                }
+            )
+            break  # Report only one skewed column
+
+    # Sort by priority (ascending = most important first), cap at 3
+    findings.sort(key=lambda f: f["priority"])
+    return findings[:3]

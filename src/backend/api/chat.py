@@ -11865,6 +11865,49 @@ def send_message(
     except Exception:  # noqa: BLE001
         pass  # Milestone card is enhancement; never crash chat
 
+    # ── Auto-Insight on New Dataset ──────────────────────────────────────────
+    # Fires automatically on the analyst's first chat message after uploading
+    # a new dataset. AutoModeler scans the profile and surfaces 1-2 specific
+    # data-driven findings (correlations, date columns, class imbalance, etc.)
+    # The analyst does NOT need to ask — this is proactive "smart colleague" UX.
+    auto_insight_event: dict | None = None
+    try:
+        _ai_dataset = ctx["dataset"]
+        _ai_last_ds_id = project.last_insight_dataset_id  # type: ignore[attr-defined]
+        if _ai_dataset and _ai_last_ds_id != _ai_dataset.id:
+            from core.analyzer import compute_auto_insights as _compute_auto_insights
+
+            _ai_profile = json.loads(_ai_dataset.profile or "{}")
+            _ai_col_names = [c["name"] for c in _ai_profile.get("columns", [])]
+            _ai_findings = _compute_auto_insights(_ai_profile, _ai_col_names)
+            if _ai_findings:
+                _ai_finding_texts = [f["finding"] for f in _ai_findings]
+                auto_insight_event = {
+                    "dataset_name": _ai_dataset.filename,
+                    "row_count": _ai_dataset.row_count or 0,
+                    "column_count": _ai_dataset.column_count or 0,
+                    "findings": _ai_findings,
+                    "summary": (
+                        f"Found {len(_ai_findings)} interesting "
+                        + ("finding" if len(_ai_findings) == 1 else "findings")
+                        + f" in **{_ai_dataset.filename}**."
+                    ),
+                }
+                system_prompt += (
+                    "\n\n## Auto-Insights Discovered\n"
+                    "AutoModeler automatically scanned the dataset and found:\n"
+                    + "\n".join(f"- {t}" for t in _ai_finding_texts)
+                    + "\nAn AutoInsightCard is shown with these findings. "
+                    "In 1 sentence, acknowledge the most important finding and "
+                    "invite the analyst to explore further."
+                )
+                # Persist so this fires exactly once per dataset
+                project.last_insight_dataset_id = _ai_dataset.id  # type: ignore[attr-defined]
+                session.add(project)
+                session.commit()
+    except Exception:  # noqa: BLE001
+        pass  # Auto-insight is enhancement; never crash chat
+
     # "What's Next?" workflow guidance card
     what_next_event: dict | None = None
     if _WHAT_NEXT_PATTERNS.search(body.message):
@@ -15155,6 +15198,9 @@ def send_message(
 
         if what_next_event:
             yield f"data: {json.dumps({'type': 'what_next', 'what_next': what_next_event})}\n\n"
+
+        if auto_insight_event:
+            yield f"data: {json.dumps({'type': 'auto_insight', 'auto_insight': auto_insight_event})}\n\n"
 
         # After text stream, opportunistically generate a chart if the
         # message is about data and we have a dataset loaded

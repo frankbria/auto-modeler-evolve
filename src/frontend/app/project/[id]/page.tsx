@@ -120,6 +120,7 @@ import { WeeklyUsageReportCard } from "@/components/deploy/weekly-usage-report-c
 import { CrossProjectComparisonCard } from "@/components/chat/cross-project-comparison-card"
 import { WhatNextCard } from "@/components/chat/what-next-card"
 import { MilestoneCard } from "@/components/chat/milestone-card"
+import { AutoInsightCard } from "@/components/chat/auto-insight-card"
 import { FairnessCheckCard } from "@/components/chat/fairness-check-card"
 import { BatchJobResultCard } from "@/components/chat/batch-job-result-card"
 import { ProductionExplanationCard } from "@/components/chat/production-explanation-card"
@@ -347,6 +348,7 @@ export default function ProjectWorkspace() {
     attachCrossProjectComparisonToLastMessage,
     attachWhatNextToLastMessage,
     attachMilestoneToLastMessage,
+    attachAutoInsightToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -843,6 +845,8 @@ export default function ProjectWorkspace() {
                 attachWhatNextToLastMessage(json.what_next as import("@/lib/types").WhatNextResult)
               } else if (json.type === "milestone" && json.milestone) {
                 attachMilestoneToLastMessage(json.milestone as import("@/lib/types").MilestoneResult)
+              } else if (json.type === "auto_insight" && json.auto_insight) {
+                attachAutoInsightToLastMessage(json.auto_insight as import("@/lib/types").AutoInsightResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -980,6 +984,7 @@ export default function ProjectWorkspace() {
     attachCrossProjectComparisonToLastMessage,
     attachWhatNextToLastMessage,
     attachMilestoneToLastMessage,
+    attachAutoInsightToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -1586,6 +1591,14 @@ export default function ProjectWorkspace() {
                     {msg.milestone && (
                       <MilestoneCard
                         result={msg.milestone}
+                        onActionClick={(prompt) => {
+                          setChatInput(prompt)
+                        }}
+                      />
+                    )}
+                    {msg.auto_insight && (
+                      <AutoInsightCard
+                        result={msg.auto_insight}
                         onActionClick={(prompt) => {
                           setChatInput(prompt)
                         }}

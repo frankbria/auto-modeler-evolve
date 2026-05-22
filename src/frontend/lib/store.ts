@@ -164,6 +164,7 @@ interface AppState {
   attachWeeklyUsageReportToLastMessage: (weekly_usage_report: import("./types").WeeklyUsageReportResult) => void
   attachWhatNextToLastMessage: (what_next: import("./types").WhatNextResult) => void
   attachMilestoneToLastMessage: (milestone: import("./types").MilestoneResult) => void
+  attachAutoInsightToLastMessage: (auto_insight: import("./types").AutoInsightResult) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -1294,6 +1295,16 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, milestone }
+      }
+      return { messages }
+    }),
+
+  attachAutoInsightToLastMessage: (auto_insight) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, auto_insight }
       }
       return { messages }
     }),

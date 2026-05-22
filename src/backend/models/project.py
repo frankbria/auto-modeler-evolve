@@ -21,3 +21,6 @@ class Project(SQLModel, table=True):
     last_milestone_state: Optional[str] = Field(
         default=None
     )  # None | "upload" | "train" | "deploy"
+    last_insight_dataset_id: Optional[str] = Field(
+        default=None
+    )  # dataset.id of the most-recently auto-analyzed dataset
