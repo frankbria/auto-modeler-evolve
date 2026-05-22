@@ -1,5 +1,32 @@
 # Journal
 
+## Day 71 — 20:00 — Track E: Auto-Insight on New Dataset
+
+No community issues. All spec items remain [x]. Selected **Auto-Insight on New Dataset** as the highest-impact remaining Track E gap — the vision's "smart colleague" principle means the system should proactively say "I found something interesting in your data" on first contact, without being asked.
+
+**What was built:**
+
+`compute_auto_insights(profile, col_names)` pure function in `core/analyzer.py` that scans a dataset profile dict and returns up to 3 ranked findings sorted by priority (1=high interest, 2=worth noting, 3=FYI):
+
+- **strong_correlation** — detects numeric column pairs with |r| ≥ 0.65 in the profile's correlations list
+- **date_column** — detects temporal columns via token-based name matching (splits on `_-\s`, checks against `_DATE_TOKENS` frozenset); regex `\b` was tried first but fails for `order_date` because Python treats `_` as `\w` — no word boundary between `_d`
+- **class_imbalance** — binary categoricals where majority class ≥ 75%
+- **high_missing** — columns with ≥ 20% null_pct
+- **high_cardinality** — columns matching `_ID_NAME_RE` or unique_count ≥ 95% of row_count
+- **numeric_skew** — std > 2× mean with min ≥ 0 (non-ID columns only)
+
+`Project.last_insight_dataset_id` TEXT field added via inline SQLite migration in `_apply_migrations()`. Handler fires exactly once per dataset: guarded by `dataset.id != last_insight_dataset_id`. After firing, commits `project.last_insight_dataset_id = dataset.id` and injects top findings into system_prompt for LLM narration.
+
+Frontend: `AutoInsightFinding` + `AutoInsightResult` TypeScript interfaces; `auto_insight?` on `ChatMessage`; `attachAutoInsightToLastMessage` Zustand action; `AutoInsightCard` (sky border, 🔍 icon) with dataset/row/column badges, summary, finding rows (priority badge + bold-markdown text + action button that pre-fills the chat input), sr-only figcaption.
+
+**Tests:** 18 backend (15 pure-function + 3 integration) + 14 frontend (component + store) = 32 new tests. All passing. Backend lint clean. Frontend build + lint clean.
+
+**Cumulative totals:** 4407 backend + 2491 frontend = 6898 tests, 100% pass rate.
+
+**Key learning:** Python regex `\b` treats `_` as `\w`, so `\bdate\b` does NOT match inside `order_date` (`_d` = `\w\w`, no boundary). Fix: split column names on `[_\-\s]+` and check tokens against a frozenset. Saved to LEARNINGS.md.
+
+---
+
 ## Day 71 — 12:00 — Track E: Proactive Milestone Messages
 
 No community issues. All spec items remain [x]. BACKLOG Day 71 identified "Proactive milestone messages" as the highest-impact remaining Track E gap — Day 71 04:00 built the *reactive* WhatNextCard (analyst asks "what's next?"), but the vision's "smart colleague" principle also requires *proactive* acknowledgment: a colleague who taps you on the shoulder and says "nice job training your first model!" without being prompted.
