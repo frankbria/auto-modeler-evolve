@@ -1,5 +1,39 @@
 # Journal
 
+## Day 72 — 12:00 — Track B: Goal Seek / Reverse Prediction via Chat
+
+No community issues. All spec items remain [x]. Selected **Goal Seek** as the highest-impact unimplemented feature — business analysts often need the inverse question: "I want revenue of $5M; what inputs do I need?" No part of this existed in the codebase.
+
+**What was built:**
+
+`run_goal_seek(pipeline_path, model_path, target_value, fixed_features, algorithm)` pure function in `core/deployer.py` using `scipy.optimize.minimize` with L-BFGS-B:
+- **Regression**: minimises `|predict(x) - target_value|` subject to per-feature bounds from `pipeline.feature_ranges` (±100% extrapolation allowed)
+- **Classification**: maximises `predict_proba` for the target class
+- Returns structured dict: `{target_column, problem_type, algorithm_plain, target_value, achieved_value, achieved, gap_pct, suggestions[{feature, current_mean, suggested_value, direction, change_pct}], fixed_features, n_optimized, feasible, summary}`
+- Suggestions ranked by |suggested − mean| / std, capped at 8, no change < 0.5% filtered out
+
+REST endpoint `POST /api/deploy/{id}/goal-seek` added to `api/deploy.py`.
+
+Chat integration in `api/chat.py`:
+- `_GOAL_SEEK_PATTERNS` regex with 8 NL variants ("goal seek", "what inputs would produce", "reverse prediction", "optimize my inputs to", "how do I reach", etc.)
+- `_extract_goal_seek_target()` helper handles K/M/B/$ suffixes, quoted class names, fallback to last/highest numeric
+- Handler block mutually-exclusive with whatif/sensitivity/interaction events; SSE `goal_seek` event emitted
+
+Frontend (`GoalSeekCard`): target vs achieved grid, amber/emerald border by achievement, gap indicator (regression only), suggestion rows with DirectionBadge (↑/↓/→), fixed features, feasibility note, sr-only accessibility caption.
+
+**Tests:** 30 backend (pytest) + 25 Jest frontend — all green. Lint clean.
+
+**Bugs fixed during implementation:**
+- Nested f-string with escaped quotes invalid in Python 3.12 — extracted to `_gs_gap_str` variable
+- Test fixtures used `endpoint_url`, `model_path`, `status="active"` on Deployment model — corrected to `endpoint_path`, `dashboard_url`, `is_active=True`; `model_path` belongs on `ModelRun`
+- Dead code `override_session()` function in test fixture removed; orphaned `engine = ...` lines cleaned up
+- Chat test URLs used `/api/chat/send` with project_id in body — corrected to `/api/chat/{project_id}` path param pattern
+- Walrus operator `:=` used incorrectly as assignment — fixed to plain assignment
+
+All 4423 backend + 2568 frontend tests pass (added 55 new tests). 100% pass rate, lint clean, frontend build clean.
+
+---
+
 ## Day 72 — 04:00 — Anthropic Mock Fixture Scope Fix
 
 No community issues. Production prediction explanation tests were failing due to incorrect mock patch target. The fixture was patching `"api.chat.anthropic"` (the module reference) instead of `"anthropic.Anthropic"` (the actual class import), causing mock failures when the Anthropic client was instantiated. Fixed patch target + scope, tests now pass cleanly. Performance baseline timings updated post-fix (training reduced to 70ms after previous optimizations). All 4423 backend + 2500 frontend tests pass, 100% pass rate, lint clean.
