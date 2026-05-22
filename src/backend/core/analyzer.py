@@ -4202,6 +4202,7 @@ def _has_date_token(col_name: str) -> bool:
     tokens = re.split(r"[_\-\s]+", col_name.lower())
     return bool(_DATE_TOKENS & set(tokens))
 
+
 # Column name patterns that suggest an ID / key column
 _ID_NAME_RE = re.compile(
     r"(^id$|_id$|^id_|_key$|^pk$|_pk$|^uuid$|^guid$)",
@@ -4318,8 +4319,7 @@ def compute_auto_insights(profile: dict, col_names: list[str]) -> list[dict]:
     high_missing = [
         col
         for col in columns
-        if col.get("null_pct", 0) >= 20
-        and not _ID_NAME_RE.search(col.get("name", ""))
+        if col.get("null_pct", 0) >= 20 and not _ID_NAME_RE.search(col.get("name", ""))
     ]
     if high_missing:
         worst = max(high_missing, key=lambda c: c.get("null_pct", 0))
@@ -4344,10 +4344,7 @@ def compute_auto_insights(profile: dict, col_names: list[str]) -> list[dict]:
         col
         for col in columns
         if _ID_NAME_RE.search(col.get("name", ""))
-        or (
-            col.get("unique_count", 0) >= max(row_count * 0.9, 50)
-            and row_count > 0
-        )
+        or (col.get("unique_count", 0) >= max(row_count * 0.9, 50) and row_count > 0)
     ]
     if id_cols:
         id_col_name = id_cols[0].get("name", "")

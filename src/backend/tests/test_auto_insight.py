@@ -232,9 +232,7 @@ class TestComputeAutoInsights:
                 },
             ]
         )
-        findings = compute_auto_insights(
-            profile, ["order_date", "revenue", "is_churn"]
-        )
+        findings = compute_auto_insights(profile, ["order_date", "revenue", "is_churn"])
         if len(findings) >= 2:
             for i in range(len(findings) - 1):
                 assert findings[i]["priority"] <= findings[i + 1]["priority"]
