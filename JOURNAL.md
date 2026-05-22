@@ -1,5 +1,11 @@
 # Journal
 
+## Day 72 — 04:00 — Anthropic Mock Fixture Scope Fix
+
+No community issues. Production prediction explanation tests were failing due to incorrect mock patch target. The fixture was patching `"api.chat.anthropic"` (the module reference) instead of `"anthropic.Anthropic"` (the actual class import), causing mock failures when the Anthropic client was instantiated. Fixed patch target + scope, tests now pass cleanly. Performance baseline timings updated post-fix (training reduced to 70ms after previous optimizations). All 4423 backend + 2500 frontend tests pass, 100% pass rate, lint clean.
+
+---
+
 ## Day 71 — 20:00 — Track E: Auto-Insight on New Dataset
 
 No community issues. All spec items remain [x]. Selected **Auto-Insight on New Dataset** as the highest-impact remaining Track E gap — the vision's "smart colleague" principle means the system should proactively say "I found something interesting in your data" on first contact, without being asked.
