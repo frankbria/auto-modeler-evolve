@@ -9025,7 +9025,11 @@ def send_message(
                     _gs_pipeline = _load_gs_pipeline(_gs_deployment.pipeline_path)
                     _gs_problem = _gs_pipeline.problem_type
                     _gs_target_col = _gs_pipeline.target_column or "output"
-                    _gs_classes = list(_gs_pipeline.target_classes or []) if _gs_pipeline.target_classes else None
+                    _gs_classes = (
+                        list(_gs_pipeline.target_classes or [])
+                        if _gs_pipeline.target_classes
+                        else None
+                    )
 
                     # Extract target value and optional fixed features from message
                     _gs_target, _gs_fixed = _extract_goal_seek_target(
@@ -9044,7 +9048,9 @@ def send_message(
                             algorithm=_gs_run.algorithm or "",
                         )
                         goal_seek_event = _gs_result
-                        _gs_achieved_label = "✓ Achieved" if _gs_result["achieved"] else "Best Effort"
+                        _gs_achieved_label = (
+                            "✓ Achieved" if _gs_result["achieved"] else "Best Effort"
+                        )
                         _gs_sugg_str = "; ".join(
                             f"{s['feature']} → {s['suggested_value']}"
                             for s in _gs_result["suggestions"][:3]

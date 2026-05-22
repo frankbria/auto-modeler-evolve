@@ -7,6 +7,7 @@ Covers:
 - POST /api/deploy/{id}/goal-seek endpoint (3 tests)
 - Chat integration: SSE event emitted (2 tests)
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -52,12 +53,29 @@ def _build_reg_pipeline(tmpdir: Path, n: int = 100) -> tuple[str, str]:
         column_types={"units": "numeric", "price": "numeric", "discount": "numeric"},
         problem_type="regression",
         target_column="revenue",
-        feature_means={"units": float(X[:, 0].mean()), "price": float(X[:, 1].mean()), "discount": float(X[:, 2].mean())},
-        feature_stds={"units": float(X[:, 0].std()), "price": float(X[:, 1].std()), "discount": float(X[:, 2].std())},
+        feature_means={
+            "units": float(X[:, 0].mean()),
+            "price": float(X[:, 1].mean()),
+            "discount": float(X[:, 2].mean()),
+        },
+        feature_stds={
+            "units": float(X[:, 0].std()),
+            "price": float(X[:, 1].std()),
+            "discount": float(X[:, 2].std()),
+        },
         feature_ranges={
-            "units": {"p5": float(np.percentile(X[:, 0], 5)), "p95": float(np.percentile(X[:, 0], 95))},
-            "price": {"p5": float(np.percentile(X[:, 1], 5)), "p95": float(np.percentile(X[:, 1], 95))},
-            "discount": {"p5": float(np.percentile(X[:, 2], 5)), "p95": float(np.percentile(X[:, 2], 95))},
+            "units": {
+                "p5": float(np.percentile(X[:, 0], 5)),
+                "p95": float(np.percentile(X[:, 0], 95)),
+            },
+            "price": {
+                "p5": float(np.percentile(X[:, 1], 5)),
+                "p95": float(np.percentile(X[:, 1], 95)),
+            },
+            "discount": {
+                "p5": float(np.percentile(X[:, 2], 5)),
+                "p95": float(np.percentile(X[:, 2], 95)),
+            },
         },
     )
     pipeline_path = str(tmpdir / "pipeline.joblib")
@@ -85,8 +103,14 @@ def _build_cls_pipeline(tmpdir: Path, n: int = 100) -> tuple[str, str]:
         feature_means={"age": float(X[:, 0].mean()), "score": float(X[:, 1].mean())},
         feature_stds={"age": float(X[:, 0].std()), "score": float(X[:, 1].std())},
         feature_ranges={
-            "age": {"p5": float(np.percentile(X[:, 0], 5)), "p95": float(np.percentile(X[:, 0], 95))},
-            "score": {"p5": float(np.percentile(X[:, 1], 5)), "p95": float(np.percentile(X[:, 1], 95))},
+            "age": {
+                "p5": float(np.percentile(X[:, 0], 5)),
+                "p95": float(np.percentile(X[:, 0], 95)),
+            },
+            "score": {
+                "p5": float(np.percentile(X[:, 1], 5)),
+                "p95": float(np.percentile(X[:, 1], 95)),
+            },
         },
     )
     pipeline_path = str(tmpdir / "cls_pipeline.joblib")
@@ -127,7 +151,9 @@ def test_goal_seek_patterns_match(message):
     ],
 )
 def test_goal_seek_patterns_no_false_positives(message):
-    assert not _GOAL_SEEK_PATTERNS.search(message), f"Pattern should NOT match: {message!r}"
+    assert not _GOAL_SEEK_PATTERNS.search(message), (
+        f"Pattern should NOT match: {message!r}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -248,7 +274,9 @@ def test_goal_seek_suggestions_capped_at_8(tmp_path):
 
 def test_goal_seek_algorithm_plain_set(tmp_path):
     pp, mp = _build_reg_pipeline(tmp_path)
-    result = run_goal_seek(pp, mp, target_value=1.0, algorithm="gradient_boosting_regressor")
+    result = run_goal_seek(
+        pp, mp, target_value=1.0, algorithm="gradient_boosting_regressor"
+    )
     assert result["algorithm_plain"] == "Gradient Boosting"
 
 
@@ -296,7 +324,9 @@ def client_with_gs(tmp_path) -> Generator[tuple[TestClient, str], None, None]:
                 row_count=100,
                 column_count=3,
             )
-            (tmp_path / "test.csv").write_text("units,price,discount,revenue\n1,2,3,4\n")
+            (tmp_path / "test.csv").write_text(
+                "units,price,discount,revenue\n1,2,3,4\n"
+            )
             s.add(ds)
             fs_obj = FeatureSet(
                 id="gs-fs-1",
@@ -401,7 +431,9 @@ def _make_chat_client(tmp_path, db_path="sqlite:///:memory:"):
                 row_count=100,
                 column_count=3,
             )
-            (tmp_path / "chat_test.csv").write_text("units,price,discount,revenue\n1,2,3,4\n")
+            (tmp_path / "chat_test.csv").write_text(
+                "units,price,discount,revenue\n1,2,3,4\n"
+            )
             s.add(ds)
             fs_obj = FeatureSet(
                 id="chat-gs-fs",

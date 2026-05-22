@@ -1240,7 +1240,11 @@ def run_goal_seek(
                 return float(-proba.max())
             # No predict_proba — approximate via prediction
             pred = model.predict(x_arr)[0]
-            return 0.0 if str(pipeline.decode_prediction(pred)) == target_class_str else 1.0
+            return (
+                0.0
+                if str(pipeline.decode_prediction(pred)) == target_class_str
+                else 1.0
+            )
         else:
             pred = float(model.predict(x_arr)[0])
             return float((pred - target_value) ** 2)  # type: ignore[operator]
@@ -1292,18 +1296,22 @@ def run_goal_seek(
             change_pct = round((suggested - mean_val) / abs(mean_val) * 100, 1)
         else:
             change_pct = 0.0
-        direction = "increase" if suggested > mean_val + 1e-9 else (
-            "decrease" if suggested < mean_val - 1e-9 else "no_change"
+        direction = (
+            "increase"
+            if suggested > mean_val + 1e-9
+            else ("decrease" if suggested < mean_val - 1e-9 else "no_change")
         )
         # Only include features that changed by at least 1%
         if abs(change_pct) >= 1.0:
-            suggestions.append({
-                "feature": f,
-                "current_mean": round(mean_val, 4),
-                "suggested_value": round(float(suggested), 4),
-                "direction": direction,
-                "change_pct": change_pct,
-            })
+            suggestions.append(
+                {
+                    "feature": f,
+                    "current_mean": round(mean_val, 4),
+                    "suggested_value": round(float(suggested), 4),
+                    "direction": direction,
+                    "change_pct": change_pct,
+                }
+            )
     # Sort by absolute change, descending
     suggestions.sort(key=lambda s: abs(s["change_pct"]), reverse=True)
     # Cap at 8 most impactful
@@ -1315,15 +1323,15 @@ def run_goal_seek(
 
     if is_classification:
         if achieved:
-            summary = (
-                f"Goal achieved: the model predicts '{target_class_str}' with the suggested inputs."
-            )
+            summary = f"Goal achieved: the model predicts '{target_class_str}' with the suggested inputs."
         else:
             best_proba_str = ""
             if hasattr(model, "predict_proba") and target_class_idx is not None:
                 proba = model.predict_proba(best_x_arr)[0]
                 if target_class_idx < len(proba):
-                    best_proba_str = f" Best confidence: {round(proba[target_class_idx]*100, 1)}%."
+                    best_proba_str = (
+                        f" Best confidence: {round(proba[target_class_idx] * 100, 1)}%."
+                    )
             summary = (
                 f"Could not achieve class '{target_class_str}' — the model predicts "
                 f"'{achieved_decoded}' even with optimized inputs.{best_proba_str}"
@@ -1337,7 +1345,9 @@ def run_goal_seek(
         else:
             if len(suggestions) > 0:
                 top = suggestions[0]
-                direction_word = "increasing" if top["direction"] == "increase" else "decreasing"
+                direction_word = (
+                    "increasing" if top["direction"] == "increase" else "decreasing"
+                )
                 summary = (
                     f"Best effort: predicted {round(float(achieved_decoded), 2):,} vs target "
                     f"{round(float(target_value), 2):,} "  # type: ignore[arg-type]
