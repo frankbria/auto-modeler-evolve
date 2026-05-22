@@ -2387,6 +2387,87 @@ def _detect_interaction_request(
 
 
 # ---------------------------------------------------------------------------
+# Goal Seek — reverse prediction: "what inputs produce target output?"
+# ---------------------------------------------------------------------------
+
+# Do NOT add a trailing \b after patterns ending in \w — causes false negatives
+_GOAL_SEEK_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"(?:goal\s+seek|goal-seek|goalseek)\b|"
+    r"what\s+(?:inputs?|values?|combination|features?)\s+(?:would|will|could)\s+(?:produce|give|yield|result\s+in|achieve|reach|get\s+me)\b|"
+    r"(?:find|show\s+me|what\s+are)\s+(?:the\s+)?inputs?\s+(?:to|that\s+(?:give|produce|yield|achieve))\b|"
+    r"(?:what|which)\s+(?:values?|combination)\s+(?:of\s+)?(?:\w+\s+){0,3}(?:gives?|produces?|yields?|achieves?|reaches?)\b|"
+    r"(?:reverse|inverse)\s+(?:prediction|forecast|model)\b|"
+    r"(?:optimize|optimise)\s+(?:my\s+)?inputs?\s+(?:to|for|toward)\b|"
+    r"what\s+(?:do\s+I\s+)?need\s+(?:to\s+)?(?:change|do|set)\s+to\s+(?:reach|achieve|hit|get\s+to)\b|"
+    r"(?:how\s+do\s+I|what\s+would\s+it\s+take\s+to)\s+(?:reach|achieve|hit|get\s+to)\b"
+    r")",
+    re.IGNORECASE,
+)
+
+_GOAL_SEEK_NUMBER_RE = re.compile(
+    r"(?:^|[\s=:to])"
+    r"(?:[$€£¥]?\s*)?"
+    r"(\d[\d,]*(?:\.\d+)?)\s*([kmb])?\b",
+    re.IGNORECASE,
+)
+
+_GOAL_SEEK_CLASS_RE = re.compile(
+    r"(?:class|predict|predicts?)\s+['\"]?(\w[\w\s\-]*)['\"]\b",
+    re.IGNORECASE,
+)
+
+
+def _extract_goal_seek_target(
+    message: str,
+    problem_type: str,
+    target_column: str,
+    target_classes: list | None,
+) -> tuple[float | str | None, dict]:
+    """Extract goal-seek target from natural language message.
+
+    Returns (target_value, fixed_features_dict).
+    For regression: target_value is float; for classification: target_value is class string.
+    """
+    fixed: dict = {}
+
+    if problem_type == "classification":
+        # Try to find a class label in the message
+        if target_classes:
+            msg_lower = message.lower()
+            for cls in sorted([str(c) for c in target_classes], key=len, reverse=True):
+                if cls.lower() in msg_lower:
+                    return cls, fixed
+        # Fallback: use class regex
+        m = _GOAL_SEEK_CLASS_RE.search(message)
+        if m:
+            return m.group(1).strip(), fixed
+        # Last resort: positive class (index 1 or 0)
+        if target_classes and len(target_classes) > 1:
+            return str(target_classes[1]), fixed
+        if target_classes:
+            return str(target_classes[0]), fixed
+        return "1", fixed
+
+    # Regression: extract a numeric target
+    # Scan the message for patterns like "$1M", "1,000,000", "0.85 R²", etc.
+    multiplier_map = {"k": 1e3, "m": 1e6, "b": 1e9}
+    best: float | None = None
+    for m in _GOAL_SEEK_NUMBER_RE.finditer(message):
+        raw = m.group(1).replace(",", "")
+        try:
+            val = float(raw)
+        except ValueError:
+            continue
+        suffix = (m.group(2) or "").lower()
+        val *= multiplier_map.get(suffix, 1.0)
+        # Prefer larger absolute values (more likely to be the target, not a fraction)
+        if best is None or abs(val) > abs(best):
+            best = val
+    return best, fixed
+
+
+# ---------------------------------------------------------------------------
 # Analysis Template patterns
 # ---------------------------------------------------------------------------
 
@@ -8910,6 +8991,83 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Cohort profiling is nice-to-have; never crash chat
 
+    # Goal Seek — reverse prediction: "what inputs produce a revenue of $1M?"
+    # Distinct from: sensitivity (sweeps one feature), what-if (changes one known feature),
+    # inline prediction (runs prediction for given inputs).
+    # Goal seek FINDS inputs that achieve a desired output via numerical optimization.
+    goal_seek_event: dict | None = None
+    if (
+        _GOAL_SEEK_PATTERNS.search(body.message)
+        and ctx["deployment"]
+        and not whatif_chat_event
+        and not sensitivity_event
+        and not interaction_event
+    ):
+        try:
+            _gs_deployment = ctx["deployment"]
+            if (
+                _gs_deployment.pipeline_path
+                and Path(_gs_deployment.pipeline_path).exists()
+            ):
+                _gs_run = next(
+                    (
+                        mr
+                        for mr in ctx["model_runs"]
+                        if mr.id == _gs_deployment.model_run_id
+                    ),
+                    None,
+                )
+                if _gs_run and _gs_run.model_path and Path(_gs_run.model_path).exists():
+                    from core.deployer import load_pipeline as _load_gs_pipeline
+                    from core.deployer import run_goal_seek as _run_gs
+
+                    # Load pipeline to get problem type and target classes
+                    _gs_pipeline = _load_gs_pipeline(_gs_deployment.pipeline_path)
+                    _gs_problem = _gs_pipeline.problem_type
+                    _gs_target_col = _gs_pipeline.target_column or "output"
+                    _gs_classes = list(_gs_pipeline.target_classes or []) if _gs_pipeline.target_classes else None
+
+                    # Extract target value and optional fixed features from message
+                    _gs_target, _gs_fixed = _extract_goal_seek_target(
+                        body.message,
+                        _gs_problem,
+                        _gs_target_col,
+                        _gs_classes,
+                    )
+
+                    if _gs_target is not None:
+                        _gs_result = _run_gs(
+                            pipeline_path=_gs_deployment.pipeline_path,
+                            model_path=_gs_run.model_path,
+                            target_value=_gs_target,
+                            fixed_features=_gs_fixed if _gs_fixed else None,
+                            algorithm=_gs_run.algorithm or "",
+                        )
+                        goal_seek_event = _gs_result
+                        _gs_achieved_label = "✓ Achieved" if _gs_result["achieved"] else "Best Effort"
+                        _gs_sugg_str = "; ".join(
+                            f"{s['feature']} → {s['suggested_value']}"
+                            for s in _gs_result["suggestions"][:3]
+                        )
+                        _gs_gap_str = (
+                            f"Gap: {_gs_result['gap_pct']}%. "
+                            if _gs_result.get("gap_pct") is not None
+                            else ""
+                        )
+                        system_prompt += (
+                            f"\n\n## Goal Seek Result\n"
+                            f"Target: {_gs_target_col} = {_gs_target}. "
+                            f"Status: {_gs_achieved_label}. "
+                            f"Achieved: {_gs_result['achieved_value']}. "
+                            f"{_gs_gap_str}"
+                            f"Key suggestions: {_gs_sugg_str or 'none'}. "
+                            f"A GoalSeekCard is shown. Explain the result conversationally: "
+                            f"tell the analyst what they need to change to reach their goal "
+                            f"(or why the goal may not be achievable). Keep it plain English."
+                        )
+        except Exception:  # noqa: BLE001
+            pass  # Goal seek is nice-to-have; never crash chat
+
     # Partial Dependence Plot — "marginal effect of price", "PDP for units"
     # Distinct from sensitivity analysis (which holds others at training means).
     # PDP averages over the ACTUAL training distribution → more accurate marginal effect.
@@ -14977,6 +15135,10 @@ def send_message(
         # Emit prediction cohort profile result
         if cohort_event:
             yield f"data: {json.dumps({'type': 'prediction_cohort', 'prediction_cohort': cohort_event})}\n\n"
+
+        # Emit goal seek result
+        if goal_seek_event:
+            yield f"data: {json.dumps({'type': 'goal_seek', 'goal_seek': goal_seek_event})}\n\n"
 
         # Emit partial dependence plot result
         if pdp_event:

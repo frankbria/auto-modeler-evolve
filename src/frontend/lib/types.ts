@@ -526,6 +526,7 @@ export interface ChatMessage {
   milestone?: MilestoneResult
   auto_insight?: AutoInsightResult
   column_type_suggestions?: ColumnTypeSuggestionResult
+  goal_seek?: GoalSeekResult
 }
 
 export interface RollbackVersionEntry {
@@ -3542,5 +3543,29 @@ export interface ColumnTypeSuggestionResult {
   has_suggestions: boolean
   dataset_rows: number
   dataset_cols: number
+  summary: string
+}
+
+export interface GoalSeekSuggestion {
+  feature: string
+  current_mean: number
+  suggested_value: number
+  direction: "increase" | "decrease" | "no_change"
+  change_pct: number
+}
+
+export interface GoalSeekResult {
+  target_column: string
+  problem_type: string
+  algorithm_plain: string
+  target_value: number | string
+  achieved_value: number | string
+  achieved: boolean
+  gap_pct: number | null
+  suggestions: GoalSeekSuggestion[]
+  fixed_features: Record<string, number>
+  categorical_features: Record<string, number>
+  n_optimized: number
+  feasible: boolean
   summary: string
 }

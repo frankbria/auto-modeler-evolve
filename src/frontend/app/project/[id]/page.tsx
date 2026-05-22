@@ -122,6 +122,7 @@ import { WhatNextCard } from "@/components/chat/what-next-card"
 import { MilestoneCard } from "@/components/chat/milestone-card"
 import { AutoInsightCard } from "@/components/chat/auto-insight-card"
 import { ColumnTypeSuggestionCard } from "@/components/chat/column-type-suggestion-card"
+import { GoalSeekCard } from "@/components/deploy/goal-seek-card"
 import { FairnessCheckCard } from "@/components/chat/fairness-check-card"
 import { BatchJobResultCard } from "@/components/chat/batch-job-result-card"
 import { ProductionExplanationCard } from "@/components/chat/production-explanation-card"
@@ -351,6 +352,7 @@ export default function ProjectWorkspace() {
     attachMilestoneToLastMessage,
     attachAutoInsightToLastMessage,
     attachColumnTypeSuggestionsToLastMessage,
+    attachGoalSeekToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -851,6 +853,8 @@ export default function ProjectWorkspace() {
                 attachAutoInsightToLastMessage(json.auto_insight as import("@/lib/types").AutoInsightResult)
               } else if (json.type === "column_type_suggestions" && json.column_type_suggestions) {
                 attachColumnTypeSuggestionsToLastMessage(json.column_type_suggestions as import("@/lib/types").ColumnTypeSuggestionResult)
+              } else if (json.type === "goal_seek" && json.goal_seek) {
+                attachGoalSeekToLastMessage(json.goal_seek as import("@/lib/types").GoalSeekResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -990,6 +994,7 @@ export default function ProjectWorkspace() {
     attachMilestoneToLastMessage,
     attachAutoInsightToLastMessage,
     attachColumnTypeSuggestionsToLastMessage,
+    attachGoalSeekToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -1616,6 +1621,9 @@ export default function ProjectWorkspace() {
                           setChatInput(prompt)
                         }}
                       />
+                    )}
+                    {msg.goal_seek && (
+                      <GoalSeekCard result={msg.goal_seek} />
                     )}
                   </div>
                 </div>

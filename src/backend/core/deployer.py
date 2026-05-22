@@ -1095,3 +1095,274 @@ def compute_prediction_cohort(
         "numeric_profile": numeric_profile,
         "characterization": characterization,
     }
+
+
+# ---------------------------------------------------------------------------
+# Goal seek — reverse prediction: find inputs that produce a target output
+# ---------------------------------------------------------------------------
+
+# Plain-English algorithm names (mirrors trainer.py)
+_ALGO_PLAIN_GS = {
+    "linear_regression": "Linear Regression",
+    "ridge_regression": "Ridge Regression",
+    "random_forest_regressor": "Random Forest",
+    "gradient_boosting_regressor": "Gradient Boosting",
+    "xgboost_regressor": "XGBoost",
+    "lightgbm_regressor": "LightGBM",
+    "mlp_regressor": "Neural Network",
+    "logistic_regression": "Logistic Regression",
+    "random_forest_classifier": "Random Forest",
+    "gradient_boosting_classifier": "Gradient Boosting",
+    "xgboost_classifier": "XGBoost",
+    "lightgbm_classifier": "LightGBM",
+    "mlp_classifier": "Neural Network",
+    "decision_tree_classifier": "Decision Tree",
+    "voting_regressor": "Voting Ensemble",
+    "voting_classifier": "Voting Ensemble",
+    "stacking_regressor": "Stacking Ensemble",
+    "stacking_classifier": "Stacking Ensemble",
+}
+
+
+def run_goal_seek(
+    pipeline_path: str,
+    model_path: str,
+    target_value: float | str,
+    fixed_features: dict | None = None,
+    algorithm: str = "",
+    max_iter: int = 300,
+) -> dict:
+    """Find feature values that produce a desired prediction target.
+
+    For regression: minimise |predict(x) - target_value|.
+    For classification: maximise predict_proba for the target class.
+
+    Only numeric features are optimized; categorical features are held at
+    their training-data median (encoded mean from pipeline.feature_means).
+    Features in fixed_features are held at the provided values.
+
+    Returns:
+        {
+          target_column, problem_type, algorithm_plain,
+          target_value,          # desired output (number or class string)
+          achieved_value,        # best prediction found
+          achieved,              # True when within 5% for regression / exact class for classification
+          gap_pct,               # |target - achieved| / |target| * 100 (regression); None for classification
+          suggestions: [         # numeric features that changed from their means
+            {feature, current_mean, suggested_value, direction, change_pct}
+          ],
+          fixed_features,        # features explicitly held fixed by caller
+          categorical_features,  # categorical features set to baseline
+          n_optimized,           # number of numeric features actually optimized
+          feasible,              # True if a solution was found (optimizer converged)
+          summary,               # plain-English sentence
+        }
+    """
+    from scipy.optimize import minimize as _sp_minimize  # optional import
+
+    import joblib as _jl
+
+    pipeline = load_pipeline(pipeline_path)
+    model = _jl.load(model_path)
+    fixed = fixed_features or {}
+
+    # Separate features into: optimize (free numeric), fixed (explicit), categorical (baseline)
+    free_numeric: list[str] = []
+    cat_baseline: dict[str, float] = {}
+
+    for f in pipeline.feature_names:
+        if f in fixed:
+            continue
+        if pipeline.column_types.get(f) == "numeric":
+            free_numeric.append(f)
+        else:
+            # Categorical: keep at encoded mean (best proxy for mode)
+            cat_baseline[f] = float(pipeline.feature_means.get(f, 0.0))
+
+    # For classification, resolve target_class index
+    is_classification = pipeline.problem_type == "classification"
+    target_class_idx: int | None = None
+    target_class_str: str = ""
+    if is_classification:
+        target_class_str = str(target_value)
+        if pipeline.target_classes:
+            class_strs = [str(c) for c in pipeline.target_classes]
+            if target_class_str in class_strs:
+                target_class_idx = class_strs.index(target_class_str)
+            else:
+                # Default to class index 1 (positive class) if not found
+                target_class_idx = 1 if len(class_strs) > 1 else 0
+        else:
+            target_class_idx = 1
+    else:
+        # Regression: ensure target_value is numeric
+        try:
+            target_value = float(target_value)
+        except (TypeError, ValueError):
+            target_value = 0.0
+
+    # Build base feature dict (fixed + categorical)
+    def _build_row(x_vals: list[float]) -> dict:
+        row: dict = {}
+        for fn in pipeline.feature_names:
+            if fn in fixed:
+                row[fn] = float(fixed[fn])
+            elif fn in cat_baseline:
+                row[fn] = cat_baseline[fn]
+        for fn, v in zip(free_numeric, x_vals):
+            row[fn] = v
+        return row
+
+    # Initial guess: training means for free numeric features
+    x0 = [float(pipeline.feature_means.get(f, 0.0)) for f in free_numeric]
+
+    # Bounds: p5 - span .. p95 + span (extrapolate ±100% range for flexibility)
+    bounds: list[tuple[float | None, float | None]] = []
+    for f in free_numeric:
+        fr = pipeline.feature_ranges.get(f, {})
+        lo = fr.get("p5", fr.get("min", None))
+        hi = fr.get("p95", fr.get("max", None))
+        if lo is not None and hi is not None:
+            span = max(hi - lo, abs(hi) * 0.1, 1.0)
+            bounds.append((lo - span, hi + span))
+        else:
+            bounds.append((None, None))
+
+    # Objective function
+    def _objective(x_vals: list[float]) -> float:
+        row = _build_row(list(x_vals))
+        x_arr = pipeline.transform(row)
+        if is_classification:
+            if hasattr(model, "predict_proba"):
+                proba = model.predict_proba(x_arr)[0]
+                if target_class_idx is not None and target_class_idx < len(proba):
+                    return float(-proba[target_class_idx])
+                return float(-proba.max())
+            # No predict_proba — approximate via prediction
+            pred = model.predict(x_arr)[0]
+            return 0.0 if str(pipeline.decode_prediction(pred)) == target_class_str else 1.0
+        else:
+            pred = float(model.predict(x_arr)[0])
+            return float((pred - target_value) ** 2)  # type: ignore[operator]
+
+    feasible = True
+    if free_numeric:
+        try:
+            opt_result = _sp_minimize(
+                _objective,
+                x0,
+                method="L-BFGS-B",
+                bounds=bounds if any(b != (None, None) for b in bounds) else None,
+                options={"maxiter": max_iter, "ftol": 1e-12},
+            )
+            best_x = list(opt_result.x)
+            feasible = opt_result.success or opt_result.fun < 1e6
+        except Exception:  # noqa: BLE001
+            best_x = x0
+            feasible = False
+    else:
+        best_x = x0
+
+    # Compute achieved prediction
+    best_row = _build_row(best_x)
+    best_x_arr = pipeline.transform(best_row)
+    raw_pred = model.predict(best_x_arr)[0]
+    achieved_decoded = pipeline.decode_prediction(raw_pred)
+
+    # Determine if goal was achieved
+    achieved = False
+    gap_pct: float | None = None
+    if is_classification:
+        achieved = str(achieved_decoded) == target_class_str
+    else:
+        achieved_val = float(achieved_decoded)
+        tgt_val = float(target_value)  # type: ignore[arg-type]
+        if abs(tgt_val) > 1e-9:
+            gap_pct = round(abs(tgt_val - achieved_val) / abs(tgt_val) * 100, 1)
+            achieved = gap_pct <= 5.0
+        else:
+            gap_pct = 0.0
+            achieved = abs(achieved_val) < 0.1
+
+    # Build suggestions (features that changed meaningfully from their means)
+    suggestions: list[dict] = []
+    for f, suggested in zip(free_numeric, best_x):
+        mean_val = float(pipeline.feature_means.get(f, 0.0))
+        if abs(mean_val) > 1e-9:
+            change_pct = round((suggested - mean_val) / abs(mean_val) * 100, 1)
+        else:
+            change_pct = 0.0
+        direction = "increase" if suggested > mean_val + 1e-9 else (
+            "decrease" if suggested < mean_val - 1e-9 else "no_change"
+        )
+        # Only include features that changed by at least 1%
+        if abs(change_pct) >= 1.0:
+            suggestions.append({
+                "feature": f,
+                "current_mean": round(mean_val, 4),
+                "suggested_value": round(float(suggested), 4),
+                "direction": direction,
+                "change_pct": change_pct,
+            })
+    # Sort by absolute change, descending
+    suggestions.sort(key=lambda s: abs(s["change_pct"]), reverse=True)
+    # Cap at 8 most impactful
+    suggestions = suggestions[:8]
+
+    # Plain-English summary
+    algo_plain = _ALGO_PLAIN_GS.get(algorithm, algorithm.replace("_", " ").title())
+    target_col = pipeline.target_column or "output"
+
+    if is_classification:
+        if achieved:
+            summary = (
+                f"Goal achieved: the model predicts '{target_class_str}' with the suggested inputs."
+            )
+        else:
+            best_proba_str = ""
+            if hasattr(model, "predict_proba") and target_class_idx is not None:
+                proba = model.predict_proba(best_x_arr)[0]
+                if target_class_idx < len(proba):
+                    best_proba_str = f" Best confidence: {round(proba[target_class_idx]*100, 1)}%."
+            summary = (
+                f"Could not achieve class '{target_class_str}' — the model predicts "
+                f"'{achieved_decoded}' even with optimized inputs.{best_proba_str}"
+            )
+    else:
+        if achieved:
+            summary = (
+                f"Goal achieved: the model predicts "
+                f"{round(float(achieved_decoded), 2):,} for {target_col} with the suggested inputs."
+            )
+        else:
+            if len(suggestions) > 0:
+                top = suggestions[0]
+                direction_word = "increasing" if top["direction"] == "increase" else "decreasing"
+                summary = (
+                    f"Best effort: predicted {round(float(achieved_decoded), 2):,} vs target "
+                    f"{round(float(target_value), 2):,} "  # type: ignore[arg-type]
+                    f"({gap_pct}% gap). "
+                    f"The biggest lever is {direction_word} {top['feature'].replace('_', ' ')}."
+                )
+            else:
+                summary = (
+                    f"Best effort: predicted {round(float(achieved_decoded), 2):,} vs target "
+                    f"{round(float(target_value), 2):,} ({gap_pct}% gap). "  # type: ignore[arg-type]
+                    f"No free numeric features to optimize."
+                )
+
+    return {
+        "target_column": target_col,
+        "problem_type": pipeline.problem_type,
+        "algorithm_plain": algo_plain,
+        "target_value": target_value if not is_classification else target_class_str,
+        "achieved_value": achieved_decoded,
+        "achieved": achieved,
+        "gap_pct": gap_pct,
+        "suggestions": suggestions,
+        "fixed_features": {k: v for k, v in fixed.items()},
+        "categorical_features": {k: v for k, v in cat_baseline.items()},
+        "n_optimized": len(free_numeric),
+        "feasible": feasible,
+        "summary": summary,
+    }

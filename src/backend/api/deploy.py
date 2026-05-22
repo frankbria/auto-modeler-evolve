@@ -5806,3 +5806,54 @@ def get_share_link(
             )
         ),
     }
+
+
+# ---------------------------------------------------------------------------
+# Goal seek — reverse prediction endpoint
+# ---------------------------------------------------------------------------
+
+
+class GoalSeekBody(BaseModel):
+    target_value: float | str
+    fixed_features: dict[str, float] | None = None
+
+
+@router.post("/api/deploy/{deployment_id}/goal-seek")
+def run_goal_seek_endpoint(
+    deployment_id: str,
+    body: GoalSeekBody,
+    session: Session = Depends(get_session),
+) -> dict:
+    """Find feature values that produce the desired prediction target.
+
+    For regression: minimise |predict(x) - target_value|.
+    For classification: maximise predict_proba for the target class label.
+    """
+    from core.deployer import run_goal_seek as _run_goal_seek
+
+    dep = session.get(Deployment, deployment_id)
+    if dep is None or not dep.is_active:
+        raise HTTPException(status_code=404, detail="Deployment not found or inactive.")
+    if not dep.pipeline_path:
+        raise HTTPException(status_code=422, detail="Deployment has no pipeline artifact.")
+
+    # Fetch algorithm name and model path from the model run
+    run = session.get(ModelRun, dep.model_run_id) if dep.model_run_id else None
+    algorithm = run.algorithm if run else ""
+    model_path = run.model_path if run else None
+    if not model_path:
+        raise HTTPException(status_code=422, detail="Deployment has no model artifact.")
+
+    try:
+        result = _run_goal_seek(
+            pipeline_path=dep.pipeline_path,
+            model_path=model_path,
+            target_value=body.target_value,
+            fixed_features={str(k): float(v) for k, v in (body.fixed_features or {}).items()},
+            algorithm=algorithm,
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=422, detail=str(exc))
+
+    result["deployment_id"] = deployment_id
+    return result
