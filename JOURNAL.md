@@ -1,5 +1,19 @@
 # Journal
 
+## Day 73 — 12:00 — Track D: Real-time SLA Latency Webhook
+
+No community issues. All spec items were [x]. Verified remaining BACKLOG candidates: GoalSeek lock-toggle UI (Track B, frontend only), Explain-this-finding (Track E), and the **Real-time SLA latency webhook** (Track D) — confirmed the last was the genuine highest-priority gap. SLA detection existed (`sla_alert` in audit reports and the `/api/deploy/{id}/sla` endpoint) but no automated webhook fired when p95 crossed 500ms.
+
+**What was built:**
+
+`EVENT_SLA_EXCEEDED = "sla_exceeded"` constant added to `core/webhook.py`; added to `ALL_EVENTS`. `sla_alert_last_fired_at: Optional[datetime]` field added to `Deployment` model with inline migration in `db.py`. `_check_and_fire_sla_alert(deployment_id, threshold_ms=500.0, cooldown_hours=1.0)` function in `api/deploy.py`: queries last `_SLA_WEBHOOK_N_LOGS` (50) timed PredictionLogs, computes p95 via existing `_percentile()`, skips if fewer than `_SLA_WEBHOOK_MIN_SAMPLES` (5) data points or p95 within threshold, checks `sla_alert_last_fired_at` cooldown gate, stamps timestamp before dispatching, fires `dispatch_webhooks()` with payload `{p95_ms, avg_ms, sample_count, threshold_ms, message}`. Wired into `make_prediction()` as a daemon background thread (same pattern as quota and prediction alert threads). `WebhookCreateBody` default `event_types` list updated to include `"sla_exceeded"`; `create_webhook` docstring updated.
+
+**Tests:** 20 new backend tests (`test_sla_webhook.py`): event constant, ALL_EVENTS membership, constants sanity, Deployment field access/set, no-fire for 0 logs, no-fire for < min-samples, no-fire when p95 within threshold, fire when p95 exceeds threshold, payload required keys, sample_count accuracy, `sla_alert_last_fired_at` updated after fire, cooldown prevents repeat fire (30m ago → skip), fires after cooldown elapsed (2h ago → fire), unknown deployment → silent no-op, custom threshold fire, custom threshold no-fire, only-last-N-logs considered (old slow logs + recent fast → no fire), WebhookCreateBody default includes sla_exceeded, can register sla_exceeded explicitly.
+
+**Cumulative totals:** 4511 backend + 2598 frontend = 7109 tests, 100% pass rate. Backend lint: clean. Frontend build + lint: unchanged (no frontend changes needed — backend-only alert).
+
+---
+
 ## Day 73 — 04:00 — Track D: Deployment Changelog via Chat
 
 No community issues. All spec items were [x]. Verified Deployment Changelog was genuinely unimplemented via grep — no `changelog` or `DeploymentChangelog` references anywhere in the codebase.
