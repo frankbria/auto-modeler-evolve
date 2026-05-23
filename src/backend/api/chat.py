@@ -2412,6 +2412,21 @@ _GOAL_SEEK_NUMBER_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Goal seek history — retrieve past goal-seek runs for comparison
+_GOAL_SEEK_HISTORY_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"(?:show|view|list|get|recall|what\s+(?:are|were))\s+(?:my\s+)?(?:goal[- ]seek\s+)?histor(?:y|ies)\b|"
+    r"(?:goal[- ]seek\s+)?(?:past|previous|prior|old|earlier)\s+(?:goal[- ]seek\s+)?(?:results?|runs?|searches?|scenarios?|attempts?)\b|"
+    r"(?:compare|review)\s+(?:my\s+)?(?:goal[- ]seek\s+)?scenarios?\b|"
+    r"(?:what|which)\s+(?:goal[- ]seeks?|targets?|scenarios?)\s+(?:have\s+I\s+)?(?:tried|run|done|explored)\b|"
+    r"(?:goal[- ]seek\s+)?scenario\s+(?:history|comparison|compare)\b|"
+    r"how\s+(?:did\s+)?(?:my\s+)?(?:goal[- ]seeks?|targets?|reverse[- ]prediction)\s+(?:results?\s+)?(?:compare|stack\s+up|look)\b|"
+    r"last\s+(?:\d+\s+)?(?:goal[- ]seek\s+)?(?:results?|attempts?|runs?|searches?)\b|"
+    r"goal[- ]seek\s+comparison\b"
+    r")",
+    re.IGNORECASE,
+)
+
 _GOAL_SEEK_CLASS_RE = re.compile(
     r"(?:class|predict|predicts?)\s+['\"]?(\w[\w\s\-]*)['\"]\b",
     re.IGNORECASE,
@@ -9074,6 +9089,82 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Goal seek is nice-to-have; never crash chat
 
+    # Goal Seek History — "show my past goal seek results", "compare my scenarios"
+    # Retrieves the last MAX_HISTORY runs per deployment so analysts can compare
+    # alternative targets they've explored (e.g., $5M vs $6M revenue).
+    goal_seek_history_event: dict | None = None
+    if _GOAL_SEEK_HISTORY_PATTERNS.search(body.message) and ctx["deployment"]:
+        try:
+            from models.goal_seek_record import GoalSeekRecord as _GSR
+            import json as _json_gsh
+
+            _gsh_dep = ctx["deployment"]
+            _gsh_records = session.exec(
+                select(_GSR)
+                .where(_GSR.deployment_id == _gsh_dep.id)
+                .order_by(_GSR.created_at.desc())  # type: ignore[arg-type]
+                .limit(3)
+            ).all()
+
+            _gsh_entries = []
+            for _r in _gsh_records:
+                try:
+                    _suggs = _json_gsh.loads(_r.suggestions_json)
+                except Exception:  # noqa: BLE001
+                    _suggs = []
+                try:
+                    _fixed = _json_gsh.loads(_r.fixed_features_json)
+                except Exception:  # noqa: BLE001
+                    _fixed = {}
+                _gsh_entries.append(
+                    {
+                        "id": _r.id,
+                        "target_column": _r.target_column,
+                        "problem_type": _r.problem_type,
+                        "algorithm_plain": _r.algorithm_plain,
+                        "target_value_str": _r.target_value_str,
+                        "achieved_value_str": _r.achieved_value_str,
+                        "achieved": _r.achieved,
+                        "gap_pct": _r.gap_pct,
+                        "suggestions": _suggs,
+                        "fixed_features": _fixed,
+                        "summary": _r.summary,
+                        "created_at": _r.created_at.isoformat(),
+                    }
+                )
+
+            goal_seek_history_event = {
+                "deployment_id": _gsh_dep.id,
+                "count": len(_gsh_entries),
+                "entries": _gsh_entries,
+            }
+
+            if _gsh_entries:
+                _gsh_summary_parts = []
+                for _e in _gsh_entries:
+                    _status = "✓ achieved" if _e["achieved"] else "best effort"
+                    _gsh_summary_parts.append(
+                        f"{_e['target_column']} = {_e['target_value_str']} "
+                        f"({_status}, got {_e['achieved_value_str']})"
+                    )
+                system_prompt += (
+                    f"\n\n## Goal Seek History\n"
+                    f"{len(_gsh_entries)} past goal-seek scenario(s):\n"
+                    + "\n".join(f"- {p}" for p in _gsh_summary_parts)
+                    + "\nA GoalSeekHistoryCard is shown. Summarise the scenarios the analyst "
+                    "has explored and highlight key differences between targets. If any scenarios "
+                    "were not fully achieved, suggest what the analyst might try differently."
+                )
+            else:
+                system_prompt += (
+                    "\n\n## Goal Seek History\n"
+                    "No goal-seek runs recorded yet for this deployment. "
+                    "Explain how to use goal seek: the analyst can say something like "
+                    "'what inputs would produce revenue of $5M?' to get started."
+                )
+        except Exception:  # noqa: BLE001
+            pass  # History is nice-to-have; never crash chat
+
     # Partial Dependence Plot — "marginal effect of price", "PDP for units"
     # Distinct from sensitivity analysis (which holds others at training means).
     # PDP averages over the ACTUAL training distribution → more accurate marginal effect.
@@ -15145,6 +15236,10 @@ def send_message(
         # Emit goal seek result
         if goal_seek_event:
             yield f"data: {json.dumps({'type': 'goal_seek', 'goal_seek': goal_seek_event})}\n\n"
+
+        # Emit goal seek history (past scenarios comparison)
+        if goal_seek_history_event:
+            yield f"data: {json.dumps({'type': 'goal_seek_history', 'goal_seek_history': goal_seek_history_event})}\n\n"
 
         # Emit partial dependence plot result
         if pdp_event:

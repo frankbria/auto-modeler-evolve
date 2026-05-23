@@ -527,6 +527,7 @@ export interface ChatMessage {
   auto_insight?: AutoInsightResult
   column_type_suggestions?: ColumnTypeSuggestionResult
   goal_seek?: GoalSeekResult
+  goal_seek_history?: GoalSeekHistoryResult
 }
 
 export interface RollbackVersionEntry {
@@ -3568,4 +3569,26 @@ export interface GoalSeekResult {
   n_optimized: number
   feasible: boolean
   summary: string
+}
+
+// Goal Seek History — last N goal-seek scenarios for scenario comparison
+export interface GoalSeekHistoryEntry {
+  id: string
+  target_column: string
+  problem_type: string
+  algorithm_plain: string
+  target_value_str: string
+  achieved_value_str: string
+  achieved: boolean
+  gap_pct: number | null
+  suggestions: GoalSeekSuggestion[]
+  fixed_features: Record<string, number>
+  summary: string
+  created_at: string
+}
+
+export interface GoalSeekHistoryResult {
+  deployment_id: string
+  count: number
+  entries: GoalSeekHistoryEntry[]
 }

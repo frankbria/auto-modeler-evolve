@@ -167,6 +167,7 @@ interface AppState {
   attachAutoInsightToLastMessage: (auto_insight: import("./types").AutoInsightResult) => void
   attachColumnTypeSuggestionsToLastMessage: (column_type_suggestions: import("./types").ColumnTypeSuggestionResult) => void
   attachGoalSeekToLastMessage: (goal_seek: import("./types").GoalSeekResult) => void
+  attachGoalSeekHistoryToLastMessage: (goal_seek_history: import("./types").GoalSeekHistoryResult) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -1327,6 +1328,16 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, goal_seek }
+      }
+      return { messages }
+    }),
+
+  attachGoalSeekHistoryToLastMessage: (goal_seek_history) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, goal_seek_history }
       }
       return { messages }
     }),

@@ -123,6 +123,7 @@ import { MilestoneCard } from "@/components/chat/milestone-card"
 import { AutoInsightCard } from "@/components/chat/auto-insight-card"
 import { ColumnTypeSuggestionCard } from "@/components/chat/column-type-suggestion-card"
 import { GoalSeekCard } from "@/components/deploy/goal-seek-card"
+import { GoalSeekHistoryCard } from "@/components/deploy/goal-seek-history-card"
 import { FairnessCheckCard } from "@/components/chat/fairness-check-card"
 import { BatchJobResultCard } from "@/components/chat/batch-job-result-card"
 import { ProductionExplanationCard } from "@/components/chat/production-explanation-card"
@@ -353,6 +354,7 @@ export default function ProjectWorkspace() {
     attachAutoInsightToLastMessage,
     attachColumnTypeSuggestionsToLastMessage,
     attachGoalSeekToLastMessage,
+    attachGoalSeekHistoryToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -855,6 +857,8 @@ export default function ProjectWorkspace() {
                 attachColumnTypeSuggestionsToLastMessage(json.column_type_suggestions as import("@/lib/types").ColumnTypeSuggestionResult)
               } else if (json.type === "goal_seek" && json.goal_seek) {
                 attachGoalSeekToLastMessage(json.goal_seek as import("@/lib/types").GoalSeekResult)
+              } else if (json.type === "goal_seek_history" && json.goal_seek_history) {
+                attachGoalSeekHistoryToLastMessage(json.goal_seek_history as import("@/lib/types").GoalSeekHistoryResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -995,6 +999,7 @@ export default function ProjectWorkspace() {
     attachAutoInsightToLastMessage,
     attachColumnTypeSuggestionsToLastMessage,
     attachGoalSeekToLastMessage,
+    attachGoalSeekHistoryToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -1624,6 +1629,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.goal_seek && (
                       <GoalSeekCard result={msg.goal_seek} />
+                    )}
+                    {msg.goal_seek_history && (
+                      <GoalSeekHistoryCard result={msg.goal_seek_history} />
                     )}
                   </div>
                 </div>

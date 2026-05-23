@@ -856,6 +856,9 @@ export const api = {
     sla: (deploymentId: string): Promise<import("./types").SlaData> =>
       fetch(`${API_URL}/api/deploy/${deploymentId}/sla`).then((r) => r.json()),
 
+    goalSeekHistory: (deploymentId: string): Promise<import("./types").GoalSeekHistoryResult> =>
+      fetch(`${API_URL}/api/deploy/${deploymentId}/goal-seek/history`).then((r) => r.json()),
+
     whatif: (
       deploymentId: string,
       base: Record<string, unknown>,

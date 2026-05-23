@@ -16,6 +16,7 @@ from models.webhook_event import WebhookEvent
 from models.analysis_template import AnalysisTemplate
 from models.input_validation_rule import InputValidationRule
 from models.dashboard_field_config import DashboardFieldConfig
+from models.goal_seek_record import GoalSeekRecord
 
 __all__ = [
     "Project",
@@ -35,4 +36,5 @@ __all__ = [
     "AnalysisTemplate",
     "InputValidationRule",
     "DashboardFieldConfig",
+    "GoalSeekRecord",
 ]

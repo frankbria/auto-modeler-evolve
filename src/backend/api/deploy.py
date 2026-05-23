@@ -65,6 +65,7 @@ from models.webhook_config import WebhookConfig
 from models.prediction_alert_rule import PredictionAlertRule
 from models.input_validation_rule import InputValidationRule
 from models.dashboard_field_config import DashboardFieldConfig
+from models.goal_seek_record import GoalSeekRecord, MAX_HISTORY
 
 router = APIRouter(tags=["deployment"])
 
@@ -5859,5 +5860,100 @@ def run_goal_seek_endpoint(
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=422, detail=str(exc))
 
+    # ── Save to goal-seek history (keep only last MAX_HISTORY per deployment) ──
+    try:
+        record = GoalSeekRecord(
+            deployment_id=deployment_id,
+            target_column=result.get("target_column", ""),
+            problem_type=result.get("problem_type", ""),
+            algorithm_plain=result.get("algorithm_plain", ""),
+            target_value_str=str(result.get("target_value", "")),
+            achieved_value_str=str(result.get("achieved_value", "")),
+            achieved=bool(result.get("achieved", False)),
+            gap_pct=result.get("gap_pct"),
+            suggestions_json=json.dumps(result.get("suggestions", [])[:5]),
+            fixed_features_json=json.dumps(result.get("fixed_features", {})),
+            summary=result.get("summary", ""),
+        )
+        session.add(record)
+        session.commit()
+
+        # Prune oldest records beyond MAX_HISTORY
+        old_records = session.exec(
+            select(GoalSeekRecord)
+            .where(GoalSeekRecord.deployment_id == deployment_id)
+            .order_by(GoalSeekRecord.created_at.desc())  # type: ignore[arg-type]
+            .offset(MAX_HISTORY)
+        ).all()
+        for old in old_records:
+            session.delete(old)
+        if old_records:
+            session.commit()
+    except Exception:  # noqa: BLE001
+        pass  # History saving is nice-to-have; never crash the main request
+
     result["deployment_id"] = deployment_id
     return result
+
+
+# ---------------------------------------------------------------------------
+# Goal seek history endpoint
+# ---------------------------------------------------------------------------
+
+
+@router.get("/api/deploy/{deployment_id}/goal-seek/history")
+def get_goal_seek_history(
+    deployment_id: str,
+    session: Session = Depends(get_session),
+) -> dict:
+    """Return the last MAX_HISTORY goal-seek results for a deployment.
+
+    Used by analysts to compare scenarios: e.g., "last time I targeted $5M,
+    this time $6M — how do the required inputs differ?"
+    """
+    dep = session.get(Deployment, deployment_id)
+    if dep is None or not dep.is_active:
+        raise HTTPException(status_code=404, detail="Deployment not found or inactive.")
+
+    records = session.exec(
+        select(GoalSeekRecord)
+        .where(GoalSeekRecord.deployment_id == deployment_id)
+        .order_by(GoalSeekRecord.created_at.desc())  # type: ignore[arg-type]
+        .limit(MAX_HISTORY)
+    ).all()
+
+    entries = []
+    for r in records:
+        try:
+            suggestions = json.loads(r.suggestions_json)
+        except Exception:  # noqa: BLE001
+            suggestions = []
+        try:
+            fixed_features = json.loads(r.fixed_features_json)
+        except Exception:  # noqa: BLE001
+            fixed_features = {}
+
+        entries.append(
+            {
+                "id": r.id,
+                "deployment_id": r.deployment_id,
+                "target_column": r.target_column,
+                "problem_type": r.problem_type,
+                "algorithm_plain": r.algorithm_plain,
+                "target_value_str": r.target_value_str,
+                "achieved_value_str": r.achieved_value_str,
+                "achieved": r.achieved,
+                "gap_pct": r.gap_pct,
+                "suggestions": suggestions,
+                "fixed_features": fixed_features,
+                "summary": r.summary,
+                "created_at": r.created_at.isoformat(),
+            }
+        )
+
+    return {
+        "deployment_id": deployment_id,
+        "count": len(entries),
+        "max_history": MAX_HISTORY,
+        "entries": entries,
+    }
