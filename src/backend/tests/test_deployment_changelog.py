@@ -162,7 +162,9 @@ def test_write_changelog_creates_entry(tmp_path):
 
     with Session(engine) as session:
         entries = session.exec(
-            select(DeploymentChangelog).where(DeploymentChangelog.deployment_id == "dep-999")
+            select(DeploymentChangelog).where(
+                DeploymentChangelog.deployment_id == "dep-999"
+            )
         ).all()
     assert len(entries) == 1
     assert entries[0].change_type == "deployed"
@@ -340,11 +342,11 @@ def test_changelog_undeploy_entry(deployed):
     with Session(db_module.engine) as session:
         from models.deployment_changelog import DeploymentChangelog as _DCL
 
-        entries = session.exec(
-            select(_DCL).where(_DCL.deployment_id == dep_id)
-        ).all()
+        entries = session.exec(select(_DCL).where(_DCL.deployment_id == dep_id)).all()
     change_types = [e.change_type for e in entries]
-    assert "undeployed" in change_types, f"Expected undeployed entry; got: {change_types}"
+    assert "undeployed" in change_types, (
+        f"Expected undeployed entry; got: {change_types}"
+    )
 
 
 def test_changelog_entries_newest_first(deployed):
@@ -379,7 +381,9 @@ def test_relative_time_just_now(tmp_path):
     # Call the endpoint via the logic path (direct test without server)
     with Session(engine) as session:
         entry = session.exec(
-            select(DeploymentChangelog).where(DeploymentChangelog.deployment_id == "dep-rt")
+            select(DeploymentChangelog).where(
+                DeploymentChangelog.deployment_id == "dep-rt"
+            )
         ).first()
     assert entry is not None
     now = datetime.now(UTC).replace(tzinfo=None)
