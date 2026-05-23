@@ -49,7 +49,17 @@ the time is better spent on real features.
 
 ## Currently Working On
 
-*(nothing — Day 72 12:00 session complete)*
+*(nothing — Day 72 20:00 session complete)*
+
+---
+
+## Day 72 (20:00) — Done
+
+**Track B: Goal Seek History via Chat** — complete.
+
+`GoalSeekRecord` SQLModel table (deployment_id indexed, MAX_HISTORY=3 per deployment). `POST /api/deploy/{id}/goal-seek` saves a record + prunes oldest beyond 3. `GET /api/deploy/{id}/goal-seek/history` REST endpoint. `_GOAL_SEEK_HISTORY_PATTERNS` (9 NL variants) + handler + SSE emit in `chat.py`. `GoalSeekHistoryCard` (violet border, EntryCards with emerald/amber per achieved, target/achieved grid, gap indicator, top-3 suggestions with direction arrows, relative timestamp, empty state). 12 backend + 14 frontend = 26 new tests. Total: **4465 backend + 2582 frontend = 7047**, all passing. Backend lint: clean. Frontend build + lint: clean.
+
+Key learning: When checking BACKLOG items, verify they're truly not implemented before committing to them — almost all the listed "What's Next" items (SLA monitoring, API key rotation, export-as-ZIP, chronological splits, ensembles, etc.) were already done. Goal seek history was the genuine gap.
 
 ---
 
@@ -75,23 +85,25 @@ Key learning: Python `\b` doesn't work for underscore-delimited column names —
 
 ## What's Next (Day 73+)
 
+**NOTE (Day 72 20:00 audit):** Most listed "What's Next" items were already implemented. Before picking any item below, verify it's truly not in the codebase.
+
 **Track B extension (goal-seek UX depth):**
-- Goal seek with user-pinned features — "keep price fixed at $99, what else do I change?" (frontend form with per-feature lock toggles → POST fixed_features map)
-- Goal seek history — remember last 3 goal-seek results per deployment so analysts can compare scenarios
+- Goal seek with user-pinned features — the backend already supports `fixed_features` map, but the GoalSeekCard has no per-feature lock toggle UI (frontend only)
+- Goal seek history ✅ DONE (Day 72 20:00)
 
 **Track D candidates (deployment depth — highest priority):**
-- Export as self-contained prediction service (ZIP + uvicorn) — portability for non-technical stakeholders
-- Prediction SLA / latency monitoring — p50/p95/p99 latency badges on deployment card
-- Chat-driven API key rotation — "regenerate my API key" / "disable API protection"
+NOTE: Export-as-ZIP, SLA monitoring, API key rotation all ALREADY DONE. Check before building.
+- Real-time deployment health webhook — push webhook when p95 latency crosses 500ms or feedback accuracy drops below threshold
+- Deployment changelog — text log of every change made to a deployment (field configs, threshold changes, retrain events) via GET /api/deploy/{id}/changelog
 
 **Track C candidates (model building depth):**
-- Date-aware chronological train/test splits — prevents data leakage for time-series targets
-- Feature selection automation — drop near-zero-importance columns with explanation
-- Ensemble methods — surface automatically when individual models plateau below 0.75 R²
+NOTE: Chronological splits, feature selection, ensembles all ALREADY DONE. Check before building.
+- SMOTE / class-weight upsampling — offer to the analyst when class imbalance >3:1 detected during training, not just as an advisory
+- Calibrated probability outputs — PlattCalibration wrapper for classification models with >10% mean confidence deviation
 
 **Track E candidates (polish):**
-- "Explain this finding" — clicking an insight card finding triggers a detailed LLM explanation
-- Auto-suggest column types — proactively flag columns that look like the wrong dtype (e.g. numeric stored as text)
+- "Explain this finding" — clicking an AutoInsightCard finding button fires a detailed LLM explanation in the chat (currently it only pre-fills the chat input)
+- Auto-suggest column types ✅ ALREADY DONE (column-type-suggestion-card.tsx + _COL_TYPE_SUGG handler in chat.py)
 
 ---
 
