@@ -49,7 +49,17 @@ the time is better spent on real features.
 
 ## Currently Working On
 
-*(nothing — Day 73 04:00 session complete)*
+*(nothing — Day 73 12:00 session complete)*
+
+---
+
+## Day 73 (12:00) — Done
+
+**Track D: Real-time SLA Latency Webhook** — complete.
+
+`EVENT_SLA_EXCEEDED = "sla_exceeded"` added to `core/webhook.py` + `ALL_EVENTS`. `sla_alert_last_fired_at` field on `Deployment` (TEXT migration in `db.py`). `_check_and_fire_sla_alert(deployment_id, threshold_ms=500.0, cooldown_hours=1.0)` in `api/deploy.py`: queries last 50 timed PredictionLogs, skips if < 5 samples, skips if p95 ≤ threshold, checks 1-hour cooldown via `sla_alert_last_fired_at`, stamps timestamp before dispatching, fires `dispatch_webhooks()` with `{p95_ms, avg_ms, sample_count, threshold_ms, message}`. Wired into `make_prediction()` as daemon background thread. `WebhookCreateBody` default `event_types` updated; `create_webhook` docstring updated. 20 backend tests. Total: **4511 backend + 2598 frontend = 7109**, all passing. Backend lint: clean. Frontend build: unchanged.
+
+Key learning: Cooldown gate needs to be stamped on the Deployment model BEFORE dispatching (not after) to prevent racing daemon threads from firing multiple times. Use separate Session for background functions — request Session is closed by the time the thread runs.
 
 ---
 
@@ -93,26 +103,26 @@ Key learning: Python `\b` doesn't work for underscore-delimited column names —
 
 ---
 
-## What's Next (Day 73+)
+## What's Next (Day 74+)
 
-**NOTE (Day 72 20:00 audit):** Most listed "What's Next" items were already implemented. Before picking any item below, verify it's truly not in the codebase.
+**NOTE (Day 73 12:00 audit):** Always grep before implementing — most candidates have already been done.
 
 **Track B extension (goal-seek UX depth):**
 - Goal seek with user-pinned features — the backend already supports `fixed_features` map, but the GoalSeekCard has no per-feature lock toggle UI (frontend only)
 - Goal seek history ✅ DONE (Day 72 20:00)
 
 **Track D candidates (deployment depth — highest priority):**
-NOTE: Export-as-ZIP, SLA monitoring, API key rotation all ALREADY DONE. Check before building.
-- Real-time deployment health webhook — push webhook when p95 latency crosses 500ms or feedback accuracy drops below threshold
-- Deployment changelog — text log of every change made to a deployment (field configs, threshold changes, retrain events) via GET /api/deploy/{id}/changelog
+NOTE: Export-as-ZIP, SLA monitoring, API key rotation, Deployment Changelog all ALREADY DONE. Check before building.
+- Real-time SLA latency webhook (`sla_exceeded`) ✅ DONE (Day 73 12:00)
+- Deployment changelog ✅ DONE (Day 73 04:00)
 
 **Track C candidates (model building depth):**
-NOTE: Chronological splits, feature selection, ensembles all ALREADY DONE. Check before building.
-- SMOTE / class-weight upsampling — offer to the analyst when class imbalance >3:1 detected during training, not just as an advisory
-- Calibrated probability outputs — PlattCalibration wrapper for classification models with >10% mean confidence deviation
+NOTE: Chronological splits, feature selection, ensembles, CalibratedClassifierCV all ALREADY DONE.
+- SMOTE / class-weight upsampling ✅ ALREADY DONE (Day 41 20:00: `_BALANCE_TRAIN_PATTERNS` + imbalance_strategy handler)
+- Calibrated probability outputs ✅ ALREADY DONE (trainer.py uses `CalibratedClassifierCV`)
 
 **Track E candidates (polish):**
-- "Explain this finding" — clicking an AutoInsightCard finding button fires a detailed LLM explanation in the chat (currently it only pre-fills the chat input)
+- "Explain this finding" — clicking an AutoInsightCard finding button sends the message directly (currently only pre-fills the chat input)
 - Auto-suggest column types ✅ ALREADY DONE (column-type-suggestion-card.tsx + _COL_TYPE_SUGG handler in chat.py)
 
 ---
