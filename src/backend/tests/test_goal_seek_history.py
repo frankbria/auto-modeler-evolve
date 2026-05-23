@@ -20,6 +20,7 @@ from models.goal_seek_record import GoalSeekRecord, MAX_HISTORY
 @pytest.fixture()
 def gsh_pattern():
     from api.chat import _GOAL_SEEK_HISTORY_PATTERNS
+
     return _GOAL_SEEK_HISTORY_PATTERNS
 
 
@@ -118,7 +119,9 @@ def client_and_deployment():
     from models.deployment import Deployment
 
     with TestClient(app) as c:
-        session: Session = next(c.app.dependency_overrides.get(get_session, get_session)())
+        session: Session = next(
+            c.app.dependency_overrides.get(get_session, get_session)()
+        )
 
         project = Project(
             id="gsh-proj",
@@ -234,7 +237,9 @@ class TestGoalSeekHistoryEndpoint:
 
     def test_inactive_deployment_returns_404(self, client_and_deployment):
         client, session, dep_id = client_and_deployment
-        dep = session.get(__import__("models.deployment", fromlist=["Deployment"]).Deployment, dep_id)
+        dep = session.get(
+            __import__("models.deployment", fromlist=["Deployment"]).Deployment, dep_id
+        )
         dep.is_active = False
         session.commit()
         resp = client.get(f"/api/deploy/{dep_id}/goal-seek/history")
@@ -273,6 +278,7 @@ class TestGoalSeekHistoryPruning:
 
         # Simulate the prune logic from the endpoint
         from sqlmodel import select
+
         records = session.exec(
             select(GoalSeekRecord)
             .where(GoalSeekRecord.deployment_id == dep_id)
@@ -324,15 +330,17 @@ class TestGoalSeekHistoryFields:
             target_value_str="High",
             achieved_value_str="High",
             achieved=True,
-            suggestions_json=json.dumps([
-                {
-                    "feature": "contract_length",
-                    "current_mean": 12.0,
-                    "suggested_value": 24.0,
-                    "direction": "increase",
-                    "change_pct": 100,
-                }
-            ]),
+            suggestions_json=json.dumps(
+                [
+                    {
+                        "feature": "contract_length",
+                        "current_mean": 12.0,
+                        "suggested_value": 24.0,
+                        "direction": "increase",
+                        "change_pct": 100,
+                    }
+                ]
+            ),
             fixed_features_json=json.dumps({"region": 1.0}),
             summary="Increase contract length to achieve High churn risk.",
         )
@@ -344,9 +352,18 @@ class TestGoalSeekHistoryFields:
         assert data["count"] == 1
         entry = data["entries"][0]
         required_keys = {
-            "id", "target_column", "problem_type", "algorithm_plain",
-            "target_value_str", "achieved_value_str", "achieved",
-            "gap_pct", "suggestions", "fixed_features", "summary", "created_at",
+            "id",
+            "target_column",
+            "problem_type",
+            "algorithm_plain",
+            "target_value_str",
+            "achieved_value_str",
+            "achieved",
+            "gap_pct",
+            "suggestions",
+            "fixed_features",
+            "summary",
+            "created_at",
         }
         assert required_keys.issubset(entry.keys())
         assert entry["achieved"] is True
