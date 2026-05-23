@@ -11,7 +11,6 @@ from sqlmodel import Session, select
 
 from models.goal_seek_record import GoalSeekRecord, MAX_HISTORY
 
-
 # ---------------------------------------------------------------------------
 # Regex unit tests
 # ---------------------------------------------------------------------------

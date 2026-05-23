@@ -36,7 +36,6 @@ from core.webhook import ALL_EVENTS, EVENT_SLA_EXCEEDED
 from models.deployment import Deployment
 from models.prediction_log import PredictionLog
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -312,5 +311,7 @@ def test_webhook_create_body_default_includes_sla_exceeded():
 def test_webhook_create_body_can_register_sla_exceeded():
     from api.deploy import WebhookCreateBody
 
-    body = WebhookCreateBody(url="https://example.com/hook", event_types=["sla_exceeded"])
+    body = WebhookCreateBody(
+        url="https://example.com/hook", event_types=["sla_exceeded"]
+    )
     assert body.event_types == ["sla_exceeded"]

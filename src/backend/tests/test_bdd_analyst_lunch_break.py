@@ -422,9 +422,9 @@ def batch_has_prediction_column(ctx):
     assert resp.status_code == 200, f"Batch prediction failed: {resp.text}"
     lines = resp.text.strip().split("\n")
     header = lines[0].lower()
-    assert "revenue_prediction" in header or "prediction" in header, (
-        f"No prediction column in batch output header: {header}"
-    )
+    assert (
+        "revenue_prediction" in header or "prediction" in header
+    ), f"No prediction column in batch output header: {header}"
 
 
 @then("the output has 3 rows matching the input")
