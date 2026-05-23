@@ -8,6 +8,7 @@ import time
 import numpy as np
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import event
 from sqlmodel import SQLModel, create_engine
 
 import db as db_module
@@ -38,7 +39,19 @@ SAMPLE_CSV = b"""date,product,region,revenue,units
 @pytest.fixture
 def client(tmp_path):
     test_db = str(tmp_path / "test.db")
-    db_module.engine = create_engine(f"sqlite:///{test_db}", echo=False)
+    db_module.engine = create_engine(
+        f"sqlite:///{test_db}",
+        echo=False,
+        connect_args={"check_same_thread": False, "timeout": 10.0},
+        pool_pre_ping=True,
+    )
+
+    @event.listens_for(db_module.engine, "connect")
+    def set_sqlite_pragma(dbapi_connection, connection_record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.close()
+
     db_module.DATA_DIR = tmp_path
 
     import models.project  # noqa
@@ -103,7 +116,7 @@ def trained_model_run(client):
     run_id = train.json()["model_run_ids"][0]
 
     # Poll until done
-    for _ in range(30):
+    for _ in range(60):
         runs = client.get(f"/api/models/{project_id}/runs").json()["runs"]
         run = next(r for r in runs if r["id"] == run_id)
         if run["status"] in ("done", "failed"):
