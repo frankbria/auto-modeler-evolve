@@ -49,7 +49,17 @@ the time is better spent on real features.
 
 ## Currently Working On
 
-*(nothing — Day 72 20:00 session complete)*
+*(nothing — Day 73 04:00 session complete)*
+
+---
+
+## Day 73 (04:00) — Done
+
+**Track D: Deployment Changelog via Chat** — complete.
+
+`DeploymentChangelog` SQLModel table (deployment_id indexed, change_type constants). `_write_changelog()` best-effort helper writes immutable entries at key lifecycle points (deploy, re-deploy, undeploy, api-key add/remove). `GET /api/deploy/{id}/changelog` REST endpoint returns last 50 entries newest-first with relative_time. `_DEPLOYMENT_CHANGELOG_PATTERNS` (9 NL variants) + handler + SSE emit in `chat.py`. `DeploymentChangelogCard` (📋 icon, change-type icons/badges, timeline layout, empty state, sr-only figcaption, aria list). 26 backend + 16 frontend = 42 new tests. Total: **4491 backend + 2598 frontend = 7089**, all passing. Backend lint: clean. Frontend build + lint: clean.
+
+Key learning: Integration test fixtures for deploy.py endpoints must use `TestClient` (sync) not `AsyncClient` (async). The `/api/data/upload` response uses `"dataset_id"` not `"id"`. Feature sets are applied via `/api/features/{dataset_id}/apply` + `/api/features/{dataset_id}/target`.
 
 ---
 

@@ -1,5 +1,27 @@
 # Journal
 
+## Day 73 — 04:00 — Track D: Deployment Changelog via Chat
+
+No community issues. All spec items were [x]. Verified Deployment Changelog was genuinely unimplemented via grep — no `changelog` or `DeploymentChangelog` references anywhere in the codebase.
+
+**What was built:**
+
+`DeploymentChangelog` SQLModel table (`deployment_id` indexed, `change_type`, `description`, `created_at` with UTC naïve timestamps). `CHANGELOG_MAX_ENTRIES = 50` constant caps REST response. `_write_changelog()` best-effort helper in `api/deploy.py` — wrapped in try/except so a failing audit write can never crash a deploy lifecycle action. Writes at: first deploy → `deployed`; re-deploy → `redeployed`; undeploy → `undeployed`; generate API key → `api_key_added`; disable API key → `api_key_removed`.
+
+`GET /api/deploy/{deployment_id}/changelog` endpoint returns entries newest-first, each with a `relative_time` human-friendly string ("just now", "5m ago", "3h ago", "2d ago").
+
+Chat integration: `_DEPLOYMENT_CHANGELOG_PATTERNS` (9 NL variants: "show my deployment changelog", "what changed to my deployment", "deployment activity", "show me the audit log", etc.). Handler queries DB for last 50 entries, injects per-entry summaries into system_prompt, emits `{type:"deployment_changelog"}` SSE event.
+
+Frontend: `DeploymentChangelogCard` — timeline layout with change-type emoji icons (🚀 deployed, 🔄 redeployed, ⏹️ undeployed, 🔑 api_key_added, 🔓 api_key_removed), color-coded badges, `role="list"` aria-label, empty state with example prompts, sr-only figcaption for screen readers.
+
+**Bugs encountered and fixed:** Integration test fixture used `"id"` from upload response — correct key is `"dataset_id"`. Feature sets require two separate calls: `POST /api/features/{dataset_id}/apply` + `/api/features/{dataset_id}/target`. Training endpoint is `POST /api/models/{project_id}/train` (not `/api/models/train` with body). Used async `AsyncClient` initially — tests use sync `TestClient`. ESLint flagged `require()` in store tests — fixed to `jest.requireActual<typeof import("@/lib/store")>()`.
+
+**Tests:** 26 backend (regex: 9 NL match + 4 no-false-positive; model; `_write_changelog` best-effort; REST endpoint; relative_time; chat SSE) + 16 frontend (heading, count badge, singular/plural, per-change-type entries, description text, relative_time, empty state, 0-count badge, sr-only figcaption, aria list, listitem count, store action attach + no-attach-to-user) = 42 new tests, all passing. Backend lint: clean. Frontend build + lint: clean.
+
+**Cumulative totals:** 4491 backend + 2598 frontend = 7089 tests, 100% pass rate.
+
+---
+
 ## Day 72 — 20:00 — Track B: Goal Seek History via Chat
 
 No community issues. All spec items were [x] — every BACKLOG item I checked (SLA monitoring, API key rotation, export-as-ZIP, chronological splits, feature selection, ensembles, column type suggestions) was already implemented. The one genuine gap was **Goal Seek History**: after building the Goal Seek optimizer (Day 72 12:00), there was no way for analysts to compare the multiple targets they'd tried.
