@@ -168,6 +168,7 @@ interface AppState {
   attachColumnTypeSuggestionsToLastMessage: (column_type_suggestions: import("./types").ColumnTypeSuggestionResult) => void
   attachGoalSeekToLastMessage: (goal_seek: import("./types").GoalSeekResult) => void
   attachGoalSeekHistoryToLastMessage: (goal_seek_history: import("./types").GoalSeekHistoryResult) => void
+  attachDeploymentChangelogToLastMessage: (deployment_changelog: import("./types").DeploymentChangelogResult) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -1338,6 +1339,16 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, goal_seek_history }
+      }
+      return { messages }
+    }),
+
+  attachDeploymentChangelogToLastMessage: (deployment_changelog) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, deployment_changelog }
       }
       return { messages }
     }),

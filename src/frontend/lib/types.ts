@@ -528,6 +528,7 @@ export interface ChatMessage {
   column_type_suggestions?: ColumnTypeSuggestionResult
   goal_seek?: GoalSeekResult
   goal_seek_history?: GoalSeekHistoryResult
+  deployment_changelog?: DeploymentChangelogResult
 }
 
 export interface RollbackVersionEntry {
@@ -3591,4 +3592,20 @@ export interface GoalSeekHistoryResult {
   deployment_id: string
   count: number
   entries: GoalSeekHistoryEntry[]
+}
+
+
+// Deployment Changelog — immutable audit log of deployment lifecycle events
+export interface DeploymentChangelogEntry {
+  id: string
+  change_type: string
+  description: string
+  created_at: string
+  relative_time: string
+}
+
+export interface DeploymentChangelogResult {
+  deployment_id: string
+  count: number
+  entries: DeploymentChangelogEntry[]
 }

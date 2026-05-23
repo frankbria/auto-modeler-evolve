@@ -66,10 +66,50 @@ from models.prediction_alert_rule import PredictionAlertRule
 from models.input_validation_rule import InputValidationRule
 from models.dashboard_field_config import DashboardFieldConfig
 from models.goal_seek_record import GoalSeekRecord, MAX_HISTORY
+from models.deployment_changelog import (
+    DeploymentChangelog,
+    CHANGELOG_MAX_ENTRIES,
+    CHANGE_DEPLOYED,
+    CHANGE_REDEPLOYED,
+    CHANGE_UNDEPLOYED,
+    CHANGE_API_KEY_ADDED,
+    CHANGE_API_KEY_REMOVED,
+)
 
 router = APIRouter(tags=["deployment"])
 
 DEPLOY_DIR = Path(__file__).parent.parent / "data" / "deployments"
+
+
+# ---------------------------------------------------------------------------
+# Changelog helper
+# ---------------------------------------------------------------------------
+
+
+def _write_changelog(
+    deployment_id: str,
+    change_type: str,
+    description: str,
+    session: Session,
+) -> None:
+    """Append an immutable audit entry to the deployment changelog.
+
+    Best-effort — errors are silently swallowed so they never break the
+    calling request.
+    """
+    try:
+        import uuid
+
+        entry = DeploymentChangelog(
+            id=str(uuid.uuid4()),
+            deployment_id=deployment_id,
+            change_type=change_type,
+            description=description,
+        )
+        session.add(entry)
+        session.commit()
+    except Exception:  # noqa: BLE001
+        pass  # changelog writes are never allowed to crash the caller
 
 
 # ---------------------------------------------------------------------------
@@ -246,6 +286,15 @@ def execute_deployment(model_run_id: str, session: Session) -> dict:
 
         session.commit()
         session.refresh(existing_for_project)
+
+        _write_changelog(
+            existing_for_project.id,
+            CHANGE_REDEPLOYED,
+            f"Model updated to version {new_version_number}: "
+            f"{run.algorithm} (target: {target_col})",
+            session,
+        )
+
         return _deployment_response(existing_for_project)
 
     # First deployment for this project
@@ -290,6 +339,13 @@ def execute_deployment(model_run_id: str, session: Session) -> dict:
 
     session.commit()
     session.refresh(deployment)
+
+    _write_changelog(
+        deployment.id,
+        CHANGE_DEPLOYED,
+        f"Deployment created: {run.algorithm} predicting {target_col}",
+        session,
+    )
 
     return _deployment_response(deployment)
 
@@ -454,6 +510,14 @@ def undeploy_model(
 
     session.add(deployment)
     session.commit()
+
+    _write_changelog(
+        deployment_id,
+        CHANGE_UNDEPLOYED,
+        "Deployment deactivated — prediction endpoint is no longer serving requests",
+        session,
+    )
+
     return None
 
 
@@ -486,6 +550,13 @@ def generate_api_key(
     session.add(deployment)
     session.commit()
 
+    _write_changelog(
+        deployment_id,
+        CHANGE_API_KEY_ADDED,
+        "API key authentication enabled — endpoint now requires Bearer token",
+        session,
+    )
+
     return {
         "deployment_id": deployment_id,
         "api_key": key,  # shown only once
@@ -508,6 +579,14 @@ def disable_api_key(
     deployment.api_key_salt = None
     session.add(deployment)
     session.commit()
+
+    _write_changelog(
+        deployment_id,
+        CHANGE_API_KEY_REMOVED,
+        "API key authentication disabled — endpoint is now publicly accessible",
+        session,
+    )
+
     return None
 
 
@@ -5955,5 +6034,64 @@ def get_goal_seek_history(
         "deployment_id": deployment_id,
         "count": len(entries),
         "max_history": MAX_HISTORY,
+        "entries": entries,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Deployment Changelog — GET /api/deploy/{id}/changelog
+# ---------------------------------------------------------------------------
+
+
+@router.get("/api/deploy/{deployment_id}/changelog")
+def get_deployment_changelog(
+    deployment_id: str,
+    session: Session = Depends(get_session),
+) -> dict:
+    """Return the last CHANGELOG_MAX_ENTRIES audit log entries for a deployment.
+
+    Entries are ordered newest-first.  Each entry records a single change
+    event: when the deployment was created, retrained, had its API key
+    toggled, etc.
+    """
+    dep = session.get(Deployment, deployment_id)
+    if dep is None:
+        raise HTTPException(status_code=404, detail="Deployment not found.")
+
+    entries_orm = session.exec(
+        select(DeploymentChangelog)
+        .where(DeploymentChangelog.deployment_id == deployment_id)
+        .order_by(DeploymentChangelog.created_at.desc())  # type: ignore[arg-type]
+        .limit(CHANGELOG_MAX_ENTRIES)
+    ).all()
+
+    now = datetime.now(UTC).replace(tzinfo=None)
+
+    def _days_ago(dt: datetime) -> str:
+        diff = now - dt
+        total_seconds = int(diff.total_seconds())
+        if total_seconds < 60:
+            return "just now"
+        if total_seconds < 3600:
+            return f"{total_seconds // 60}m ago"
+        if total_seconds < 86400:
+            return f"{total_seconds // 3600}h ago"
+        days = diff.days
+        return f"{days}d ago"
+
+    entries = [
+        {
+            "id": e.id,
+            "change_type": e.change_type,
+            "description": e.description,
+            "created_at": e.created_at.isoformat(),
+            "relative_time": _days_ago(e.created_at),
+        }
+        for e in entries_orm
+    ]
+
+    return {
+        "deployment_id": deployment_id,
+        "count": len(entries),
         "entries": entries,
     }

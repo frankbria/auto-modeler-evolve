@@ -2413,6 +2413,21 @@ _GOAL_SEEK_NUMBER_RE = re.compile(
 )
 
 # Goal seek history — retrieve past goal-seek runs for comparison
+_DEPLOYMENT_CHANGELOG_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"(?:show|view|get|list|what(?:'s|is)?)\s+(?:my\s+)?(?:deployment\s+)?(?:change\s*log|audit\s*log|history|changes?|log)\b|"
+    r"what\s+(?:changed|happened)\s+(?:to\s+)?(?:my\s+)?(?:deployment|model|prediction\s+(?:api|endpoint))\b|"
+    r"deployment\s+(?:change\s*log|audit|history|log|timeline)\b|"
+    r"(?:show|view)\s+(?:deployment|model)\s+(?:changes?|history|log|timeline)\b|"
+    r"when\s+(?:was|did)\s+(?:my\s+)?(?:model|deployment)\s+(?:last\s+)?(?:changed?|updated?|retrained?|deployed?)\b|"
+    r"(?:changes?|updates?)\s+(?:to\s+)?(?:my\s+)?(?:deployment|model|api)\b|"
+    r"deployment\s+(?:activity|events?|record)\b|"
+    r"what\s+(?:events?|updates?|modifications?)\s+(?:have\s+)?(?:happened|occurred|been\s+made)\s+(?:to\s+)?(?:my\s+)?(?:deployment|model)\b|"
+    r"show\s+(?:me\s+)?(?:the\s+)?(?:change|audit|event|modification)\s*(?:log|history|trail)\b"
+    r")",
+    re.IGNORECASE,
+)
+
 _GOAL_SEEK_HISTORY_PATTERNS = re.compile(
     r"(?i)(?:"
     r"(?:show|view|list|get|recall|what\s+(?:are|were))\s+(?:my\s+)?(?:goal[- ]seek\s+)?histor(?:y|ies)\b|"
@@ -9165,6 +9180,76 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # History is nice-to-have; never crash chat
 
+    # Deployment Changelog — "what changed to my deployment?", "show changelog"
+    # Returns the audit trail of deployment lifecycle events (deploy, retrain, api key, etc.)
+    # so analysts can understand what happened to their model over time.
+    deployment_changelog_event: dict | None = None
+    if _DEPLOYMENT_CHANGELOG_PATTERNS.search(body.message) and ctx["deployment"]:
+        try:
+            from models.deployment_changelog import DeploymentChangelog as _DCL
+
+            _dcl_dep = ctx["deployment"]
+            _dcl_entries_orm = session.exec(
+                select(_DCL)
+                .where(_DCL.deployment_id == _dcl_dep.id)
+                .order_by(_DCL.created_at.desc())  # type: ignore[arg-type]
+                .limit(20)
+            ).all()
+
+            from datetime import UTC as _UTC
+
+            _dcl_now = datetime.now(_UTC).replace(tzinfo=None)
+
+            def _dcl_rel(dt: datetime) -> str:
+                diff = _dcl_now - dt
+                s = int(diff.total_seconds())
+                if s < 60:
+                    return "just now"
+                if s < 3600:
+                    return f"{s // 60}m ago"
+                if s < 86400:
+                    return f"{s // 3600}h ago"
+                return f"{diff.days}d ago"
+
+            _dcl_entries = [
+                {
+                    "id": e.id,
+                    "change_type": e.change_type,
+                    "description": e.description,
+                    "created_at": e.created_at.isoformat(),
+                    "relative_time": _dcl_rel(e.created_at),
+                }
+                for e in _dcl_entries_orm
+            ]
+
+            deployment_changelog_event = {
+                "deployment_id": _dcl_dep.id,
+                "count": len(_dcl_entries),
+                "entries": _dcl_entries,
+            }
+
+            if _dcl_entries:
+                _dcl_summary = "; ".join(
+                    f"{e['change_type']} ({e['relative_time']})"
+                    for e in _dcl_entries[:5]
+                )
+                system_prompt += (
+                    f"\n\n## Deployment Changelog\n"
+                    f"{len(_dcl_entries)} event(s) recorded. Recent: {_dcl_summary}. "
+                    f"A DeploymentChangelogCard is shown. Summarise the deployment history "
+                    f"in plain English: when was it first deployed, has it been retrained, "
+                    f"any API key or configuration changes? Keep it concise and friendly."
+                )
+            else:
+                system_prompt += (
+                    "\n\n## Deployment Changelog\n"
+                    "No changes have been recorded yet for this deployment. "
+                    "Tell the analyst that the changelog will show events like deployments, "
+                    "retraining, and API key changes as they happen."
+                )
+        except Exception:  # noqa: BLE001
+            pass  # Changelog is nice-to-have; never crash chat
+
     # Partial Dependence Plot — "marginal effect of price", "PDP for units"
     # Distinct from sensitivity analysis (which holds others at training means).
     # PDP averages over the ACTUAL training distribution → more accurate marginal effect.
@@ -15240,6 +15325,10 @@ def send_message(
         # Emit goal seek history (past scenarios comparison)
         if goal_seek_history_event:
             yield f"data: {json.dumps({'type': 'goal_seek_history', 'goal_seek_history': goal_seek_history_event})}\n\n"
+
+        # Emit deployment changelog (audit trail of lifecycle changes)
+        if deployment_changelog_event:
+            yield f"data: {json.dumps({'type': 'deployment_changelog', 'deployment_changelog': deployment_changelog_event})}\n\n"
 
         # Emit partial dependence plot result
         if pdp_event:

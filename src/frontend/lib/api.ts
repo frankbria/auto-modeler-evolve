@@ -859,6 +859,9 @@ export const api = {
     goalSeekHistory: (deploymentId: string): Promise<import("./types").GoalSeekHistoryResult> =>
       fetch(`${API_URL}/api/deploy/${deploymentId}/goal-seek/history`).then((r) => r.json()),
 
+    deploymentChangelog: (deploymentId: string): Promise<import("./types").DeploymentChangelogResult> =>
+      fetch(`${API_URL}/api/deploy/${deploymentId}/changelog`).then((r) => r.json()),
+
     whatif: (
       deploymentId: string,
       base: Record<string, unknown>,

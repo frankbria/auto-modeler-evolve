@@ -17,6 +17,7 @@ from models.analysis_template import AnalysisTemplate
 from models.input_validation_rule import InputValidationRule
 from models.dashboard_field_config import DashboardFieldConfig
 from models.goal_seek_record import GoalSeekRecord
+from models.deployment_changelog import DeploymentChangelog
 
 __all__ = [
     "Project",
@@ -37,4 +38,5 @@ __all__ = [
     "InputValidationRule",
     "DashboardFieldConfig",
     "GoalSeekRecord",
+    "DeploymentChangelog",
 ]
