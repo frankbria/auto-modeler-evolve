@@ -53,3 +53,5 @@ class Deployment(SQLModel, table=True):
     # Custom VP-facing dashboard metadata (overrides auto-generated title/description)
     dashboard_title: Optional[str] = None
     dashboard_description: Optional[str] = None
+    # SLA latency alert: timestamp of last sla_exceeded webhook fire (cooldown gate)
+    sla_alert_last_fired_at: Optional[datetime] = None

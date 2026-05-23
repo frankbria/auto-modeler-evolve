@@ -5,6 +5,7 @@ events occur:
   - "batch_complete"  — a scheduled batch prediction job finished
   - "drift_detected"  — prediction distribution drift score >= 50
   - "health_degraded" — model health score drops below 60
+  - "sla_exceeded"    — p95 prediction latency crosses 500 ms threshold
 
 Payloads are signed with HMAC-SHA256 using the webhook's secret, delivered in
 the ``X-AutoModeler-Signature`` header (hex digest of the JSON body).
@@ -32,6 +33,7 @@ EVENT_HEALTH_DEGRADED = "health_degraded"
 EVENT_QUOTA_ALERT = "quota_alert"
 EVENT_PREDICTION_ALERT = "prediction_alert"
 EVENT_ACCURACY_ALERT = "accuracy_alert"
+EVENT_SLA_EXCEEDED = "sla_exceeded"
 
 ALL_EVENTS = {
     EVENT_BATCH_COMPLETE,
@@ -40,6 +42,7 @@ ALL_EVENTS = {
     EVENT_QUOTA_ALERT,
     EVENT_PREDICTION_ALERT,
     EVENT_ACCURACY_ALERT,
+    EVENT_SLA_EXCEEDED,
 }
 
 

@@ -37,6 +37,7 @@ def _apply_migrations():
         ("project", "last_milestone_state", "TEXT"),
         ("project", "last_insight_dataset_id", "TEXT"),
         ("project", "last_type_check_dataset_id", "TEXT"),
+        ("deployment", "sla_alert_last_fired_at", "TEXT"),
     ]
     with engine.connect() as conn:
         for table, col, definition in migrations:

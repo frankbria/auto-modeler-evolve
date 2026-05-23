@@ -1166,6 +1166,16 @@ def make_prediction(
     )
     _t2.start()
 
+    # SLA latency alert: fire sla_exceeded webhook when p95 > 500ms
+    import threading as _threading3
+
+    _t3 = _threading3.Thread(
+        target=_check_and_fire_sla_alert,
+        args=(deployment_id,),
+        daemon=True,
+    )
+    _t3.start()
+
     return {
         "deployment_id": deployment_id,
         "ab_variant": ab_variant,
@@ -3278,6 +3288,94 @@ def _check_and_fire_quota_alert(
         pass  # Best-effort; never crash the prediction path
 
 
+# SLA latency alert constants
+_SLA_WEBHOOK_N_LOGS: int = 50  # number of recent predictions to consider for p95
+_SLA_WEBHOOK_MIN_SAMPLES: int = 5  # minimum data points needed for a meaningful p95
+_SLA_WEBHOOK_THRESHOLD_MS: float = 500.0  # alert when p95 exceeds this (ms)
+_SLA_WEBHOOK_COOLDOWN_HOURS: float = 1.0  # minimum hours between consecutive fires
+
+
+def _check_and_fire_sla_alert(
+    deployment_id: str,
+    threshold_ms: float = _SLA_WEBHOOK_THRESHOLD_MS,
+    cooldown_hours: float = _SLA_WEBHOOK_COOLDOWN_HOURS,
+) -> None:
+    """Fire sla_exceeded webhook when p95 prediction latency crosses threshold.
+
+    Reads the last ``_SLA_WEBHOOK_N_LOGS`` timed PredictionLog entries, computes
+    p95, and fires once per ``cooldown_hours`` to avoid alert storms.
+
+    Designed to run in a daemon background thread — never blocks or crashes.
+    """
+    try:
+        from db import engine as _sla_engine
+        from models.prediction_log import PredictionLog as _SLA_PL
+        from sqlmodel import Session as _SLA_Session
+        from sqlmodel import desc as _sla_desc
+        from sqlmodel import select as _sla_select
+
+        with _SLA_Session(_sla_engine) as _s:
+            _logs = _s.exec(
+                _sla_select(_SLA_PL)
+                .where(
+                    _SLA_PL.deployment_id == deployment_id,
+                    _SLA_PL.response_ms.isnot(None),  # type: ignore[union-attr]
+                )
+                .order_by(_sla_desc(_SLA_PL.created_at))
+                .limit(_SLA_WEBHOOK_N_LOGS)
+            ).all()
+
+            if len(_logs) < _SLA_WEBHOOK_MIN_SAMPLES:
+                return  # not enough data for a meaningful p95
+
+            latencies = sorted(lg.response_ms for lg in _logs)  # type: ignore[misc]
+            p95 = _percentile(latencies, 95)
+
+            if p95 <= threshold_ms:
+                return  # within SLA — nothing to do
+
+            # Cooldown gate: check sla_alert_last_fired_at on the deployment row
+            _dep = _s.get(Deployment, deployment_id)
+            if _dep is None:
+                return
+
+            _now = datetime.now(UTC).replace(tzinfo=None)
+            if _dep.sla_alert_last_fired_at is not None:
+                _elapsed_h = (
+                    _now - _dep.sla_alert_last_fired_at
+                ).total_seconds() / 3600
+                if _elapsed_h < cooldown_hours:
+                    return  # too soon since last alert
+
+            # Stamp the fired timestamp before dispatching to prevent racing threads
+            _dep.sla_alert_last_fired_at = _now
+            _s.add(_dep)
+            _s.commit()
+
+        # Dispatch outside the session — best-effort, in daemon thread already
+        from core.webhook import EVENT_SLA_EXCEEDED, dispatch_webhooks
+
+        avg_ms = round(sum(latencies) / len(latencies), 2)
+        dispatch_webhooks(
+            deployment_id,
+            EVENT_SLA_EXCEEDED,
+            {
+                "p95_ms": p95,
+                "avg_ms": avg_ms,
+                "sample_count": len(latencies),
+                "threshold_ms": threshold_ms,
+                "message": (
+                    f"SLA alert: p95 prediction latency is {p95}ms — "
+                    f"above the {threshold_ms:.0f}ms target. "
+                    "Consider retraining with fewer features or switching to "
+                    "a simpler algorithm."
+                ),
+            },
+        )
+    except Exception:
+        pass  # Best-effort; never crash the prediction path
+
+
 # ---------------------------------------------------------------------------
 # Batch schedule endpoints
 # ---------------------------------------------------------------------------
@@ -4268,7 +4366,12 @@ def get_sdk(
 
 class WebhookCreateBody(BaseModel):
     url: str
-    event_types: list[str] = ["batch_complete", "drift_detected", "health_degraded"]
+    event_types: list[str] = [
+        "batch_complete",
+        "drift_detected",
+        "health_degraded",
+        "sla_exceeded",
+    ]
 
 
 def _webhook_response(wh: WebhookConfig, include_secret: bool = False) -> dict:
@@ -4302,6 +4405,7 @@ def create_webhook(
     - "batch_complete"  — a scheduled batch job finished (success or failure)
     - "drift_detected"  — prediction drift score >= 50
     - "health_degraded" — model health score < 60
+    - "sla_exceeded"    — p95 prediction latency crossed 500ms (fires once/hour max)
     """
     from core.webhook import ALL_EVENTS
 
