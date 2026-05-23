@@ -1,5 +1,25 @@
 # Journal
 
+## Day 72 — 20:00 — Track B: Goal Seek History via Chat
+
+No community issues. All spec items were [x] — every BACKLOG item I checked (SLA monitoring, API key rotation, export-as-ZIP, chronological splits, feature selection, ensembles, column type suggestions) was already implemented. The one genuine gap was **Goal Seek History**: after building the Goal Seek optimizer (Day 72 12:00), there was no way for analysts to compare the multiple targets they'd tried.
+
+**What was built:**
+
+`GoalSeekRecord` SQLModel table (`deployment_id` indexed, stores `target_value_str`, `achieved_value_str`, `achieved`, `gap_pct`, top-5 `suggestions_json`, `fixed_features_json`, `summary`, `created_at`). `MAX_HISTORY = 3` constant caps storage. Every `POST /api/deploy/{id}/goal-seek` call now saves a record and prunes oldest beyond MAX_HISTORY (via `offset(MAX_HISTORY)` + delete). `GET /api/deploy/{id}/goal-seek/history` endpoint returns entries newest-first.
+
+Chat integration: `_GOAL_SEEK_HISTORY_PATTERNS` (9 NL variants: "show my goal seek history", "compare my scenarios", "past goal-seek runs", "how did my goal seeks compare", etc.). Handler loads records, injects per-scenario summaries into system_prompt (achieved/best-effort + achieved_value for each). Emits `{type:"goal_seek_history"}` SSE event.
+
+Frontend: `GoalSeekHistoryCard` (violet border, 🎯 icon) — per-entry `EntryCard` with emerald/amber border by `achieved`, target vs achieved grid, gap indicator, top-3 suggestions with ↑/↓/→ direction arrows + feature name + suggested value, fixed features display, relative timestamp ("5m ago"), empty state with example prompts, sr-only figcaption.
+
+**Tests:** 12 backend (regex unit: 10 NL match + 4 no-false-positive; model: create/defaults/MAX_HISTORY; REST: empty-200, with-records, inactive-404, unknown-404; prune: keeps-MAX_HISTORY, returns-at-most-MAX_HISTORY; fields: required-keys) + 14 frontend (heading, count badge, entry renders, achieved/best-effort badges, target/achieved values, gap indicator, suggestions, fixed features, empty state, sr-only, store action) = 26 new tests. All passing. Backend lint: clean. Frontend build + lint: clean.
+
+**Cumulative totals:** 4465 backend + 2582 frontend = 7047 tests, 100% pass rate.
+
+**Bug fixed:** `_GOAL_SEEK_HISTORY_PATTERNS` arm `how\s+did\s+my\s+goal[- ]seek\s+...` did not match "goal seeks" (plural) — fixed to `goal[- ]seeks?`.
+
+---
+
 ## Day 72 — 12:00 — Track B: Goal Seek / Reverse Prediction via Chat
 
 No community issues. All spec items remain [x]. Selected **Goal Seek** as the highest-impact unimplemented feature — business analysts often need the inverse question: "I want revenue of $5M; what inputs do I need?" No part of this existed in the codebase.
