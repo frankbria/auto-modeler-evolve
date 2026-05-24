@@ -2406,9 +2406,7 @@ _GOAL_SEEK_PATTERNS = re.compile(
 )
 
 # Regex to find "feature_name=numeric_value" pairs for locked/fixed features
-_GS_KV_FIXED_RE = re.compile(
-    r"\b([\w][\w]*)\s*=\s*([+-]?\d[\d,]*(?:\.\d+)?)\b"
-)
+_GS_KV_FIXED_RE = re.compile(r"\b([\w][\w]*)\s*=\s*([+-]?\d[\d,]*(?:\.\d+)?)\b")
 
 _GOAL_SEEK_NUMBER_RE = re.compile(
     r"(?:^|[\s=:to])" r"(?:[$€£¥]?\s*)?" r"(\d[\d,]*(?:\.\d+)?)\s*([kmb])?\b",
