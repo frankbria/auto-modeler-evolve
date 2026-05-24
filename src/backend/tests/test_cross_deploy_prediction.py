@@ -22,8 +22,6 @@ Covers:
 from __future__ import annotations
 
 import io
-import json
-from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -106,8 +104,8 @@ _CSV = b"units,region,revenue\n100,East,5000\n200,West,8000\n150,East,6500\n"
 
 def _make_client_with_two_deployments(tmp_path):
     """Return (client, project_id, dep1_id, dep2_id) with two active deployments."""
-    import sys
     import os
+    from fastapi.testclient import TestClient
 
     os.environ.setdefault("ANTHROPIC_API_KEY", "test-key")
 
@@ -185,7 +183,7 @@ def _make_client_with_two_deployments(tmp_path):
 
 
 try:
-    from sqlmodel import SQLModel, Session, create_engine, select
+    from sqlmodel import SQLModel, create_engine
 
     _HAS_SQLMODEL = True
 except ImportError:
@@ -223,7 +221,7 @@ def test_result_row_required_keys():
 
 def test_cross_deploy_summary_mentions_count():
     """summary field references the number of deployments compared."""
-    summary = f"Comparing 2 deployed models on revenue: predictions range from 4500.00 to 5500.00. Highest: Linear Regression."
+    summary = "Comparing 2 deployed models on revenue: predictions range from 4500.00 to 5500.00. Highest: Linear Regression."
     assert "2" in summary
     assert "revenue" in summary
 
@@ -312,7 +310,7 @@ def test_classification_summary_format():
         {"algorithm_plain": "Logistic Regression", "prediction": "churn"},
         {"algorithm_plain": "Random Forest", "prediction": "no_churn"},
     ]
-    summary = f"Comparing 2 deployed models on target: predictions vary — " + ", ".join(
+    summary = "Comparing 2 deployed models on target: predictions vary — " + ", ".join(
         f"{r['algorithm_plain']}: {r['prediction']}" for r in results
     )
     assert "Logistic Regression: churn" in summary
