@@ -89,9 +89,9 @@ def test_weekly_usage_patterns_no_false_positives(phrase):
     """Unrelated phrases must NOT trigger the weekly usage report."""
     from api.chat import _WEEKLY_USAGE_PATTERNS
 
-    assert not _WEEKLY_USAGE_PATTERNS.search(
-        phrase
-    ), f"Pattern should NOT match: {phrase!r}"
+    assert not _WEEKLY_USAGE_PATTERNS.search(phrase), (
+        f"Pattern should NOT match: {phrase!r}"
+    )
 
 
 # ---------------------------------------------------------------------------

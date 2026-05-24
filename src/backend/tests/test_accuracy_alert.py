@@ -162,9 +162,9 @@ def test_accuracy_alert_patterns_no_false_positives():
         "what is the drift score",
     ]
     for phrase in non_matches:
-        assert not _ACCURACY_ALERT_PATTERNS.search(
-            phrase
-        ), f"False positive: {phrase!r}"
+        assert not _ACCURACY_ALERT_PATTERNS.search(phrase), (
+            f"False positive: {phrase!r}"
+        )
 
 
 def test_accuracy_alert_threshold_re_extracts_percent():
