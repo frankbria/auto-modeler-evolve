@@ -85,6 +85,7 @@ export function EnsembleRecommendationCard({
     options,
     recommended_name,
     summary,
+    auto_suggested,
   } = result
 
   const metricDisplay = metric_name.toUpperCase()
@@ -105,12 +106,27 @@ export function EnsembleRecommendationCard({
       className="border border-violet-200 rounded-lg p-4 bg-white my-2 space-y-3"
       aria-label="Ensemble model recommendation"
     >
+      {/* Auto-suggest banner — shown only when proactively surfaced */}
+      {auto_suggested && (
+        <div
+          className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-md px-3 py-2"
+          data-testid="ensemble-auto-suggest-banner"
+          role="note"
+          aria-label="AutoModeler suggestion"
+        >
+          <span aria-hidden="true" className="text-base">💡</span>
+          <p className="text-xs text-amber-800 font-medium">
+            AutoModeler noticed your model score is below target — an ensemble may help improve it.
+          </p>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="flex items-center gap-2">
           <span aria-hidden="true" className="text-lg">🧩</span>
           <h3 className="text-sm font-semibold text-violet-900">
-            Ensemble Models
+            {auto_suggested ? "Accuracy Below Target — Try an Ensemble" : "Ensemble Models"}
           </h3>
         </div>
         <div className="flex flex-wrap items-center gap-1.5">

@@ -27,3 +27,6 @@ class Project(SQLModel, table=True):
     last_type_check_dataset_id: Optional[str] = Field(
         default=None
     )  # dataset.id of the most-recently type-checked dataset
+    last_ensemble_suggest_run_count: Optional[int] = Field(
+        default=None
+    )  # number of done non-ensemble runs when auto-suggest last fired

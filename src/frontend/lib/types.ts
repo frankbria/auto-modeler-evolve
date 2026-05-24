@@ -2643,6 +2643,8 @@ export interface EnsembleRecommendationResult {
   recommended_name: string
   options: EnsembleOption[]
   summary: string
+  /** True when AutoModeler surfaced this proactively (low accuracy), not from an explicit ask */
+  auto_suggested?: boolean
 }
 
 // ---------------------------------------------------------------------------

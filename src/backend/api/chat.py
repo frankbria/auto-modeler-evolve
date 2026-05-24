@@ -2640,6 +2640,10 @@ _ENSEMBLE_TRAIN_PATTERNS = re.compile(
 # Subtype detector: voting vs stacking
 _STACKING_RE = re.compile(r"\bstack(?:ing)?\b", re.IGNORECASE)
 
+# Score threshold below which the auto-suggest fires proactively.
+# Applies to both R² (regression) and accuracy (classification).
+_ENSEMBLE_AUTO_THRESHOLD: float = 0.75
+
 # Patterns for training WITH imbalance correction (fires before _TRAIN_PATTERNS so that
 # "train with class weighting" doesn't fall through to uncorrected training).
 _BALANCE_TRAIN_PATTERNS = re.compile(
@@ -15105,6 +15109,163 @@ def send_message(
                 "powerful but needs more data). "
                 "Encourage the analyst to say 'train a voting/stacking model' to start."
             )
+        except Exception:  # noqa: BLE001
+            pass  # Nice-to-have; never crash chat
+
+    # ---------------------------------------------------------------------------
+    # Proactive ensemble auto-suggest — fires automatically after any chat message
+    # when the best non-ensemble model is below 0.75 (R² or accuracy) and no
+    # ensemble has been trained yet. Does NOT fire if the user already asked
+    # about ensembles (ensemble_event already set) or if this same run-count was
+    # already suggested. Persists run-count to project so it fires exactly once
+    # per "batch" of training runs.
+    # ---------------------------------------------------------------------------
+    if ensemble_event is None and ctx["model_runs"]:
+        try:
+            _ae_fset = ctx["feature_set"]
+            _ae_prob = (
+                (_ae_fset.problem_type or "regression") if _ae_fset else "regression"
+            )
+            _ae_metric = "r2" if _ae_prob == "regression" else "accuracy"
+
+            _ae_done_runs = [r for r in ctx["model_runs"] if r.status == "done"]
+            _ae_non_ens: list = []
+            _ae_has_ens = False
+            for _ae_r in _ae_done_runs:
+                _ae_m = json.loads(_ae_r.metrics or "{}")
+                if _ae_m.get("ensemble_type"):
+                    _ae_has_ens = True
+                else:
+                    _ae_non_ens.append(_ae_r)
+
+            if _ae_non_ens and not _ae_has_ens:
+                # Find best non-ensemble score
+                _ae_best: float | None = None
+                _ae_best_algo: str | None = None
+                for _ae_r2 in _ae_non_ens:
+                    _ae_mv = json.loads(_ae_r2.metrics or "{}")
+                    _ae_v = _ae_mv.get(_ae_metric)
+                    if _ae_v is not None:
+                        _ae_v = float(_ae_v)
+                        if _ae_best is None or _ae_v > _ae_best:
+                            _ae_best = _ae_v
+                            _ae_best_algo = _ae_r2.algorithm
+
+                _ae_run_count = len(_ae_non_ens)
+                _ae_last_count = project.last_ensemble_suggest_run_count  # type: ignore[attr-defined]
+
+                if (
+                    _ae_best is not None
+                    and _ae_best < _ENSEMBLE_AUTO_THRESHOLD
+                    and _ae_run_count != _ae_last_count
+                ):
+                    # Build the same recommendation payload as the explicit handler
+                    _ae_ds_size = ctx["dataset"].row_count if ctx["dataset"] else 0
+                    _ae_recommend_stacking = (
+                        _ae_ds_size >= 200 and len(_ae_done_runs) >= 2
+                    )
+                    if _ae_prob == "classification":
+                        _ae_voting_algo = "voting_classifier"
+                        _ae_stacking_algo = "stacking_classifier"
+                        _ae_voting_name = "Voting Classifier"
+                        _ae_stacking_name = "Stacking Classifier"
+                        _ae_voting_desc = (
+                            "Combines Logistic Regression, Random Forest, and Gradient "
+                            "Boosting by majority vote (soft voting)."
+                        )
+                        _ae_stacking_desc = (
+                            "Uses a meta-learner (Logistic Regression) to optimally "
+                            "combine Logistic Regression, Random Forest, and Gradient "
+                            "Boosting."
+                        )
+                    else:
+                        _ae_voting_algo = "voting_regressor"
+                        _ae_stacking_algo = "stacking_regressor"
+                        _ae_voting_name = "Voting Ensemble"
+                        _ae_stacking_name = "Stacking Ensemble"
+                        _ae_voting_desc = (
+                            "Averages predictions from Linear Regression, Random "
+                            "Forest, and Gradient Boosting Regressor."
+                        )
+                        _ae_stacking_desc = (
+                            "Uses a meta-learner (Ridge Regression) to combine Linear "
+                            "Regression, Random Forest, and Gradient Boosting Regressor."
+                        )
+
+                    _ae_voting_complexity = "easy"
+                    _ae_stacking_complexity = "medium"
+
+                    _ae_options = [
+                        {
+                            "algorithm": _ae_voting_algo,
+                            "name": _ae_voting_name,
+                            "ensemble_type": "voting",
+                            "description": _ae_voting_desc,
+                            "plain_english": (
+                                "Gets a second opinion from three different models and "
+                                "averages their answers."
+                            ),
+                            "best_for": "Quick accuracy improvement; easy to explain",
+                            "complexity": _ae_voting_complexity,
+                            "is_recommended": not _ae_recommend_stacking,
+                        },
+                        {
+                            "algorithm": _ae_stacking_algo,
+                            "name": _ae_stacking_name,
+                            "ensemble_type": "stacking",
+                            "description": _ae_stacking_desc,
+                            "plain_english": (
+                                "Trains three models, then trains a fourth model to "
+                                "learn the optimal combination."
+                            ),
+                            "best_for": "Maximum accuracy; needs 200+ rows",
+                            "complexity": _ae_stacking_complexity,
+                            "is_recommended": _ae_recommend_stacking,
+                        },
+                    ]
+                    _ae_rec_algo = (
+                        _ae_stacking_algo if _ae_recommend_stacking else _ae_voting_algo
+                    )
+                    _ae_rec_name = (
+                        _ae_stacking_name if _ae_recommend_stacking else _ae_voting_name
+                    )
+                    _ae_score_text = (
+                        f" (current best {_ae_metric.upper()}: {_ae_best:.3f})"
+                        if _ae_best is not None
+                        else ""
+                    )
+                    _ae_summary = (
+                        f"Your best model score is below the target threshold"
+                        f"{_ae_score_text}. "
+                        f"{'Stacking' if _ae_recommend_stacking else 'Voting'} ensemble "
+                        f"recommended — ensembles typically improve accuracy by 1–5% "
+                        f"by combining multiple models to reduce errors."
+                    )
+                    ensemble_event = {
+                        "problem_type": _ae_prob,
+                        "best_current_algorithm": _ae_best_algo,
+                        "best_current_score": _ae_best,
+                        "metric_name": _ae_metric,
+                        "dataset_size": _ae_ds_size,
+                        "recommended_algorithm": _ae_rec_algo,
+                        "recommended_name": _ae_rec_name,
+                        "options": _ae_options,
+                        "summary": _ae_summary,
+                        "auto_suggested": True,
+                    }
+                    system_prompt += (
+                        "\n\n## AutoModeler Proactive Suggestion\n"
+                        f"The analyst's best model has a score of {_ae_best:.3f} "
+                        f"({_ae_metric.upper()}), which is below the 0.75 target. "
+                        "You've automatically surfaced an ensemble recommendation. "
+                        "Briefly acknowledge the low score, explain that AutoModeler "
+                        "noticed this and is suggesting an ensemble as a way to improve, "
+                        "and encourage the analyst to say 'train a voting model' to try it."
+                    )
+                    # Persist so this fires exactly once per batch of runs
+                    project.last_ensemble_suggest_run_count = _ae_run_count  # type: ignore[attr-defined]
+                    session.add(project)
+                    session.commit()
         except Exception:  # noqa: BLE001
             pass  # Nice-to-have; never crash chat
 
