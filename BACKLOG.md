@@ -53,6 +53,16 @@ the time is better spent on real features.
 
 ---
 
+## Day 74 (04:00) — Done
+
+**Track D: Cross-Deployment Prediction Comparison via Chat** — complete.
+
+`_CROSS_DEPLOY_PRED_PATTERNS` (8 NL variants: "compare what my models would predict for X", "run my models side by side", "cross-deployment comparison", "which model gives the highest prediction?"). Handler in `send_message()`: finds all active deployments for project, extracts `key=value` features via `_extract_multi_feature_prediction()`, fills missing with `feature_means`, runs `predict_single()` on each (capped 4), computes winner (highest regression prediction / highest confidence classification), emits `{type:"cross_deploy_prediction"}` SSE event. Single-deployment guard → system_prompt hint to retrain and deploy a second version. `CrossDeployPredictionCard` (orange border, 🔀 icon): feature chips + defaults note, comparison table with 🏆 winner row, Env badge, prediction + CI/confidence, deployed date, sr-only figcaption. 25 backend + 21 frontend = 46 new tests. Total: **4613 backend + 2634 frontend = 7247**, all passing. Backend lint: clean. Frontend build + lint: clean.
+
+Key learning: The existing `POST /api/predict/compare` REST endpoint powers the `CompareModelsCard` on the prediction page but has no chat interface — always grep for existing REST endpoints before building new ones, and ask whether a chat handler is missing.
+
+---
+
 ## Day 73 (20:00) — Done
 
 **Track E: "Explain this finding" Direct-Send + Track B: Goal Seek Lock Toggle** — complete.
@@ -113,27 +123,28 @@ Key learning: Python `\b` doesn't work for underscore-delimited column names —
 
 ---
 
-## What's Next (Day 74+)
+## What's Next (Day 75+)
 
-**NOTE (Day 73 12:00 audit):** Always grep before implementing — most candidates have already been done.
+**CRITICAL NOTE:** Always grep before implementing — most candidates have already been done.
+**Key learning (Day 74):** Check for existing REST endpoints that lack chat handlers — `POST /api/predict/compare` existed since Day 9 but had no chat interface until Day 74.
 
-**Track B extension (goal-seek UX depth):**
-- Goal seek with user-pinned features — the backend already supports `fixed_features` map, but the GoalSeekCard has no per-feature lock toggle UI (frontend only)
-- Goal seek history ✅ DONE (Day 72 20:00)
-
-**Track D candidates (deployment depth — highest priority):**
-NOTE: Export-as-ZIP, SLA monitoring, API key rotation, Deployment Changelog all ALREADY DONE. Check before building.
-- Real-time SLA latency webhook (`sla_exceeded`) ✅ DONE (Day 73 12:00)
+**Track D candidates:**
+- Cross-deployment prediction comparison via chat ✅ DONE (Day 74 04:00)
+- Real-time SLA latency webhook ✅ DONE (Day 73 12:00)
 - Deployment changelog ✅ DONE (Day 73 04:00)
+- NOTE: Export-as-ZIP, API key rotation, SLA monitoring all ALREADY DONE.
 
 **Track C candidates (model building depth):**
-NOTE: Chronological splits, feature selection, ensembles, CalibratedClassifierCV all ALREADY DONE.
-- SMOTE / class-weight upsampling ✅ ALREADY DONE (Day 41 20:00: `_BALANCE_TRAIN_PATTERNS` + imbalance_strategy handler)
-- Calibrated probability outputs ✅ ALREADY DONE (trainer.py uses `CalibratedClassifierCV`)
+- Ensemble auto-suggest — proactively surface ensemble recommendation when best model R² < 0.75 or accuracy < 75% (ensemble recommendation already exists as an explicit card but isn't proactive on training completion)
+- NOTE: Chronological splits, feature selection, ensembles, SMOTE, CalibratedClassifierCV all ALREADY DONE.
 
 **Track E candidates (polish):**
-- "Explain this finding" — clicking an AutoInsightCard finding button sends the message directly (currently only pre-fills the chat input)
-- Auto-suggest column types ✅ ALREADY DONE (column-type-suggestion-card.tsx + _COL_TYPE_SUGG handler in chat.py)
+- "Explain this finding" direct-send ✅ DONE (Day 73 20:00)
+- Auto-suggest column types ✅ ALREADY DONE
+- Training completion low-accuracy hint — when a training run completes with accuracy < threshold, auto-inject improvement suggestions or a MilestoneCard with "your model accuracy is below target, here's what to try"
+
+**Track B candidates (vision-driven innovation):**
+- Predictive cohort monitoring — automatically track how the cohort profiles of top-N predictions evolve over time as new data is uploaded
 
 ---
 
