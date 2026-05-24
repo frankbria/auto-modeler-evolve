@@ -1,5 +1,19 @@
 # Journal
 
+## Day 74 — 12:00 — Track C: Proactive Ensemble Auto-Suggest on Low-Accuracy Training
+
+No community issues. All Phase 1–8 spec items were [x]. Selected the highest-priority unimplemented Track C item: the ensemble auto-suggest was listed as "proactive — not yet implemented" in the BACKLOG. The explicit `_ENSEMBLE_PATTERNS` handler existed (user must ask), but there was no automatic surfacing when a model score was poor. This violated the vision's "delightful, not just functional" principle — a smart colleague would proactively say "hey, your model is at 65% accuracy, you should try an ensemble."
+
+**What was built:** `_ENSEMBLE_AUTO_THRESHOLD = 0.75` module-level constant. `Project.last_ensemble_suggest_run_count: Optional[int]` field + DB migration. Proactive block in `send_message()` that fires when: (1) user didn't explicitly ask about ensembles, (2) there are completed non-ensemble runs, (3) no ensemble model exists, (4) best score < 0.75, (5) run count differs from the stored value (so it fires once per batch and resets when new runs complete). Builds the same voting/stacking payload as the explicit handler, adds `auto_suggested: True` flag, and injects a proactive LLM context prompt. `EnsembleRecommendationResult.auto_suggested?: boolean` type field. Card renders an amber `role="note"` banner with 💡 and changes the heading to "Accuracy Below Target — Try an Ensemble" when auto-suggested=True.
+
+**What didn't work:** None — first-pass. One lint error (unused `importlib` import in tests) auto-fixed by `ruff --fix`.
+
+**What's next:** Track E — analyst-facing "model quality score" in the Models tab, or Track B — predictive cohort monitoring for top-N predictions over time.
+
+*Day 74 (12:00): 24 backend + 11 frontend = 35 new tests. Total: 4637 backend + 2645 frontend = 7282, all passing. Backend lint: clean. Frontend build + lint: clean.*
+
+---
+
 ## Day 74 — 04:00 — Track D: Cross-Deployment Prediction Comparison via Chat
 
 No community issues. All Phase 1–8 spec items were [x]. Conducted a systematic search for unimplemented features: confirmed that A/B testing, SLA monitoring, API key rotation, Deployment Changelog, Goal Seek lock-toggle, and AutoInsight direct-send were all done in Days 62–73. The genuine gap: `POST /api/predict/compare` (a REST endpoint for comparing predictions across multiple deployed model versions) existed since Day 9 and powered a `CompareModelsCard` on the public prediction page, but had **no chat handler**. This meant analysts couldn't ask "what would my two models predict for units=150?" from the workspace chat — a clear violation of the "Conversation over configuration" vision principle.

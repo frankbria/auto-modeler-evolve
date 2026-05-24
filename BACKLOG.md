@@ -53,6 +53,16 @@ the time is better spent on real features.
 
 ---
 
+## Day 74 (12:00) — Done
+
+**Track C: Proactive Ensemble Auto-Suggest** — complete.
+
+`_ENSEMBLE_AUTO_THRESHOLD = 0.75` module-level constant (importable by tests). `Project.last_ensemble_suggest_run_count: Optional[int]` field + DB migration. Proactive block in `send_message()`: fires when `ensemble_event is None` (user didn't ask) AND non-ensemble done runs exist AND no ensemble trained AND best score < 0.75 AND run count differs from last stored value. Builds the same payload as the explicit `_ENSEMBLE_PATTERNS` handler (voting/stacking options, recommended algo, summary) but adds `auto_suggested: True`. Injects a "AutoModeler Proactive Suggestion" block into `system_prompt` so Claude acknowledges the low score. Persists `last_ensemble_suggest_run_count = _ae_run_count` so suggestion fires once per batch of runs and resets when new runs complete. `EnsembleRecommendationResult.auto_suggested?: boolean` type field. `EnsembleRecommendationCard`: when `auto_suggested=True`, renders amber `role="note"` banner ("💡 AutoModeler noticed your model score is below target") and changes heading to "Accuracy Below Target — Try an Ensemble". 24 backend + 11 frontend = 35 new tests. Total: **4637 backend + 2645 frontend = 7282**, all passing. Backend lint: clean. Frontend build + lint: clean.
+
+Key learning: Module-level threshold constants should be defined at module scope (not inside the function body) so tests can import and verify them directly.
+
+---
+
 ## Day 74 (04:00) — Done
 
 **Track D: Cross-Deployment Prediction Comparison via Chat** — complete.
@@ -126,7 +136,9 @@ Key learning: Python `\b` doesn't work for underscore-delimited column names —
 ## What's Next (Day 75+)
 
 **CRITICAL NOTE:** Always grep before implementing — most candidates have already been done.
-**Key learning (Day 74):** Check for existing REST endpoints that lack chat handlers — `POST /api/predict/compare` existed since Day 9 but had no chat interface until Day 74.
+**Key learnings:**
+- Day 74 04:00: Check for existing REST endpoints that lack chat handlers.
+- Day 74 12:00: Module-level threshold constants must be at module scope so tests can import them.
 
 **Track D candidates:**
 - Cross-deployment prediction comparison via chat ✅ DONE (Day 74 04:00)
@@ -135,16 +147,18 @@ Key learning: Python `\b` doesn't work for underscore-delimited column names —
 - NOTE: Export-as-ZIP, API key rotation, SLA monitoring all ALREADY DONE.
 
 **Track C candidates (model building depth):**
-- Ensemble auto-suggest — proactively surface ensemble recommendation when best model R² < 0.75 or accuracy < 75% (ensemble recommendation already exists as an explicit card but isn't proactive on training completion)
+- Ensemble auto-suggest ✅ DONE (Day 74 12:00) — proactive ensemble card when score < 0.75
 - NOTE: Chronological splits, feature selection, ensembles, SMOTE, CalibratedClassifierCV all ALREADY DONE.
 
 **Track E candidates (polish):**
 - "Explain this finding" direct-send ✅ DONE (Day 73 20:00)
 - Auto-suggest column types ✅ ALREADY DONE
-- Training completion low-accuracy hint — when a training run completes with accuracy < threshold, auto-inject improvement suggestions or a MilestoneCard with "your model accuracy is below target, here's what to try"
+- Training completion low-accuracy hint ✅ PARTIALLY DONE via ensemble auto-suggest (Day 74 12:00); remaining: a MilestoneCard "here's what to try beyond ensembles" when accuracy is low and no ensemble training is pending
+- Analyst-facing "model quality score" in the Models tab — a plain-English summary of "this model is good/acceptable/needs work" with reasoning
 
 **Track B candidates (vision-driven innovation):**
 - Predictive cohort monitoring — automatically track how the cohort profiles of top-N predictions evolve over time as new data is uploaded
+- "Why did this prediction change?" — compare two consecutive predictions for the same inputs and explain the delta (useful after retraining)
 
 ---
 
