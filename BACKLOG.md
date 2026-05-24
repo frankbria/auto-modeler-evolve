@@ -49,7 +49,17 @@ the time is better spent on real features.
 
 ## Currently Working On
 
-**Day 73 (20:00):** Track E — "Explain this finding" direct send + Track B — Goal seek lock toggle UI
+*(nothing)*
+
+---
+
+## Day 73 (20:00) — Done
+
+**Track E: "Explain this finding" Direct-Send + Track B: Goal Seek Lock Toggle** — complete.
+
+`handleSendMessage` in `project/[id]/page.tsx` gained `directText?: string` optional param; `AutoInsightCard` + `GoalSeekCard` now call it directly (no extra Send click). Bug caught: `onClick={handleSendMessage}` on Send button passed SyntheticEvent as `directText`; fixed to `onClick={() => handleSendMessage()}`. `GoalSeekCard`: `useState<Set<string>>` lock state, 🔓/🔒 toggle per suggestion row (`aria-pressed`, `data-testid`), Re-run button builds natural-language message parsed by updated `_extract_goal_seek_target` (`_GS_KV_FIXED_RE` regex + `feature_names` whitelist). 5 backend + 15 frontend = 20 new tests. Total: **4516 backend + 2613 frontend = 7129**, all passing. Backend lint: clean. Frontend build + lint: clean.
+
+Key learnings: Arrow wrapper `() => fn()` is mandatory when a function has optional params and is wired to `onClick` — SyntheticEvent leaks in otherwise. Lock toggle state should use `Set<string>` with functional updater for correctness.
 
 ---
 

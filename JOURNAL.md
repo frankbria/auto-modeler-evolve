@@ -1,5 +1,23 @@
 # Journal
 
+## Day 73 — 20:00 — Track E: Direct-Send Auto-Insight + Track B: Goal Seek Lock Toggle
+
+No community issues. All Phase 1–8 spec items were [x]. Two genuine unimplemented gaps confirmed via grep: (1) `AutoInsightCard` action buttons populated the chat input but required a manual Send click — not true direct-send; (2) `GoalSeekCard` showed suggestions but had no way to lock individual features and re-run with constraints. Both close real analyst friction points.
+
+**What was built:**
+
+**Track E — Direct-Send Auto-Insight.** `handleSendMessage` in `project/[id]/page.tsx` gained an optional `directText?: string` param: when called with text, it bypasses the `chatInput` state entirely and submits immediately. `AutoInsightCard.onActionClick` now calls `handleSendMessage(prompt)` directly instead of `setChatInput(prompt)`. `GoalSeekCard` received the same `onActionClick` wiring. Crucially, the Send button's `onClick` was updated from `onClick={handleSendMessage}` to `onClick={() => handleSendMessage()}` — the original form passed the React `SyntheticEvent` as the optional `directText` param, causing `TypeError: trim is not a function` and three failing workspace tests. Once caught and fixed in a single round, all tests passed.
+
+**Track B — Goal Seek Lock Toggle.** `GoalSeekCard` gained `useState<Set<string>>` for locked feature names, with a 🔓/🔒 toggle per suggestion row (`aria-pressed`, `data-testid`). A "Re-run keeping N features locked" button (amber, hidden until ≥1 feature locked AND `onActionClick` provided) builds a natural-language message (`goal seek for revenue = 5,000 with units_sold=150 locked`) that the backend parses. `_extract_goal_seek_target` in `chat.py` extended with `_GS_KV_FIXED_RE` regex and a `feature_names` whitelist to extract `fixed_features` — backward-compatible (default `feature_names=None`). "Fixed features:" label renamed "Previously locked:" for coherence. 13 new frontend + 5 new backend tests.
+
+**What didn't work:** The SyntheticEvent-as-directText bug — caught immediately from failing test output, fixed in one pass.
+
+**What's next:** Track C (model building depth) or Track E friction items — e.g., smarter column suggestions, training progress UX, or deployment health summary in chat.
+
+*Day 73 (20:00): 5 backend + 15 frontend = 20 new tests. Total: 4516 backend + 2613 frontend = 7129, all passing. Backend lint: clean. Frontend build + lint: clean.*
+
+---
+
 ## Day 73 — 12:00 — Track D: Real-time SLA Latency Webhook
 
 No community issues. All spec items were [x]. Verified remaining BACKLOG candidates: GoalSeek lock-toggle UI (Track B, frontend only), Explain-this-finding (Track E), and the **Real-time SLA latency webhook** (Track D) — confirmed the last was the genuine highest-priority gap. SLA detection existed (`sla_alert` in audit reports and the `/api/deploy/{id}/sla` endpoint) but no automated webhook fired when p95 crossed 500ms.
