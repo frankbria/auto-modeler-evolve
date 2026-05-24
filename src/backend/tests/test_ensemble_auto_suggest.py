@@ -106,7 +106,9 @@ def _make_feature_set(problem_type: str) -> mock.MagicMock:
     fs = mock.MagicMock()
     fs.problem_type = problem_type
     fs.target_column = "revenue"
-    fs.target_column_type = "continuous" if problem_type == "regression" else "categorical"
+    fs.target_column_type = (
+        "continuous" if problem_type == "regression" else "categorical"
+    )
     return mock.MagicMock(
         problem_type=problem_type,
         target_column="revenue",
@@ -173,9 +175,9 @@ class TestAutoSuggestFires:
         # Import the threshold
         from api.chat import _ENSEMBLE_AUTO_THRESHOLD, _ENSEMBLE_PATTERNS
 
-        assert not _ENSEMBLE_PATTERNS.search(message), (
-            "Test message must not match explicit ensemble patterns"
-        )
+        assert not _ENSEMBLE_PATTERNS.search(
+            message
+        ), "Test message must not match explicit ensemble patterns"
 
         fset = ctx["feature_set"]
         prob = fset.problem_type
@@ -214,7 +216,12 @@ class TestAutoSuggestFires:
         if run_count == last_count:
             return None  # already shown for this batch
 
-        return {"auto_suggested": True, "best": best, "algo": best_algo, "metric": metric_name}
+        return {
+            "auto_suggested": True,
+            "best": best,
+            "algo": best_algo,
+            "metric": metric_name,
+        }
 
     def test_regression_below_threshold_fires(self):
         runs = [_make_run("random_forest_regressor", 0.70, "r2")]
@@ -402,12 +409,16 @@ class TestAutoSuggestPayloadStructure:
 
     def test_stacking_complexity_medium(self):
         payload = self._build_payload()
-        stacking = next(o for o in payload["options"] if o["ensemble_type"] == "stacking")
+        stacking = next(
+            o for o in payload["options"] if o["ensemble_type"] == "stacking"
+        )
         assert stacking["complexity"] == "medium"
 
     def test_stacking_recommended_for_large_dataset(self):
         payload = self._build_payload(ds_rows=300, n_done=3)
-        stacking = next(o for o in payload["options"] if o["ensemble_type"] == "stacking")
+        stacking = next(
+            o for o in payload["options"] if o["ensemble_type"] == "stacking"
+        )
         assert stacking["is_recommended"] is True
 
     def test_voting_recommended_for_small_dataset(self):
