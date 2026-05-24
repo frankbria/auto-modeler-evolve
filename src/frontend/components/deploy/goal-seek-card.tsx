@@ -3,15 +3,24 @@
  *
  * Given a desired prediction target, displays the suggested input values the model
  * optimizer found, how close the achieved prediction is, and a plain-English summary.
+ *
+ * Analysts can lock individual suggestions (pin feature values) and re-run the goal seek
+ * with those features held constant, letting the optimizer search the remaining degrees
+ * of freedom. Locked features are sent as fixed_features in the chat message.
  */
 "use client"
 
+import { useState, useCallback } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import type { GoalSeekResult, GoalSeekSuggestion } from "@/lib/types"
 
 interface GoalSeekCardProps {
   result: GoalSeekResult
+  /** Called when the analyst clicks "Re-run with locked features".
+   *  Receives the message to send directly to chat. */
+  onActionClick?: (message: string) => void
 }
 
 function DirectionBadge({ direction, changePct }: { direction: string; changePct: number }) {
@@ -40,16 +49,29 @@ function DirectionBadge({ direction, changePct }: { direction: string; changePct
   )
 }
 
-function SuggestionRow({ suggestion }: { suggestion: GoalSeekSuggestion }) {
+function SuggestionRow({
+  suggestion,
+  isLocked,
+  onToggleLock,
+}: {
+  suggestion: GoalSeekSuggestion
+  isLocked: boolean
+  onToggleLock: () => void
+}) {
   return (
     <div
       data-testid={`suggestion-row-${suggestion.feature}`}
-      className="flex items-center justify-between gap-2 py-1.5 border-b border-border/40 last:border-0"
+      className={`flex items-center justify-between gap-2 py-1.5 border-b border-border/40 last:border-0 ${
+        isLocked ? "bg-amber-50/60 rounded" : ""
+      }`}
     >
-      <span className="text-sm font-medium text-foreground truncate max-w-[140px]" title={suggestion.feature}>
+      <span
+        className="text-sm font-medium text-foreground truncate max-w-[120px]"
+        title={suggestion.feature}
+      >
         {suggestion.feature.replace(/_/g, " ")}
       </span>
-      <div className="flex items-center gap-2 shrink-0">
+      <div className="flex items-center gap-1.5 shrink-0">
         <span className="text-xs text-muted-foreground">
           avg: <span className="font-mono">{suggestion.current_mean.toLocaleString()}</span>
         </span>
@@ -58,6 +80,21 @@ function SuggestionRow({ suggestion }: { suggestion: GoalSeekSuggestion }) {
           {suggestion.suggested_value.toLocaleString()}
         </span>
         <DirectionBadge direction={suggestion.direction} changePct={suggestion.change_pct} />
+        {/* Lock toggle */}
+        <button
+          onClick={onToggleLock}
+          aria-pressed={isLocked}
+          aria-label={isLocked ? `Unlock ${suggestion.feature}` : `Lock ${suggestion.feature} at ${suggestion.suggested_value}`}
+          data-testid={`lock-toggle-${suggestion.feature}`}
+          className={`ml-1 rounded p-0.5 text-base leading-none transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+            isLocked
+              ? "text-amber-600 bg-amber-100 hover:bg-amber-200"
+              : "text-muted-foreground hover:text-foreground hover:bg-muted"
+          }`}
+          title={isLocked ? "Locked — click to unlock" : "Click to lock this feature value"}
+        >
+          {isLocked ? "🔒" : "🔓"}
+        </button>
       </div>
     </div>
   )
@@ -70,10 +107,23 @@ function fmt(v: number | string): string {
   return String(v)
 }
 
-export function GoalSeekCard({ result }: GoalSeekCardProps) {
-  const borderClass = result.achieved
-    ? "border-emerald-500/40"
-    : "border-amber-500/40"
+export function GoalSeekCard({ result, onActionClick }: GoalSeekCardProps) {
+  // Track which suggestion features are locked (pinned)
+  const [lockedFeatures, setLockedFeatures] = useState<Set<string>>(new Set())
+
+  const toggleLock = useCallback((featureName: string) => {
+    setLockedFeatures((prev) => {
+      const next = new Set(prev)
+      if (next.has(featureName)) {
+        next.delete(featureName)
+      } else {
+        next.add(featureName)
+      }
+      return next
+    })
+  }, [])
+
+  const borderClass = result.achieved ? "border-emerald-500/40" : "border-amber-500/40"
 
   const achievedBadge = result.achieved ? (
     <Badge
@@ -96,6 +146,21 @@ export function GoalSeekCard({ result }: GoalSeekCardProps) {
       Note: Optimizer did not fully converge — results are approximate.
     </p>
   )
+
+  // Build re-run message with locked features as key=value pairs
+  const handleRerun = useCallback(() => {
+    if (lockedFeatures.size === 0 || !onActionClick) return
+
+    const lockedParts = result.suggestions
+      .filter((s) => lockedFeatures.has(s.feature))
+      .map((s) => `${s.feature}=${s.suggested_value}`)
+      .join(" ")
+
+    const message = `goal seek for ${result.target_column} = ${fmt(result.target_value)} with ${lockedParts} locked`
+    onActionClick(message)
+  }, [lockedFeatures, result, onActionClick])
+
+  const hasLockedFeatures = lockedFeatures.size > 0
 
   return (
     <Card data-testid="goal-seek-card" className={`${borderClass} w-full`}>
@@ -152,15 +217,23 @@ export function GoalSeekCard({ result }: GoalSeekCardProps) {
           </div>
         )}
 
-        {/* Suggestions */}
+        {/* Suggestions with lock toggles */}
         {result.suggestions.length > 0 && (
           <div>
-            <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">
+            <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-1.5 flex items-center gap-1.5">
               Suggested Input Changes
+              <span className="font-normal normal-case text-muted-foreground/70">
+                (🔓 = lock to pin a value)
+              </span>
             </div>
             <div data-testid="suggestions-list" className="space-y-0">
               {result.suggestions.map((s) => (
-                <SuggestionRow key={s.feature} suggestion={s} />
+                <SuggestionRow
+                  key={s.feature}
+                  suggestion={s}
+                  isLocked={lockedFeatures.has(s.feature)}
+                  onToggleLock={() => toggleLock(s.feature)}
+                />
               ))}
             </div>
             <p className="text-[10px] text-muted-foreground mt-1.5 italic">
@@ -180,14 +253,27 @@ export function GoalSeekCard({ result }: GoalSeekCardProps) {
           </p>
         )}
 
-        {/* Fixed features */}
+        {/* Fixed features from previous run */}
         {Object.keys(result.fixed_features).length > 0 && (
           <div className="text-xs text-muted-foreground">
-            <span className="font-medium">Fixed features: </span>
+            <span className="font-medium">Previously locked: </span>
             {Object.entries(result.fixed_features)
               .map(([k, v]) => `${k.replace(/_/g, " ")}=${v}`)
               .join(", ")}
           </div>
+        )}
+
+        {/* Re-run button — shown when any feature is locked */}
+        {hasLockedFeatures && onActionClick && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleRerun}
+            data-testid="rerun-with-locked-button"
+            className="w-full border-amber-300 text-amber-800 hover:bg-amber-50"
+          >
+            🔒 Re-run keeping {lockedFeatures.size} feature{lockedFeatures.size !== 1 ? "s" : ""} locked
+          </Button>
         )}
 
         {feasibilityNote}

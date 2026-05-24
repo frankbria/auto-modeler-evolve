@@ -2405,6 +2405,11 @@ _GOAL_SEEK_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# Regex to find "feature_name=numeric_value" pairs for locked/fixed features
+_GS_KV_FIXED_RE = re.compile(
+    r"\b([\w][\w]*)\s*=\s*([+-]?\d[\d,]*(?:\.\d+)?)\b"
+)
+
 _GOAL_SEEK_NUMBER_RE = re.compile(
     r"(?:^|[\s=:to])" r"(?:[$€£¥]?\s*)?" r"(\d[\d,]*(?:\.\d+)?)\s*([kmb])?\b",
     re.IGNORECASE,
@@ -2451,13 +2456,28 @@ def _extract_goal_seek_target(
     problem_type: str,
     target_column: str,
     target_classes: list | None,
+    feature_names: list[str] | None = None,
 ) -> tuple[float | str | None, dict]:
     """Extract goal-seek target from natural language message.
 
     Returns (target_value, fixed_features_dict).
     For regression: target_value is float; for classification: target_value is class string.
+    Fixed features are parsed from key=value pairs in the message when feature_names provided.
     """
     fixed: dict = {}
+
+    # Parse locked/fixed features: find "feature=value" pairs that match known feature names
+    if feature_names:
+        _fn_lower = {fn.lower(): fn for fn in feature_names}
+        _fn_no_underscore = {fn.lower().replace("_", " "): fn for fn in feature_names}
+        for _kv_m in _GS_KV_FIXED_RE.finditer(message):
+            _key = _kv_m.group(1).lower()
+            _matched_fn = _fn_lower.get(_key) or _fn_no_underscore.get(_key)
+            if _matched_fn and _matched_fn.lower() != target_column.lower():
+                try:
+                    fixed[_matched_fn] = float(_kv_m.group(2).replace(",", ""))
+                except ValueError:
+                    pass
 
     if problem_type == "classification":
         # Try to find a class label in the message
@@ -9065,6 +9085,7 @@ def send_message(
                         _gs_problem,
                         _gs_target_col,
                         _gs_classes,
+                        feature_names=_gs_pipeline.feature_names,
                     )
 
                     if _gs_target is not None:

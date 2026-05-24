@@ -553,11 +553,11 @@ export default function ProjectWorkspace() {
     [addMessage]
   )
 
-  const handleSendMessage = useCallback(async () => {
-    const text = chatInput.trim()
+  const handleSendMessage = useCallback(async (directText?: string) => {
+    const text = (directText !== undefined ? directText : chatInput).trim()
     if (!text || isStreaming) return
 
-    setChatInput("")
+    if (directText === undefined) setChatInput("")
     setChatSuggestions([])  // clear previous suggestions when a new message is sent
     addMessage({
       role: "user",
@@ -1620,7 +1620,7 @@ export default function ProjectWorkspace() {
                       <AutoInsightCard
                         result={msg.auto_insight}
                         onActionClick={(prompt) => {
-                          setChatInput(prompt)
+                          handleSendMessage(prompt)
                         }}
                       />
                     )}
@@ -1633,7 +1633,12 @@ export default function ProjectWorkspace() {
                       />
                     )}
                     {msg.goal_seek && (
-                      <GoalSeekCard result={msg.goal_seek} />
+                      <GoalSeekCard
+                        result={msg.goal_seek}
+                        onActionClick={(message) => {
+                          handleSendMessage(message)
+                        }}
+                      />
                     )}
                     {msg.goal_seek_history && (
                       <GoalSeekHistoryCard result={msg.goal_seek_history} />
@@ -1692,7 +1697,7 @@ export default function ProjectWorkspace() {
                 className="resize-none min-h-[36px] max-h-[120px] py-2"
               />
               <Button
-                onClick={handleSendMessage}
+                onClick={() => handleSendMessage()}
                 disabled={isStreaming || !chatInput.trim()}
               >
                 Send

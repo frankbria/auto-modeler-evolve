@@ -1,7 +1,16 @@
 /**
  * Unit tests for GoalSeekCard component.
+ *
+ * Covers:
+ * - Core result display (target, achieved, gap, summary)
+ * - Suggestion rows with direction badges
+ * - Fixed features display ("Previously locked:")
+ * - Lock toggle per suggestion row
+ * - Re-run button shown when features are locked
+ * - Re-run button calls onActionClick with locked feature key=value pairs in message
+ * - Re-run button hidden when no features locked or no onActionClick provided
  */
-import { render, screen } from "@testing-library/react"
+import { render, screen, fireEvent } from "@testing-library/react"
 import { GoalSeekCard } from "@/components/deploy/goal-seek-card"
 import type { GoalSeekResult } from "@/lib/types"
 
@@ -147,16 +156,16 @@ describe("GoalSeekCard", () => {
     expect(screen.queryByText(/Optimizer did not fully converge/i)).not.toBeInTheDocument()
   })
 
-  it("shows fixed features when present", () => {
+  it("shows previously locked features when present", () => {
     const result = { ...baseResult, fixed_features: { price: 99.99 } }
     render(<GoalSeekCard result={result} />)
-    expect(screen.getByText(/Fixed features/i)).toBeInTheDocument()
+    expect(screen.getByText(/Previously locked/i)).toBeInTheDocument()
     expect(screen.getByText(/price=99\.99/)).toBeInTheDocument()
   })
 
-  it("hides fixed features section when empty", () => {
+  it("hides previously locked section when fixed_features is empty", () => {
     render(<GoalSeekCard result={baseResult} />)
-    expect(screen.queryByText(/Fixed features/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Previously locked/i)).not.toBeInTheDocument()
   })
 
   it("renders multiple suggestion rows", () => {
@@ -181,5 +190,113 @@ describe("GoalSeekCard", () => {
   it("uses amber border class when goal not achieved", () => {
     const { container } = render(<GoalSeekCard result={baseResult} />)
     expect(container.firstChild).toHaveClass("border-amber-500/40")
+  })
+
+  // ─── Lock toggle tests ───────────────────────────────────────────────────
+
+  it("renders a lock toggle button for each suggestion", () => {
+    render(<GoalSeekCard result={baseResult} />)
+    expect(screen.getByTestId("lock-toggle-units_sold")).toBeInTheDocument()
+  })
+
+  it("lock toggle starts unlocked (🔓 icon)", () => {
+    render(<GoalSeekCard result={baseResult} />)
+    expect(screen.getByTestId("lock-toggle-units_sold")).toHaveTextContent("🔓")
+  })
+
+  it("clicking lock toggle changes icon to locked (🔒)", () => {
+    render(<GoalSeekCard result={baseResult} />)
+    fireEvent.click(screen.getByTestId("lock-toggle-units_sold"))
+    expect(screen.getByTestId("lock-toggle-units_sold")).toHaveTextContent("🔒")
+  })
+
+  it("clicking lock toggle twice returns to unlocked state", () => {
+    render(<GoalSeekCard result={baseResult} />)
+    const toggle = screen.getByTestId("lock-toggle-units_sold")
+    fireEvent.click(toggle)
+    fireEvent.click(toggle)
+    expect(toggle).toHaveTextContent("🔓")
+  })
+
+  it("lock toggle has aria-pressed=false when unlocked", () => {
+    render(<GoalSeekCard result={baseResult} />)
+    expect(screen.getByTestId("lock-toggle-units_sold")).toHaveAttribute("aria-pressed", "false")
+  })
+
+  it("lock toggle has aria-pressed=true when locked", () => {
+    render(<GoalSeekCard result={baseResult} />)
+    fireEvent.click(screen.getByTestId("lock-toggle-units_sold"))
+    expect(screen.getByTestId("lock-toggle-units_sold")).toHaveAttribute("aria-pressed", "true")
+  })
+
+  it("re-run button is not shown when no features are locked", () => {
+    render(<GoalSeekCard result={baseResult} onActionClick={jest.fn()} />)
+    expect(screen.queryByTestId("rerun-with-locked-button")).not.toBeInTheDocument()
+  })
+
+  it("re-run button appears after locking a feature", () => {
+    render(<GoalSeekCard result={baseResult} onActionClick={jest.fn()} />)
+    fireEvent.click(screen.getByTestId("lock-toggle-units_sold"))
+    expect(screen.getByTestId("rerun-with-locked-button")).toBeInTheDocument()
+  })
+
+  it("re-run button is not shown without onActionClick prop", () => {
+    render(<GoalSeekCard result={baseResult} />)
+    fireEvent.click(screen.getByTestId("lock-toggle-units_sold"))
+    expect(screen.queryByTestId("rerun-with-locked-button")).not.toBeInTheDocument()
+  })
+
+  it("re-run button calls onActionClick with locked feature in message", () => {
+    const onActionClick = jest.fn()
+    render(<GoalSeekCard result={baseResult} onActionClick={onActionClick} />)
+    fireEvent.click(screen.getByTestId("lock-toggle-units_sold"))
+    fireEvent.click(screen.getByTestId("rerun-with-locked-button"))
+    expect(onActionClick).toHaveBeenCalledTimes(1)
+    const msg: string = onActionClick.mock.calls[0][0]
+    expect(msg).toContain("goal seek")
+    expect(msg).toContain("revenue")
+    expect(msg).toContain("units_sold=150")
+  })
+
+  it("re-run message includes the original target value", () => {
+    const onActionClick = jest.fn()
+    render(<GoalSeekCard result={baseResult} onActionClick={onActionClick} />)
+    fireEvent.click(screen.getByTestId("lock-toggle-units_sold"))
+    fireEvent.click(screen.getByTestId("rerun-with-locked-button"))
+    const msg: string = onActionClick.mock.calls[0][0]
+    expect(msg).toContain("5,000")
+  })
+
+  it("re-run button label shows count of locked features", () => {
+    const result = {
+      ...baseResult,
+      suggestions: [
+        baseSuggestion,
+        { feature: "price", current_mean: 50, suggested_value: 45, direction: "decrease" as const, change_pct: 10.0 },
+      ],
+    }
+    render(<GoalSeekCard result={result} onActionClick={jest.fn()} />)
+    fireEvent.click(screen.getByTestId("lock-toggle-units_sold"))
+    fireEvent.click(screen.getByTestId("lock-toggle-price"))
+    const btn = screen.getByTestId("rerun-with-locked-button")
+    expect(btn).toHaveTextContent("2 features locked")
+  })
+
+  it("re-run message includes all locked features", () => {
+    const result = {
+      ...baseResult,
+      suggestions: [
+        baseSuggestion,
+        { feature: "price", current_mean: 50, suggested_value: 45, direction: "decrease" as const, change_pct: 10.0 },
+      ],
+    }
+    const onActionClick = jest.fn()
+    render(<GoalSeekCard result={result} onActionClick={onActionClick} />)
+    fireEvent.click(screen.getByTestId("lock-toggle-units_sold"))
+    fireEvent.click(screen.getByTestId("lock-toggle-price"))
+    fireEvent.click(screen.getByTestId("rerun-with-locked-button"))
+    const msg: string = onActionClick.mock.calls[0][0]
+    expect(msg).toContain("units_sold=150")
+    expect(msg).toContain("price=45")
   })
 })

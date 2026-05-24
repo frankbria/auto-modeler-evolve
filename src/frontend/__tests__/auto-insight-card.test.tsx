@@ -126,6 +126,19 @@ describe("AutoInsightCard", () => {
     expect(caption).toBeTruthy()
     expect(caption?.classList.contains("sr-only")).toBe(true)
   })
+
+  it("action button is immediately invoked on click (no async delay)", () => {
+    const handler = jest.fn()
+    render(<AutoInsightCard result={mockResult} onActionClick={handler} />)
+    fireEvent.click(screen.getByTestId("insight-action-0"))
+    // Callback fires synchronously — confirm it was called exactly once
+    expect(handler).toHaveBeenCalledTimes(1)
+  })
+
+  it("renders without onActionClick without throwing", () => {
+    // When used with a direct-send handler the card should still render
+    expect(() => render(<AutoInsightCard result={mockResult} />)).not.toThrow()
+  })
 })
 
 describe("Store: attachAutoInsightToLastMessage", () => {

@@ -201,6 +201,67 @@ def test_extract_goal_seek_classification_fallback_positive():
     assert str(target) == "yes"
 
 
+def test_extract_goal_seek_fixed_features_from_kv_pairs():
+    """key=value pairs matching known feature names are extracted as fixed features."""
+    target, fixed = _extract_goal_seek_target(
+        "goal seek for revenue = 5000 with units=150 locked",
+        "regression",
+        "revenue",
+        None,
+        feature_names=["units", "price", "discount"],
+    )
+    assert target is not None
+    assert fixed == {"units": 150.0}
+
+
+def test_extract_goal_seek_fixed_features_excludes_target_column():
+    """The target column itself is not added to fixed_features even if it appears as key=value."""
+    target, fixed = _extract_goal_seek_target(
+        "goal seek for revenue = 1000 with revenue=500 fixed",
+        "regression",
+        "revenue",
+        None,
+        feature_names=["units", "revenue"],
+    )
+    # revenue is the target column → excluded from fixed
+    assert "revenue" not in fixed
+
+
+def test_extract_goal_seek_fixed_features_multiple():
+    """Multiple key=value pairs that match feature names are all extracted."""
+    target, fixed = _extract_goal_seek_target(
+        "goal seek for revenue = 5000 with units=150 price=45 locked",
+        "regression",
+        "revenue",
+        None,
+        feature_names=["units", "price", "discount"],
+    )
+    assert fixed == {"units": 150.0, "price": 45.0}
+
+
+def test_extract_goal_seek_no_feature_names_no_fixed():
+    """Without feature_names, fixed is always empty (original behavior preserved)."""
+    target, fixed = _extract_goal_seek_target(
+        "goal seek for revenue = 5000 with units=150 locked",
+        "regression",
+        "revenue",
+        None,
+    )
+    assert fixed == {}
+
+
+def test_extract_goal_seek_unknown_feature_not_extracted():
+    """key=value pairs for unknown features are ignored."""
+    target, fixed = _extract_goal_seek_target(
+        "goal seek for revenue = 5000 with unknown_col=99 locked",
+        "regression",
+        "revenue",
+        None,
+        feature_names=["units", "price"],
+    )
+    assert fixed == {}
+
+
 # ---------------------------------------------------------------------------
 # run_goal_seek pure function tests
 # ---------------------------------------------------------------------------
