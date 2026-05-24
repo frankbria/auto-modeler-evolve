@@ -27,7 +27,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-
 # ─── Pattern unit tests ────────────────────────────────────────────────────────
 
 
@@ -213,7 +212,13 @@ def test_result_row_required_keys():
     # Verify the keys we expect from the handler
     required = {"deployment_id", "algorithm", "algorithm_plain", "prediction", "error"}
     # We assert the set structurally — integration covered in pattern + mock tests
-    assert required == {"deployment_id", "algorithm", "algorithm_plain", "prediction", "error"}
+    assert required == {
+        "deployment_id",
+        "algorithm",
+        "algorithm_plain",
+        "prediction",
+        "error",
+    }
 
 
 def test_cross_deploy_summary_mentions_count():
@@ -232,8 +237,16 @@ def test_cross_deploy_regression_summary_includes_range():
 def test_cross_deploy_winner_is_highest_regression():
     """For regression, winner is the model with the highest prediction."""
     results = [
-        {"deployment_id": "a", "algorithm_plain": "Linear Regression", "prediction": 4500.0},
-        {"deployment_id": "b", "algorithm_plain": "Ridge Regression", "prediction": 5500.0},
+        {
+            "deployment_id": "a",
+            "algorithm_plain": "Linear Regression",
+            "prediction": 4500.0,
+        },
+        {
+            "deployment_id": "b",
+            "algorithm_plain": "Ridge Regression",
+            "prediction": 5500.0,
+        },
     ]
     best = max(results, key=lambda r: r["prediction"])
     assert best["deployment_id"] == "b"
@@ -299,9 +312,8 @@ def test_classification_summary_format():
         {"algorithm_plain": "Logistic Regression", "prediction": "churn"},
         {"algorithm_plain": "Random Forest", "prediction": "no_churn"},
     ]
-    summary = (
-        f"Comparing 2 deployed models on target: predictions vary — "
-        + ", ".join(f"{r['algorithm_plain']}: {r['prediction']}" for r in results)
+    summary = f"Comparing 2 deployed models on target: predictions vary — " + ", ".join(
+        f"{r['algorithm_plain']}: {r['prediction']}" for r in results
     )
     assert "Logistic Regression: churn" in summary
     assert "Random Forest: no_churn" in summary

@@ -12003,9 +12003,7 @@ def send_message(
             _wu_trend = (
                 "up"
                 if (_wu_change_pct or 0) > 5
-                else "down"
-                if (_wu_change_pct or 0) < -5
-                else "flat"
+                else "down" if (_wu_change_pct or 0) < -5 else "flat"
             )
 
             # Per-day breakdown for the current week (7 entries)
@@ -12024,7 +12022,9 @@ def send_message(
             _wu_feature_tally: dict[str, dict[str, int]] = {}
             _wu_recent_logs = [
                 lg for lg in _wu_logs if lg.created_at >= _wu_week_start
-            ][:100]  # cap to last 100 for performance
+            ][
+                :100
+            ]  # cap to last 100 for performance
             for _wl in _wu_recent_logs:
                 try:
                     _feat_dict: dict = json.loads(_wl.input_features or "{}")
@@ -12403,9 +12403,9 @@ def send_message(
                             _cdp_entry: dict = {
                                 "deployment_id": _cdp_dep.id,
                                 "algorithm": _cdp_dep.algorithm or "Unknown",
-                                "algorithm_plain": (
-                                    _cdp_dep.algorithm or "Unknown"
-                                ).replace("_", " ").title(),
+                                "algorithm_plain": (_cdp_dep.algorithm or "Unknown")
+                                .replace("_", " ")
+                                .title(),
                                 "deployed_at": (
                                     _cdp_dep.created_at.isoformat()
                                     if _cdp_dep.created_at
@@ -12432,9 +12432,7 @@ def send_message(
                             pass  # skip failed deployments
 
                     if _cdp_results:
-                        _cdp_target = (
-                            _cdp_results[0].get("target_column") or "output"
-                        )
+                        _cdp_target = _cdp_results[0].get("target_column") or "output"
                         _cdp_ptype = _cdp_results[0].get("problem_type", "regression")
                         _cdp_provided = list(_cdp_extracted.keys())
 
@@ -14825,9 +14823,7 @@ def send_message(
                         else (
                             "healthy"
                             if _n_failed == 0
-                            else "warning"
-                            if _n_failed / _n_total < 0.1
-                            else "critical"
+                            else "warning" if _n_failed / _n_total < 0.1 else "critical"
                         )
                     )
                     _wh_total_events += _n_total
@@ -14886,9 +14882,7 @@ def send_message(
                     else (
                         "warning"
                         if any(d["status"] == "warning" for d in _wh_dep_summaries)
-                        else "no_events"
-                        if _wh_total_events == 0
-                        else "healthy"
+                        else "no_events" if _wh_total_events == 0 else "healthy"
                     )
                 )
             )
