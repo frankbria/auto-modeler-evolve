@@ -169,6 +169,7 @@ interface AppState {
   attachGoalSeekToLastMessage: (goal_seek: import("./types").GoalSeekResult) => void
   attachGoalSeekHistoryToLastMessage: (goal_seek_history: import("./types").GoalSeekHistoryResult) => void
   attachDeploymentChangelogToLastMessage: (deployment_changelog: import("./types").DeploymentChangelogResult) => void
+  attachCrossDeployPredictionToLastMessage: (cross_deploy_prediction: import("./types").CrossDeployPredictionResult) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -1349,6 +1350,16 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, deployment_changelog }
+      }
+      return { messages }
+    }),
+
+  attachCrossDeployPredictionToLastMessage: (cross_deploy_prediction) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, cross_deploy_prediction }
       }
       return { messages }
     }),

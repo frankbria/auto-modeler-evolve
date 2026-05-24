@@ -4079,6 +4079,24 @@ def _detect_sensitivity_request(
     }
 
 
+# ---------------------------------------------------------------------------
+# Cross-deployment prediction comparison via chat
+# "what would my two models predict for units=150?" / "compare deployments for..."
+# ---------------------------------------------------------------------------
+_CROSS_DEPLOY_PRED_PATTERNS = re.compile(
+    r"(?i)\b("
+    r"compare\s+(?:what\s+)?(?:my\s+)?(?:models?|deployments?)\s+(?:would\s+)?predict|"
+    r"(?:what\s+would|run)\s+(?:my\s+)?(?:models?|deployments?)\s+(?:predict|say)\s+for|"
+    r"(?:models?|deployments?)\s+(?:side[\s-]?by[\s-]?side|comparison)\s+(?:for|with)|"
+    r"cross[- ]deployment\s+(?:prediction|comparison)|"
+    r"compare\s+(?:my\s+)?(?:deployed\s+)?(?:models?|versions?)\s+(?:for|with|on)\s+(?:these|the\s+same|my)|"
+    r"(?:which|what)\s+(?:deployment|model|version)\s+(?:gives?|predicts?|returns?)\s+(?:the\s+)?(?:highest|lowest|best|different)|"
+    r"run\s+(?:my\s+)?(?:models?|deployments?)\s+(?:in\s+parallel|simultaneously|at\s+once)|"
+    r"(?:all|both)\s+(?:my\s+)?(?:deployed\s+)?models?\s+(?:on|for|with)\s+(?:the\s+)?(?:same|these)"
+    r")\b",
+    re.IGNORECASE,
+)
+
 # Matches "Key = Value", "Key: Value", "Key is Value" patterns in a message
 _KV_PAIR_RE = re.compile(
     r"\b([A-Za-z_][\w\s]{0,30}?)\s*(?:=|:|\s+is\s+|\s+equals?\s+|\s+of\s+)\s*"
@@ -12328,6 +12346,169 @@ def send_message(
     except Exception:  # noqa: BLE001
         pass  # Column type check is enhancement; never crash chat
 
+    # Cross-deployment prediction comparison via chat
+    # "compare what my two models predict for units=150, region=East"
+    cross_deploy_pred_event: dict | None = None
+    if _CROSS_DEPLOY_PRED_PATTERNS.search(body.message) and ctx["deployment"]:
+        try:
+            from models.deployment import Deployment as _CdpDeployment
+            from core.deployer import load_pipeline as _load_pipeline_cdp
+            from core.deployer import predict_single as _predict_single_cdp
+
+            # Find all active deployments for this project
+            _cdp_stmt = (
+                select(_CdpDeployment)
+                .where(_CdpDeployment.project_id == project_id)
+                .where(_CdpDeployment.is_active == True)  # noqa: E712
+            )
+            _cdp_deployments = list(session.exec(_cdp_stmt).all())
+
+            if len(_cdp_deployments) >= 2:
+                # Get feature names from the primary (most recent) deployment's pipeline
+                _cdp_primary = ctx["deployment"]
+                if (
+                    _cdp_primary.pipeline_path
+                    and Path(_cdp_primary.pipeline_path).exists()
+                ):
+                    _cdp_pipeline = _load_pipeline_cdp(_cdp_primary.pipeline_path)
+                    _cdp_feature_names = _cdp_pipeline.feature_names
+                    _cdp_extracted = _extract_multi_feature_prediction(
+                        body.message, _cdp_feature_names
+                    )
+
+                    _cdp_results: list[dict] = []
+                    for _cdp_dep in _cdp_deployments[:4]:  # cap at 4
+                        _cdp_dep_run = session.get(ModelRun, _cdp_dep.model_run_id)
+                        if not (
+                            _cdp_dep.pipeline_path
+                            and _cdp_dep_run
+                            and _cdp_dep_run.model_path
+                            and Path(_cdp_dep.pipeline_path).exists()
+                            and Path(_cdp_dep_run.model_path).exists()
+                        ):
+                            continue
+                        try:
+                            _cdp_dep_pipeline = _load_pipeline_cdp(
+                                _cdp_dep.pipeline_path
+                            )
+                            _cdp_inputs: dict[str, object] = dict(
+                                _cdp_dep_pipeline.feature_means
+                            )
+                            _cdp_inputs.update(_cdp_extracted)
+                            _cdp_pred = _predict_single_cdp(
+                                _cdp_dep.pipeline_path,
+                                _cdp_dep_run.model_path,
+                                _cdp_inputs,
+                            )
+                            _cdp_entry: dict = {
+                                "deployment_id": _cdp_dep.id,
+                                "algorithm": _cdp_dep.algorithm or "Unknown",
+                                "algorithm_plain": (
+                                    _cdp_dep.algorithm or "Unknown"
+                                ).replace("_", " ").title(),
+                                "deployed_at": (
+                                    _cdp_dep.created_at.isoformat()
+                                    if _cdp_dep.created_at
+                                    else None
+                                ),
+                                "environment": getattr(
+                                    _cdp_dep, "environment", "staging"
+                                ),
+                                "prediction": _cdp_pred["prediction"],
+                                "problem_type": _cdp_pred.get("problem_type"),
+                                "target_column": _cdp_pred.get("target_column"),
+                                "error": None,
+                            }
+                            if "confidence_interval" in _cdp_pred:
+                                _cdp_entry["confidence_interval"] = _cdp_pred[
+                                    "confidence_interval"
+                                ]
+                            if "confidence" in _cdp_pred:
+                                _cdp_entry["confidence"] = _cdp_pred["confidence"]
+                            if "probabilities" in _cdp_pred:
+                                _cdp_entry["probabilities"] = _cdp_pred["probabilities"]
+                            _cdp_results.append(_cdp_entry)
+                        except Exception:  # noqa: BLE001
+                            pass  # skip failed deployments
+
+                    if _cdp_results:
+                        _cdp_target = (
+                            _cdp_results[0].get("target_column") or "output"
+                        )
+                        _cdp_ptype = _cdp_results[0].get("problem_type", "regression")
+                        _cdp_provided = list(_cdp_extracted.keys())
+
+                        # Build plain-English summary
+                        if _cdp_ptype == "regression":
+                            _cdp_preds = [
+                                r["prediction"]
+                                for r in _cdp_results
+                                if isinstance(r.get("prediction"), (int, float))
+                            ]
+                            if _cdp_preds:
+                                _cdp_best = max(
+                                    _cdp_results,
+                                    key=lambda r: r.get("prediction", float("-inf")),
+                                )
+                                _cdp_summary = (
+                                    f"Comparing {len(_cdp_results)} deployed models "
+                                    f"on {_cdp_target}: predictions range from "
+                                    f"{min(_cdp_preds):.2f} to {max(_cdp_preds):.2f}. "
+                                    f"Highest: {_cdp_best['algorithm_plain']}."
+                                )
+                            else:
+                                _cdp_summary = (
+                                    f"Ran {len(_cdp_results)} models; "
+                                    f"results shown below."
+                                )
+                        else:
+                            _cdp_top_classes = [
+                                r.get("prediction")
+                                for r in _cdp_results
+                                if r.get("prediction")
+                            ]
+                            _cdp_summary = (
+                                f"Comparing {len(_cdp_results)} deployed models "
+                                f"on {_cdp_target}: "
+                                + (
+                                    "predictions vary — "
+                                    + ", ".join(
+                                        f"{r['algorithm_plain']}: {r['prediction']}"
+                                        for r in _cdp_results
+                                    )
+                                    if _cdp_top_classes
+                                    else "results shown below."
+                                )
+                            )
+
+                        cross_deploy_pred_event = {
+                            "target_column": _cdp_target,
+                            "problem_type": _cdp_ptype,
+                            "n_deployments": len(_cdp_results),
+                            "provided_features": _cdp_provided,
+                            "defaults_used": len(_cdp_feature_names)
+                            - len(_cdp_provided),
+                            "results": _cdp_results,
+                            "summary": _cdp_summary,
+                        }
+                        system_prompt += (
+                            f"\n\n## Cross-Deployment Prediction Comparison\n"
+                            f"{_cdp_summary}\n"
+                            f"A CrossDeployPredictionCard is shown. "
+                            f"In 1-2 sentences, highlight the key difference between the models' "
+                            f"predictions and note which performs best for this input."
+                        )
+            elif len(_cdp_deployments) == 1:
+                # Only one deployment — inform analyst
+                system_prompt += (
+                    "\n\n## Cross-Deployment Comparison Unavailable\n"
+                    "Only one active deployment exists for this project. "
+                    "Retrain and deploy a second model version to compare predictions. "
+                    "Mention this limitation and suggest the analyst retrain."
+                )
+        except Exception:  # noqa: BLE001
+            pass  # Cross-deployment comparison is enhancement; never crash chat
+
     # "What's Next?" workflow guidance card
     what_next_event: dict | None = None
     if _WHAT_NEXT_PATTERNS.search(body.message):
@@ -15636,6 +15817,9 @@ def send_message(
 
         if column_type_event:
             yield f"data: {json.dumps({'type': 'column_type_suggestions', 'column_type_suggestions': column_type_event})}\n\n"
+
+        if cross_deploy_pred_event:
+            yield f"data: {json.dumps({'type': 'cross_deploy_prediction', 'cross_deploy_prediction': cross_deploy_pred_event})}\n\n"
 
         # After text stream, opportunistically generate a chart if the
         # message is about data and we have a dataset loaded

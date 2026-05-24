@@ -125,6 +125,7 @@ import { ColumnTypeSuggestionCard } from "@/components/chat/column-type-suggesti
 import { GoalSeekCard } from "@/components/deploy/goal-seek-card"
 import { GoalSeekHistoryCard } from "@/components/deploy/goal-seek-history-card"
 import { DeploymentChangelogCard } from "@/components/deploy/deployment-changelog-card"
+import { CrossDeployPredictionCard } from "@/components/deploy/cross-deploy-prediction-card"
 import { FairnessCheckCard } from "@/components/chat/fairness-check-card"
 import { BatchJobResultCard } from "@/components/chat/batch-job-result-card"
 import { ProductionExplanationCard } from "@/components/chat/production-explanation-card"
@@ -357,6 +358,7 @@ export default function ProjectWorkspace() {
     attachGoalSeekToLastMessage,
     attachGoalSeekHistoryToLastMessage,
     attachDeploymentChangelogToLastMessage,
+    attachCrossDeployPredictionToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -863,6 +865,8 @@ export default function ProjectWorkspace() {
                 attachGoalSeekHistoryToLastMessage(json.goal_seek_history as import("@/lib/types").GoalSeekHistoryResult)
               } else if (json.type === "deployment_changelog" && json.deployment_changelog) {
                 attachDeploymentChangelogToLastMessage(json.deployment_changelog as import("@/lib/types").DeploymentChangelogResult)
+              } else if (json.type === "cross_deploy_prediction" && json.cross_deploy_prediction) {
+                attachCrossDeployPredictionToLastMessage(json.cross_deploy_prediction as import("@/lib/types").CrossDeployPredictionResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -1005,6 +1009,7 @@ export default function ProjectWorkspace() {
     attachGoalSeekToLastMessage,
     attachGoalSeekHistoryToLastMessage,
     attachDeploymentChangelogToLastMessage,
+    attachCrossDeployPredictionToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -1645,6 +1650,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.deployment_changelog && (
                       <DeploymentChangelogCard result={msg.deployment_changelog} />
+                    )}
+                    {msg.cross_deploy_prediction && (
+                      <CrossDeployPredictionCard result={msg.cross_deploy_prediction} />
                     )}
                   </div>
                 </div>

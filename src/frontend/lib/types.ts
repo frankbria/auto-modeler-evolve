@@ -529,6 +529,7 @@ export interface ChatMessage {
   goal_seek?: GoalSeekResult
   goal_seek_history?: GoalSeekHistoryResult
   deployment_changelog?: DeploymentChangelogResult
+  cross_deploy_prediction?: CrossDeployPredictionResult
 }
 
 export interface RollbackVersionEntry {
@@ -3608,4 +3609,30 @@ export interface DeploymentChangelogResult {
   deployment_id: string
   count: number
   entries: DeploymentChangelogEntry[]
+}
+
+// Cross-Deployment Prediction Comparison — compare predictions across all active deployments
+export interface CrossDeployPredictionRow {
+  deployment_id: string
+  algorithm: string
+  algorithm_plain: string
+  deployed_at: string | null
+  environment: string
+  prediction: number | string
+  problem_type: string
+  target_column: string
+  confidence_interval?: { lower: number; upper: number }
+  confidence?: number
+  probabilities?: Record<string, number>
+  error: string | null
+}
+
+export interface CrossDeployPredictionResult {
+  target_column: string
+  problem_type: string
+  n_deployments: number
+  provided_features: string[]
+  defaults_used: number
+  results: CrossDeployPredictionRow[]
+  summary: string
 }
