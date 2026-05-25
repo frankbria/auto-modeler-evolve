@@ -4974,7 +4974,12 @@ def send_message(
                 _q_pt = (
                     "classification"
                     if _q_algo.endswith("_classifier")
-                    or _q_algo in {"logistic_regression", "voting_classifier", "stacking_classifier"}
+                    or _q_algo
+                    in {
+                        "logistic_regression",
+                        "voting_classifier",
+                        "stacking_classifier",
+                    }
                     else "regression"
                 )
                 _q_rows = 0

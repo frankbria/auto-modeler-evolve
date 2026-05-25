@@ -98,7 +98,9 @@ def test_cv_instability_downgrades_label():
     from core.advisor import compute_model_quality_score
 
     # R²=0.90 would normally be Excellent; with cv_std=0.15 → Good
-    r = compute_model_quality_score({"r2": 0.90, "cv_std": 0.15, "cv_mean": 0.85}, "regression")
+    r = compute_model_quality_score(
+        {"r2": 0.90, "cv_std": 0.15, "cv_mean": 0.85}, "regression"
+    )
     assert r["quality_label"] == "Good"
     assert r["is_stable"] is False
 
@@ -107,7 +109,9 @@ def test_cv_stability_no_downgrade_when_low():
     """Low cv_std (≤ 0.10) does not downgrade."""
     from core.advisor import compute_model_quality_score
 
-    r = compute_model_quality_score({"r2": 0.90, "cv_std": 0.05, "cv_mean": 0.88}, "regression")
+    r = compute_model_quality_score(
+        {"r2": 0.90, "cv_std": 0.05, "cv_mean": 0.88}, "regression"
+    )
     assert r["quality_label"] == "Excellent"
     assert r["is_stable"] is True
 
@@ -115,10 +119,14 @@ def test_cv_stability_no_downgrade_when_low():
 def test_reasoning_bullets_present():
     from core.advisor import compute_model_quality_score
 
-    r = compute_model_quality_score({"r2": 0.73, "cv_mean": 0.71, "cv_std": 0.04}, "regression")
+    r = compute_model_quality_score(
+        {"r2": 0.73, "cv_mean": 0.71, "cv_std": 0.04}, "regression"
+    )
     assert len(r["reasoning"]) >= 2
     assert any("R²" in b or "73" in b for b in r["reasoning"])
-    assert any("cross-validation" in b.lower() or "cv" in b.lower() for b in r["reasoning"])
+    assert any(
+        "cross-validation" in b.lower() or "cv" in b.lower() for b in r["reasoning"]
+    )
 
 
 def test_recommendation_populated():
@@ -143,7 +151,10 @@ def test_nonlinear_recommendation_for_linear_algo():
         {"accuracy": 0.72}, "classification", algorithm="logistic_regression"
     )
     # Acceptable + linear algo → suggest nonlinear algorithm
-    assert "random" in r["recommendation"].lower() or "xgboost" in r["recommendation"].lower()
+    assert (
+        "random" in r["recommendation"].lower()
+        or "xgboost" in r["recommendation"].lower()
+    )
 
 
 def test_nonlinear_recommendation_skipped_for_ensemble():
@@ -167,7 +178,9 @@ def test_quality_score_within_range():
 def test_cv_fields_returned():
     from core.advisor import compute_model_quality_score
 
-    r = compute_model_quality_score({"r2": 0.80, "cv_mean": 0.78, "cv_std": 0.03}, "regression")
+    r = compute_model_quality_score(
+        {"r2": 0.80, "cv_mean": 0.78, "cv_std": 0.03}, "regression"
+    )
     assert r["cv_mean"] == pytest.approx(0.78)
     assert r["cv_std"] == pytest.approx(0.03)
 

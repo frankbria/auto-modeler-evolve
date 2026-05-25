@@ -1363,7 +1363,9 @@ def compute_model_quality_score(
     """
     primary_metric, metric_name = _primary_metric(metrics, problem_type)
 
-    thresholds = _QUALITY_THRESHOLDS.get(problem_type, _QUALITY_THRESHOLDS["classification"])
+    thresholds = _QUALITY_THRESHOLDS.get(
+        problem_type, _QUALITY_THRESHOLDS["classification"]
+    )
 
     # Determine base quality band
     quality_label = "Needs Work"
@@ -1430,7 +1432,11 @@ def compute_model_quality_score(
         cv_pct_std = round(cv_std * 100, 1)
         reasoning.append(
             f"5-fold cross-validation: {cv_pct_mean}% ± {cv_pct_std}% — "
-            + ("consistent across splits." if is_stable else "results vary across splits.")
+            + (
+                "consistent across splits."
+                if is_stable
+                else "results vary across splits."
+            )
         )
 
     if stability_note:
@@ -1442,7 +1448,9 @@ def compute_model_quality_score(
     recommendation = _quality_recommendation(quality_label, problem_type, algorithm)
 
     # Final quality_score: interpolate within band
-    quality_score = _compute_quality_score(primary_metric, problem_type, base_score, quality_label)
+    quality_score = _compute_quality_score(
+        primary_metric, problem_type, base_score, quality_label
+    )
 
     return {
         "quality_label": quality_label,
@@ -1474,7 +1482,9 @@ def _compute_quality_score(
     quality_label: str,
 ) -> int:
     """Interpolate a 0–100 score within the quality band."""
-    thresholds = _QUALITY_THRESHOLDS.get(problem_type, _QUALITY_THRESHOLDS["classification"])
+    thresholds = _QUALITY_THRESHOLDS.get(
+        problem_type, _QUALITY_THRESHOLDS["classification"]
+    )
     # Find band boundaries
     band_min = 0.0
     band_max = 1.0
@@ -1513,7 +1523,15 @@ def _quality_recommendation(
     if quality_label == "Acceptable":
         is_nonlinear = any(
             kw in algorithm
-            for kw in ("forest", "gradient", "xgboost", "lgbm", "ensemble", "stacking", "voting")
+            for kw in (
+                "forest",
+                "gradient",
+                "xgboost",
+                "lgbm",
+                "ensemble",
+                "stacking",
+                "voting",
+            )
         )
         if not is_nonlinear:
             return (
