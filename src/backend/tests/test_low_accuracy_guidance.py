@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import unittest.mock as mock
 
 import pytest
 from core.advisor import (
@@ -169,8 +170,6 @@ class TestComputeLowAccuracyGuidance:
 # Mirrors the pattern used in test_ensemble_auto_suggest.py
 # ---------------------------------------------------------------------------
 
-import unittest.mock as mock
-
 
 def _make_run(
     algorithm: str,
@@ -214,7 +213,6 @@ def _make_project(
 
 def _apply_guidance_logic(ctx: dict, project: mock.MagicMock) -> dict | None:
     """Replicate the proactive low-accuracy guidance logic from chat.py."""
-    from api.chat import _ENSEMBLE_AUTO_THRESHOLD
     from core.advisor import (
         LOW_ACCURACY_GUIDANCE_THRESHOLD,
         compute_low_accuracy_guidance,
