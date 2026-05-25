@@ -52,6 +52,7 @@ import { SplitStrategyCard } from "@/components/models/split-strategy-card"
 import { FeatureSelectionCard } from "@/components/models/feature-selection-card"
 import { ModelImprovementCard } from "@/components/models/model-improvement-card"
 import { ModelSelectionCard } from "@/components/models/model-selection-card"
+import { ModelQualityScoreCard } from "@/components/models/model-quality-score-card"
 import { AutoRetrainCard } from "@/components/models/auto-retrain-card"
 import { ConversationExportCard } from "@/components/chat/conversation-export-card"
 import { ModelCardExportCard } from "@/components/chat/model-card-export-card"
@@ -274,6 +275,7 @@ export default function ProjectWorkspace() {
     attachFeatureSelectionToLastMessage,
     attachModelImprovementToLastMessage,
     attachModelSelectionToLastMessage,
+    attachModelQualityScoreToLastMessage,
     attachAutoRetrainToLastMessage,
     attachConversationExportToLastMessage,
     attachHealthSummaryToLastMessage,
@@ -697,6 +699,8 @@ export default function ProjectWorkspace() {
                 attachModelImprovementToLastMessage(json.model_improvement as import("@/lib/types").ModelImprovementResult)
               } else if (json.type === "model_selection" && json.model_selection) {
                 attachModelSelectionToLastMessage(json.model_selection as import("@/lib/types").ModelSelectionResult)
+              } else if (json.type === "model_quality_score" && json.model_quality_score) {
+                attachModelQualityScoreToLastMessage(json.model_quality_score as import("@/lib/types").ModelQualityScoreResult)
               } else if (json.type === "auto_retrain" && json.auto_retrain) {
                 attachAutoRetrainToLastMessage(json.auto_retrain as import("@/lib/types").AutoRetrainResult)
               } else if (json.type === "conversation_export" && json.conversation_export) {
@@ -925,6 +929,7 @@ export default function ProjectWorkspace() {
     attachFeatureSelectionToLastMessage,
     attachModelImprovementToLastMessage,
     attachModelSelectionToLastMessage,
+    attachModelQualityScoreToLastMessage,
     attachAutoRetrainToLastMessage,
     attachConversationExportToLastMessage,
     attachHealthSummaryToLastMessage,
@@ -1356,6 +1361,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.model_selection && (
                       <ModelSelectionCard result={msg.model_selection} />
+                    )}
+                    {msg.model_quality_score && (
+                      <ModelQualityScoreCard result={msg.model_quality_score} />
                     )}
                     {msg.auto_retrain && (
                       <AutoRetrainCard result={msg.auto_retrain} />

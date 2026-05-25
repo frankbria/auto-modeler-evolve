@@ -445,6 +445,7 @@ export interface ChatMessage {
   feature_selection?: FeatureSelectionResult
   model_improvement?: ModelImprovementResult
   model_selection?: ModelSelectionResult
+  model_quality_score?: ModelQualityScoreResult
   auto_retrain?: AutoRetrainResult
   conversation_export?: ConversationExportInfo
   health_summary?: ProjectHealthSummary
@@ -2103,6 +2104,28 @@ export interface ModelImprovementResult {
   suggestions: ImprovementSuggestion[]
   summary: string
   n_suggestions: number
+}
+
+// ---------------------------------------------------------------------------
+// Model Quality Score
+// ---------------------------------------------------------------------------
+
+export type ModelQualityLabel = "Excellent" | "Good" | "Acceptable" | "Needs Work"
+export type ModelQualityColor = "emerald" | "blue" | "amber" | "rose"
+
+export interface ModelQualityScoreResult {
+  run_id: string
+  project_id: string
+  quality_label: ModelQualityLabel
+  quality_score: number
+  primary_metric: number
+  primary_metric_name: string
+  color: ModelQualityColor
+  reasoning: string[]
+  recommendation: string
+  is_stable: boolean
+  cv_mean: number | null
+  cv_std: number | null
 }
 
 // ---------------------------------------------------------------------------

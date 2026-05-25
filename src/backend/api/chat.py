@@ -88,6 +88,23 @@ _IMPROVEMENT_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# Keywords that trigger the model quality score card
+# Distinct from _IMPROVEMENT_PATTERNS (broad advice) — these specifically ask for
+# a quality rating / reliability assessment of the current model.
+# Also distinct from _READINESS_PATTERNS (deployment readiness) — these focus on
+# "how good is this model?" not "can I deploy it?"
+_QUALITY_PATTERNS = re.compile(
+    r"\b(how.*good.*model|is.*model.*good|model.*quality|quality.*model|"
+    r"rate.*model|model.*rating|score.*model|model.*score|"
+    r"is.*model.*reliable|reliable.*model|model.*reliable|"
+    r"is.*model.*production.ready|production.ready.*model|"
+    r"is.*accuracy.*good|is.*r.?2.*good|how.*accurate.*model|"
+    r"evaluate.*model|model.*evaluation|assess.*model|model.*assessment|"
+    r"should.*use.*model|is.*model.*acceptable|is.*model.*worth|"
+    r"model.*performance.*summary|how.*well.*model|how.*model.*perform)\b",
+    re.IGNORECASE,
+)
+
 # Goal-driven training: analyst sets a target metric and AutoModeler tries algorithms
 _GOAL_TRAIN_PATTERNS = re.compile(
     r"(?:"
@@ -4931,6 +4948,59 @@ def send_message(
                     + "\n\nPresent the top 2-3 suggestions to the user in a helpful, "
                     "encouraging tone. Each suggestion should explain what to do and why "
                     "it will help — reference the specific metric values above."
+                )
+            except Exception:  # noqa: BLE001
+                pass  # Nice-to-have; never crash chat
+
+    # Model quality score — "how good is my model?", "is this model reliable?"
+    # Distinct from _IMPROVEMENT_PATTERNS (advice) and _READINESS_PATTERNS (deploy readiness)
+    model_quality_event: dict | None = None
+    if (
+        _QUALITY_PATTERNS.search(body.message)
+        and not _IMPROVEMENT_PATTERNS.search(body.message)
+        and ctx["model_runs"]
+    ):
+        completed_runs = [mr for mr in ctx["model_runs"] if mr.status == "done"]
+        if completed_runs:
+            try:
+                from core.advisor import (
+                    compute_model_quality_score as _compute_quality,
+                )
+
+                _sel = next((mr for mr in completed_runs if mr.is_selected), None)
+                _tgt = _sel or completed_runs[-1]
+                _qm = json.loads(_tgt.metrics or "{}")
+                _q_algo = _tgt.algorithm or ""
+                _q_pt = (
+                    "classification"
+                    if _q_algo.endswith("_classifier")
+                    or _q_algo in {"logistic_regression", "voting_classifier", "stacking_classifier"}
+                    else "regression"
+                )
+                _q_rows = 0
+                if hasattr(ctx.get("dataset"), "row_count"):
+                    _q_rows = ctx["dataset"].row_count or 0
+
+                model_quality_event = _compute_quality(
+                    metrics=_qm,
+                    problem_type=_q_pt,
+                    algorithm=_q_algo,
+                    n_rows=_q_rows,
+                )
+                model_quality_event["run_id"] = _tgt.id
+                model_quality_event["project_id"] = body.project_id
+                _ql = model_quality_event["quality_label"]
+                _qpn = model_quality_event["primary_metric_name"]
+                _qpv = round(model_quality_event["primary_metric"], 2)
+                _qrec = model_quality_event["recommendation"]
+                system_prompt += (
+                    f"\n\n## Model Quality Assessment (just computed)\n"
+                    f"Algorithm: {_q_algo} | {_qpn}: {_qpv} | "
+                    f"Quality: {_ql}\n"
+                    f"Recommendation: {_qrec}\n"
+                    "Communicate this quality assessment conversationally. Use the label "
+                    "and metric value. If quality is below 'Good', be encouraging and "
+                    "point to specific next steps."
                 )
             except Exception:  # noqa: BLE001
                 pass  # Nice-to-have; never crash chat
@@ -15475,6 +15545,10 @@ def send_message(
         # Emit model improvement suggestions if computed
         if improvement_event:
             yield f"data: {json.dumps({'type': 'model_improvement', 'model_improvement': improvement_event})}\n\n"
+
+        # Emit model quality score if computed
+        if model_quality_event:
+            yield f"data: {json.dumps({'type': 'model_quality_score', 'model_quality_score': model_quality_event})}\n\n"
 
         # Emit model comparison summary if computed
         if model_comparison_summary_event:

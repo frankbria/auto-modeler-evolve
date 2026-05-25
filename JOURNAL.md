@@ -1,5 +1,31 @@
 # Journal
 
+## Day 74 — 20:00 — Track E: Analyst-Facing Model Quality Score
+
+No community issues. Selected the highest-impact unimplemented Track E item from BACKLOG: "Analyst-facing model quality score". The gap: analysts had no way to ask "is my model good enough?" and get a plain-English verdict — a critical friction point in the lunch-break flow, since every analyst needs to decide whether to trust their model before deploying.
+
+**What was built:**
+
+`compute_model_quality_score()` pure function in `core/advisor.py`. Takes `metrics` (dict with r2/accuracy/f1/cv_mean/cv_std), `problem_type`, `algorithm`, `n_rows`. Derives quality tiers from primary metric (regression: Excellent ≥0.85, Good ≥0.70, Acceptable ≥0.55; classification: 0.90/0.80/0.70). Applies CV instability penalty: `cv_std > 0.10` downgrades label one step and sets `is_stable=False`. Returns `quality_label` (Excellent/Good/Acceptable/Needs Work), `quality_score` (0–100), `color` (emerald/blue/amber/rose), `reasoning` (3–4 plain-English bullets on metric value, stability, dataset size), `recommendation` (context-aware: linear algo + Acceptable → suggest Random Forest/XGBoost; ensemble already → suggest more features/data), `primary_metric`, `primary_metric_name`, `is_stable`, `cv_mean`, `cv_std`.
+
+`GET /api/models/{run_id}/quality-score` REST endpoint. `_QUALITY_PATTERNS` regex (10 NL variants covering "how good", "rate my model", "evaluate my model", "production ready", "is accuracy good enough", "should I use this model") in `chat.py`. SSE handler emits `{type:"model_quality_score"}` and injects plain-English context into system_prompt for LLM narration.
+
+`ModelQualityScoreCard` (color-coded border): quality emoji + score progress bar, reasoning bullets, recommendation box. `ModelQualityBadge` inline in `RunCard` in the training panel — computes label client-side from raw metrics, no API call — analysts see quality verdict immediately without asking.
+
+**What didn't work (fixed):**
+1. Endpoint originally used `run.problem_type` — `ModelRun` has no such field. Fixed: derive from `FeatureSet` (the codebase-standard pattern).
+2. Endpoint passed `run.metrics` (JSON string) directly to the pure function. Fixed: `json.loads(run.metrics)`.
+3. Endpoint used `project.dataset_id` — `Project` has no such field. Fixed: query Dataset by `project_id`.
+4. REST endpoint tests used sync `TestClient` + real HTTP setup — fails with "no such table". Fixed: rewrote using `async AsyncClient + ASGITransport` with direct DB insertion (matches codebase pattern from `test_model_selection.py`).
+5. TypeScript: `run.metrics as Record<string, unknown>` — `ModelMetrics` union doesn't overlap. Fixed: `as unknown as Record<string, unknown>`.
+6. Unused `sqlmodel.SQLModel` import in test file (ruff F401). Fixed: removed.
+
+**Lessons:** Always verify attribute existence on ORM models before writing endpoints — every endpoint in models.py that needs `problem_type` queries it from `FeatureSet`, never from `ModelRun`. Metrics are stored as JSON strings; always `json.loads()` before passing to pure functions. REST tests must use `async AsyncClient + ASGITransport` pattern from conftest.py, never `TestClient` with in-memory SQLite.
+
+*Day 74 (20:00): 35 backend (19 pure-function + 12 regex + 4 REST endpoint) tests added. Frontend build + lint: clean. Backend lint: clean.*
+
+---
+
 ## Day 74 — 12:00 — Track C: Proactive Ensemble Auto-Suggest on Low-Accuracy Training
 
 No community issues. All Phase 1–8 spec items were [x]. Selected the highest-priority unimplemented Track C item: the ensemble auto-suggest was listed as "proactive — not yet implemented" in the BACKLOG. The explicit `_ENSEMBLE_PATTERNS` handler existed (user must ask), but there was no automatic surfacing when a model score was poor. This violated the vision's "delightful, not just functional" principle — a smart colleague would proactively say "hey, your model is at 65% accuracy, you should try an ensemble."

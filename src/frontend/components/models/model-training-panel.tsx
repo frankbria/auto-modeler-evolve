@@ -22,6 +22,7 @@ import { api } from "@/lib/api"
 import type { ChartSpec, ClassImbalanceResult, EnsembleMetricsExtra, FeatureSelectionResult, ModelRecommendation, ModelRun, ModelComparison, ModelMetrics, TuningResult, ModelVersionHistory } from "@/lib/types"
 import { ImbalanceCard } from "@/components/models/imbalance-card"
 import { FeatureSelectionCard } from "@/components/models/feature-selection-card"
+import { ModelQualityBadge } from "@/components/models/model-quality-score-card"
 
 interface ModelTrainingPanelProps {
   projectId: string
@@ -580,6 +581,12 @@ function RunCard({
         <CardTitle className="flex items-center gap-2">
           <span>{displayName}</span>
           {statusBadge}
+          {run.status === "done" && run.metrics && (
+            <ModelQualityBadge
+              metrics={run.metrics as unknown as Record<string, unknown>}
+              problemType={problemType}
+            />
+          )}
           {run.is_selected && (
             <Badge variant="default" className="ml-auto">Selected</Badge>
           )}

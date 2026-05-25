@@ -1301,3 +1301,231 @@ def compute_cross_project_comparison(
         "insights": insights,
         "summary": summary,
     }
+
+
+# ---------------------------------------------------------------------------
+# Model Quality Score
+# ---------------------------------------------------------------------------
+
+# Quality thresholds per problem type
+_QUALITY_THRESHOLDS: dict[str, list[tuple[float, str, str, int]]] = {
+    # (min_metric, label, color, base_score)
+    "regression": [
+        (0.85, "Excellent", "emerald", 95),
+        (0.70, "Good", "blue", 80),
+        (0.55, "Acceptable", "amber", 60),
+        (0.0, "Needs Work", "rose", 30),
+    ],
+    "classification": [
+        (0.90, "Excellent", "emerald", 95),
+        (0.80, "Good", "blue", 80),
+        (0.70, "Acceptable", "amber", 60),
+        (0.0, "Needs Work", "rose", 30),
+    ],
+}
+
+# Penalty in base_score when CV is unstable (cv_std > 0.10)
+_CV_INSTABILITY_PENALTY = 15
+
+
+def compute_model_quality_score(
+    metrics: dict[str, Any],
+    problem_type: str,
+    algorithm: str = "",
+    n_rows: int = 0,
+) -> dict[str, Any]:
+    """Return a plain-English quality assessment for a trained model run.
+
+    Parameters
+    ----------
+    metrics:
+        The model run metrics dict (r2 / accuracy / f1 / mae / cv_mean / cv_std …).
+    problem_type:
+        "regression" or "classification".
+    algorithm:
+        Algorithm key, e.g. "random_forest_regressor". Used for context messaging.
+    n_rows:
+        Training dataset size. Used to add a caution note for tiny datasets.
+
+    Returns
+    -------
+    dict with keys:
+        quality_label   : "Excellent" | "Good" | "Acceptable" | "Needs Work"
+        quality_score   : int 0–100 (composite score for UI display)
+        primary_metric  : float
+        primary_metric_name : str ("R²" | "accuracy")
+        color           : "emerald" | "blue" | "amber" | "rose"
+        reasoning       : list[str] — bullet points for UI
+        recommendation  : str — single action sentence
+        is_stable       : bool — True if no CV instability flag
+        cv_mean         : float | None
+        cv_std          : float | None
+    """
+    primary_metric, metric_name = _primary_metric(metrics, problem_type)
+
+    thresholds = _QUALITY_THRESHOLDS.get(problem_type, _QUALITY_THRESHOLDS["classification"])
+
+    # Determine base quality band
+    quality_label = "Needs Work"
+    color = "rose"
+    base_score = 30
+    for min_val, label, col, score in thresholds:
+        if primary_metric >= min_val:
+            quality_label = label
+            color = col
+            base_score = score
+            break
+
+    # CV stability check
+    m_raw = metrics if isinstance(metrics, dict) else {}
+    cv_mean = _safe_float(m_raw.get("cv_mean"))
+    cv_std = _safe_float(m_raw.get("cv_std"))
+    is_stable = True
+    stability_note: str | None = None
+    if cv_std is not None and cv_std > 0.10:
+        is_stable = False
+        base_score = max(base_score - _CV_INSTABILITY_PENALTY, 10)
+        # downgrade label one step if not already "Needs Work"
+        label_order = ["Excellent", "Good", "Acceptable", "Needs Work"]
+        idx = label_order.index(quality_label) if quality_label in label_order else 3
+        quality_label = label_order[min(idx + 1, 3)]
+        # color follows new label
+        color_map = {
+            "Excellent": "emerald",
+            "Good": "blue",
+            "Acceptable": "amber",
+            "Needs Work": "rose",
+        }
+        color = color_map[quality_label]
+        cv_pct = round(cv_std * 100, 1)
+        stability_note = (
+            f"Cross-validation spread is ±{cv_pct}% — results vary between data "
+            "splits, which means the model may perform differently on new data."
+        )
+
+    # Small-dataset warning
+    small_data_note: str | None = None
+    if 0 < n_rows < 100:
+        small_data_note = (
+            f"Your training set has only {n_rows} rows. More data would give a "
+            "more reliable quality assessment."
+        )
+
+    # Build reasoning bullets
+    reasoning: list[str] = []
+    pct_int = round(primary_metric * 100)
+    if problem_type == "regression":
+        reasoning.append(
+            f"R² = {primary_metric:.2f} — the model explains {pct_int}% of the "
+            "variation in your target column."
+        )
+    else:
+        reasoning.append(
+            f"Accuracy = {pct_int}% — the model predicts the correct class "
+            f"{pct_int}% of the time."
+        )
+
+    if cv_mean is not None and cv_std is not None:
+        cv_pct_mean = round(cv_mean * 100, 1)
+        cv_pct_std = round(cv_std * 100, 1)
+        reasoning.append(
+            f"5-fold cross-validation: {cv_pct_mean}% ± {cv_pct_std}% — "
+            + ("consistent across splits." if is_stable else "results vary across splits.")
+        )
+
+    if stability_note:
+        reasoning.append(stability_note)
+    if small_data_note:
+        reasoning.append(small_data_note)
+
+    # Recommendation
+    recommendation = _quality_recommendation(quality_label, problem_type, algorithm)
+
+    # Final quality_score: interpolate within band
+    quality_score = _compute_quality_score(primary_metric, problem_type, base_score, quality_label)
+
+    return {
+        "quality_label": quality_label,
+        "quality_score": quality_score,
+        "primary_metric": primary_metric,
+        "primary_metric_name": metric_name,
+        "color": color,
+        "reasoning": reasoning,
+        "recommendation": recommendation,
+        "is_stable": is_stable,
+        "cv_mean": cv_mean,
+        "cv_std": cv_std,
+    }
+
+
+def _safe_float(val: Any) -> "float | None":
+    if val is None:
+        return None
+    try:
+        return float(val)
+    except (TypeError, ValueError):
+        return None
+
+
+def _compute_quality_score(
+    primary_metric: float,
+    problem_type: str,
+    base_score: int,
+    quality_label: str,
+) -> int:
+    """Interpolate a 0–100 score within the quality band."""
+    thresholds = _QUALITY_THRESHOLDS.get(problem_type, _QUALITY_THRESHOLDS["classification"])
+    # Find band boundaries
+    band_min = 0.0
+    band_max = 1.0
+    for i, (min_val, label, _col, _score) in enumerate(thresholds):
+        if label == quality_label:
+            band_min = min_val
+            # upper bound is the previous threshold (or 1.0 for Excellent)
+            band_max = thresholds[i - 1][0] if i > 0 else 1.0
+            break
+    band_range = band_max - band_min
+    if band_range <= 0:
+        return base_score
+    position = (primary_metric - band_min) / band_range  # 0..1 within band
+    # Each band spans roughly 15 points; base_score is the lower end
+    score = base_score + round(position * 15)
+    return min(max(score, 0), 100)
+
+
+def _quality_recommendation(
+    quality_label: str,
+    problem_type: str,
+    algorithm: str,
+) -> str:
+    """Return a single-sentence next-step recommendation."""
+    metric_word = "R²" if problem_type == "regression" else "accuracy"
+    if quality_label == "Excellent":
+        return (
+            "Your model is performing very well. You're ready to deploy and share "
+            "the prediction dashboard with your team."
+        )
+    if quality_label == "Good":
+        return (
+            f"Solid {metric_word}. You can deploy now or try hyperparameter tuning "
+            "to squeeze out a little more accuracy first."
+        )
+    if quality_label == "Acceptable":
+        is_nonlinear = any(
+            kw in algorithm
+            for kw in ("forest", "gradient", "xgboost", "lgbm", "ensemble", "stacking", "voting")
+        )
+        if not is_nonlinear:
+            return (
+                f"{metric_word} is decent. Try a more powerful algorithm like Random "
+                "Forest or XGBoost — it could noticeably improve results."
+            )
+        return (
+            f"{metric_word} is decent but could be better. Try adding more features, "
+            "removing weak ones, or exploring ensemble methods."
+        )
+    # Needs Work
+    return (
+        "Results are limited. Check your features (add more, remove low-importance ones), "
+        "try a more powerful algorithm, or verify your target column is correct."
+    )

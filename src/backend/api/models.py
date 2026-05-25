@@ -26,7 +26,7 @@ from chat.narration import (
     narrate_training_with_ai,
 )
 from chat.orchestrator import get_next_step_chips
-from core.advisor import compute_improvement_suggestions
+from core.advisor import compute_improvement_suggestions, compute_model_quality_score
 from core.feature_engine import apply_transformations
 from core.report_generator import generate_model_report
 from core.chart_builder import build_model_comparison_radar
@@ -2384,4 +2384,50 @@ def get_cross_model_features(project_id: str, session: Session = Depends(get_ses
 
     result = compute_cross_model_feature_importance(runs_wi)
     result["project_id"] = project_id
+    return result
+
+
+@router.get("/api/models/{run_id}/quality-score")
+def get_model_quality_score(run_id: str, session: Session = Depends(get_session)):
+    """Return a plain-English quality assessment for a trained model run.
+
+    Analyses the model's primary metric and cross-validation stability to produce
+    a labelled quality score ("Excellent" / "Good" / "Acceptable" / "Needs Work")
+    with plain-English reasoning and a single-sentence recommendation.
+    """
+    run = session.get(ModelRun, run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Model run not found.")
+    if run.status != "done":
+        raise HTTPException(
+            status_code=422,
+            detail="Quality score is only available for completed model runs.",
+        )
+    if not run.metrics:
+        raise HTTPException(status_code=422, detail="Model run has no metrics.")
+
+    # Determine problem type from feature set (ModelRun has no problem_type field)
+    feature_set = None
+    if run.feature_set_id:
+        feature_set = session.get(FeatureSet, run.feature_set_id)
+    problem_type = (feature_set.problem_type if feature_set else None) or "regression"
+
+    # Fetch dataset row count for small-data warning
+    n_rows = 0
+    dataset = session.exec(
+        select(Dataset).where(Dataset.project_id == run.project_id)
+    ).first()
+    if dataset and dataset.row_count:
+        n_rows = dataset.row_count
+
+    metrics = json.loads(run.metrics) if run.metrics else {}
+
+    result = compute_model_quality_score(
+        metrics=metrics,
+        problem_type=problem_type,
+        algorithm=run.algorithm or "",
+        n_rows=n_rows,
+    )
+    result["run_id"] = run_id
+    result["project_id"] = run.project_id
     return result

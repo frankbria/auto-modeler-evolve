@@ -85,6 +85,7 @@ interface AppState {
   attachFeatureSelectionToLastMessage: (feature_selection: import("./types").FeatureSelectionResult) => void
   attachModelImprovementToLastMessage: (model_improvement: import("./types").ModelImprovementResult) => void
   attachModelSelectionToLastMessage: (model_selection: import("./types").ModelSelectionResult) => void
+  attachModelQualityScoreToLastMessage: (model_quality_score: import("./types").ModelQualityScoreResult) => void
   attachAutoRetrainToLastMessage: (auto_retrain: import("./types").AutoRetrainResult) => void
   attachConversationExportToLastMessage: (conversation_export: import("./types").ConversationExportInfo) => void
   attachHealthSummaryToLastMessage: (health_summary: import("./types").ProjectHealthSummary) => void
@@ -570,6 +571,15 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, model_selection }
+      }
+      return { messages }
+    }),
+  attachModelQualityScoreToLastMessage: (model_quality_score) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, model_quality_score }
       }
       return { messages }
     }),

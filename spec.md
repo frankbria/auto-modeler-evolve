@@ -1913,6 +1913,34 @@ guides them forward through the natural flow.
 - [x] **Goal Seek Per-Feature Lock Toggle UI** — Track B perpetual. Analysts can now lock individual suggested features at their recommended values and re-run goal seek with those constraints — the optimizer then searches only the remaining free features. `GoalSeekCard` gains `useState<Set<string>>` for locked feature names; each suggestion row shows a 🔓/🔒 toggle button with `data-testid="lock-toggle-{feature}"` and `aria-pressed` for accessibility. A "Re-run keeping N features locked" button (amber styling, `data-testid="rerun-with-locked-button"`) appears only when ≥1 feature is locked AND `onActionClick` is provided; clicking it calls `onActionClick("goal seek for {target} = {value} with {key=val ...} locked")` — a natural-language message that the backend's `_extract_goal_seek_target` (updated with `_GS_KV_FIXED_RE` regex + `feature_names` param) parses into `fixed_features` for the next optimization pass. "Fixed features:" label renamed to "Previously locked:" for consistency with the new metaphor. 13 new frontend tests cover lock state, aria attributes, re-run button visibility, message content, and multi-feature locking.
       *Day 73 (20:00): 13 frontend tests + 5 backend tests added. Total: 4516 backend + 2613 frontend = 7129, all passing. Backend lint: clean. Frontend build + lint: clean.*
 
+- [x] **Analyst-Facing Model Quality Score** — Track E perpetual. After training, analysts can
+      ask "how good is my model?", "is my model reliable?", "rate my model", "evaluate my model",
+      "is my accuracy good enough?", "should I use this model?", or "is my model production ready?"
+      and receive a `ModelQualityScoreCard` inline in chat with a plain-English verdict, color-coded
+      progress bar, reasoning bullets, and a single-sentence recommendation. `compute_model_quality_score()`
+      pure function in `core/advisor.py` derives a 0–100 quality score from the primary metric
+      (R² for regression, accuracy/F1 for classification) using tier thresholds (Excellent ≥0.85/0.90,
+      Good ≥0.70/0.80, Acceptable ≥0.55/0.70, Needs Work below) and downgrades the label one step
+      when `cv_std > 0.10` (CV instability penalty). Returns `quality_label`, `quality_score`,
+      `primary_metric`, `primary_metric_name`, `color` (emerald/blue/amber/rose), `reasoning` (list
+      of plain-English bullets covering metric value, CV stability, dataset size), `recommendation`
+      (context-aware: linear algorithms → suggest nonlinear; already ensemble → suggest features/data),
+      `is_stable`, `cv_mean`, `cv_std`. `GET /api/models/{run_id}/quality-score` REST endpoint.
+      `_QUALITY_PATTERNS` regex (10 NL variants) in `chat.py`; handler guards on `ctx["model_runs"]`
+      and emits `{type:"model_quality_score"}` SSE event injecting plain-English context into
+      system_prompt. `ModelQualityScoreCard` (color-coded border, quality emoji icons): quality
+      label + score progress bar, reasoning bullets, recommendation box. `ModelQualityBadge`
+      inline in `RunCard` in the training panel (computes label client-side from metrics, no API
+      call — analysts see quality verdict immediately without asking). `ModelQualityLabel`,
+      `ModelQualityColor`, `ModelQualityScoreResult` TypeScript types; `model_quality_score?` on
+      `ChatMessage`; `attachModelQualityScoreToLastMessage` Zustand action; `api.models.qualityScore()`
+      client method; SSE handler + card render wired in `project/[id]/page.tsx`. 35 backend tests
+      (19 pure-function, 12 regex, 4 REST endpoint integration). Backend lint: clean. Frontend
+      build + lint: clean.
+      *Day 74 (20:00): Implemented. Two endpoint bugs fixed: problem_type derived from FeatureSet
+      (not ModelRun), metrics parsed from JSON string before passing to pure function. REST tests
+      converted to async AsyncClient+ASGITransport pattern matching codebase convention.*
+
 ---
 
 ## Data Model

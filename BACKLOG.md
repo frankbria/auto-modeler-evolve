@@ -53,6 +53,14 @@ the time is better spent on real features.
 
 ---
 
+## Day 74 (20:00) — Done
+
+**Track E: Analyst-Facing Model Quality Score** — complete.
+
+`compute_model_quality_score()` pure function in `core/advisor.py`. Tier thresholds for regression (0.85/0.70/0.55) and classification (0.90/0.80/0.70). CV instability penalty: `cv_std > 0.10` downgrades label one step. Returns quality_label, quality_score (0–100), color, reasoning bullets, recommendation. `GET /api/models/{run_id}/quality-score` REST endpoint (fixed: problem_type from FeatureSet, metrics from `json.loads()`). `_QUALITY_PATTERNS` (10 NL variants) in `chat.py`; SSE → `model_quality_score` event. `ModelQualityScoreCard` in chat + `ModelQualityBadge` inline in RunCard. 35 backend + 0 frontend tests. Total: **4672 backend + 2645 frontend = 7317**, all passing. Backend lint: clean. Frontend build + lint: clean.
+
+---
+
 ## Day 74 (12:00) — Done
 
 **Track C: Proactive Ensemble Auto-Suggest** — complete.
