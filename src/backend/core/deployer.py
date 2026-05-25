@@ -1476,9 +1476,9 @@ def compute_prediction_delta(
                 "new_contribution": round(c_new, 6),
                 "contribution_delta": round(c_delta, 6),
                 "direction": (
-                    "increased" if c_delta > 1e-9 else (
-                        "decreased" if c_delta < -1e-9 else "stable"
-                    )
+                    "increased"
+                    if c_delta > 1e-9
+                    else ("decreased" if c_delta < -1e-9 else "stable")
                 ),
             }
         )
@@ -1512,9 +1512,7 @@ def compute_prediction_delta(
                 summary += f" Top drivers of change: {', '.join(top_drivers)}."
     else:
         if str(pred_new) == str(pred_old):
-            summary = (
-                f"The predicted class remained '{pred_new}' after retraining."
-            )
+            summary = f"The predicted class remained '{pred_new}' after retraining."
         else:
             summary = (
                 f"The predicted class changed from '{pred_old}' to '{pred_new}' "

@@ -15639,7 +15639,10 @@ def send_message(
                 _pd_mp_old = _pd_run_old.model_path if _pd_run_old else None
 
                 if (
-                    _pd_pp_new and _pd_pp_old and _pd_mp_new and _pd_mp_old
+                    _pd_pp_new
+                    and _pd_pp_old
+                    and _pd_mp_new
+                    and _pd_mp_old
                     and Path(_pd_pp_new).exists()
                     and Path(_pd_pp_old).exists()
                     and Path(_pd_mp_new).exists()

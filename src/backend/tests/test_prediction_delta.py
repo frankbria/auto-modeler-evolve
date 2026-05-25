@@ -21,7 +21,12 @@ import pytest
 # ─── helpers ──────────────────────────────────────────────────────────────────
 
 
-def _make_pipeline(feature_names: list[str], target_col: str, problem_type: str, means: dict | None = None):
+def _make_pipeline(
+    feature_names: list[str],
+    target_col: str,
+    problem_type: str,
+    means: dict | None = None,
+):
     """Build a minimal PredictionPipeline for testing."""
     from core.deployer import PredictionPipeline
 
@@ -71,8 +76,12 @@ class TestComputePredictionDeltaRegression:
         from core.deployer import compute_prediction_delta
 
         feats = ["units", "price"]
-        pipeline_old = _make_pipeline(feats, "revenue", "regression", {"units": 10.0, "price": 5.0})
-        pipeline_new = _make_pipeline(feats, "revenue", "regression", {"units": 10.0, "price": 5.0})
+        pipeline_old = _make_pipeline(
+            feats, "revenue", "regression", {"units": 10.0, "price": 5.0}
+        )
+        pipeline_new = _make_pipeline(
+            feats, "revenue", "regression", {"units": 10.0, "price": 5.0}
+        )
 
         # old model predicts 100; new model predicts 120
         model_old = _make_linear_model([1.0, 1.0], intercept=0.0)
@@ -89,7 +98,10 @@ class TestComputePredictionDeltaRegression:
         _save_model(model_new, m_new)
 
         result = compute_prediction_delta(
-            str(p_new), str(m_new), str(p_old), str(m_old),
+            str(p_new),
+            str(m_new),
+            str(p_old),
+            str(m_old),
             {"units": 10.0, "price": 5.0},
         )
 
@@ -120,7 +132,10 @@ class TestComputePredictionDeltaRegression:
         _save_model(model_new, m_new)
 
         result = compute_prediction_delta(
-            str(p_new), str(m_new), str(p_old), str(m_old),
+            str(p_new),
+            str(m_new),
+            str(p_old),
+            str(m_old),
             {"units": 5.0},
         )
 
@@ -140,7 +155,9 @@ class TestComputePredictionDeltaRegression:
         _save_pipeline(pipeline, p)
         _save_model(model, m)
 
-        result = compute_prediction_delta(str(p), str(m), str(p), str(m), {"units": 5.0})
+        result = compute_prediction_delta(
+            str(p), str(m), str(p), str(m), {"units": 5.0}
+        )
 
         assert result["direction"] == "unchanged"
         assert result["delta"] == 0.0
@@ -181,12 +198,21 @@ class TestComputePredictionDeltaRegression:
         model_old = _make_linear_model([1.0, 0.5], intercept=0.0)
         model_new = _make_linear_model([2.0, 0.5], intercept=0.0)
 
-        for name, obj in [("po", pipeline_old), ("pn", pipeline_new), ("mo", model_old), ("mn", model_new)]:
-            _save_pipeline(obj, tmp_path / f"{name}.joblib") if "p" in name else _save_model(obj, tmp_path / f"{name}.joblib")
+        for name, obj in [
+            ("po", pipeline_old),
+            ("pn", pipeline_new),
+            ("mo", model_old),
+            ("mn", model_new),
+        ]:
+            _save_pipeline(
+                obj, tmp_path / f"{name}.joblib"
+            ) if "p" in name else _save_model(obj, tmp_path / f"{name}.joblib")
 
         result = compute_prediction_delta(
-            str(tmp_path / "pn.joblib"), str(tmp_path / "mn.joblib"),
-            str(tmp_path / "po.joblib"), str(tmp_path / "mo.joblib"),
+            str(tmp_path / "pn.joblib"),
+            str(tmp_path / "mn.joblib"),
+            str(tmp_path / "po.joblib"),
+            str(tmp_path / "mo.joblib"),
             {"a": 5.0, "b": 3.0},
         )
 
@@ -217,8 +243,10 @@ class TestComputePredictionDeltaRegression:
             _save_model(obj, tmp_path / f"{name}.joblib")
 
         result = compute_prediction_delta(
-            str(tmp_path / "pn.joblib"), str(tmp_path / "mn.joblib"),
-            str(tmp_path / "po.joblib"), str(tmp_path / "mo.joblib"),
+            str(tmp_path / "pn.joblib"),
+            str(tmp_path / "mn.joblib"),
+            str(tmp_path / "po.joblib"),
+            str(tmp_path / "mo.joblib"),
             {"stable_a": 1.0, "stable_b": 1.0, "high_driver": 1.0},
         )
 
@@ -241,13 +269,18 @@ class TestComputePredictionDeltaRegression:
         _save_model(model_new, tmp_path / "mn.joblib")
 
         result = compute_prediction_delta(
-            str(tmp_path / "pn.joblib"), str(tmp_path / "mn.joblib"),
-            str(tmp_path / "po.joblib"), str(tmp_path / "mo.joblib"),
+            str(tmp_path / "pn.joblib"),
+            str(tmp_path / "mn.joblib"),
+            str(tmp_path / "po.joblib"),
+            str(tmp_path / "mo.joblib"),
             {"x": 5.0},
         )
 
         assert "revenue" in result["summary"]
-        assert str(int(result["old_prediction"])) in result["summary"] or str(result["old_prediction"]) in result["summary"]
+        assert (
+            str(int(result["old_prediction"])) in result["summary"]
+            or str(result["old_prediction"]) in result["summary"]
+        )
 
     def test_top_drivers_nonempty_when_delta_exists(self, tmp_path):
         """top_drivers is non-empty when feature contributions meaningfully change.
@@ -271,8 +304,10 @@ class TestComputePredictionDeltaRegression:
         _save_model(model_new, tmp_path / "mn.joblib")
 
         result = compute_prediction_delta(
-            str(tmp_path / "pn.joblib"), str(tmp_path / "mn.joblib"),
-            str(tmp_path / "po.joblib"), str(tmp_path / "mo.joblib"),
+            str(tmp_path / "pn.joblib"),
+            str(tmp_path / "mn.joblib"),
+            str(tmp_path / "po.joblib"),
+            str(tmp_path / "mo.joblib"),
             {"feature_a": 1.0, "feature_b": 1.0, "feature_c": 1.0},
         )
 
@@ -327,7 +362,9 @@ class TestComputePredictionDeltaClassification:
         from sklearn.linear_model import LogisticRegression
 
         feats = ["a", "b"]
-        pipeline = _make_pipeline(feats, "label", "classification", {"a": 0.0, "b": 0.0})
+        pipeline = _make_pipeline(
+            feats, "label", "classification", {"a": 0.0, "b": 0.0}
+        )
         X = np.array([[0, 0], [1, 1], [0, 0], [1, 1]])
         y = np.array([0, 1, 0, 1])
         model = LogisticRegression().fit(X, y)
@@ -337,7 +374,9 @@ class TestComputePredictionDeltaClassification:
         _save_pipeline(pipeline, p)
         _save_model(model, m)
 
-        result = compute_prediction_delta(str(p), str(m), str(p), str(m), {"a": 0.5, "b": 0.5})
+        result = compute_prediction_delta(
+            str(p), str(m), str(p), str(m), {"a": 0.5, "b": 0.5}
+        )
 
         assert isinstance(result["feature_delta"], list)
 
@@ -351,31 +390,38 @@ class TestPredDeltaPatterns:
     @pytest.fixture
     def pattern(self):
         from api.chat import _PRED_DELTA_PATTERNS
+
         return _PRED_DELTA_PATTERNS
 
-    @pytest.mark.parametrize("msg", [
-        "why did my prediction change",
-        "why did the prediction change after retraining",
-        "why is the prediction different now",
-        "explain the prediction delta",
-        "explain the prediction change",
-        "what changed about the prediction",
-        "why different results after retraining",
-        "same inputs different prediction",
-        "prediction delta after retrain",
-        "why is my forecast different",
-    ])
+    @pytest.mark.parametrize(
+        "msg",
+        [
+            "why did my prediction change",
+            "why did the prediction change after retraining",
+            "why is the prediction different now",
+            "explain the prediction delta",
+            "explain the prediction change",
+            "what changed about the prediction",
+            "why different results after retraining",
+            "same inputs different prediction",
+            "prediction delta after retrain",
+            "why is my forecast different",
+        ],
+    )
     def test_positive_matches(self, pattern, msg):
         assert pattern.search(msg), f"Should match: {msg!r}"
 
-    @pytest.mark.parametrize("msg", [
-        "show me the data",
-        "train a model",
-        "how accurate is my model",
-        "what is my R2",
-        "deploy the model",
-        "compare my models",
-    ])
+    @pytest.mark.parametrize(
+        "msg",
+        [
+            "show me the data",
+            "train a model",
+            "how accurate is my model",
+            "what is my R2",
+            "deploy the model",
+            "compare my models",
+        ],
+    )
     def test_negative_non_matches(self, pattern, msg):
         assert not pattern.search(msg), f"Should NOT match: {msg!r}"
 
@@ -536,9 +582,17 @@ class TestPredictionDeltaChatHandler:
         result = compute_prediction_delta(str(p), str(m), str(p), str(m), {"x": 5.0})
 
         required = [
-            "old_prediction", "new_prediction", "delta", "pct_change", "direction",
-            "problem_type", "target_column", "provided_features",
-            "feature_delta", "top_drivers", "summary",
+            "old_prediction",
+            "new_prediction",
+            "delta",
+            "pct_change",
+            "direction",
+            "problem_type",
+            "target_column",
+            "provided_features",
+            "feature_delta",
+            "top_drivers",
+            "summary",
         ]
         for key in required:
             assert key in result, f"Missing key: {key}"
@@ -548,7 +602,9 @@ class TestPredictionDeltaChatHandler:
         project_id, _dep_id = _setup_and_deploy_delta(client)
         _make_second_deploy_version(client, project_id)
 
-        resp = _chat_delta(client, project_id, "why did my prediction change after retraining")
+        resp = _chat_delta(
+            client, project_id, "why did my prediction change after retraining"
+        )
         assert resp.status_code == 200
         events = _parse_events_delta(resp)
         delta_events = [e for e in events if e.get("type") == "prediction_delta"]
