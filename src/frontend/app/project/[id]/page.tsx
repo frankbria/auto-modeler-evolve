@@ -127,6 +127,7 @@ import { GoalSeekCard } from "@/components/deploy/goal-seek-card"
 import { GoalSeekHistoryCard } from "@/components/deploy/goal-seek-history-card"
 import { DeploymentChangelogCard } from "@/components/deploy/deployment-changelog-card"
 import { CrossDeployPredictionCard } from "@/components/deploy/cross-deploy-prediction-card"
+import { LowAccuracyGuidanceCard } from "@/components/models/low-accuracy-guidance-card"
 import { FairnessCheckCard } from "@/components/chat/fairness-check-card"
 import { BatchJobResultCard } from "@/components/chat/batch-job-result-card"
 import { ProductionExplanationCard } from "@/components/chat/production-explanation-card"
@@ -361,6 +362,7 @@ export default function ProjectWorkspace() {
     attachGoalSeekHistoryToLastMessage,
     attachDeploymentChangelogToLastMessage,
     attachCrossDeployPredictionToLastMessage,
+    attachLowAccuracyGuidanceToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -871,6 +873,8 @@ export default function ProjectWorkspace() {
                 attachDeploymentChangelogToLastMessage(json.deployment_changelog as import("@/lib/types").DeploymentChangelogResult)
               } else if (json.type === "cross_deploy_prediction" && json.cross_deploy_prediction) {
                 attachCrossDeployPredictionToLastMessage(json.cross_deploy_prediction as import("@/lib/types").CrossDeployPredictionResult)
+              } else if (json.type === "low_accuracy_guidance" && json.low_accuracy_guidance) {
+                attachLowAccuracyGuidanceToLastMessage(json.low_accuracy_guidance as import("@/lib/types").LowAccuracyGuidanceResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -1015,6 +1019,7 @@ export default function ProjectWorkspace() {
     attachGoalSeekHistoryToLastMessage,
     attachDeploymentChangelogToLastMessage,
     attachCrossDeployPredictionToLastMessage,
+    attachLowAccuracyGuidanceToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -1661,6 +1666,12 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.cross_deploy_prediction && (
                       <CrossDeployPredictionCard result={msg.cross_deploy_prediction} />
+                    )}
+                    {msg.low_accuracy_guidance && (
+                      <LowAccuracyGuidanceCard
+                        result={msg.low_accuracy_guidance}
+                        onActionClick={handleSendMessage}
+                      />
                     )}
                   </div>
                 </div>

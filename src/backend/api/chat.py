@@ -2657,9 +2657,13 @@ _ENSEMBLE_TRAIN_PATTERNS = re.compile(
 # Subtype detector: voting vs stacking
 _STACKING_RE = re.compile(r"\bstack(?:ing)?\b", re.IGNORECASE)
 
-# Score threshold below which the auto-suggest fires proactively.
+# Score threshold below which the ensemble auto-suggest fires proactively.
 # Applies to both R² (regression) and accuracy (classification).
 _ENSEMBLE_AUTO_THRESHOLD: float = 0.75
+
+# Score threshold below which the post-ensemble low-accuracy guidance fires.
+# Lower than the ensemble threshold so guidance surfaces AFTER ensemble was tried.
+_LOW_ACCURACY_GUIDANCE_THRESHOLD: float = 0.70
 
 # Patterns for training WITH imbalance correction (fires before _TRAIN_PATTERNS so that
 # "train with class weighting" doesn't fall through to uncorrected training).
@@ -15344,6 +15348,103 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Nice-to-have; never crash chat
 
+    # ---------------------------------------------------------------------------
+    # Proactive: Low-accuracy guidance (post-ensemble)
+    # Fires once per batch of runs when best score (incl. ensembles) is still
+    # below _LOW_ACCURACY_GUIDANCE_THRESHOLD and an ensemble has already been
+    # tried OR the ensemble auto-suggest has previously fired.
+    # Never crashes chat — wrapped in try/except.
+    # ---------------------------------------------------------------------------
+    low_accuracy_guidance_event: dict | None = None
+    if ensemble_event is None and ctx["model_runs"]:
+        try:
+            from core.advisor import LOW_ACCURACY_GUIDANCE_THRESHOLD as _LAG_THRESH
+            from core.advisor import compute_low_accuracy_guidance as _compute_lag
+
+            _lag_fset = ctx["feature_set"]
+            _lag_prob = (
+                (_lag_fset.problem_type or "regression") if _lag_fset else "regression"
+            )
+            _lag_metric = "r2" if _lag_prob == "regression" else "accuracy"
+
+            _lag_done_runs = [r for r in ctx["model_runs"] if r.status == "done"]
+            _lag_has_ens = False
+            _lag_best: float | None = None
+            for _lag_r in _lag_done_runs:
+                _lag_m = json.loads(_lag_r.metrics or "{}")
+                if _lag_m.get("ensemble_type"):
+                    _lag_has_ens = True
+                _lag_v = _lag_m.get(_lag_metric)
+                if _lag_v is not None:
+                    _lag_v = float(_lag_v)
+                    if _lag_best is None or _lag_v > _lag_best:
+                        _lag_best = _lag_v
+
+            # Check cooldown: fires once per batch (run count change)
+            _lag_run_count = len(_lag_done_runs)
+            _lag_last_count = project.last_low_accuracy_guidance_run_count  # type: ignore[attr-defined]
+            # Only fire when an ensemble already exists OR it was previously auto-suggested
+            _lag_ens_was_suggested = project.last_ensemble_suggest_run_count is not None  # type: ignore[attr-defined]
+
+            if (
+                _lag_best is not None
+                and _lag_best < _LAG_THRESH
+                and (_lag_has_ens or _lag_ens_was_suggested)
+                and _lag_run_count != _lag_last_count
+            ):
+                _lag_ds = ctx["dataset"]
+                _lag_n_rows = _lag_ds.row_count if _lag_ds else 0
+                # Detect date columns from dataset profile
+                _lag_has_dates = False
+                if _lag_ds and _lag_ds.column_info:
+                    try:
+                        import json as _json_lag
+
+                        _lag_cols = _json_lag.loads(_lag_ds.column_info)
+                        _lag_has_dates = any(
+                            (c.get("dtype") or "").lower()
+                            in {"datetime64[ns]", "datetime", "date"}
+                            for c in (_lag_cols if isinstance(_lag_cols, list) else [])
+                        )
+                    except Exception:  # noqa: BLE001
+                        pass
+
+                _lag_n_features = 0
+                if _lag_fset and _lag_fset.approved_features:
+                    try:
+                        import json as _json_lag2
+
+                        _lag_n_features = len(
+                            _json_lag2.loads(_lag_fset.approved_features) or []
+                        )
+                    except Exception:  # noqa: BLE001
+                        pass
+
+                _lag_result = _compute_lag(
+                    problem_type=_lag_prob,
+                    best_score=_lag_best,
+                    n_rows=_lag_n_rows,
+                    has_ensemble=_lag_has_ens,
+                    has_date_columns=_lag_has_dates,
+                    n_features=_lag_n_features,
+                )
+                low_accuracy_guidance_event = _lag_result
+                system_prompt += (
+                    "\n\n## AutoModeler Low-Accuracy Guidance\n"
+                    f"The analyst's best model (including ensembles) has a "
+                    f"{_lag_metric.upper()} of {_lag_best:.3f}, which is still below "
+                    f"the {_LAG_THRESH} target. You've surfaced a data-improvement "
+                    "guidance card. Briefly acknowledge the persistent low accuracy, "
+                    "mention that algorithm improvements have already been tried, and "
+                    "point the analyst toward the data-level tips in the card."
+                )
+                # Persist run count so this fires once per batch
+                project.last_low_accuracy_guidance_run_count = _lag_run_count  # type: ignore[attr-defined]
+                session.add(project)
+                session.commit()
+        except Exception:  # noqa: BLE001
+            pass  # Nice-to-have; never crash chat
+
     # Deployment version comparison — diff metrics between current and previous version
     version_compare_event: dict | None = None
     if _VERSION_COMPARE_PATTERNS.search(body.message) and ctx["deployment"]:
@@ -16058,6 +16159,9 @@ def send_message(
 
         if cross_deploy_pred_event:
             yield f"data: {json.dumps({'type': 'cross_deploy_prediction', 'cross_deploy_prediction': cross_deploy_pred_event})}\n\n"
+
+        if low_accuracy_guidance_event:
+            yield f"data: {json.dumps({'type': 'low_accuracy_guidance', 'low_accuracy_guidance': low_accuracy_guidance_event})}\n\n"
 
         # After text stream, opportunistically generate a chart if the
         # message is about data and we have a dataset loaded

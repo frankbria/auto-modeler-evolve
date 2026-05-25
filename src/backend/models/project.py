@@ -30,3 +30,6 @@ class Project(SQLModel, table=True):
     last_ensemble_suggest_run_count: Optional[int] = Field(
         default=None
     )  # number of done non-ensemble runs when auto-suggest last fired
+    last_low_accuracy_guidance_run_count: Optional[int] = Field(
+        default=None
+    )  # total done runs when low-accuracy guidance last fired

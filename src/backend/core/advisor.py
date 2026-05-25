@@ -1547,3 +1547,205 @@ def _quality_recommendation(
         "Results are limited. Check your features (add more, remove low-importance ones), "
         "try a more powerful algorithm, or verify your target column is correct."
     )
+
+
+# ---------------------------------------------------------------------------
+# Low Accuracy Guidance (post-ensemble)
+# ---------------------------------------------------------------------------
+
+# Fires proactively when best score (including ensembles) is still below this
+# threshold — i.e., after ensemble auto-suggest has had a chance to run.
+LOW_ACCURACY_GUIDANCE_THRESHOLD: float = 0.70
+
+
+def compute_low_accuracy_guidance(
+    problem_type: str,
+    best_score: float,
+    n_rows: int = 0,
+    has_ensemble: bool = False,
+    has_date_columns: bool = False,
+    n_features: int = 0,
+) -> dict[str, Any]:
+    """Return a plain-English guidance card for analysts stuck with low accuracy.
+
+    This fires after ensemble methods have already been tried (or auto-suggested)
+    and the best score is still below LOW_ACCURACY_GUIDANCE_THRESHOLD.  It goes
+    beyond algorithm advice and surfaces data/framing improvements the analyst can
+    act on without writing code.
+
+    Parameters
+    ----------
+    problem_type:
+        "regression" or "classification".
+    best_score:
+        Best primary metric value across all completed runs (R² or accuracy).
+    n_rows:
+        Training dataset row count.  Used to tailor the "more data" tip.
+    has_ensemble:
+        True if at least one ensemble run exists.
+    has_date_columns:
+        True if the dataset contains a datetime column not yet used for splitting.
+    n_features:
+        Number of features used in training.
+
+    Returns
+    -------
+    dict with keys:
+        problem_type     : str
+        best_score       : float
+        metric_name      : str  ("R²" | "accuracy")
+        score_label      : str  human-friendly score
+        is_very_low      : bool  score below 0.50 (suggests possible data issue)
+        tips             : list[dict] — each has icon, title, description, action
+        summary          : str — 1–2 sentence plain-English framing
+        n_tips           : int
+    """
+    metric_name = "R²" if problem_type == "regression" else "accuracy"
+    score_pct = round(best_score * 100, 1)
+    score_label = f"{score_pct}%"
+    is_very_low = best_score < 0.50
+
+    tips: list[dict[str, str]] = []
+
+    # Tip 1 — Data volume
+    if n_rows < 500:
+        tips.append(
+            {
+                "icon": "📥",
+                "title": "Collect more data",
+                "description": (
+                    f"Your dataset has {n_rows} rows. Most ML models improve "
+                    "significantly with 500+ rows. Even 100–200 more rows can help."
+                ),
+                "action": "How do I add more data to my project?",
+            }
+        )
+    else:
+        tips.append(
+            {
+                "icon": "📥",
+                "title": "Add more training examples",
+                "description": (
+                    "More diverse examples often help more than better algorithms. "
+                    "Consider uploading additional data covering edge cases or rare "
+                    "categories."
+                ),
+                "action": "What kinds of data would help my model learn better?",
+            }
+        )
+
+    # Tip 2 — Feature engineering
+    tips.append(
+        {
+            "icon": "🔧",
+            "title": "Engineer better features",
+            "description": (
+                "The features you give the model matter more than the algorithm. "
+                "Try combining columns, extracting ratios, or asking 'what else "
+                "predicts this outcome?' in your domain knowledge."
+            ),
+            "action": "What new features would help predict my target better?",
+        }
+    )
+
+    # Tip 3 — Date-based split (if relevant)
+    if has_date_columns:
+        tips.append(
+            {
+                "icon": "📅",
+                "title": "Use a chronological train/test split",
+                "description": (
+                    "Your data has dates. A time-based split (train on older data, "
+                    "test on recent data) gives a more realistic accuracy estimate "
+                    "and can surface temporal patterns."
+                ),
+                "action": "Train with a chronological split",
+            }
+        )
+
+    # Tip 4 — Data quality / target column
+    if is_very_low:
+        tips.append(
+            {
+                "icon": "🎯",
+                "title": "Review your target column",
+                "description": (
+                    f"A {metric_name} of {score_label} is very low — this can happen "
+                    "when the target has noisy labels, inconsistent definitions, or "
+                    "when the available features simply don't predict it well. "
+                    "Double-check that your target column means what you think it means."
+                ),
+                "action": "Analyze my target column for quality issues",
+            }
+        )
+    else:
+        tips.append(
+            {
+                "icon": "🔍",
+                "title": "Check for data quality issues",
+                "description": (
+                    "Outliers, inconsistent categories, and mislabeled rows can "
+                    "hurt model accuracy significantly. Run a data quality check "
+                    "to find potential issues before training again."
+                ),
+                "action": "Show me a data quality report",
+            }
+        )
+
+    # Tip 5 — Leakage warning for very low scores
+    if is_very_low and n_features > 0:
+        tips.append(
+            {
+                "icon": "⚠️",
+                "title": "Check for data leakage",
+                "description": (
+                    "If your training accuracy was high but test accuracy is low, "
+                    "a feature might be 'leaking' future information into training. "
+                    "Remove any column that would not be available at prediction time."
+                ),
+                "action": "What features might be causing data leakage?",
+            }
+        )
+
+    # Tip 6 — Problem framing (always last)
+    tips.append(
+        {
+            "icon": "💡",
+            "title": "Try a different approach",
+            "description": (
+                "Sometimes the way the problem is framed matters as much as the "
+                "data. Consider: Can you predict a simpler version of this outcome? "
+                "Would bucketing the target into categories (classification) work "
+                "better than predicting the exact number (regression)?"
+            ),
+            "action": "Suggest alternative ways to frame my prediction problem",
+        }
+    )
+
+    # Cap at 5 tips for card readability
+    tips = tips[:5]
+
+    # Summary
+    if has_ensemble:
+        summary = (
+            f"Your best model (including ensembles) achieves {metric_name} "
+            f"{score_label}. Beyond algorithms, there are several data-level "
+            "improvements that often have the biggest impact on accuracy."
+        )
+    else:
+        summary = (
+            f"Your best model achieves {metric_name} {score_label}. "
+            "Here are data-level improvements to try before training more models — "
+            "they often have a bigger impact than switching algorithms."
+        )
+
+    return {
+        "problem_type": problem_type,
+        "best_score": best_score,
+        "metric_name": metric_name,
+        "score_label": score_label,
+        "is_very_low": is_very_low,
+        "tips": tips,
+        "summary": summary,
+        "n_tips": len(tips),
+    }

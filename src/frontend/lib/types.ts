@@ -531,6 +531,7 @@ export interface ChatMessage {
   goal_seek_history?: GoalSeekHistoryResult
   deployment_changelog?: DeploymentChangelogResult
   cross_deploy_prediction?: CrossDeployPredictionResult
+  low_accuracy_guidance?: LowAccuracyGuidanceResult
 }
 
 export interface RollbackVersionEntry {
@@ -3660,4 +3661,22 @@ export interface CrossDeployPredictionResult {
   defaults_used: number
   results: CrossDeployPredictionRow[]
   summary: string
+}
+
+export interface LowAccuracyGuidanceTip {
+  icon: string
+  title: string
+  description: string
+  action: string
+}
+
+export interface LowAccuracyGuidanceResult {
+  problem_type: string
+  best_score: number
+  metric_name: string
+  score_label: string
+  is_very_low: boolean
+  tips: LowAccuracyGuidanceTip[]
+  summary: string
+  n_tips: number
 }
