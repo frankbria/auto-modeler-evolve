@@ -1,5 +1,15 @@
 # Journal
 
+## Day 75 — 04:00 — Build Error Fix: Import Cleanup in Low-Accuracy Guidance Tests
+
+Build verification caught import ordering issues in `test_low_accuracy_guidance.py` from Day 74's low-accuracy guidance and ensemble auto-suggest work. Fixed: moved `import unittest.mock as mock` to the top of the file (was scattered), removed unused `_ENSEMBLE_AUTO_THRESHOLD` import. Updated performance baseline metrics. All 7247 tests passing; backend and frontend lint clean.
+
+**What's next:** Continue with highest-priority unimplemented features from BACKLOG — likely Track C (model building depth), Track B (cohort monitoring), or Track E friction items per session schedule.
+
+*Day 75 (04:00): 0 new tests — import cleanup only. Total: 4613 backend + 2634 frontend = 7247, all passing. Backend lint: clean. Frontend build + lint: clean.*
+
+---
+
 ## Day 74 — 20:00 — Track E: Analyst-Facing Model Quality Score
 
 No community issues. Selected the highest-impact unimplemented Track E item from BACKLOG: "Analyst-facing model quality score". The gap: analysts had no way to ask "is my model good enough?" and get a plain-English verdict — a critical friction point in the lunch-break flow, since every analyst needs to decide whether to trust their model before deploying.
