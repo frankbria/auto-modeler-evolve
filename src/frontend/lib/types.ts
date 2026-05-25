@@ -532,6 +532,7 @@ export interface ChatMessage {
   deployment_changelog?: DeploymentChangelogResult
   cross_deploy_prediction?: CrossDeployPredictionResult
   low_accuracy_guidance?: LowAccuracyGuidanceResult
+  prediction_delta?: PredictionDeltaResult
 }
 
 export interface RollbackVersionEntry {
@@ -3679,4 +3680,29 @@ export interface LowAccuracyGuidanceResult {
   tips: LowAccuracyGuidanceTip[]
   summary: string
   n_tips: number
+}
+
+export interface PredictionDeltaFeature {
+  feature: string
+  old_contribution: number
+  new_contribution: number
+  contribution_delta: number
+  direction: "increased" | "decreased" | "stable"
+}
+
+export interface PredictionDeltaResult {
+  old_prediction: number | string
+  new_prediction: number | string
+  delta: number
+  pct_change: number
+  direction: "up" | "down" | "unchanged" | "changed"
+  problem_type: string
+  target_column: string
+  provided_features: Record<string, number>
+  feature_delta: PredictionDeltaFeature[]
+  top_drivers: string[]
+  summary: string
+  current_version: number
+  previous_version: number
+  inputs_from_message: boolean
 }

@@ -128,6 +128,7 @@ import { GoalSeekHistoryCard } from "@/components/deploy/goal-seek-history-card"
 import { DeploymentChangelogCard } from "@/components/deploy/deployment-changelog-card"
 import { CrossDeployPredictionCard } from "@/components/deploy/cross-deploy-prediction-card"
 import { LowAccuracyGuidanceCard } from "@/components/models/low-accuracy-guidance-card"
+import { PredictionDeltaCard } from "@/components/deploy/prediction-delta-card"
 import { FairnessCheckCard } from "@/components/chat/fairness-check-card"
 import { BatchJobResultCard } from "@/components/chat/batch-job-result-card"
 import { ProductionExplanationCard } from "@/components/chat/production-explanation-card"
@@ -363,6 +364,7 @@ export default function ProjectWorkspace() {
     attachDeploymentChangelogToLastMessage,
     attachCrossDeployPredictionToLastMessage,
     attachLowAccuracyGuidanceToLastMessage,
+    attachPredictionDeltaToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -875,6 +877,8 @@ export default function ProjectWorkspace() {
                 attachCrossDeployPredictionToLastMessage(json.cross_deploy_prediction as import("@/lib/types").CrossDeployPredictionResult)
               } else if (json.type === "low_accuracy_guidance" && json.low_accuracy_guidance) {
                 attachLowAccuracyGuidanceToLastMessage(json.low_accuracy_guidance as import("@/lib/types").LowAccuracyGuidanceResult)
+              } else if (json.type === "prediction_delta" && json.prediction_delta) {
+                attachPredictionDeltaToLastMessage(json.prediction_delta as import("@/lib/types").PredictionDeltaResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -1020,6 +1024,7 @@ export default function ProjectWorkspace() {
     attachDeploymentChangelogToLastMessage,
     attachCrossDeployPredictionToLastMessage,
     attachLowAccuracyGuidanceToLastMessage,
+    attachPredictionDeltaToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -1672,6 +1677,9 @@ export default function ProjectWorkspace() {
                         result={msg.low_accuracy_guidance}
                         onActionClick={handleSendMessage}
                       />
+                    )}
+                    {msg.prediction_delta && (
+                      <PredictionDeltaCard result={msg.prediction_delta} />
                     )}
                   </div>
                 </div>

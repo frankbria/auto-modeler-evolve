@@ -3554,6 +3554,21 @@ _VERSION_COMPARE_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# Prediction delta — "why did my prediction change after retraining?"
+_PRED_DELTA_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"why\s+(?:did|has|is|would)?\s*(?:the\s+|my\s+)?prediction\s+(?:change[d]?|shift(?:ed)?|differ(?:ent)?|be\s+different)\b|"
+    r"why\s+(?:is|are)\s+(?:the\s+|my\s+)?(?:predictions?|results?|outputs?|forecasts?)\s+different\s*(?:now|after|since)?\b|"
+    r"explain\s+(?:the\s+)?prediction\s+(?:delta|change|difference|shift)\b|"
+    r"what\s+changed\s+(?:in|about)\s+(?:the\s+|my\s+)?(?:prediction|forecast|output|result)\b|"
+    r"why\s+(?:different|changed|shifted)\s+(?:results?|predictions?|outputs?)\s+after\s+(?:retrain(?:ing)?|update)\b|"
+    r"same\s+inputs?\s+(?:but\s+)?different\s+(?:prediction|result|output)\b|"
+    r"prediction\s+(?:delta|changed|different)\s+after\s+(?:retrain(?:ing)?|update|version)\b|"
+    r"(?:how|why)\s+(?:did|has)\s+(?:the\s+)?(?:model\s+)?output\s+(?:change|shift|differ)\s+(?:after|between|since)\b"
+    r")",
+    re.IGNORECASE,
+)
+
 # Production input distribution — "what values are users sending to my model?", "show production inputs"
 _PROD_INPUT_DIST_PATTERNS = re.compile(
     r"(?i)(?:"
@@ -15590,6 +15605,90 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Nice-to-have; never crash chat
 
+    # Prediction delta — "why did my prediction change after retraining?"
+    # Guards: deployment exists, 2+ DeploymentVersions, version_compare didn't fire,
+    # cross_deploy_prediction didn't fire (those already cover comparison scenarios)
+    pred_delta_event: dict | None = None
+    if (
+        _PRED_DELTA_PATTERNS.search(body.message)
+        and ctx["deployment"]
+        and version_compare_event is None
+        and cross_deploy_pred_event is None
+    ):
+        try:
+            from models.deployment_version import DeploymentVersion as _DVDelta
+            from models.model_run import ModelRun as _MRDelta
+
+            _pd_dep = ctx["deployment"]
+            _pd_versions = session.exec(
+                select(_DVDelta)
+                .where(_DVDelta.deployment_id == _pd_dep.id)
+                .order_by(_DVDelta.version_number.desc())
+            ).all()
+
+            if len(_pd_versions) >= 2:
+                _pd_ver_new = _pd_versions[0]  # current version
+                _pd_ver_old = _pd_versions[1]  # previous version
+
+                _pd_run_new = session.get(_MRDelta, _pd_ver_new.model_run_id)
+                _pd_run_old = session.get(_MRDelta, _pd_ver_old.model_run_id)
+
+                _pd_pp_new = _pd_ver_new.pipeline_path
+                _pd_pp_old = _pd_ver_old.pipeline_path
+                _pd_mp_new = _pd_run_new.model_path if _pd_run_new else None
+                _pd_mp_old = _pd_run_old.model_path if _pd_run_old else None
+
+                if (
+                    _pd_pp_new and _pd_pp_old and _pd_mp_new and _pd_mp_old
+                    and Path(_pd_pp_new).exists()
+                    and Path(_pd_pp_old).exists()
+                    and Path(_pd_mp_new).exists()
+                    and Path(_pd_mp_old).exists()
+                ):
+                    from core.deployer import (
+                        compute_prediction_delta as _compute_pd,
+                        load_pipeline as _load_pd_pipe,
+                    )
+
+                    # Extract feature inputs from message; fall back to training means
+                    _pd_pipeline = _load_pd_pipe(_pd_pp_new)
+                    _pd_feature_names = _pd_pipeline.feature_names
+                    _pd_means = getattr(_pd_pipeline, "feature_means", {})
+
+                    _pd_provided = _extract_multi_feature_prediction(
+                        body.message, _pd_feature_names
+                    )
+                    # Merge with training means for missing features
+                    _pd_inputs: dict = {
+                        f: _pd_provided.get(f, _pd_means.get(f, 0.0))
+                        for f in _pd_feature_names
+                    }
+
+                    _pd_result = _compute_pd(
+                        _pd_pp_new, _pd_mp_new, _pd_pp_old, _pd_mp_old, _pd_inputs
+                    )
+
+                    # Annotate with version numbers
+                    _pd_result["current_version"] = _pd_ver_new.version_number
+                    _pd_result["previous_version"] = _pd_ver_old.version_number
+                    _pd_result["inputs_from_message"] = bool(_pd_provided)
+
+                    pred_delta_event = _pd_result
+
+                    system_prompt += (
+                        "\n\n## Prediction Delta (Why Did the Prediction Change?)\n"
+                        f"Version {_pd_ver_old.version_number} → "
+                        f"Version {_pd_ver_new.version_number}: "
+                        f"{_pd_result['summary']}\n"
+                        "Explain this change in plain English to the analyst. "
+                        "Name the features that drove the change and what it means "
+                        "for their business. Keep the tone of a helpful data-savvy colleague."
+                    )
+                # No else — silently skip if paths are missing
+
+        except Exception:  # noqa: BLE001
+            pass  # Nice-to-have; never crash chat
+
     # Pre-compute follow-up suggestions (based on state + current message)
     current_state = detect_state(
         ctx["dataset"], ctx["feature_set"], ctx["model_runs"], ctx["deployment"]
@@ -16162,6 +16261,9 @@ def send_message(
 
         if low_accuracy_guidance_event:
             yield f"data: {json.dumps({'type': 'low_accuracy_guidance', 'low_accuracy_guidance': low_accuracy_guidance_event})}\n\n"
+
+        if pred_delta_event:
+            yield f"data: {json.dumps({'type': 'prediction_delta', 'prediction_delta': pred_delta_event})}\n\n"
 
         # After text stream, opportunistically generate a chart if the
         # message is about data and we have a dataset loaded

@@ -172,6 +172,7 @@ interface AppState {
   attachDeploymentChangelogToLastMessage: (deployment_changelog: import("./types").DeploymentChangelogResult) => void
   attachCrossDeployPredictionToLastMessage: (cross_deploy_prediction: import("./types").CrossDeployPredictionResult) => void
   attachLowAccuracyGuidanceToLastMessage: (low_accuracy_guidance: import("./types").LowAccuracyGuidanceResult) => void
+  attachPredictionDeltaToLastMessage: (prediction_delta: import("./types").PredictionDeltaResult) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -1381,6 +1382,16 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, low_accuracy_guidance }
+      }
+      return { messages }
+    }),
+
+  attachPredictionDeltaToLastMessage: (prediction_delta) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, prediction_delta }
       }
       return { messages }
     }),

@@ -1376,3 +1376,163 @@ def run_goal_seek(
         "feasible": feasible,
         "summary": summary,
     }
+
+
+# ---------------------------------------------------------------------------
+# Prediction delta — "why did my prediction change after retraining?"
+# ---------------------------------------------------------------------------
+
+
+def compute_prediction_delta(
+    pipeline_path_new: str,
+    model_path_new: str,
+    pipeline_path_old: str,
+    model_path_old: str,
+    input_features: dict,
+) -> dict:
+    """Compare predictions between two model versions for the same inputs.
+
+    Explains how and why the prediction changed after retraining by comparing
+    per-feature contributions between the old and new model versions.
+
+    Args:
+        pipeline_path_new: Path to the new (current) PredictionPipeline joblib.
+        model_path_new: Path to the new sklearn model joblib.
+        pipeline_path_old: Path to the previous PredictionPipeline joblib.
+        model_path_old: Path to the previous sklearn model joblib.
+        input_features: Feature dict to run through both models.
+
+    Returns:
+        {
+            old_prediction, new_prediction, delta, pct_change, direction,
+            problem_type, target_column, provided_features,
+            feature_delta: [{feature, old_contribution, new_contribution,
+                             contribution_delta, direction}],
+            top_drivers: [str],  # plain-English driver phrases
+            summary: str,
+        }
+    """
+    from core.explainer import compute_feature_importance  # noqa: PLC0415
+
+    pipeline_new = load_pipeline(pipeline_path_new)
+    model_new = joblib.load(model_path_new)
+    pipeline_old = load_pipeline(pipeline_path_old)
+    model_old = joblib.load(model_path_old)
+
+    target_col = pipeline_new.target_column
+    problem_type = pipeline_new.problem_type
+
+    # ── Predictions ──────────────────────────────────────────────────────────
+    x_new = pipeline_new.transform(input_features).flatten()
+    raw_new = model_new.predict(x_new.reshape(1, -1))[0]
+    pred_new = pipeline_new.decode_prediction(raw_new)
+
+    x_old = pipeline_old.transform(input_features).flatten()
+    raw_old = model_old.predict(x_old.reshape(1, -1))[0]
+    pred_old = pipeline_old.decode_prediction(raw_old)
+
+    # ── Numeric delta ─────────────────────────────────────────────────────────
+    try:
+        num_new = float(pred_new)
+        num_old = float(pred_old)
+        delta = round(num_new - num_old, 4)
+        pct_change = round((delta / abs(num_old) * 100) if num_old != 0 else 0.0, 1)
+        direction = "up" if delta > 1e-9 else ("down" if delta < -1e-9 else "unchanged")
+    except (TypeError, ValueError):
+        # Classification — use top-class confidence delta
+        delta = 0.0
+        pct_change = 0.0
+        direction = "unchanged" if str(pred_new) == str(pred_old) else "changed"
+
+    # ── Feature contribution delta ────────────────────────────────────────────
+    def _contributions(pipeline, model, x_vec: "np.ndarray") -> dict[str, float]:  # type: ignore[name-defined]
+        feat_names = pipeline.feature_names
+        imp_list = compute_feature_importance(model, feat_names)
+        imp_map = {item["feature"]: item["importance"] for item in imp_list}
+        contribs: dict[str, float] = {}
+        for i, col in enumerate(feat_names):
+            imp = imp_map.get(col, 0.0)
+            mean_val = getattr(pipeline, "feature_means", {}).get(col, float(x_vec[i]))
+            std_val = getattr(pipeline, "feature_stds", {}).get(col, 1.0)
+            if std_val < 1e-10:
+                std_val = 1.0
+            deviation = (float(x_vec[i]) - mean_val) / std_val
+            contribs[col] = float(imp * deviation)
+        return contribs
+
+    new_contribs = _contributions(pipeline_new, model_new, x_new)
+    old_contribs = _contributions(pipeline_old, model_old, x_old)
+
+    # Merge feature sets (use the new model's features as reference)
+    feature_delta: list[dict] = []
+    for feat in pipeline_new.feature_names:
+        c_new = new_contribs.get(feat, 0.0)
+        c_old = old_contribs.get(feat, 0.0)
+        c_delta = c_new - c_old
+        feature_delta.append(
+            {
+                "feature": feat,
+                "old_contribution": round(c_old, 6),
+                "new_contribution": round(c_new, 6),
+                "contribution_delta": round(c_delta, 6),
+                "direction": (
+                    "increased" if c_delta > 1e-9 else (
+                        "decreased" if c_delta < -1e-9 else "stable"
+                    )
+                ),
+            }
+        )
+
+    # Sort by absolute contribution delta (largest driver of change first)
+    feature_delta.sort(key=lambda f: abs(f["contribution_delta"]), reverse=True)
+
+    # ── Plain-English summary ─────────────────────────────────────────────────
+    top_drivers: list[str] = []
+    for f in feature_delta[:3]:
+        if abs(f["contribution_delta"]) < 1e-9:
+            continue
+        word = "↑" if f["direction"] == "increased" else "↓"
+        top_drivers.append(f"{f['feature'].replace('_', ' ')} {word}")
+
+    if problem_type == "regression":
+        if direction == "unchanged":
+            summary = (
+                f"The {target_col.replace('_', ' ')} prediction remained unchanged "
+                f"at {pred_new} after retraining."
+            )
+        else:
+            dir_word = "increased" if direction == "up" else "decreased"
+            summary = (
+                f"The {target_col.replace('_', ' ')} prediction {dir_word} from "
+                f"{pred_old} to {pred_new} "
+                f"({'+' if delta >= 0 else ''}{delta:,}, "
+                f"{'+' if pct_change >= 0 else ''}{pct_change}%)."
+            )
+            if top_drivers:
+                summary += f" Top drivers of change: {', '.join(top_drivers)}."
+    else:
+        if str(pred_new) == str(pred_old):
+            summary = (
+                f"The predicted class remained '{pred_new}' after retraining."
+            )
+        else:
+            summary = (
+                f"The predicted class changed from '{pred_old}' to '{pred_new}' "
+                f"after retraining."
+            )
+            if top_drivers:
+                summary += f" Top feature shifts: {', '.join(top_drivers)}."
+
+    return {
+        "old_prediction": pred_old,
+        "new_prediction": pred_new,
+        "delta": delta,
+        "pct_change": pct_change,
+        "direction": direction,
+        "problem_type": problem_type,
+        "target_column": target_col,
+        "provided_features": input_features,
+        "feature_delta": feature_delta,
+        "top_drivers": top_drivers,
+        "summary": summary,
+    }

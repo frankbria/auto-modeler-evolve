@@ -166,7 +166,8 @@ Key learning: Python `\b` doesn't work for underscore-delimited column names —
 
 **Track B candidates (vision-driven innovation):**
 - Predictive cohort monitoring — automatically track how the cohort profiles of top-N predictions evolve over time as new data is uploaded
-- "Why did this prediction change?" — compare two consecutive predictions for the same inputs and explain the delta (useful after retraining)
+- "Why did this prediction change?" — compare two consecutive predictions for the same inputs and explain the delta (useful after retraining) ✅ DONE (Day 75 12:00)
+- Prediction delta on the live dashboard — expose per-feature contribution bar chart on `predict/[id]` after each prediction, showing why THIS specific prediction is higher/lower than the training mean
 
 ---
 

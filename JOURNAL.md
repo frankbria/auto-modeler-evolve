@@ -1,5 +1,31 @@
 # Journal
 
+## Day 75 — 12:00 — Track B: Prediction Delta — "Why Did My Prediction Change?"
+
+No community issues. Identified the genuine unimplemented gap from BACKLOG: **"Why did this prediction change?"** — analysts who retrain their model and then run the same inputs get a different prediction, with no explanation for why. This is the most common source of post-retrain confusion. Every other comparison feature was already done (version metrics, cross-deployment side-by-side, what-if), but per-feature attribution delta was missing.
+
+**What was built:**
+
+`compute_prediction_delta(pipeline_path_new, model_path_new, pipeline_path_old, model_path_old, input_features)` pure function in `core/deployer.py`. Loads both `PredictionPipeline` + sklearn model pairs, runs both models on the same inputs, computes `delta`/`pct_change`/`direction` (up/down/unchanged for regression; changed/unchanged for classification). Uses `compute_feature_importance() × normalized deviation` to compute per-feature contribution for each model version, then diffs them: `contribution_delta = c_new - c_old`. Sorts by absolute delta (biggest driver first). Returns `{old_prediction, new_prediction, delta, pct_change, direction, problem_type, target_column, provided_features, feature_delta:[{feature, old_contribution, new_contribution, contribution_delta, direction}], top_drivers, summary}`.
+
+`_PRED_DELTA_PATTERNS` regex (8 NL variants: "why did my prediction change", "explain the prediction delta", "same inputs different prediction", "what changed about the prediction", etc.) + chat handler in `send_message()`. Guarded by deployment + 2+ `DeploymentVersion` records + version_compare/cross_deploy_pred not already fired. Extracts feature values from message via `_extract_multi_feature_prediction()`, fills missing with `feature_means`. Annotates result with `current_version`/`previous_version`/`inputs_from_message`. Emits `{type:"prediction_delta"}` SSE event.
+
+`PredictionDeltaCard` (emerald/rose/slate border per direction, 🔍 icon): version badge (`v{prev}→v{curr}`), direction badge (Increased/Decreased/Unchanged/Class changed), old→new prediction side-by-side, delta + % change, feature contribution delta horizontal bars (top 8, sorted by absolute impact, green=increased/red=decreased/gray=stable), top drivers amber chips, sr-only figcaption. `PredictionDeltaFeature` + `PredictionDeltaResult` TypeScript interfaces; `prediction_delta?` on `ChatMessage`; `attachPredictionDeltaToLastMessage` Zustand action; SSE handler + card render wired in workspace `page.tsx`.
+
+**What didn't work (fixed):**
+
+1. Integration tests initially used `AsyncClient` + direct DB insertion — failed with "no such table: dataset". Root cause: not all model modules were imported before `SQLModel.metadata.create_all()`. Fix: rewrote tests to use `TestClient` (sync), import all model modules first, and set up via actual API endpoints (upload → features → train → deploy → redeploy). Matches the pattern from `test_version_comparison_chat.py`.
+
+2. Feature delta sort test — with 2 features and symmetric normalized importances, contribution deltas end up equal. Fix: use 3+ features in the sort test with asymmetric new model weights to break symmetry.
+
+3. `top_drivers` empty with single-feature test — normalized importance = 1.0 for both versions so delta = 0.0. Fix: use 3-feature model with highly asymmetric weights so `high_driver` gets a large, non-zero contribution delta.
+
+**What's next:** Track D — could go deeper on batch prediction monitoring, or Track C model building. Or Track E: expose feature delta breakdown in the prediction explanation card on the live prediction dashboard.
+
+*Day 75 (12:00): 32 backend + 26 frontend = 58 new tests. Total: 4739 backend + 2687 frontend = 7426, all passing. Backend lint: clean. Frontend build + lint: clean.*
+
+---
+
 ## Day 75 — 04:00 — Build Error Fix: Import Cleanup in Low-Accuracy Guidance Tests
 
 Build verification caught import ordering issues in `test_low_accuracy_guidance.py` from Day 74's low-accuracy guidance and ensemble auto-suggest work. Fixed: moved `import unittest.mock as mock` to the top of the file (was scattered), removed unused `_ENSEMBLE_AUTO_THRESHOLD` import. Updated performance baseline metrics. All 7247 tests passing; backend and frontend lint clean.
