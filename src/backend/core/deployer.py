@@ -1783,3 +1783,267 @@ def compute_prediction_delta(
         "top_drivers": top_drivers,
         "summary": summary,
     }
+
+
+# ---------------------------------------------------------------------------
+# Counterfactual Explanation
+# ---------------------------------------------------------------------------
+
+
+def compute_counterfactual(
+    pipeline_path: str,
+    model_path: str,
+    original_features: dict,
+    target_class: str | None = None,
+    max_steps: int = 15,
+    step_fraction: float = 0.1,
+) -> dict:
+    """Find the minimal feature change to flip a classification prediction.
+
+    Uses greedy gradient-based search: at each step perturbs the numeric
+    feature whose finite-difference gradient most moves the prediction toward
+    the desired class.
+
+    Only numeric features are perturbed; categorical features stay fixed.
+
+    Args:
+        pipeline_path: Path to PredictionPipeline joblib.
+        model_path: Path to sklearn model joblib.
+        original_features: Feature dict for the specific instance (raw values).
+        target_class: Desired class to flip to.  None → flip to any other class.
+        max_steps: Maximum greedy steps before giving up.
+        step_fraction: Each step nudges a feature by this fraction of its
+            training std (from pipeline.feature_stds).
+
+    Returns:
+        {
+          problem_type, target_column,
+          original_prediction, original_class, original_confidence,
+          counterfactual_prediction, target_class,
+          counterfactual_confidence,
+          flipped,              # True when class actually changed
+          n_steps,
+          changed_features: [  # only features that were perturbed
+            {name, original_value, counterfactual_value, change_pct, direction}
+          ],
+          summary,
+        }
+
+    Raises:
+        ValueError: if the model is not a classifier or has no predict_proba.
+    """
+    import joblib as _jl
+
+    pipeline = load_pipeline(pipeline_path)
+    model = _jl.load(model_path)
+
+    if pipeline.problem_type != "classification":
+        raise ValueError(
+            "Counterfactual explanations are only supported for classification models. "
+            "For regression, use goal_seek to find inputs that meet a target value."
+        )
+    if not hasattr(model, "predict_proba"):
+        raise ValueError(
+            "Counterfactual requires a probabilistic classifier (predict_proba). "
+            "This model does not support probability estimates."
+        )
+
+    # ── Decode class names ────────────────────────────────────────────────────
+    classes: list[str] = []
+    if pipeline.target_encoder is not None:
+        classes = [str(c) for c in pipeline.target_encoder.classes_]
+    else:
+        # Probe with the original features to get class count
+        x_probe = pipeline.transform(original_features)
+        proba_probe = model.predict_proba(x_probe)[0]
+        classes = [str(i) for i in range(len(proba_probe))]
+
+    if len(classes) < 2:
+        raise ValueError("Counterfactual requires at least 2 classes.")
+
+    # ── Original prediction ───────────────────────────────────────────────────
+    x_orig = pipeline.transform(original_features)
+    proba_orig = model.predict_proba(x_orig)[0]
+    orig_class_idx = int(np.argmax(proba_orig))
+    orig_class = classes[orig_class_idx]
+    orig_confidence = round(float(proba_orig[orig_class_idx]), 4)
+
+    # Resolve target class index
+    if target_class is not None:
+        if target_class not in classes:
+            raise ValueError(
+                f"Target class '{target_class}' not found. "
+                f"Available classes: {classes}"
+            )
+        target_class_idx = classes.index(target_class)
+    else:
+        # Flip to the class with second-highest probability
+        sorted_idxs = np.argsort(proba_orig)[::-1]
+        target_class_idx = int(sorted_idxs[1])
+        target_class = classes[target_class_idx]
+
+    if target_class_idx == orig_class_idx:
+        # Already at the target class — nothing to flip
+        return {
+            "problem_type": "classification",
+            "target_column": pipeline.target_column,
+            "original_prediction": orig_class,
+            "original_class": orig_class,
+            "original_confidence": orig_confidence,
+            "counterfactual_prediction": orig_class,
+            "target_class": target_class,
+            "counterfactual_confidence": orig_confidence,
+            "flipped": True,
+            "n_steps": 0,
+            "changed_features": [],
+            "summary": (
+                f"The prediction is already '{orig_class}' — no change needed."
+            ),
+        }
+
+    # ── Identify perturbable numeric features ────────────────────────────────
+    numeric_features = [
+        f
+        for f in pipeline.feature_names
+        if pipeline.column_types.get(f) == "numeric"
+    ]
+    if not numeric_features:
+        raise ValueError(
+            "No numeric features found — counterfactual requires at least one "
+            "numeric feature to perturb."
+        )
+
+    # Step sizes: step_fraction × training std (floor at small epsilon)
+    feature_stds = getattr(pipeline, "feature_stds", {})
+    step_sizes: dict[str, float] = {}
+    for f in numeric_features:
+        std = float(feature_stds.get(f, 1.0))
+        step_sizes[f] = max(std * step_fraction, 1e-6)
+
+    # ── Greedy search ─────────────────────────────────────────────────────────
+    current_features = dict(original_features)
+    n_steps = 0
+    flipped = False
+    current_class_idx = orig_class_idx
+
+    for _step in range(max_steps):
+        # Compute finite-difference gradient of target class probability
+        # for each numeric feature
+        x_curr = pipeline.transform(current_features)
+        proba_curr = model.predict_proba(x_curr)[0]
+        current_class_idx = int(np.argmax(proba_curr))
+
+        if current_class_idx == target_class_idx:
+            flipped = True
+            break
+
+        target_prob_curr = float(proba_curr[target_class_idx])
+
+        best_feature: str | None = None
+        best_gain: float = -1.0
+        best_direction: float = 0.0
+
+        for feat in numeric_features:
+            step = step_sizes[feat]
+            curr_val = float(current_features.get(feat, 0.0))
+
+            # Probe + direction
+            for direction_sign in (+1.0, -1.0):
+                probe = dict(current_features)
+                probe[feat] = curr_val + direction_sign * step
+                x_probe = pipeline.transform(probe)
+                proba_probe = model.predict_proba(x_probe)[0]
+                gain = float(proba_probe[target_class_idx]) - target_prob_curr
+                if gain > best_gain:
+                    best_gain = gain
+                    best_feature = feat
+                    best_direction = direction_sign
+
+        if best_feature is None or best_gain <= 0:
+            # No numeric feature can improve — stop early
+            break
+
+        # Apply the best step
+        curr_val = float(current_features.get(best_feature, 0.0))
+        current_features[best_feature] = curr_val + best_direction * step_sizes[best_feature]
+        n_steps += 1
+
+    # Final prediction after search
+    x_final = pipeline.transform(current_features)
+    proba_final = model.predict_proba(x_final)[0]
+    final_class_idx = int(np.argmax(proba_final))
+    final_class = classes[final_class_idx]
+    cf_confidence = round(float(proba_final[target_class_idx]), 4)
+    flipped = final_class_idx == target_class_idx
+
+    # ── Build changed-features list ───────────────────────────────────────────
+    changed_features: list[dict] = []
+    for feat in numeric_features:
+        orig_val = float(original_features.get(feat, 0.0))
+        cf_val = float(current_features.get(feat, 0.0))
+        if abs(cf_val - orig_val) < 1e-9:
+            continue
+        change = cf_val - orig_val
+        pct = round((change / abs(orig_val) * 100) if orig_val != 0 else 0.0, 1)
+        changed_features.append(
+            {
+                "name": feat,
+                "original_value": round(orig_val, 4),
+                "counterfactual_value": round(cf_val, 4),
+                "change_pct": pct,
+                "direction": "increase" if change > 0 else "decrease",
+            }
+        )
+
+    # Sort by absolute change magnitude
+    changed_features.sort(
+        key=lambda f: abs(f["counterfactual_value"] - f["original_value"]),
+        reverse=True,
+    )
+
+    # ── Plain-English summary ─────────────────────────────────────────────────
+    target_col = pipeline.target_column.replace("_", " ")
+    if flipped:
+        if changed_features:
+            top = changed_features[0]
+            dir_word = "increase" if top["direction"] == "increase" else "decrease"
+            feat_name = top["name"].replace("_", " ")
+            summary = (
+                f"By {dir_word}ing {feat_name} from "
+                f"{top['original_value']:,} to {top['counterfactual_value']:,}, "
+                f"the {target_col} prediction flips from '{orig_class}' to '{final_class}'. "
+            )
+            if len(changed_features) > 1:
+                extra = [f["name"].replace("_", " ") for f in changed_features[1:3]]
+                summary += f"Other helpful changes: {', '.join(extra)}."
+        else:
+            summary = (
+                f"The prediction is already '{final_class}' with no changes needed."
+            )
+    else:
+        if changed_features:
+            summary = (
+                f"Even after {n_steps} adjustments, the model still predicts '{orig_class}'. "
+                f"This instance is firmly in the '{orig_class}' category — "
+                f"larger changes may be required to reach '{target_class}'."
+            )
+        else:
+            summary = (
+                f"No numeric features could be adjusted to flip the prediction "
+                f"from '{orig_class}' to '{target_class}'."
+            )
+
+    return {
+        "problem_type": "classification",
+        "target_column": pipeline.target_column,
+        "original_prediction": orig_class,
+        "original_class": orig_class,
+        "original_confidence": orig_confidence,
+        "counterfactual_prediction": final_class,
+        "target_class": target_class,
+        "counterfactual_confidence": cf_confidence,
+        "flipped": flipped,
+        "n_steps": n_steps,
+        "changed_features": changed_features,
+        "summary": summary,
+    }

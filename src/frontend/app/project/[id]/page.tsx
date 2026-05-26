@@ -73,6 +73,7 @@ import { InteractionCard } from "@/components/deploy/interaction-card"
 import { RankedPredictionsCard } from "@/components/deploy/ranked-predictions-card"
 import { PredictionCohortCard } from "@/components/deploy/prediction-cohort-card"
 import { CohortEvolutionCard } from "@/components/deploy/cohort-evolution-card"
+import { CounterfactualCard } from "@/components/deploy/counterfactual-card"
 import { OnboardingGuideCard } from "@/components/chat/onboarding-guide-card"
 import { DataVersionHistoryCard } from "@/components/chat/data-version-history-card"
 import { LearningCurveCard } from "@/components/chat/learning-curve-card"
@@ -367,6 +368,7 @@ export default function ProjectWorkspace() {
     attachLowAccuracyGuidanceToLastMessage,
     attachPredictionDeltaToLastMessage,
     attachCohortEvolutionToLastMessage,
+    attachCounterfactualToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -733,6 +735,8 @@ export default function ProjectWorkspace() {
                 attachPredictionCohortToLastMessage(json.prediction_cohort as import("@/lib/types").PredictionCohortResult)
               } else if (json.type === "cohort_evolution" && json.cohort_evolution) {
                 attachCohortEvolutionToLastMessage(json.cohort_evolution as import("@/lib/types").CohortEvolutionResult)
+              } else if (json.type === "counterfactual" && json.counterfactual) {
+                attachCounterfactualToLastMessage(json.counterfactual as import("@/lib/types").CounterfactualResult)
               } else if (json.type === "onboarding_guide" && json.onboarding_guide) {
                 attachOnboardingGuideToLastMessage(json.onboarding_guide as import("@/lib/types").OnboardingGuideResult)
               } else if (json.type === "version_history" && json.version_history) {
@@ -885,6 +889,8 @@ export default function ProjectWorkspace() {
                 attachPredictionDeltaToLastMessage(json.prediction_delta as import("@/lib/types").PredictionDeltaResult)
               } else if (json.type === "cohort_evolution" && json.cohort_evolution) {
                 attachCohortEvolutionToLastMessage(json.cohort_evolution as import("@/lib/types").CohortEvolutionResult)
+              } else if (json.type === "counterfactual" && json.counterfactual) {
+                attachCounterfactualToLastMessage(json.counterfactual as import("@/lib/types").CounterfactualResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -1032,6 +1038,7 @@ export default function ProjectWorkspace() {
     attachLowAccuracyGuidanceToLastMessage,
     attachPredictionDeltaToLastMessage,
     attachCohortEvolutionToLastMessage,
+    attachCounterfactualToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -1690,6 +1697,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.cohort_evolution && (
                       <CohortEvolutionCard result={msg.cohort_evolution} />
+                    )}
+                    {msg.counterfactual && (
+                      <CounterfactualCard data={msg.counterfactual} />
                     )}
                   </div>
                 </div>

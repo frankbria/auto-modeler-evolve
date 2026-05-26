@@ -534,6 +534,7 @@ export interface ChatMessage {
   low_accuracy_guidance?: LowAccuracyGuidanceResult
   prediction_delta?: PredictionDeltaResult
   cohort_evolution?: CohortEvolutionResult
+  counterfactual?: CounterfactualResult
 }
 
 export interface RollbackVersionEntry {
@@ -3770,5 +3771,30 @@ export interface CohortEvolutionResult {
   n_periods: number
   periods: CohortEvolutionPeriod[]
   shifts: CohortEvolutionShift[]
+  summary: string
+}
+
+
+export interface CounterfactualChangedFeature {
+  name: string
+  original_value: number
+  counterfactual_value: number
+  change_pct: number
+  direction: "increase" | "decrease"
+}
+
+export interface CounterfactualResult {
+  row_index: number
+  problem_type: string
+  target_column: string
+  original_prediction: string
+  original_class: string
+  original_confidence: number
+  counterfactual_prediction: string | null
+  target_class: string
+  counterfactual_confidence: number | null
+  flipped: boolean
+  n_steps: number
+  changed_features: CounterfactualChangedFeature[]
   summary: string
 }

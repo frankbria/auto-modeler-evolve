@@ -3911,6 +3911,22 @@ _EXPLAIN_ROW_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+_COUNTERFACTUAL_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"what\s+(?:would|needs?\s+to|has\s+to)\s+(?:need\s+to\s+)?change\s+(?:for|to\s+flip|to\s+change)\b|"
+    r"(?:counterfactual|counter\s+factual)\s+(?:for|explanation|of)?\s*(?:row|record|index)?\s*\d*\b|"
+    r"minimum\s+(?:change|intervention|adjustment)\s+(?:to\s+flip|to\s+change|needed)\b|"
+    r"(?:flip|change|alter)\s+(?:this|the)\s+prediction\s+(?:for\s+)?(?:row|record)?\s*\d*\b|"
+    r"(?:what|which)\s+(?:changes?|adjustments?|interventions?)\s+would\s+(?:flip|change|alter)\b|"
+    r"how\s+(?:close|far)\s+(?:is|are)\s+(?:row|record|this)\s*\d*\s*(?:from|to)\s+(?:the\s+other|a\s+different)\s+(?:class|prediction|outcome)\b|"
+    r"what\s+would\s+(?:save|prevent|stop)\s+(?:this\s+customer|row|record)\s*\d*\b|"
+    r"(?:save|prevent|stop)\s+(?:this\s+|the\s+)?(?:churn|default|loss)\s+(?:for\s+)?(?:row|record)?\s*\d*\b|"
+    r"(?:intervention|action)\s+needed\s+for\s+(?:row|record|this)\s*\d*\b"
+    r")",
+    re.IGNORECASE,
+)
+
+
 _PROD_MONITOR_PATTERNS = re.compile(
     r"(?i)(?:"
     r"how\s+(?:is|has)\s+(?:my\s+)?model\s+(?:holding\s+up|performing|doing)\s+in\s+production\b|"
@@ -9806,6 +9822,105 @@ def send_message(
                     )
         except Exception:  # noqa: BLE001
             pass  # Local explanation is nice-to-have; never crash chat
+
+    # Counterfactual explanation — "what would need to change to flip this prediction?"
+    counterfactual_event: dict | None = None
+    if (
+        _COUNTERFACTUAL_PATTERNS.search(body.message)
+        and ctx.get("deployment")
+        and ctx["dataset"]
+        and ctx.get("feature_set")
+        and ctx.get("model_runs")
+        and not local_explanation_event
+        and not pdp_event
+    ):
+        try:
+            import json as _json_cf
+
+            import pandas as _pd_cf
+
+            from core.deployer import compute_counterfactual as _cc
+            from core.feature_engine import apply_transformations as _at_cf
+            from core.trainer import prepare_features as _pf_cf
+
+            _cf_runs = [mr for mr in ctx["model_runs"] if mr.status == "done"]
+            _cf_run = next(
+                (mr for mr in _cf_runs if mr.is_selected),
+                _cf_runs[0] if _cf_runs else None,
+            )
+            _cf_dep = ctx["deployment"]
+            _cf_pipeline_path = _cf_dep.model_path.replace(
+                "_model.joblib", "_pipeline.joblib"
+            ) if _cf_dep and _cf_dep.model_path else None
+
+            if (
+                _cf_run
+                and _cf_run.model_path
+                and Path(_cf_run.model_path).exists()
+                and _cf_pipeline_path
+                and Path(_cf_pipeline_path).exists()
+            ):
+                _cf_fs = ctx["feature_set"]
+                _cf_ds = ctx["dataset"]
+                _cf_file = Path(_cf_ds.file_path)
+
+                # Classification only — counterfactual doesn't apply to regression
+                if _cf_fs.problem_type == "classification" and _cf_file.exists():
+                    _cf_df_raw = _pd_cf.read_csv(_cf_file)
+                    _cf_transforms = _json_cf.loads(_cf_fs.transformations or "[]")
+                    _cf_df = _cf_df_raw.copy()
+                    if _cf_transforms:
+                        _cf_df, _ = _at_cf(_cf_df, _cf_transforms)
+
+                    _cf_target = _cf_fs.target_column
+                    _cf_feat_cols = [c for c in _cf_df.columns if c != _cf_target]
+
+                    _cf_X, _cf_y, _ = _pf_cf(
+                        _cf_df, _cf_feat_cols, _cf_target, "classification"
+                    )
+
+                    # Parse row index (reuse _extract_row_index)
+                    _cf_row_idx = _extract_row_index(body.message)
+                    _cf_row_idx = max(0, min(_cf_row_idx, len(_cf_df_raw) - 1))
+
+                    # Build original features from raw row values (pipeline handles encoding)
+                    _cf_raw_row: dict = _cf_df_raw.iloc[_cf_row_idx].to_dict()
+                    # Remove target column from feature dict
+                    _cf_orig_features = {
+                        k: v for k, v in _cf_raw_row.items() if k != _cf_target
+                    }
+
+                    _cf_result = _cc(
+                        pipeline_path=_cf_pipeline_path,
+                        model_path=_cf_dep.model_path,
+                        original_features=_cf_orig_features,
+                        max_steps=15,
+                        step_fraction=0.1,
+                    )
+
+                    counterfactual_event = {
+                        "row_index": _cf_row_idx,
+                        **_cf_result,
+                    }
+
+                    system_prompt += (
+                        f"\n\n## Counterfactual Explanation (Row {_cf_row_idx})\n"
+                        f"Original prediction: '{_cf_result['original_class']}' "
+                        f"(confidence {_cf_result['original_confidence']:.0%}).\n"
+                        f"Target class to reach: '{_cf_result['target_class']}'.\n"
+                        f"Flipped: {'Yes' if _cf_result['flipped'] else 'No'}.\n"
+                        f"Changed features: "
+                        f"{', '.join(f['name'] for f in _cf_result['changed_features'][:3]) or 'none'}.\n"
+                        f"{_cf_result['summary']}\n"
+                        f"A CounterfactualCard is shown in the chat. "
+                        f"Explain what the analyst would need to change about this record "
+                        f"to get a different outcome, in plain English. "
+                        f"Speak as a smart colleague explaining 'what it would take' to "
+                        f"move this customer/record to the other category. "
+                        f"Avoid ML jargon."
+                    )
+        except Exception:  # noqa: BLE001
+            pass  # Counterfactual is nice-to-have; never crash chat
 
     # Guided onboarding wizard — responds to "guide me", "first steps", etc.
     onboarding_event: dict | None = None
@@ -16258,6 +16373,10 @@ def send_message(
         # Emit local explanation (feature contribution waterfall) for a specific training row
         if local_explanation_event:
             yield f"data: {json.dumps({'type': 'local_explanation', 'local_explanation': local_explanation_event})}\n\n"
+
+        # Emit counterfactual explanation — minimum change to flip a prediction
+        if counterfactual_event:
+            yield f"data: {json.dumps({'type': 'counterfactual', 'counterfactual': counterfactual_event})}\n\n"
 
         # Emit production input feature distribution card
         if prod_input_dist_event:
