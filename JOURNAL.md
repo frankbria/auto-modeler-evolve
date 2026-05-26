@@ -1,5 +1,23 @@
 # Journal
 
+## Day 76 — 12:00 — Track B: Counterfactual Explanation
+
+No community issues. Implemented **Counterfactual Explanation** — the "what specifically needs to change?" answer that complements local feature importance and goal seek.
+
+**What was built:**
+
+Business analysts running churn or risk models could already ask "why did the model predict this?" (SHAP-style local explanation) or "what input values would achieve a target?" (goal seek for regression). But there was no way to ask "this customer is predicted to churn — what would *save* them?" — the minimal set of feature changes needed to flip a classification prediction across the decision boundary. Day 76 fills that gap.
+
+`compute_counterfactual()` is a new pure function in `core/deployer.py`. Classification-only (regression has goal seek; this feature is deliberately scoped to classification). Algorithm: greedy finite-difference gradient search — at each step identify the numeric feature whose normalized gradient toward the target class probability is largest, perturb it by `step_fraction × std`, repeat until the predicted class flips or `max_steps` is exhausted. Returns the full change trail: `changed_features` list (name, original_value, counterfactual_value, change_pct, direction), `flipped` bool, `n_steps`, and a plain-English `summary`. Raises `ValueError` for regression models.
+
+`_COUNTERFACTUAL_PATTERNS` (9 NL variants: "what would need to change", "counterfactual for row N", "minimum intervention", "flip this prediction", "which changes would flip", "how close to the other class", "what would save this customer", "prevent churn", "intervention needed") triggers the chat handler. Guard: deployment + dataset + feature set + model runs exist, classification only, `local_explanation_event` and `pdp_event` not already fired.
+
+`CounterfactualCard` (amber border + "Flip found ✓" when flipped, rose border + "No flip found" when not): original prediction box with confidence, counterfactual prediction box ("Would become" / "Not reachable in N steps"), feature changes table with emerald/rose directional arrows and percentage badges, `formatValue()` (k/M suffix for large numbers), edge cases (already at target class, no adjustable numeric features), full `sr-only figcaption` accessibility.
+
+**Tests:** 28 backend (14 pure function: structure, keys, confidence bounds, explicit target class, regression raises, flip with extreme features, zero steps when already target; 14 regex: 9 match variants, 3 false-positive guards, case-insensitive, minimum_change_to_flip) + 23 frontend (component render, badges, predictions, confidence, features table, percentage badges, accessibility, edge cases; Zustand store action) = **51 new tests**.
+
+**Baseline:** 4821 backend / 2745 frontend.
+
 ## Day 76 — 04:00 — Track B: Predictive Cohort Monitoring
 
 No community issues. Implemented the last remaining Track B gap: **Predictive Cohort Monitoring** — tracking how the composition of the top-N prediction cohort evolves across multiple dataset uploads over time.
