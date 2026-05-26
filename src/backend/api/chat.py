@@ -9849,9 +9849,11 @@ def send_message(
                 _cf_runs[0] if _cf_runs else None,
             )
             _cf_dep = ctx["deployment"]
-            _cf_pipeline_path = _cf_dep.model_path.replace(
-                "_model.joblib", "_pipeline.joblib"
-            ) if _cf_dep and _cf_dep.model_path else None
+            _cf_pipeline_path = (
+                _cf_dep.model_path.replace("_model.joblib", "_pipeline.joblib")
+                if _cf_dep and _cf_dep.model_path
+                else None
+            )
 
             if (
                 _cf_run

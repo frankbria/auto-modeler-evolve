@@ -1872,8 +1872,7 @@ def compute_counterfactual(
     if target_class is not None:
         if target_class not in classes:
             raise ValueError(
-                f"Target class '{target_class}' not found. "
-                f"Available classes: {classes}"
+                f"Target class '{target_class}' not found. Available classes: {classes}"
             )
         target_class_idx = classes.index(target_class)
     else:
@@ -1903,9 +1902,7 @@ def compute_counterfactual(
 
     # ── Identify perturbable numeric features ────────────────────────────────
     numeric_features = [
-        f
-        for f in pipeline.feature_names
-        if pipeline.column_types.get(f) == "numeric"
+        f for f in pipeline.feature_names if pipeline.column_types.get(f) == "numeric"
     ]
     if not numeric_features:
         raise ValueError(
@@ -1965,7 +1962,9 @@ def compute_counterfactual(
 
         # Apply the best step
         curr_val = float(current_features.get(best_feature, 0.0))
-        current_features[best_feature] = curr_val + best_direction * step_sizes[best_feature]
+        current_features[best_feature] = (
+            curr_val + best_direction * step_sizes[best_feature]
+        )
         n_steps += 1
 
     # Final prediction after search

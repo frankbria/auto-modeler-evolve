@@ -35,9 +35,15 @@ def _build_pipeline_and_model(n_samples: int = 80, n_numeric: int = 3):
         target_column="label",
         problem_type="classification",
     )
-    pipeline.feature_means = {f: float(X[:, i].mean()) for i, f in enumerate(feature_names)}
-    pipeline.feature_stds = {f: float(X[:, i].std()) for i, f in enumerate(feature_names)}
-    pipeline.medians = {f: float(np.median(X[:, i])) for i, f in enumerate(feature_names)}
+    pipeline.feature_means = {
+        f: float(X[:, i].mean()) for i, f in enumerate(feature_names)
+    }
+    pipeline.feature_stds = {
+        f: float(X[:, i].std()) for i, f in enumerate(feature_names)
+    }
+    pipeline.medians = {
+        f: float(np.median(X[:, i])) for i, f in enumerate(feature_names)
+    }
     le = LabelEncoder()
     le.fit(y_binary)
     pipeline.target_encoder = le
@@ -65,8 +71,7 @@ class TestComputeCounterfactual:
 
     def _make_features(self, row_idx: int) -> dict:
         return {
-            f"feature{i}": float(self.X[row_idx, i])
-            for i in range(self.X.shape[1])
+            f"feature{i}": float(self.X[row_idx, i]) for i in range(self.X.shape[1])
         }
 
     def test_returns_required_keys(self):
@@ -75,9 +80,18 @@ class TestComputeCounterfactual:
         orig = self._make_features(0)
         result = compute_counterfactual(self.pipeline_path, self.model_path, orig)
         required = {
-            "problem_type", "target_column", "original_prediction", "original_class",
-            "original_confidence", "counterfactual_prediction", "target_class",
-            "counterfactual_confidence", "flipped", "n_steps", "changed_features", "summary",
+            "problem_type",
+            "target_column",
+            "original_prediction",
+            "original_class",
+            "original_confidence",
+            "counterfactual_prediction",
+            "target_class",
+            "counterfactual_confidence",
+            "flipped",
+            "n_steps",
+            "changed_features",
+            "summary",
         }
         assert required.issubset(result.keys())
 
@@ -128,8 +142,9 @@ class TestComputeCounterfactual:
 
         # Find a row predicted as 0, ask for 1
         orig_class_0_idx = next(
-            i for i in range(len(self.y))
-            if self.model.predict(self.X[i:i+1])[0] == 0
+            i
+            for i in range(len(self.y))
+            if self.model.predict(self.X[i : i + 1])[0] == 0
         )
         orig = self._make_features(orig_class_0_idx)
         result = compute_counterfactual(
@@ -204,8 +219,7 @@ class TestComputeCounterfactual:
         orig = self._make_features(strongly_neg_idx)
         # Ask for class 1 — requires feature0 to increase significantly
         result = compute_counterfactual(
-            self.pipeline_path, self.model_path, orig,
-            target_class="1", max_steps=30
+            self.pipeline_path, self.model_path, orig, target_class="1", max_steps=30
         )
         # May or may not flip depending on step size, but structure should be valid
         assert isinstance(result["flipped"], bool)
