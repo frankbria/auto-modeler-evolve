@@ -411,12 +411,22 @@ def explain_prediction(
     Uses global feature importance multiplied by normalised deviation from mean.
     Works with any sklearn estimator that has feature_importances_ or coef_.
 
+    Also computes a baseline prediction (all features at training-data means) to
+    show how the user's specific inputs shift the outcome vs a "typical" case.
+
     Returns:
         {
           prediction: decoded prediction value,
           contributions: [{feature, value, mean_value, contribution, direction}],
           summary: str,
-          top_drivers: [str],   # plain-English top-3 driver names
+          top_drivers: [str],          # plain-English top-3 driver names
+          baseline_prediction: decoded, # prediction when all features = training mean
+          delta: float | None,          # prediction − baseline (regression only)
+          pct_change: float | None,     # % change from baseline (regression only)
+          direction: str,               # "above_baseline" | "below_baseline" | "at_baseline"
+                                        # | "class_changed" | "same_class" (classification)
+          current_confidence: float | None,  # max predict_proba for user's inputs
+          baseline_confidence: float | None, # max predict_proba for baseline inputs
         }
     """
     from core.explainer import compute_feature_importance
@@ -456,9 +466,53 @@ def explain_prediction(
     # Sort by absolute contribution (highest first)
     contributions.sort(key=lambda c: abs(c["contribution"]), reverse=True)
 
-    # Make prediction for display
+    # Make prediction for user's inputs
     raw = model.predict(x_vec.reshape(1, -1))[0]
     decoded = pipeline.decode_prediction(raw)
+
+    # -----------------------------------------------------------------------
+    # Baseline prediction (all features at encoded training-data means)
+    # feature_means holds the mean of each feature in its *encoded* form
+    # (integers for categorical columns after LabelEncoding).
+    # -----------------------------------------------------------------------
+    means = getattr(pipeline, "feature_means", {})
+    baseline_x = np.array(
+        [means.get(col, 0.0) for col in feature_names], dtype=float
+    ).reshape(1, -1)
+    baseline_raw = model.predict(baseline_x)[0]
+    baseline_decoded = pipeline.decode_prediction(baseline_raw)
+
+    # Compute delta / direction
+    delta: float | None = None
+    pct_change: float | None = None
+    current_confidence: float | None = None
+    baseline_confidence: float | None = None
+
+    if pipeline.problem_type == "regression":
+        try:
+            _delta = float(raw) - float(baseline_raw)
+            _base = float(baseline_raw)
+            delta = round(_delta, 4)
+            pct_change = round(_delta / abs(_base) * 100, 1) if abs(_base) > 1e-10 else None
+            if abs(_delta) < 1e-6:
+                direction = "at_baseline"
+            elif _delta > 0:
+                direction = "above_baseline"
+            else:
+                direction = "below_baseline"
+        except (ValueError, TypeError):
+            direction = "at_baseline"
+    else:
+        # Classification — compare predicted classes; optionally compare confidence
+        direction = "class_changed" if str(decoded) != str(baseline_decoded) else "same_class"
+        if hasattr(model, "predict_proba"):
+            try:
+                curr_proba = model.predict_proba(x_vec.reshape(1, -1))[0]
+                base_proba = model.predict_proba(baseline_x)[0]
+                current_confidence = round(float(curr_proba.max()), 4)
+                baseline_confidence = round(float(base_proba.max()), 4)
+            except Exception:  # noqa: BLE001
+                pass
 
     # Build plain-English summary
     top = contributions[:3] if contributions else []
@@ -485,6 +539,12 @@ def explain_prediction(
         "contributions": contributions,
         "summary": summary,
         "top_drivers": drivers[:3],
+        "baseline_prediction": baseline_decoded,
+        "delta": delta,
+        "pct_change": pct_change,
+        "direction": direction,
+        "current_confidence": current_confidence,
+        "baseline_confidence": baseline_confidence,
     }
 
 

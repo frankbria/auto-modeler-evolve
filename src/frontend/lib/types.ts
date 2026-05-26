@@ -1010,6 +1010,13 @@ export interface PredictionExplanation {
   contributions: FeatureContribution[]
   summary: string
   top_drivers: string[]
+  // Baseline context (prediction when all features = training-data means)
+  baseline_prediction?: number | string
+  delta?: number | null
+  pct_change?: number | null
+  direction?: "above_baseline" | "below_baseline" | "at_baseline" | "class_changed" | "same_class"
+  current_confidence?: number | null
+  baseline_confidence?: number | null
 }
 
 // ---------------------------------------------------------------------------

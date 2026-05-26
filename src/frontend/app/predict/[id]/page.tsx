@@ -124,6 +124,92 @@ function ContributionBar({
   )
 }
 
+function BaselineComparisonBanner({ explanation }: { explanation: PredictionExplanation }) {
+  const { baseline_prediction, delta, pct_change, direction, current_confidence, baseline_confidence } = explanation
+  if (baseline_prediction === undefined) return null
+
+  const isRegression = explanation.problem_type === "regression"
+
+  if (isRegression && delta != null) {
+    const isAbove = direction === "above_baseline"
+    const isBelow = direction === "below_baseline"
+    const absChange = Math.abs(pct_change ?? 0)
+    const arrow = isAbove ? "▲" : isBelow ? "▼" : "→"
+    const colorClass = isAbove
+      ? "border-emerald-200 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950/30"
+      : isBelow
+      ? "border-rose-200 bg-rose-50 dark:border-rose-800 dark:bg-rose-950/30"
+      : "border-border bg-muted/30"
+    const textClass = isAbove
+      ? "text-emerald-700 dark:text-emerald-400"
+      : isBelow
+      ? "text-rose-700 dark:text-rose-400"
+      : "text-muted-foreground"
+
+    return (
+      <div
+        className={`rounded-lg border px-4 py-3 ${colorClass}`}
+        data-testid="baseline-comparison"
+        aria-label={`Baseline comparison: ${direction}`}
+      >
+        <div className="flex items-center justify-between gap-3">
+          <div className="text-xs text-muted-foreground">
+            <span className="font-medium">Typical baseline</span>
+            <span className="ml-2 tabular-nums font-semibold text-foreground">
+              {typeof baseline_prediction === "number"
+                ? baseline_prediction.toLocaleString(undefined, { maximumFractionDigits: 4 })
+                : baseline_prediction}
+            </span>
+          </div>
+          <span className={`text-xs font-semibold tabular-nums ${textClass}`} aria-hidden="true">
+            {arrow} {Math.abs(delta).toLocaleString(undefined, { maximumFractionDigits: 4 })}
+            {pct_change != null ? ` (${absChange.toFixed(1)}%)` : ""}
+          </span>
+        </div>
+        <p className="mt-0.5 text-[10px] text-muted-foreground">
+          {direction === "at_baseline"
+            ? "Your inputs are close to a typical case — the prediction is near the baseline."
+            : `Your inputs ${isAbove ? "raised" : "lowered"} the prediction ${isAbove ? "above" : "below"} what a typical case would produce.`}
+        </p>
+      </div>
+    )
+  }
+
+  // Classification baseline
+  const classChanged = direction === "class_changed"
+  const colorClass = classChanged
+    ? "border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30"
+    : "border-emerald-200 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950/30"
+
+  return (
+    <div
+      className={`rounded-lg border px-4 py-3 ${colorClass}`}
+      data-testid="baseline-comparison"
+      aria-label="Classification baseline comparison"
+    >
+      <div className="flex items-center justify-between gap-3">
+        <div className="text-xs text-muted-foreground">
+          <span className="font-medium">Typical baseline:</span>
+          <span className="ml-2 font-semibold text-foreground">{String(baseline_prediction)}</span>
+          {baseline_confidence != null && (
+            <span className="ml-1 text-muted-foreground">({Math.round(baseline_confidence * 100)}%)</span>
+          )}
+        </div>
+        {current_confidence != null && baseline_confidence != null && (
+          <span className="text-xs tabular-nums text-muted-foreground">
+            {Math.round(baseline_confidence * 100)}% → {Math.round(current_confidence * 100)}% confidence
+          </span>
+        )}
+      </div>
+      <p className="mt-0.5 text-[10px] text-muted-foreground">
+        {classChanged
+          ? "Your inputs changed the predicted outcome from what a typical case would produce."
+          : "Your inputs produce the same outcome as a typical case, though confidence may differ."}
+      </p>
+    </div>
+  )
+}
+
 function ExplanationCard({ explanation }: { explanation: PredictionExplanation }) {
   const top = explanation.contributions.slice(0, 8)
   const maxAbs = Math.max(...top.map((c) => Math.abs(c.contribution)), 1e-8)
@@ -135,6 +221,9 @@ function ExplanationCard({ explanation }: { explanation: PredictionExplanation }
       </CardHeader>
       <CardContent className="space-y-3">
         <p className="text-sm text-muted-foreground">{explanation.summary}</p>
+
+        {/* Baseline context banner */}
+        <BaselineComparisonBanner explanation={explanation} />
 
         {/* Legend */}
         <div className="flex items-center gap-4 text-[10px] text-muted-foreground">

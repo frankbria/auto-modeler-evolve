@@ -57,7 +57,38 @@ def client(tmp_path):
     db_module.engine = create_engine(f"sqlite:///{test_db}", echo=False)
     db_module.DATA_DIR = tmp_path
 
+    # Import all model modules first so SQLModel registers them before create_all()
+    import models.ab_test  # noqa
+    import models.analysis_template  # noqa
+    import models.batch_schedule  # noqa
+    import models.conversation  # noqa
+    import models.dashboard_field_config  # noqa
+    import models.dataset  # noqa
+    import models.dataset_filter  # noqa
+    import models.deployment  # noqa
+    import models.deployment_changelog  # noqa
+    import models.deployment_preset  # noqa
+    import models.deployment_version  # noqa
+    import models.feature_set  # noqa
+    import models.feedback_record  # noqa
+    import models.goal_seek_record  # noqa
+    import models.input_validation_rule  # noqa
+    import models.model_run  # noqa
+    import models.prediction_alert_rule  # noqa
+    import models.prediction_log  # noqa
+    import models.project  # noqa
+    import models.webhook_config  # noqa
+    import models.webhook_event  # noqa
+
     SQLModel.metadata.create_all(db_module.engine)
+
+    import api.data as data_module
+    import api.deploy as deploy_module
+    import api.models as models_api_module
+
+    data_module.UPLOAD_DIR = tmp_path / "uploads"
+    deploy_module.DEPLOY_DIR = tmp_path / "deployments"
+    models_api_module.MODELS_DIR = tmp_path / "models"
 
     from main import app
 
@@ -291,6 +322,172 @@ def test_explain_deployer_feature_means_stored(tmp_path):
     # Means should be close to actual means
     assert abs(pipeline.feature_means["age"] - df["age"].mean()) < 0.01
     assert abs(pipeline.feature_stds["age"] - df["age"].std()) < 0.01
+
+
+# ---------------------------------------------------------------------------
+# Baseline prediction context tests (new: Day 75 20:00)
+# ---------------------------------------------------------------------------
+
+
+def test_explain_returns_baseline_prediction_regression(client):
+    """Explain endpoint returns baseline_prediction for regression models."""
+    deployment, _ = _full_pipeline(client, REGRESSION_CSV, "revenue", "regression")
+    dep_id = deployment["id"]
+
+    resp = client.post(
+        f"/api/predict/{dep_id}/explain",
+        json={"age": 40, "income": 55000},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "baseline_prediction" in data
+    assert data["baseline_prediction"] is not None
+    # Baseline should be a number for regression
+    assert isinstance(data["baseline_prediction"], (int, float))
+
+
+def test_explain_returns_delta_and_pct_change_regression(client):
+    """Explain endpoint returns delta and pct_change for regression."""
+    deployment, _ = _full_pipeline(client, REGRESSION_CSV, "revenue", "regression")
+    dep_id = deployment["id"]
+
+    resp = client.post(
+        f"/api/predict/{dep_id}/explain",
+        json={"age": 60, "income": 85000},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "delta" in data
+    assert "pct_change" in data
+    # delta should be approximately prediction - baseline
+    pred = data["prediction"]
+    baseline = data["baseline_prediction"]
+    if isinstance(pred, (int, float)) and isinstance(baseline, (int, float)):
+        expected_delta = round(pred - baseline, 4)
+        assert abs(data["delta"] - expected_delta) < 0.001
+
+
+def test_explain_direction_regression(client):
+    """Direction is above_baseline / below_baseline / at_baseline for regression."""
+    deployment, _ = _full_pipeline(client, REGRESSION_CSV, "revenue", "regression")
+    dep_id = deployment["id"]
+
+    # High inputs should push prediction above baseline
+    resp = client.post(
+        f"/api/predict/{dep_id}/explain",
+        json={"age": 60, "income": 85000},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["direction"] in ("above_baseline", "below_baseline", "at_baseline")
+
+    # Low inputs should push prediction below baseline
+    resp2 = client.post(
+        f"/api/predict/{dep_id}/explain",
+        json={"age": 25, "income": 30000},
+    )
+    assert resp2.status_code == 200
+    data2 = resp2.json()
+    assert data2["direction"] in ("above_baseline", "below_baseline", "at_baseline")
+
+    # Verify consistency: delta sign matches direction
+    if data["delta"] is not None:
+        if data["delta"] > 0.001:
+            assert data["direction"] == "above_baseline"
+        elif data["delta"] < -0.001:
+            assert data["direction"] == "below_baseline"
+
+
+def test_explain_baseline_prediction_classification(client):
+    """Explain endpoint returns baseline_prediction and direction for classification."""
+    deployment, _ = _full_pipeline(
+        client, CLASSIFICATION_CSV, "label", "classification"
+    )
+    dep_id = deployment["id"]
+
+    resp = client.post(
+        f"/api/predict/{dep_id}/explain",
+        json={"x1": 3.0, "x2": 4.0},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "baseline_prediction" in data
+    assert data["direction"] in ("same_class", "class_changed")
+
+
+def test_explain_baseline_confidence_classification(client):
+    """Classification explain includes confidence fields when model supports predict_proba."""
+    deployment, _ = _full_pipeline(
+        client, CLASSIFICATION_CSV, "label", "classification"
+    )
+    dep_id = deployment["id"]
+
+    resp = client.post(
+        f"/api/predict/{dep_id}/explain",
+        json={"x1": 9.0, "x2": 10.0},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    # Logistic regression supports predict_proba so these should be populated
+    assert "current_confidence" in data
+    assert "baseline_confidence" in data
+    if data["current_confidence"] is not None:
+        assert 0.0 <= data["current_confidence"] <= 1.0
+    if data["baseline_confidence"] is not None:
+        assert 0.0 <= data["baseline_confidence"] <= 1.0
+
+
+def test_explain_pure_function_baseline(tmp_path):
+    """Pure-function test: explain_prediction returns baseline_prediction and delta."""
+    import joblib
+    from sklearn.linear_model import LinearRegression
+
+    from core.deployer import (
+        PredictionPipeline,
+        explain_prediction,
+        save_pipeline,
+    )
+
+    # Build a simple pipeline manually
+    pipeline = PredictionPipeline(
+        feature_names=["x1", "x2"],
+        column_types={"x1": "numeric", "x2": "numeric"},
+        target_column="y",
+        problem_type="regression",
+        feature_means={"x1": 5.0, "x2": 10.0},
+        feature_stds={"x1": 2.0, "x2": 3.0},
+        medians={"x1": 5.0, "x2": 10.0},
+    )
+
+    # Train a trivial linear model: y = 2*x1 + x2
+    import numpy as np
+
+    X = np.array([[1, 2], [3, 6], [5, 10], [7, 14], [9, 18]], dtype=float)
+    y = 2 * X[:, 0] + X[:, 1]
+    model = LinearRegression().fit(X, y)
+
+    pipeline_path = str(tmp_path / "pipeline.joblib")
+    model_path = str(tmp_path / "model.joblib")
+    save_pipeline(pipeline, pipeline_path)
+    joblib.dump(model, model_path)
+
+    # Explain for inputs at means → delta should be 0
+    result = explain_prediction(pipeline_path, model_path, {"x1": 5.0, "x2": 10.0})
+    assert "baseline_prediction" in result
+    assert result["delta"] is not None
+    # At means: prediction ≈ baseline → delta ≈ 0
+    assert abs(result["delta"]) < 0.01
+    assert result["direction"] == "at_baseline"
+
+    # Explain for inputs ABOVE means → positive delta
+    result_high = explain_prediction(pipeline_path, model_path, {"x1": 9.0, "x2": 18.0})
+    assert result_high["delta"] > 0
+    assert result_high["direction"] == "above_baseline"
+
+    # Explain for inputs BELOW means → negative delta
+    result_low = explain_prediction(pipeline_path, model_path, {"x1": 1.0, "x2": 2.0})
+    assert result_low["delta"] < 0
+    assert result_low["direction"] == "below_baseline"
 
 
 def test_explain_deployer_explain_prediction_function(tmp_path):
