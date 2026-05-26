@@ -1,5 +1,25 @@
 # Journal
 
+## Day 76 — 04:00 — Track B: Predictive Cohort Monitoring
+
+No community issues. Implemented the last remaining Track B gap: **Predictive Cohort Monitoring** — tracking how the composition of the top-N prediction cohort evolves across multiple dataset uploads over time.
+
+**What was built:**
+
+A business analyst running a churn model could previously ask "who are the top 20 at-risk customers?" and get a snapshot cohort profile. But they couldn't ask "has that cohort been changing month over month?" — which is the more strategic question for proactive intervention. Day 76 closes that gap.
+
+`compute_cohort_evolution()` is a new pure function in `core/deployer.py`. It reuses the existing `compute_prediction_cohort()` for each historical dataset (capped at the 6 most recent, ordered by upload date), computes period-over-period categorical shifts (≥5pp threshold to avoid noise), and builds plain-English summaries naming the biggest movers. Raises `ValueError` if fewer than 2 scoreable datasets exist.
+
+`_COHORT_EVOLUTION_PATTERNS` (9 NL variants: "how has my top cohort changed", "cohort evolution", "monitor my at-risk predictions over time", etc.) triggers the chat handler in `send_message()`. Guards: deployment + model path exist, ≥2 DataFrames loadable from DB, `cohort_event` and `ranked_pred_event` not already fired.
+
+`CohortEvolutionCard` (violet border, 📈 icon): scrollable period timeline with `PeriodNode` components (top 2 categorical profile bars per period) connected by `ShiftConnector` arrows (showing the top shift for each transition); "Notable Composition Shifts" section lists up to 6 `ShiftRow` items sorted by absolute change (emerald for rising, rose for falling). Full accessibility: `role="list"` on the timeline, `aria-label` attributes, `sr-only figcaption`.
+
+7 new TypeScript interfaces (`CohortEvolutionResult`, `CohortEvolutionPeriod`, `CohortEvolutionShift`, `CohortCategoricalShift`, `CohortCategoricalProfile`, `CohortNumericProfile`, `CohortCategoryEntry`); `cohort_evolution?` field on `ChatMessage`; `attachCohortEvolutionToLastMessage` Zustand action; SSE handler and render wired in workspace `page.tsx`.
+
+**Tests:** 47 backend (regex coverage for all 9 NL variants + pure function unit tests: structure, edge cases, 5pp threshold, 6-period cap, empty-df skipping, ValueError) + 20 frontend (render, badges, period nodes, shift connectors, shift rows, accessibility, sort order, 6-row cap) = **67 new tests**.
+
+**Baseline:** 4793 backend / 2722 frontend.
+
 ## Day 75 — 20:00 — Track B: Prediction Baseline Context on Live Dashboard
 
 No community issues. Closed the final context gap on the VP-facing prediction dashboard: analysts had per-feature contribution bars but no top-level answer to "is this prediction high or low relative to a typical case?" This matters for understanding whether the model is behaving as expected.

@@ -533,6 +533,7 @@ export interface ChatMessage {
   cross_deploy_prediction?: CrossDeployPredictionResult
   low_accuracy_guidance?: LowAccuracyGuidanceResult
   prediction_delta?: PredictionDeltaResult
+  cohort_evolution?: CohortEvolutionResult
 }
 
 export interface RollbackVersionEntry {
@@ -3712,4 +3713,62 @@ export interface PredictionDeltaResult {
   current_version: number
   previous_version: number
   inputs_from_message: boolean
+}
+
+// Predictive Cohort Monitoring — how the top-N cohort profile evolves across uploads
+export interface CohortCategoryEntry {
+  value: string
+  top_pct: number
+  overall_pct: number
+  ratio: number
+}
+
+export interface CohortCategoricalProfile {
+  column: string
+  categories: CohortCategoryEntry[]
+  dominant: string
+  dominant_top_pct: number
+}
+
+export interface CohortNumericProfile {
+  column: string
+  top_mean: number
+  overall_mean: number
+  ratio: number | null
+  direction: "higher" | "lower" | "similar"
+}
+
+export interface CohortEvolutionPeriod {
+  period_label: string
+  dataset_id: string
+  total_rows: number
+  categorical_profile: CohortCategoricalProfile[]
+  numeric_profile: CohortNumericProfile[]
+}
+
+export interface CohortCategoricalShift {
+  column: string
+  category: string
+  from_pct: number
+  to_pct: number
+  change: number
+  direction: "rising" | "falling"
+}
+
+export interface CohortEvolutionShift {
+  from_period: string
+  to_period: string
+  categorical_shifts: CohortCategoricalShift[]
+  summary: string
+}
+
+export interface CohortEvolutionResult {
+  n: number
+  direction: "highest" | "lowest"
+  target_column: string
+  problem_type: string
+  n_periods: number
+  periods: CohortEvolutionPeriod[]
+  shifts: CohortEvolutionShift[]
+  summary: string
 }

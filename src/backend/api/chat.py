@@ -3248,6 +3248,25 @@ _COHORT_PATTERNS = re.compile(
 )
 
 # ---------------------------------------------------------------------------
+# Cohort evolution patterns — "how has my top-N cohort changed over time?"
+# ---------------------------------------------------------------------------
+
+_COHORT_EVOLUTION_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"how\s+ha(?:s|ve)\s+(?:my\s+)?(?:top|at.risk|highest.scoring|predicted)\s*(?:\d+\s+)?(?:cohort|predictions?|customers?|records?|group)\s+changed\b|"
+    r"(?:track|monitor|watch)\s+(?:my\s+)?(?:top|at.risk)\s*(?:\d+\s+)?(?:cohort|predictions?|customers?|records?)\s+over\s+time\b|"
+    r"cohort\s+(?:evolution|monitoring|tracking|trend|drift|shift|changes?)\b|"
+    r"(?:which|what)\s+(?:segments?|groups?|categories?)\s+(?:are\s+)?(?:rising|falling|trending|shifting|growing|declining)\s+(?:in|among|within)\s+(?:my\s+)?(?:top|highest|at.risk)\b|"
+    r"(?:how\s+(?:has|have)|what\s+changed\s+(?:about|in))\s+(?:my\s+)?(?:top|at.risk|highest)\s*(?:\d+\s+)?(?:predictions?|customers?|records?|cohort)\b|"
+    r"predictive\s+cohort\s+(?:monitoring|tracking|analysis|report)\b|"
+    r"(?:who|what)\s+(?:is|are)\s+(?:rising|falling|trending|shifting)\s+(?:into|out\s+of)\s+(?:my\s+)?(?:top|highest|at.risk|predicted)\b|"
+    r"(?:trend|change|shift|evolution)\s+(?:in|of)\s+(?:my\s+)?(?:top|highest|at.risk)\s*(?:\d+\s+)?(?:cohort|predictions?|customers?|records?)\b|"
+    r"cohort\s+(?:profile|composition)\s+(?:over\s+time|across\s+(?:periods?|uploads?|datasets?))\b"
+    r")",
+    re.IGNORECASE,
+)
+
+# ---------------------------------------------------------------------------
 # Batch schedule patterns — "schedule daily predictions at 9am"
 # ---------------------------------------------------------------------------
 
@@ -9152,6 +9171,85 @@ def send_message(
                     )
         except Exception:  # noqa: BLE001
             pass  # Cohort profiling is nice-to-have; never crash chat
+
+    # Cohort evolution — "how has my top-20 cohort changed over time?"
+    # Requires deployment + 2+ datasets for the project (multiple periods).
+    # Distinct from prediction_cohort (single-period snapshot) — this shows evolution.
+    cohort_evolution_event: dict | None = None
+    if (
+        _COHORT_EVOLUTION_PATTERNS.search(body.message)
+        and ctx["deployment"]
+        and not cohort_event
+        and not ranked_pred_event
+    ):
+        try:
+            from sqlmodel import select as _sel_ce
+
+            from models.dataset import Dataset as _DatasetCE
+
+            _ce_deployment = ctx["deployment"]
+            _ce_run = next(
+                (
+                    mr
+                    for mr in ctx["model_runs"]
+                    if mr.id == _ce_deployment.model_run_id
+                ),
+                None,
+            )
+            if (
+                _ce_run
+                and _ce_run.model_path
+                and Path(_ce_run.model_path).exists()
+                and _ce_deployment.pipeline_path
+                and Path(_ce_deployment.pipeline_path).exists()
+            ):
+                # Load all datasets for this project, oldest-first
+                _ce_all_ds = list(
+                    session.exec(
+                        _sel_ce(_DatasetCE)
+                        .where(_DatasetCE.project_id == project_id)
+                        .order_by(_DatasetCE.uploaded_at)  # type: ignore[arg-type]
+                    ).all()
+                )
+                # Build (DataFrame, dataset_id, period_label) tuples
+                import pandas as _pd_ce
+
+                _ce_dframes: list[tuple] = []
+                for _ds_ce in _ce_all_ds:
+                    _fp_ce = Path(_ds_ce.file_path)
+                    if not _fp_ce.exists():
+                        continue
+                    try:
+                        _df_ce = _pd_ce.read_csv(_fp_ce)
+                        # Period label: filename without extension + (date if distinct)
+                        _lbl = _ds_ce.filename
+                        _ce_dframes.append((_df_ce, _ds_ce.id, _lbl))
+                    except Exception:  # noqa: BLE001
+                        continue
+
+                if len(_ce_dframes) >= 2:
+                    from core.deployer import compute_cohort_evolution as _cce
+
+                    _ce_req = _detect_ranked_pred_request(body.message)
+                    _ce_result = _cce(
+                        _ce_deployment.pipeline_path,
+                        _ce_run.model_path,
+                        _ce_dframes,
+                        n=_ce_req["n"],
+                        direction=_ce_req["direction"],
+                    )
+                    cohort_evolution_event = _ce_result
+                    system_prompt += (
+                        f"\n\n## Predictive Cohort Evolution\n"
+                        f"{_ce_result['summary']}\n"
+                        f"A CohortEvolutionCard is shown tracking how the top-{_ce_result['n']} "
+                        f"{_ce_result['direction']} {_ce_result['target_column']} predictions "
+                        f"have changed across {_ce_result['n_periods']} dataset uploads. "
+                        f"Narrate the key shifts — which segments are rising or falling in the "
+                        f"top cohort, and what this means for the analyst's business decisions."
+                    )
+        except Exception:  # noqa: BLE001
+            pass  # Cohort evolution is nice-to-have; never crash chat
 
     # Goal Seek — reverse prediction: "what inputs produce a revenue of $1M?"
     # Distinct from: sensitivity (sweeps one feature), what-if (changes one known feature),
@@ -15956,6 +16054,10 @@ def send_message(
         # Emit prediction cohort profile result
         if cohort_event:
             yield f"data: {json.dumps({'type': 'prediction_cohort', 'prediction_cohort': cohort_event})}\n\n"
+
+        # Emit predictive cohort evolution (multi-period timeline)
+        if cohort_evolution_event:
+            yield f"data: {json.dumps({'type': 'cohort_evolution', 'cohort_evolution': cohort_evolution_event})}\n\n"
 
         # Emit goal seek result
         if goal_seek_event:

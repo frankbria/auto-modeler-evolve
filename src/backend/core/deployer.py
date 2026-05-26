@@ -1161,6 +1161,189 @@ def compute_prediction_cohort(
     }
 
 
+def compute_cohort_evolution(
+    pipeline_path: str,
+    model_path: str,
+    dataframes: list[tuple[pd.DataFrame, str, str]],
+    n: int = 20,
+    direction: str = "highest",
+) -> dict:
+    """Track how the top-N prediction cohort profile evolves across multiple dataset uploads.
+
+    Args:
+        pipeline_path: Path to the serialised PredictionPipeline joblib file.
+        model_path: Path to the serialised model joblib file.
+        dataframes: List of (DataFrame, dataset_id, period_label) tuples, ordered
+                    oldest-first.  Each DataFrame is the raw (unfiltered) dataset for
+                    that period.  Maximum 6 periods used to keep the result manageable.
+        n: How many top predictions to include in each period's cohort.
+        direction: "highest" (top-N by prediction value) or "lowest".
+
+    Returns a dict::
+
+        {
+            n, direction, target_column, problem_type,
+            n_periods,
+            periods: [
+                {
+                    period_label, dataset_id, total_rows,
+                    categorical_profile,   # same shape as compute_prediction_cohort
+                    numeric_profile,
+                },
+                ...
+            ],
+            shifts: [
+                {
+                    from_period, to_period,
+                    categorical_shifts: [
+                        {column, category, from_pct, to_pct, change, direction},
+                        ...
+                    ],
+                    summary,
+                },
+                ...
+            ],
+            summary,
+        }
+    """
+    if len(dataframes) < 2:
+        raise ValueError("At least 2 datasets are required for cohort evolution analysis.")
+
+    # Limit to most-recent 6 periods
+    data_slice = dataframes[-6:]
+
+    periods: list[dict] = []
+    pipeline = load_pipeline(pipeline_path)
+    target_col = pipeline.target_column
+    problem_type = pipeline.problem_type
+
+    for df, ds_id, label in data_slice:
+        if len(df) == 0:
+            continue
+        try:
+            cohort = compute_prediction_cohort(
+                pipeline_path, model_path, df, n=n, direction=direction
+            )
+            periods.append(
+                {
+                    "period_label": label,
+                    "dataset_id": ds_id,
+                    "total_rows": len(df),
+                    "categorical_profile": cohort["categorical_profile"],
+                    "numeric_profile": cohort["numeric_profile"],
+                }
+            )
+        except Exception:  # noqa: BLE001
+            # Skip a period that can't be scored (e.g. schema mismatch)
+            continue
+
+    if len(periods) < 2:
+        raise ValueError("Not enough scoreable datasets for cohort evolution analysis.")
+
+    # --- Build period-over-period shifts ---
+    shifts: list[dict] = []
+    for i in range(len(periods) - 1):
+        prev = periods[i]
+        curr = periods[i + 1]
+
+        # Build lookup: column → category → pct for each period
+        def _build_cat_lookup(cat_profile: list[dict]) -> dict:
+            lookup: dict[str, dict[str, float]] = {}
+            for cp in cat_profile:
+                col = cp["column"]
+                lookup[col] = {}
+                for cat_entry in cp.get("categories", []):
+                    lookup[col][cat_entry["value"]] = cat_entry["top_pct"]
+            return lookup
+
+        prev_lookup = _build_cat_lookup(prev["categorical_profile"])
+        curr_lookup = _build_cat_lookup(curr["categorical_profile"])
+
+        categorical_shifts: list[dict] = []
+        all_cols = set(prev_lookup.keys()) | set(curr_lookup.keys())
+        for col in all_cols:
+            prev_cats = prev_lookup.get(col, {})
+            curr_cats = curr_lookup.get(col, {})
+            all_categories = set(prev_cats.keys()) | set(curr_cats.keys())
+            for cat_val in all_categories:
+                from_pct = prev_cats.get(cat_val, 0.0)
+                to_pct = curr_cats.get(cat_val, 0.0)
+                change = round(to_pct - from_pct, 1)
+                if abs(change) < 5.0:
+                    continue  # Only surface meaningful shifts (≥5 pp)
+                shift_dir = "rising" if change > 0 else "falling"
+                categorical_shifts.append(
+                    {
+                        "column": col,
+                        "category": cat_val,
+                        "from_pct": round(from_pct, 1),
+                        "to_pct": round(to_pct, 1),
+                        "change": change,
+                        "direction": shift_dir,
+                    }
+                )
+
+        # Sort by absolute change descending, cap at 5 per shift
+        categorical_shifts.sort(key=lambda x: abs(x["change"]), reverse=True)
+        top_shifts = categorical_shifts[:5]
+
+        # Plain-English shift summary
+        if top_shifts:
+            s = top_shifts[0]
+            col_plain = s["column"].replace("_", " ")
+            dir_word = "grew" if s["direction"] == "rising" else "fell"
+            shift_summary = (
+                f"{col_plain} = '{s['category']}' {dir_word} from "
+                f"{s['from_pct']}% to {s['to_pct']}% of the top-{n} cohort."
+            )
+        else:
+            shift_summary = (
+                f"The top-{n} cohort composition was stable between "
+                f"{prev['period_label']} and {curr['period_label']}."
+            )
+
+        shifts.append(
+            {
+                "from_period": prev["period_label"],
+                "to_period": curr["period_label"],
+                "categorical_shifts": top_shifts,
+                "summary": shift_summary,
+            }
+        )
+
+    # --- Overall summary ---
+    all_shifts_flat = [s for shift in shifts for s in shift["categorical_shifts"]]
+    if all_shifts_flat:
+        # Find the single biggest mover across all periods
+        biggest = max(all_shifts_flat, key=lambda x: abs(x["change"]))
+        col_plain = biggest["column"].replace("_", " ")
+        dir_word = "increasing" if biggest["direction"] == "rising" else "decreasing"
+        dir_word2 = "growing" if biggest["direction"] == "rising" else "shrinking"
+        overall_summary = (
+            f"Over {len(periods)} periods, the top-{n} {direction} {target_col} "
+            f"predictions show {col_plain} = '{biggest['category']}' "
+            f"{dir_word} ({biggest['from_pct']}% → {biggest['to_pct']}%) — "
+            f"this segment's share of the highest-scoring records is {dir_word2}."
+        )
+    else:
+        overall_summary = (
+            f"The top-{n} {direction} {target_col} predictions had a stable "
+            f"composition across {len(periods)} periods with no segments "
+            f"shifting more than 5 percentage points."
+        )
+
+    return {
+        "n": n,
+        "direction": direction,
+        "target_column": target_col,
+        "problem_type": problem_type,
+        "n_periods": len(periods),
+        "periods": periods,
+        "shifts": shifts,
+        "summary": overall_summary,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Goal seek — reverse prediction: find inputs that produce a target output
 # ---------------------------------------------------------------------------

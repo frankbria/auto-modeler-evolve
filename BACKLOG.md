@@ -53,6 +53,21 @@ the time is better spent on real features.
 
 ---
 
+## Day 76 (04:00) — Done
+
+**Track B: Predictive Cohort Monitoring** — complete.
+
+Closes the "how is my cohort trending over time?" gap. Analysts can now ask "how has my top cohort changed?" or "cohort evolution" and receive a `CohortEvolutionCard` showing composition shifts across all historical dataset uploads.
+
+**What was built:**
+- `compute_cohort_evolution()` pure function in `core/deployer.py`: reuses `compute_prediction_cohort()` per period, computes period-over-period categorical shifts (≥5pp threshold), caps at 6 most-recent periods, generates plain-English summaries.
+- `_COHORT_EVOLUTION_PATTERNS` regex (9 NL variants) + handler in `chat.py`; guards: deployment exists, ≥2 scoreable DataFrames from DB, cohort_event and ranked_pred_event not already fired.
+- `CohortEvolutionCard` (violet, 📈): period timeline with `PeriodNode` (mini categorical bars) and `ShiftConnector` arrows; "Notable Composition Shifts" section with `ShiftRow` (emerald/rose per direction).
+- 7 new TypeScript interfaces; `attachCohortEvolutionToLastMessage` Zustand action; SSE handler wired in page.tsx.
+- 47 backend + 20 frontend = 67 new tests.
+
+---
+
 ## Day 75 (20:00) — Done
 
 **Track B: Prediction Baseline Context on Live Dashboard** — complete.

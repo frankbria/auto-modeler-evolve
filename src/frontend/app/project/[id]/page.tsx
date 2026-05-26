@@ -72,6 +72,7 @@ import { SensitivityCard } from "@/components/deploy/sensitivity-card"
 import { InteractionCard } from "@/components/deploy/interaction-card"
 import { RankedPredictionsCard } from "@/components/deploy/ranked-predictions-card"
 import { PredictionCohortCard } from "@/components/deploy/prediction-cohort-card"
+import { CohortEvolutionCard } from "@/components/deploy/cohort-evolution-card"
 import { OnboardingGuideCard } from "@/components/chat/onboarding-guide-card"
 import { DataVersionHistoryCard } from "@/components/chat/data-version-history-card"
 import { LearningCurveCard } from "@/components/chat/learning-curve-card"
@@ -365,6 +366,7 @@ export default function ProjectWorkspace() {
     attachCrossDeployPredictionToLastMessage,
     attachLowAccuracyGuidanceToLastMessage,
     attachPredictionDeltaToLastMessage,
+    attachCohortEvolutionToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -729,6 +731,8 @@ export default function ProjectWorkspace() {
                 attachRankedPredictionsToLastMessage(json.ranked_predictions as import("@/lib/types").RankedPredictionsResult)
               } else if (json.type === "prediction_cohort" && json.prediction_cohort) {
                 attachPredictionCohortToLastMessage(json.prediction_cohort as import("@/lib/types").PredictionCohortResult)
+              } else if (json.type === "cohort_evolution" && json.cohort_evolution) {
+                attachCohortEvolutionToLastMessage(json.cohort_evolution as import("@/lib/types").CohortEvolutionResult)
               } else if (json.type === "onboarding_guide" && json.onboarding_guide) {
                 attachOnboardingGuideToLastMessage(json.onboarding_guide as import("@/lib/types").OnboardingGuideResult)
               } else if (json.type === "version_history" && json.version_history) {
@@ -879,6 +883,8 @@ export default function ProjectWorkspace() {
                 attachLowAccuracyGuidanceToLastMessage(json.low_accuracy_guidance as import("@/lib/types").LowAccuracyGuidanceResult)
               } else if (json.type === "prediction_delta" && json.prediction_delta) {
                 attachPredictionDeltaToLastMessage(json.prediction_delta as import("@/lib/types").PredictionDeltaResult)
+              } else if (json.type === "cohort_evolution" && json.cohort_evolution) {
+                attachCohortEvolutionToLastMessage(json.cohort_evolution as import("@/lib/types").CohortEvolutionResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -1025,6 +1031,7 @@ export default function ProjectWorkspace() {
     attachCrossDeployPredictionToLastMessage,
     attachLowAccuracyGuidanceToLastMessage,
     attachPredictionDeltaToLastMessage,
+    attachCohortEvolutionToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -1680,6 +1687,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.prediction_delta && (
                       <PredictionDeltaCard result={msg.prediction_delta} />
+                    )}
+                    {msg.cohort_evolution && (
+                      <CohortEvolutionCard result={msg.cohort_evolution} />
                     )}
                   </div>
                 </div>
