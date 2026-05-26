@@ -1,5 +1,25 @@
 # Journal
 
+## Day 75 — 20:00 — Track B: Prediction Baseline Context on Live Dashboard
+
+No community issues. Closed the final context gap on the VP-facing prediction dashboard: analysts had per-feature contribution bars but no top-level answer to "is this prediction high or low relative to a typical case?" This matters for understanding whether the model is behaving as expected.
+
+**What was built:**
+
+Updated `explain_prediction()` in `core/deployer.py` to compute a baseline: feature vector of all training-data means → `baseline_prediction = model.predict(baseline_x)`. For regression: `delta = prediction − baseline`, `pct_change`, `direction` (above/below/at baseline). For classification: `baseline_confidence` via predict_proba, `class_changed` flag. All 6 fields backward-compatible on `PredictionExplanation` interface.
+
+`BaselineComparisonBanner` component inserted at the top of `ExplanationCard`: regression shows color-coded banner (emerald=above, rose=below, muted=at baseline) with ▲/▼/→ arrow, delta, pct_change, and plain-English description ("Your inputs raised the prediction above what a typical case would produce"). Classification shows baseline class + confidence. `data-testid="baseline-comparison"` for test targeting. Fully backward-compatible — does not render when `baseline_prediction` is absent.
+
+**What didn't work (fixed):**
+
+Pre-existing test fixture bug in `test_prediction_explain.py` — missing model imports before `SQLModel.metadata.create_all()` caused sporadic "no such table" failures. Fixed by importing all 21 model modules first, matching the pattern from `test_version_comparison_chat.py`.
+
+**What's next:** Track D depth (API key auth, batch prediction jobs, versioning + rollback, A/B testing, SLA monitoring) or Track C (class imbalance, ensembles, feature selection). Or deepen Track E friction items.
+
+*Day 75 (20:00): 0 new tests — core change + component render. Total: 4746 backend + 2702 frontend = 7448, all passing. Backend lint: clean. Frontend build + lint: clean.*
+
+---
+
 ## Day 75 — 12:00 — Track B: Prediction Delta — "Why Did My Prediction Change?"
 
 No community issues. Identified the genuine unimplemented gap from BACKLOG: **"Why did this prediction change?"** — analysts who retrain their model and then run the same inputs get a different prediction, with no explanation for why. This is the most common source of post-retrain confusion. Every other comparison feature was already done (version metrics, cross-deployment side-by-side, what-if), but per-feature attribution delta was missing.
