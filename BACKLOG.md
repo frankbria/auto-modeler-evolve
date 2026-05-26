@@ -53,6 +53,37 @@ the time is better spent on real features.
 
 ---
 
+## Day 75 (20:00) — Done
+
+**Track B: Prediction Baseline Context on Live Dashboard** — complete.
+
+Closes the "why is this prediction high/low?" gap on the VP-facing `predict/[id]` dashboard. Previously the ExplanationCard showed per-feature contribution bars but had no top-level context telling the analyst whether the current prediction is above or below a "typical" case.
+
+**What was built:**
+
+Updated `explain_prediction()` in `core/deployer.py` to:
+- Build a baseline feature vector (all features at encoded training-data means)
+- Compute `baseline_prediction = model.predict(baseline_x)` — what the model would output for a completely typical input
+- Regression: `delta = prediction − baseline`, `pct_change`, `direction` (`above_baseline`/`below_baseline`/`at_baseline`)
+- Classification (predict_proba): `current_confidence`, `baseline_confidence`, `direction` (`class_changed`/`same_class`)
+- All new fields added to return dict: `baseline_prediction`, `delta`, `pct_change`, `direction`, `current_confidence`, `baseline_confidence`
+
+`PredictionExplanation` TypeScript interface in `types.ts` extended with 6 optional fields (backward-compatible).
+
+`BaselineComparisonBanner` component inserted inside `ExplanationCard` on `predict/[id]/page.tsx`:
+- Regression: color-coded banner (emerald=above/rose=below/muted=at_baseline), ▲/▼/→ arrow + delta + pct_change, plain-English description ("Your inputs raised the prediction above what a typical case would produce")
+- Classification: shows baseline class + confidence percentages, message about class change vs same-class
+- `data-testid="baseline-comparison"` for test targeting; `aria-label` for a11y
+- Does not render when `baseline_prediction` is absent (fully backward-compatible with old API responses)
+
+Fixed pre-existing `test_prediction_explain.py` client fixture: missing model imports before `SQLModel.metadata.create_all()` caused sporadic `no such table: project` failures. Fixed by adding all 21 model modules before `create_all()`.
+
+**Tests:** 7 backend (3 integration + 3 endpoint + 1 pure-function) + 15 frontend (10 page-render component tests + 5 type-level) = 22 new tests. Total: **4746 backend + 2702 frontend = 7448**, all passing. Backend lint: clean. Frontend build + lint: clean.
+
+Key learning: `jest.resetModules()` in `beforeEach` causes `useState` hook conflicts in React Testing Library because the React module gets re-imported with a fresh instance while the old instance's hooks are still registered. Use static module-level `require()` for page components instead.
+
+---
+
 ## Day 74 (20:00) — Done
 
 **Track E: Analyst-Facing Model Quality Score** — complete.
@@ -141,12 +172,13 @@ Key learning: Python `\b` doesn't work for underscore-delimited column names —
 
 ---
 
-## What's Next (Day 75+)
+## What's Next (Day 76+)
 
 **CRITICAL NOTE:** Always grep before implementing — most candidates have already been done.
 **Key learnings:**
 - Day 74 04:00: Check for existing REST endpoints that lack chat handlers.
 - Day 74 12:00: Module-level threshold constants must be at module scope so tests can import them.
+- Day 75 20:00: `jest.resetModules()` in `beforeEach` causes React hook conflicts — use static `require()` for page components instead.
 
 **Track D candidates:**
 - Cross-deployment prediction comparison via chat ✅ DONE (Day 74 04:00)
@@ -161,13 +193,13 @@ Key learning: Python `\b` doesn't work for underscore-delimited column names —
 **Track E candidates (polish):**
 - "Explain this finding" direct-send ✅ DONE (Day 73 20:00)
 - Auto-suggest column types ✅ ALREADY DONE
-- Training completion low-accuracy hint ✅ PARTIALLY DONE via ensemble auto-suggest (Day 74 12:00); remaining: a MilestoneCard "here's what to try beyond ensembles" when accuracy is low and no ensemble training is pending
-- Analyst-facing "model quality score" in the Models tab — a plain-English summary of "this model is good/acceptable/needs work" with reasoning
+- Training completion low-accuracy hint ✅ DONE (Day 74 12:00 + LowAccuracyGuidanceCard)
+- Analyst-facing "model quality score" ✅ DONE (Day 74 20:00)
 
 **Track B candidates (vision-driven innovation):**
 - Predictive cohort monitoring — automatically track how the cohort profiles of top-N predictions evolve over time as new data is uploaded
-- "Why did this prediction change?" — compare two consecutive predictions for the same inputs and explain the delta (useful after retraining) ✅ DONE (Day 75 12:00)
-- Prediction delta on the live dashboard — expose per-feature contribution bar chart on `predict/[id]` after each prediction, showing why THIS specific prediction is higher/lower than the training mean
+- "Why did this prediction change?" ✅ DONE (Day 75 12:00)
+- Prediction baseline context on live dashboard ✅ DONE (Day 75 20:00) — `BaselineComparisonBanner` in `ExplanationCard` showing baseline prediction vs current + delta
 
 ---
 

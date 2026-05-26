@@ -493,7 +493,9 @@ def explain_prediction(
             _delta = float(raw) - float(baseline_raw)
             _base = float(baseline_raw)
             delta = round(_delta, 4)
-            pct_change = round(_delta / abs(_base) * 100, 1) if abs(_base) > 1e-10 else None
+            pct_change = (
+                round(_delta / abs(_base) * 100, 1) if abs(_base) > 1e-10 else None
+            )
             if abs(_delta) < 1e-6:
                 direction = "at_baseline"
             elif _delta > 0:
@@ -504,7 +506,9 @@ def explain_prediction(
             direction = "at_baseline"
     else:
         # Classification — compare predicted classes; optionally compare confidence
-        direction = "class_changed" if str(decoded) != str(baseline_decoded) else "same_class"
+        direction = (
+            "class_changed" if str(decoded) != str(baseline_decoded) else "same_class"
+        )
         if hasattr(model, "predict_proba"):
             try:
                 curr_proba = model.predict_proba(x_vec.reshape(1, -1))[0]
