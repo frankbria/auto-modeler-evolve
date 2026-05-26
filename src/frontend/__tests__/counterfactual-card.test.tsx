@@ -2,6 +2,7 @@ import React from "react"
 import { render, screen } from "@testing-library/react"
 import { CounterfactualCard } from "../components/deploy/counterfactual-card"
 import { CounterfactualResult } from "../lib/types"
+import { useAppStore } from "../lib/store"
 
 function makeData(overrides: Partial<CounterfactualResult> = {}): CounterfactualResult {
   return {
@@ -187,7 +188,6 @@ describe("CounterfactualCard", () => {
 // ── Zustand store action test ─────────────────────────────────────────────
 describe("attachCounterfactualToLastMessage", () => {
   it("attaches counterfactual to last assistant message", () => {
-    const { useAppStore } = require("../lib/store")
     const store = useAppStore.getState()
 
     store.messages = [
@@ -203,7 +203,6 @@ describe("attachCounterfactualToLastMessage", () => {
   })
 
   it("does not modify non-assistant messages", () => {
-    const { useAppStore } = require("../lib/store")
     const store = useAppStore.getState()
 
     store.messages = [
