@@ -1207,7 +1207,9 @@ def compute_cohort_evolution(
         }
     """
     if len(dataframes) < 2:
-        raise ValueError("At least 2 datasets are required for cohort evolution analysis.")
+        raise ValueError(
+            "At least 2 datasets are required for cohort evolution analysis."
+        )
 
     # Limit to most-recent 6 periods
     data_slice = dataframes[-6:]

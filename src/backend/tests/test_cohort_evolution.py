@@ -1,4 +1,5 @@
 """Tests for compute_cohort_evolution() — Track B: Predictive Cohort Monitoring."""
+
 import math
 import re
 from unittest.mock import MagicMock, patch
@@ -65,7 +66,9 @@ class TestCohortEvolutionRegex:
         ],
     )
     def test_matches(self, phrase):
-        assert _COHORT_EVOLUTION_PATTERNS.search(phrase), f"Expected match for: {phrase!r}"
+        assert _COHORT_EVOLUTION_PATTERNS.search(phrase), (
+            f"Expected match for: {phrase!r}"
+        )
 
     @pytest.mark.parametrize(
         "phrase",
@@ -86,7 +89,10 @@ class TestCohortEvolutionRegex:
 # Pure function unit tests
 # ---------------------------------------------------------------------------
 
-def _make_minimal_pipeline(target_column: str = "score", problem_type: str = "regression"):
+
+def _make_minimal_pipeline(
+    target_column: str = "score", problem_type: str = "regression"
+):
     """Return a minimal mock pipeline object."""
     pipeline = MagicMock()
     pipeline.target_column = target_column
@@ -134,7 +140,14 @@ class TestComputeCohortEvolution:
         cat_profile_a = [
             {
                 "column": "age_group",
-                "categories": [{"value": "18-25", "top_pct": 60.0, "overall_pct": 30.0, "ratio": 2.0}],
+                "categories": [
+                    {
+                        "value": "18-25",
+                        "top_pct": 60.0,
+                        "overall_pct": 30.0,
+                        "ratio": 2.0,
+                    }
+                ],
                 "dominant": "18-25",
                 "dominant_top_pct": 60.0,
             }
@@ -142,7 +155,14 @@ class TestComputeCohortEvolution:
         cat_profile_b = [
             {
                 "column": "age_group",
-                "categories": [{"value": "18-25", "top_pct": 40.0, "overall_pct": 30.0, "ratio": 1.33}],
+                "categories": [
+                    {
+                        "value": "18-25",
+                        "top_pct": 40.0,
+                        "overall_pct": 30.0,
+                        "ratio": 1.33,
+                    }
+                ],
                 "dominant": "18-25",
                 "dominant_top_pct": 40.0,
             }
@@ -180,13 +200,24 @@ class TestComputeCohortEvolution:
             df_a = _make_df(100)
             df_b = _make_df(100)
             dframes = [(df_a, "ds1", "Upload 1"), (df_b, "ds2", "Upload 2")]
-        return compute_cohort_evolution(self._pipeline_path, self._model_path, dframes, n=n, direction=direction)
+        return compute_cohort_evolution(
+            self._pipeline_path, self._model_path, dframes, n=n, direction=direction
+        )
 
     # -- Structure --
 
     def test_returns_required_keys(self):
         result = self._run()
-        for key in ("n", "direction", "target_column", "problem_type", "n_periods", "periods", "shifts", "summary"):
+        for key in (
+            "n",
+            "direction",
+            "target_column",
+            "problem_type",
+            "n_periods",
+            "periods",
+            "shifts",
+            "summary",
+        ):
             assert key in result, f"Missing key: {key}"
 
     def test_n_periods_matches_periods_list(self):
@@ -200,7 +231,13 @@ class TestComputeCohortEvolution:
     def test_period_has_required_keys(self):
         result = self._run()
         for period in result["periods"]:
-            for key in ("period_label", "dataset_id", "total_rows", "categorical_profile", "numeric_profile"):
+            for key in (
+                "period_label",
+                "dataset_id",
+                "total_rows",
+                "categorical_profile",
+                "numeric_profile",
+            ):
                 assert key in period, f"Period missing key: {key}"
 
     def test_shift_has_required_keys(self):
@@ -213,7 +250,14 @@ class TestComputeCohortEvolution:
         result = self._run()
         for shift in result["shifts"]:
             for cs in shift["categorical_shifts"]:
-                for key in ("column", "category", "from_pct", "to_pct", "change", "direction"):
+                for key in (
+                    "column",
+                    "category",
+                    "from_pct",
+                    "to_pct",
+                    "change",
+                    "direction",
+                ):
                     assert key in cs, f"CategoricalShift missing key: {key}"
 
     # -- Values --
@@ -276,7 +320,11 @@ class TestComputeCohortEvolution:
         df_empty = pd.DataFrame()
         df_a = _make_df(100)
         df_b = _make_df(100)
-        dframes = [(df_empty, "ds0", "Empty"), (df_a, "ds1", "Upload 1"), (df_b, "ds2", "Upload 2")]
+        dframes = [
+            (df_empty, "ds0", "Empty"),
+            (df_a, "ds1", "Upload 1"),
+            (df_b, "ds2", "Upload 2"),
+        ]
         result = self._run(dframes=dframes)
         # Empty frame is skipped — should still have at least 2 periods
         assert result["n_periods"] >= 2
