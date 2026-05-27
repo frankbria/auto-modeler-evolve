@@ -10019,7 +10019,9 @@ def send_message(
 
                         population_cf_event = _pcf_result
 
-                        _pcf_dom_feat = _pcf_result.get("dominant_feature") or "no single feature"
+                        _pcf_dom_feat = (
+                            _pcf_result.get("dominant_feature") or "no single feature"
+                        )
                         _pcf_dom_dir = _pcf_result.get("dominant_direction", "change")
                         _pcf_flip_ct = _pcf_result.get("flipped_count", 0)
                         _pcf_total = _pcf_result.get("total_rows", 0)

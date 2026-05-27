@@ -17,9 +17,7 @@ from sklearn.linear_model import LogisticRegression, Ridge
 # ---------------------------------------------------------------------------
 
 
-def _build_classification_pipeline_and_model(
-    n_samples: int = 100, n_numeric: int = 3
-):
+def _build_classification_pipeline_and_model(n_samples: int = 100, n_numeric: int = 3):
     """Create a tiny classification pipeline + model."""
     from core.deployer import PredictionPipeline
     from sklearn.preprocessing import LabelEncoder
@@ -104,16 +102,13 @@ class TestComputePopulationCounterfactual:
     def setup_method(self):
         self.tmp = tempfile.mkdtemp()
         self.pipeline, self.model, self.X = _build_classification_pipeline_and_model()
-        self.pipeline_path, self.model_path = _save(
-            self.pipeline, self.model, self.tmp
-        )
+        self.pipeline_path, self.model_path = _save(self.pipeline, self.model, self.tmp)
 
     def _rows(self, n: int = 10) -> list[dict]:
         rng = np.random.default_rng(0)
         idxs = rng.choice(len(self.X), size=min(n, len(self.X)), replace=False)
         return [
-            {f"feature{i}": float(self.X[idx, i]) for i in range(3)}
-            for idx in idxs
+            {f"feature{i}": float(self.X[idx, i]) for i in range(3)} for idx in idxs
         ]
 
     # -- required output keys --------------------------------------------------

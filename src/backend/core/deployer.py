@@ -2254,7 +2254,9 @@ def compute_population_counterfactual(
                     "direction": direction,
                 }
             )
-            if flip_ct > best_flip_ct or (flip_ct == best_flip_ct and avg_pct < best_avg_pct):
+            if flip_ct > best_flip_ct or (
+                flip_ct == best_flip_ct and avg_pct < best_avg_pct
+            ):
                 best_flip_ct = flip_ct
                 best_feat = feat
                 best_dir = direction
