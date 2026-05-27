@@ -2,6 +2,7 @@
 
 import pytest
 
+from api.chat import _FE_IMPACT_PATTERNS
 from core.trainer import compute_feature_engineering_impact
 
 
@@ -237,11 +238,6 @@ def test_groups_has_two_entries():
 # ---------------------------------------------------------------------------
 # Regex pattern tests
 # ---------------------------------------------------------------------------
-
-
-import re
-
-from api.chat import _FE_IMPACT_PATTERNS
 
 
 @pytest.mark.parametrize(
