@@ -3943,6 +3943,21 @@ _POPULATION_CF_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# Feature engineering impact: "which features helped?", "did the transformations improve my model?"
+_FE_IMPACT_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"(?:which|what)\s+(?:features?|transformations?|engineering)\s+(?:helped|improved|added|contributed|mattered)\b|"
+    r"feature\s+engineering\s+impact\b|"
+    r"did\s+(?:the\s+)?(?:feature\s+engineering|transformations?)\s+(?:help|improve|work|matter)\b|"
+    r"show\s+(?:me\s+)?(?:what\s+)?(?:the\s+)?(?:engineering|transformations?)\s+added\b|"
+    r"(?:impact|value|contribution)\s+of\s+(?:feature\s+)?engineering\b|"
+    r"(?:original|engineered|transformed)\s+(?:vs\.?\s*)?(?:original|engineered|transformed)\s+features?\b|"
+    r"(?:were|was)\s+(?:the\s+)?(?:transformations?|engineering|feature\s+engineering)\s+(?:worth(?:while)?|helpful|useful|effective)\b|"
+    r"how\s+(?:much\s+)?did\s+(?:feature\s+)?engineering\s+(?:help|improve|contribute|matter)\b"
+    r")",
+    re.IGNORECASE,
+)
+
 # Similar records: "find records most like row 5", "who else looks like this customer?"
 _SIMILAR_RECORDS_PATTERNS = re.compile(
     r"(?i)(?:"
@@ -7380,6 +7395,84 @@ def send_message(
                             )
         except Exception:  # noqa: BLE001
             pass  # Feature selection is nice-to-have; never crash chat
+
+    # Check if user wants feature engineering impact analysis
+    fe_impact_event: dict | None = None
+    if _FE_IMPACT_PATTERNS.search(body.message) and project:
+        try:
+            from sqlmodel import select as _sel_fei
+
+            from core.explainer import compute_feature_importance as _cfi_fei
+            from core.feature_engine import apply_transformations as _apply_fei
+            from core.trainer import compute_feature_engineering_impact as _cfei
+
+            _ds_fei = ctx["dataset"]
+            if _ds_fei:
+                _done_runs_fei = list(
+                    session.exec(
+                        _sel_fei(ModelRun)
+                        .where(
+                            ModelRun.project_id == project.id,
+                            ModelRun.status == "done",
+                        )
+                        .order_by(ModelRun.created_at.desc())  # type: ignore[attr-defined]
+                    ).all()
+                )
+                _best_run_fei: ModelRun | None = None
+                for _r_fei in _done_runs_fei:
+                    if _r_fei.model_path and Path(_r_fei.model_path).exists():
+                        _best_run_fei = _r_fei
+                        break
+
+                if _best_run_fei:
+                    _fset_fei = session.exec(
+                        _sel_fei(FeatureSet).where(
+                            FeatureSet.dataset_id == _ds_fei.id,
+                            FeatureSet.is_active == True,  # noqa: E712
+                        )
+                    ).first()
+                    if _fset_fei and _fset_fei.target_column:
+                        _fp_fei = Path(_ds_fei.file_path)
+                        if _fp_fei.exists():
+                            import pandas as _pd_fei
+
+                            _df_fei = _pd_fei.read_csv(_fp_fei)
+                            _tfms_fei = __import__("json").loads(
+                                _fset_fei.transformations or "[]"
+                            )
+                            _col_map_fei: dict = {}
+                            if _tfms_fei:
+                                _df_fei, _col_map_fei = _apply_fei(_df_fei, _tfms_fei)
+                            _feat_cols_fei = [
+                                c for c in _df_fei.columns if c != _fset_fei.target_column
+                            ]
+                            import joblib as _jl_fei
+
+                            _model_fei = _jl_fei.load(_best_run_fei.model_path)
+                            _imps_fei = _cfi_fei(_model_fei, _feat_cols_fei)
+                            if _imps_fei:
+                                _fei_result = _cfei(
+                                    _feat_cols_fei, _imps_fei, _tfms_fei, _col_map_fei
+                                )
+                                fe_impact_event = {
+                                    "run_id": _best_run_fei.id,
+                                    "algorithm": _best_run_fei.algorithm,
+                                    "target_column": _fset_fei.target_column,
+                                    "n_features": len(_feat_cols_fei),
+                                    "n_engineered": len(_fei_result["engineered_columns"]),
+                                    "n_original": len(_fei_result["original_columns"]),
+                                    **_fei_result,
+                                }
+                                system_prompt += (
+                                    f"\n\n## Feature Engineering Impact\n"
+                                    f"Algorithm: {_best_run_fei.algorithm}. "
+                                    f"{len(_fei_result['engineered_columns'])} engineered features, "
+                                    f"{len(_fei_result['original_columns'])} original features. "
+                                    f"Verdict: {_fei_result['verdict']} "
+                                    "Summarize this for the user — did feature engineering help?"
+                                )
+        except Exception:  # noqa: BLE001
+            pass  # Feature engineering impact is nice-to-have; never crash chat
 
     # Check if user wants to change the train/test split strategy
     split_strategy_event: dict | None = None
@@ -16707,6 +16800,9 @@ def send_message(
 
         if pred_delta_event:
             yield f"data: {json.dumps({'type': 'prediction_delta', 'prediction_delta': pred_delta_event})}\n\n"
+
+        if fe_impact_event:
+            yield f"data: {json.dumps({'type': 'fe_impact', 'fe_impact': fe_impact_event})}\n\n"
 
         # After text stream, opportunistically generate a chart if the
         # message is about data and we have a dataset loaded

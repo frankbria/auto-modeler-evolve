@@ -1558,6 +1558,126 @@ def identify_weak_features(
 
 
 # ---------------------------------------------------------------------------
+# Feature engineering impact analysis
+# ---------------------------------------------------------------------------
+
+
+def compute_feature_engineering_impact(
+    feature_cols: list[str],
+    importances: list[dict],
+    transformations: list[dict],
+    column_mapping: dict[str, list[str]],
+) -> dict:
+    """Group features into Original vs Engineered and compute per-group importance.
+
+    Args:
+        feature_cols: All feature column names after transformation.
+        importances: List of {feature, importance, rank} from compute_feature_importance.
+        transformations: List of transformation dicts (from FeatureSet.transformations).
+        column_mapping: Dict mapping source column → list of new column names.
+
+    Returns:
+        {
+            "groups": [
+                {
+                    "name": "Original" | "Engineered",
+                    "total_importance": float,
+                    "features": [{"name": str, "importance": float, "rank": int, "source": str | None}],
+                }
+            ],
+            "engineered_columns": [str, ...],
+            "original_columns": [str, ...],
+            "verdict": str,
+            "has_engineering": bool,
+        }
+    """
+    # Build set of all engineered column names (columns produced by transformations)
+    engineered_cols: set[str] = set()
+    source_map: dict[str, str] = {}  # engineered col → source col
+    for src_col, new_cols in column_mapping.items():
+        for nc in new_cols:
+            engineered_cols.add(nc)
+            source_map[nc] = src_col
+
+    imp_by_name = {item["feature"]: item for item in importances}
+
+    original_features = []
+    engineered_features = []
+
+    for col in feature_cols:
+        item = imp_by_name.get(col, {"feature": col, "importance": 0.0, "rank": len(feature_cols)})
+        if col in engineered_cols:
+            engineered_features.append({
+                "name": col,
+                "importance": round(float(item.get("importance", 0.0)), 6),
+                "rank": item.get("rank", len(feature_cols)),
+                "source": source_map.get(col),
+            })
+        else:
+            original_features.append({
+                "name": col,
+                "importance": round(float(item.get("importance", 0.0)), 6),
+                "rank": item.get("rank", len(feature_cols)),
+                "source": None,
+            })
+
+    original_features.sort(key=lambda x: x["importance"], reverse=True)
+    engineered_features.sort(key=lambda x: x["importance"], reverse=True)
+
+    total_original = round(sum(f["importance"] for f in original_features), 6)
+    total_engineered = round(sum(f["importance"] for f in engineered_features), 6)
+
+    has_engineering = len(engineered_features) > 0
+
+    if not has_engineering:
+        verdict = "No feature engineering was applied. All model inputs are original columns."
+    elif total_engineered <= 0:
+        verdict = (
+            "Feature engineering was applied but the engineered features contributed "
+            "no measurable importance. Consider different transformation types."
+        )
+    elif total_engineered > total_original:
+        pct = round(total_engineered / (total_original + total_engineered) * 100)
+        verdict = (
+            f"Feature engineering was worthwhile — engineered features account for "
+            f"{pct}% of total model importance, outweighing the original columns."
+        )
+    elif total_engineered > 0.1 * (total_original + total_engineered):
+        pct = round(total_engineered / (total_original + total_engineered) * 100)
+        verdict = (
+            f"Feature engineering added value — engineered features contribute "
+            f"{pct}% of total model importance."
+        )
+    else:
+        pct = round(total_engineered / (total_original + total_engineered) * 100)
+        verdict = (
+            f"Feature engineering had minimal impact — engineered features contribute "
+            f"only {pct}% of total model importance. The original columns drive most predictions."
+        )
+
+    groups = [
+        {
+            "name": "Original",
+            "total_importance": total_original,
+            "features": original_features,
+        },
+        {
+            "name": "Engineered",
+            "total_importance": total_engineered,
+            "features": engineered_features,
+        },
+    ]
+
+    return {
+        "groups": groups,
+        "engineered_columns": [f["name"] for f in engineered_features],
+        "original_columns": [f["name"] for f in original_features],
+        "verdict": verdict,
+        "has_engineering": has_engineering,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Best model selection
 # ---------------------------------------------------------------------------
 

@@ -53,6 +53,12 @@ the time is better spent on real features.
 
 ---
 
+## Day 77 (12:00) — Done
+
+**Track C: Feature Engineering Impact Analysis** — complete. `FeatureEngineeringImpactCard`, `compute_feature_engineering_impact()` pure function, REST endpoint, chat regex + handler + SSE emit. 28 backend + 12 frontend = 40 new tests.
+
+---
+
 ## Day 76 (12:00) — Done
 
 **Track B: Counterfactual Explanation** — complete.

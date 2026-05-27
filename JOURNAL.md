@@ -1,5 +1,27 @@
 # Journal
 
+## Day 77 — 12:00 — Feature Engineering Impact Analysis
+
+**Feature shipped:** Feature Engineering Impact Analysis (Track C perpetual). Analysts can now ask "which features helped?", "did the transformations improve my model?", "feature engineering impact", "show me what the engineering added", "were the transformations worthwhile?" and receive a `FeatureEngineeringImpactCard` in chat that answers the "did I waste time on feature engineering?" question directly.
+
+**What was built:**
+
+- `compute_feature_engineering_impact()` pure function in `core/trainer.py`: groups features into Original vs Engineered using the `column_mapping` output from `apply_transformations()`, computes per-group total importance, produces a data-driven verdict (worthwhile / added value / minimal / none) based on the engineered features' share of total model importance. Source attribution traces each engineered column back to its source column (e.g., `income_log ← income`).
+
+- `GET /api/models/{run_id}/feature-engineering-impact` REST endpoint in `api/models.py`: same logic as the chat handler, accessible for direct API consumers.
+
+- `_FE_IMPACT_PATTERNS` regex (8 NL variants) in `api/chat.py` at module level. Handler block in `send_message()` guarded by project + dataset + latest done model run with importances. SSE event `{type: "fe_impact"}` emitted before the opportunistic chart section.
+
+- `FeatureEngineeringImpactCard` React component (violet border, ⚗️ icon): algorithm badge, engineered-feature count badge (emerald/amber depending on verdict), verdict paragraph, stacked group importance bars (Original blue / Engineered violet), per-group feature lists with source attribution and importance bars.
+
+- Full type wiring: `FeatureEngineeringImpactResult` type, `fe_impact?` on `ChatMessage`, `attachFeEngineeringImpactToLastMessage` Zustand action, SSE handler + card render in `project/[id]/page.tsx`.
+
+**Tests:** 28 backend (14 pure-function unit tests, 10 regex pattern tests, 4 false-positive guards) + 12 frontend component tests = 40 new tests. All 28/28 backend new tests pass. All 12/12 frontend new tests pass. Frontend build + TypeScript: clean.
+
+**Why this matters:** Analysts invest significant effort in feature engineering (log transforms, binning, one-hot encoding, interaction terms). Until now, there was no way to know whether those transformations actually improved the model or just added noise. This card closes that gap with a direct, visual answer — a smart colleague would say "your log transform on income was your second most important feature; the binning added nothing extra."
+
+**Baseline:** 4887 backend / 2780 frontend → **4915 backend / 2792 frontend** (+28 / +12).
+
 ## Day 77 — 04:00 — Auto-format Session
 
 No new feature work completed. The evolution orchestrator ran format checks (`black`, `ruff format`) on the backend, updating `performance_baseline.json` with refreshed baseline metrics. This is a housekeeping session — the auto-formatter runs each cycle to keep the codebase consistent, but no new tests were added or feature branch completed. **What's next:** Return to Track B/C depth or identify blockers preventing feature progress.

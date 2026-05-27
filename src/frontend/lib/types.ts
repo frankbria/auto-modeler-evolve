@@ -537,6 +537,7 @@ export interface ChatMessage {
   counterfactual?: CounterfactualResult
   population_counterfactual?: PopulationCounterfactualResult
   similar_records?: SimilarRecordsResult
+  fe_impact?: FeatureEngineeringImpactResult
 }
 
 export interface RollbackVersionEntry {
@@ -3841,4 +3842,31 @@ export interface SimilarRecordsResult {
   feature_columns: string[]
   neighbors: SimilarRecordNeighbor[]
   summary: string
+}
+
+export interface FeatureEngineeringImpactFeature {
+  name: string
+  importance: number
+  rank: number
+  source: string | null
+}
+
+export interface FeatureEngineeringImpactGroup {
+  name: "Original" | "Engineered"
+  total_importance: number
+  features: FeatureEngineeringImpactFeature[]
+}
+
+export interface FeatureEngineeringImpactResult {
+  run_id: string
+  algorithm: string
+  target_column: string
+  n_features: number
+  n_engineered: number
+  n_original: number
+  groups: FeatureEngineeringImpactGroup[]
+  engineered_columns: string[]
+  original_columns: string[]
+  verdict: string
+  has_engineering: boolean
 }

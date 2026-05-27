@@ -638,6 +638,85 @@ def get_feature_selection(run_id: str, session: Session = Depends(get_session)):
     }
 
 
+@router.get("/api/models/{run_id}/feature-engineering-impact")
+def get_feature_engineering_impact(run_id: str, session: Session = Depends(get_session)):
+    """Show which features are original vs engineered and their relative importance.
+
+    Groups model features into Original (raw columns) and Engineered (produced by
+    transformations) and computes per-group total importance with a plain-English verdict.
+    Returns 400 if no feature engineering was applied or importances aren't available.
+    """
+    from core.explainer import compute_feature_importance
+    from core.trainer import compute_feature_engineering_impact
+
+    run = session.get(ModelRun, run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Model run not found")
+    if run.status != "done":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Model is not done (status: {run.status}). Train the model first.",
+        )
+    if not run.model_path:
+        raise HTTPException(status_code=404, detail="Model file path not recorded")
+
+    model_file = Path(run.model_path)
+    if not model_file.exists():
+        raise HTTPException(status_code=404, detail="Model file not found on disk")
+
+    project_id = run.project_id
+    dataset = session.exec(
+        select(Dataset).where(Dataset.project_id == project_id)
+    ).first()
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    feature_set = session.exec(
+        select(FeatureSet).where(
+            FeatureSet.dataset_id == dataset.id,
+            FeatureSet.is_active == True,  # noqa: E712
+        )
+    ).first()
+    if not feature_set or not feature_set.target_column:
+        raise HTTPException(
+            status_code=400, detail="No active feature set with target column"
+        )
+
+    file_path = Path(dataset.file_path)
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Dataset file not found on disk")
+
+    df = pd.read_csv(file_path)
+    transforms = json.loads(feature_set.transformations or "[]")
+    col_mapping: dict = {}
+    if transforms:
+        df, col_mapping = apply_transformations(df, transforms)
+
+    target_col = feature_set.target_column
+    feature_cols = [c for c in df.columns if c != target_col]
+
+    model = joblib.load(model_file)
+    importances = compute_feature_importance(model, feature_cols)
+    if not importances:
+        raise HTTPException(
+            status_code=400,
+            detail="Feature importances are not available for this model type.",
+        )
+
+    result = compute_feature_engineering_impact(feature_cols, importances, transforms, col_mapping)
+
+    return {
+        "run_id": run_id,
+        "project_id": project_id,
+        "algorithm": run.algorithm,
+        "target_column": target_col,
+        "n_features": len(feature_cols),
+        "n_engineered": len(result["engineered_columns"]),
+        "n_original": len(result["original_columns"]),
+        **result,
+    }
+
+
 @router.get("/api/models/{run_id}/calibration")
 def get_calibration(run_id: str, session: Session = Depends(get_session)):
     """Return calibration curve data and Brier score for a trained classifier.
