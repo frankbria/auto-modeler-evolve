@@ -536,6 +536,7 @@ export interface ChatMessage {
   cohort_evolution?: CohortEvolutionResult
   counterfactual?: CounterfactualResult
   population_counterfactual?: PopulationCounterfactualResult
+  similar_records?: SimilarRecordsResult
 }
 
 export interface RollbackVersionEntry {
@@ -3820,5 +3821,24 @@ export interface PopulationCounterfactualResult {
   dominant_flip_count: number
   dominant_avg_change_pct: number
   feature_summary: PopulationCFFeatureSummary[]
+  summary: string
+}
+
+export interface SimilarRecordNeighbor {
+  row_index: number
+  distance: number
+  similarity_score: number
+  features: Record<string, string | number | boolean | null>
+  actual_label: string | null
+  predicted_label: string
+  predicted_confidence: number
+}
+
+export interface SimilarRecordsResult {
+  query_row_index: number
+  query_prediction: string
+  query_confidence: number
+  feature_columns: string[]
+  neighbors: SimilarRecordNeighbor[]
   summary: string
 }

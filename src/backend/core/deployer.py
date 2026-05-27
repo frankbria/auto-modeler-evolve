@@ -2307,3 +2307,208 @@ def compute_population_counterfactual(
         "feature_summary": all_feature_rows,
         "summary": summary,
     }
+
+
+# ---------------------------------------------------------------------------
+# compute_similar_records — K-Nearest Neighbours in feature space
+# ---------------------------------------------------------------------------
+
+
+def compute_similar_records(
+    pipeline_path: str,
+    model_path: str,
+    query_features: dict,
+    dataset_df: pd.DataFrame,
+    target_column: str,
+    n_neighbors: int = 5,
+) -> dict:
+    """Find the N most similar records in the dataset to a query instance.
+
+    Similarity is measured in the pipeline's encoded feature space using
+    Euclidean distance (normalised by each feature's training std so no single
+    scale dominates).
+
+    Args:
+        pipeline_path: Path to PredictionPipeline joblib.
+        model_path: Path to sklearn model joblib.
+        query_features: Feature dict for the query instance (raw values, without
+            the target column).
+        dataset_df: Raw DataFrame of the training/reference dataset.
+        target_column: Name of the target column.
+        n_neighbors: Number of similar records to return (clamped 1–20).
+
+    Returns:
+        {
+          query_prediction,        # predicted label for the query
+          query_confidence,        # confidence (0-1) for query prediction
+          feature_columns,         # list of feature names used
+          neighbors: [
+            {
+              row_index,
+              distance,            # Euclidean distance in normalised space
+              similarity_score,    # 1 / (1 + distance)  in [0, 1]
+              features,            # dict of raw feature values
+              actual_label,        # ground-truth label (if target in dataset)
+              predicted_label,     # model prediction for this neighbor
+              predicted_confidence,
+            }
+          ],
+          summary,
+        }
+
+    Raises:
+        FileNotFoundError: if pipeline or model paths do not exist.
+        ValueError: if dataset_df has fewer rows than n_neighbors.
+    """
+    from sklearn.neighbors import NearestNeighbors
+
+    n_neighbors = max(1, min(n_neighbors, 20))
+
+    if not Path(pipeline_path).exists():
+        raise FileNotFoundError(f"Pipeline not found: {pipeline_path}")
+    if not Path(model_path).exists():
+        raise FileNotFoundError(f"Model not found: {model_path}")
+
+    pipeline: PredictionPipeline = joblib.load(pipeline_path)
+    model = joblib.load(model_path)
+
+    # ── Build feature matrix from dataset ────────────────────────────────────
+    feat_cols = [c for c in dataset_df.columns if c != target_column]
+    df_feats = dataset_df[feat_cols].copy()
+
+    # Encode the full dataset through the pipeline
+    X_encoded_list: list[np.ndarray] = []
+    for _, row in df_feats.iterrows():
+        row_dict = row.to_dict()
+        try:
+            enc = pipeline.transform(row_dict)
+            X_encoded_list.append(enc)
+        except Exception:  # noqa: BLE001
+            # Skip rows that can't be encoded (missing values etc.)
+            X_encoded_list.append(np.zeros(len(feat_cols), dtype=float))
+
+    X_encoded = np.vstack(X_encoded_list)
+
+    # ── Encode query ──────────────────────────────────────────────────────────
+    query_only_feats = {k: v for k, v in query_features.items() if k != target_column}
+    query_encoded = pipeline.transform(query_only_feats).reshape(1, -1)
+
+    # ── Normalise by feature std so distances are scale-independent ───────────
+    stds = X_encoded.std(axis=0)
+    stds[stds == 0] = 1.0  # Prevent division by zero for constant columns
+    X_norm = X_encoded / stds
+    query_norm = query_encoded / stds
+
+    # ── Fit KNN and find neighbours ───────────────────────────────────────────
+    actual_k = min(n_neighbors, len(X_norm))
+    knn = NearestNeighbors(n_neighbors=actual_k, metric="euclidean")
+    knn.fit(X_norm)
+    distances, indices = knn.kneighbors(query_norm)
+    distances = distances[0]
+    indices = indices[0]
+
+    # ── Query prediction ──────────────────────────────────────────────────────
+    query_pred_raw = model.predict(query_encoded)[0]
+    query_conf: float = 0.0
+    try:
+        proba = model.predict_proba(query_encoded)[0]
+        query_conf = float(proba.max())
+    except AttributeError:
+        pass
+
+    if hasattr(pipeline, "target_encoder") and pipeline.target_encoder is not None:
+        query_label: str = str(
+            pipeline.target_encoder.inverse_transform([int(query_pred_raw)])[0]
+        )
+    else:
+        query_label = str(query_pred_raw)
+
+    # ── Build neighbour list ──────────────────────────────────────────────────
+    target_present = target_column in dataset_df.columns
+    neighbors_out: list[dict] = []
+
+    for dist, row_idx in zip(distances, indices):
+        sim_score = float(1.0 / (1.0 + dist))
+        raw_row = dataset_df.iloc[int(row_idx)]
+        row_feats = {c: raw_row[c] for c in feat_cols}
+
+        # Predict this neighbour
+        try:
+            nb_enc = X_encoded[[row_idx]]
+            nb_pred_raw = model.predict(nb_enc)[0]
+            nb_conf: float = 0.0
+            try:
+                nb_proba = model.predict_proba(nb_enc)[0]
+                nb_conf = float(nb_proba.max())
+            except AttributeError:
+                pass
+
+            if (
+                hasattr(pipeline, "target_encoder")
+                and pipeline.target_encoder is not None
+            ):
+                nb_label = str(
+                    pipeline.target_encoder.inverse_transform([int(nb_pred_raw)])[0]
+                )
+            else:
+                nb_label = str(nb_pred_raw)
+        except Exception:  # noqa: BLE001
+            nb_label = "unknown"
+            nb_conf = 0.0
+
+        actual_label: str | None = None
+        if target_present:
+            actual_label = str(raw_row[target_column])
+
+        # Convert numpy types to plain Python for JSON serialisability
+        clean_feats: dict = {}
+        for k, v in row_feats.items():
+            if isinstance(v, (np.integer,)):
+                clean_feats[k] = int(v)
+            elif isinstance(v, (np.floating,)):
+                clean_feats[k] = round(float(v), 4)
+            else:
+                clean_feats[k] = v
+
+        neighbors_out.append(
+            {
+                "row_index": int(row_idx),
+                "distance": round(float(dist), 4),
+                "similarity_score": round(sim_score, 4),
+                "features": clean_feats,
+                "actual_label": actual_label,
+                "predicted_label": nb_label,
+                "predicted_confidence": round(nb_conf, 4),
+            }
+        )
+
+    # ── Plain-English summary ─────────────────────────────────────────────────
+    same_pred_count = sum(
+        1 for nb in neighbors_out if nb["predicted_label"] == query_label
+    )
+    top_sim = neighbors_out[0]["similarity_score"] if neighbors_out else 0.0
+    summary = (
+        f"Found {len(neighbors_out)} similar records. "
+        f"The most similar record has a similarity score of {top_sim:.0%}. "
+        f"{same_pred_count} of {len(neighbors_out)} neighbors share the same "
+        f"predicted outcome ('{query_label}'). "
+    )
+    if same_pred_count == len(neighbors_out):
+        summary += "This instance sits in a very consistent region of the data."
+    elif same_pred_count == 0:
+        summary += (
+            "Neighbors have different predicted outcomes — "
+            "this instance is near a decision boundary."
+        )
+    else:
+        summary += (
+            "The neighborhood is mixed — features may be close to a class boundary."
+        )
+
+    return {
+        "query_prediction": query_label,
+        "query_confidence": round(float(query_conf), 4),
+        "feature_columns": feat_cols,
+        "neighbors": neighbors_out,
+        "summary": summary,
+    }

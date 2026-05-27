@@ -3943,6 +3943,21 @@ _POPULATION_CF_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# Similar records: "find records most like row 5", "who else looks like this customer?"
+_SIMILAR_RECORDS_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"(?:find|show|get)\s+(?:me\s+)?(?:similar|like|nearest|closest)\s+(?:records?|rows?|cases?|customers?|examples?)\b|"
+    r"(?:who|what)\s+(?:else\s+)?(?:looks?\s+like|is\s+similar\s+to|resembles?)\s+(?:this|row|record|case)\b|"
+    r"(?:nearest|closest)\s+(?:neighbours?|neighbors?|records?|matches?|rows?)\b|"
+    r"(?:k.?nn|knn|k.?nearest.?neighbou?rs?)\b|"
+    r"(?:find|show)\s+(?:me\s+)?(?:the\s+)?(?:most\s+)?similar\s+(?:training\s+)?(?:data\s+)?(?:points?|instances?|examples?)\b|"
+    r"(?:which|what)\s+(?:records?|rows?|cases?|customers?)\s+(?:are\s+)?(?:most\s+)?similar\s+to\s+(?:row|record|case|this)\b|"
+    r"(?:look\s+up|lookup)\s+similar\s+(?:records?|customers?|cases?)\b|"
+    r"(?:analogous|comparable)\s+(?:records?|rows?|cases?|examples?)\b"
+    r")",
+    re.IGNORECASE,
+)
+
 
 _PROD_MONITOR_PATTERNS = re.compile(
     r"(?i)(?:"
@@ -9866,11 +9881,7 @@ def send_message(
                 _cf_runs[0] if _cf_runs else None,
             )
             _cf_dep = ctx["deployment"]
-            _cf_pipeline_path = (
-                _cf_dep.model_path.replace("_model.joblib", "_pipeline.joblib")
-                if _cf_dep and _cf_dep.model_path
-                else None
-            )
+            _cf_pipeline_path = _cf_dep.pipeline_path if _cf_dep else None
 
             if (
                 _cf_run
@@ -9911,7 +9922,7 @@ def send_message(
 
                     _cf_result = _cc(
                         pipeline_path=_cf_pipeline_path,
-                        model_path=_cf_dep.model_path,
+                        model_path=_cf_run.model_path,
                         original_features=_cf_orig_features,
                         max_steps=15,
                         step_fraction=0.1,
@@ -9966,11 +9977,7 @@ def send_message(
                 _pcf_runs[0] if _pcf_runs else None,
             )
             _pcf_dep = ctx["deployment"]
-            _pcf_pipeline_path = (
-                _pcf_dep.model_path.replace("_model.joblib", "_pipeline.joblib")
-                if _pcf_dep and _pcf_dep.model_path
-                else None
-            )
+            _pcf_pipeline_path = _pcf_dep.pipeline_path if _pcf_dep else None
 
             if (
                 _pcf_run
@@ -10010,7 +10017,7 @@ def send_message(
                     if len(_pcf_feature_list) >= 2:
                         _pcf_result = _cpcf(
                             pipeline_path=_pcf_pipeline_path,
-                            model_path=_pcf_dep.model_path,
+                            model_path=_pcf_run.model_path,
                             input_features_list=_pcf_feature_list,
                             max_rows=25,
                             max_steps=15,
@@ -10039,6 +10046,92 @@ def send_message(
                         )
         except Exception:  # noqa: BLE001
             pass  # Population counterfactual is nice-to-have; never crash chat
+
+    # Similar records — "find records most like row 5", "who else looks like this?"
+    similar_records_event: dict | None = None
+    if (
+        _SIMILAR_RECORDS_PATTERNS.search(body.message)
+        and ctx["dataset"]
+        and ctx.get("feature_set")
+        and ctx.get("model_runs")
+        and ctx.get("deployment")
+    ):
+        try:
+            import json as _json_sr
+
+            import pandas as _pd_sr
+
+            from core.deployer import compute_similar_records as _csr
+
+            _sr_runs = [mr for mr in ctx["model_runs"] if mr.status == "done"]
+            _sr_run = next(
+                (mr for mr in _sr_runs if mr.is_selected),
+                _sr_runs[0] if _sr_runs else None,
+            )
+            _sr_dep = ctx["deployment"]
+            _sr_pipeline_path = _sr_dep.pipeline_path if _sr_dep else None
+
+            if (
+                _sr_run
+                and _sr_run.model_path
+                and Path(_sr_run.model_path).exists()
+                and _sr_pipeline_path
+                and Path(_sr_pipeline_path).exists()
+            ):
+                _sr_fs = ctx["feature_set"]
+                _sr_ds = ctx["dataset"]
+                _sr_file = Path(_sr_ds.file_path)
+
+                if _sr_file.exists():
+                    _sr_df_raw = _pd_sr.read_csv(_sr_file)
+                    _sr_transforms = _json_sr.loads(_sr_fs.transformations or "[]")
+                    _sr_df = _sr_df_raw.copy()
+                    if _sr_transforms:
+                        from core.feature_engine import apply_transformations as _at_sr
+
+                        _sr_df, _ = _at_sr(_sr_df, _sr_transforms)
+
+                    _sr_target = _sr_fs.target_column
+                    _sr_feat_cols = [c for c in _sr_df.columns if c != _sr_target]
+
+                    # Parse row index from message
+                    _sr_row_idx = _extract_row_index(body.message)
+                    _sr_row_idx = max(0, min(_sr_row_idx, len(_sr_df_raw) - 1))
+
+                    _sr_raw_row: dict = _sr_df_raw.iloc[_sr_row_idx].to_dict()
+                    _sr_query_features = {
+                        k: v for k, v in _sr_raw_row.items() if k != _sr_target
+                    }
+
+                    similar_records_event = _csr(
+                        pipeline_path=_sr_pipeline_path,
+                        model_path=_sr_run.model_path,
+                        query_features=_sr_query_features,
+                        dataset_df=_sr_df_raw,
+                        target_column=_sr_target,
+                        n_neighbors=5,
+                    )
+                    similar_records_event["query_row_index"] = _sr_row_idx
+
+                    _sr_top = (
+                        similar_records_event["neighbors"][0]
+                        if similar_records_event["neighbors"]
+                        else {}
+                    )
+                    system_prompt += (
+                        f"\n\n## Similar Records (Row {_sr_row_idx})\n"
+                        f"Query prediction: '{similar_records_event['query_prediction']}' "
+                        f"(confidence {similar_records_event['query_confidence']:.0%}).\n"
+                        f"Found {len(similar_records_event['neighbors'])} similar records.\n"
+                        f"Most similar row index: {_sr_top.get('row_index', '?')} "
+                        f"(similarity {_sr_top.get('similarity_score', 0):.0%}).\n"
+                        f"{similar_records_event['summary']}\n"
+                        f"A SimilarRecordsCard is shown. Describe what these similar "
+                        f"records reveal — do they share the same outcome? Any patterns "
+                        f"in their feature values? Speak plainly."
+                    )
+        except Exception:  # noqa: BLE001
+            pass  # Similar records is nice-to-have; never crash chat
 
     # Guided onboarding wizard — responds to "guide me", "first steps", etc.
     onboarding_event: dict | None = None
@@ -16499,6 +16592,10 @@ def send_message(
         # Emit population-level counterfactual card
         if population_cf_event:
             yield f"data: {json.dumps({'type': 'population_counterfactual', 'population_counterfactual': population_cf_event})}\n\n"
+
+        # Emit similar records (KNN) card
+        if similar_records_event:
+            yield f"data: {json.dumps({'type': 'similar_records', 'similar_records': similar_records_event})}\n\n"
 
         # Emit production input feature distribution card
         if prod_input_dist_event:

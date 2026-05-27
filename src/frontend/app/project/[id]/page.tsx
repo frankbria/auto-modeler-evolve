@@ -75,6 +75,7 @@ import { PredictionCohortCard } from "@/components/deploy/prediction-cohort-card
 import { CohortEvolutionCard } from "@/components/deploy/cohort-evolution-card"
 import { CounterfactualCard } from "@/components/deploy/counterfactual-card"
 import { PopulationCounterfactualCard } from "@/components/deploy/population-counterfactual-card"
+import { SimilarRecordsCard } from "@/components/deploy/similar-records-card"
 import { OnboardingGuideCard } from "@/components/chat/onboarding-guide-card"
 import { DataVersionHistoryCard } from "@/components/chat/data-version-history-card"
 import { LearningCurveCard } from "@/components/chat/learning-curve-card"
@@ -371,6 +372,7 @@ export default function ProjectWorkspace() {
     attachCohortEvolutionToLastMessage,
     attachCounterfactualToLastMessage,
     attachPopulationCounterfactualToLastMessage,
+    attachSimilarRecordsToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -741,6 +743,8 @@ export default function ProjectWorkspace() {
                 attachCounterfactualToLastMessage(json.counterfactual as import("@/lib/types").CounterfactualResult)
               } else if (json.type === "population_counterfactual" && json.population_counterfactual) {
                 attachPopulationCounterfactualToLastMessage(json.population_counterfactual as import("@/lib/types").PopulationCounterfactualResult)
+              } else if (json.type === "similar_records" && json.similar_records) {
+                attachSimilarRecordsToLastMessage(json.similar_records as import("@/lib/types").SimilarRecordsResult)
               } else if (json.type === "onboarding_guide" && json.onboarding_guide) {
                 attachOnboardingGuideToLastMessage(json.onboarding_guide as import("@/lib/types").OnboardingGuideResult)
               } else if (json.type === "version_history" && json.version_history) {
@@ -897,6 +901,8 @@ export default function ProjectWorkspace() {
                 attachCounterfactualToLastMessage(json.counterfactual as import("@/lib/types").CounterfactualResult)
               } else if (json.type === "population_counterfactual" && json.population_counterfactual) {
                 attachPopulationCounterfactualToLastMessage(json.population_counterfactual as import("@/lib/types").PopulationCounterfactualResult)
+              } else if (json.type === "similar_records" && json.similar_records) {
+                attachSimilarRecordsToLastMessage(json.similar_records as import("@/lib/types").SimilarRecordsResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -1046,6 +1052,7 @@ export default function ProjectWorkspace() {
     attachCohortEvolutionToLastMessage,
     attachCounterfactualToLastMessage,
     attachPopulationCounterfactualToLastMessage,
+    attachSimilarRecordsToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -1710,6 +1717,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.population_counterfactual && (
                       <PopulationCounterfactualCard data={msg.population_counterfactual} />
+                    )}
+                    {msg.similar_records && (
+                      <SimilarRecordsCard data={msg.similar_records} />
                     )}
                   </div>
                 </div>

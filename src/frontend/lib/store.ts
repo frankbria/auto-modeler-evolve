@@ -176,6 +176,7 @@ interface AppState {
   attachCohortEvolutionToLastMessage: (cohort_evolution: import("./types").CohortEvolutionResult) => void
   attachCounterfactualToLastMessage: (counterfactual: import("./types").CounterfactualResult) => void
   attachPopulationCounterfactualToLastMessage: (population_counterfactual: import("./types").PopulationCounterfactualResult) => void
+  attachSimilarRecordsToLastMessage: (similar_records: import("./types").SimilarRecordsResult) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -1425,6 +1426,16 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, population_counterfactual }
+      }
+      return { messages }
+    }),
+
+  attachSimilarRecordsToLastMessage: (similar_records) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, similar_records }
       }
       return { messages }
     }),
