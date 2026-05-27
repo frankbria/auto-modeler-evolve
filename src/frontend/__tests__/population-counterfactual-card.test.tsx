@@ -1,7 +1,7 @@
 import React from "react"
 import { render, screen } from "@testing-library/react"
 import { PopulationCounterfactualCard } from "../components/deploy/population-counterfactual-card"
-import { PopulationCounterfactualResult } from "../lib/types"
+import { PopulationCounterfactualResult, ChatMessage } from "../lib/types"
 import { useAppStore } from "../lib/store"
 
 // ---------------------------------------------------------------------------
@@ -246,7 +246,7 @@ describe("attachPopulationCounterfactualToLastMessage (store)", () => {
     const payload = makeData()
     attachPopulationCounterfactualToLastMessage(payload)
     const msgs = useAppStore.getState().messages
-    const last = msgs[msgs.length - 1] as any
+    const last = msgs[msgs.length - 1] as ChatMessage
     expect(last.population_counterfactual).toEqual(payload)
   })
 
@@ -254,7 +254,7 @@ describe("attachPopulationCounterfactualToLastMessage (store)", () => {
     const { attachPopulationCounterfactualToLastMessage } = useAppStore.getState()
     attachPopulationCounterfactualToLastMessage(makeData())
     const msgs = useAppStore.getState().messages
-    expect((msgs[0] as any).population_counterfactual).toBeUndefined()
+    expect((msgs[0] as ChatMessage).population_counterfactual).toBeUndefined()
   })
 
   it("does not attach when last message is from user", () => {
@@ -266,6 +266,6 @@ describe("attachPopulationCounterfactualToLastMessage (store)", () => {
     const { attachPopulationCounterfactualToLastMessage } = useAppStore.getState()
     attachPopulationCounterfactualToLastMessage(makeData())
     const msgs = useAppStore.getState().messages
-    expect((msgs[msgs.length - 1] as any).population_counterfactual).toBeUndefined()
+    expect((msgs[msgs.length - 1] as ChatMessage).population_counterfactual).toBeUndefined()
   })
 })
