@@ -2046,3 +2046,262 @@ def compute_counterfactual(
         "changed_features": changed_features,
         "summary": summary,
     }
+
+
+def compute_population_counterfactual(
+    pipeline_path: str,
+    model_path: str,
+    input_features_list: list[dict],
+    target_class: str | None = None,
+    max_rows: int = 20,
+    max_steps: int = 15,
+    step_fraction: float = 0.1,
+) -> dict:
+    """Find the single feature intervention that flips the most predictions in a cohort.
+
+    Runs the greedy counterfactual for each row (up to max_rows), then aggregates
+    which feature + direction combination was the dominant driver of prediction flips.
+    Returns the most impactful population-level intervention.
+
+    Only works for classification models.
+
+    Args:
+        pipeline_path: Path to PredictionPipeline joblib.
+        model_path: Path to sklearn model joblib.
+        input_features_list: List of feature dicts (one per row).
+        target_class: Desired class to flip to.  None → flip away from current prediction.
+        max_rows: Cap on rows to analyse (default 20; performance guard).
+        max_steps: Max greedy steps per row.
+        step_fraction: Step size as fraction of training std.
+
+    Returns:
+        {
+          problem_type, target_column,
+          total_rows,               # rows analysed
+          flipped_count,            # rows where flip was found
+          flip_rate,                # flipped_count / total_rows (0–1)
+          dominant_feature,         # feature name with most flips as top change
+          dominant_direction,       # "increase" | "decrease"
+          dominant_flip_count,      # rows flipped with this as primary feature
+          dominant_avg_change_pct,  # average % change needed for those rows
+          feature_summary: [        # per-feature aggregated stats
+            {feature, flip_count, flip_pct, avg_change_pct, direction}
+          ],
+          summary,                  # plain-English narrative
+        }
+
+    Raises:
+        ValueError: if model is not a classifier, or fewer than 2 input rows.
+    """
+    import joblib as _jl
+    from collections import defaultdict as _dd
+
+    if len(input_features_list) < 2:
+        raise ValueError("Population counterfactual requires at least 2 rows.")
+
+    pipeline = load_pipeline(pipeline_path)
+    model = _jl.load(model_path)
+
+    if pipeline.problem_type != "classification":
+        raise ValueError(
+            "Population counterfactual is only supported for classification models. "
+            "Use goal_seek for regression."
+        )
+    if not hasattr(model, "predict_proba"):
+        raise ValueError(
+            "Population counterfactual requires a probabilistic classifier (predict_proba)."
+        )
+
+    # ── Decode class names ────────────────────────────────────────────────────
+    classes: list[str] = []
+    if pipeline.target_encoder is not None:
+        classes = [str(c) for c in pipeline.target_encoder.classes_]
+    else:
+        x_probe = pipeline.transform(input_features_list[0])
+        proba_probe = model.predict_proba(x_probe)[0]
+        classes = [str(i) for i in range(len(proba_probe))]
+
+    if len(classes) < 2:
+        raise ValueError("Population counterfactual requires at least 2 classes.")
+
+    # Numeric features and step sizes
+    numeric_features = [
+        f for f in pipeline.feature_names if pipeline.column_types.get(f) == "numeric"
+    ]
+    if not numeric_features:
+        raise ValueError(
+            "Population counterfactual requires at least one numeric feature."
+        )
+    feature_stds = getattr(pipeline, "feature_stds", {})
+    step_sizes: dict[str, float] = {}
+    for f in numeric_features:
+        std = float(feature_stds.get(f, 1.0))
+        step_sizes[f] = max(std * step_fraction, 1e-6)
+
+    # ── Run counterfactual for each row ───────────────────────────────────────
+    rows = input_features_list[:max_rows]
+    total_rows = len(rows)
+
+    # Aggregation: {feature -> {direction -> [change_pcts]}}
+    feature_direction_changes: dict = _dd(lambda: {"increase": [], "decrease": []})
+    flipped_count = 0
+
+    for orig_feats in rows:
+        try:
+            x_orig = pipeline.transform(orig_feats)
+            proba_orig = model.predict_proba(x_orig)[0]
+            orig_class_idx = int(np.argmax(proba_orig))
+
+            # Determine target class for this row
+            if target_class is not None and target_class in classes:
+                t_class_idx = classes.index(target_class)
+            else:
+                sorted_idxs = np.argsort(proba_orig)[::-1]
+                t_class_idx = int(sorted_idxs[1])
+
+            if t_class_idx == orig_class_idx:
+                # Already at target — still counts as flipped
+                flipped_count += 1
+                continue
+
+            # Run greedy search
+            current_features = dict(orig_feats)
+            row_flipped = False
+
+            for _step in range(max_steps):
+                x_curr = pipeline.transform(current_features)
+                proba_curr = model.predict_proba(x_curr)[0]
+                current_class_idx = int(np.argmax(proba_curr))
+
+                if current_class_idx == t_class_idx:
+                    row_flipped = True
+                    break
+
+                target_prob_curr = float(proba_curr[t_class_idx])
+                best_feature: str | None = None
+                best_gain: float = -1.0
+                best_direction: float = 0.0
+
+                for feat in numeric_features:
+                    step = step_sizes[feat]
+                    curr_val = float(current_features.get(feat, 0.0))
+                    for direction_sign in (+1.0, -1.0):
+                        probe = dict(current_features)
+                        probe[feat] = curr_val + direction_sign * step
+                        x_probe = pipeline.transform(probe)
+                        proba_probe = model.predict_proba(x_probe)[0]
+                        gain = float(proba_probe[t_class_idx]) - target_prob_curr
+                        if gain > best_gain:
+                            best_gain = gain
+                            best_feature = feat
+                            best_direction = direction_sign
+
+                if best_feature is None or best_gain <= 0:
+                    break
+
+                curr_val = float(current_features.get(best_feature, 0.0))
+                current_features[best_feature] = (
+                    curr_val + best_direction * step_sizes[best_feature]
+                )
+
+            if row_flipped:
+                flipped_count += 1
+                # Record the primary changed feature (largest absolute change)
+                primary_feat: str | None = None
+                primary_dir = "increase"
+                max_abs_change = 0.0
+                for feat in numeric_features:
+                    orig_val = float(orig_feats.get(feat, 0.0))
+                    cf_val = float(current_features.get(feat, 0.0))
+                    abs_change = abs(cf_val - orig_val)
+                    if abs_change > max_abs_change:
+                        max_abs_change = abs_change
+                        primary_feat = feat
+                        primary_dir = "increase" if cf_val > orig_val else "decrease"
+                        orig_v = orig_val
+
+                if primary_feat is not None:
+                    pct = (
+                        round((max_abs_change / abs(orig_v) * 100), 1)
+                        if orig_v != 0
+                        else 0.0
+                    )
+                    feature_direction_changes[primary_feat][primary_dir].append(pct)
+
+        except Exception:  # noqa: BLE001
+            continue  # Skip rows that error; don't crash the whole analysis
+
+    # ── Aggregate by feature + direction ─────────────────────────────────────
+    # Find (feature, direction) pair with most associated flips
+    best_feat: str | None = None
+    best_dir = "increase"
+    best_flip_ct = 0
+    best_avg_pct = 0.0
+
+    all_feature_rows: list[dict] = []
+    for feat, dirs in feature_direction_changes.items():
+        for direction, pct_list in dirs.items():
+            if not pct_list:
+                continue
+            flip_ct = len(pct_list)
+            avg_pct = round(sum(pct_list) / len(pct_list), 1)
+            all_feature_rows.append(
+                {
+                    "feature": feat,
+                    "flip_count": flip_ct,
+                    "flip_pct": round(flip_ct / total_rows * 100, 1),
+                    "avg_change_pct": avg_pct,
+                    "direction": direction,
+                }
+            )
+            if flip_ct > best_flip_ct or (flip_ct == best_flip_ct and avg_pct < best_avg_pct):
+                best_flip_ct = flip_ct
+                best_feat = feat
+                best_dir = direction
+                best_avg_pct = avg_pct
+
+    # Sort feature_summary by flip_count desc
+    all_feature_rows.sort(key=lambda r: r["flip_count"], reverse=True)
+
+    flip_rate = round(flipped_count / total_rows, 3) if total_rows > 0 else 0.0
+    target_col = pipeline.target_column.replace("_", " ")
+
+    # ── Plain-English summary ─────────────────────────────────────────────────
+    if flipped_count == 0:
+        summary = (
+            f"None of the {total_rows} analysed records could be flipped within the "
+            f"step budget. This cohort appears firmly in its current prediction — "
+            f"larger changes than typical may be required."
+        )
+    elif best_feat is None:
+        summary = (
+            f"{flipped_count} of {total_rows} records could be flipped, "
+            f"but no single dominant feature emerged as the primary driver."
+        )
+    else:
+        dir_phrase = (
+            f"increasing '{best_feat.replace('_', ' ')}'"
+            if best_dir == "increase"
+            else f"decreasing '{best_feat.replace('_', ' ')}'"
+        )
+        flip_pct = round(best_flip_ct / total_rows * 100)
+        summary = (
+            f"For {best_flip_ct} of {total_rows} records ({flip_pct}%), "
+            f"{dir_phrase} by ~{best_avg_pct}% was the primary change needed "
+            f"to flip the {target_col} prediction. "
+            f"This is the single most impactful lever across the cohort."
+        )
+
+    return {
+        "problem_type": "classification",
+        "target_column": pipeline.target_column,
+        "total_rows": total_rows,
+        "flipped_count": flipped_count,
+        "flip_rate": flip_rate,
+        "dominant_feature": best_feat,
+        "dominant_direction": best_dir,
+        "dominant_flip_count": best_flip_ct,
+        "dominant_avg_change_pct": best_avg_pct,
+        "feature_summary": all_feature_rows,
+        "summary": summary,
+    }

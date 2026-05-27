@@ -3927,6 +3927,23 @@ _COUNTERFACTUAL_PATTERNS = re.compile(
 )
 
 
+# Population-level counterfactual: "what single change flips the most predictions?"
+_POPULATION_CF_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"(?:what|which)\s+(?:one\s+)?(?:change|feature|intervention)\s+would\s+(?:flip|change|affect)\s+(?:the\s+)?most\b|"
+    r"population\s+counterfactual\b|"
+    r"most\s+impactful\s+intervention\s+(?:across|for|in)\s+(?:the\s+)?(?:cohort|population|group|segment)\b|"
+    r"(?:what|which)\s+(?:change|feature)\s+would\s+(?:help|save)\s+(?:the\s+)?most\s+(?:customers?|records?|rows?|cases?)\b|"
+    r"single\s+(?:most\s+impactful|best|biggest)\s+(?:feature|lever|change|intervention)\s+(?:for|across|in)\s+(?:the\s+)?(?:cohort|group|population|segment|at.risk)\b|"
+    r"(?:best|optimal|top)\s+intervention\s+(?:for|across)\s+(?:all\s+)?(?:at.risk|predicted|flagged)\s+(?:customers?|records?|cases?)\b|"
+    r"(?:which|what)\s+(?:features?\s+)?(?:changes?\s+)?(?:would\s+)?flip\s+(?:the\s+)?most\s+(?:predictions?|outcomes?|results?)\b|"
+    r"cohort\s+(?:level\s+)?(?:intervention|action|counterfactual)\b|"
+    r"(?:aggregate|group|population)\s+(?:level\s+)?(?:counterfactual|explanation|intervention)\b"
+    r")",
+    re.IGNORECASE,
+)
+
+
 _PROD_MONITOR_PATTERNS = re.compile(
     r"(?i)(?:"
     r"how\s+(?:is|has)\s+(?:my\s+)?model\s+(?:holding\s+up|performing|doing)\s+in\s+production\b|"
@@ -9923,6 +9940,103 @@ def send_message(
                     )
         except Exception:  # noqa: BLE001
             pass  # Counterfactual is nice-to-have; never crash chat
+
+    # Population-level counterfactual — "what single change flips the most predictions?"
+    population_cf_event: dict | None = None
+    if (
+        _POPULATION_CF_PATTERNS.search(body.message)
+        and ctx.get("deployment")
+        and ctx["dataset"]
+        and ctx.get("feature_set")
+        and ctx.get("model_runs")
+        and not counterfactual_event
+    ):
+        try:
+            import json as _json_pcf
+
+            import pandas as _pd_pcf
+
+            from core.deployer import compute_population_counterfactual as _cpcf
+            from core.feature_engine import apply_transformations as _at_pcf
+            from core.trainer import prepare_features as _pf_pcf
+
+            _pcf_runs = [mr for mr in ctx["model_runs"] if mr.status == "done"]
+            _pcf_run = next(
+                (mr for mr in _pcf_runs if mr.is_selected),
+                _pcf_runs[0] if _pcf_runs else None,
+            )
+            _pcf_dep = ctx["deployment"]
+            _pcf_pipeline_path = (
+                _pcf_dep.model_path.replace("_model.joblib", "_pipeline.joblib")
+                if _pcf_dep and _pcf_dep.model_path
+                else None
+            )
+
+            if (
+                _pcf_run
+                and _pcf_run.model_path
+                and Path(_pcf_run.model_path).exists()
+                and _pcf_pipeline_path
+                and Path(_pcf_pipeline_path).exists()
+            ):
+                _pcf_fs = ctx["feature_set"]
+                _pcf_ds = ctx["dataset"]
+                _pcf_file = Path(_pcf_ds.file_path)
+
+                # Classification only
+                if _pcf_fs.problem_type == "classification" and _pcf_file.exists():
+                    _pcf_df_raw = _pd_pcf.read_csv(_pcf_file)
+                    _pcf_transforms = _json_pcf.loads(_pcf_fs.transformations or "[]")
+                    _pcf_df = _pcf_df_raw.copy()
+                    if _pcf_transforms:
+                        _pcf_df, _ = _at_pcf(_pcf_df, _pcf_transforms)
+
+                    _pcf_target = _pcf_fs.target_column
+                    _pcf_feat_cols = [c for c in _pcf_df.columns if c != _pcf_target]
+
+                    _pcf_X, _pcf_y, _ = _pf_pcf(
+                        _pcf_df, _pcf_feat_cols, _pcf_target, "classification"
+                    )
+
+                    # Build list of feature dicts (up to 25 rows for population)
+                    _pcf_max_rows = min(25, len(_pcf_df_raw))
+                    _pcf_feature_list: list[dict] = []
+                    for _ri in range(_pcf_max_rows):
+                        _pcf_raw_row = _pcf_df_raw.iloc[_ri].to_dict()
+                        _pcf_feature_list.append(
+                            {k: v for k, v in _pcf_raw_row.items() if k != _pcf_target}
+                        )
+
+                    if len(_pcf_feature_list) >= 2:
+                        _pcf_result = _cpcf(
+                            pipeline_path=_pcf_pipeline_path,
+                            model_path=_pcf_dep.model_path,
+                            input_features_list=_pcf_feature_list,
+                            max_rows=25,
+                            max_steps=15,
+                            step_fraction=0.1,
+                        )
+
+                        population_cf_event = _pcf_result
+
+                        _pcf_dom_feat = _pcf_result.get("dominant_feature") or "no single feature"
+                        _pcf_dom_dir = _pcf_result.get("dominant_direction", "change")
+                        _pcf_flip_ct = _pcf_result.get("flipped_count", 0)
+                        _pcf_total = _pcf_result.get("total_rows", 0)
+                        system_prompt += (
+                            f"\n\n## Population Counterfactual Analysis\n"
+                            f"Analysed {_pcf_total} records from the dataset.\n"
+                            f"Flipped: {_pcf_flip_ct} of {_pcf_total} records.\n"
+                            f"Dominant intervention: {_pcf_dom_dir} '{_pcf_dom_feat}'.\n"
+                            f"{_pcf_result['summary']}\n"
+                            f"A PopulationCounterfactualCard is shown in the chat. "
+                            f"Explain which single change would help the most records "
+                            f"in this cohort get a better outcome, in plain English. "
+                            f"Focus on the business implication of the dominant lever. "
+                            f"Avoid ML jargon."
+                        )
+        except Exception:  # noqa: BLE001
+            pass  # Population counterfactual is nice-to-have; never crash chat
 
     # Guided onboarding wizard — responds to "guide me", "first steps", etc.
     onboarding_event: dict | None = None
@@ -16379,6 +16493,10 @@ def send_message(
         # Emit counterfactual explanation — minimum change to flip a prediction
         if counterfactual_event:
             yield f"data: {json.dumps({'type': 'counterfactual', 'counterfactual': counterfactual_event})}\n\n"
+
+        # Emit population-level counterfactual card
+        if population_cf_event:
+            yield f"data: {json.dumps({'type': 'population_counterfactual', 'population_counterfactual': population_cf_event})}\n\n"
 
         # Emit production input feature distribution card
         if prod_input_dist_event:

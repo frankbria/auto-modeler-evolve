@@ -535,6 +535,7 @@ export interface ChatMessage {
   prediction_delta?: PredictionDeltaResult
   cohort_evolution?: CohortEvolutionResult
   counterfactual?: CounterfactualResult
+  population_counterfactual?: PopulationCounterfactualResult
 }
 
 export interface RollbackVersionEntry {
@@ -3796,5 +3797,28 @@ export interface CounterfactualResult {
   flipped: boolean
   n_steps: number
   changed_features: CounterfactualChangedFeature[]
+  summary: string
+}
+
+
+export interface PopulationCFFeatureSummary {
+  feature: string
+  flip_count: number
+  flip_pct: number
+  avg_change_pct: number
+  direction: "increase" | "decrease"
+}
+
+export interface PopulationCounterfactualResult {
+  problem_type: string
+  target_column: string
+  total_rows: number
+  flipped_count: number
+  flip_rate: number
+  dominant_feature: string | null
+  dominant_direction: "increase" | "decrease"
+  dominant_flip_count: number
+  dominant_avg_change_pct: number
+  feature_summary: PopulationCFFeatureSummary[]
   summary: string
 }

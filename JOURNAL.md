@@ -1,5 +1,23 @@
 # Journal
 
+## Day 76 — 20:00 — Track B: Population-Level Counterfactual
+
+No community issues. Implemented **Population-Level Counterfactual** — the cohort-wide complement to per-row counterfactual that answers "if I could only change one thing for my whole at-risk group, what should it be?"
+
+**What was built:**
+
+With per-row counterfactual (Day 76 12:00), analysts can ask "what would save *this* customer?". But the more operationally powerful question is "what one change would save the *most* customers?" — a business analyst responsible for 500 flagged churn customers needs to know which single lever to pull, not 500 individual plans.
+
+`compute_population_counterfactual()` is a new pure function in `core/deployer.py`. It runs the greedy counterfactual search for each row in the cohort (up to `max_rows=20` for performance), tracks the *primary* changed feature per successful flip (the feature with the largest absolute change), then aggregates: for each `(feature, direction)` pair it collects the list of percentage changes from flipped rows. The pair with the most flips becomes the dominant intervention. Returns `flipped_count`, `flip_rate`, `dominant_feature`, `dominant_direction`, `dominant_flip_count`, `dominant_avg_change_pct`, and a `feature_summary` list sorted by flip_count descending. Raises `ValueError` for regression models or fewer than 2 input rows.
+
+`_POPULATION_CF_PATTERNS` (9 NL variants: "what change would flip the most", "population counterfactual", "most impactful intervention across the cohort", "what change would help the most customers", "single most impactful feature for the cohort", "best intervention for at-risk customers", "flip the most predictions", "cohort intervention", "aggregate level counterfactual") triggers the handler. Guard: deployment + dataset + feature set + model runs + classification + not already running per-row counterfactual.
+
+`PopulationCounterfactualCard` (amber border + "N of M flippable" when flips found, rose border + "No flips found" when not): flip rate progress bar with `role="progressbar"` ARIA, dominant intervention highlight box ("Most Impactful Single Lever" with feature name, direction, avg % change and flip count), feature breakdown table (Feature | Rows flipped | Dir. | Avg change %), empty-state message for unhelpful cohort, summary paragraph, `sr-only figcaption` for screen readers.
+
+**Tests:** 46 backend (15 pure function: keys, problem_type, target_column, flipped_count ≤ total_rows, flip_rate bounds, flip_rate consistency, max_rows cap, feature_summary structure, row keys, sorted by flip_count, flip_pct range, dominant_direction valid, dominant_feature in feature_names, dominant_flip_count ≤ flipped_count, summary string, larger batch; 3 error cases: regression raises, <2 rows raises, no numeric features raises; 21 regex tests: 21 match phrases across 9 arms, uppercase, mixed case, 5 false-positive guards) + 29 frontend (render/structure, flip badge, no-flip badge, flip rate numbers, progressbar ARIA, dominant intervention show/hide, dominant feature name, dominant flip count, increase/decrease label, feature rows count, empty feature table, underscore replacement, avg change pct, no-flip text, no-flip inverse, summary paragraph, figcaption sr-only, figcaption mentions count, figure aria-label, target_column underscore, total_rows badge; Zustand store: attach to last assistant message, doesn't modify earlier messages, doesn't attach to user message) = **75 new tests**.
+
+**Baseline:** 4839 backend / 2772 frontend.
+
 ## Day 76 — 12:00 — Track B: Counterfactual Explanation
 
 No community issues. Implemented **Counterfactual Explanation** — the "what specifically needs to change?" answer that complements local feature importance and goal seek.

@@ -53,6 +53,35 @@ the time is better spent on real features.
 
 ---
 
+## Day 76 (12:00) — Done
+
+**Track B: Counterfactual Explanation** — complete.
+
+Closes the "what specifically needs to change for this prediction to flip?" gap. Analysts can ask "what would save this customer?", "counterfactual for row 5", or "minimum intervention to change the prediction" and receive a `CounterfactualCard` showing the minimal feature changes needed to flip a classification prediction across the decision boundary.
+
+**What was built:**
+- `compute_counterfactual()` pure function in `core/deployer.py`: greedy finite-difference gradient search, classification-only.
+- `_COUNTERFACTUAL_PATTERNS` regex (9 NL variants) + handler in `chat.py`.
+- `CounterfactualCard` (amber/rose): original + counterfactual prediction boxes, feature changes table with ▲/▼ arrows.
+- 28 backend + 23 frontend = **51 new tests**.
+
+---
+
+## Day 76 (20:00) — Done
+
+**Track B: Population-Level Counterfactual** — complete.
+
+Closes the "what one change would save the most customers?" gap. Analysts can now ask "what change would flip the most predictions?" or "most impactful intervention for the cohort" and receive a `PopulationCounterfactualCard` showing the single feature intervention that flips the most predictions across the at-risk cohort — the operationally actionable complement to per-row counterfactual.
+
+**What was built:**
+- `compute_population_counterfactual()` pure function in `core/deployer.py`: runs greedy counterfactual for each row (max 20), aggregates primary changed feature per flip, returns dominant (feature, direction) pair + flip rate + feature_summary sorted by flip_count desc.
+- `_POPULATION_CF_PATTERNS` regex (9 NL variants) + handler in `chat.py`; guard: deployment + dataset + feature_set + model_runs + classification + not per-row counterfactual.
+- `PopulationCounterfactualCard` (amber/rose, 🎯): flip rate progress bar (ARIA), dominant intervention highlight, feature breakdown table, empty state, sr-only figcaption.
+- `PopulationCFFeatureSummary` + `PopulationCounterfactualResult` TypeScript interfaces; `attachPopulationCounterfactualToLastMessage` Zustand action; SSE handler wired in page.tsx.
+- 46 backend + 29 frontend = **75 new tests**.
+
+---
+
 ## Day 76 (04:00) — Done
 
 **Track B: Predictive Cohort Monitoring** — complete.
@@ -212,9 +241,11 @@ Key learning: Python `\b` doesn't work for underscore-delimited column names —
 - Analyst-facing "model quality score" ✅ DONE (Day 74 20:00)
 
 **Track B candidates (vision-driven innovation):**
-- Predictive cohort monitoring — automatically track how the cohort profiles of top-N predictions evolve over time as new data is uploaded
+- Predictive cohort monitoring ✅ DONE (Day 76 04:00)
 - "Why did this prediction change?" ✅ DONE (Day 75 12:00)
 - Prediction baseline context on live dashboard ✅ DONE (Day 75 20:00) — `BaselineComparisonBanner` in `ExplanationCard` showing baseline prediction vs current + delta
+- Per-row counterfactual explanation ✅ DONE (Day 76 12:00) — "what would save this customer?"
+- Population-level counterfactual ✅ DONE (Day 76 20:00) — "what one change helps the most customers?"
 
 ---
 
