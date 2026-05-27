@@ -7444,7 +7444,9 @@ def send_message(
                             if _tfms_fei:
                                 _df_fei, _col_map_fei = _apply_fei(_df_fei, _tfms_fei)
                             _feat_cols_fei = [
-                                c for c in _df_fei.columns if c != _fset_fei.target_column
+                                c
+                                for c in _df_fei.columns
+                                if c != _fset_fei.target_column
                             ]
                             import joblib as _jl_fei
 
@@ -7459,7 +7461,9 @@ def send_message(
                                     "algorithm": _best_run_fei.algorithm,
                                     "target_column": _fset_fei.target_column,
                                     "n_features": len(_feat_cols_fei),
-                                    "n_engineered": len(_fei_result["engineered_columns"]),
+                                    "n_engineered": len(
+                                        _fei_result["engineered_columns"]
+                                    ),
                                     "n_original": len(_fei_result["original_columns"]),
                                     **_fei_result,
                                 }

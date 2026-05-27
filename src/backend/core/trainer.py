@@ -1605,21 +1605,27 @@ def compute_feature_engineering_impact(
     engineered_features = []
 
     for col in feature_cols:
-        item = imp_by_name.get(col, {"feature": col, "importance": 0.0, "rank": len(feature_cols)})
+        item = imp_by_name.get(
+            col, {"feature": col, "importance": 0.0, "rank": len(feature_cols)}
+        )
         if col in engineered_cols:
-            engineered_features.append({
-                "name": col,
-                "importance": round(float(item.get("importance", 0.0)), 6),
-                "rank": item.get("rank", len(feature_cols)),
-                "source": source_map.get(col),
-            })
+            engineered_features.append(
+                {
+                    "name": col,
+                    "importance": round(float(item.get("importance", 0.0)), 6),
+                    "rank": item.get("rank", len(feature_cols)),
+                    "source": source_map.get(col),
+                }
+            )
         else:
-            original_features.append({
-                "name": col,
-                "importance": round(float(item.get("importance", 0.0)), 6),
-                "rank": item.get("rank", len(feature_cols)),
-                "source": None,
-            })
+            original_features.append(
+                {
+                    "name": col,
+                    "importance": round(float(item.get("importance", 0.0)), 6),
+                    "rank": item.get("rank", len(feature_cols)),
+                    "source": None,
+                }
+            )
 
     original_features.sort(key=lambda x: x["importance"], reverse=True)
     engineered_features.sort(key=lambda x: x["importance"], reverse=True)
@@ -1630,7 +1636,9 @@ def compute_feature_engineering_impact(
     has_engineering = len(engineered_features) > 0
 
     if not has_engineering:
-        verdict = "No feature engineering was applied. All model inputs are original columns."
+        verdict = (
+            "No feature engineering was applied. All model inputs are original columns."
+        )
     elif total_engineered <= 0:
         verdict = (
             "Feature engineering was applied but the engineered features contributed "

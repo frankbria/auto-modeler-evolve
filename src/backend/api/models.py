@@ -639,7 +639,9 @@ def get_feature_selection(run_id: str, session: Session = Depends(get_session)):
 
 
 @router.get("/api/models/{run_id}/feature-engineering-impact")
-def get_feature_engineering_impact(run_id: str, session: Session = Depends(get_session)):
+def get_feature_engineering_impact(
+    run_id: str, session: Session = Depends(get_session)
+):
     """Show which features are original vs engineered and their relative importance.
 
     Groups model features into Original (raw columns) and Engineered (produced by
@@ -703,7 +705,9 @@ def get_feature_engineering_impact(run_id: str, session: Session = Depends(get_s
             detail="Feature importances are not available for this model type.",
         )
 
-    result = compute_feature_engineering_impact(feature_cols, importances, transforms, col_mapping)
+    result = compute_feature_engineering_impact(
+        feature_cols, importances, transforms, col_mapping
+    )
 
     return {
         "run_id": run_id,

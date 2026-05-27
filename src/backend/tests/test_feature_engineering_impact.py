@@ -212,7 +212,13 @@ def test_result_has_required_keys():
         [{"column": "income", "transform_type": "log_transform"}],
         {"income": ["income_log"]},
     )
-    for key in ("groups", "engineered_columns", "original_columns", "verdict", "has_engineering"):
+    for key in (
+        "groups",
+        "engineered_columns",
+        "original_columns",
+        "verdict",
+        "has_engineering",
+    ):
         assert key in result, f"Missing key: {key}"
 
 
@@ -267,4 +273,6 @@ def test_fe_impact_pattern_matches(phrase):
     ],
 )
 def test_fe_impact_pattern_no_false_positives(phrase):
-    assert not _FE_IMPACT_PATTERNS.search(phrase), f"Pattern falsely matched: {phrase!r}"
+    assert not _FE_IMPACT_PATTERNS.search(phrase), (
+        f"Pattern falsely matched: {phrase!r}"
+    )
