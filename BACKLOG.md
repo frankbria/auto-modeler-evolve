@@ -53,6 +53,12 @@ the time is better spent on real features.
 
 ---
 
+## Day 77 (20:00) — Done
+
+**Track C: Data Quality Impact on Model Performance** — complete. `DataQualityImpactCard`, `compute_data_quality_impact()` pure function using IsolationForest, REST endpoint, chat regex (9 NL variants) + handler + SSE emit. 39 backend + 22 frontend = 61 new tests.
+
+---
+
 ## Day 77 (12:00) — Done
 
 **Track C: Feature Engineering Impact Analysis** — complete. `FeatureEngineeringImpactCard`, `compute_feature_engineering_impact()` pure function, REST endpoint, chat regex + handler + SSE emit. 28 backend + 12 frontend = 40 new tests.
