@@ -31,6 +31,7 @@ from core.analyzer import (
     compute_group_trends,
     compute_pair_correlation,
     compute_dataset_comparison,
+    compute_feature_redundancy,
     compute_prediction_opportunities,
     compute_stat_query,
     compute_summary_stats,
@@ -2798,3 +2799,53 @@ def get_version_history(
         dfs.append(pd.read_csv(p) if p.exists() else pd.DataFrame())
 
     return compute_version_history(ds_dicts, dfs)
+
+
+@router.get("/{dataset_id}/feature-redundancy")
+def get_feature_redundancy(
+    dataset_id: str,
+    threshold: float = 0.85,
+    session: Session = Depends(get_session),
+) -> dict:
+    """Detect pairs of features that are so highly correlated they carry duplicate information.
+
+    Args:
+        dataset_id: UUID of the dataset to inspect.
+        threshold: Absolute Pearson correlation threshold (default 0.85).
+
+    Returns:
+        redundant_pairs, redundant_groups, n_redundant, n_features_checked, threshold,
+        verdict, verdict_label, summary.
+    """
+    dataset = session.get(Dataset, dataset_id)
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    path = Path(dataset.file_path)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Dataset file not found on disk")
+
+    if threshold < 0.0 or threshold > 1.0:
+        raise HTTPException(
+            status_code=400, detail="threshold must be between 0.0 and 1.0"
+        )
+
+    # Find the active feature set to get the feature columns (excluding target)
+    feature_set = session.exec(
+        select(FeatureSet).where(
+            FeatureSet.dataset_id == dataset_id,
+            FeatureSet.is_active == True,  # noqa: E712
+        )
+    ).first()
+
+    df = pd.read_csv(path)
+
+    if feature_set and feature_set.target_column:
+        feature_names = [c for c in df.columns if c != feature_set.target_column]
+    else:
+        feature_names = list(df.columns)
+
+    try:
+        return compute_feature_redundancy(df, feature_names, threshold=threshold)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc

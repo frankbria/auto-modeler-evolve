@@ -79,6 +79,7 @@ import { SimilarRecordsCard } from "@/components/deploy/similar-records-card"
 import { FeatureEngineeringImpactCard } from "@/components/models/feature-engineering-impact-card"
 import { DataQualityImpactCard } from "@/components/models/data-quality-impact-card"
 import { OverfittingAnalysisCard } from "@/components/models/overfitting-analysis-card"
+import { FeatureRedundancyCard } from "@/components/models/feature-redundancy-card"
 import { OnboardingGuideCard } from "@/components/chat/onboarding-guide-card"
 import { DataVersionHistoryCard } from "@/components/chat/data-version-history-card"
 import { LearningCurveCard } from "@/components/chat/learning-curve-card"
@@ -379,6 +380,7 @@ export default function ProjectWorkspace() {
     attachFeEngineeringImpactToLastMessage,
     attachDataQualityImpactToLastMessage,
     attachOverfittingAnalysisToLastMessage,
+    attachFeatureRedundancyToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -757,6 +759,8 @@ export default function ProjectWorkspace() {
                 attachDataQualityImpactToLastMessage(json.data_quality_impact as import("@/lib/types").DataQualityImpactResult)
               } else if (json.type === "overfitting_analysis" && json.overfitting_analysis) {
                 attachOverfittingAnalysisToLastMessage(json.overfitting_analysis as import("@/lib/types").OverfittingAnalysisResult)
+              } else if (json.type === "feature_redundancy" && json.feature_redundancy) {
+                attachFeatureRedundancyToLastMessage(json.feature_redundancy as import("@/lib/types").FeatureRedundancyResult)
               } else if (json.type === "onboarding_guide" && json.onboarding_guide) {
                 attachOnboardingGuideToLastMessage(json.onboarding_guide as import("@/lib/types").OnboardingGuideResult)
               } else if (json.type === "version_history" && json.version_history) {
@@ -921,6 +925,8 @@ export default function ProjectWorkspace() {
                 attachDataQualityImpactToLastMessage(json.data_quality_impact as import("@/lib/types").DataQualityImpactResult)
               } else if (json.type === "overfitting_analysis" && json.overfitting_analysis) {
                 attachOverfittingAnalysisToLastMessage(json.overfitting_analysis as import("@/lib/types").OverfittingAnalysisResult)
+              } else if (json.type === "feature_redundancy" && json.feature_redundancy) {
+                attachFeatureRedundancyToLastMessage(json.feature_redundancy as import("@/lib/types").FeatureRedundancyResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -1074,6 +1080,7 @@ export default function ProjectWorkspace() {
     attachFeEngineeringImpactToLastMessage,
     attachDataQualityImpactToLastMessage,
     attachOverfittingAnalysisToLastMessage,
+    attachFeatureRedundancyToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -1750,6 +1757,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.overfitting_analysis && (
                       <OverfittingAnalysisCard result={msg.overfitting_analysis} />
+                    )}
+                    {msg.feature_redundancy && (
+                      <FeatureRedundancyCard result={msg.feature_redundancy} />
                     )}
                   </div>
                 </div>

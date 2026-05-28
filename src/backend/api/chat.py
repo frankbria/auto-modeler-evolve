@@ -3989,6 +3989,25 @@ _OVERFITTING_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# Feature redundancy: "are any features redundant?", "multicollinearity check"
+# Distinct from _FEATURE_SEL_PATTERNS (importance-based weak features) — this detects
+# features that are highly correlated with *each other*, not just with the target.
+_REDUNDANCY_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"(?:check\s+(?:for|if)|detect|find|show)\s+(?:redundant|duplicate|overlapping|correlated)\s+features?\b|"
+    r"features?\s+(?:redundant|duplicate|overlapping)\b|"
+    r"(?:any|are)\s+(?:redundant|duplicate|overlapping|correlated)\s+features?\b|"
+    r"(?:feature|column)\s+redundancy\b|"
+    r"(?:multicollinearity|multi.collinearity|collinearity)\b|"
+    r"(?:which|what)\s+features?\s+(?:measure|say|capture)\s+(?:the\s+same|similar)\s+(?:thing|information)\b|"
+    r"(?:highly|strongly|very)\s+correlated\s+features?\b|"
+    r"(?:feature|column)\s+(?:overlap|duplication|correlation\s+check)\b|"
+    r"duplicate\s+(?:signals?|information)\s+in\s+(?:my\s+)?(?:features?|data|columns)\b|"
+    r"(?:remove|drop)\s+(?:redundant|duplicate|correlated)\s+features?\b"
+    r")",
+    re.IGNORECASE,
+)
+
 # Similar records: "find records most like row 5", "who else looks like this customer?"
 _SIMILAR_RECORDS_PATTERNS = re.compile(
     r"(?i)(?:"
@@ -7646,6 +7665,70 @@ def send_message(
                             )
         except Exception:  # noqa: BLE001
             pass  # Overfitting analysis is nice-to-have; never crash chat
+
+    # Feature redundancy detection — "are any features redundant?", "multicollinearity"
+    redundancy_event: dict | None = None
+    if _REDUNDANCY_PATTERNS.search(body.message) and ctx["dataset"]:
+        try:
+            from core.analyzer import compute_feature_redundancy as _cfr
+            from core.feature_engine import apply_transformations as _apply_rd
+
+            _ds_rd = ctx["dataset"]
+            if _ds_rd and Path(_ds_rd.file_path).exists():
+                from sqlmodel import select as _sel_rd
+
+                _fset_rd = session.exec(
+                    _sel_rd(FeatureSet).where(
+                        FeatureSet.dataset_id == _ds_rd.id,
+                        FeatureSet.is_active == True,  # noqa: E712
+                    )
+                ).first()
+                import pandas as _pd_rd
+
+                _df_rd = _pd_rd.read_csv(Path(_ds_rd.file_path))
+                if _fset_rd:
+                    _tfms_rd = __import__("json").loads(_fset_rd.transformations or "[]")
+                    if _tfms_rd:
+                        _df_rd, _ = _apply_rd(_df_rd, _tfms_rd)
+                    _feat_cols_rd = [
+                        c for c in _df_rd.columns if c != (_fset_rd.target_column or "")
+                    ]
+                else:
+                    _feat_cols_rd = list(_df_rd.columns)
+
+                if len(_feat_cols_rd) >= 2:
+                    _rd_result = _cfr(_df_rd, _feat_cols_rd)
+                    redundancy_event = {
+                        "dataset_id": _ds_rd.id,
+                        "target_column": (_fset_rd.target_column if _fset_rd else None),
+                        **_rd_result,
+                    }
+                    _rd_pairs = _rd_result["redundant_pairs"]
+                    _rd_verdict = _rd_result["verdict_label"]
+                    if _rd_pairs:
+                        _drop_list = ", ".join(
+                            sorted({p["drop"] for p in _rd_pairs})
+                        )
+                        system_prompt += (
+                            f"\n\n## Feature Redundancy Analysis\n"
+                            f"Verdict: {_rd_verdict}. "
+                            f"Found {len(_rd_pairs)} redundant pair(s) in "
+                            f"{_rd_result['n_features_checked']} numeric features. "
+                            f"Suggested features to drop: {_drop_list}. "
+                            f"Summary: {_rd_result['summary']} "
+                            "Tell the analyst which features are redundant and which one to keep from each pair. "
+                            "Explain that removing redundant features simplifies the model without losing information."
+                        )
+                    else:
+                        system_prompt += (
+                            f"\n\n## Feature Redundancy Analysis\n"
+                            f"Verdict: {_rd_verdict}. "
+                            f"Checked {_rd_result['n_features_checked']} numeric features — "
+                            "no redundant pairs found above the threshold. "
+                            "Tell the analyst their features are non-redundant and this is a good sign."
+                        )
+        except Exception:  # noqa: BLE001
+            pass  # Redundancy analysis is nice-to-have; never crash chat
 
     # Check if user wants to change the train/test split strategy
     split_strategy_event: dict | None = None
@@ -16982,6 +17065,9 @@ def send_message(
 
         if overfitting_event:
             yield f"data: {json.dumps({'type': 'overfitting_analysis', 'overfitting_analysis': overfitting_event})}\n\n"
+
+        if redundancy_event:
+            yield f"data: {json.dumps({'type': 'feature_redundancy', 'feature_redundancy': redundancy_event})}\n\n"
 
         # After text stream, opportunistically generate a chart if the
         # message is about data and we have a dataset loaded

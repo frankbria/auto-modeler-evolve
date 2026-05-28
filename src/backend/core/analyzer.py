@@ -4587,3 +4587,166 @@ def compute_column_type_suggestions(profile: dict) -> dict:
         "dataset_rows": row_count,
         "dataset_cols": len(columns),
     }
+
+
+def compute_feature_redundancy(
+    df: pd.DataFrame,
+    feature_names: list[str],
+    threshold: float = 0.85,
+) -> dict:
+    """Detect pairs of features that are so highly correlated they carry duplicate information.
+
+    Uses Pearson correlation on numeric columns. For each redundant pair (|corr| > threshold),
+    recommends which feature to keep (higher variance wins; ties broken alphabetically).
+
+    Args:
+        df: DataFrame containing the feature columns.
+        feature_names: List of columns to check (should exclude the target).
+        threshold: Absolute correlation above which features are considered redundant (0–1).
+
+    Returns:
+        dict with keys:
+            redundant_pairs    – list of {feature_a, feature_b, correlation, keep, drop}
+            redundant_groups   – list of grouped feature clusters (each a list of col names)
+            n_redundant        – int: total features involved in at least one redundant pair
+            n_features_checked – int: numeric features examined
+            threshold          – float: threshold used
+            verdict            – "none" | "low" | "high"
+            verdict_label      – plain-English label
+            summary            – one-sentence overview
+    """
+    MIN_ROWS = 10
+
+    if len(df) < MIN_ROWS:
+        raise ValueError(
+            f"Dataset has only {len(df)} rows — need at least {MIN_ROWS} for "
+            "feature redundancy analysis."
+        )
+
+    # Keep only numeric columns that appear in feature_names
+    numeric_cols = [
+        c for c in feature_names if c in df.columns and pd.api.types.is_numeric_dtype(df[c])
+    ]
+
+    if len(numeric_cols) < 2:
+        return {
+            "redundant_pairs": [],
+            "redundant_groups": [],
+            "n_redundant": 0,
+            "n_features_checked": len(numeric_cols),
+            "threshold": threshold,
+            "verdict": "none",
+            "verdict_label": "No Redundancy Detected",
+            "summary": (
+                "Not enough numeric features to check for redundancy "
+                f"(found {len(numeric_cols)} numeric column(s) — need at least 2)."
+            ),
+        }
+
+    sub = df[numeric_cols].dropna(how="all")
+    # Fill remaining NaN with column median so correlation can be computed
+    sub = sub.fillna(sub.median(numeric_only=True))
+
+    corr_matrix = sub.corr(method="pearson")
+    variances = sub.var()
+
+    # Collect all pairs above threshold (upper triangle only to avoid duplicates)
+    redundant_pairs: list[dict] = []
+    seen_as_drop: set[str] = set()
+
+    for i, col_a in enumerate(numeric_cols):
+        for col_b in numeric_cols[i + 1 :]:
+            corr_val = corr_matrix.loc[col_a, col_b]
+            if pd.isna(corr_val):
+                continue
+            if abs(corr_val) >= threshold:
+                # Recommend keeping the feature with higher variance
+                var_a = float(variances.get(col_a, 0.0))
+                var_b = float(variances.get(col_b, 0.0))
+                if var_a >= var_b:
+                    keep, drop = col_a, col_b
+                else:
+                    keep, drop = col_b, col_a
+                seen_as_drop.add(drop)
+                redundant_pairs.append(
+                    {
+                        "feature_a": col_a,
+                        "feature_b": col_b,
+                        "correlation": round(float(corr_val), 4),
+                        "correlation_abs": round(abs(float(corr_val)), 4),
+                        "direction": "positive" if corr_val > 0 else "negative",
+                        "keep": keep,
+                        "drop": drop,
+                        "reason": (
+                            f"{col_a} and {col_b} are {abs(corr_val):.0%} correlated — "
+                            f"they carry nearly identical information. "
+                            f"Keeping {keep} (higher variance) is sufficient."
+                        ),
+                    }
+                )
+
+    # Build redundant groups using union-find
+    parent: dict[str, str] = {}
+
+    def _find(x: str) -> str:
+        while parent.get(x, x) != x:
+            parent[x] = parent.get(parent.get(x, x), parent.get(x, x))
+            x = parent.get(x, x)
+        return x
+
+    def _union(a: str, b: str) -> None:
+        ra, rb = _find(a), _find(b)
+        if ra != rb:
+            parent[rb] = ra
+
+    for pair in redundant_pairs:
+        _union(pair["feature_a"], pair["feature_b"])
+
+    groups_map: dict[str, list[str]] = {}
+    all_involved = set()
+    for pair in redundant_pairs:
+        for col in (pair["feature_a"], pair["feature_b"]):
+            all_involved.add(col)
+            root = _find(col)
+            groups_map.setdefault(root, [])
+            if col not in groups_map[root]:
+                groups_map[root].append(col)
+
+    redundant_groups = [sorted(members) for members in groups_map.values() if len(members) >= 2]
+    n_redundant = len(all_involved)
+    n_features_checked = len(numeric_cols)
+
+    if n_redundant == 0:
+        verdict = "none"
+        verdict_label = "No Redundancy Detected"
+        summary = (
+            f"None of the {n_features_checked} numeric features exceed the "
+            f"{threshold:.0%} correlation threshold — your feature set has minimal redundancy."
+        )
+    elif len(redundant_pairs) <= 2:
+        verdict = "low"
+        verdict_label = "Low Redundancy"
+        summary = (
+            f"Found {len(redundant_pairs)} redundant feature pair(s) out of "
+            f"{n_features_checked} numeric features checked. "
+            f"Consider dropping: {', '.join(sorted(seen_as_drop))}."
+        )
+    else:
+        verdict = "high"
+        verdict_label = "High Redundancy"
+        summary = (
+            f"Found {len(redundant_pairs)} redundant feature pair(s) involving "
+            f"{n_redundant} features. "
+            f"Simplify your model by dropping: {', '.join(sorted(seen_as_drop))}."
+        )
+
+    return {
+        "redundant_pairs": redundant_pairs,
+        "redundant_groups": redundant_groups,
+        "n_redundant": n_redundant,
+        "n_features_checked": n_features_checked,
+        "threshold": threshold,
+        "verdict": verdict,
+        "verdict_label": verdict_label,
+        "summary": summary,
+    }

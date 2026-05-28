@@ -540,6 +540,7 @@ export interface ChatMessage {
   fe_impact?: FeatureEngineeringImpactResult
   data_quality_impact?: DataQualityImpactResult
   overfitting_analysis?: OverfittingAnalysisResult
+  feature_redundancy?: FeatureRedundancyResult
 }
 
 export interface RollbackVersionEntry {
@@ -3911,5 +3912,29 @@ export interface OverfittingAnalysisResult {
   n_features: number
   algorithm_plain: string
   recommendations: string[]
+  summary: string
+}
+
+export interface RedundantPair {
+  feature_a: string
+  feature_b: string
+  correlation: number
+  correlation_abs: number
+  direction: "positive" | "negative"
+  keep: string
+  drop: string
+  reason: string
+}
+
+export interface FeatureRedundancyResult {
+  dataset_id: string
+  target_column: string | null
+  redundant_pairs: RedundantPair[]
+  redundant_groups: string[][]
+  n_redundant: number
+  n_features_checked: number
+  threshold: number
+  verdict: "none" | "low" | "high"
+  verdict_label: string
   summary: string
 }

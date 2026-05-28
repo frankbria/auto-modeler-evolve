@@ -49,7 +49,7 @@ the time is better spent on real features.
 
 ## Currently Working On
 
-*(nothing)*
+**Track C: Feature Redundancy Detection via Chat** — detecting highly correlated feature pairs that carry duplicate information. "Are any features redundant?", "which features measure the same thing?", "multicollinearity check". `FeatureRedundancyCard` with correlation-pair table, keep/drop badges, and plain-English advice.
 
 ---
 
