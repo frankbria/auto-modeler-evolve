@@ -7506,9 +7506,7 @@ def send_message(
 
             _ds_dqi = ctx["dataset"]
             if _ds_dqi and Path(_ds_dqi.file_path).exists():
-                _done_runs_dqi = [
-                    r for r in ctx["model_runs"] if r.status == "done"
-                ]
+                _done_runs_dqi = [r for r in ctx["model_runs"] if r.status == "done"]
                 _run_dqi: ModelRun | None = next(
                     (r for r in _done_runs_dqi if r.is_selected),
                     _done_runs_dqi[0] if _done_runs_dqi else None,
@@ -7530,7 +7528,7 @@ def send_message(
                         if _tfms_dqi:
                             _df_dqi, _ = _apply_dqi(_df_dqi, _tfms_dqi)
                         _target_dqi = _fset_dqi.target_column
-                        _problem_dqi = (_fset_dqi.problem_type or "regression")
+                        _problem_dqi = _fset_dqi.problem_type or "regression"
                         _feat_cols_dqi = [
                             c for c in _df_dqi.columns if c != _target_dqi
                         ]

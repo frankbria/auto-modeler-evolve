@@ -13,7 +13,9 @@ from core.trainer import compute_data_quality_impact
 # ---------------------------------------------------------------------------
 
 
-def _make_regression_data(n: int = 60, seed: int = 42) -> tuple[pd.DataFrame, pd.Series]:
+def _make_regression_data(
+    n: int = 60, seed: int = 42
+) -> tuple[pd.DataFrame, pd.Series]:
     rng = np.random.default_rng(seed)
     X = pd.DataFrame(
         {
@@ -25,7 +27,9 @@ def _make_regression_data(n: int = 60, seed: int = 42) -> tuple[pd.DataFrame, pd
     return X, y
 
 
-def _make_classification_data(n: int = 60, seed: int = 7) -> tuple[pd.DataFrame, pd.Series]:
+def _make_classification_data(
+    n: int = 60, seed: int = 7
+) -> tuple[pd.DataFrame, pd.Series]:
     rng = np.random.default_rng(seed)
     X = pd.DataFrame(
         {
@@ -46,9 +50,18 @@ def test_regression_result_has_required_keys():
     X, y = _make_regression_data()
     result = compute_data_quality_impact(X, y, "linear_regression", "regression")
     required = {
-        "n_total", "n_outliers", "outlier_pct", "baseline_score", "clean_score",
-        "delta", "metric_key", "metric_label", "verdict", "improvement",
-        "recommendation", "summary",
+        "n_total",
+        "n_outliers",
+        "outlier_pct",
+        "baseline_score",
+        "clean_score",
+        "delta",
+        "metric_key",
+        "metric_label",
+        "verdict",
+        "improvement",
+        "recommendation",
+        "summary",
     }
     assert required.issubset(result.keys())
 
@@ -57,9 +70,18 @@ def test_classification_result_has_required_keys():
     X, y = _make_classification_data()
     result = compute_data_quality_impact(X, y, "logistic_regression", "classification")
     required = {
-        "n_total", "n_outliers", "outlier_pct", "baseline_score", "clean_score",
-        "delta", "metric_key", "metric_label", "verdict", "improvement",
-        "recommendation", "summary",
+        "n_total",
+        "n_outliers",
+        "outlier_pct",
+        "baseline_score",
+        "clean_score",
+        "delta",
+        "metric_key",
+        "metric_label",
+        "verdict",
+        "improvement",
+        "recommendation",
+        "summary",
     }
     assert required.issubset(result.keys())
 
@@ -169,7 +191,9 @@ def test_too_few_rows_raises():
 
 def test_unknown_algorithm_falls_back():
     X, y = _make_regression_data()
-    result = compute_data_quality_impact(X, y, "nonexistent_algorithm_xyz", "regression")
+    result = compute_data_quality_impact(
+        X, y, "nonexistent_algorithm_xyz", "regression"
+    )
     # Should not raise — should fall back to linear_regression
     assert result["n_total"] == len(X)
 
@@ -221,9 +245,13 @@ def test_pattern_matches(message: str):
     ],
 )
 def test_pattern_false_positives(message: str):
-    assert not _DATA_QUALITY_IMPACT_PATTERNS.search(message), f"Should NOT match: {message!r}"
+    assert not _DATA_QUALITY_IMPACT_PATTERNS.search(message), (
+        f"Should NOT match: {message!r}"
+    )
 
 
 def test_pattern_case_insensitive():
-    assert _DATA_QUALITY_IMPACT_PATTERNS.search("WOULD REMOVING OUTLIERS IMPROVE MY MODEL?")
+    assert _DATA_QUALITY_IMPACT_PATTERNS.search(
+        "WOULD REMOVING OUTLIERS IMPROVE MY MODEL?"
+    )
     assert _DATA_QUALITY_IMPACT_PATTERNS.search("DATA QUALITY IMPACT ON MODEL")

@@ -2142,7 +2142,9 @@ def compute_data_quality_impact(
     )
     if algorithm not in all_algos:
         algorithm = (
-            "linear_regression" if problem_type == "regression" else "logistic_regression"
+            "linear_regression"
+            if problem_type == "regression"
+            else "logistic_regression"
         )
     algo_info = all_algos[algorithm]
     if algo_info.get("is_ensemble"):
@@ -2160,8 +2162,12 @@ def compute_data_quality_impact(
     y_arr = np.array(y)
 
     # Detect outliers — IsolationForest runs on features only, not the target
-    actual_contamination = min(contamination, max(0.01, (len(X_arr) - MIN_ROWS) / len(X_arr)))
-    iso = _IsoForest(contamination=actual_contamination, random_state=42, n_estimators=50)
+    actual_contamination = min(
+        contamination, max(0.01, (len(X_arr) - MIN_ROWS) / len(X_arr))
+    )
+    iso = _IsoForest(
+        contamination=actual_contamination, random_state=42, n_estimators=50
+    )
     preds = iso.fit_predict(X_arr)
     inlier_mask = preds == 1
     n_outliers = int(np.sum(~inlier_mask))
