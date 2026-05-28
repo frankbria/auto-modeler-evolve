@@ -53,6 +53,12 @@ the time is better spent on real features.
 
 ---
 
+## Day 78 (04:00) — Done
+
+**Track C: Overfitting/Underfitting Detection via Chat** — complete. `OverfittingAnalysisCard`, `compute_overfitting_analysis()` pure function comparing train score vs CV score, REST endpoint, chat regex (8 NL variants) + handler + SSE emit. 46 backend + 25 frontend = 71 new tests. Verdicts: well_fit / mild_overfit / overfit / underfit.
+
+---
+
 ## Day 77 (20:00) — Done
 
 **Track C: Data Quality Impact on Model Performance** — complete. `DataQualityImpactCard`, `compute_data_quality_impact()` pure function using IsolationForest, REST endpoint, chat regex (9 NL variants) + handler + SSE emit. 39 backend + 22 frontend = 61 new tests.
