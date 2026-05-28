@@ -539,6 +539,7 @@ export interface ChatMessage {
   similar_records?: SimilarRecordsResult
   fe_impact?: FeatureEngineeringImpactResult
   data_quality_impact?: DataQualityImpactResult
+  overfitting_analysis?: OverfittingAnalysisResult
 }
 
 export interface RollbackVersionEntry {
@@ -3888,5 +3889,27 @@ export interface DataQualityImpactResult {
   verdict: "worthwhile" | "marginal" | "no_benefit" | "harmful"
   improvement: boolean
   recommendation: string
+  summary: string
+}
+
+export interface OverfittingAnalysisResult {
+  run_id: string
+  algorithm: string
+  target_column: string
+  problem_type: string
+  train_score: number
+  cv_mean: number
+  cv_std: number
+  cv_scores: number[]
+  gap: number
+  gap_pct: number
+  metric_key: string
+  metric_label: string
+  verdict: "well_fit" | "mild_overfit" | "overfit" | "underfit"
+  verdict_label: string
+  n_rows: number
+  n_features: number
+  algorithm_plain: string
+  recommendations: string[]
   summary: string
 }

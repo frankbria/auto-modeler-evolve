@@ -2257,3 +2257,203 @@ def compute_data_quality_impact(
         "recommendation": recommendation,
         "summary": summary,
     }
+
+
+def compute_overfitting_analysis(
+    X: pd.DataFrame,
+    y: pd.Series,
+    algorithm: str,
+    problem_type: str,
+    cv_folds: int = 5,
+) -> dict:
+    """Detect overfitting or underfitting by comparing train score vs cross-validation score.
+
+    Returns:
+        dict with keys: train_score, cv_mean, cv_std, cv_scores, gap, gap_pct,
+        metric_key, metric_label, verdict, verdict_label, n_rows, n_features,
+        algorithm_plain, recommendations, summary.
+    """
+    MIN_ROWS = 20
+
+    if len(X) < MIN_ROWS:
+        raise ValueError(
+            f"Dataset has only {len(X)} rows — need at least {MIN_ROWS} for "
+            "overfitting analysis."
+        )
+
+    all_algos = (
+        _build_regression_algorithms()
+        if problem_type == "regression"
+        else _build_classification_algorithms()
+    )
+    if algorithm not in all_algos:
+        algorithm = (
+            "linear_regression"
+            if problem_type == "regression"
+            else "logistic_regression"
+        )
+    algo_info = all_algos[algorithm]
+
+    if algo_info.get("is_ensemble"):
+        algorithm = (
+            "random_forest_regressor"
+            if problem_type == "regression"
+            else "random_forest_classifier"
+        )
+        algo_info = all_algos[algorithm]
+
+    metric_key = "r2" if problem_type == "regression" else "accuracy"
+    metric_label = "R²" if metric_key == "r2" else "Accuracy"
+
+    X_arr = np.array(X, dtype=float)
+    y_arr = np.array(y)
+
+    actual_cv = min(cv_folds, len(X_arr))
+    X_tr, _X_te, y_tr, _y_te = train_test_split(
+        X_arr, y_arr, test_size=0.2, random_state=42
+    )
+    train_model = algo_info["class"](**algo_info["params"])
+    try:
+        train_model.fit(X_tr, y_tr)
+        y_pred_tr = train_model.predict(X_tr)
+        if metric_key == "r2":
+            train_score = float(r2_score(y_tr, y_pred_tr))
+        else:
+            train_score = float(accuracy_score(y_tr, y_pred_tr))
+    except Exception:  # noqa: BLE001
+        train_score = 0.0
+
+    cv_model = algo_info["class"](**algo_info["params"])
+    try:
+        cv_result = run_cross_validation(
+            cv_model, X_arr, y_arr, n_splits=actual_cv, problem_type=problem_type
+        )
+        cv_scores = cv_result.get("scores", [])
+        cv_mean = float(cv_result.get("mean", 0.0))
+        cv_std = float(cv_result.get("std", 0.0))
+    except Exception:  # noqa: BLE001
+        cv_scores = []
+        cv_mean = train_score
+        cv_std = 0.0
+
+    train_score = round(train_score, 4)
+    cv_mean = round(cv_mean, 4)
+    cv_std = round(cv_std, 4)
+
+    gap = round(train_score - cv_mean, 4)
+    gap_pct = round(abs(gap) / max(abs(train_score), 1e-9) * 100, 1)
+
+    underfit_threshold = 0.3 if metric_key == "r2" else 0.6
+    if train_score < underfit_threshold:
+        verdict = "underfit"
+        verdict_label = "Underfitting"
+    elif gap > 0.15:
+        verdict = "overfit"
+        verdict_label = "Overfitting"
+    elif gap > 0.05:
+        verdict = "mild_overfit"
+        verdict_label = "Mild Overfitting"
+    else:
+        verdict = "well_fit"
+        verdict_label = "Well Fitted"
+
+    _ALGO_PLAIN_MAP = {
+        "linear_regression": "Linear Regression",
+        "logistic_regression": "Logistic Regression",
+        "decision_tree_regressor": "Decision Tree",
+        "decision_tree_classifier": "Decision Tree",
+        "random_forest_regressor": "Random Forest",
+        "random_forest_classifier": "Random Forest",
+        "gradient_boosting_regressor": "Gradient Boosting",
+        "gradient_boosting_classifier": "Gradient Boosting",
+        "xgboost_regressor": "XGBoost",
+        "xgboost_classifier": "XGBoost",
+        "lightgbm_regressor": "LightGBM",
+        "lightgbm_classifier": "LightGBM",
+        "mlp_regressor": "Neural Network",
+        "mlp_classifier": "Neural Network",
+    }
+    algorithm_plain = _ALGO_PLAIN_MAP.get(algorithm, algorithm.replace("_", " ").title())
+
+    n_rows = len(X_arr)
+    n_features = X_arr.shape[1] if len(X_arr.shape) > 1 else 1
+
+    recommendations: list[str] = []
+    if verdict == "underfit":
+        recommendations.append(
+            "Try a more complex algorithm (e.g., Random Forest or Gradient Boosting)."
+        )
+        if n_features < 5:
+            recommendations.append(
+                "Add more features — the model may not have enough signal to learn from."
+            )
+        if n_rows < 500:
+            recommendations.append(
+                "Collect more training data — small datasets often lead to underfitting."
+            )
+    elif verdict == "overfit":
+        recommendations.append(
+            "The model has memorized the training data. Try a simpler algorithm."
+        )
+        if algorithm in ("decision_tree_regressor", "decision_tree_classifier"):
+            recommendations.append("Limit tree depth to reduce memorization.")
+        if n_rows < 1000:
+            recommendations.append(
+                "Collect more training data — small datasets make overfitting more likely."
+            )
+        recommendations.append(
+            "Consider feature selection to remove noisy or redundant columns."
+        )
+    elif verdict == "mild_overfit":
+        recommendations.append(
+            "Slight overfitting detected. Consider regularization or feature selection."
+        )
+        recommendations.append(
+            "Hyperparameter tuning may help — try 'tune my model' in chat."
+        )
+    else:
+        recommendations.append(
+            "The model generalizes well. Train score and validation score are close."
+        )
+        if cv_std > 0.10:
+            recommendations.append(
+                "CV scores vary across folds — the model may be sensitive to data splits."
+            )
+
+    if verdict == "underfit":
+        summary = (
+            f"{algorithm_plain} is underfitting — train {metric_label} "
+            f"({train_score:.3f}) is below expectations. "
+            "The model needs more complexity or features."
+        )
+    elif verdict in ("overfit", "mild_overfit"):
+        summary = (
+            f"{algorithm_plain} shows a train {metric_label} of {train_score:.3f} "
+            f"but CV {metric_label} of only {cv_mean:.3f} "
+            f"(gap: {gap:+.3f}). "
+            "This suggests the model has memorized training patterns."
+        )
+    else:
+        summary = (
+            f"{algorithm_plain} generalizes well — train {metric_label} "
+            f"{train_score:.3f} vs CV {metric_label} {cv_mean:.3f} "
+            f"(gap: {gap:+.3f})."
+        )
+
+    return {
+        "train_score": train_score,
+        "cv_mean": cv_mean,
+        "cv_std": cv_std,
+        "cv_scores": [round(s, 4) for s in cv_scores],
+        "gap": gap,
+        "gap_pct": gap_pct,
+        "metric_key": metric_key,
+        "metric_label": metric_label,
+        "verdict": verdict,
+        "verdict_label": verdict_label,
+        "n_rows": n_rows,
+        "n_features": n_features,
+        "algorithm_plain": algorithm_plain,
+        "recommendations": recommendations,
+        "summary": summary,
+    }

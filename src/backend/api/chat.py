@@ -3974,6 +3974,21 @@ _DATA_QUALITY_IMPACT_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# Overfitting analysis: "is my model overfitting?", "generalization gap", "memorizing training data"
+_OVERFITTING_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"is\s+(?:my\s+)?model\s+(?:over|under)fitting\b|"
+    r"(?:check|detect|show|analyze)\s+(?:for\s+)?(?:over|under)fitting\b|"
+    r"(?:overfitting|underfitting)\s+(?:check|analysis|detection|report)\b|"
+    r"(?:generalization|train(?:ing)?)\s+gap\b|"
+    r"(?:is\s+(?:my\s+)?model\s+)?memoriz(?:ing|ed)\s+(?:the\s+)?training\s+data\b|"
+    r"(?:train(?:ing)?\s+(?:score|accuracy)\s+(?:vs|versus)\s+(?:test|validation|cv))\b|"
+    r"(?:is\s+(?:my\s+)?model\s+)?(?:too\s+)?complex\s+for\s+(?:my\s+)?data\b|"
+    r"model\s+(?:fit|fitting)\s+(?:analysis|check|quality)\b"
+    r")",
+    re.IGNORECASE,
+)
+
 # Similar records: "find records most like row 5", "who else looks like this customer?"
 _SIMILAR_RECORDS_PATTERNS = re.compile(
     r"(?i)(?:"
@@ -7565,6 +7580,72 @@ def send_message(
                             )
         except Exception:  # noqa: BLE001
             pass  # Data quality impact is nice-to-have; never crash chat
+
+    # Overfitting analysis: "is my model overfitting?", "generalization gap"
+    overfitting_event: dict | None = None
+    if _OVERFITTING_PATTERNS.search(body.message) and ctx["model_runs"]:
+        try:
+            from sqlmodel import select as _sel_oa
+
+            from core.feature_engine import apply_transformations as _apply_oa
+            from core.trainer import compute_overfitting_analysis as _coa
+            from core.trainer import prepare_features as _prep_oa
+
+            _ds_oa = ctx["dataset"]
+            if _ds_oa and Path(_ds_oa.file_path).exists():
+                _done_runs_oa = [r for r in ctx["model_runs"] if r.status == "done"]
+                _run_oa: ModelRun | None = next(
+                    (r for r in _done_runs_oa if r.is_selected),
+                    _done_runs_oa[0] if _done_runs_oa else None,
+                )
+                if _run_oa:
+                    _fset_oa = session.exec(
+                        _sel_oa(FeatureSet).where(
+                            FeatureSet.dataset_id == _ds_oa.id,
+                            FeatureSet.is_active == True,  # noqa: E712
+                        )
+                    ).first()
+                    if _fset_oa and _fset_oa.target_column:
+                        import pandas as _pd_oa
+
+                        _df_oa = _pd_oa.read_csv(Path(_ds_oa.file_path))
+                        _tfms_oa = __import__("json").loads(
+                            _fset_oa.transformations or "[]"
+                        )
+                        if _tfms_oa:
+                            _df_oa, _ = _apply_oa(_df_oa, _tfms_oa)
+                        _target_oa = _fset_oa.target_column
+                        _problem_oa = _fset_oa.problem_type or "regression"
+                        _feat_cols_oa = [c for c in _df_oa.columns if c != _target_oa]
+                        _X_oa, _y_oa, _ = _prep_oa(
+                            _df_oa, _feat_cols_oa, _target_oa, _problem_oa
+                        )
+                        if len(_X_oa) >= 20:
+                            _oa_result = _coa(
+                                _pd_oa.DataFrame(_X_oa),
+                                _pd_oa.Series(_y_oa),
+                                _run_oa.algorithm,
+                                _problem_oa,
+                            )
+                            overfitting_event = {
+                                "run_id": _run_oa.id,
+                                "algorithm": _run_oa.algorithm,
+                                "target_column": _target_oa,
+                                "problem_type": _problem_oa,
+                                **_oa_result,
+                            }
+                            system_prompt += (
+                                f"\n\n## Overfitting Analysis\n"
+                                f"Algorithm: {_run_oa.algorithm}. "
+                                f"Train {_oa_result['metric_label']}: {_oa_result['train_score']:.3f}. "
+                                f"CV {_oa_result['metric_label']}: {_oa_result['cv_mean']:.3f} "
+                                f"(gap: {_oa_result['gap']:+.3f}). "
+                                f"Verdict: {_oa_result['verdict_label']}. "
+                                "Explain what this means for the analyst in plain English. "
+                                "If overfitting, explain what memorizing training data means and suggest fixes."
+                            )
+        except Exception:  # noqa: BLE001
+            pass  # Overfitting analysis is nice-to-have; never crash chat
 
     # Check if user wants to change the train/test split strategy
     split_strategy_event: dict | None = None
@@ -16898,6 +16979,9 @@ def send_message(
 
         if data_quality_impact_event:
             yield f"data: {json.dumps({'type': 'data_quality_impact', 'data_quality_impact': data_quality_impact_event})}\n\n"
+
+        if overfitting_event:
+            yield f"data: {json.dumps({'type': 'overfitting_analysis', 'overfitting_analysis': overfitting_event})}\n\n"
 
         # After text stream, opportunistically generate a chart if the
         # message is about data and we have a dataset loaded

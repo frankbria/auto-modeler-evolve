@@ -292,3 +292,58 @@ describe("attachDataQualityImpactToLastMessage", () => {
     expect(msgs[0].data_quality_impact).toBeUndefined()
   })
 })
+
+// ---------------------------------------------------------------------------
+// attachOverfittingAnalysisToLastMessage
+// ---------------------------------------------------------------------------
+
+import type { OverfittingAnalysisResult } from "../lib/types"
+
+const makeOverfittingAnalysis = (): OverfittingAnalysisResult => ({
+  run_id: "run-oa-01",
+  algorithm: "random_forest_regressor",
+  target_column: "revenue",
+  problem_type: "regression",
+  train_score: 0.95,
+  cv_mean: 0.72,
+  cv_std: 0.04,
+  cv_scores: [0.70, 0.73, 0.71, 0.74, 0.72],
+  gap: 0.23,
+  gap_pct: 24.2,
+  metric_key: "r2",
+  metric_label: "R²",
+  verdict: "overfit",
+  verdict_label: "Overfitting",
+  n_rows: 200,
+  n_features: 5,
+  algorithm_plain: "Random Forest",
+  recommendations: ["Try a simpler algorithm."],
+  summary: "Overfitting detected.",
+})
+
+describe("attachOverfittingAnalysisToLastMessage", () => {
+  it("attaches overfitting analysis to the last assistant message", () => {
+    act(() => useAppStore.getState().addMessage(makeMessage("assistant", "Here is the analysis:")))
+    act(() => useAppStore.getState().attachOverfittingAnalysisToLastMessage(makeOverfittingAnalysis()))
+    expect(useAppStore.getState().messages[0].overfitting_analysis).toBeDefined()
+    expect(useAppStore.getState().messages[0].overfitting_analysis?.verdict).toBe("overfit")
+  })
+
+  it("does not attach to a user message", () => {
+    act(() => useAppStore.getState().addMessage(makeMessage("user", "is my model overfitting?")))
+    act(() => useAppStore.getState().attachOverfittingAnalysisToLastMessage(makeOverfittingAnalysis()))
+    expect(useAppStore.getState().messages[0].overfitting_analysis).toBeUndefined()
+  })
+
+  it("attaches to the last message, not earlier ones", () => {
+    act(() => {
+      useAppStore.getState().addMessage(makeMessage("assistant", "first"))
+      useAppStore.getState().addMessage(makeMessage("user", "question"))
+      useAppStore.getState().addMessage(makeMessage("assistant", "second"))
+    })
+    act(() => useAppStore.getState().attachOverfittingAnalysisToLastMessage(makeOverfittingAnalysis()))
+    const msgs = useAppStore.getState().messages
+    expect(msgs[2].overfitting_analysis).toBeDefined()
+    expect(msgs[0].overfitting_analysis).toBeUndefined()
+  })
+})

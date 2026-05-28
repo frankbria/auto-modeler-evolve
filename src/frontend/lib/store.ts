@@ -179,6 +179,7 @@ interface AppState {
   attachSimilarRecordsToLastMessage: (similar_records: import("./types").SimilarRecordsResult) => void
   attachFeEngineeringImpactToLastMessage: (fe_impact: import("./types").FeatureEngineeringImpactResult) => void
   attachDataQualityImpactToLastMessage: (data_quality_impact: import("./types").DataQualityImpactResult) => void
+  attachOverfittingAnalysisToLastMessage: (overfitting_analysis: import("./types").OverfittingAnalysisResult) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -1458,6 +1459,16 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, data_quality_impact }
+      }
+      return { messages }
+    }),
+
+  attachOverfittingAnalysisToLastMessage: (overfitting_analysis) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, overfitting_analysis }
       }
       return { messages }
     }),
