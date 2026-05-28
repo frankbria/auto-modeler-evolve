@@ -1,5 +1,27 @@
 # Journal
 
+## Day 78 — 04:00 — Overfitting/Underfitting Detection via Chat
+
+**Feature shipped:** Overfitting/Underfitting Detection (Track C perpetual). Analysts can now ask "is my model overfitting?", "generalization gap", "is my model memorizing the training data?", "train score vs test", or "model fit analysis" and receive an `OverfittingAnalysisCard` in chat with a direct answer to "is my model generalizing or memorizing?"
+
+**What was built:**
+
+- `compute_overfitting_analysis()` pure function in `core/trainer.py`: fits the model on an 80/20 split to get the train score, then runs `run_cross_validation()` for cv_mean/cv_std. Computes generalization gap = train_score − cv_mean. Verdicts: `well_fit` (|gap|<0.05), `mild_overfit` (gap>0.05), `overfit` (gap>0.15), `underfit` (train_score below thresholds). Returns 16-key dict including per-fold cv_scores, gap_pct, algorithm_plain, recommendations list, and summary.
+
+- `GET /api/models/{run_id}/overfitting-analysis` REST endpoint in `api/models.py`: loads run + active feature set + dataset, calls `prepare_features()` then `compute_overfitting_analysis()`, returns 400 when <20 rows or model not done.
+
+- `_OVERFITTING_PATTERNS` regex (8 NL variants) in `api/chat.py` at module level. Handler block in `send_message()` guarded by `ctx["model_runs"]`; selects best/selected done run; injects verdict + gap into system_prompt. SSE event `{type:"overfitting_analysis"}` emitted in generator.
+
+- `OverfittingAnalysisCard` React component: emerald border=well_fit, amber=mild_overfit, rose=overfit, slate=underfit. Shows train vs CV 3-column grid (train score / gap / cv score), gap progressbar (ARIA), recommendations list, summary line, sr-only figcaption.
+
+- Full type wiring: `OverfittingAnalysisResult` TypeScript interface, `overfitting_analysis?` on `ChatMessage`, `attachOverfittingAnalysisToLastMessage` Zustand action, SSE handler + card render in `project/[id]/page.tsx`.
+
+**Tests:** 46 backend (21 pure-function unit tests, 16 regex pattern tests, 3 edge cases: too-few-rows ValueError, unknown-algorithm fallback, ensemble fallback, 6 structure tests) + 25 frontend (22 card component tests, 3 store action tests) = 71 new tests. All passing. Backend lint: clean. Frontend build + lint: clean.
+
+**Why this matters:** Analysts frequently wonder whether their model will generalize to new data or has just memorized training patterns. Until now, there was no direct way to diagnose this from chat. A large train/test gap is a clear signal to use a simpler algorithm or collect more data; a small gap confirms the model is trustworthy. Distinct from `CvScoreDistributionCard` (fold variance) and `ModelQualityScoreCard` (quality score) — this directly answers "is my model overfitting?"
+
+**Baseline:** 4954 backend / 2814 frontend → **5000 backend / 2839 frontend** (+46 / +25).
+
 ## Day 77 — 20:00 — Data Quality Impact on Model Performance
 
 **Feature shipped:** Data Quality Impact Analysis (Track C perpetual). Analysts can now ask "would removing outliers improve my model?", "data quality impact on model", "what if I removed the bad training rows?", "would cleaner data help my accuracy?" and receive a `DataQualityImpactCard` in chat with a direct, data-backed answer to "should I clean my training data before retraining?"
