@@ -1,4 +1,5 @@
 """Tests for compute_feature_redundancy() pure function and REST endpoint."""
+
 import io
 
 import numpy as np
@@ -38,7 +39,9 @@ def test_no_redundancy_returns_none_verdict():
 
 def test_perfectly_correlated_pair_detected():
     x = np.linspace(1, 100, 60)
-    df = pd.DataFrame({"x": x, "y": x * 2 + 1, "z": np.random.default_rng(0).uniform(0, 1, 60)})
+    df = pd.DataFrame(
+        {"x": x, "y": x * 2 + 1, "z": np.random.default_rng(0).uniform(0, 1, 60)}
+    )
     result = compute_feature_redundancy(df, ["x", "y", "z"])
     pairs = result["redundant_pairs"]
     assert len(pairs) >= 1
@@ -91,7 +94,9 @@ def test_verdict_high_for_many_pairs():
             "noise": np.random.default_rng(7).uniform(0, 10, 40),
         }
     )
-    result = compute_feature_redundancy(df, ["a", "b", "c", "d", "noise"], threshold=0.8)
+    result = compute_feature_redundancy(
+        df, ["a", "b", "c", "d", "noise"], threshold=0.8
+    )
     # a/b/c/d are all highly correlated — should get 'high'
     assert result["verdict"] == "high"
 
@@ -118,7 +123,16 @@ def test_pair_keys():
     result = compute_feature_redundancy(df, ["a", "b"], threshold=0.5)
     if result["redundant_pairs"]:
         pair = result["redundant_pairs"][0]
-        required = {"feature_a", "feature_b", "correlation", "correlation_abs", "direction", "keep", "drop", "reason"}
+        required = {
+            "feature_a",
+            "feature_b",
+            "correlation",
+            "correlation_abs",
+            "direction",
+            "keep",
+            "drop",
+            "reason",
+        }
         assert required <= pair.keys()
 
 
@@ -128,7 +142,9 @@ def test_correlation_abs_is_absolute_value():
     result = compute_feature_redundancy(df, ["x", "neg_x"], threshold=0.5)
     for pair in result["redundant_pairs"]:
         assert pair["correlation_abs"] >= 0
-        assert abs(pair["correlation"]) == pytest.approx(pair["correlation_abs"], abs=1e-6)
+        assert abs(pair["correlation"]) == pytest.approx(
+            pair["correlation_abs"], abs=1e-6
+        )
 
 
 def test_too_few_rows_raises_value_error():
@@ -259,12 +275,8 @@ def test_regex_false_positives():
 # REST endpoint integration tests
 # ---------------------------------------------------------------------------
 
-_SAMPLE_CSV = (
-    b"a,b,c\n"
-    + b"".join(
-        f"{i},{i * 2},{100 - i * 0.3}\n".encode()
-        for i in range(1, 31)
-    )
+_SAMPLE_CSV = b"a,b,c\n" + b"".join(
+    f"{i},{i * 2},{100 - i * 0.3}\n".encode() for i in range(1, 31)
 )
 
 
@@ -284,6 +296,7 @@ async def ac(tmp_path):
     SQLModel.metadata.create_all(db_module.engine)
 
     import api.data as data_module
+
     data_module.UPLOAD_DIR = tmp_path / "uploads"
 
     from main import app

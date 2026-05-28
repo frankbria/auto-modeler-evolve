@@ -7687,7 +7687,9 @@ def send_message(
 
                 _df_rd = _pd_rd.read_csv(Path(_ds_rd.file_path))
                 if _fset_rd:
-                    _tfms_rd = __import__("json").loads(_fset_rd.transformations or "[]")
+                    _tfms_rd = __import__("json").loads(
+                        _fset_rd.transformations or "[]"
+                    )
                     if _tfms_rd:
                         _df_rd, _ = _apply_rd(_df_rd, _tfms_rd)
                     _feat_cols_rd = [
@@ -7706,9 +7708,7 @@ def send_message(
                     _rd_pairs = _rd_result["redundant_pairs"]
                     _rd_verdict = _rd_result["verdict_label"]
                     if _rd_pairs:
-                        _drop_list = ", ".join(
-                            sorted({p["drop"] for p in _rd_pairs})
-                        )
+                        _drop_list = ", ".join(sorted({p["drop"] for p in _rd_pairs}))
                         system_prompt += (
                             f"\n\n## Feature Redundancy Analysis\n"
                             f"Verdict: {_rd_verdict}. "

@@ -4625,7 +4625,9 @@ def compute_feature_redundancy(
 
     # Keep only numeric columns that appear in feature_names
     numeric_cols = [
-        c for c in feature_names if c in df.columns and pd.api.types.is_numeric_dtype(df[c])
+        c
+        for c in feature_names
+        if c in df.columns and pd.api.types.is_numeric_dtype(df[c])
     ]
 
     if len(numeric_cols) < 2:
@@ -4712,7 +4714,9 @@ def compute_feature_redundancy(
             if col not in groups_map[root]:
                 groups_map[root].append(col)
 
-    redundant_groups = [sorted(members) for members in groups_map.values() if len(members) >= 2]
+    redundant_groups = [
+        sorted(members) for members in groups_map.values() if len(members) >= 2
+    ]
     n_redundant = len(all_involved)
     n_features_checked = len(numeric_cols)
 
