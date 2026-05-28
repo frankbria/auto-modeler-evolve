@@ -77,6 +77,7 @@ import { CounterfactualCard } from "@/components/deploy/counterfactual-card"
 import { PopulationCounterfactualCard } from "@/components/deploy/population-counterfactual-card"
 import { SimilarRecordsCard } from "@/components/deploy/similar-records-card"
 import { FeatureEngineeringImpactCard } from "@/components/models/feature-engineering-impact-card"
+import { DataQualityImpactCard } from "@/components/models/data-quality-impact-card"
 import { OnboardingGuideCard } from "@/components/chat/onboarding-guide-card"
 import { DataVersionHistoryCard } from "@/components/chat/data-version-history-card"
 import { LearningCurveCard } from "@/components/chat/learning-curve-card"
@@ -375,6 +376,7 @@ export default function ProjectWorkspace() {
     attachPopulationCounterfactualToLastMessage,
     attachSimilarRecordsToLastMessage,
     attachFeEngineeringImpactToLastMessage,
+    attachDataQualityImpactToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -749,6 +751,8 @@ export default function ProjectWorkspace() {
                 attachSimilarRecordsToLastMessage(json.similar_records as import("@/lib/types").SimilarRecordsResult)
               } else if (json.type === "fe_impact" && json.fe_impact) {
                 attachFeEngineeringImpactToLastMessage(json.fe_impact as import("@/lib/types").FeatureEngineeringImpactResult)
+              } else if (json.type === "data_quality_impact" && json.data_quality_impact) {
+                attachDataQualityImpactToLastMessage(json.data_quality_impact as import("@/lib/types").DataQualityImpactResult)
               } else if (json.type === "onboarding_guide" && json.onboarding_guide) {
                 attachOnboardingGuideToLastMessage(json.onboarding_guide as import("@/lib/types").OnboardingGuideResult)
               } else if (json.type === "version_history" && json.version_history) {
@@ -909,6 +913,8 @@ export default function ProjectWorkspace() {
                 attachSimilarRecordsToLastMessage(json.similar_records as import("@/lib/types").SimilarRecordsResult)
               } else if (json.type === "fe_impact" && json.fe_impact) {
                 attachFeEngineeringImpactToLastMessage(json.fe_impact as import("@/lib/types").FeatureEngineeringImpactResult)
+              } else if (json.type === "data_quality_impact" && json.data_quality_impact) {
+                attachDataQualityImpactToLastMessage(json.data_quality_impact as import("@/lib/types").DataQualityImpactResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -1060,6 +1066,7 @@ export default function ProjectWorkspace() {
     attachPopulationCounterfactualToLastMessage,
     attachSimilarRecordsToLastMessage,
     attachFeEngineeringImpactToLastMessage,
+    attachDataQualityImpactToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -1730,6 +1737,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.fe_impact && (
                       <FeatureEngineeringImpactCard result={msg.fe_impact} />
+                    )}
+                    {msg.data_quality_impact && (
+                      <DataQualityImpactCard result={msg.data_quality_impact} />
                     )}
                   </div>
                 </div>

@@ -178,6 +178,7 @@ interface AppState {
   attachPopulationCounterfactualToLastMessage: (population_counterfactual: import("./types").PopulationCounterfactualResult) => void
   attachSimilarRecordsToLastMessage: (similar_records: import("./types").SimilarRecordsResult) => void
   attachFeEngineeringImpactToLastMessage: (fe_impact: import("./types").FeatureEngineeringImpactResult) => void
+  attachDataQualityImpactToLastMessage: (data_quality_impact: import("./types").DataQualityImpactResult) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -1447,6 +1448,16 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, fe_impact }
+      }
+      return { messages }
+    }),
+
+  attachDataQualityImpactToLastMessage: (data_quality_impact) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, data_quality_impact }
       }
       return { messages }
     }),

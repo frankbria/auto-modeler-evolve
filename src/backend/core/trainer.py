@@ -2088,3 +2088,166 @@ def compute_learning_curve(
         "recommendation": recommendation,
         "summary": summary,
     }
+
+
+def compute_data_quality_impact(
+    X: pd.DataFrame,
+    y: pd.Series,
+    algorithm: str,
+    problem_type: str,
+    contamination: float = 0.05,
+) -> dict:
+    """Assess whether removing outlier training rows would improve model performance.
+
+    Trains the specified algorithm twice: once on the full dataset and once with
+    the top ``contamination`` fraction of outliers (detected via IsolationForest)
+    removed.  Compares primary metrics to measure the impact.
+
+    Args:
+        X: Feature matrix (numeric, no NaNs — use prepare_features() first).
+        y: Target vector (already label-encoded for classification).
+        algorithm: Key from the algorithm registry.
+        problem_type: "regression" or "classification".
+        contamination: Fraction of rows to flag as outliers (default 0.05 = 5%).
+
+    Returns:
+        dict with keys:
+            n_total          – total rows
+            n_outliers       – rows flagged as outliers
+            outlier_pct      – percentage flagged (0–100)
+            baseline_score   – primary metric on full dataset
+            clean_score      – primary metric without outliers
+            delta            – clean_score − baseline_score
+            metric_key       – "r2" or "accuracy"
+            metric_label     – human-friendly metric name
+            verdict          – "worthwhile" | "marginal" | "no_benefit" | "harmful"
+            improvement      – True when delta > 0
+            recommendation   – plain-English recommendation
+            summary          – one-sentence overview
+    """
+    from sklearn.ensemble import IsolationForest as _IsoForest
+
+    MIN_ROWS = 20
+
+    if len(X) < MIN_ROWS:
+        raise ValueError(
+            f"Dataset has only {len(X)} rows — need at least {MIN_ROWS} for "
+            "data quality impact analysis."
+        )
+
+    all_algos = (
+        _build_regression_algorithms()
+        if problem_type == "regression"
+        else _build_classification_algorithms()
+    )
+    if algorithm not in all_algos:
+        algorithm = (
+            "linear_regression" if problem_type == "regression" else "logistic_regression"
+        )
+    algo_info = all_algos[algorithm]
+    if algo_info.get("is_ensemble"):
+        algorithm = (
+            "random_forest_regressor"
+            if problem_type == "regression"
+            else "random_forest_classifier"
+        )
+        algo_info = all_algos[algorithm]
+
+    metric_key = "r2" if problem_type == "regression" else "accuracy"
+    metric_label = "R²" if metric_key == "r2" else "Accuracy"
+
+    X_arr = np.array(X, dtype=float)
+    y_arr = np.array(y)
+
+    # Detect outliers — IsolationForest runs on features only, not the target
+    actual_contamination = min(contamination, max(0.01, (len(X_arr) - MIN_ROWS) / len(X_arr)))
+    iso = _IsoForest(contamination=actual_contamination, random_state=42, n_estimators=50)
+    preds = iso.fit_predict(X_arr)
+    inlier_mask = preds == 1
+    n_outliers = int(np.sum(~inlier_mask))
+
+    def _quick_score(X_data: np.ndarray, y_data: np.ndarray) -> float:
+        n = len(X_data)
+        if n >= 10:
+            X_tr, X_te, y_tr, y_te = train_test_split(
+                X_data, y_data, test_size=0.2, random_state=42
+            )
+        else:
+            X_tr = X_te = X_data
+            y_tr = y_te = y_data
+        model = algo_info["class"](**algo_info["params"])
+        try:
+            model.fit(X_tr, y_tr)
+        except Exception:  # noqa: BLE001
+            return 0.0
+        y_pred = model.predict(X_te)
+        if metric_key == "r2":
+            return float(r2_score(y_te, y_pred))
+        return float(accuracy_score(y_te, y_pred))
+
+    baseline_score = round(_quick_score(X_arr, y_arr), 4)
+    X_clean = X_arr[inlier_mask]
+    y_clean = y_arr[inlier_mask]
+    clean_score = round(_quick_score(X_clean, y_clean), 4)
+
+    delta = round(clean_score - baseline_score, 4)
+
+    if delta > 0.05:
+        verdict = "worthwhile"
+        improvement = True
+    elif delta > 0.01:
+        verdict = "marginal"
+        improvement = True
+    elif delta >= -0.01:
+        verdict = "no_benefit"
+        improvement = False
+    else:
+        verdict = "harmful"
+        improvement = False
+
+    if verdict == "worthwhile":
+        recommendation = (
+            f"Removing the {n_outliers} outlier row{'s' if n_outliers != 1 else ''} "
+            f"improved {metric_label} by {delta:+.3f}. "
+            "Consider cleaning the data before the next training run."
+        )
+    elif verdict == "marginal":
+        recommendation = (
+            f"Removing outliers gives a slight improvement "
+            f"({delta:+.3f} {metric_label}). "
+            "The benefit is small — only clean if the outliers are known errors."
+        )
+    elif verdict == "no_benefit":
+        recommendation = (
+            f"Removing {n_outliers} outlier row{'s' if n_outliers != 1 else ''} "
+            f"does not significantly change {metric_label} ({delta:+.3f}). "
+            "The model handles these rows well — keep them in training."
+        )
+    else:
+        recommendation = (
+            f"Removing {n_outliers} row{'s' if n_outliers != 1 else ''} worsened "
+            f"{metric_label} by {abs(delta):.3f}. "
+            "These 'outliers' likely represent real signal — keep them in training."
+        )
+
+    summary = (
+        f"Full dataset ({len(X_arr)} rows): {metric_label} = {baseline_score:.3f}. "
+        f"Without {n_outliers} outlier{'s' if n_outliers != 1 else ''} "
+        f"({len(X_arr) - n_outliers} rows): "
+        f"{metric_label} = {clean_score:.3f} ({delta:+.3f})."
+    )
+
+    return {
+        "n_total": len(X_arr),
+        "n_outliers": n_outliers,
+        "outlier_pct": round(n_outliers / len(X_arr) * 100, 1),
+        "baseline_score": baseline_score,
+        "clean_score": clean_score,
+        "delta": delta,
+        "metric_key": metric_key,
+        "metric_label": metric_label,
+        "verdict": verdict,
+        "improvement": improvement,
+        "recommendation": recommendation,
+        "summary": summary,
+    }

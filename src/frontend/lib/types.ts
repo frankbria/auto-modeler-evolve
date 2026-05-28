@@ -538,6 +538,7 @@ export interface ChatMessage {
   population_counterfactual?: PopulationCounterfactualResult
   similar_records?: SimilarRecordsResult
   fe_impact?: FeatureEngineeringImpactResult
+  data_quality_impact?: DataQualityImpactResult
 }
 
 export interface RollbackVersionEntry {
@@ -3869,4 +3870,23 @@ export interface FeatureEngineeringImpactResult {
   original_columns: string[]
   verdict: string
   has_engineering: boolean
+}
+
+export interface DataQualityImpactResult {
+  run_id: string
+  algorithm: string
+  target_column: string
+  problem_type: string
+  n_total: number
+  n_outliers: number
+  outlier_pct: number
+  baseline_score: number
+  clean_score: number
+  delta: number
+  metric_key: string
+  metric_label: string
+  verdict: "worthwhile" | "marginal" | "no_benefit" | "harmful"
+  improvement: boolean
+  recommendation: string
+  summary: string
 }

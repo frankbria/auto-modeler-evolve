@@ -240,3 +240,55 @@ describe("attachChartToLastMessage", () => {
     expect(msgs[1].chart).toBeUndefined() // earlier assistant unchanged
   })
 })
+
+// ---------------------------------------------------------------------------
+// attachDataQualityImpactToLastMessage
+// ---------------------------------------------------------------------------
+
+import type { DataQualityImpactResult } from "../lib/types"
+
+const makeDataQualityImpact = (): DataQualityImpactResult => ({
+  run_id: "run-001",
+  algorithm: "random_forest_regressor",
+  target_column: "revenue",
+  problem_type: "regression",
+  n_total: 100,
+  n_outliers: 5,
+  outlier_pct: 5.0,
+  baseline_score: 0.78,
+  clean_score: 0.84,
+  delta: 0.06,
+  metric_key: "r2",
+  metric_label: "R²",
+  verdict: "worthwhile",
+  improvement: true,
+  recommendation: "Removing outliers improved R².",
+  summary: "Full dataset (100 rows): R² = 0.780.",
+})
+
+describe("attachDataQualityImpactToLastMessage", () => {
+  it("attaches data quality impact to the last assistant message", () => {
+    act(() => useAppStore.getState().addMessage(makeMessage("assistant", "Here is the analysis:")))
+    act(() => useAppStore.getState().attachDataQualityImpactToLastMessage(makeDataQualityImpact()))
+    expect(useAppStore.getState().messages[0].data_quality_impact).toBeDefined()
+    expect(useAppStore.getState().messages[0].data_quality_impact?.verdict).toBe("worthwhile")
+  })
+
+  it("does not attach to a user message", () => {
+    act(() => useAppStore.getState().addMessage(makeMessage("user", "would removing outliers help?")))
+    act(() => useAppStore.getState().attachDataQualityImpactToLastMessage(makeDataQualityImpact()))
+    expect(useAppStore.getState().messages[0].data_quality_impact).toBeUndefined()
+  })
+
+  it("attaches to the last message, not earlier ones", () => {
+    act(() => {
+      useAppStore.getState().addMessage(makeMessage("assistant", "first"))
+      useAppStore.getState().addMessage(makeMessage("user", "question"))
+      useAppStore.getState().addMessage(makeMessage("assistant", "second"))
+    })
+    act(() => useAppStore.getState().attachDataQualityImpactToLastMessage(makeDataQualityImpact()))
+    const msgs = useAppStore.getState().messages
+    expect(msgs[2].data_quality_impact).toBeDefined()
+    expect(msgs[0].data_quality_impact).toBeUndefined()
+  })
+})

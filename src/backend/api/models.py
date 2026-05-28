@@ -721,6 +721,88 @@ def get_feature_engineering_impact(
     }
 
 
+@router.get("/api/models/{run_id}/data-quality-impact")
+def get_data_quality_impact(run_id: str, session: Session = Depends(get_session)):
+    """Show whether removing outlier training rows would improve model performance.
+
+    Uses IsolationForest to flag the most anomalous 5% of training rows, then
+    compares the primary metric trained on all data vs. without those rows.
+    Returns 400 if the dataset has fewer than 20 rows or no numeric features.
+    """
+    from core.feature_engine import apply_transformations
+    from core.trainer import compute_data_quality_impact, prepare_features
+
+    run = session.get(ModelRun, run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Model run not found")
+    if run.status != "done":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Model is not done (status: {run.status}). Train the model first.",
+        )
+
+    project_id = run.project_id
+    dataset = session.exec(
+        select(Dataset).where(Dataset.project_id == project_id)
+    ).first()
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    feature_set = session.exec(
+        select(FeatureSet).where(
+            FeatureSet.dataset_id == dataset.id,
+            FeatureSet.is_active == True,  # noqa: E712
+        )
+    ).first()
+    if not feature_set or not feature_set.target_column:
+        raise HTTPException(
+            status_code=400, detail="No active feature set with target column"
+        )
+
+    file_path = Path(dataset.file_path)
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Dataset file not found on disk")
+
+    df = pd.read_csv(file_path)
+    transforms = json.loads(feature_set.transformations or "[]")
+    if transforms:
+        df, _ = apply_transformations(df, transforms)
+
+    target_col = feature_set.target_column
+    problem_type = (feature_set.problem_type if feature_set else None) or "regression"
+    feature_cols = [c for c in df.columns if c != target_col]
+
+    try:
+        X_arr, y_arr, _ = prepare_features(df, feature_cols, target_col, problem_type)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    if len(X_arr) < 20:
+        raise HTTPException(
+            status_code=400,
+            detail="Need at least 20 rows for data quality impact analysis.",
+        )
+
+    try:
+        result = compute_data_quality_impact(
+            pd.DataFrame(X_arr),
+            pd.Series(y_arr),
+            run.algorithm,
+            problem_type,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return {
+        "run_id": run_id,
+        "project_id": project_id,
+        "algorithm": run.algorithm,
+        "target_column": target_col,
+        "problem_type": problem_type,
+        **result,
+    }
+
+
 @router.get("/api/models/{run_id}/calibration")
 def get_calibration(run_id: str, session: Session = Depends(get_session)):
     """Return calibration curve data and Brier score for a trained classifier.

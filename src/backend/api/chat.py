@@ -3958,6 +3958,22 @@ _FE_IMPACT_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# Data quality impact: "would removing outliers improve my model?", "data cleaning impact"
+_DATA_QUALITY_IMPACT_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"(?:would|will|could)\s+removing\s+(?:the\s+)?(?:outliers?|anomalies|bad\s+(?:rows?|data|records?))\s+(?:improve|help|boost|increase|change)\s+(?:my\s+)?(?:model|accuracy|performance|predictions?)\b|"
+    r"(?:data|training)\s+(?:quality|cleaning|cleanliness)\s+impact\s+(?:on\s+)?(?:my\s+)?(?:model|accuracy|performance|predictions?)\b|"
+    r"impact\s+of\s+(?:outliers?|noisy\s+data|bad\s+(?:rows?|data|records?)|data\s+quality|removing\s+(?:outliers?|bad\s+(?:rows?|data|records?)))\s+(?:on\s+)?(?:my\s+)?(?:model|training|accuracy|performance)\b|"
+    r"(?:how\s+)?would\s+cleaning\s+(?:up\s+)?(?:the\s+)?(?:data|training\s+data)?\s*(?:help|improve|affect|change)\s+(?:my\s+)?(?:model|accuracy|performance|predictions?)\b|"
+    r"(?:how\s+)?would\s+removing\s+(?:outliers?|bad\s+rows?|noise)\s+(?:affect|change|improve|help)\s+(?:my\s+)?(?:model|accuracy|performance|predictions?)\b|"
+    r"effect\s+of\s+(?:removing|cleaning)\s+(?:outliers?|bad\s+(?:rows?|data)|noise)\s+(?:on\s+)?(?:my\s+)?(?:model|training|accuracy)\b|"
+    r"(?:outlier|noise|bad\s+data)\s+removal\s+impact\s+(?:on\s+)?(?:model|accuracy|performance)\b|"
+    r"(?:what\s+if\s+)?(?:I|we)\s+(?:removed?|clean(?:ed)?|filtered?)\s+(?:the\s+)?(?:outliers?|bad\s+(?:rows?|data)|anomalies)\s+(?:from\s+)?(?:training|the\s+data|my\s+model)?\b|"
+    r"(?:would|will)\s+(?:cleaner|better|higher.?quality)\s+(?:training\s+)?data\s+(?:improve|help|boost)\s+(?:my\s+)?(?:model|accuracy|predictions?)\b"
+    r")",
+    re.IGNORECASE,
+)
+
 # Similar records: "find records most like row 5", "who else looks like this customer?"
 _SIMILAR_RECORDS_PATTERNS = re.compile(
     r"(?i)(?:"
@@ -7477,6 +7493,80 @@ def send_message(
                                 )
         except Exception:  # noqa: BLE001
             pass  # Feature engineering impact is nice-to-have; never crash chat
+
+    # Data quality impact: "would removing outliers improve my model?"
+    data_quality_impact_event: dict | None = None
+    if _DATA_QUALITY_IMPACT_PATTERNS.search(body.message) and ctx["model_runs"]:
+        try:
+            from sqlmodel import select as _sel_dqi
+
+            from core.feature_engine import apply_transformations as _apply_dqi
+            from core.trainer import compute_data_quality_impact as _cdqi
+            from core.trainer import prepare_features as _prep_dqi
+
+            _ds_dqi = ctx["dataset"]
+            if _ds_dqi and Path(_ds_dqi.file_path).exists():
+                _done_runs_dqi = [
+                    r for r in ctx["model_runs"] if r.status == "done"
+                ]
+                _run_dqi: ModelRun | None = next(
+                    (r for r in _done_runs_dqi if r.is_selected),
+                    _done_runs_dqi[0] if _done_runs_dqi else None,
+                )
+                if _run_dqi:
+                    _fset_dqi = session.exec(
+                        _sel_dqi(FeatureSet).where(
+                            FeatureSet.dataset_id == _ds_dqi.id,
+                            FeatureSet.is_active == True,  # noqa: E712
+                        )
+                    ).first()
+                    if _fset_dqi and _fset_dqi.target_column:
+                        import pandas as _pd_dqi
+
+                        _df_dqi = _pd_dqi.read_csv(Path(_ds_dqi.file_path))
+                        _tfms_dqi = __import__("json").loads(
+                            _fset_dqi.transformations or "[]"
+                        )
+                        if _tfms_dqi:
+                            _df_dqi, _ = _apply_dqi(_df_dqi, _tfms_dqi)
+                        _target_dqi = _fset_dqi.target_column
+                        _problem_dqi = (_fset_dqi.problem_type or "regression")
+                        _feat_cols_dqi = [
+                            c for c in _df_dqi.columns if c != _target_dqi
+                        ]
+                        _X_dqi, _y_dqi, _ = _prep_dqi(
+                            _df_dqi, _feat_cols_dqi, _target_dqi, _problem_dqi
+                        )
+                        if len(_X_dqi) >= 20:
+                            import pandas as _pd_dqi2
+
+                            _dqi_result = _cdqi(
+                                _pd_dqi2.DataFrame(_X_dqi),
+                                _pd_dqi2.Series(_y_dqi),
+                                _run_dqi.algorithm,
+                                _problem_dqi,
+                            )
+                            data_quality_impact_event = {
+                                "run_id": _run_dqi.id,
+                                "algorithm": _run_dqi.algorithm,
+                                "target_column": _target_dqi,
+                                "problem_type": _problem_dqi,
+                                **_dqi_result,
+                            }
+                            system_prompt += (
+                                f"\n\n## Data Quality Impact Analysis\n"
+                                f"Algorithm: {_run_dqi.algorithm}. "
+                                f"Total rows: {_dqi_result['n_total']}. "
+                                f"Outlier rows flagged: {_dqi_result['n_outliers']} "
+                                f"({_dqi_result['outlier_pct']}%). "
+                                f"Baseline {_dqi_result['metric_label']}: {_dqi_result['baseline_score']:.3f}. "
+                                f"Without outliers: {_dqi_result['clean_score']:.3f} "
+                                f"(delta {_dqi_result['delta']:+.3f}). "
+                                f"Verdict: {_dqi_result['verdict']}. "
+                                "Explain to the user whether removing outlier training rows would help their model."
+                            )
+        except Exception:  # noqa: BLE001
+            pass  # Data quality impact is nice-to-have; never crash chat
 
     # Check if user wants to change the train/test split strategy
     split_strategy_event: dict | None = None
@@ -16807,6 +16897,9 @@ def send_message(
 
         if fe_impact_event:
             yield f"data: {json.dumps({'type': 'fe_impact', 'fe_impact': fe_impact_event})}\n\n"
+
+        if data_quality_impact_event:
+            yield f"data: {json.dumps({'type': 'data_quality_impact', 'data_quality_impact': data_quality_impact_event})}\n\n"
 
         # After text stream, opportunistically generate a chart if the
         # message is about data and we have a dataset loaded
