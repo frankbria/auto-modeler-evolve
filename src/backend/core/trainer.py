@@ -2373,7 +2373,9 @@ def compute_overfitting_analysis(
         "mlp_regressor": "Neural Network",
         "mlp_classifier": "Neural Network",
     }
-    algorithm_plain = _ALGO_PLAIN_MAP.get(algorithm, algorithm.replace("_", " ").title())
+    algorithm_plain = _ALGO_PLAIN_MAP.get(
+        algorithm, algorithm.replace("_", " ").title()
+    )
 
     n_rows = len(X_arr)
     n_features = X_arr.shape[1] if len(X_arr.shape) > 1 else 1
