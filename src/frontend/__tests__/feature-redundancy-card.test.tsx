@@ -2,6 +2,7 @@ import React from "react"
 import { render, screen } from "@testing-library/react"
 import { FeatureRedundancyCard } from "@/components/models/feature-redundancy-card"
 import type { FeatureRedundancyResult } from "@/lib/types"
+import { useAppStore } from "@/lib/store"
 
 function makeResult(overrides: Partial<FeatureRedundancyResult> = {}): FeatureRedundancyResult {
   return {
@@ -187,7 +188,6 @@ describe("FeatureRedundancyCard", () => {
 
 describe("attachFeatureRedundancyToLastMessage store action", () => {
   beforeEach(() => {
-    const { useAppStore } = require("@/lib/store")
     useAppStore.setState({
       messages: [
         { role: "user", content: "Are any features redundant?" },
@@ -197,7 +197,6 @@ describe("attachFeatureRedundancyToLastMessage store action", () => {
   })
 
   it("attaches feature_redundancy to the last assistant message", () => {
-    const { useAppStore } = require("@/lib/store")
     const result = makeResult({ verdict: "low", verdict_label: "Low Redundancy" })
     useAppStore.getState().attachFeatureRedundancyToLastMessage(result)
     const messages = useAppStore.getState().messages
@@ -206,7 +205,6 @@ describe("attachFeatureRedundancyToLastMessage store action", () => {
   })
 
   it("does not attach to a user message", () => {
-    const { useAppStore } = require("@/lib/store")
     useAppStore.setState({
       messages: [{ role: "user", content: "test" }],
     })
@@ -217,7 +215,6 @@ describe("attachFeatureRedundancyToLastMessage store action", () => {
   })
 
   it("does not modify earlier messages", () => {
-    const { useAppStore } = require("@/lib/store")
     const result = makeResult()
     useAppStore.getState().attachFeatureRedundancyToLastMessage(result)
     const messages = useAppStore.getState().messages
