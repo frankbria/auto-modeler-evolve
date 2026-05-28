@@ -1,5 +1,27 @@
 # Journal
 
+## Day 77 — 20:00 — Data Quality Impact on Model Performance
+
+**Feature shipped:** Data Quality Impact Analysis (Track C perpetual). Analysts can now ask "would removing outliers improve my model?", "data quality impact on model", "what if I removed the bad training rows?", "would cleaner data help my accuracy?" and receive a `DataQualityImpactCard` in chat with a direct, data-backed answer to "should I clean my training data before retraining?"
+
+**What was built:**
+
+- `compute_data_quality_impact()` pure function in `core/trainer.py`: uses IsolationForest (contamination=5%, n_estimators=50 for speed) to flag the most anomalous training rows, trains the algorithm twice on identical 80/20 splits — once on all data (baseline) and once with flagged rows removed (clean). Computes delta in primary metric (R² for regression, accuracy for classification) and maps to verdict: worthwhile (Δ>0.05), marginal (Δ>0.01), no_benefit (Δ≥-0.01), harmful (Δ<-0.01). Ensemble algorithms fall back to Random Forest to avoid calibration overhead. Raises ValueError for <20 rows.
+
+- `GET /api/models/{run_id}/data-quality-impact` REST endpoint in `api/models.py`: loads run + active feature set + dataset, calls `prepare_features()` then pure function, returns 400 on <20 rows or prep errors.
+
+- `_DATA_QUALITY_IMPACT_PATTERNS` regex (9 NL variants) in `api/chat.py` at module level. Handler block in `send_message()` guarded by `ctx["model_runs"]`; selects best/selected done run; injects verdict + delta into system_prompt. SSE event `{type:"data_quality_impact"}` emitted in generator.
+
+- `DataQualityImpactCard` React component (adaptive border: emerald=worthwhile, amber=marginal, gray=no_benefit, rose=harmful): algorithm + metric label badges, 3-column score grid (baseline / delta / clean), outlier progress bar (role="progressbar", ARIA), recommendation paragraph, summary line, sr-only figcaption.
+
+- Full type wiring: `DataQualityImpactResult` TypeScript interface, `data_quality_impact?` on `ChatMessage`, `attachDataQualityImpactToLastMessage` Zustand action, SSE handler + card render in `project/[id]/page.tsx`.
+
+**Tests:** 39 backend (20 pure-function unit tests, 9 regex pattern tests, 7 false-positive guards, 3 edge cases: too-few-rows ValueError, unknown-algorithm fallback, ensemble fallback) + 22 frontend (16 card component tests, 3 store action tests + 3 existing store tests restructured) = 61 new tests. All 39/39 backend new tests pass. All 22/22 frontend new tests pass. Frontend build + TypeScript + lint: clean. Backend lint: clean.
+
+**Why this matters:** Analysts frequently wonder whether their model would perform better with cleaner data, but currently have no way to find out without manually cleaning and retraining. This card gives a direct experiment-based answer: "your model's R² improves from 0.72 to 0.81 when the 10 most anomalous training rows are removed — consider cleaning before the next retrain." The flip side (verdict: harmful) is equally valuable — it tells the analyst that those "outliers" are actually real signal and removing them would hurt the model.
+
+**Baseline:** 4915 backend / 2792 frontend → **4954 backend / 2814 frontend** (+39 / +22).
+
 ## Day 77 — 12:00 — Feature Engineering Impact Analysis
 
 **Feature shipped:** Feature Engineering Impact Analysis (Track C perpetual). Analysts can now ask "which features helped?", "did the transformations improve my model?", "feature engineering impact", "show me what the engineering added", "were the transformations worthwhile?" and receive a `FeatureEngineeringImpactCard` in chat that answers the "did I waste time on feature engineering?" question directly.
