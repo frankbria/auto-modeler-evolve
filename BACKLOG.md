@@ -49,7 +49,15 @@ the time is better spent on real features.
 
 ## Currently Working On
 
-**Track C: Feature Redundancy Detection via Chat** — detecting highly correlated feature pairs that carry duplicate information. "Are any features redundant?", "which features measure the same thing?", "multicollinearity check". `FeatureRedundancyCard` with correlation-pair table, keep/drop badges, and plain-English advice.
+*(nothing)*
+
+---
+
+## Day 78 (12:00) — Done
+
+**Track C: Feature Redundancy Detection via Chat** — complete.
+
+Closes the "are my features measuring the same thing?" analyst gap. Detects all numeric feature pairs with Pearson |correlation| ≥ 0.85 (configurable), clusters them into groups via union-find, recommends which to keep (higher variance wins). `_REDUNDANCY_PATTERNS` (8 NL variants: "are any features redundant?", "multicollinearity", "which features measure the same thing?", etc.). `FeatureRedundancyCard` (emerald/amber/rose by verdict, correlation bars, Keep/Drop badges). Distinct from FeatureSelectionCard (importance-based weak feature removal). 24 backend + 21 frontend = **45 new tests**. Total: **5024 backend / 2860 frontend = 7884**, all passing.
 
 ---
 

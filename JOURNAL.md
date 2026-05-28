@@ -1,5 +1,27 @@
 # Journal
 
+## Day 78 — 12:00 — Feature Redundancy Detection via Chat
+
+**Feature shipped:** Feature Redundancy Detection (Track C perpetual). Analysts can now ask "are any features redundant?", "multicollinearity", "which features measure the same thing?", "highly correlated features", or "feature overlap" and receive a `FeatureRedundancyCard` in chat that directly answers the "do I have duplicate signals in my data?" question.
+
+**What was built:**
+
+- `compute_feature_redundancy(df, feature_names, threshold=0.85)` pure function in `core/analyzer.py`: computes Pearson correlation matrix for all numeric columns in `feature_names`, finds all pairs where |corr| ≥ threshold, uses union-find to cluster redundant groups, recommends keeping the feature with higher variance from each redundant pair. Verdict: `none` (no redundant pairs), `low` (≤2 pairs), `high` (>2 pairs). Handles NaN via median fill. Returns 8-key dict including `redundant_pairs` (with keep/drop/reason/direction per pair), `redundant_groups`, `n_redundant`, `n_features_checked`, `threshold`, `verdict`, `verdict_label`, `summary`.
+
+- `GET /api/data/{dataset_id}/feature-redundancy` REST endpoint in `api/data.py`: loads active FeatureSet to exclude target column from feature list, validates threshold in [0, 1], returns 400 for out-of-range threshold and 404 for unknown dataset.
+
+- `_REDUNDANCY_PATTERNS` regex (8 NL variants) in `api/chat.py` at module level. Handler block guarded by `ctx["dataset"]`; loads and applies active transformations; emits `{type:"feature_redundancy"}` SSE event. System prompt injection names which features to drop and explains collinearity.
+
+- `FeatureRedundancyCard` React component (emerald border=none / amber border=low / rose border=high): verdict badge, features-checked badge, redundant-count badge, per-pair rows (`PairRow`: feature A ↔ feature B, direction badge positive/negative, correlation bar with role="progressbar" ARIA, Keep/Drop badges), drop recommendation box, summary line, sr-only figcaption.
+
+- Full type wiring: `RedundantPair` + `FeatureRedundancyResult` TypeScript interfaces, `feature_redundancy?` on `ChatMessage`, `attachFeatureRedundancyToLastMessage` Zustand action, SSE handler + card render in both EventSource branches of `project/[id]/page.tsx`.
+
+**Tests:** 24 backend (18 pure-function: no-redundancy, perfect correlation, negative correlation, variance-based keep, verdict-low, verdict-high, required keys, pair keys, correlation_abs, too-few-rows ValueError, single-numeric, non-numeric ignored, threshold parameter, redundant-groups structure, n_features_checked, summary type, threshold stored, NaN handling; 2 regex: matches + false positives; 4 endpoint: 200, required fields, 404, 400 invalid threshold) + 21 frontend (18 component + 3 store action) = 45 new tests. All passing. Backend lint: clean. Frontend build + lint: clean.
+
+**Why this matters:** Analysts often build datasets with redundant columns — revenue and revenue_thousands, age and age_bucket, log_price and price. These don't just waste model complexity; they split feature importance between near-identical signals, making the "most important features" list misleading. Distinct from `FeatureSelectionCard` (which drops low-importance features based on the trained model) — redundancy detection works *before* training and identifies collinear feature pairs that carry the same information regardless of importance scores.
+
+**Baseline:** 5000 backend / 2839 frontend → **5024 backend / 2860 frontend** (+24 / +21).
+
 ## Day 78 — 04:00 — Overfitting/Underfitting Detection via Chat
 
 **Feature shipped:** Overfitting/Underfitting Detection (Track C perpetual). Analysts can now ask "is my model overfitting?", "generalization gap", "is my model memorizing the training data?", "train score vs test", or "model fit analysis" and receive an `OverfittingAnalysisCard` in chat with a direct answer to "is my model generalizing or memorizing?"
