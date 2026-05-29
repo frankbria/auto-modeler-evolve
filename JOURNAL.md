@@ -1,5 +1,27 @@
 # Journal
 
+## Day 79 — 04:00 — Classification Threshold Advisor via Chat
+
+**Feature shipped:** Classification Threshold Advisor (Track C perpetual). Analysts can now ask "what probability threshold should I use?", "precision recall tradeoff", "optimal cutoff for my model", "help me choose a threshold", or "at what probability should I flag customers?" and receive a `ThresholdAnalysisCard` in chat that directly answers the "which probability cutoff should I use for my classification model?" question.
+
+**What was built:**
+
+- `compute_threshold_analysis(y_true, y_proba, class_names)` pure function in `core/validator.py`: sweeps thresholds from 0.05 to 0.95 in 19 steps, computes precision/recall/F1/positive_rate at each. Identifies three recommended options: max_f1 (best F1 balance), high_recall (recall ≥ 80%, for churn/fraud), high_precision (precision ≥ 80%, for costly interventions). Handles binary (uses positive class probability) and multiclass (uses max-class confidence). Raises ValueError for < 10 rows or single class.
+
+- `GET /api/models/{run_id}/threshold-analysis` REST endpoint in `api/validation.py`: classification-only (HTTP 400 for regression or non-probability models), loads fitted model, computes sweep on full training data, returns sweep + recommendations + current_metrics (at 0.50 default) + prevalence + positive_class name.
+
+- `_THRESHOLD_ADVISOR_PATTERNS` regex (8 NL variants: "what threshold should I use", "optimal cutoff", "precision recall tradeoff", "classification threshold advice", etc.) in `chat.py`. Handler guarded by classification `ctx["model_runs"]`; finds selected/best done run; loads model via joblib; computes threshold sweep; injects plain-English context (best F1 threshold, high-recall option, business guidance) into system_prompt; emits `{type:"threshold_analysis"}` SSE event.
+
+- `ThresholdAnalysisCard` (amber border, 🎯 icon): current-threshold stats row (precision/recall/F1 at 50%), Recharts LineChart with blue precision / green recall / amber F1 curves + dashed reference line at best F1, three `RecommendationRow` components (max_f1 marked Recommended, high_recall, high_precision — each with threshold badge, metric grid, plain-English description), "Which threshold is right for me?" guidance table listing business contexts. `data-testid="threshold-recommendation"` on each recommendation row for test targeting.
+
+- Full type wiring: `ThresholdSweepPoint`, `ThresholdRecommendation`, `ThresholdAnalysisResult` TypeScript interfaces in `lib/types.ts`; `threshold_analysis?` field on `ChatMessage`; `attachThresholdAnalysisToLastMessage` Zustand action in `store.ts`; SSE handler wired in both EventSource branches of `project/[id]/page.tsx`; card render in message list; `api.models.thresholdAnalysis()` client method in `lib/api.ts`.
+
+**Tests:** 18 pure-function (required keys, 19 sweep points, threshold range, current threshold is 0.5, current/sweep/recommendation keys, n_positive/n_total, prevalence fraction, summary string, high-recall achieves high recall, max_f1 is best, scores in 0-1 range, class_names applied, too-few-rows ValueError, single-class ValueError, perfect classifier) + 10 regex (8 matches + 2 false-positive guards) + 3 endpoint (regression=400, classification=200, unknown run=404) = 31 backend + 21 frontend (18 card component + 3 store action) = **52 new tests**. All passing. Backend lint: clean. Frontend build + lint: clean.
+
+**Why this matters:** Most analysts deploy classification models with the default 0.50 probability cutoff — but this is rarely optimal. A churn model with 30% class prevalence will miss 40% of true churners at 50% threshold. This card gives analysts a clear, visual explanation of the precision/recall/F1 tradeoff and recommends three concrete options with business-context descriptions. Distinct from `ConfidenceThresholdCard` (which sets a minimum confidence gate for prediction serving) — this is a pre-deployment advisor about which cutoff produces the best classification performance for the analyst's specific business context.
+
+**Baseline:** 5051 backend / 2881 frontend → **5082 backend / 2902 frontend** (+31 / +21).
+
 ## Day 78 — 20:00 — Target Leakage Detection via Chat
 
 **Feature shipped:** Target Leakage Detection (Track C perpetual). Analysts can now ask "is there target leakage?", "check for data leakage", "any leaky features?", "features that cheat the answer", or "suspicious correlations with the target" and receive a `TargetLeakageCard` in chat that directly answers the "am I accidentally training on the answer?" safety question.

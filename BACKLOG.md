@@ -53,6 +53,24 @@ the time is better spent on real features.
 
 ---
 
+## Day 79 (04:00) — Done
+
+**Track C: Classification Threshold Advisor via Chat** — complete.
+
+Closes the "what probability cutoff should I use?" analyst gap. Analysts can ask "what threshold should I use?", "optimal cutoff for my model", "precision recall tradeoff", or "help me choose a threshold" and receive a `ThresholdAnalysisCard` showing the full precision/recall/F1 sweep (0.05–0.95) with three plain-English recommendations.
+
+- `compute_threshold_analysis(y_true, y_proba, class_names)` pure function in `core/validator.py`: sweeps 19 thresholds, computes precision/recall/F1/positive_rate at each, identifies max_f1/high_recall/high_precision options. Binary: uses positive class probability; multiclass: uses max-class confidence as proxy.
+- `GET /api/models/{run_id}/threshold-analysis` endpoint in `api/validation.py`: classification-only (400 for regression), loads model, computes thresholds, returns sweep + recommendations + current_metrics + prevalence.
+- `_THRESHOLD_ADVISOR_PATTERNS` (8 NL variants) + handler in `chat.py`: guards on classification model runs, computes sweep, injects plain-English guidance into system_prompt, emits `{type:"threshold_analysis"}` SSE event.
+- `ThresholdAnalysisCard` (amber border, 🎯 icon): Recharts LineChart with precision/recall/F1 curves + dashed reference line at best F1, three RecommendationRow options with threshold %, scores, and business-context descriptions ("churn/fraud use cases → High Recall"), "Which threshold is right for me?" guidance table.
+- Full type wiring: `ThresholdSweepPoint`, `ThresholdRecommendation`, `ThresholdAnalysisResult` TypeScript interfaces; `threshold_analysis?` on `ChatMessage`; `attachThresholdAnalysisToLastMessage` Zustand action; SSE handler + card render in `page.tsx`; `api.models.thresholdAnalysis()` client method.
+
+**Distinct from:** `_CONFIDENCE_THRESHOLD_PATTERNS` (sets a minimum confidence gate for prediction serving) — this is a pre-deployment advisor about what cutoff produces the best classification performance trade-off.
+
+31 backend + 21 frontend = **52 new tests**. Total: **5082 backend / 2902 frontend = 7984**, all passing. Backend lint: clean. Frontend build + lint: clean.
+
+---
+
 ## Day 78 (20:00) — Done
 
 **Track C: Target Leakage Detection via Chat** — complete.
