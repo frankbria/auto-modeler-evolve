@@ -53,6 +53,14 @@ the time is better spent on real features.
 
 ---
 
+## Day 78 (20:00) — Done
+
+**Track C: Target Leakage Detection via Chat** — complete.
+
+Closes the "am I accidentally cheating with this feature?" analyst gap. Detects features with suspiciously high correlation with the target (Pearson for numeric targets, normalized mutual information for categorical targets). High-risk (≥ 90%) vs moderate-risk (≥ 75%) classification. `_TARGET_LEAKAGE_PATTERNS` (8 NL variants: "is there target leakage?", "check for data leakage", "any leaky features?", etc.). `TargetLeakageCard` (emerald/amber/rose by verdict, correlation bars, Risk badges, severe alert callout). Distinct from FeatureRedundancyCard (detects collinearity between features, not with target). 27 backend + 21 frontend = **48 new tests**. Total: **5051 backend / 2881 frontend = 7932**, all passing.
+
+---
+
 ## Day 78 (12:00) — Done
 
 **Track C: Feature Redundancy Detection via Chat** — complete.

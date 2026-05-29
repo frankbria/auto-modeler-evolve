@@ -1,5 +1,27 @@
 # Journal
 
+## Day 78 — 20:00 — Target Leakage Detection via Chat
+
+**Feature shipped:** Target Leakage Detection (Track C perpetual). Analysts can now ask "is there target leakage?", "check for data leakage", "any leaky features?", "features that cheat the answer", or "suspicious correlations with the target" and receive a `TargetLeakageCard` in chat that directly answers the "am I accidentally training on the answer?" safety question.
+
+**What was built:**
+
+- `compute_target_leakage(df, target_col, feature_names, high_threshold=0.90, moderate_threshold=0.75)` pure function in `core/analyzer.py`: for numeric targets computes Pearson correlation per numeric feature; for categorical targets computes normalized mutual information (`mutual_info_classif` / log2(n_classes)). Flags features with high-risk (≥ 90%) or moderate-risk (≥ 75%) correlation. Sorts by `correlation_abs` descending. Verdict: `none`, `warning` (moderate-only), `severe` (any high-risk). Returns 8-key dict including `leaky_features` (with feature/correlation/correlation_abs/risk_level/risk_label/reason per entry), `n_checked`, `target_col`, `summary`.
+
+- `GET /api/data/{dataset_id}/target-leakage` REST endpoint in `api/data.py`: loads active FeatureSet target column (400 if not configured), applies transformations, calls pure function, returns 404 for unknown dataset.
+
+- `_TARGET_LEAKAGE_PATTERNS` regex (8 NL variants) in `api/chat.py` at module level. Handler block guarded by `ctx["dataset"]` + active FeatureSet with target_column; applies transformations; injects leaky feature names + plain-English leakage explanation into system_prompt. SSE emit `{type:"target_leakage"}` after feature_redundancy event.
+
+- `TargetLeakageCard` React component (emerald border=none / amber=warning / rose=severe): verdict badge, features-checked badge, leaky-count badge, target column code label, severe alert with `role="alert"` when verdict=severe, per-feature `FeatureRow` (feature name, risk badge, correlation bar with progressbar ARIA), leakage recommendation box, summary paragraph, sr-only figcaption.
+
+- Full type wiring: `LeakyFeature` + `TargetLeakageResult` TypeScript interfaces, `target_leakage?` on `ChatMessage`, `attachTargetLeakageToLastMessage` Zustand action, SSE handler + card render in both EventSource branches of `project/[id]/page.tsx`.
+
+**Tests:** 27 backend (15 numeric pure-function: no-leakage, perfect correlation, moderate correlation, required keys, leaky feature keys, verdict-severe, sort order, target_col stored, too-few-rows ValueError, missing target ValueError, no features, summary type, NaN handling, thresholds stored, n_checked count; 2 categorical: no-leakage, strongly separating feature flagged; 7 regex: 5 matches + 2 false-positive guards; 3 endpoint: 200, 404, 400-no-target) + 21 frontend (18 component + 3 store action) = 48 new tests. All passing. Backend lint: clean. Frontend build + lint: clean.
+
+**Why this matters:** Target leakage is one of the most dangerous ML mistakes — analysts often include features like `final_payment_date` (which implies churn has already happened) or `refund_processed` (which implies a return has occurred), producing models with 98% training accuracy that fail completely on new data. This card gives a data-backed safety check before training. Distinct from `FeatureRedundancyCard` (detects collinearity between features) — leakage detection measures each feature's correlation with the *target* specifically.
+
+**Baseline:** 5024 backend / 2860 frontend → **5051 backend / 2881 frontend** (+27 / +21).
+
 ## Day 78 — 12:00 — Feature Redundancy Detection via Chat
 
 **Feature shipped:** Feature Redundancy Detection (Track C perpetual). Analysts can now ask "are any features redundant?", "multicollinearity", "which features measure the same thing?", "highly correlated features", or "feature overlap" and receive a `FeatureRedundancyCard` in chat that directly answers the "do I have duplicate signals in my data?" question.
