@@ -49,9 +49,22 @@ the time is better spent on real features.
 
 ## Currently Working On
 
-**Track C: Model Confidence Distribution via Chat** — implementing Day 79 (12:00).
+*(nothing)*
 
-Closes the "how confident/decisive is my model overall?" analyst question. Analysts ask "how confident is my model?", "confidence distribution", "show confidence histogram", "how certain are my predictions?", "is my model decisive or uncertain?". Distinct from threshold analysis (which sweeps thresholds to find the optimal cutoff) and calibration check (which shows reliability). This shows the distribution of prediction probabilities — whether the model is typically decisive (predictions near 0/1) or uncertain (predictions near 0.5).
+---
+
+## Day 79 (12:00) — Done
+
+**Track C: Model Confidence Distribution via Chat** — complete.
+
+Closes the "how confident/decisive is my model overall?" analyst question. Analysts can ask "how confident is my model?", "confidence distribution", "show confidence histogram", "how certain are my predictions?", "is my model decisive or uncertain?", or "distribution of prediction probabilities" and receive a `ConfidenceDistributionCard` showing a histogram of max-class probabilities, a High/Medium/Low tier breakdown (high ≥80%, medium 50–80%, low <50%), per-class mean confidence, and a decisiveness verdict (decisive/moderate/uncertain).
+
+- `compute_confidence_distribution(y_proba, y_pred, class_names, n_bins)` pure function in `core/validator.py`: bins max-class probabilities, computes mean/median, segments tiers, derives decisiveness verdict.
+- `GET /api/models/{model_run_id}/confidence-distribution` endpoint: classification-only (400 regression/non-proba, 404 unknown).
+- `_CONFIDENCE_DIST_PATTERNS` (8 NL variants) + handler in `chat.py`: finds best/selected classification run, computes distribution, injects context into system prompt.
+- `ConfidenceDistributionCard`: emerald/amber/rose per decisiveness, Recharts BarChart with color-coded bins, per-class confidence progressbars, ARIA accessibility.
+
+**Distinct from:** `ThresholdAnalysisCard` (sweeps thresholds for precision/recall) and `CalibrationCheckCard` (checks probability reliability). 31 backend + 20 frontend = **51 new tests**. Total: **5113 backend / 2922 frontend = 8035**.
 
 ---
 
