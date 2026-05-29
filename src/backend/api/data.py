@@ -2893,7 +2893,8 @@ def get_target_leakage(
 
     if target_col not in df.columns:
         raise HTTPException(
-            status_code=400, detail=f"Target column '{target_col}' not found in dataset."
+            status_code=400,
+            detail=f"Target column '{target_col}' not found in dataset.",
         )
 
     feature_names = [c for c in df.columns if c != target_col]

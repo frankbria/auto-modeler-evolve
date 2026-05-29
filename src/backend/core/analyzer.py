@@ -4865,9 +4865,7 @@ def compute_target_leakage(
         valid_idx = df[target_col].notna()
 
         numeric_feats = [
-            f
-            for f in valid_features
-            if pd.api.types.is_numeric_dtype(df[f])
+            f for f in valid_features if pd.api.types.is_numeric_dtype(df[f])
         ]
         if numeric_feats:
             X_num = df.loc[valid_idx, numeric_feats].fillna(0).values

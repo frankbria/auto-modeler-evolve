@@ -7765,7 +7765,9 @@ def send_message(
                     import pandas as _pd_tl
 
                     _df_tl = _pd_tl.read_csv(Path(_ds_tl.file_path))
-                    _tfms_tl = __import__("json").loads(_fset_tl.transformations or "[]")
+                    _tfms_tl = __import__("json").loads(
+                        _fset_tl.transformations or "[]"
+                    )
                     if _tfms_tl:
                         _df_tl, _ = _apply_tl(_df_tl, _tfms_tl)
                     _target_tl = _fset_tl.target_column

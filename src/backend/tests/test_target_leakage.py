@@ -89,7 +89,14 @@ class TestComputeTargetLeakageNumericTarget:
         result = compute_target_leakage(df, "target", ["leak"])
         if result["leaky_features"]:
             feat = result["leaky_features"][0]
-            for key in ("feature", "correlation", "correlation_abs", "risk_level", "risk_label", "reason"):
+            for key in (
+                "feature",
+                "correlation",
+                "correlation_abs",
+                "risk_level",
+                "risk_label",
+                "reason",
+            ):
                 assert key in feat
 
     def test_verdict_severe_for_high_correlation(self):
@@ -110,7 +117,9 @@ class TestComputeTargetLeakageNumericTarget:
                 "weak": y * 0.5 + rng.normal(0, 3, n),
             }
         )
-        result = compute_target_leakage(df, "target", ["strong", "weak"], high_threshold=0.5, moderate_threshold=0.3)
+        result = compute_target_leakage(
+            df, "target", ["strong", "weak"], high_threshold=0.5, moderate_threshold=0.3
+        )
         feats = result["leaky_features"]
         if len(feats) >= 2:
             assert feats[0]["correlation_abs"] >= feats[1]["correlation_abs"]
@@ -150,7 +159,9 @@ class TestComputeTargetLeakageNumericTarget:
 
     def test_thresholds_stored_in_result(self):
         df = _make_num_df()
-        result = compute_target_leakage(df, "target", ["a"], high_threshold=0.92, moderate_threshold=0.77)
+        result = compute_target_leakage(
+            df, "target", ["a"], high_threshold=0.92, moderate_threshold=0.77
+        )
         assert result["high_threshold"] == 0.92
         assert result["moderate_threshold"] == 0.77
 
@@ -180,10 +191,12 @@ class TestComputeTargetLeakageCategoricalTarget:
         n = 80
         y_cls = ["A"] * 40 + ["B"] * 40
         # x_leak: tight Gaussian around 0 for A, tight Gaussian around 10 for B
-        x_leak = np.concatenate([
-            rng.normal(0, 0.1, 40),
-            rng.normal(10, 0.1, 40),
-        ])
+        x_leak = np.concatenate(
+            [
+                rng.normal(0, 0.1, 40),
+                rng.normal(10, 0.1, 40),
+            ]
+        )
         df = pd.DataFrame(
             {
                 "target": y_cls,
@@ -193,8 +206,7 @@ class TestComputeTargetLeakageCategoricalTarget:
         )
         # Use lower thresholds since MI estimates can be conservative
         result = compute_target_leakage(
-            df, "target", ["leak", "safe"],
-            high_threshold=0.5, moderate_threshold=0.3
+            df, "target", ["leak", "safe"], high_threshold=0.5, moderate_threshold=0.3
         )
         # The leak feature should score higher than safe; verdict should be non-none
         assert result["verdict"] in ("warning", "severe")
@@ -210,30 +222,41 @@ class TestComputeTargetLeakageCategoricalTarget:
 class TestTargetLeakagePatterns:
     def test_matches_target_leakage(self):
         from api.chat import _TARGET_LEAKAGE_PATTERNS
+
         assert _TARGET_LEAKAGE_PATTERNS.search("is there target leakage?")
 
     def test_matches_data_leakage(self):
         from api.chat import _TARGET_LEAKAGE_PATTERNS
+
         assert _TARGET_LEAKAGE_PATTERNS.search("check for data leakage")
 
     def test_matches_leaky_features(self):
         from api.chat import _TARGET_LEAKAGE_PATTERNS
+
         assert _TARGET_LEAKAGE_PATTERNS.search("are there any leaky features?")
 
     def test_matches_feature_cheating(self):
         from api.chat import _TARGET_LEAKAGE_PATTERNS
+
         assert _TARGET_LEAKAGE_PATTERNS.search("features that cheat the answer")
 
     def test_matches_suspicious_correlations(self):
         from api.chat import _TARGET_LEAKAGE_PATTERNS
-        assert _TARGET_LEAKAGE_PATTERNS.search("suspicious correlations with the target")
+
+        assert _TARGET_LEAKAGE_PATTERNS.search(
+            "suspicious correlations with the target"
+        )
 
     def test_does_not_match_generic_correlation(self):
         from api.chat import _TARGET_LEAKAGE_PATTERNS
-        assert not _TARGET_LEAKAGE_PATTERNS.search("what is the correlation between price and revenue?")
+
+        assert not _TARGET_LEAKAGE_PATTERNS.search(
+            "what is the correlation between price and revenue?"
+        )
 
     def test_does_not_match_feature_importance(self):
         from api.chat import _TARGET_LEAKAGE_PATTERNS
+
         assert not _TARGET_LEAKAGE_PATTERNS.search("show me feature importance")
 
 
@@ -241,9 +264,8 @@ class TestTargetLeakagePatterns:
 # REST endpoint integration tests
 # ---------------------------------------------------------------------------
 
-_SAMPLE_CSV = (
-    b"target,a,b\n"
-    + b"".join(f"{i * 0.1},{i},{100 - i * 0.3}\n".encode() for i in range(1, 51))
+_SAMPLE_CSV = b"target,a,b\n" + b"".join(
+    f"{i * 0.1},{i},{100 - i * 0.3}\n".encode() for i in range(1, 51)
 )
 
 
