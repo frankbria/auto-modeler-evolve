@@ -4023,6 +4023,20 @@ _TARGET_LEAKAGE_PATTERNS = re.compile(
 )
 
 # Similar records: "find records most like row 5", "who else looks like this customer?"
+_THRESHOLD_ADVISOR_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"(?:what|which|optimal)\s+(?:probability\s+)?(?:threshold|cutoff)\s+(?:should\s+I\s+use|do\s+I\s+need|would\s+be\s+best)\b|"
+    r"(?:classification|decision)\s+threshold\s+(?:advice|recommendation|analysis|advisor)\b|"
+    r"(?:threshold|cutoff)\s+(?:analysis|trade.?off|selection|recommendation)\b|"
+    r"(?:precision|recall)\s+(?:trade.?off|tradeoff|vs\.?\s+recall|vs\.?\s+precision)\b|"
+    r"(?:what|which)\s+confidence\s+(?:cutoff|threshold|level)\s+(?:should|do)\b|"
+    r"(?:how\s+do\s+I|help\s+me)\s+choose\s+(?:a\s+)?(?:threshold|cutoff)\b|"
+    r"(?:best|right|optimal|good)\s+(?:probability\s+)?(?:threshold|cutoff)\s+for\b|"
+    r"at\s+what\s+(?:probability|confidence|score)\s+should\s+I\s+(?:flag|alert|trigger)\b"
+    r")",
+    re.IGNORECASE,
+)
+
 _SIMILAR_RECORDS_PATTERNS = re.compile(
     r"(?i)(?:"
     r"(?:find|show|get)\s+(?:me\s+)?(?:similar|like|nearest|closest)\s+(?:records?|rows?|cases?|customers?|examples?)\b|"
@@ -7805,6 +7819,92 @@ def send_message(
                         )
         except Exception:  # noqa: BLE001
             pass  # Leakage analysis is nice-to-have; never crash chat
+
+    # Classification threshold advisor: "what probability cutoff should I use?"
+    threshold_analysis_event: dict | None = None
+    if _THRESHOLD_ADVISOR_PATTERNS.search(body.message) and ctx["model_runs"]:
+        try:
+            from core.validator import compute_threshold_analysis as _cta
+
+            import joblib as _jl_ta
+            import numpy as _np_ta
+
+            _done_cls_ta = [
+                r
+                for r in ctx["model_runs"]
+                if r.status == "done"
+                and r.model_path
+                and Path(r.model_path).exists()
+            ]
+            _cls_runs_ta = []
+            _cls_fsets: dict[str, object] = {}
+            for _r_ta in _done_cls_ta:
+                _fset_ta = session.get(FeatureSet, _r_ta.feature_set_id)
+                if _fset_ta and (_fset_ta.problem_type or "regression") == "classification":
+                    _cls_runs_ta.append(_r_ta)
+                    _cls_fsets[_r_ta.id] = _fset_ta
+
+            if _cls_runs_ta:
+                # Prefer selected run, then best by primary metric
+                _sel_ta = next(
+                    (r for r in _cls_runs_ta if r.is_selected), None
+                ) or _cls_runs_ta[0]
+                _fset_ta2 = _cls_fsets[_sel_ta.id]
+                _ds_ta = ctx["dataset"]
+                if _ds_ta and Path(_ds_ta.file_path).exists():
+                    import pandas as _pd_ta
+                    from core.feature_engine import apply_transformations as _apply_ta
+                    from core.trainer import prepare_features as _pf_ta
+
+                    _df_ta = _pd_ta.read_csv(Path(_ds_ta.file_path))
+                    _tfms_ta = __import__("json").loads(
+                        _fset_ta2.transformations or "[]"
+                    )
+                    if _tfms_ta:
+                        _df_ta, _ = _apply_ta(_df_ta, _tfms_ta)
+
+                    _target_ta = _fset_ta2.target_column
+                    _feat_cols_ta = [c for c in _df_ta.columns if c != _target_ta]
+                    _X_ta, _y_ta, _ = _pf_ta(
+                        _df_ta, _feat_cols_ta, _target_ta, "classification"
+                    )
+
+                    _model_ta = _jl_ta.load(_sel_ta.model_path)
+                    if hasattr(_model_ta, "predict_proba"):
+                        _proba_ta = _model_ta.predict_proba(_X_ta)
+                        _classes_ta = [str(c) for c in _model_ta.classes_.tolist()]
+                        if _proba_ta.shape[1] == 2:
+                            _y_proba_ta = _proba_ta[:, 1]
+                        else:
+                            _y_proba_ta = _proba_ta.max(axis=1)
+
+                        _ta_result = _cta(
+                            y_true=_np_ta.array(_y_ta),
+                            y_proba=_np_ta.array(_y_proba_ta),
+                            class_names=_classes_ta,
+                        )
+                        threshold_analysis_event = {
+                            "model_run_id": _sel_ta.id,
+                            "algorithm": _sel_ta.algorithm,
+                            "target_col": _target_ta,
+                            **_ta_result,
+                        }
+                        _best_ta = _ta_result["recommendations"]["max_f1"]
+                        _high_rec_ta = _ta_result["recommendations"]["high_recall"]
+                        system_prompt += (
+                            f"\n\n## Classification Threshold Advisor\n"
+                            f"{_ta_result['summary']} "
+                            f"Best F1 threshold: {int(_best_ta['threshold']*100)}% "
+                            f"(precision {int(_best_ta['precision']*100)}%, "
+                            f"recall {int(_best_ta['recall']*100)}%). "
+                            f"For churn/fraud use cases: lower threshold to "
+                            f"{int(_high_rec_ta['threshold']*100)}% to catch more positives. "
+                            "Explain to the analyst: the default 50% cutoff is rarely optimal. "
+                            "Help them choose based on their business context — is it worse to "
+                            "miss a positive case, or to flag too many false alarms?"
+                        )
+        except Exception:  # noqa: BLE001
+            pass  # Threshold advisor is nice-to-have; never crash chat
 
     # Check if user wants to change the train/test split strategy
     split_strategy_event: dict | None = None
@@ -17147,6 +17247,9 @@ def send_message(
 
         if target_leakage_event:
             yield f"data: {json.dumps({'type': 'target_leakage', 'target_leakage': target_leakage_event})}\n\n"
+
+        if threshold_analysis_event:
+            yield f"data: {json.dumps({'type': 'threshold_analysis', 'threshold_analysis': threshold_analysis_event})}\n\n"
 
         # After text stream, opportunistically generate a chart if the
         # message is about data and we have a dataset loaded

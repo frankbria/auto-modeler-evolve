@@ -36,6 +36,7 @@ from core.validator import (
     compute_prediction_errors,
     compute_residuals,
     compute_segment_performance,
+    compute_threshold_analysis,
     run_cross_validation,
 )
 from db import get_session
@@ -606,5 +607,68 @@ def get_fairness_metrics(
     result["model_run_id"] = model_run_id
     result["algorithm"] = run.algorithm
     result["target_col"] = target_col
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# 8. Classification threshold analysis
+# ---------------------------------------------------------------------------
+
+
+@router.get("/api/models/{model_run_id}/threshold-analysis")
+def get_threshold_analysis(
+    model_run_id: str,
+    session: Session = Depends(get_session),
+):
+    """Return precision/recall/F1 sweep across probability thresholds (0.05–0.95).
+
+    Only available for binary classification models with predict_proba support.
+    Returns 400 for regression models or models without probability output.
+    """
+    run, feature_set, _dataset, file_path = _load_run_context(model_run_id, session)
+
+    problem_type = feature_set.problem_type or "regression"
+    if problem_type != "classification":
+        raise HTTPException(
+            status_code=400,
+            detail="Threshold analysis is only available for classification models.",
+        )
+
+    X, y, _feature_cols = _build_Xy(file_path, feature_set)
+
+    fitted_model = joblib.load(run.model_path)
+
+    if not hasattr(fitted_model, "predict_proba"):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Algorithm '{run.algorithm}' does not support probability output "
+                "required for threshold analysis."
+            ),
+        )
+
+    proba = fitted_model.predict_proba(X)
+
+    # Binary: use probability of positive class (index 1)
+    # Multiclass: use maximum probability across classes (confidence proxy)
+    if proba.shape[1] == 2:
+        y_proba = proba[:, 1]
+        classes = fitted_model.classes_.tolist()
+        class_names = [str(c) for c in classes]
+    else:
+        y_proba = proba.max(axis=1)
+        classes = fitted_model.classes_.tolist()
+        class_names = [str(c) for c in classes]
+
+    result = compute_threshold_analysis(
+        y_true=y,
+        y_proba=y_proba,
+        class_names=class_names,
+    )
+
+    result["model_run_id"] = model_run_id
+    result["algorithm"] = run.algorithm
+    result["target_col"] = feature_set.target_column
 
     return result

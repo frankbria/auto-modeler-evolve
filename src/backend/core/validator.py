@@ -1146,3 +1146,168 @@ def validate_prediction_inputs(
                     )
 
     return len(violations) == 0, violations
+
+
+# ---------------------------------------------------------------------------
+# Classification threshold analysis
+# ---------------------------------------------------------------------------
+
+
+def compute_threshold_analysis(
+    y_true: np.ndarray,
+    y_proba: np.ndarray,
+    class_names: list[str] | None = None,
+) -> dict:
+    """Sweep probability thresholds and return precision/recall/F1 trade-off data.
+
+    y_proba should be the probability for the positive class (binary) or the
+    maximum class probability (multiclass — used as a confidence proxy).
+
+    Returns a dict with:
+      sweep          — list of {threshold, precision, recall, f1, positive_rate}
+      current_threshold — 0.5 (the default used by most classifiers)
+      recommendations — dict with max_f1 / high_recall / high_precision options
+      summary         — plain-English description of the trade-off situation
+      n_positive      — count of true positive labels in y_true
+      n_total         — total number of samples
+      positive_class  — name of the positive class (from class_names)
+    """
+    if len(y_true) < 10:
+        raise ValueError("Need at least 10 samples to compute threshold analysis.")
+
+    # Determine positive label: use 1 (binary) or class with highest count if int-encoded
+    unique_labels = sorted(set(y_true.tolist()))
+    if len(unique_labels) < 2:
+        raise ValueError("Need at least 2 classes to compute threshold analysis.")
+
+    # For multiclass, we treat the most-common class as negative, least-common as positive
+    # For binary, positive label = 1 if present, else the higher label
+    if 1 in unique_labels:
+        positive_label = 1
+    else:
+        # Use the second label (assumes binary after encoding: 0/1 or 0/2 etc.)
+        positive_label = unique_labels[-1]
+
+    pos_class_name = (
+        class_names[positive_label]
+        if class_names and positive_label < len(class_names)
+        else str(positive_label)
+    )
+
+    y_bin = (np.array(y_true) == positive_label).astype(int)
+    n_positive = int(y_bin.sum())
+    n_total = len(y_bin)
+    prevalence = n_positive / n_total
+
+    thresholds = [round(t * 0.05, 2) for t in range(1, 20)]  # 0.05 … 0.95
+
+    sweep: list[dict] = []
+    for thr in thresholds:
+        y_pred_bin = (np.array(y_proba) >= thr).astype(int)
+        tp = int(((y_pred_bin == 1) & (y_bin == 1)).sum())
+        fp = int(((y_pred_bin == 1) & (y_bin == 0)).sum())
+        fn = int(((y_pred_bin == 0) & (y_bin == 1)).sum())
+        pred_pos = tp + fp
+        actual_pos = tp + fn
+
+        prec = tp / pred_pos if pred_pos > 0 else 0.0
+        rec = tp / actual_pos if actual_pos > 0 else 0.0
+        f1 = 2 * prec * rec / (prec + rec) if (prec + rec) > 0 else 0.0
+        pos_rate = pred_pos / n_total
+
+        sweep.append(
+            {
+                "threshold": thr,
+                "precision": round(prec, 4),
+                "recall": round(rec, 4),
+                "f1": round(f1, 4),
+                "positive_rate": round(pos_rate, 4),
+            }
+        )
+
+    # Find key thresholds
+    best_f1 = max(sweep, key=lambda p: p["f1"])
+    high_recall = next(
+        (p for p in sweep if p["recall"] >= 0.80),
+        sweep[0],
+    )
+    high_precision = next(
+        (p for p in reversed(sweep) if p["precision"] >= 0.80),
+        sweep[-1],
+    )
+
+    # Current threshold (0.50) metrics
+    current_point = next((p for p in sweep if p["threshold"] == 0.50), sweep[9])
+
+    recommendations = {
+        "max_f1": {
+            "threshold": best_f1["threshold"],
+            "precision": best_f1["precision"],
+            "recall": best_f1["recall"],
+            "f1": best_f1["f1"],
+            "label": "Balanced (Max F1)",
+            "description": (
+                f"At {int(best_f1['threshold']*100)}%, precision and recall are most balanced. "
+                "Best when false positives and false negatives are equally costly."
+            ),
+        },
+        "high_recall": {
+            "threshold": high_recall["threshold"],
+            "precision": high_recall["precision"],
+            "recall": high_recall["recall"],
+            "f1": high_recall["f1"],
+            "label": "High Recall (Catch More)",
+            "description": (
+                f"At {int(high_recall['threshold']*100)}%, you catch "
+                f"{int(high_recall['recall']*100)}% of actual positives. "
+                "Best when missing a positive case is expensive (e.g., fraud, churn)."
+            ),
+        },
+        "high_precision": {
+            "threshold": high_precision["threshold"],
+            "precision": high_precision["precision"],
+            "recall": high_precision["recall"],
+            "f1": high_precision["f1"],
+            "label": "High Precision (Fewer False Alarms)",
+            "description": (
+                f"At {int(high_precision['threshold']*100)}%, "
+                f"{int(high_precision['precision']*100)}% of flagged cases are truly positive. "
+                "Best when acting on a false alarm is expensive (e.g., costly interventions)."
+            ),
+        },
+    }
+
+    # Current-threshold plain-English
+    current_prec_pct = int(current_point["precision"] * 100)
+    current_rec_pct = int(current_point["recall"] * 100)
+    best_thr_pct = int(best_f1["threshold"] * 100)
+
+    if abs(best_f1["threshold"] - 0.50) < 0.001:
+        thr_advice = "the default 50% threshold is already optimal for this dataset."
+    elif best_f1["threshold"] < 0.50:
+        thr_advice = (
+            f"consider lowering your threshold to {best_thr_pct}% to improve overall performance."
+        )
+    else:
+        thr_advice = (
+            f"consider raising your threshold to {best_thr_pct}% to improve overall performance."
+        )
+
+    summary = (
+        f"At the default 50% threshold: {current_prec_pct}% precision, "
+        f"{current_rec_pct}% recall. "
+        f"The best F1 score is at {best_thr_pct}% — {thr_advice} "
+        f"The dataset has {prevalence:.0%} true positives ({n_positive} of {n_total} rows)."
+    )
+
+    return {
+        "sweep": sweep,
+        "current_threshold": 0.50,
+        "current_metrics": current_point,
+        "recommendations": recommendations,
+        "n_positive": n_positive,
+        "n_total": n_total,
+        "prevalence": round(prevalence, 4),
+        "positive_class": pos_class_name,
+        "summary": summary,
+    }

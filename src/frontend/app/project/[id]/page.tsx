@@ -81,6 +81,7 @@ import { DataQualityImpactCard } from "@/components/models/data-quality-impact-c
 import { OverfittingAnalysisCard } from "@/components/models/overfitting-analysis-card"
 import { FeatureRedundancyCard } from "@/components/models/feature-redundancy-card"
 import { TargetLeakageCard } from "@/components/models/target-leakage-card"
+import { ThresholdAnalysisCard } from "@/components/models/threshold-analysis-card"
 import { OnboardingGuideCard } from "@/components/chat/onboarding-guide-card"
 import { DataVersionHistoryCard } from "@/components/chat/data-version-history-card"
 import { LearningCurveCard } from "@/components/chat/learning-curve-card"
@@ -383,6 +384,7 @@ export default function ProjectWorkspace() {
     attachOverfittingAnalysisToLastMessage,
     attachFeatureRedundancyToLastMessage,
     attachTargetLeakageToLastMessage,
+    attachThresholdAnalysisToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -765,6 +767,8 @@ export default function ProjectWorkspace() {
                 attachFeatureRedundancyToLastMessage(json.feature_redundancy as import("@/lib/types").FeatureRedundancyResult)
               } else if (json.type === "target_leakage" && json.target_leakage) {
                 attachTargetLeakageToLastMessage(json.target_leakage as import("@/lib/types").TargetLeakageResult)
+              } else if (json.type === "threshold_analysis" && json.threshold_analysis) {
+                attachThresholdAnalysisToLastMessage(json.threshold_analysis as import("@/lib/types").ThresholdAnalysisResult)
               } else if (json.type === "onboarding_guide" && json.onboarding_guide) {
                 attachOnboardingGuideToLastMessage(json.onboarding_guide as import("@/lib/types").OnboardingGuideResult)
               } else if (json.type === "version_history" && json.version_history) {
@@ -933,6 +937,8 @@ export default function ProjectWorkspace() {
                 attachFeatureRedundancyToLastMessage(json.feature_redundancy as import("@/lib/types").FeatureRedundancyResult)
               } else if (json.type === "target_leakage" && json.target_leakage) {
                 attachTargetLeakageToLastMessage(json.target_leakage as import("@/lib/types").TargetLeakageResult)
+              } else if (json.type === "threshold_analysis" && json.threshold_analysis) {
+                attachThresholdAnalysisToLastMessage(json.threshold_analysis as import("@/lib/types").ThresholdAnalysisResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -1088,6 +1094,7 @@ export default function ProjectWorkspace() {
     attachOverfittingAnalysisToLastMessage,
     attachFeatureRedundancyToLastMessage,
     attachTargetLeakageToLastMessage,
+    attachThresholdAnalysisToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -1770,6 +1777,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.target_leakage && (
                       <TargetLeakageCard result={msg.target_leakage} />
+                    )}
+                    {msg.threshold_analysis && (
+                      <ThresholdAnalysisCard result={msg.threshold_analysis} />
                     )}
                   </div>
                 </div>

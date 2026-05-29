@@ -542,6 +542,7 @@ export interface ChatMessage {
   overfitting_analysis?: OverfittingAnalysisResult
   feature_redundancy?: FeatureRedundancyResult
   target_leakage?: TargetLeakageResult
+  threshold_analysis?: ThresholdAnalysisResult
 }
 
 export interface RollbackVersionEntry {
@@ -3958,5 +3959,41 @@ export interface TargetLeakageResult {
   high_threshold: number
   moderate_threshold: number
   target_col: string
+  summary: string
+}
+
+export interface ThresholdSweepPoint {
+  threshold: number
+  precision: number
+  recall: number
+  f1: number
+  positive_rate: number
+}
+
+export interface ThresholdRecommendation {
+  threshold: number
+  precision: number
+  recall: number
+  f1: number
+  label: string
+  description: string
+}
+
+export interface ThresholdAnalysisResult {
+  model_run_id: string
+  algorithm: string
+  target_col: string
+  sweep: ThresholdSweepPoint[]
+  current_threshold: number
+  current_metrics: ThresholdSweepPoint
+  recommendations: {
+    max_f1: ThresholdRecommendation
+    high_recall: ThresholdRecommendation
+    high_precision: ThresholdRecommendation
+  }
+  n_positive: number
+  n_total: number
+  prevalence: number
+  positive_class: string
   summary: string
 }

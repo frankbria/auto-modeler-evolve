@@ -182,6 +182,7 @@ interface AppState {
   attachOverfittingAnalysisToLastMessage: (overfitting_analysis: import("./types").OverfittingAnalysisResult) => void
   attachFeatureRedundancyToLastMessage: (feature_redundancy: import("./types").FeatureRedundancyResult) => void
   attachTargetLeakageToLastMessage: (target_leakage: import("./types").TargetLeakageResult) => void
+  attachThresholdAnalysisToLastMessage: (threshold_analysis: import("./types").ThresholdAnalysisResult) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -1491,6 +1492,16 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, target_leakage }
+      }
+      return { messages }
+    }),
+
+  attachThresholdAnalysisToLastMessage: (threshold_analysis) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, threshold_analysis }
       }
       return { messages }
     }),

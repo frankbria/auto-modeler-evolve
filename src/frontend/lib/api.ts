@@ -683,6 +683,14 @@ export const api = {
     ): Promise<import("./types").FeatureSelectionResult> =>
       fetch(`${API_URL}/api/models/${runId}/feature-selection`).then((r) => r.json()),
 
+    thresholdAnalysis: (
+      runId: string
+    ): Promise<import("./types").ThresholdAnalysisResult> =>
+      fetch(`${API_URL}/api/models/${runId}/threshold-analysis`).then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        return r.json()
+      }),
+
     calibration: (
       runId: string
     ): Promise<import("./types").CalibrationData> =>
