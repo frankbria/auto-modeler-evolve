@@ -30,6 +30,7 @@ from core.trainer import (
 )
 from core.validator import (
     assess_confidence_limitations,
+    compute_confidence_distribution,
     compute_confusion_matrix,
     compute_error_distribution,
     compute_fairness_metrics,
@@ -665,6 +666,68 @@ def get_threshold_analysis(
         y_true=y,
         y_proba=y_proba,
         class_names=class_names,
+    )
+
+    result["model_run_id"] = model_run_id
+    result["algorithm"] = run.algorithm
+    result["target_col"] = feature_set.target_column
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# 9. Confidence distribution analysis
+# ---------------------------------------------------------------------------
+
+
+@router.get("/api/models/{model_run_id}/confidence-distribution")
+def get_confidence_distribution(
+    model_run_id: str,
+    n_bins: int = 10,
+    session: Session = Depends(get_session),
+):
+    """Return the distribution of prediction confidence (max-class probability) across training data.
+
+    Only available for classification models with predict_proba support.
+    Returns 400 for regression models or models without probability output.
+
+    Query params:
+        n_bins: Histogram bin count (5-20, default 10).
+    """
+    n_bins = max(5, min(20, n_bins))
+    run, feature_set, _dataset, file_path = _load_run_context(model_run_id, session)
+
+    problem_type = feature_set.problem_type or "regression"
+    if problem_type != "classification":
+        raise HTTPException(
+            status_code=400,
+            detail="Confidence distribution is only available for classification models.",
+        )
+
+    X, y, _feature_cols = _build_Xy(file_path, feature_set)
+
+    fitted_model = joblib.load(run.model_path)
+
+    if not hasattr(fitted_model, "predict_proba"):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Algorithm '{run.algorithm}' does not support probability output "
+                "required for confidence distribution."
+            ),
+        )
+
+    proba = fitted_model.predict_proba(X)
+    y_proba_cd = proba.max(axis=1)
+    y_pred_cd = fitted_model.predict(X)
+
+    class_names_cd = [str(c) for c in fitted_model.classes_.tolist()]
+
+    result = compute_confidence_distribution(
+        y_proba=y_proba_cd,
+        y_pred=y_pred_cd,
+        class_names=class_names_cd,
+        n_bins=n_bins,
     )
 
     result["model_run_id"] = model_run_id

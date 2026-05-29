@@ -4037,6 +4037,20 @@ _THRESHOLD_ADVISOR_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+_CONFIDENCE_DIST_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"(?:show|display|plot|visualize)\s+(?:me\s+)?(?:the\s+)?confidence\s+distribution\b|"
+    r"(?:confidence|probability)\s+(?:histogram|distribution|spread|breakdown)\b|"
+    r"how\s+confident\s+is\s+(?:my\s+)?(?:model|classifier)\b|"
+    r"how\s+certain\s+are\s+(?:my\s+)?predictions\b|"
+    r"(?:is\s+)?(?:my\s+)?model\s+(?:decisive|uncertain|confident)\b|"
+    r"(?:distribution\s+of|spread\s+of)\s+(?:prediction\s+)?(?:probabilities|confidences|certainty)\b|"
+    r"how\s+(?:often|many\s+times)\s+(?:is\s+)?(?:my\s+)?model\s+(?:very\s+)?confident\b|"
+    r"(?:prediction\s+)?confidence\s+(?:breakdown|profile|overview|analysis)\b"
+    r")",
+    re.IGNORECASE,
+)
+
 _SIMILAR_RECORDS_PATTERNS = re.compile(
     r"(?i)(?:"
     r"(?:find|show|get)\s+(?:me\s+)?(?:similar|like|nearest|closest)\s+(?:records?|rows?|cases?|customers?|examples?)\b|"
@@ -7907,6 +7921,87 @@ def send_message(
                         )
         except Exception:  # noqa: BLE001
             pass  # Threshold advisor is nice-to-have; never crash chat
+
+    # Confidence distribution analysis
+    confidence_dist_event: dict | None = None
+    if _CONFIDENCE_DIST_PATTERNS.search(body.message) and ctx["model_runs"]:
+        try:
+            from core.validator import compute_confidence_distribution as _ccd
+
+            import joblib as _jl_cd
+            import numpy as _np_cd
+
+            _done_cls_cd = [
+                r
+                for r in ctx["model_runs"]
+                if r.status == "done" and r.model_path and Path(r.model_path).exists()
+            ]
+            _cls_runs_cd = []
+            _cls_fsets_cd: dict[str, object] = {}
+            for _r_cd in _done_cls_cd:
+                _fset_cd = session.get(FeatureSet, _r_cd.feature_set_id)
+                if (
+                    _fset_cd
+                    and (_fset_cd.problem_type or "regression") == "classification"
+                ):
+                    _cls_runs_cd.append(_r_cd)
+                    _cls_fsets_cd[_r_cd.id] = _fset_cd
+
+            if _cls_runs_cd:
+                _sel_cd = (
+                    next((r for r in _cls_runs_cd if r.is_selected), None)
+                    or _cls_runs_cd[0]
+                )
+                _fset_cd2 = _cls_fsets_cd[_sel_cd.id]
+                _ds_cd = ctx["dataset"]
+                if _ds_cd and Path(_ds_cd.file_path).exists():
+                    import pandas as _pd_cd
+                    from core.feature_engine import apply_transformations as _apply_cd
+                    from core.trainer import prepare_features as _pf_cd
+
+                    _df_cd = _pd_cd.read_csv(Path(_ds_cd.file_path))
+                    _tfms_cd = __import__("json").loads(
+                        _fset_cd2.transformations or "[]"
+                    )
+                    if _tfms_cd:
+                        _df_cd, _ = _apply_cd(_df_cd, _tfms_cd)
+
+                    _target_cd = _fset_cd2.target_column
+                    _feat_cols_cd = [c for c in _df_cd.columns if c != _target_cd]
+                    _X_cd, _y_cd, _ = _pf_cd(
+                        _df_cd, _feat_cols_cd, _target_cd, "classification"
+                    )
+
+                    _model_cd = _jl_cd.load(_sel_cd.model_path)
+                    if hasattr(_model_cd, "predict_proba"):
+                        _proba_cd = _model_cd.predict_proba(_X_cd)
+                        _y_proba_cd = _proba_cd.max(axis=1)
+                        _y_pred_cd = _model_cd.predict(_X_cd)
+                        _class_names_cd = [str(c) for c in _model_cd.classes_.tolist()]
+
+                        _cd_result = _ccd(
+                            y_proba=_np_cd.array(_y_proba_cd),
+                            y_pred=_np_cd.array(_y_pred_cd),
+                            class_names=_class_names_cd,
+                        )
+                        confidence_dist_event = {
+                            "model_run_id": _sel_cd.id,
+                            "algorithm": _sel_cd.algorithm,
+                            "target_col": _target_cd,
+                            **_cd_result,
+                        }
+                        system_prompt += (
+                            f"\n\n## Model Confidence Distribution\n"
+                            f"{_cd_result['summary']} "
+                            f"Decisiveness verdict: {_cd_result['decisiveness_label']}. "
+                            f"Mean confidence: {_cd_result['mean_confidence']:.0%}. "
+                            "Explain to the analyst what this means in plain English: "
+                            "a decisive model makes clear calls (high probabilities near 0 or 1), "
+                            "while an uncertain model often sits near 50% — suggesting overlapping classes "
+                            "or insufficient training data. Mention what they might do to improve decisiveness."
+                        )
+        except Exception:  # noqa: BLE001
+            pass  # Confidence distribution is nice-to-have; never crash chat
 
     # Check if user wants to change the train/test split strategy
     split_strategy_event: dict | None = None
@@ -17252,6 +17347,9 @@ def send_message(
 
         if threshold_analysis_event:
             yield f"data: {json.dumps({'type': 'threshold_analysis', 'threshold_analysis': threshold_analysis_event})}\n\n"
+
+        if confidence_dist_event:
+            yield f"data: {json.dumps({'type': 'confidence_distribution', 'confidence_distribution': confidence_dist_event})}\n\n"
 
         # After text stream, opportunistically generate a chart if the
         # message is about data and we have a dataset loaded

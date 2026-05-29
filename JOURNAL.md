@@ -1,5 +1,27 @@
 # Journal
 
+## Day 79 — 12:00 — Model Confidence Distribution via Chat
+
+**Feature shipped:** Model Confidence Distribution (Track C perpetual). Analysts can now ask "how confident is my model?", "confidence distribution", "show confidence histogram", "how certain are my predictions?", "is my model decisive or uncertain?", or "distribution of prediction probabilities" and receive a `ConfidenceDistributionCard` in chat that directly answers "is my model typically decisive (predictions near 0/1) or uncertain (sitting near 50%)?"
+
+**What was built:**
+
+- `compute_confidence_distribution(y_proba, y_pred, class_names, n_bins)` pure function in `core/validator.py`: buckets max-class probabilities into a 5–20 bin histogram, segments predictions into high (≥80%), medium (50–80%), and low (<50%) confidence tiers with counts and percentages, derives decisiveness verdict ("decisive" if ≥60% high-confidence, "moderate" 30–60%, "uncertain" <30%), computes per-class mean confidence.
+
+- `GET /api/models/{model_run_id}/confidence-distribution` REST endpoint in `api/validation.py`: classification-only (400 for regression or non-proba models), loads fitted model, runs predict_proba, calls pure function, returns bins + verdict + per-class means.
+
+- `_CONFIDENCE_DIST_PATTERNS` regex (8 NL variants: "show confidence distribution", "confidence histogram", "how confident is my model", "how certain are my predictions", "is my model decisive/uncertain", "distribution of probabilities", etc.) in `chat.py`. Handler guarded by classification `ctx["model_runs"]`; finds selected/best done run; computes confidence distribution; injects decisiveness verdict + mean confidence into system prompt; emits `{type:"confidence_distribution"}` SSE event.
+
+- `ConfidenceDistributionCard` (emerald=decisive / amber=moderate / rose=uncertain, 🎯 icon): decisiveness badge, algorithm badge, target column, 3-column High/Medium/Low breakdown with counts, mean/median/N stats row, Recharts BarChart with color-coded bins (emerald=high/amber=medium/rose=low), per-class mean confidence bars with ARIA progressbars, summary paragraph, sr-only figcaption.
+
+- Full type wiring: `ConfidenceDistributionResult` + `ConfidenceDistBin` + `ConfidenceDistClassMean` TypeScript interfaces in `lib/types.ts`; `confidence_distribution?` field on `ChatMessage`; `attachConfidenceDistributionToLastMessage` Zustand action in `store.ts`; SSE handler wired in both EventSource branches of `project/[id]/page.tsx`; card render in message list.
+
+**Tests:** 16 pure-function (required keys, bin count, bin keys, n_total, pct sum, n counts sum, decisive verdict, uncertain verdict, per-class structure, per-class count sum, mean in range, median in range, summary type, class names applied, n_bins clamped min/max, too-few-rows ValueError) + 11 regex (8 matches + 2 false-positive guards + 1 extra) + 3 endpoint (regression=400, classification=200, unknown=404) = 31 backend + 20 frontend (17 card component + 3 store action) = **51 new tests**. All passing. Backend lint: clean. Frontend build + lint: clean.
+
+**Why this matters:** Most analysts know their model's overall accuracy but don't know how "sure" it typically is. A model that makes 80% high-confidence predictions is very different from one that typically gives 52% or 48% probabilities — the latter is effectively guessing. This card gives a visual distribution that immediately reveals whether the model has learned clear decision boundaries or is struggling with class overlap. Distinct from `ThresholdAnalysisCard` (which sweeps thresholds for precision/recall tradeoffs) and `CalibrationCheckCard` (which checks reliability of probabilities) — this answers "is my model typically confident or hesitant?"
+
+**Baseline:** 5082 backend / 2902 frontend → **5113 backend / 2922 frontend** (+31 / +20).
+
 ## Day 79 — 04:00 — Classification Threshold Advisor via Chat
 
 **Feature shipped:** Classification Threshold Advisor (Track C perpetual). Analysts can now ask "what probability threshold should I use?", "precision recall tradeoff", "optimal cutoff for my model", "help me choose a threshold", or "at what probability should I flag customers?" and receive a `ThresholdAnalysisCard` in chat that directly answers the "which probability cutoff should I use for my classification model?" question.

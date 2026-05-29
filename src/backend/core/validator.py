@@ -1307,3 +1307,131 @@ def compute_threshold_analysis(
         "positive_class": pos_class_name,
         "summary": summary,
     }
+
+
+# ---------------------------------------------------------------------------
+# Confidence distribution analysis
+# ---------------------------------------------------------------------------
+
+
+def compute_confidence_distribution(
+    y_proba: np.ndarray,
+    y_pred: np.ndarray,
+    class_names: list[str] | None = None,
+    n_bins: int = 10,
+) -> dict:
+    """Compute the distribution of model prediction confidences across training data.
+
+    y_proba: max-class probability per row (shape [n_samples]).
+    y_pred:  predicted class labels (encoded integers).
+    class_names: optional list of decoded class labels.
+
+    Returns a dict with:
+      bins           — list of {lo, hi, count, pct, label} histogram bars
+      n_total        — total number of samples
+      mean_confidence  — overall mean of max-class probabilities
+      median_confidence
+      pct_high       — % of predictions with confidence >= 0.80 (decisive)
+      pct_medium     — % of predictions with confidence 0.50..0.80
+      pct_low        — % of predictions with confidence < 0.50
+      decisiveness   — "decisive" / "moderate" / "uncertain"
+      per_class_mean — list of {class_name, mean_confidence, count}
+      summary        — plain-English description
+    """
+    if len(y_proba) < 5:
+        raise ValueError("Need at least 5 samples to compute confidence distribution.")
+
+    y_proba = np.asarray(y_proba, dtype=float)
+    y_pred = np.asarray(y_pred)
+    n_total = len(y_proba)
+    n_bins = max(5, min(20, n_bins))
+
+    # Histogram from 0.0 to 1.0
+    counts, edges = np.histogram(y_proba, bins=n_bins, range=(0.0, 1.0))
+    bins: list[dict] = []
+    for i in range(n_bins):
+        lo = round(float(edges[i]), 4)
+        hi = round(float(edges[i + 1]), 4)
+        count = int(counts[i])
+        pct = round(count / n_total * 100, 1)
+        label = f"{int(lo * 100)}–{int(hi * 100)}%"
+        bins.append({"lo": lo, "hi": hi, "count": count, "pct": pct, "label": label})
+
+    mean_conf = round(float(np.mean(y_proba)), 4)
+    median_conf = round(float(np.median(y_proba)), 4)
+
+    n_high = int(np.sum(y_proba >= 0.80))
+    n_medium = int(np.sum((y_proba >= 0.50) & (y_proba < 0.80)))
+    n_low = int(np.sum(y_proba < 0.50))
+
+    pct_high = round(n_high / n_total * 100, 1)
+    pct_medium = round(n_medium / n_total * 100, 1)
+    pct_low = round(n_low / n_total * 100, 1)
+
+    # Decisiveness verdict
+    if pct_high >= 60:
+        decisiveness = "decisive"
+        decisiveness_label = "Decisive"
+        decisiveness_desc = (
+            f"{pct_high:.0f}% of predictions have confidence ≥ 80% — "
+            "the model is confident and decisive in most cases."
+        )
+    elif pct_high >= 30:
+        decisiveness = "moderate"
+        decisiveness_label = "Moderate"
+        decisiveness_desc = (
+            f"{pct_high:.0f}% of predictions have confidence ≥ 80%. "
+            "The model has moderate decisiveness — "
+            "many predictions fall in the uncertain middle range."
+        )
+    else:
+        decisiveness = "uncertain"
+        decisiveness_label = "Uncertain"
+        decisiveness_desc = (
+            f"Only {pct_high:.0f}% of predictions have confidence ≥ 80%. "
+            "The model is often uncertain — predictions tend to cluster near 50%, "
+            "which may indicate class overlap in the training data."
+        )
+
+    # Per-class mean confidence
+    unique_classes = sorted(set(y_pred.tolist()))
+    per_class_mean: list[dict] = []
+    for cls in unique_classes:
+        mask = y_pred == cls
+        cls_proba = y_proba[mask]
+        cls_name = (
+            class_names[int(cls)] if class_names and int(cls) < len(class_names) else str(cls)
+        )
+        per_class_mean.append(
+            {
+                "class_name": cls_name,
+                "mean_confidence": round(float(np.mean(cls_proba)), 4) if len(cls_proba) > 0 else 0.0,
+                "count": int(mask.sum()),
+            }
+        )
+
+    summary = (
+        f"The model has mean confidence of {mean_conf:.0%} across {n_total} training predictions. "
+        f"{decisiveness_desc} "
+        f"{pct_high:.0f}% high-confidence (≥80%), "
+        f"{pct_medium:.0f}% medium (50–80%), "
+        f"{pct_low:.0f}% low (<50%)."
+    )
+
+    return {
+        "bins": bins,
+        "n_total": n_total,
+        "n_bins": n_bins,
+        "mean_confidence": mean_conf,
+        "median_confidence": median_conf,
+        "pct_high": pct_high,
+        "pct_medium": pct_medium,
+        "pct_low": pct_low,
+        "n_high": n_high,
+        "n_medium": n_medium,
+        "n_low": n_low,
+        "decisiveness": decisiveness,
+        "decisiveness_label": decisiveness_label,
+        "per_class_mean": per_class_mean,
+        "summary": summary,
+    }

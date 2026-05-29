@@ -543,6 +543,7 @@ export interface ChatMessage {
   feature_redundancy?: FeatureRedundancyResult
   target_leakage?: TargetLeakageResult
   threshold_analysis?: ThresholdAnalysisResult
+  confidence_distribution?: ConfidenceDistributionResult
 }
 
 export interface RollbackVersionEntry {
@@ -3995,5 +3996,40 @@ export interface ThresholdAnalysisResult {
   n_total: number
   prevalence: number
   positive_class: string
+  summary: string
+}
+
+export interface ConfidenceDistBin {
+  lo: number
+  hi: number
+  count: number
+  pct: number
+  label: string
+}
+
+export interface ConfidenceDistClassMean {
+  class_name: string
+  mean_confidence: number
+  count: number
+}
+
+export interface ConfidenceDistributionResult {
+  model_run_id: string
+  algorithm: string
+  target_col: string
+  bins: ConfidenceDistBin[]
+  n_total: number
+  n_bins: number
+  mean_confidence: number
+  median_confidence: number
+  pct_high: number
+  pct_medium: number
+  pct_low: number
+  n_high: number
+  n_medium: number
+  n_low: number
+  decisiveness: "decisive" | "moderate" | "uncertain"
+  decisiveness_label: string
+  per_class_mean: ConfidenceDistClassMean[]
   summary: string
 }

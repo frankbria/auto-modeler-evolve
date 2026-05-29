@@ -49,7 +49,9 @@ the time is better spent on real features.
 
 ## Currently Working On
 
-*(nothing)*
+**Track C: Model Confidence Distribution via Chat** — implementing Day 79 (12:00).
+
+Closes the "how confident/decisive is my model overall?" analyst question. Analysts ask "how confident is my model?", "confidence distribution", "show confidence histogram", "how certain are my predictions?", "is my model decisive or uncertain?". Distinct from threshold analysis (which sweeps thresholds to find the optimal cutoff) and calibration check (which shows reliability). This shows the distribution of prediction probabilities — whether the model is typically decisive (predictions near 0/1) or uncertain (predictions near 0.5).
 
 ---
 
