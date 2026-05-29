@@ -541,6 +541,7 @@ export interface ChatMessage {
   data_quality_impact?: DataQualityImpactResult
   overfitting_analysis?: OverfittingAnalysisResult
   feature_redundancy?: FeatureRedundancyResult
+  target_leakage?: TargetLeakageResult
 }
 
 export interface RollbackVersionEntry {
@@ -3936,5 +3937,26 @@ export interface FeatureRedundancyResult {
   threshold: number
   verdict: "none" | "low" | "high"
   verdict_label: string
+  summary: string
+}
+
+export interface LeakyFeature {
+  feature: string
+  correlation: number
+  correlation_abs: number
+  risk_level: "high" | "moderate"
+  risk_label: string
+  reason: string
+}
+
+export interface TargetLeakageResult {
+  dataset_id: string
+  leaky_features: LeakyFeature[]
+  n_checked: number
+  verdict: "none" | "warning" | "severe"
+  verdict_label: string
+  high_threshold: number
+  moderate_threshold: number
+  target_col: string
   summary: string
 }

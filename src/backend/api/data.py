@@ -32,6 +32,7 @@ from core.analyzer import (
     compute_pair_correlation,
     compute_dataset_comparison,
     compute_feature_redundancy,
+    compute_target_leakage,
     compute_prediction_opportunities,
     compute_stat_query,
     compute_summary_stats,
@@ -2847,5 +2848,70 @@ def get_feature_redundancy(
 
     try:
         return compute_feature_redundancy(df, feature_names, threshold=threshold)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/{dataset_id}/target-leakage")
+def get_target_leakage(
+    dataset_id: str,
+    session: Session = Depends(get_session),
+) -> dict:
+    """Identify features that may be leaking information about the target.
+
+    Uses Pearson correlation (numeric target) or normalized mutual information
+    (categorical target) to flag features with suspiciously high overlap with
+    the target column.
+
+    Returns:
+        leaky_features, n_checked, verdict, verdict_label, high_threshold,
+        moderate_threshold, target_col, summary.
+    """
+    dataset = session.get(Dataset, dataset_id)
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    path = Path(dataset.file_path)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Dataset file not found on disk")
+
+    feature_set = session.exec(
+        select(FeatureSet).where(
+            FeatureSet.dataset_id == dataset_id,
+            FeatureSet.is_active == True,  # noqa: E712
+        )
+    ).first()
+
+    if not feature_set or not feature_set.target_column:
+        raise HTTPException(
+            status_code=400,
+            detail="No target column configured. Set a target column in the Features tab first.",
+        )
+
+    df = pd.read_csv(path)
+    target_col = feature_set.target_column
+
+    if target_col not in df.columns:
+        raise HTTPException(
+            status_code=400, detail=f"Target column '{target_col}' not found in dataset."
+        )
+
+    feature_names = [c for c in df.columns if c != target_col]
+
+    if feature_set.transformations:
+        try:
+            from core.feature_engine import apply_transformations
+
+            transforms = __import__("json").loads(feature_set.transformations)
+            if transforms:
+                df, _ = apply_transformations(df, transforms)
+                feature_names = [c for c in df.columns if c != target_col]
+        except Exception:  # noqa: BLE001
+            pass
+
+    try:
+        result = compute_target_leakage(df, target_col, feature_names)
+        result["dataset_id"] = dataset_id
+        return result
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

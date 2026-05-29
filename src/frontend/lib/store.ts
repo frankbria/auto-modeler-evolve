@@ -181,6 +181,7 @@ interface AppState {
   attachDataQualityImpactToLastMessage: (data_quality_impact: import("./types").DataQualityImpactResult) => void
   attachOverfittingAnalysisToLastMessage: (overfitting_analysis: import("./types").OverfittingAnalysisResult) => void
   attachFeatureRedundancyToLastMessage: (feature_redundancy: import("./types").FeatureRedundancyResult) => void
+  attachTargetLeakageToLastMessage: (target_leakage: import("./types").TargetLeakageResult) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -1480,6 +1481,16 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, feature_redundancy }
+      }
+      return { messages }
+    }),
+
+  attachTargetLeakageToLastMessage: (target_leakage) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, target_leakage }
       }
       return { messages }
     }),

@@ -4754,3 +4754,205 @@ def compute_feature_redundancy(
         "verdict_label": verdict_label,
         "summary": summary,
     }
+
+
+def compute_target_leakage(
+    df: pd.DataFrame,
+    target_col: str,
+    feature_names: list[str],
+    high_threshold: float = 0.90,
+    moderate_threshold: float = 0.75,
+) -> dict:
+    """Identify features that may be leaking information about the target.
+
+    Computes Pearson correlation for numeric features vs a numeric target,
+    and mutual information (normalized) for all features vs a categorical target.
+    Flags features whose correlation exceeds the moderate or high threshold.
+
+    Args:
+        df: DataFrame with all columns.
+        target_col: Name of the target column.
+        feature_names: Feature columns to check (should exclude target).
+        high_threshold: Correlation above this is "high risk" leakage (default 0.90).
+        moderate_threshold: Correlation above this is "moderate risk" (default 0.75).
+
+    Returns:
+        dict with keys:
+            leaky_features  – list of {feature, correlation, risk_level, reason}
+            n_checked       – int: number of features examined
+            verdict         – "none" | "warning" | "severe"
+            verdict_label   – plain-English verdict label
+            high_threshold  – threshold used for high-risk classification
+            moderate_threshold – threshold used for moderate-risk classification
+            target_col      – target column name
+            summary         – one-sentence plain-English overview
+    """
+    MIN_ROWS = 10
+
+    if len(df) < MIN_ROWS:
+        raise ValueError(
+            f"Dataset has only {len(df)} rows — need at least {MIN_ROWS} for "
+            "target leakage analysis."
+        )
+
+    if target_col not in df.columns:
+        raise ValueError(f"Target column '{target_col}' not found in DataFrame.")
+
+    valid_features = [c for c in feature_names if c in df.columns and c != target_col]
+    if not valid_features:
+        return {
+            "leaky_features": [],
+            "n_checked": 0,
+            "verdict": "none",
+            "verdict_label": "No Leakage Detected",
+            "high_threshold": high_threshold,
+            "moderate_threshold": moderate_threshold,
+            "target_col": target_col,
+            "summary": "No features to check — dataset may have no feature columns.",
+        }
+
+    target_series = df[target_col].dropna()
+    is_numeric_target = pd.api.types.is_numeric_dtype(df[target_col])
+
+    leaky_features: list[dict] = []
+
+    if is_numeric_target:
+        # Pearson correlation for numeric features vs numeric target
+        for feat in valid_features:
+            col_series = df[feat]
+            if not pd.api.types.is_numeric_dtype(col_series):
+                continue
+            combined = df[[feat, target_col]].dropna()
+            if len(combined) < MIN_ROWS:
+                continue
+            try:
+                corr_val = combined[feat].corr(combined[target_col])
+            except Exception:  # noqa: BLE001
+                continue
+            if pd.isna(corr_val):
+                continue
+            abs_corr = abs(corr_val)
+            if abs_corr >= moderate_threshold:
+                if abs_corr >= high_threshold:
+                    risk_level = "high"
+                    risk_label = "High Risk"
+                else:
+                    risk_level = "moderate"
+                    risk_label = "Moderate Risk"
+                leaky_features.append(
+                    {
+                        "feature": feat,
+                        "correlation": round(float(corr_val), 4),
+                        "correlation_abs": round(abs_corr, 4),
+                        "risk_level": risk_level,
+                        "risk_label": risk_label,
+                        "reason": (
+                            f"'{feat}' has a {abs_corr:.0%} Pearson correlation with "
+                            f"'{target_col}'. A correlation this high suggests the feature "
+                            "may be a direct derivative of the target or recorded at the "
+                            "same time — it could be cheating."
+                        ),
+                    }
+                )
+    else:
+        # Categorical target: use mutual information (normalized by target entropy)
+        from sklearn.feature_selection import mutual_info_classif
+        from sklearn.preprocessing import LabelEncoder
+
+        le_target = LabelEncoder()
+        y_enc = le_target.fit_transform(target_series.astype(str))
+        # Need to align indices
+        valid_idx = df[target_col].notna()
+
+        numeric_feats = [
+            f
+            for f in valid_features
+            if pd.api.types.is_numeric_dtype(df[f])
+        ]
+        if numeric_feats:
+            X_num = df.loc[valid_idx, numeric_feats].fillna(0).values
+            try:
+                mi_scores = mutual_info_classif(
+                    X_num, y_enc, discrete_features=False, random_state=42
+                )
+                # Normalize by log2(n_classes) to get 0-1 range
+                import math
+
+                n_classes = len(le_target.classes_)
+                norm_factor = math.log2(n_classes) if n_classes > 1 else 1.0
+                for feat, mi in zip(numeric_feats, mi_scores):
+                    norm_mi = mi / norm_factor if norm_factor > 0 else mi
+                    norm_mi = min(norm_mi, 1.0)
+                    if norm_mi >= moderate_threshold:
+                        if norm_mi >= high_threshold:
+                            risk_level = "high"
+                            risk_label = "High Risk"
+                        else:
+                            risk_level = "moderate"
+                            risk_label = "Moderate Risk"
+                        leaky_features.append(
+                            {
+                                "feature": feat,
+                                "correlation": round(float(norm_mi), 4),
+                                "correlation_abs": round(float(norm_mi), 4),
+                                "risk_level": risk_level,
+                                "risk_label": risk_label,
+                                "reason": (
+                                    f"'{feat}' shares {norm_mi:.0%} of the information "
+                                    f"in '{target_col}' (normalized mutual information). "
+                                    "This level of information overlap suggests the feature "
+                                    "may be derived from the target."
+                                ),
+                            }
+                        )
+            except Exception:  # noqa: BLE001
+                pass
+
+    # Sort by correlation_abs descending
+    leaky_features.sort(key=lambda x: x["correlation_abs"], reverse=True)
+
+    n_checked = len(valid_features)
+    n_high = sum(1 for f in leaky_features if f["risk_level"] == "high")
+    n_moderate = sum(1 for f in leaky_features if f["risk_level"] == "moderate")
+
+    if n_high > 0:
+        verdict = "severe"
+        verdict_label = "Likely Leakage"
+    elif n_moderate > 0:
+        verdict = "warning"
+        verdict_label = "Possible Leakage"
+    else:
+        verdict = "none"
+        verdict_label = "No Leakage Detected"
+
+    if verdict == "none":
+        summary = (
+            f"None of the {n_checked} features show suspicious correlation "
+            f"with '{target_col}' — no obvious leakage detected."
+        )
+    elif verdict == "warning":
+        feat_names = ", ".join(f["feature"] for f in leaky_features[:3])
+        summary = (
+            f"{n_moderate} feature(s) show moderate correlation with '{target_col}': "
+            f"{feat_names}. Review whether these columns are available at prediction time."
+        )
+    else:
+        feat_names = ", ".join(
+            f["feature"] for f in leaky_features if f["risk_level"] == "high"
+        )
+        summary = (
+            f"{n_high} feature(s) are highly correlated with '{target_col}' "
+            f"({feat_names}) — these may be leaking the answer into the training data. "
+            "If these features are only known after the target is determined, remove them."
+        )
+
+    return {
+        "leaky_features": leaky_features,
+        "n_checked": n_checked,
+        "verdict": verdict,
+        "verdict_label": verdict_label,
+        "high_threshold": high_threshold,
+        "moderate_threshold": moderate_threshold,
+        "target_col": target_col,
+        "summary": summary,
+    }

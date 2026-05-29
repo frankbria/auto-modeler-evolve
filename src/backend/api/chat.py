@@ -4008,6 +4008,20 @@ _REDUNDANCY_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+_TARGET_LEAKAGE_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"(?:target|data)\s+leakage\b|"
+    r"(?:check|detect|find|any|is\s+there)\s+(?:any\s+)?(?:target|data)\s+leakage\b|"
+    r"(?:leaky|leaking)\s+features?\b|"
+    r"features?\s+(?:that\s+)?(?:leak|cheat|give\s+away)\s+(?:the\s+)?(?:answer|target)\b|"
+    r"(?:suspicious|suspiciously)\s+(?:high\s+)?(?:correlat|correlations?)\s+with\s+(?:the\s+)?target\b|"
+    r"(?:are\s+)?(?:any|which)\s+features?\s+(?:already\s+)?(?:know|contain|encode)\s+(?:the\s+)?(?:answer|target)\b|"
+    r"feature\s+(?:leaks?|cheats?)\s+(?:the\s+)?(?:answer|target|outcome)\b|"
+    r"(?:check\s+(?:for\s+)?)?suspicious\s+features?\b"
+    r")",
+    re.IGNORECASE,
+)
+
 # Similar records: "find records most like row 5", "who else looks like this customer?"
 _SIMILAR_RECORDS_PATTERNS = re.compile(
     r"(?i)(?:"
@@ -7729,6 +7743,66 @@ def send_message(
                         )
         except Exception:  # noqa: BLE001
             pass  # Redundancy analysis is nice-to-have; never crash chat
+
+    # Target leakage detection — "is there target leakage?", "check for leakage"
+    target_leakage_event: dict | None = None
+    if _TARGET_LEAKAGE_PATTERNS.search(body.message) and ctx["dataset"]:
+        try:
+            from core.analyzer import compute_target_leakage as _ctl
+            from core.feature_engine import apply_transformations as _apply_tl
+
+            _ds_tl = ctx["dataset"]
+            if _ds_tl and Path(_ds_tl.file_path).exists():
+                from sqlmodel import select as _sel_tl
+
+                _fset_tl = session.exec(
+                    _sel_tl(FeatureSet).where(
+                        FeatureSet.dataset_id == _ds_tl.id,
+                        FeatureSet.is_active == True,  # noqa: E712
+                    )
+                ).first()
+                if _fset_tl and _fset_tl.target_column:
+                    import pandas as _pd_tl
+
+                    _df_tl = _pd_tl.read_csv(Path(_ds_tl.file_path))
+                    _tfms_tl = __import__("json").loads(_fset_tl.transformations or "[]")
+                    if _tfms_tl:
+                        _df_tl, _ = _apply_tl(_df_tl, _tfms_tl)
+                    _target_tl = _fset_tl.target_column
+                    _feat_cols_tl = [c for c in _df_tl.columns if c != _target_tl]
+                    _tl_result = _ctl(_df_tl, _target_tl, _feat_cols_tl)
+                    target_leakage_event = {
+                        "dataset_id": _ds_tl.id,
+                        **_tl_result,
+                    }
+                    _tl_verdict = _tl_result["verdict_label"]
+                    if _tl_result["leaky_features"]:
+                        _leaky_names = ", ".join(
+                            f["feature"] for f in _tl_result["leaky_features"][:3]
+                        )
+                        system_prompt += (
+                            f"\n\n## Target Leakage Analysis\n"
+                            f"Verdict: {_tl_verdict}. "
+                            f"Suspicious features: {_leaky_names}. "
+                            f"Summary: {_tl_result['summary']} "
+                            "Explain to the analyst what target leakage means: these features "
+                            "are so strongly correlated with the target that they may encode "
+                            "the answer. If these features are recorded after the target is known "
+                            "(e.g., 'final_payment_date' leaks 'churned'), the model will appear "
+                            "accurate in training but fail in production. Recommend removing them "
+                            "from training data and re-verifying accuracy."
+                        )
+                    else:
+                        system_prompt += (
+                            f"\n\n## Target Leakage Analysis\n"
+                            f"Verdict: {_tl_verdict}. "
+                            f"Checked {_tl_result['n_checked']} features — "
+                            "none show suspicious correlation with the target. "
+                            "Tell the analyst their features look clean and this is a positive sign "
+                            "that the model's accuracy reflects genuine patterns, not data shortcuts."
+                        )
+        except Exception:  # noqa: BLE001
+            pass  # Leakage analysis is nice-to-have; never crash chat
 
     # Check if user wants to change the train/test split strategy
     split_strategy_event: dict | None = None
@@ -17068,6 +17142,9 @@ def send_message(
 
         if redundancy_event:
             yield f"data: {json.dumps({'type': 'feature_redundancy', 'feature_redundancy': redundancy_event})}\n\n"
+
+        if target_leakage_event:
+            yield f"data: {json.dumps({'type': 'target_leakage', 'target_leakage': target_leakage_event})}\n\n"
 
         # After text stream, opportunistically generate a chart if the
         # message is about data and we have a dataset loaded
