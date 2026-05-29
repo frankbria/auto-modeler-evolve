@@ -26,8 +26,17 @@ class TestComputeThresholdAnalysisPure:
     def test_returns_required_keys(self):
         y_true, y_proba = _make_binary_y()
         result = compute_threshold_analysis(y_true, y_proba)
-        for key in ["sweep", "current_threshold", "current_metrics", "recommendations",
-                    "n_positive", "n_total", "prevalence", "positive_class", "summary"]:
+        for key in [
+            "sweep",
+            "current_threshold",
+            "current_metrics",
+            "recommendations",
+            "n_positive",
+            "n_total",
+            "prevalence",
+            "positive_class",
+            "summary",
+        ]:
             assert key in result, f"Missing key: {key}"
 
     def test_sweep_has_19_points(self):
@@ -73,7 +82,14 @@ class TestComputeThresholdAnalysisPure:
         y_true, y_proba = _make_binary_y()
         result = compute_threshold_analysis(y_true, y_proba)
         for rec in result["recommendations"].values():
-            for key in ["threshold", "precision", "recall", "f1", "label", "description"]:
+            for key in [
+                "threshold",
+                "precision",
+                "recall",
+                "f1",
+                "label",
+                "description",
+            ]:
                 assert key in rec
 
     def test_n_positive_and_n_total(self):
@@ -85,7 +101,9 @@ class TestComputeThresholdAnalysisPure:
     def test_prevalence_fraction(self):
         y_true, y_proba = _make_binary_y(n=100, positive_ratio=0.3)
         result = compute_threshold_analysis(y_true, y_proba)
-        assert abs(result["prevalence"] - result["n_positive"] / result["n_total"]) < 0.001
+        assert (
+            abs(result["prevalence"] - result["n_positive"] / result["n_total"]) < 0.001
+        )
 
     def test_summary_is_string(self):
         y_true, y_proba = _make_binary_y()
@@ -157,6 +175,7 @@ class TestComputeThresholdAnalysisPure:
 
 def _load_pattern():
     from api.chat import _THRESHOLD_ADVISOR_PATTERNS
+
     return _THRESHOLD_ADVISOR_PATTERNS
 
 

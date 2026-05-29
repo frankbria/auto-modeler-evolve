@@ -1247,7 +1247,7 @@ def compute_threshold_analysis(
             "f1": best_f1["f1"],
             "label": "Balanced (Max F1)",
             "description": (
-                f"At {int(best_f1['threshold']*100)}%, precision and recall are most balanced. "
+                f"At {int(best_f1['threshold'] * 100)}%, precision and recall are most balanced. "
                 "Best when false positives and false negatives are equally costly."
             ),
         },
@@ -1258,8 +1258,8 @@ def compute_threshold_analysis(
             "f1": high_recall["f1"],
             "label": "High Recall (Catch More)",
             "description": (
-                f"At {int(high_recall['threshold']*100)}%, you catch "
-                f"{int(high_recall['recall']*100)}% of actual positives. "
+                f"At {int(high_recall['threshold'] * 100)}%, you catch "
+                f"{int(high_recall['recall'] * 100)}% of actual positives. "
                 "Best when missing a positive case is expensive (e.g., fraud, churn)."
             ),
         },
@@ -1270,8 +1270,8 @@ def compute_threshold_analysis(
             "f1": high_precision["f1"],
             "label": "High Precision (Fewer False Alarms)",
             "description": (
-                f"At {int(high_precision['threshold']*100)}%, "
-                f"{int(high_precision['precision']*100)}% of flagged cases are truly positive. "
+                f"At {int(high_precision['threshold'] * 100)}%, "
+                f"{int(high_precision['precision'] * 100)}% of flagged cases are truly positive. "
                 "Best when acting on a false alarm is expensive (e.g., costly interventions)."
             ),
         },
@@ -1285,13 +1285,9 @@ def compute_threshold_analysis(
     if abs(best_f1["threshold"] - 0.50) < 0.001:
         thr_advice = "the default 50% threshold is already optimal for this dataset."
     elif best_f1["threshold"] < 0.50:
-        thr_advice = (
-            f"consider lowering your threshold to {best_thr_pct}% to improve overall performance."
-        )
+        thr_advice = f"consider lowering your threshold to {best_thr_pct}% to improve overall performance."
     else:
-        thr_advice = (
-            f"consider raising your threshold to {best_thr_pct}% to improve overall performance."
-        )
+        thr_advice = f"consider raising your threshold to {best_thr_pct}% to improve overall performance."
 
     summary = (
         f"At the default 50% threshold: {current_prec_pct}% precision, "

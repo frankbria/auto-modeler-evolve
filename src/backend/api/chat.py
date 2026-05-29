@@ -7832,23 +7832,25 @@ def send_message(
             _done_cls_ta = [
                 r
                 for r in ctx["model_runs"]
-                if r.status == "done"
-                and r.model_path
-                and Path(r.model_path).exists()
+                if r.status == "done" and r.model_path and Path(r.model_path).exists()
             ]
             _cls_runs_ta = []
             _cls_fsets: dict[str, object] = {}
             for _r_ta in _done_cls_ta:
                 _fset_ta = session.get(FeatureSet, _r_ta.feature_set_id)
-                if _fset_ta and (_fset_ta.problem_type or "regression") == "classification":
+                if (
+                    _fset_ta
+                    and (_fset_ta.problem_type or "regression") == "classification"
+                ):
                     _cls_runs_ta.append(_r_ta)
                     _cls_fsets[_r_ta.id] = _fset_ta
 
             if _cls_runs_ta:
                 # Prefer selected run, then best by primary metric
-                _sel_ta = next(
-                    (r for r in _cls_runs_ta if r.is_selected), None
-                ) or _cls_runs_ta[0]
+                _sel_ta = (
+                    next((r for r in _cls_runs_ta if r.is_selected), None)
+                    or _cls_runs_ta[0]
+                )
                 _fset_ta2 = _cls_fsets[_sel_ta.id]
                 _ds_ta = ctx["dataset"]
                 if _ds_ta and Path(_ds_ta.file_path).exists():
@@ -7894,11 +7896,11 @@ def send_message(
                         system_prompt += (
                             f"\n\n## Classification Threshold Advisor\n"
                             f"{_ta_result['summary']} "
-                            f"Best F1 threshold: {int(_best_ta['threshold']*100)}% "
-                            f"(precision {int(_best_ta['precision']*100)}%, "
-                            f"recall {int(_best_ta['recall']*100)}%). "
+                            f"Best F1 threshold: {int(_best_ta['threshold'] * 100)}% "
+                            f"(precision {int(_best_ta['precision'] * 100)}%, "
+                            f"recall {int(_best_ta['recall'] * 100)}%). "
                             f"For churn/fraud use cases: lower threshold to "
-                            f"{int(_high_rec_ta['threshold']*100)}% to catch more positives. "
+                            f"{int(_high_rec_ta['threshold'] * 100)}% to catch more positives. "
                             "Explain to the analyst: the default 50% cutoff is rarely optimal. "
                             "Help them choose based on their business context — is it worse to "
                             "miss a positive case, or to flag too many false alarms?"
