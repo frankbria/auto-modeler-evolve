@@ -1400,12 +1400,16 @@ def compute_confidence_distribution(
         mask = y_pred == cls
         cls_proba = y_proba[mask]
         cls_name = (
-            class_names[int(cls)] if class_names and int(cls) < len(class_names) else str(cls)
+            class_names[int(cls)]
+            if class_names and int(cls) < len(class_names)
+            else str(cls)
         )
         per_class_mean.append(
             {
                 "class_name": cls_name,
-                "mean_confidence": round(float(np.mean(cls_proba)), 4) if len(cls_proba) > 0 else 0.0,
+                "mean_confidence": round(float(np.mean(cls_proba)), 4)
+                if len(cls_proba) > 0
+                else 0.0,
                 "count": int(mask.sum()),
             }
         )

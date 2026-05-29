@@ -51,7 +51,11 @@ def _make_binary_proba(n=100, decisive=True, seed=42):
     if decisive:
         # Most probabilities near 0 or 1
         y_proba = np.clip(
-            np.where(rng.random(n) > 0.5, rng.uniform(0.7, 0.99, n), rng.uniform(0.01, 0.3, n)),
+            np.where(
+                rng.random(n) > 0.5,
+                rng.uniform(0.7, 0.99, n),
+                rng.uniform(0.01, 0.3, n),
+            ),
             0.01,
             0.99,
         )
@@ -116,7 +120,9 @@ class TestComputeConfidenceDistribution:
     def test_n_counts_sum_to_total(self):
         y_proba, y_pred = _make_binary_proba()
         result = compute_confidence_distribution(y_proba, y_pred)
-        assert result["n_high"] + result["n_medium"] + result["n_low"] == result["n_total"]
+        assert (
+            result["n_high"] + result["n_medium"] + result["n_low"] == result["n_total"]
+        )
 
     def test_decisive_verdict_for_decisive_model(self):
         y_proba, y_pred = _make_binary_proba(decisive=True, n=200)
@@ -134,7 +140,9 @@ class TestComputeConfidenceDistribution:
 
     def test_per_class_mean_structure(self):
         y_proba, y_pred = _make_binary_proba()
-        result = compute_confidence_distribution(y_proba, y_pred, class_names=["No", "Yes"])
+        result = compute_confidence_distribution(
+            y_proba, y_pred, class_names=["No", "Yes"]
+        )
         for entry in result["per_class_mean"]:
             assert "class_name" in entry
             assert "mean_confidence" in entry
@@ -164,7 +172,9 @@ class TestComputeConfidenceDistribution:
 
     def test_class_names_applied(self):
         y_proba, y_pred = _make_binary_proba(n=50)
-        result = compute_confidence_distribution(y_proba, y_pred, class_names=["Cat", "Dog"])
+        result = compute_confidence_distribution(
+            y_proba, y_pred, class_names=["Cat", "Dog"]
+        )
         names = {e["class_name"] for e in result["per_class_mean"]}
         assert "Cat" in names or "Dog" in names
 
@@ -260,7 +270,7 @@ async def test_confidence_dist_regression_returns_400(ac, tmp_path):
     n = 20
     X = np.array([[i] for i in range(n)], dtype=float)
     y = np.array([i * 2 for i in range(n)], dtype=float)
-    csv_content = "x,y\n" + "\n".join(f"{i},{i*2}" for i in range(n))
+    csv_content = "x,y\n" + "\n".join(f"{i},{i * 2}" for i in range(n))
 
     with Session(db_module.engine) as session:
         proj = Project(name="p")
