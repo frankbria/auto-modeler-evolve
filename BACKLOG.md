@@ -53,6 +53,21 @@ the time is better spent on real features.
 
 ---
 
+## Day 79 (20:00) — Done
+
+**Track C: Sample Size Adequacy Analysis via Chat** — complete.
+
+Closes the "do I have enough data to trust this model?" analyst gap. Analysts can ask "do I have enough training data?", "is my dataset big enough?", "how many more rows do I need?", "is my sample size sufficient?", or "sample size check" and receive a `SampleSizeAdequacyCard` with a verdict (adequate/borderline/insufficient), coverage progress bar, feature/row ratio, optional CV stability badge, and concrete shortfall count.
+
+- `compute_sample_size_adequacy(n_rows, n_features, problem_type, n_classes, cv_std)` pure function in `core/analyzer.py`: 10× rule of thumb, three verdicts, cv_stable check.
+- `GET /api/models/{run_id}/sample-size-adequacy` endpoint: loads dataset, prepares features, reads cv_std from metrics.
+- `_SAMPLE_SIZE_PATTERNS` (8 NL variants) + handler in `chat.py`: injects verdict + shortfall into system_prompt.
+- `SampleSizeAdequacyCard`: emerald/amber/rose per verdict, ARIA progressbar, feature/ratio badge, CV stability badge.
+
+**Distinct from:** `OverfittingAnalysisCard` (train/CV gap) and `DataQualityImpactCard` (outlier effect). 35 backend + 21 frontend = **56 new tests**. Total: **5148 backend / 2943 frontend = 8091**.
+
+---
+
 ## Day 79 (12:00) — Done
 
 **Track C: Model Confidence Distribution via Chat** — complete.
