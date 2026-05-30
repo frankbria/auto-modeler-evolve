@@ -4079,6 +4079,22 @@ _CLASS_FEAT_IMP_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+_CALIBRATION_CHECK_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"how\s+well.calibrated\s+is\s+(?:the\s+|my\s+)?(?:model|classifier)\b|"
+    r"(?:is\s+)?(?:my\s+)?model\s+(?:well\s+)?calibrated\b|"
+    r"(?:show|display)\s+(?:me\s+)?calibration\b|"
+    r"calibration\s+(?:check|analysis|report|curve|diagram|plot|for)\b|"
+    r"(?:are\s+)?(?:my\s+)?(?:model'?s?\s+)?(?:confidence|probability)\s+scores?\s+(?:reliable|accurate|trustworthy|calibrated|right|correct)\b|"
+    r"(?:can\s+I|should\s+I)\s+trust\s+(?:my\s+)?(?:model'?s?\s+)?(?:probability|confidence)\s+(?:scores?|outputs?|predictions?)\b|"
+    r"(?:how\s+)?(?:trustworthy|reliable|accurate)\s+are\s+(?:my\s+)?(?:probability|confidence)\s+scores?\b|"
+    r"(?:probability|confidence)\s+calibration\b|"
+    r"reliability\s+diagram\b|"
+    r"\bbrier\s+score\b"
+    r")",
+    re.IGNORECASE,
+)
+
 _SIMILAR_RECORDS_PATTERNS = re.compile(
     r"(?i)(?:"
     r"(?:find|show|get)\s+(?:me\s+)?(?:similar|like|nearest|closest)\s+(?:records?|rows?|cases?|customers?|examples?)\b|"
@@ -8228,6 +8244,85 @@ def send_message(
                         )
         except Exception:  # noqa: BLE001
             pass  # Class feature importance is nice-to-have; never crash chat
+
+    # Calibration check
+    calibration_event: dict | None = None
+    if _CALIBRATION_CHECK_PATTERNS.search(body.message) and ctx["model_runs"]:
+        try:
+            from core.validator import compute_calibration_check as _ccal
+            from core.feature_engine import apply_transformations as _apply_cal
+            from core.trainer import prepare_features as _pf_cal
+
+            import json as _json_cal
+            import joblib as _jl_cal
+
+            _done_cal = [
+                r
+                for r in ctx["model_runs"]
+                if r.status == "done" and r.model_path and Path(r.model_path).exists()
+            ]
+            _cls_runs_cal = []
+            _cls_fsets_cal: dict[str, object] = {}
+            for _r_cal in _done_cal:
+                _fset_cal = session.get(FeatureSet, _r_cal.feature_set_id)
+                if (
+                    _fset_cal
+                    and (_fset_cal.problem_type or "regression") == "classification"
+                ):
+                    _cls_runs_cal.append(_r_cal)
+                    _cls_fsets_cal[_r_cal.id] = _fset_cal
+
+            if _cls_runs_cal:
+                _sel_cal = (
+                    next((r for r in _cls_runs_cal if r.is_selected), None)
+                    or _cls_runs_cal[0]
+                )
+                _fset_cal2 = _cls_fsets_cal[_sel_cal.id]
+                _ds_cal = ctx["dataset"]
+                if _ds_cal and Path(_ds_cal.file_path).exists():
+                    import pandas as _pd_cal
+
+                    _df_cal = _pd_cal.read_csv(Path(_ds_cal.file_path))
+                    _tfms_cal = _json_cal.loads(_fset_cal2.transformations or "[]")
+                    if _tfms_cal:
+                        _df_cal, _ = _apply_cal(_df_cal, _tfms_cal)
+
+                    _target_cal = _fset_cal2.target_column
+                    _feat_cols_cal = [c for c in _df_cal.columns if c != _target_cal]
+                    _X_cal, _y_cal, _ = _pf_cal(
+                        _df_cal, _feat_cols_cal, _target_cal, "classification"
+                    )
+
+                    _model_cal = _jl_cal.load(_sel_cal.model_path)
+                    if hasattr(_model_cal, "predict_proba"):
+                        _proba_cal = _model_cal.predict_proba(_X_cal)
+                        _class_names_cal = [str(c) for c in _model_cal.classes_.tolist()]
+
+                        _cal_result = _ccal(
+                            y_true=_y_cal,
+                            y_proba_matrix=_proba_cal,
+                            class_names=_class_names_cal,
+                        )
+                        calibration_event = {
+                            "model_run_id": _sel_cal.id,
+                            "algorithm": _sel_cal.algorithm,
+                            "target_col": _target_cal,
+                            **_cal_result,
+                        }
+                        system_prompt += (
+                            f"\n\n## Model Calibration Check\n"
+                            f"{_cal_result['summary']} "
+                            f"Verdict: {_cal_result['verdict_label']}. "
+                            f"ECE: {_cal_result['ece']:.3f}. "
+                            f"Brier score: {_cal_result['brier_score']:.3f}. "
+                            "Explain what calibration means in plain English: "
+                            "a well-calibrated model's probability scores accurately reflect real-world likelihoods, "
+                            "while a poorly calibrated model's probabilities should not be trusted as precise estimates. "
+                            "If poorly calibrated, suggest that the analyst consider Platt scaling or isotonic regression. "
+                            "Distinguish this from model accuracy — a model can be accurate but poorly calibrated."
+                        )
+        except Exception:  # noqa: BLE001
+            pass  # Calibration check is nice-to-have; never crash chat
 
     # Check if user wants to change the train/test split strategy
     split_strategy_event: dict | None = None
@@ -17582,6 +17677,9 @@ def send_message(
 
         if class_feat_imp_event:
             yield f"data: {json.dumps({'type': 'class_feature_importance', 'class_feature_importance': class_feat_imp_event})}\n\n"
+
+        if calibration_event:
+            yield f"data: {json.dumps({'type': 'calibration_check', 'calibration_check': calibration_event})}\n\n"
 
         # After text stream, opportunistically generate a chart if the
         # message is about data and we have a dataset loaded

@@ -715,6 +715,17 @@ export const api = {
         return r.json()
       }),
 
+    calibrationCheck: (
+      runId: string,
+      nBins: number = 10
+    ): Promise<import("./types").CalibrationCheckResult> =>
+      fetch(`${API_URL}/api/models/${runId}/calibration-check?n_bins=${nBins}`).then(
+        (r) => {
+          if (!r.ok) throw new Error(`HTTP ${r.status}`)
+          return r.json()
+        }
+      ),
+
     improvementSuggestions: (
       projectId: string
     ): Promise<import("./types").ModelImprovementResult> =>

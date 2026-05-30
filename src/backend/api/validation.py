@@ -31,6 +31,7 @@ from core.trainer import (
 )
 from core.validator import (
     assess_confidence_limitations,
+    compute_calibration_check,
     compute_confidence_distribution,
     compute_confusion_matrix,
     compute_error_distribution,
@@ -776,6 +777,66 @@ async def get_class_feature_importance(
             y_pred=y_pred,
             feature_names=feature_cols,
             class_names=class_names,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    result["model_run_id"] = model_run_id
+    result["algorithm"] = run.algorithm
+    result["target_col"] = feature_set.target_column
+
+    return result
+
+
+@router.get("/api/models/{model_run_id}/calibration-check")
+async def get_calibration_check(
+    model_run_id: str,
+    n_bins: int = 10,
+    session: Session = Depends(get_session),
+):
+    """Check how well the model's predicted probabilities match actual outcome rates.
+
+    A well-calibrated model that predicts 70% probability is correct ~70% of the time.
+    Returns a reliability diagram (calibration curve), Expected Calibration Error (ECE),
+    and Brier score.
+
+    Classification only. Returns 400 for regression or non-probabilistic models.
+
+    Query params:
+        n_bins: Calibration bin count (5-20, default 10).
+    """
+    n_bins = max(5, min(20, n_bins))
+    run, feature_set, _dataset, file_path = _load_run_context(model_run_id, session)
+
+    problem_type = feature_set.problem_type or "regression"
+    if problem_type != "classification":
+        raise HTTPException(
+            status_code=400,
+            detail="Calibration check is only available for classification models.",
+        )
+
+    X, y, _feature_cols = _build_Xy(file_path, feature_set)
+
+    fitted_model = joblib.load(run.model_path)
+
+    if not hasattr(fitted_model, "predict_proba"):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Algorithm '{run.algorithm}' does not support probability output "
+                "required for calibration check."
+            ),
+        )
+
+    y_proba_matrix = fitted_model.predict_proba(X)
+    class_names = [str(c) for c in fitted_model.classes_.tolist()]
+
+    try:
+        result = compute_calibration_check(
+            y_true=y,
+            y_proba_matrix=y_proba_matrix,
+            class_names=class_names,
+            n_bins=n_bins,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

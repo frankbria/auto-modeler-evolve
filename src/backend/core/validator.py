@@ -13,7 +13,8 @@ from __future__ import annotations
 from typing import Any
 
 import numpy as np
-from sklearn.metrics import confusion_matrix
+from sklearn.calibration import calibration_curve
+from sklearn.metrics import brier_score_loss, confusion_matrix
 from sklearn.model_selection import KFold, StratifiedKFold, cross_val_score
 
 # ---------------------------------------------------------------------------
@@ -1437,5 +1438,218 @@ def compute_confidence_distribution(
         "decisiveness": decisiveness,
         "decisiveness_label": decisiveness_label,
         "per_class_mean": per_class_mean,
+        "summary": summary,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Calibration check
+# ---------------------------------------------------------------------------
+
+
+def compute_calibration_check(
+    y_true: np.ndarray,
+    y_proba_matrix: np.ndarray,
+    class_names: list[str] | None = None,
+    n_bins: int = 10,
+) -> dict:
+    """Check how well the model's predicted probabilities match actual outcome rates.
+
+    A well-calibrated model that says "70% probability" is correct ~70% of the time.
+
+    y_true:         true labels (integer-encoded).
+    y_proba_matrix: full predict_proba output, shape [n_samples, n_classes].
+    class_names:    optional decoded class labels.
+    n_bins:         number of calibration bins (5–20).
+
+    Returns a dict with:
+      curve_points   — list of {mean_prob, frac_positive, count, bin_label} per bin
+      ece            — Expected Calibration Error (0 = perfect, closer to 0 = better)
+      brier_score    — mean squared error of predicted probabilities vs actual labels
+      verdict        — "well_calibrated" / "moderate" / "poorly_calibrated"
+      verdict_label  — human-readable label
+      per_class      — list of {class_name, brier_score, ece, n_positive} (multiclass)
+      n_classes      — number of classes
+      n_total        — number of samples
+      summary        — plain-English description
+    """
+    y_true = np.asarray(y_true)
+    y_proba_matrix = np.asarray(y_proba_matrix, dtype=float)
+
+    if len(y_true) < 10:
+        raise ValueError("Need at least 10 samples to compute calibration check.")
+
+    n_classes = y_proba_matrix.shape[1] if y_proba_matrix.ndim == 2 else 1
+    n_total = len(y_true)
+    n_bins = max(5, min(20, n_bins))
+
+    classes = sorted(set(y_true.tolist()))
+    if class_names is None or len(class_names) != n_classes:
+        class_names = [str(c) for c in classes]
+
+    # For binary: use positive-class probability column
+    # For multiclass: use max-class probability (one-vs-rest approximation for ECE)
+    if n_classes == 2:
+        pos_class_idx = 1
+        y_prob_pos = y_proba_matrix[:, pos_class_idx]
+        y_binary = (y_true == classes[pos_class_idx]).astype(int)
+
+        frac_pos, mean_prob = calibration_curve(
+            y_binary, y_prob_pos, n_bins=n_bins, strategy="uniform"
+        )
+        # Count samples in each bin
+        bin_edges = np.linspace(0.0, 1.0, n_bins + 1)
+        bin_indices = np.digitize(y_prob_pos, bin_edges[1:-1])
+        curve_points: list[dict] = []
+        for i, (fp, mp) in enumerate(zip(frac_pos, mean_prob)):
+            count = int(np.sum(bin_indices == i))
+            lo = round(bin_edges[i], 2)
+            hi = round(bin_edges[i + 1], 2)
+            curve_points.append(
+                {
+                    "mean_prob": round(float(mp), 4),
+                    "frac_positive": round(float(fp), 4),
+                    "count": count,
+                    "bin_label": f"{int(lo * 100)}–{int(hi * 100)}%",
+                }
+            )
+
+        # ECE = weighted average of |predicted_prob - actual_fraction|
+        bin_weights = np.array([p["count"] for p in curve_points], dtype=float)
+        bin_weights /= bin_weights.sum() if bin_weights.sum() > 0 else 1
+        ece = float(
+            np.sum(
+                bin_weights
+                * np.abs(
+                    np.array([p["mean_prob"] for p in curve_points])
+                    - np.array([p["frac_positive"] for p in curve_points])
+                )
+            )
+        )
+        overall_brier = float(brier_score_loss(y_binary, y_prob_pos))
+
+        per_class = [
+            {
+                "class_name": class_names[pos_class_idx],
+                "brier_score": round(overall_brier, 4),
+                "ece": round(ece, 4),
+                "n_positive": int(np.sum(y_binary)),
+            }
+        ]
+    else:
+        # Multiclass: aggregate calibration via one-vs-rest per class
+        all_ece: list[float] = []
+        all_brier: list[float] = []
+        curve_points = []
+        per_class = []
+
+        # Build curve points using the "confidence" approach: max-class probability
+        y_conf = y_proba_matrix.max(axis=1)
+        y_correct = (
+            np.array(
+                [
+                    1 if y_true[i] == classes[np.argmax(y_proba_matrix[i])] else 0
+                    for i in range(n_total)
+                ]
+            )
+        )
+        try:
+            frac_pos_mc, mean_prob_mc = calibration_curve(
+                y_correct, y_conf, n_bins=n_bins, strategy="uniform"
+            )
+        except ValueError:
+            frac_pos_mc = np.array([float(np.mean(y_correct))])
+            mean_prob_mc = np.array([float(np.mean(y_conf))])
+
+        bin_edges = np.linspace(0.0, 1.0, n_bins + 1)
+        bin_indices = np.digitize(y_conf, bin_edges[1:-1])
+        for i, (fp, mp) in enumerate(zip(frac_pos_mc, mean_prob_mc)):
+            count = int(np.sum(bin_indices == i))
+            lo = round(bin_edges[i], 2)
+            hi = round(bin_edges[i + 1], 2)
+            curve_points.append(
+                {
+                    "mean_prob": round(float(mp), 4),
+                    "frac_positive": round(float(fp), 4),
+                    "count": count,
+                    "bin_label": f"{int(lo * 100)}–{int(hi * 100)}%",
+                }
+            )
+
+        # Per-class one-vs-rest brier and ECE
+        for k, cls in enumerate(classes):
+            cls_name = class_names[k] if k < len(class_names) else str(cls)
+            y_bin = (y_true == cls).astype(int)
+            y_prob_k = y_proba_matrix[:, k]
+            b = float(brier_score_loss(y_bin, y_prob_k))
+            try:
+                fp_k, mp_k = calibration_curve(y_bin, y_prob_k, n_bins=n_bins, strategy="uniform")
+                bw = np.ones(len(fp_k)) / len(fp_k)
+                e_k = float(np.sum(bw * np.abs(mp_k - fp_k)))
+            except ValueError:
+                e_k = 0.0
+            all_ece.append(e_k)
+            all_brier.append(b)
+            per_class.append(
+                {
+                    "class_name": cls_name,
+                    "brier_score": round(b, 4),
+                    "ece": round(e_k, 4),
+                    "n_positive": int(np.sum(y_bin)),
+                }
+            )
+
+        # Weighted ECE and aggregate brier
+        class_counts = np.array([p["n_positive"] for p in per_class], dtype=float)
+        weights = class_counts / class_counts.sum() if class_counts.sum() > 0 else np.ones(len(per_class)) / len(per_class)
+        ece = float(np.sum(weights * np.array(all_ece)))
+        overall_brier = float(np.mean(all_brier))
+
+    ece_r = round(ece, 4)
+    brier_r = round(overall_brier, 4)
+
+    if ece_r < 0.05:
+        verdict = "well_calibrated"
+        verdict_label = "Well-Calibrated"
+        verdict_desc = (
+            f"ECE {ece_r:.3f} — the model's probability scores closely match actual outcome rates. "
+            "When it says 80%, it's correct about 80% of the time."
+        )
+    elif ece_r < 0.15:
+        verdict = "moderate"
+        verdict_label = "Moderately Calibrated"
+        verdict_desc = (
+            f"ECE {ece_r:.3f} — the model's probabilities are roughly reliable but noticeably off in some ranges. "
+            "Use probability scores as directional guidance, not precise estimates."
+        )
+    else:
+        verdict = "poorly_calibrated"
+        verdict_label = "Poorly Calibrated"
+        verdict_desc = (
+            f"ECE {ece_r:.3f} — the model's probability scores do not reliably match actual outcome rates. "
+            "Avoid using the raw probability values for business decisions. "
+            "Consider probability calibration (Platt scaling or isotonic regression)."
+        )
+
+    brier_guidance = (
+        "closer to 0 is better"
+        if brier_r < 0.25
+        else "a score above 0.25 suggests poor probability estimates"
+    )
+    summary = (
+        f"{verdict_label}. {verdict_desc} "
+        f"Brier score: {brier_r:.3f} ({brier_guidance}). "
+        f"Computed on {n_total} training samples across {n_classes} {'class' if n_classes == 1 else 'classes'}."
+    )
+
+    return {
+        "curve_points": curve_points,
+        "ece": ece_r,
+        "brier_score": brier_r,
+        "verdict": verdict,
+        "verdict_label": verdict_label,
+        "per_class": per_class,
+        "n_classes": n_classes,
+        "n_total": n_total,
         "summary": summary,
     }

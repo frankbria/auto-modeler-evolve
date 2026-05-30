@@ -2082,14 +2082,32 @@ export interface CalibrationData {
   is_calibrated: boolean
 }
 
+export interface CalibrationCurvePoint {
+  mean_prob: number
+  frac_positive: number
+  count: number
+  bin_label: string
+}
+
+export interface CalibrationPerClassEntry {
+  class_name: string
+  brier_score: number
+  ece: number
+  n_positive: number
+}
+
 export interface CalibrationCheckResult {
-  run_id: string
+  model_run_id: string
   algorithm: string
-  is_calibrated: boolean
-  brier_score: number | null
-  calibration_quality: "excellent" | "good" | "poor" | "unknown"
-  calibration_curve: CalibrationPoint[]
-  calibration_note: string
+  target_col: string
+  curve_points: CalibrationCurvePoint[]
+  ece: number
+  brier_score: number
+  verdict: "well_calibrated" | "moderate" | "poorly_calibrated"
+  verdict_label: string
+  per_class: CalibrationPerClassEntry[]
+  n_classes: number
+  n_total: number
   summary: string
 }
 

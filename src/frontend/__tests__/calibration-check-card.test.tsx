@@ -1,22 +1,24 @@
 /**
  * Tests for CalibrationCheckCard component and Zustand store action.
  *
- * Covers:
- *  1.  Renders region with correct aria-label
- *  2.  Renders 🎯 icon (aria-hidden)
- *  3.  Shows "Confidence Calibration Check" heading
- *  4.  Shows "Excellent" quality badge for brier_score < 0.1
- *  5.  Shows "Good" quality badge for brier_score 0.1–0.2
- *  6.  Shows "Needs attention" quality badge for brier_score ≥ 0.2
- *  7.  Shows algorithm badge
- *  8.  Shows formatted brier score value
- *  9.  Shows plain-English summary text
- * 10.  Renders Recharts chart when calibration_curve has entries
- * 11.  Shows "No calibration curve data" fallback when curve is empty
- * 12.  Shows calibration_note when present
- * 13.  Store: attachCalibrationCheckToLastMessage attaches to last assistant message
- * 14.  Store: does not attach to user message
- * 15.  Store: does not crash when messages list is empty
+ * Covers (17 tests):
+ *  1.  Renders figure with data-testid="calibration-check-card"
+ *  2.  Shows verdict badge for well_calibrated
+ *  3.  Shows verdict badge for moderate
+ *  4.  Shows verdict badge for poorly_calibrated
+ *  5.  Shows algorithm badge (human-readable)
+ *  6.  Shows target column badge
+ *  7.  Shows n_classes badge
+ *  8.  Shows n_total badge
+ *  9.  Shows ECE value
+ * 10.  Shows Brier score value
+ * 11.  Shows plain-English summary text
+ * 12.  Renders Recharts chart when curve_points has entries
+ * 13.  Per-class section visible for n_classes > 2
+ * 14.  Per-class section hidden for binary (n_classes == 2)
+ * 15.  sr-only figcaption contains verdict and metric text
+ * 16.  Store: attachCalibrationCheckToLastMessage attaches to last assistant message
+ * 17.  Store: does not crash when messages list is empty
  */
 
 import React from "react"
@@ -44,39 +46,57 @@ jest.mock("recharts", () => {
 // Fixtures
 // ---------------------------------------------------------------------------
 
-const excellentResult: CalibrationCheckResult = {
-  run_id: "run-1",
+const CURVE_POINTS = [
+  { mean_prob: 0.1, frac_positive: 0.08, count: 20, bin_label: "0–20%" },
+  { mean_prob: 0.5, frac_positive: 0.49, count: 60, bin_label: "40–60%" },
+  { mean_prob: 0.9, frac_positive: 0.91, count: 30, bin_label: "80–100%" },
+]
+
+const baseResult: CalibrationCheckResult = {
+  model_run_id: "run-1",
   algorithm: "logistic_regression",
-  is_calibrated: true,
-  brier_score: 0.075,
-  calibration_quality: "excellent",
-  calibration_curve: [
-    { predicted: 0.1, actual: 0.08 },
-    { predicted: 0.5, actual: 0.49 },
-    { predicted: 0.9, actual: 0.91 },
+  target_col: "churn",
+  curve_points: CURVE_POINTS,
+  ece: 0.03,
+  brier_score: 0.07,
+  verdict: "well_calibrated",
+  verdict_label: "Well-Calibrated",
+  per_class: [
+    { class_name: "no", brier_score: 0.06, ece: 0.02, n_positive: 70 },
+    { class_name: "yes", brier_score: 0.08, ece: 0.04, n_positive: 30 },
   ],
-  calibration_note: "Calibrated via isotonic regression.",
+  n_classes: 2,
+  n_total: 100,
   summary:
-    "Brier score 0.075 — excellent calibration. When the model says '80% confident', it's right roughly 80% of the time.",
+    "Well-Calibrated. ECE 0.030 — the model's probability scores closely match actual outcome rates. Brier score: 0.070.",
 }
 
-const goodResult: CalibrationCheckResult = {
-  ...excellentResult,
+const moderateResult: CalibrationCheckResult = {
+  ...baseResult,
+  ece: 0.09,
   brier_score: 0.15,
-  calibration_quality: "good",
-  summary: "Brier score 0.150 — good calibration.",
+  verdict: "moderate",
+  verdict_label: "Moderately Calibrated",
+  summary: "Moderately Calibrated. ECE 0.090.",
 }
 
 const poorResult: CalibrationCheckResult = {
-  ...excellentResult,
+  ...baseResult,
+  ece: 0.22,
   brier_score: 0.28,
-  calibration_quality: "poor",
-  summary: "Brier score 0.280 — calibration needs attention.",
+  verdict: "poorly_calibrated",
+  verdict_label: "Poorly Calibrated",
+  summary: "Poorly Calibrated. ECE 0.220.",
 }
 
-const emptyCurveResult: CalibrationCheckResult = {
-  ...excellentResult,
-  calibration_curve: [],
+const multiclassResult: CalibrationCheckResult = {
+  ...baseResult,
+  n_classes: 3,
+  per_class: [
+    { class_name: "A", brier_score: 0.05, ece: 0.02, n_positive: 40 },
+    { class_name: "B", brier_score: 0.07, ece: 0.03, n_positive: 35 },
+    { class_name: "C", brier_score: 0.09, ece: 0.04, n_positive: 25 },
+  ],
 }
 
 // ---------------------------------------------------------------------------
@@ -84,71 +104,89 @@ const emptyCurveResult: CalibrationCheckResult = {
 // ---------------------------------------------------------------------------
 
 describe("CalibrationCheckCard", () => {
-  it("renders region with correct aria-label", () => {
-    render(<CalibrationCheckCard result={excellentResult} />)
-    expect(
-      screen.getByRole("region", { name: "Model calibration check" }),
-    ).toBeInTheDocument()
+  it("renders figure with data-testid", () => {
+    render(<CalibrationCheckCard result={baseResult} />)
+    expect(screen.getByTestId("calibration-check-card")).toBeInTheDocument()
   })
 
-  it("renders 🎯 icon with aria-hidden", () => {
-    render(<CalibrationCheckCard result={excellentResult} />)
-    const icon = screen.getByText("🎯")
-    expect(icon).toHaveAttribute("aria-hidden", "true")
+  it("shows Well-Calibrated verdict badge", () => {
+    render(<CalibrationCheckCard result={baseResult} />)
+    expect(screen.getByTestId("calibration-verdict-badge")).toHaveTextContent(
+      "Well-Calibrated"
+    )
   })
 
-  it("shows heading text", () => {
-    render(<CalibrationCheckCard result={excellentResult} />)
-    expect(screen.getByText("Confidence Calibration Check")).toBeInTheDocument()
+  it("shows Moderately Calibrated verdict badge", () => {
+    render(<CalibrationCheckCard result={moderateResult} />)
+    expect(screen.getByTestId("calibration-verdict-badge")).toHaveTextContent(
+      "Moderately Calibrated"
+    )
   })
 
-  it("shows Excellent badge for brier_score < 0.1", () => {
-    render(<CalibrationCheckCard result={excellentResult} />)
-    expect(screen.getByText("Excellent")).toBeInTheDocument()
-  })
-
-  it("shows Good badge for brier_score 0.1–0.2", () => {
-    render(<CalibrationCheckCard result={goodResult} />)
-    expect(screen.getByText("Good")).toBeInTheDocument()
-  })
-
-  it("shows Needs attention badge for brier_score ≥ 0.2", () => {
+  it("shows Poorly Calibrated verdict badge", () => {
     render(<CalibrationCheckCard result={poorResult} />)
-    expect(screen.getByText("Needs attention")).toBeInTheDocument()
+    expect(screen.getByTestId("calibration-verdict-badge")).toHaveTextContent(
+      "Poorly Calibrated"
+    )
   })
 
-  it("shows algorithm badge", () => {
-    render(<CalibrationCheckCard result={excellentResult} />)
-    expect(screen.getByText("logistic_regression")).toBeInTheDocument()
+  it("shows human-readable algorithm name", () => {
+    render(<CalibrationCheckCard result={baseResult} />)
+    expect(screen.getByText("Logistic Regression")).toBeInTheDocument()
   })
 
-  it("shows formatted brier score value", () => {
-    render(<CalibrationCheckCard result={excellentResult} />)
-    expect(screen.getByText("0.075")).toBeInTheDocument()
+  it("shows target column badge", () => {
+    render(<CalibrationCheckCard result={baseResult} />)
+    expect(screen.getByText("churn")).toBeInTheDocument()
+  })
+
+  it("shows n_classes badge", () => {
+    render(<CalibrationCheckCard result={baseResult} />)
+    expect(screen.getByText(/2 classes/)).toBeInTheDocument()
+  })
+
+  it("shows n_total badge", () => {
+    render(<CalibrationCheckCard result={baseResult} />)
+    expect(screen.getByText(/n=100/)).toBeInTheDocument()
+  })
+
+  it("shows ECE value", () => {
+    render(<CalibrationCheckCard result={baseResult} />)
+    expect(screen.getByText("0.030")).toBeInTheDocument()
+  })
+
+  it("shows Brier score value", () => {
+    render(<CalibrationCheckCard result={baseResult} />)
+    expect(screen.getByText("0.070")).toBeInTheDocument()
   })
 
   it("shows plain-English summary text", () => {
-    render(<CalibrationCheckCard result={excellentResult} />)
-    expect(screen.getByText(/excellent calibration/i)).toBeInTheDocument()
+    render(<CalibrationCheckCard result={baseResult} />)
+    expect(screen.getByText(/probability scores closely match/i)).toBeInTheDocument()
   })
 
-  it("renders chart when calibration_curve is non-empty", () => {
-    render(<CalibrationCheckCard result={excellentResult} />)
+  it("renders recharts chart when curve_points is non-empty", () => {
+    render(<CalibrationCheckCard result={baseResult} />)
     expect(screen.getByTestId("responsive-container")).toBeInTheDocument()
   })
 
-  it("shows fallback message when calibration_curve is empty", () => {
-    render(<CalibrationCheckCard result={emptyCurveResult} />)
-    expect(
-      screen.getByText(/No calibration curve data available/i),
-    ).toBeInTheDocument()
+  it("shows per-class section for multiclass (n_classes > 2)", () => {
+    render(<CalibrationCheckCard result={multiclassResult} />)
+    expect(screen.getByText("Per-class calibration")).toBeInTheDocument()
+    expect(screen.getByText("A")).toBeInTheDocument()
+    expect(screen.getByText("B")).toBeInTheDocument()
   })
 
-  it("shows calibration_note when present", () => {
-    render(<CalibrationCheckCard result={excellentResult} />)
-    expect(
-      screen.getByText("Calibrated via isotonic regression."),
-    ).toBeInTheDocument()
+  it("hides per-class section for binary (n_classes == 2)", () => {
+    render(<CalibrationCheckCard result={baseResult} />)
+    expect(screen.queryByText("Per-class calibration")).not.toBeInTheDocument()
+  })
+
+  it("sr-only figcaption contains verdict label and metric values", () => {
+    render(<CalibrationCheckCard result={baseResult} />)
+    const caption = document.querySelector("figcaption.sr-only")
+    expect(caption?.textContent).toMatch(/Well-Calibrated/)
+    expect(caption?.textContent).toMatch(/0\.030/)
   })
 })
 
@@ -168,16 +206,16 @@ describe("attachCalibrationCheckToLastMessage", () => {
         { role: "assistant", content: "Here you go." },
       ],
     })
-    useAppStore.getState().attachCalibrationCheckToLastMessage(excellentResult)
+    useAppStore.getState().attachCalibrationCheckToLastMessage(baseResult)
     const msgs = useAppStore.getState().messages
-    expect(msgs[1].calibration_check).toEqual(excellentResult)
+    expect(msgs[1].calibration_check).toEqual(baseResult)
   })
 
   it("does not attach to user message", () => {
     useAppStore.setState({
       messages: [{ role: "user", content: "check calibration" }],
     })
-    useAppStore.getState().attachCalibrationCheckToLastMessage(excellentResult)
+    useAppStore.getState().attachCalibrationCheckToLastMessage(baseResult)
     const msgs = useAppStore.getState().messages
     expect(msgs[0].calibration_check).toBeUndefined()
   })
@@ -185,7 +223,7 @@ describe("attachCalibrationCheckToLastMessage", () => {
   it("does not crash when messages list is empty", () => {
     useAppStore.setState({ messages: [] })
     expect(() =>
-      useAppStore.getState().attachCalibrationCheckToLastMessage(excellentResult),
+      useAppStore.getState().attachCalibrationCheckToLastMessage(baseResult)
     ).not.toThrow()
   })
 })
