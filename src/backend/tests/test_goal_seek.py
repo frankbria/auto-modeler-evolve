@@ -150,9 +150,9 @@ def test_goal_seek_patterns_match(message):
     ],
 )
 def test_goal_seek_patterns_no_false_positives(message):
-    assert not _GOAL_SEEK_PATTERNS.search(message), (
-        f"Pattern should NOT match: {message!r}"
-    )
+    assert not _GOAL_SEEK_PATTERNS.search(
+        message
+    ), f"Pattern should NOT match: {message!r}"
 
 
 # ---------------------------------------------------------------------------

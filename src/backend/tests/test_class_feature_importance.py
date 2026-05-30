@@ -13,7 +13,6 @@ import db as db_module
 from api.chat import _CLASS_FEAT_IMP_PATTERNS
 from core.explainer import compute_class_conditional_importance
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -85,7 +84,9 @@ class TestComputeClassConditionalImportancePure:
         y_pred = model.predict(X)
         class_names = ["not_churn", "churn"]
         result = compute_class_conditional_importance(
-            model=model, X=X, y_pred=y_pred,
+            model=model,
+            X=X,
+            y_pred=y_pred,
             feature_names=[f"f{i}" for i in range(4)],
             class_names=class_names,
         )
@@ -98,7 +99,9 @@ class TestComputeClassConditionalImportancePure:
         model = _fitted_rf(X, y)
         y_pred = model.predict(X)
         result = compute_class_conditional_importance(
-            model=model, X=X, y_pred=y_pred,
+            model=model,
+            X=X,
+            y_pred=y_pred,
             feature_names=[f"f{i}" for i in range(4)],
             class_names=None,
         )
@@ -114,7 +117,14 @@ class TestComputeClassConditionalImportancePure:
             model=model, X=X, y_pred=y_pred, feature_names=[f"f{i}" for i in range(4)]
         )
         for cls in result["classes"]:
-            for key in ["class_label", "sample_count", "sample_pct", "features", "top_feature", "summary"]:
+            for key in [
+                "class_label",
+                "sample_count",
+                "sample_pct",
+                "features",
+                "top_feature",
+                "summary",
+            ]:
                 assert key in cls, f"Missing key {key} in class dict"
 
     def test_sample_counts_sum_to_total(self):
@@ -147,8 +157,13 @@ class TestComputeClassConditionalImportancePure:
         for cls in result["classes"]:
             for feat in cls["features"]:
                 for key in [
-                    "feature", "global_importance", "mean_for_class",
-                    "global_mean", "deviation_pct", "weighted_deviation", "direction"
+                    "feature",
+                    "global_importance",
+                    "mean_for_class",
+                    "global_mean",
+                    "deviation_pct",
+                    "weighted_deviation",
+                    "direction",
                 ]:
                     assert key in feat, f"Missing feat key: {key}"
 
@@ -213,17 +228,24 @@ class TestComputeClassConditionalImportancePure:
         y_pred = model.predict(X)
         with pytest.raises(ValueError, match="at least 10 rows"):
             compute_class_conditional_importance(
-                model=model, X=X, y_pred=y_pred, feature_names=[f"f{i}" for i in range(4)]
+                model=model,
+                X=X,
+                y_pred=y_pred,
+                feature_names=[f"f{i}" for i in range(4)],
             )
 
     def test_single_class_raises(self):
         X = np.random.standard_normal((20, 4))
         y_all_zero = np.zeros(20, dtype=int)
+
         # Force all predictions to same class
         class FakeModel:
             classes_ = np.array([0, 1])
             feature_importances_ = np.array([0.25, 0.25, 0.25, 0.25])
-            def predict(self, X): return np.zeros(len(X), dtype=int)
+
+            def predict(self, X):
+                return np.zeros(len(X), dtype=int)
+
         with pytest.raises(ValueError, match="at least 2 distinct"):
             compute_class_conditional_importance(
                 model=FakeModel(),
@@ -310,7 +332,6 @@ async def test_class_feat_imp_returns_200(ac, tmp_path):
     """Classification model returns 200 with classes list."""
     import joblib
     import pandas as pd
-    from sqlmodel import Session
 
     from models.dataset import Dataset
     from models.feature_set import FeatureSet
@@ -392,7 +413,6 @@ async def test_class_feat_imp_400_regression(ac, tmp_path):
     import joblib
     import pandas as pd
     from sklearn.linear_model import LinearRegression
-    from sqlmodel import Session
 
     from models.dataset import Dataset
     from models.feature_set import FeatureSet

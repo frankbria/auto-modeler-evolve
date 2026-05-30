@@ -394,7 +394,11 @@ def compute_class_conditional_importance(
         features.sort(key=lambda f: f["weighted_deviation"], reverse=True)
         top_8 = features[:8]
 
-        top_feat = top_8[0]["feature"] if top_8 else (feature_names[0] if feature_names else "")
+        top_feat = (
+            top_8[0]["feature"]
+            if top_8
+            else (feature_names[0] if feature_names else "")
+        )
 
         # Resolve class label
         if class_names and cls_idx < len(class_names):
@@ -408,9 +412,11 @@ def compute_class_conditional_importance(
             dir_phrase = (
                 "higher than average"
                 if t["direction"] == "above_average"
-                else "lower than average"
-                if t["direction"] == "below_average"
-                else "average"
+                else (
+                    "lower than average"
+                    if t["direction"] == "below_average"
+                    else "average"
+                )
             )
             summary = (
                 f"For predictions of '{cls_label}' ({count:,} of {n_samples:,} records): "
@@ -433,7 +439,9 @@ def compute_class_conditional_importance(
 
     # Overall summary
     if len(class_results) >= 2:
-        top_classes = sorted(class_results, key=lambda c: c["sample_count"], reverse=True)
+        top_classes = sorted(
+            class_results, key=lambda c: c["sample_count"], reverse=True
+        )
         main_cls = top_classes[0]
         if main_cls["features"]:
             top_feat_main = main_cls["features"][0]["feature"]
@@ -443,7 +451,9 @@ def compute_class_conditional_importance(
                 f"('{main_cls['class_label']}', {main_cls['sample_pct']:.0f}% of records)."
             )
         else:
-            overall_summary = f"Class-conditional analysis across {len(class_results)} classes."
+            overall_summary = (
+                f"Class-conditional analysis across {len(class_results)} classes."
+            )
     elif len(class_results) == 1:
         overall_summary = class_results[0]["summary"]
     else:

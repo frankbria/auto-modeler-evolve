@@ -8138,7 +8138,10 @@ def send_message(
                 r
                 for r in ctx["model_runs"]
                 if r.status == "done"
-                and (ctx.get("feature_set") and ctx["feature_set"].problem_type == "classification")
+                and (
+                    ctx.get("feature_set")
+                    and ctx["feature_set"].problem_type == "classification"
+                )
             ]
             if not _done_cfi:
                 # All done runs regardless of problem_type check — fall back
@@ -8158,9 +8161,18 @@ def send_message(
                         )
                     ).first()
 
-                _prob_cfi = (_fset_cfi.problem_type or "regression") if _fset_cfi else "regression"
+                _prob_cfi = (
+                    (_fset_cfi.problem_type or "regression")
+                    if _fset_cfi
+                    else "regression"
+                )
 
-                if _prob_cfi == "classification" and _ds_cfi and _fset_cfi and Path(_ds_cfi.file_path).exists():
+                if (
+                    _prob_cfi == "classification"
+                    and _ds_cfi
+                    and _fset_cfi
+                    and Path(_ds_cfi.file_path).exists()
+                ):
                     import joblib as _jl_cfi
                     import pandas as _pd_cfi
 
@@ -8171,7 +8183,9 @@ def send_message(
 
                     _target_cfi = _fset_cfi.target_column
                     _feat_cols_cfi = [c for c in _df_cfi.columns if c != _target_cfi]
-                    _X_cfi, _y_cfi, _ = _pf_cfi(_df_cfi, _feat_cols_cfi, _target_cfi, _prob_cfi)
+                    _X_cfi, _y_cfi, _ = _pf_cfi(
+                        _df_cfi, _feat_cols_cfi, _target_cfi, _prob_cfi
+                    )
 
                     if _sel_cfi.model_path and Path(_sel_cfi.model_path).exists():
                         _model_cfi = _jl_cfi.load(_sel_cfi.model_path)
@@ -8179,7 +8193,9 @@ def send_message(
 
                         _class_names_cfi: list[str] | None = None
                         if hasattr(_model_cfi, "classes_"):
-                            _class_names_cfi = [str(c) for c in _model_cfi.classes_.tolist()]
+                            _class_names_cfi = [
+                                str(c) for c in _model_cfi.classes_.tolist()
+                            ]
 
                         _cfi_result = _cfi(
                             model=_model_cfi,
@@ -13357,9 +13373,7 @@ def send_message(
             _wu_trend = (
                 "up"
                 if (_wu_change_pct or 0) > 5
-                else "down"
-                if (_wu_change_pct or 0) < -5
-                else "flat"
+                else "down" if (_wu_change_pct or 0) < -5 else "flat"
             )
 
             # Per-day breakdown for the current week (7 entries)
@@ -13378,7 +13392,9 @@ def send_message(
             _wu_feature_tally: dict[str, dict[str, int]] = {}
             _wu_recent_logs = [
                 lg for lg in _wu_logs if lg.created_at >= _wu_week_start
-            ][:100]  # cap to last 100 for performance
+            ][
+                :100
+            ]  # cap to last 100 for performance
             for _wl in _wu_recent_logs:
                 try:
                     _feat_dict: dict = json.loads(_wl.input_features or "{}")
@@ -16177,9 +16193,7 @@ def send_message(
                         else (
                             "healthy"
                             if _n_failed == 0
-                            else "warning"
-                            if _n_failed / _n_total < 0.1
-                            else "critical"
+                            else "warning" if _n_failed / _n_total < 0.1 else "critical"
                         )
                     )
                     _wh_total_events += _n_total
@@ -16238,9 +16252,7 @@ def send_message(
                     else (
                         "warning"
                         if any(d["status"] == "warning" for d in _wh_dep_summaries)
-                        else "no_events"
-                        if _wh_total_events == 0
-                        else "healthy"
+                        else "no_events" if _wh_total_events == 0 else "healthy"
                     )
                 )
             )

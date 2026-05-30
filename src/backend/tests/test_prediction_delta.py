@@ -204,9 +204,11 @@ class TestComputePredictionDeltaRegression:
             ("mo", model_old),
             ("mn", model_new),
         ]:
-            _save_pipeline(
-                obj, tmp_path / f"{name}.joblib"
-            ) if "p" in name else _save_model(obj, tmp_path / f"{name}.joblib")
+            (
+                _save_pipeline(obj, tmp_path / f"{name}.joblib")
+                if "p" in name
+                else _save_model(obj, tmp_path / f"{name}.joblib")
+            )
 
         result = compute_prediction_delta(
             str(tmp_path / "pn.joblib"),

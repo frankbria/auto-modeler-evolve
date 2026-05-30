@@ -8,7 +8,6 @@ from sqlmodel import SQLModel, create_engine
 import db as db_module
 from core.validator import compute_threshold_analysis
 
-
 # ---------------------------------------------------------------------------
 # Pure function unit tests
 # ---------------------------------------------------------------------------

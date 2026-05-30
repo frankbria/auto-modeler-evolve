@@ -184,7 +184,7 @@ describe("attachClassFeatureImportanceToLastMessage store action", () => {
     ])
     useAppStore.getState().attachClassFeatureImportanceToLastMessage(makeResult())
     const messages = useAppStore.getState().messages
-    expect((messages[0] as any).class_feature_importance).toBeUndefined()
+    expect((messages[0] as Record<string, unknown>).class_feature_importance).toBeUndefined()
   })
 
   it("does not modify when messages array is empty", () => {

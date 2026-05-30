@@ -123,11 +123,11 @@ function ClassPanel({ group, colorStyle, isOpen, onToggle }: ClassPanelProps) {
 }
 
 export function ClassFeatureImportanceCard({ result }: ClassFeatureImportanceCardProps) {
-  if (!result) return null
-
   const [openClass, setOpenClass] = useState<string | null>(
-    result.classes.length > 0 ? result.classes[0].class_label : null
+    result?.classes?.length > 0 ? result.classes[0].class_label : null
   )
+
+  if (!result) return null
 
   const toggleClass = (label: string) => {
     setOpenClass((prev) => (prev === label ? null : label))
@@ -160,7 +160,7 @@ export function ClassFeatureImportanceCard({ result }: ClassFeatureImportanceCar
       {/* Explainer */}
       <p className="text-xs text-gray-600 mb-3 italic">
         For each predicted class, shows which features deviate most from the training average —
-        answering "what makes the model predict each outcome?"
+        answering &ldquo;what makes the model predict each outcome?&rdquo;
       </p>
 
       {/* Per-class panels */}

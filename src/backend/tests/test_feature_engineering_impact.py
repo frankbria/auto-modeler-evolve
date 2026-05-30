@@ -5,7 +5,6 @@ import pytest
 from api.chat import _FE_IMPACT_PATTERNS
 from core.trainer import compute_feature_engineering_impact
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -269,6 +268,6 @@ def test_fe_impact_pattern_matches(phrase):
     ],
 )
 def test_fe_impact_pattern_no_false_positives(phrase):
-    assert not _FE_IMPACT_PATTERNS.search(phrase), (
-        f"Pattern falsely matched: {phrase!r}"
-    )
+    assert not _FE_IMPACT_PATTERNS.search(
+        phrase
+    ), f"Pattern falsely matched: {phrase!r}"

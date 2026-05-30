@@ -9,7 +9,6 @@ import db as db_module
 from api.chat import _SAMPLE_SIZE_PATTERNS
 from core.analyzer import compute_sample_size_adequacy
 
-
 # ---------------------------------------------------------------------------
 # Pure function: structure
 # ---------------------------------------------------------------------------

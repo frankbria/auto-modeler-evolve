@@ -7,7 +7,6 @@ import pytest
 from api.chat import _OVERFITTING_PATTERNS
 from core.trainer import compute_overfitting_analysis
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------

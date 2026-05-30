@@ -1407,9 +1407,9 @@ def compute_confidence_distribution(
         per_class_mean.append(
             {
                 "class_name": cls_name,
-                "mean_confidence": round(float(np.mean(cls_proba)), 4)
-                if len(cls_proba) > 0
-                else 0.0,
+                "mean_confidence": (
+                    round(float(np.mean(cls_proba)), 4) if len(cls_proba) > 0 else 0.0
+                ),
                 "count": int(mask.sum()),
             }
         )

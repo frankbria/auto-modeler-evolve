@@ -7,7 +7,6 @@ import pytest
 from api.chat import _DATA_QUALITY_IMPACT_PATTERNS
 from core.trainer import compute_data_quality_impact
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -245,9 +244,9 @@ def test_pattern_matches(message: str):
     ],
 )
 def test_pattern_false_positives(message: str):
-    assert not _DATA_QUALITY_IMPACT_PATTERNS.search(message), (
-        f"Should NOT match: {message!r}"
-    )
+    assert not _DATA_QUALITY_IMPACT_PATTERNS.search(
+        message
+    ), f"Should NOT match: {message!r}"
 
 
 def test_pattern_case_insensitive():
