@@ -1,5 +1,27 @@
 # Journal
 
+## Day 79 — 20:00 — Sample Size Adequacy Analysis via Chat
+
+**Feature shipped:** Sample Size Adequacy (Track C perpetual). Analysts can now ask "do I have enough training data?", "is my dataset big enough?", "how many more rows do I need?", "is my sample size sufficient?", "sample size check", or "minimum required samples" and receive a `SampleSizeAdequacyCard` in chat that directly answers the "can I trust this model given how few rows I uploaded?" safety question.
+
+**What was built:**
+
+- `compute_sample_size_adequacy(n_rows, n_features, problem_type, n_classes, cv_std)` pure function in `core/analyzer.py`: applies the 10× rule of thumb (regression: max(50, 10×n_features); classification: max(50×n_classes, 10×n_features×n_classes)), computes coverage_pct = min(n_rows/recommended × 100, 100), verdicts (`adequate` ≥100%, `borderline` 60–99%, `insufficient` <60%), feature/row ratio, shortfall, and optional cv_stable flag (True if cv_std ≤ 0.10).
+
+- `GET /api/models/{run_id}/sample-size-adequacy` REST endpoint in `api/models.py`: loads run + active feature set + dataset, calls `prepare_features()` to get real post-encoding n_rows/n_features, counts n_classes from unique target values for classification, reads cv_std from stored ModelRun metrics.
+
+- `_SAMPLE_SIZE_PATTERNS` regex (8 NL variants) + handler in `chat.py`: guards on `ctx["model_runs"]`; selects best/selected done run; injects verdict + shortfall + recommended_n into system_prompt so LLM gives concrete guidance; emits `{type:"sample_size_adequacy"}` SSE event.
+
+- `SampleSizeAdequacyCard` (emerald=adequate / amber=borderline / rose=insufficient): verdict badge, algorithm badge, problem-type badge, 3-column grid (Current Rows / Recommended / Shortfall with "None" for zero shortfall), coverage ARIA progressbar, feature/row ratio badge (amber when ratio > 0.1 with inline warning), optional CV stability badge (emerald=Stable / rose=Unstable with std value), recommendations list with → bullets, summary paragraph, sr-only figcaption.
+
+- Full type wiring: `SampleSizeAdequacyResult` TypeScript interface in `lib/types.ts`; `sample_size_adequacy?` on `ChatMessage`; `attachSampleSizeAdequacyToLastMessage` Zustand action in `store.ts`; `api.models.sampleSizeAdequacy()` client method; SSE handler + card render in both EventSource branches of `project/[id]/page.tsx`.
+
+**Tests:** 21 pure-function (required keys, regression/classification recommended_n, minimum-50 regression, n_classes None for regression, n_classes present for classification, adequate/borderline/insufficient verdicts, shortfall zero/positive, ratio, coverage_pct capped, cv_std None → cv_stable None, low/high cv_std, summary string, recommendations list, insufficient has recommendations, too-few-rows ValueError, zero-features ValueError) + 11 regex (8 matches + 2 false-positive guards + 1 extra) + 3 endpoint (200 with fields, 404 unknown, 400 not-done) = 35 backend + 21 frontend (18 card component + 3 store action) = **56 new tests**. All passing. Backend lint: clean. Frontend build + lint: clean.
+
+**Why this matters:** Business analysts routinely upload small datasets (50–300 rows) and wonder whether the resulting model is reliable. Without guidance, they may deploy a borderline model unaware that 10× more rows would dramatically stabilize it. This card gives a data-backed "green/amber/red" verdict with a concrete shortfall count — "you need 140 more rows" is actionable in a way "your model might be unstable" is not. Distinct from `OverfittingAnalysisCard` (measures train/CV gap, not data quantity) and `DataQualityImpactCard` (measures outlier effect, not volume).
+
+**Baseline:** 5113 backend / 2922 frontend → **5148 backend / 2943 frontend** (+35 / +21).
+
 ## Day 79 — 12:00 — Model Confidence Distribution via Chat
 
 **Feature shipped:** Model Confidence Distribution (Track C perpetual). Analysts can now ask "how confident is my model?", "confidence distribution", "show confidence histogram", "how certain are my predictions?", "is my model decisive or uncertain?", or "distribution of prediction probabilities" and receive a `ConfidenceDistributionCard` in chat that directly answers "is my model typically decisive (predictions near 0/1) or uncertain (sitting near 50%)?"
