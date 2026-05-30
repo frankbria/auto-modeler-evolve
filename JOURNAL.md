@@ -1,5 +1,27 @@
 # Journal
 
+## Day 80 — 04:00 — Class-Conditional Feature Importance via Chat
+
+**Feature shipped:** Class-Conditional Feature Importance (Track C perpetual). Analysts can now ask "what features drive churn predictions?", "feature importance per class", "class-specific feature breakdown", "what makes the model predict X vs Y?", or "feature breakdown by class" and receive a `ClassFeatureImportanceCard` in chat that directly answers "what does my model see differently about each predicted outcome?"
+
+**What was built:**
+
+- `compute_class_conditional_importance(model, X, y_pred, feature_names, class_names)` pure function in `core/explainer.py`: for each predicted class, filters training rows to that cohort, computes per-feature deviations from the global training mean weighted by feature importance. Derives direction labels (above_average/below_average/similar with 5% threshold), sorts by `weighted_deviation` descending (top 8 per class), builds per-class summary sentence. Raises `ValueError` for <10 rows or single predicted class. Works with all sklearn model types (tree-based via `feature_importances_`, linear via `coef_`).
+
+- `GET /api/models/{run_id}/class-feature-importance` REST endpoint in `api/validation.py`: classification-only (400 for regression), loads run + feature set + dataset, calls `prepare_features()`, loads joblib model, runs `model.predict()`, resolves class names from `model.classes_`, returns full result dict. 404 for unknown run.
+
+- `_CLASS_FEAT_IMP_PATTERNS` regex (8 NL variants) + handler in `chat.py`: guards on classification `ctx["model_runs"]`; selects best/selected done run; loads CSV via `_load_working_df`; applies transformations; prepares X/y; loads model; calls `compute_class_conditional_importance()`; injects per-class highlights into system_prompt; emits `{type:"class_feature_importance"}` SSE event.
+
+- `ClassFeatureImportanceCard` (indigo border, 🎯 icon): n-classes badge, algorithm badge, target column badge, n-samples badge, explainer note, per-class collapsible `ClassPanel` (expand/collapse with `aria-expanded`, class label badge, sample count + %, feature rows with proportional bars and direction labels ↑/↓/≈), summary paragraph, sr-only figcaption. First class expands by default.
+
+- Full type wiring: `ClassFeatureEntry` + `ClassImportanceGroup` + `ClassFeatureImportanceResult` TypeScript interfaces in `lib/types.ts`; `class_feature_importance?` on `ChatMessage`; `attachClassFeatureImportanceToLastMessage` Zustand action in `store.ts`; `api.models.classFeatureImportance()` client method in `api.ts`; SSE handler + card render in both EventSource branches of `project/[id]/page.tsx`.
+
+**Tests:** 17 pure-function (required keys, n_samples, n_classes, custom class labels, fallback labels, class key structure, counts sum, pct sum, feature entry keys, direction valid values, sorted by weighted_deviation, top_feature in names, summary string, logistic regression, too-few-rows ValueError, single-class ValueError, global importance ≤ 1) + 12 regex (8 matches + 4 false-positive guards) + 3 endpoint (200 classification, 404 unknown, 400 regression) = 32 backend + 20 frontend (17 card component + 3 store action) = **52 new tests**. All passing. Backend lint: clean. Frontend build + lint: clean.
+
+**Why this matters:** Global feature importance tells analysts "which features matter overall", but it doesn't explain why the model makes *different* decisions for different classes. A churn model might use "monthly_charges" heavily for predicting "churn" but barely for "no churn." Class-conditional importance makes this segmentation visible — helping analysts validate that the model's reasoning aligns with domain knowledge ("yes, of course customers with high charges churn more often") or flag suspicious patterns ("why is contract_type ignored for the high-value class?"). Distinct from `GlobalFeatureImportance` (averaged across all predictions), `PDP` (population marginal effect of a single feature), and `LocalExplanationCard` (single row explanation).
+
+**Baseline:** 5148 backend / 2943 frontend → **5180 backend / 2963 frontend** (+32 / +20).
+
 ## Day 79 — 20:00 — Sample Size Adequacy Analysis via Chat
 
 **Feature shipped:** Sample Size Adequacy (Track C perpetual). Analysts can now ask "do I have enough training data?", "is my dataset big enough?", "how many more rows do I need?", "is my sample size sufficient?", "sample size check", or "minimum required samples" and receive a `SampleSizeAdequacyCard` in chat that directly answers the "can I trust this model given how few rows I uploaded?" safety question.
