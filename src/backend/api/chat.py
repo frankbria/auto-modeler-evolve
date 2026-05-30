@@ -4065,6 +4065,20 @@ _SAMPLE_SIZE_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+_CLASS_FEAT_IMP_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"(?:what|which)\s+features?\s+(?:drive|cause|are\s+(?:most\s+)?(?:important|predictive|responsible)\s+for)\s+(?:the\s+)?(?:predictions?\s+of\s+)?(?:class\s+)?(?:\w+\s+)?predictions?\b|"
+    r"(?:feature\s+importance|features?\s+(?:that\s+)?(?:matter|are\s+important))\s+(?:per|by|for\s+(?:each|every))\s+(?:class|category|outcome|prediction)\b|"
+    r"(?:class.?(?:specific|conditional|level|by.class))\s+feature\s+(?:importance|breakdown|analysis|profile)\b|"
+    r"what\s+(?:makes?|causes?)\s+(?:the\s+)?model\s+(?:to\s+)?predict\s+(?:\w+\s+)?(?:vs\.?|versus|vs)\b|"
+    r"(?:feature|variable)\s+breakdown\s+(?:by|per|for)\s+(?:class|category|outcome|prediction)\b|"
+    r"why\s+does\s+(?:the\s+)?model\s+predict\s+(?:one\s+class|different\s+classes|each\s+class)\b|"
+    r"what\s+(?:features?|variables?)\s+are\s+(?:different|distinctive|distinct)\s+for\s+each\s+(?:class|prediction|outcome)\b|"
+    r"(?:distinguish|differentiate)\s+(?:between\s+)?(?:classes|predictions?|outcomes?)\s+(?:by|using)?\s+(?:features?|variables?)\b"
+    r")",
+    re.IGNORECASE,
+)
+
 _SIMILAR_RECORDS_PATTERNS = re.compile(
     r"(?i)(?:"
     r"(?:find|show|get)\s+(?:me\s+)?(?:similar|like|nearest|closest)\s+(?:records?|rows?|cases?|customers?|examples?)\b|"
@@ -8109,6 +8123,95 @@ def send_message(
                     )
         except Exception:  # noqa: BLE001
             pass  # Sample size adequacy is nice-to-have; never crash chat
+
+    # Class-conditional feature importance
+    class_feat_imp_event: dict | None = None
+    if _CLASS_FEAT_IMP_PATTERNS.search(body.message) and ctx["model_runs"]:
+        try:
+            from core.explainer import compute_class_conditional_importance as _cfi
+            from core.feature_engine import apply_transformations as _apply_cfi
+            from core.trainer import prepare_features as _pf_cfi
+
+            import json as _json_cfi
+
+            _done_cfi = [
+                r
+                for r in ctx["model_runs"]
+                if r.status == "done"
+                and (ctx.get("feature_set") and ctx["feature_set"].problem_type == "classification")
+            ]
+            if not _done_cfi:
+                # All done runs regardless of problem_type check — fall back
+                _done_cfi = [r for r in ctx["model_runs"] if r.status == "done"]
+
+            if _done_cfi:
+                _sel_cfi = (
+                    next((r for r in _done_cfi if r.is_selected), None) or _done_cfi[0]
+                )
+                _ds_cfi = ctx["dataset"]
+                _fset_cfi = ctx.get("feature_set")
+                if not _fset_cfi:
+                    _fset_cfi = session.exec(
+                        select(FeatureSet).where(
+                            FeatureSet.dataset_id == _ds_cfi.id if _ds_cfi else False,
+                            FeatureSet.is_active == True,  # noqa: E712
+                        )
+                    ).first()
+
+                _prob_cfi = (_fset_cfi.problem_type or "regression") if _fset_cfi else "regression"
+
+                if _prob_cfi == "classification" and _ds_cfi and _fset_cfi and Path(_ds_cfi.file_path).exists():
+                    import joblib as _jl_cfi
+                    import pandas as _pd_cfi
+
+                    _df_cfi = _pd_cfi.read_csv(Path(_ds_cfi.file_path))
+                    _tfms_cfi = _json_cfi.loads(_fset_cfi.transformations or "[]")
+                    if _tfms_cfi:
+                        _df_cfi, _ = _apply_cfi(_df_cfi, _tfms_cfi)
+
+                    _target_cfi = _fset_cfi.target_column
+                    _feat_cols_cfi = [c for c in _df_cfi.columns if c != _target_cfi]
+                    _X_cfi, _y_cfi, _ = _pf_cfi(_df_cfi, _feat_cols_cfi, _target_cfi, _prob_cfi)
+
+                    if _sel_cfi.model_path and Path(_sel_cfi.model_path).exists():
+                        _model_cfi = _jl_cfi.load(_sel_cfi.model_path)
+                        _y_pred_cfi = _model_cfi.predict(_X_cfi)
+
+                        _class_names_cfi: list[str] | None = None
+                        if hasattr(_model_cfi, "classes_"):
+                            _class_names_cfi = [str(c) for c in _model_cfi.classes_.tolist()]
+
+                        _cfi_result = _cfi(
+                            model=_model_cfi,
+                            X=_X_cfi,
+                            y_pred=_y_pred_cfi,
+                            feature_names=_feat_cols_cfi,
+                            class_names=_class_names_cfi,
+                        )
+                        class_feat_imp_event = {
+                            "model_run_id": _sel_cfi.id,
+                            "algorithm": _sel_cfi.algorithm,
+                            "target_col": _target_cfi,
+                            **_cfi_result,
+                        }
+                        _top_classes_cfi = sorted(
+                            _cfi_result["classes"],
+                            key=lambda c: c["sample_count"],
+                            reverse=True,
+                        )[:3]
+                        _cfi_context = "; ".join(
+                            f"'{c['class_label']}' ({c['sample_pct']:.0f}%): top feature = '{c['top_feature']}'"
+                            for c in _top_classes_cfi
+                        )
+                        system_prompt += (
+                            f"\n\n## Class-Conditional Feature Importance\n"
+                            f"{_cfi_result['summary']} "
+                            f"Per-class highlights: {_cfi_context}. "
+                            "Explain which features are most different between each predicted "
+                            "class and what that means for the analyst's business context."
+                        )
+        except Exception:  # noqa: BLE001
+            pass  # Class feature importance is nice-to-have; never crash chat
 
     # Check if user wants to change the train/test split strategy
     split_strategy_event: dict | None = None
@@ -17460,6 +17563,9 @@ def send_message(
 
         if sample_size_event:
             yield f"data: {json.dumps({'type': 'sample_size_adequacy', 'sample_size_adequacy': sample_size_event})}\n\n"
+
+        if class_feat_imp_event:
+            yield f"data: {json.dumps({'type': 'class_feature_importance', 'class_feature_importance': class_feat_imp_event})}\n\n"
 
         # After text stream, opportunistically generate a chart if the
         # message is about data and we have a dataset loaded

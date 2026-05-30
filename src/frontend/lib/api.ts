@@ -699,6 +699,14 @@ export const api = {
         return r.json()
       }),
 
+    classFeatureImportance: (
+      runId: string
+    ): Promise<import("./types").ClassFeatureImportanceResult> =>
+      fetch(`${API_URL}/api/models/${runId}/class-feature-importance`).then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        return r.json()
+      }),
+
     calibration: (
       runId: string
     ): Promise<import("./types").CalibrationData> =>

@@ -288,6 +288,176 @@ def compute_partial_dependence(
     }
 
 
+def compute_class_conditional_importance(
+    model,  # fitted sklearn classifier with predict() and feature_importances_ or coef_
+    X: np.ndarray,  # shape (n_samples, n_features) — training data
+    y_pred: np.ndarray,  # predicted class labels (int or str)
+    feature_names: list[str],
+    class_names: list[str] | None = None,
+) -> dict:
+    """Per-class feature importance breakdown for classification models.
+
+    For each predicted class, filters rows where the model predicts that class,
+    then computes which features deviate most (in importance-weighted terms) for
+    that cohort vs. the overall training distribution.
+
+    This answers "what makes the model predict class X?" — showing which features
+    are systematically different for each predicted outcome.
+
+    Returns:
+        {
+          classes: [
+            {
+              class_label: str,
+              sample_count: int,
+              sample_pct: float,
+              features: [
+                {
+                  feature: str,
+                  global_importance: float,
+                  mean_for_class: float,
+                  global_mean: float,
+                  deviation_pct: float,   # (class_mean - global_mean) / (global_mean + eps) * 100
+                  weighted_deviation: float,  # importance * |deviation_pct| / 100
+                  direction: "above_average" | "below_average" | "similar",
+                },
+                ...
+              ],  # top 8 by weighted_deviation
+              top_feature: str,
+              summary: str,
+            }
+          ],
+          n_classes: int,
+          n_samples: int,
+          feature_names: [str, ...],
+          summary: str,
+        }
+
+    Raises:
+        ValueError: if fewer than 2 distinct classes in y_pred, or fewer than 10 rows.
+    """
+    if len(X) < 10:
+        raise ValueError("Need at least 10 rows for class-conditional analysis.")
+
+    unique_preds = np.unique(y_pred)
+    if len(unique_preds) < 2:
+        raise ValueError("Need at least 2 distinct predicted classes.")
+
+    importances_list = compute_feature_importance(model, feature_names)
+    imp_map = {item["feature"]: item["importance"] for item in importances_list}
+
+    global_means = np.mean(X, axis=0)
+    n_samples = len(X)
+
+    class_results = []
+    for cls_idx, cls_val in enumerate(unique_preds):
+        mask = y_pred == cls_val
+        X_cls = X[mask]
+        count = int(np.sum(mask))
+
+        if count == 0:
+            continue
+
+        cls_means = np.mean(X_cls, axis=0) if count > 0 else global_means.copy()
+        pct = round(float(count / n_samples * 100), 1)
+
+        features = []
+        for i, fname in enumerate(feature_names):
+            g_mean = float(global_means[i])
+            c_mean = float(cls_means[i])
+            imp = imp_map.get(fname, 0.0)
+
+            eps = max(abs(g_mean) * 0.01, 1e-6)
+            dev_pct = (c_mean - g_mean) / (abs(g_mean) + eps) * 100.0
+            weighted_dev = imp * abs(dev_pct) / 100.0
+
+            direction: str
+            if abs(dev_pct) < 5.0:
+                direction = "similar"
+            elif dev_pct > 0:
+                direction = "above_average"
+            else:
+                direction = "below_average"
+
+            features.append(
+                {
+                    "feature": fname,
+                    "global_importance": round(imp, 6),
+                    "mean_for_class": round(c_mean, 4),
+                    "global_mean": round(float(g_mean), 4),
+                    "deviation_pct": round(dev_pct, 1),
+                    "weighted_deviation": round(weighted_dev, 6),
+                    "direction": direction,
+                }
+            )
+
+        features.sort(key=lambda f: f["weighted_deviation"], reverse=True)
+        top_8 = features[:8]
+
+        top_feat = top_8[0]["feature"] if top_8 else (feature_names[0] if feature_names else "")
+
+        # Resolve class label
+        if class_names and cls_idx < len(class_names):
+            cls_label = str(class_names[cls_idx])
+        else:
+            cls_label = str(cls_val)
+
+        # Build summary sentence
+        if top_8:
+            t = top_8[0]
+            dir_phrase = (
+                "higher than average"
+                if t["direction"] == "above_average"
+                else "lower than average"
+                if t["direction"] == "below_average"
+                else "average"
+            )
+            summary = (
+                f"For predictions of '{cls_label}' ({count:,} of {n_samples:,} records): "
+                f"'{top_feat}' is the most distinguishing feature ({dir_phrase} by "
+                f"{abs(t['deviation_pct']):.0f}%)."
+            )
+        else:
+            summary = f"Class '{cls_label}' has {count:,} predicted records."
+
+        class_results.append(
+            {
+                "class_label": cls_label,
+                "sample_count": count,
+                "sample_pct": pct,
+                "features": top_8,
+                "top_feature": top_feat,
+                "summary": summary,
+            }
+        )
+
+    # Overall summary
+    if len(class_results) >= 2:
+        top_classes = sorted(class_results, key=lambda c: c["sample_count"], reverse=True)
+        main_cls = top_classes[0]
+        if main_cls["features"]:
+            top_feat_main = main_cls["features"][0]["feature"]
+            overall_summary = (
+                f"Across {len(class_results)} classes, '{top_feat_main}' is the top "
+                f"distinguishing feature for the most common prediction "
+                f"('{main_cls['class_label']}', {main_cls['sample_pct']:.0f}% of records)."
+            )
+        else:
+            overall_summary = f"Class-conditional analysis across {len(class_results)} classes."
+    elif len(class_results) == 1:
+        overall_summary = class_results[0]["summary"]
+    else:
+        overall_summary = "No class-conditional data available."
+
+    return {
+        "classes": class_results,
+        "n_classes": len(class_results),
+        "n_samples": n_samples,
+        "feature_names": feature_names,
+        "summary": overall_summary,
+    }
+
+
 def _prediction_summary(
     top_contributions: list[dict],
     prediction_val: float,

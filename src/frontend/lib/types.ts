@@ -545,6 +545,7 @@ export interface ChatMessage {
   threshold_analysis?: ThresholdAnalysisResult
   confidence_distribution?: ConfidenceDistributionResult
   sample_size_adequacy?: SampleSizeAdequacyResult
+  class_feature_importance?: ClassFeatureImportanceResult
 }
 
 export interface RollbackVersionEntry {
@@ -4053,4 +4054,34 @@ export interface SampleSizeAdequacyResult {
   cv_stable: boolean | null
   summary: string
   recommendations: string[]
+}
+
+export interface ClassFeatureEntry {
+  feature: string
+  global_importance: number
+  mean_for_class: number
+  global_mean: number
+  deviation_pct: number
+  weighted_deviation: number
+  direction: "above_average" | "below_average" | "similar"
+}
+
+export interface ClassImportanceGroup {
+  class_label: string
+  sample_count: number
+  sample_pct: number
+  features: ClassFeatureEntry[]
+  top_feature: string
+  summary: string
+}
+
+export interface ClassFeatureImportanceResult {
+  model_run_id: string
+  algorithm: string
+  target_col: string
+  classes: ClassImportanceGroup[]
+  n_classes: number
+  n_samples: number
+  feature_names: string[]
+  summary: string
 }

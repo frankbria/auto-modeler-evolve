@@ -185,6 +185,7 @@ interface AppState {
   attachThresholdAnalysisToLastMessage: (threshold_analysis: import("./types").ThresholdAnalysisResult) => void
   attachConfidenceDistributionToLastMessage: (confidence_distribution: import("./types").ConfidenceDistributionResult) => void
   attachSampleSizeAdequacyToLastMessage: (sample_size_adequacy: import("./types").SampleSizeAdequacyResult) => void
+  attachClassFeatureImportanceToLastMessage: (class_feature_importance: import("./types").ClassFeatureImportanceResult) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -1524,6 +1525,16 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, sample_size_adequacy }
+      }
+      return { messages }
+    }),
+
+  attachClassFeatureImportanceToLastMessage: (class_feature_importance) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, class_feature_importance }
       }
       return { messages }
     }),

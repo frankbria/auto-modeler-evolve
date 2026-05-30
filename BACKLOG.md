@@ -49,7 +49,9 @@ the time is better spent on real features.
 
 ## Currently Working On
 
-*(nothing)*
+**Day 80 (04:00): Track C — Class-Conditional Feature Importance via Chat**
+
+Analysts ask "what features drive churn predictions?", "which features matter most for each class?", "feature importance per class", "what makes the model predict X vs Y?" and receive a `ClassFeatureImportanceCard` showing per-predicted-class feature importance breakdown. Distinct from global importance (which averages across all predictions) and local explanation (single row) — this shows which features are *systematically* more important when predicting each specific class.
 
 ---
 

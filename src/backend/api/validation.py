@@ -18,6 +18,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
 
 from core.explainer import (
+    compute_class_conditional_importance,
     compute_feature_importance,
     compute_partial_dependence,
     explain_single_prediction,
@@ -729,6 +730,55 @@ def get_confidence_distribution(
         class_names=class_names_cd,
         n_bins=n_bins,
     )
+
+    result["model_run_id"] = model_run_id
+    result["algorithm"] = run.algorithm
+    result["target_col"] = feature_set.target_column
+
+    return result
+
+
+@router.get("/api/models/{model_run_id}/class-feature-importance")
+async def get_class_feature_importance(
+    model_run_id: str,
+    session: Session = Depends(get_session),
+):
+    """Per-predicted-class feature importance breakdown.
+
+    For each class the model predicts, shows which features deviate most from the
+    global training mean (importance-weighted), answering "what makes the model
+    predict X vs Y?"
+
+    Classification only. Returns 400 for regression runs.
+    """
+    run, feature_set, _dataset, file_path = _load_run_context(model_run_id, session)
+
+    problem_type = feature_set.problem_type or "regression"
+    if problem_type != "classification":
+        raise HTTPException(
+            status_code=400,
+            detail="Class-conditional feature importance is only available for classification models.",
+        )
+
+    X, y, feature_cols = _build_Xy(file_path, feature_set)
+
+    fitted_model = joblib.load(run.model_path)
+    y_pred = fitted_model.predict(X)
+
+    class_names: list[str] | None = None
+    if hasattr(fitted_model, "classes_"):
+        class_names = [str(c) for c in fitted_model.classes_.tolist()]
+
+    try:
+        result = compute_class_conditional_importance(
+            model=fitted_model,
+            X=X,
+            y_pred=y_pred,
+            feature_names=feature_cols,
+            class_names=class_names,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     result["model_run_id"] = model_run_id
     result["algorithm"] = run.algorithm

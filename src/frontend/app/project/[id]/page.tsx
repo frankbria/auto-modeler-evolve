@@ -84,6 +84,7 @@ import { TargetLeakageCard } from "@/components/models/target-leakage-card"
 import { ThresholdAnalysisCard } from "@/components/models/threshold-analysis-card"
 import { ConfidenceDistributionCard } from "@/components/models/confidence-distribution-card"
 import { SampleSizeAdequacyCard } from "@/components/models/sample-size-adequacy-card"
+import { ClassFeatureImportanceCard } from "@/components/models/class-feature-importance-card"
 import { OnboardingGuideCard } from "@/components/chat/onboarding-guide-card"
 import { DataVersionHistoryCard } from "@/components/chat/data-version-history-card"
 import { LearningCurveCard } from "@/components/chat/learning-curve-card"
@@ -389,6 +390,7 @@ export default function ProjectWorkspace() {
     attachThresholdAnalysisToLastMessage,
     attachConfidenceDistributionToLastMessage,
     attachSampleSizeAdequacyToLastMessage,
+    attachClassFeatureImportanceToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -777,6 +779,8 @@ export default function ProjectWorkspace() {
                 attachConfidenceDistributionToLastMessage(json.confidence_distribution as import("@/lib/types").ConfidenceDistributionResult)
               } else if (json.type === "sample_size_adequacy" && json.sample_size_adequacy) {
                 attachSampleSizeAdequacyToLastMessage(json.sample_size_adequacy as import("@/lib/types").SampleSizeAdequacyResult)
+              } else if (json.type === "class_feature_importance" && json.class_feature_importance) {
+                attachClassFeatureImportanceToLastMessage(json.class_feature_importance as import("@/lib/types").ClassFeatureImportanceResult)
               } else if (json.type === "onboarding_guide" && json.onboarding_guide) {
                 attachOnboardingGuideToLastMessage(json.onboarding_guide as import("@/lib/types").OnboardingGuideResult)
               } else if (json.type === "version_history" && json.version_history) {
@@ -951,6 +955,8 @@ export default function ProjectWorkspace() {
                 attachConfidenceDistributionToLastMessage(json.confidence_distribution as import("@/lib/types").ConfidenceDistributionResult)
               } else if (json.type === "sample_size_adequacy" && json.sample_size_adequacy) {
                 attachSampleSizeAdequacyToLastMessage(json.sample_size_adequacy as import("@/lib/types").SampleSizeAdequacyResult)
+              } else if (json.type === "class_feature_importance" && json.class_feature_importance) {
+                attachClassFeatureImportanceToLastMessage(json.class_feature_importance as import("@/lib/types").ClassFeatureImportanceResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -1109,6 +1115,7 @@ export default function ProjectWorkspace() {
     attachThresholdAnalysisToLastMessage,
     attachConfidenceDistributionToLastMessage,
     attachSampleSizeAdequacyToLastMessage,
+    attachClassFeatureImportanceToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -1800,6 +1807,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.sample_size_adequacy && (
                       <SampleSizeAdequacyCard result={msg.sample_size_adequacy} />
+                    )}
+                    {msg.class_feature_importance && (
+                      <ClassFeatureImportanceCard result={msg.class_feature_importance} />
                     )}
                   </div>
                 </div>
