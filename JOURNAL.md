@@ -1,5 +1,27 @@
 # Journal
 
+## Day 80 — 12:00 — Calibration Check via Chat
+
+**Feature shipped:** Calibration Check (Track C perpetual). Analysts can now ask "is my model calibrated?", "calibration check", "are my probabilities reliable?", "can I trust my probability scores?", "what's the brier score?", "reliability diagram", "probability calibration", "are my confidence scores accurate?", or 2 other NL variants and receive a `CalibrationCheckCard` in chat directly answering "when my model says 70% probability, is it actually right ~70% of the time?"
+
+**What was built:**
+
+- `compute_calibration_check(y_true, y_proba_matrix, class_names, n_bins)` pure function in `core/validator.py`: uses sklearn's `calibration_curve` to build a reliability diagram. Binary: uses positive-class probability column and `brier_score_loss`; multiclass: uses max-class confidence for the main calibration curve plus one-vs-rest per-class Brier/ECE. ECE = Expected Calibration Error (weighted average of |predicted_prob − actual_fraction| per bin). Verdicts: `well_calibrated` (ECE < 0.05), `moderate` (ECE 0.05–0.15), `poorly_calibrated` (ECE ≥ 0.15). Raises `ValueError` for < 10 samples. Returns 9-key dict: `curve_points`, `ece`, `brier_score`, `verdict`, `verdict_label`, `per_class`, `n_classes`, `n_total`, `summary`.
+
+- `GET /api/models/{model_run_id}/calibration-check?n_bins=10` REST endpoint in `api/validation.py`: classification-only (400 for regression), 404 for unknown run, 400 for non-proba models. Loads model via joblib, calls `predict_proba`, returns full calibration dict plus `model_run_id`, `algorithm`, `target_col`.
+
+- `_CALIBRATION_CHECK_PATTERNS` regex (10 NL variants including "how well-calibrated is my model", "brier score", "reliability diagram", "are my confidence scores reliable") + handler in `chat.py`: guards on classification `ctx["model_runs"]`; finds selected/best done run; loads predict_proba; calls pure function; injects ECE + verdict into system_prompt with plain-English guidance that poorly-calibrated models should not have their probability values trusted for business decisions; emits `{type:"calibration_check"}` SSE event.
+
+- `CalibrationCheckCard` (emerald=well_calibrated / amber=moderate / rose=poorly_calibrated, 📐 icon): verdict badge, algorithm badge, target column badge, n_classes badge, n_total badge, ECE/Brier score 2-column grid with color guidance text, Recharts LineChart reliability diagram with actual calibration line + dashed perfect-calibration reference line, per-class table visible for multiclass only (ECE/Brier/sample count per class), plain-English summary paragraph, sr-only figcaption.
+
+- Updated `CalibrationCheckResult` TypeScript interface + new `CalibrationCurvePoint` + `CalibrationPerClassEntry` interfaces in `lib/types.ts`; `api.models.calibrationCheck()` client method in `lib/api.ts`. Replaced stale `test_calibration_check.py` that tested a metrics-injection approach with 33 tests matching the live-compute implementation.
+
+**Tests:** 20 pure-function (required keys, n_total/n_classes, ECE/Brier in range, verdict values, curve_points structure, per-class structure + class names, well-calibrated verdict, overconfident verdict, too-few-rows ValueError, n_bins clamp, summary string, multiclass per-class count, class_names fallback) + 10 regex (8 matches + 2 false-positive guards) + 3 REST endpoint (200 classification, 404 unknown, 400 regression) = 33 backend + 15 card component + 3 store action = 18 frontend = **51 new tests**. All passing. Backend lint: clean. Frontend build + lint: clean.
+
+**Why this matters:** Confidence Distribution (Day 79) tells analysts "how often is my model very/moderately/uncertain in its predictions." Calibration Check answers the deeper follow-up: "when the model says 70%, does that actually mean a 70% chance?" A perfectly accurate model can be poorly calibrated — it picks the right class but its probabilities are systematically off. This matters whenever a business decision is based on the probability value itself (e.g., "flag customers with >60% churn probability for intervention") rather than just the class label. Distinct from `ConfidenceDistributionCard` (distribution of confidence levels) and `ThresholdAnalysisCard` (precision/recall tradeoff at different thresholds).
+
+**Baseline:** 5180 backend / 2963 frontend → **5200 backend / 2966 frontend** (+20 / +3, net after replacing 13 stale tests with 33 new ones).
+
 ## Day 80 — 04:00 — Class-Conditional Feature Importance via Chat
 
 **Feature shipped:** Class-Conditional Feature Importance (Track C perpetual). Analysts can now ask "what features drive churn predictions?", "feature importance per class", "class-specific feature breakdown", "what makes the model predict X vs Y?", or "feature breakdown by class" and receive a `ClassFeatureImportanceCard` in chat that directly answers "what does my model see differently about each predicted outcome?"
