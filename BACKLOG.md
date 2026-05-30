@@ -49,9 +49,22 @@ the time is better spent on real features.
 
 ## Currently Working On
 
-**Day 80 (04:00): Track C — Class-Conditional Feature Importance via Chat**
+*(nothing)*
 
-Analysts ask "what features drive churn predictions?", "which features matter most for each class?", "feature importance per class", "what makes the model predict X vs Y?" and receive a `ClassFeatureImportanceCard` showing per-predicted-class feature importance breakdown. Distinct from global importance (which averages across all predictions) and local explanation (single row) — this shows which features are *systematically* more important when predicting each specific class.
+---
+
+## Day 80 (04:00) — Done
+
+**Track C: Class-Conditional Feature Importance via Chat** — complete.
+
+Closes the "what makes my model predict each outcome differently?" analyst gap. Analysts can ask "what features drive churn predictions?", "feature importance per class", "class-specific feature breakdown", "what makes the model predict X vs Y?", or "why does the model predict different classes?" and receive a `ClassFeatureImportanceCard` with per-class collapsible panels showing which features deviate most from the training average for each predicted class.
+
+- `compute_class_conditional_importance(model, X, y_pred, feature_names, class_names)` pure function in `core/explainer.py`: per-class feature deviation analysis, importance-weighted, top 8 per class.
+- `GET /api/models/{run_id}/class-feature-importance` endpoint: classification-only (400 regression, 404 unknown).
+- `_CLASS_FEAT_IMP_PATTERNS` (8 NL variants) + handler in `chat.py`: injects per-class highlights into system_prompt.
+- `ClassFeatureImportanceCard`: collapsible per-class panels, ↑/↓/≈ direction labels, proportional importance bars.
+
+**Distinct from:** `GlobalFeatureImportance` (averages all predictions), `PDP` (marginal effect), `LocalExplanationCard` (single row). 32 backend + 20 frontend = **52 new tests**. Total: **5180 backend / 2963 frontend = 8143**.
 
 ---
 
