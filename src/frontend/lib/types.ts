@@ -544,6 +544,7 @@ export interface ChatMessage {
   target_leakage?: TargetLeakageResult
   threshold_analysis?: ThresholdAnalysisResult
   confidence_distribution?: ConfidenceDistributionResult
+  sample_size_adequacy?: SampleSizeAdequacyResult
 }
 
 export interface RollbackVersionEntry {
@@ -4032,4 +4033,24 @@ export interface ConfidenceDistributionResult {
   decisiveness_label: string
   per_class_mean: ConfidenceDistClassMean[]
   summary: string
+}
+
+export interface SampleSizeAdequacyResult {
+  model_run_id: string
+  algorithm: string
+  target_col: string
+  n_rows: number
+  n_features: number
+  n_classes: number | null
+  problem_type: string
+  recommended_n: number
+  shortfall: number
+  coverage_pct: number
+  ratio: number
+  verdict: "adequate" | "borderline" | "insufficient"
+  verdict_label: string
+  cv_std: number | null
+  cv_stable: boolean | null
+  summary: string
+  recommendations: string[]
 }

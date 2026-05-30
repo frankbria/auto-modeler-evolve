@@ -883,6 +883,102 @@ def get_overfitting_analysis(run_id: str, session: Session = Depends(get_session
     }
 
 
+@router.get("/api/models/{run_id}/sample-size-adequacy")
+def get_sample_size_adequacy(run_id: str, session: Session = Depends(get_session)):
+    """Assess whether the training dataset has enough rows for reliable modeling.
+
+    Uses the 10× rule of thumb (regression: 10×n_features; classification:
+    10×n_features×n_classes) and optionally factors in cross-validation stability.
+    Returns 400 for runs with fewer than 5 rows or no active feature set.
+    """
+    from core.analyzer import compute_sample_size_adequacy
+    from core.feature_engine import apply_transformations
+    from core.trainer import prepare_features
+
+    run = session.get(ModelRun, run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Model run not found")
+    if run.status != "done":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Model is not done (status: {run.status}). Train the model first.",
+        )
+
+    project_id = run.project_id
+    dataset = session.exec(
+        select(Dataset).where(Dataset.project_id == project_id)
+    ).first()
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    feature_set = session.exec(
+        select(FeatureSet).where(
+            FeatureSet.dataset_id == dataset.id,
+            FeatureSet.is_active == True,  # noqa: E712
+        )
+    ).first()
+    if not feature_set or not feature_set.target_column:
+        raise HTTPException(
+            status_code=400, detail="No active feature set with target column"
+        )
+
+    file_path = Path(dataset.file_path)
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Dataset file not found on disk")
+
+    df = pd.read_csv(file_path)
+    transforms = json.loads(feature_set.transformations or "[]")
+    if transforms:
+        df, _ = apply_transformations(df, transforms)
+
+    target_col = feature_set.target_column
+    problem_type = (feature_set.problem_type if feature_set else None) or "regression"
+    feature_cols = [c for c in df.columns if c != target_col]
+
+    try:
+        X_arr, y_arr, _ = prepare_features(df, feature_cols, target_col, problem_type)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    n_rows = len(X_arr)
+    n_features = X_arr.shape[1] if hasattr(X_arr, "shape") else len(X_arr[0])
+
+    n_classes = 2
+    if problem_type == "classification":
+        import numpy as _np_ssa
+
+        n_classes = len(_np_ssa.unique(y_arr))
+
+    cv_std: float | None = None
+    if run.metrics:
+        metrics_dict = json.loads(run.metrics) if isinstance(run.metrics, str) else run.metrics
+        raw_cv_std = metrics_dict.get("cv_std")
+        if raw_cv_std is not None:
+            try:
+                cv_std = float(raw_cv_std)
+            except (TypeError, ValueError):
+                cv_std = None
+
+    try:
+        result = compute_sample_size_adequacy(
+            n_rows=n_rows,
+            n_features=n_features,
+            problem_type=problem_type,
+            n_classes=n_classes,
+            cv_std=cv_std,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return {
+        "run_id": run_id,
+        "project_id": project_id,
+        "algorithm": run.algorithm,
+        "target_col": target_col,
+        **result,
+    }
+
+
 @router.get("/api/models/{run_id}/calibration")
 def get_calibration(run_id: str, session: Session = Depends(get_session)):
     """Return calibration curve data and Brier score for a trained classifier.

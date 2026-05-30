@@ -4051,6 +4051,20 @@ _CONFIDENCE_DIST_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+_SAMPLE_SIZE_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"(?:do\s+I|does\s+my\s+(?:dataset|data))\s+have\s+enough\s+(?:training\s+)?(?:data|rows?|samples?|examples?)\b|"
+    r"(?:is\s+)?(?:my\s+)?(?:dataset|data(?:set)?|sample)\s+(?:big|large|small)\s+enough\b|"
+    r"how\s+many\s+(?:more\s+)?(?:rows?|samples?|examples?|records?)\s+do\s+I\s+need\b|"
+    r"(?:is\s+)?(?:my\s+)?(?:dataset|training\s+data)\s+too\s+small\b|"
+    r"(?:sample|data(?:set)?)\s+size\s+(?:check|adequacy|sufficiency|assessment|analysis)\b|"
+    r"(?:is\s+)?(?:my\s+)?(?:data|training\s+set)\s+(?:statistically\s+)?sufficient\b|"
+    r"(?:do\s+I\s+have|have\s+I\s+got)\s+enough\s+(?:data|rows?|samples?)\s+(?:to\s+train|for\s+(?:reliable|good|accurate)\s+(?:modeling|training|predictions?))\b|"
+    r"(?:minimum|minimum\s+required|required)\s+(?:training\s+)?(?:data\s+)?(?:size|rows?|samples?)\b"
+    r")",
+    re.IGNORECASE,
+)
+
 _SIMILAR_RECORDS_PATTERNS = re.compile(
     r"(?i)(?:"
     r"(?:find|show|get)\s+(?:me\s+)?(?:similar|like|nearest|closest)\s+(?:records?|rows?|cases?|customers?|examples?)\b|"
@@ -8002,6 +8016,95 @@ def send_message(
                         )
         except Exception:  # noqa: BLE001
             pass  # Confidence distribution is nice-to-have; never crash chat
+
+    # Sample size adequacy assessment
+    sample_size_event: dict | None = None
+    if _SAMPLE_SIZE_PATTERNS.search(body.message) and ctx["model_runs"]:
+        try:
+            from core.analyzer import compute_sample_size_adequacy as _cssa
+            from core.feature_engine import apply_transformations as _apply_ssa
+            from core.trainer import prepare_features as _pf_ssa
+
+            import json as _json_ssa
+            import numpy as _np_ssa
+
+            _done_ssa = [
+                r
+                for r in ctx["model_runs"]
+                if r.status == "done"
+            ]
+            if _done_ssa:
+                _sel_ssa = (
+                    next((r for r in _done_ssa if r.is_selected), None)
+                    or _done_ssa[0]
+                )
+                _ds_ssa = ctx["dataset"]
+                _fset_ssa = ctx.get("feature_set")
+                if not _fset_ssa:
+                    _fset_ssa = session.exec(
+                        select(FeatureSet).where(
+                            FeatureSet.dataset_id == _ds_ssa.id if _ds_ssa else False,
+                            FeatureSet.is_active == True,  # noqa: E712
+                        )
+                    ).first()
+                if _ds_ssa and _fset_ssa and _fset_ssa.target_column and Path(_ds_ssa.file_path).exists():
+                    import pandas as _pd_ssa
+
+                    _df_ssa = _pd_ssa.read_csv(Path(_ds_ssa.file_path))
+                    _tfms_ssa = _json_ssa.loads(_fset_ssa.transformations or "[]")
+                    if _tfms_ssa:
+                        _df_ssa, _ = _apply_ssa(_df_ssa, _tfms_ssa)
+
+                    _target_ssa = _fset_ssa.target_column
+                    _prob_ssa = (_fset_ssa.problem_type or "regression")
+                    _feat_cols_ssa = [c for c in _df_ssa.columns if c != _target_ssa]
+
+                    _X_ssa, _y_ssa, _ = _pf_ssa(_df_ssa, _feat_cols_ssa, _target_ssa, _prob_ssa)
+                    _n_rows_ssa = len(_X_ssa)
+                    _n_feat_ssa = _X_ssa.shape[1] if hasattr(_X_ssa, "shape") else len(_X_ssa[0])
+                    _n_classes_ssa = 2
+                    if _prob_ssa == "classification":
+                        _n_classes_ssa = len(_np_ssa.unique(_y_ssa))
+
+                    _cv_std_ssa: float | None = None
+                    if _sel_ssa.metrics:
+                        _m_ssa = (
+                            _json_ssa.loads(_sel_ssa.metrics)
+                            if isinstance(_sel_ssa.metrics, str)
+                            else _sel_ssa.metrics
+                        )
+                        _raw_cv = _m_ssa.get("cv_std")
+                        if _raw_cv is not None:
+                            try:
+                                _cv_std_ssa = float(_raw_cv)
+                            except (TypeError, ValueError):
+                                pass
+
+                    _ssa_result = _cssa(
+                        n_rows=_n_rows_ssa,
+                        n_features=_n_feat_ssa,
+                        problem_type=_prob_ssa,
+                        n_classes=_n_classes_ssa,
+                        cv_std=_cv_std_ssa,
+                    )
+                    sample_size_event = {
+                        "model_run_id": _sel_ssa.id,
+                        "algorithm": _sel_ssa.algorithm,
+                        "target_col": _target_ssa,
+                        **_ssa_result,
+                    }
+                    system_prompt += (
+                        f"\n\n## Sample Size Adequacy\n"
+                        f"{_ssa_result['summary']} "
+                        f"Verdict: {_ssa_result['verdict_label']}. "
+                        f"Current rows: {_ssa_result['n_rows']:,}. "
+                        f"Recommended: {_ssa_result['recommended_n']:,}. "
+                        "Explain what this means in plain English and give concrete, "
+                        "actionable guidance on whether the analyst should collect more data "
+                        "before relying on this model."
+                    )
+        except Exception:  # noqa: BLE001
+            pass  # Sample size adequacy is nice-to-have; never crash chat
 
     # Check if user wants to change the train/test split strategy
     split_strategy_event: dict | None = None
@@ -17350,6 +17453,9 @@ def send_message(
 
         if confidence_dist_event:
             yield f"data: {json.dumps({'type': 'confidence_distribution', 'confidence_distribution': confidence_dist_event})}\n\n"
+
+        if sample_size_event:
+            yield f"data: {json.dumps({'type': 'sample_size_adequacy', 'sample_size_adequacy': sample_size_event})}\n\n"
 
         # After text stream, opportunistically generate a chart if the
         # message is about data and we have a dataset loaded

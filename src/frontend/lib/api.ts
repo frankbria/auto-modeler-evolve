@@ -691,6 +691,14 @@ export const api = {
         return r.json()
       }),
 
+    sampleSizeAdequacy: (
+      runId: string
+    ): Promise<import("./types").SampleSizeAdequacyResult> =>
+      fetch(`${API_URL}/api/models/${runId}/sample-size-adequacy`).then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        return r.json()
+      }),
+
     calibration: (
       runId: string
     ): Promise<import("./types").CalibrationData> =>

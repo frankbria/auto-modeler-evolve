@@ -4954,3 +4954,145 @@ def compute_target_leakage(
         "target_col": target_col,
         "summary": summary,
     }
+
+
+def compute_sample_size_adequacy(
+    n_rows: int,
+    n_features: int,
+    problem_type: str,
+    n_classes: int = 2,
+    cv_std: float | None = None,
+) -> dict:
+    """Assess whether the training dataset has enough rows for reliable modeling.
+
+    Uses the 10× rule of thumb:
+    - Regression: recommended = max(50, 10 * n_features)
+    - Classification: recommended = max(50 * n_classes, 10 * n_features * n_classes)
+
+    Verdicts:
+    - adequate: n_rows >= recommended
+    - borderline: n_rows >= 0.6 * recommended
+    - insufficient: n_rows < 0.6 * recommended
+
+    Args:
+        n_rows: Number of training rows.
+        n_features: Number of input features (after encoding).
+        problem_type: "regression" or "classification".
+        n_classes: Number of target classes (ignored for regression).
+        cv_std: Cross-validation standard deviation from existing run (optional).
+
+    Returns:
+        Dict with verdict, recommended_n, shortfall, ratio, cv checks, and
+        plain-English summary and recommendations.
+
+    Raises:
+        ValueError: If n_rows < 5 or n_features < 1.
+    """
+    if n_rows < 5:
+        raise ValueError("Need at least 5 rows to assess sample size adequacy.")
+    if n_features < 1:
+        raise ValueError("Need at least 1 feature to assess sample size adequacy.")
+
+    is_classification = problem_type == "classification"
+    _n_classes = max(2, n_classes) if is_classification else 1
+
+    if is_classification:
+        recommended_n = max(50 * _n_classes, 10 * n_features * _n_classes)
+    else:
+        recommended_n = max(50, 10 * n_features)
+
+    shortfall = max(0, recommended_n - n_rows)
+    ratio = round(n_features / n_rows, 4)
+
+    coverage = n_rows / recommended_n
+    if coverage >= 1.0:
+        verdict = "adequate"
+        verdict_label = "Adequate"
+    elif coverage >= 0.6:
+        verdict = "borderline"
+        verdict_label = "Borderline"
+    else:
+        verdict = "insufficient"
+        verdict_label = "Insufficient"
+
+    cv_stable: bool | None = None
+    if cv_std is not None:
+        cv_stable = cv_std <= 0.10
+
+    recommendations: list[str] = []
+    if verdict == "insufficient":
+        recommendations.append(
+            f"Collect at least {shortfall:,} more rows to reach the recommended {recommended_n:,}."
+        )
+        if is_classification:
+            recommendations.append(
+                "Focus on under-represented classes — imbalanced data amplifies small-sample problems."
+            )
+        else:
+            recommendations.append(
+                "With limited rows, prefer simpler models (Linear Regression, Ridge) "
+                "to reduce overfitting risk."
+            )
+        if ratio > 0.1:
+            recommendations.append(
+                f"Your feature-to-sample ratio is {ratio:.2f} ({n_features} features / "
+                f"{n_rows:,} rows) — consider dropping low-importance features to reduce noise."
+            )
+    elif verdict == "borderline":
+        recommendations.append(
+            f"You are {shortfall:,} rows short of the recommended {recommended_n:,}. "
+            "Results may be noisy — cross-validation is especially important."
+        )
+        if cv_std is not None and not cv_stable:
+            recommendations.append(
+                f"Your CV standard deviation ({cv_std:.3f}) is high, confirming "
+                "that more data would improve model stability."
+            )
+    else:
+        recommendations.append(
+            "Your dataset meets the size recommendation — training should be reliable."
+        )
+        if cv_std is not None and not cv_stable:
+            recommendations.append(
+                f"Cross-validation shows high variance (std={cv_std:.3f}) despite adequate size — "
+                "consider feature engineering or a more robust algorithm."
+            )
+
+    if verdict == "adequate":
+        summary = (
+            f"Your {n_rows:,}-row dataset meets the recommended minimum of {recommended_n:,} rows "
+            f"for a {problem_type} model with {n_features} features"
+            + (f" and {_n_classes} classes" if is_classification else "")
+            + ". Training should produce reliable results."
+        )
+    elif verdict == "borderline":
+        summary = (
+            f"Your {n_rows:,} rows are in the borderline range — the rule of thumb recommends "
+            f"{recommended_n:,} rows for {n_features} features"
+            + (f" and {_n_classes} classes" if is_classification else "")
+            + ". Results may be noisier than ideal."
+        )
+    else:
+        summary = (
+            f"Your {n_rows:,} rows are below the recommended {recommended_n:,} for a "
+            f"{problem_type} model with {n_features} features"
+            + (f" and {_n_classes} classes" if is_classification else "")
+            + f". You need approximately {shortfall:,} more rows for reliable modeling."
+        )
+
+    return {
+        "n_rows": n_rows,
+        "n_features": n_features,
+        "n_classes": _n_classes if is_classification else None,
+        "problem_type": problem_type,
+        "recommended_n": recommended_n,
+        "shortfall": shortfall,
+        "coverage_pct": round(min(coverage, 1.0) * 100, 1),
+        "ratio": ratio,
+        "verdict": verdict,
+        "verdict_label": verdict_label,
+        "cv_std": cv_std,
+        "cv_stable": cv_stable,
+        "summary": summary,
+        "recommendations": recommendations,
+    }

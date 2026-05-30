@@ -184,6 +184,7 @@ interface AppState {
   attachTargetLeakageToLastMessage: (target_leakage: import("./types").TargetLeakageResult) => void
   attachThresholdAnalysisToLastMessage: (threshold_analysis: import("./types").ThresholdAnalysisResult) => void
   attachConfidenceDistributionToLastMessage: (confidence_distribution: import("./types").ConfidenceDistributionResult) => void
+  attachSampleSizeAdequacyToLastMessage: (sample_size_adequacy: import("./types").SampleSizeAdequacyResult) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -1513,6 +1514,16 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, confidence_distribution }
+      }
+      return { messages }
+    }),
+
+  attachSampleSizeAdequacyToLastMessage: (sample_size_adequacy) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, sample_size_adequacy }
       }
       return { messages }
     }),
