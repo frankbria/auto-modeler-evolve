@@ -8028,15 +8028,10 @@ def send_message(
             import json as _json_ssa
             import numpy as _np_ssa
 
-            _done_ssa = [
-                r
-                for r in ctx["model_runs"]
-                if r.status == "done"
-            ]
+            _done_ssa = [r for r in ctx["model_runs"] if r.status == "done"]
             if _done_ssa:
                 _sel_ssa = (
-                    next((r for r in _done_ssa if r.is_selected), None)
-                    or _done_ssa[0]
+                    next((r for r in _done_ssa if r.is_selected), None) or _done_ssa[0]
                 )
                 _ds_ssa = ctx["dataset"]
                 _fset_ssa = ctx.get("feature_set")
@@ -8047,7 +8042,12 @@ def send_message(
                             FeatureSet.is_active == True,  # noqa: E712
                         )
                     ).first()
-                if _ds_ssa and _fset_ssa and _fset_ssa.target_column and Path(_ds_ssa.file_path).exists():
+                if (
+                    _ds_ssa
+                    and _fset_ssa
+                    and _fset_ssa.target_column
+                    and Path(_ds_ssa.file_path).exists()
+                ):
                     import pandas as _pd_ssa
 
                     _df_ssa = _pd_ssa.read_csv(Path(_ds_ssa.file_path))
@@ -8056,12 +8056,16 @@ def send_message(
                         _df_ssa, _ = _apply_ssa(_df_ssa, _tfms_ssa)
 
                     _target_ssa = _fset_ssa.target_column
-                    _prob_ssa = (_fset_ssa.problem_type or "regression")
+                    _prob_ssa = _fset_ssa.problem_type or "regression"
                     _feat_cols_ssa = [c for c in _df_ssa.columns if c != _target_ssa]
 
-                    _X_ssa, _y_ssa, _ = _pf_ssa(_df_ssa, _feat_cols_ssa, _target_ssa, _prob_ssa)
+                    _X_ssa, _y_ssa, _ = _pf_ssa(
+                        _df_ssa, _feat_cols_ssa, _target_ssa, _prob_ssa
+                    )
                     _n_rows_ssa = len(_X_ssa)
-                    _n_feat_ssa = _X_ssa.shape[1] if hasattr(_X_ssa, "shape") else len(_X_ssa[0])
+                    _n_feat_ssa = (
+                        _X_ssa.shape[1] if hasattr(_X_ssa, "shape") else len(_X_ssa[0])
+                    )
                     _n_classes_ssa = 2
                     if _prob_ssa == "classification":
                         _n_classes_ssa = len(_np_ssa.unique(_y_ssa))

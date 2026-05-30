@@ -40,11 +40,15 @@ class TestComputeSampleSizeAdequacyPure:
 
     def test_regression_recommended_n(self):
         # Regression: max(50, 10 * n_features)
-        result = compute_sample_size_adequacy(n_rows=100, n_features=8, problem_type="regression")
+        result = compute_sample_size_adequacy(
+            n_rows=100, n_features=8, problem_type="regression"
+        )
         assert result["recommended_n"] == max(50, 10 * 8)
 
     def test_regression_recommended_n_minimum_50(self):
-        result = compute_sample_size_adequacy(n_rows=100, n_features=3, problem_type="regression")
+        result = compute_sample_size_adequacy(
+            n_rows=100, n_features=3, problem_type="regression"
+        )
         assert result["recommended_n"] == 50
 
     def test_classification_recommended_n(self):
@@ -55,7 +59,9 @@ class TestComputeSampleSizeAdequacyPure:
         assert result["recommended_n"] == max(50 * 3, 10 * 5 * 3)
 
     def test_n_classes_none_for_regression(self):
-        result = compute_sample_size_adequacy(n_rows=200, n_features=5, problem_type="regression")
+        result = compute_sample_size_adequacy(
+            n_rows=200, n_features=5, problem_type="regression"
+        )
         assert result["n_classes"] is None
 
     def test_n_classes_present_for_classification(self):

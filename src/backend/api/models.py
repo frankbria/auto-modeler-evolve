@@ -951,7 +951,9 @@ def get_sample_size_adequacy(run_id: str, session: Session = Depends(get_session
 
     cv_std: float | None = None
     if run.metrics:
-        metrics_dict = json.loads(run.metrics) if isinstance(run.metrics, str) else run.metrics
+        metrics_dict = (
+            json.loads(run.metrics) if isinstance(run.metrics, str) else run.metrics
+        )
         raw_cv_std = metrics_dict.get("cv_std")
         if raw_cv_std is not None:
             try:
