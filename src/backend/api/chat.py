@@ -8296,7 +8296,9 @@ def send_message(
                     _model_cal = _jl_cal.load(_sel_cal.model_path)
                     if hasattr(_model_cal, "predict_proba"):
                         _proba_cal = _model_cal.predict_proba(_X_cal)
-                        _class_names_cal = [str(c) for c in _model_cal.classes_.tolist()]
+                        _class_names_cal = [
+                            str(c) for c in _model_cal.classes_.tolist()
+                        ]
 
                         _cal_result = _ccal(
                             y_true=_y_cal,

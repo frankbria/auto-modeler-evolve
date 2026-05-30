@@ -1545,13 +1545,11 @@ def compute_calibration_check(
 
         # Build curve points using the "confidence" approach: max-class probability
         y_conf = y_proba_matrix.max(axis=1)
-        y_correct = (
-            np.array(
-                [
-                    1 if y_true[i] == classes[np.argmax(y_proba_matrix[i])] else 0
-                    for i in range(n_total)
-                ]
-            )
+        y_correct = np.array(
+            [
+                1 if y_true[i] == classes[np.argmax(y_proba_matrix[i])] else 0
+                for i in range(n_total)
+            ]
         )
         try:
             frac_pos_mc, mean_prob_mc = calibration_curve(
@@ -1583,7 +1581,9 @@ def compute_calibration_check(
             y_prob_k = y_proba_matrix[:, k]
             b = float(brier_score_loss(y_bin, y_prob_k))
             try:
-                fp_k, mp_k = calibration_curve(y_bin, y_prob_k, n_bins=n_bins, strategy="uniform")
+                fp_k, mp_k = calibration_curve(
+                    y_bin, y_prob_k, n_bins=n_bins, strategy="uniform"
+                )
                 bw = np.ones(len(fp_k)) / len(fp_k)
                 e_k = float(np.sum(bw * np.abs(mp_k - fp_k)))
             except ValueError:
@@ -1601,7 +1601,11 @@ def compute_calibration_check(
 
         # Weighted ECE and aggregate brier
         class_counts = np.array([p["n_positive"] for p in per_class], dtype=float)
-        weights = class_counts / class_counts.sum() if class_counts.sum() > 0 else np.ones(len(per_class)) / len(per_class)
+        weights = (
+            class_counts / class_counts.sum()
+            if class_counts.sum() > 0
+            else np.ones(len(per_class)) / len(per_class)
+        )
         ece = float(np.sum(weights * np.array(all_ece)))
         overall_brier = float(np.mean(all_brier))
 
