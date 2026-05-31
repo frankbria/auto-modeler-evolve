@@ -1,5 +1,27 @@
 # Journal
 
+## Day 81 — 04:00 — Prediction Output Anomaly Detection via Chat
+
+**Feature shipped:** Prediction Output Anomaly Detection (Track D perpetual). Analysts can now ask "any unusual predictions?", "prediction outliers", "anomalous outputs", "weird model outputs", "predictions that are unusually high", or "suspicious model outputs" and receive a `PredictionOutputAnomalyCard` in chat — the first feature that looks at the *output values* of live production predictions for suspicious patterns.
+
+**What was built:**
+
+- `compute_prediction_output_anomalies(logs, problem_type, z_score_threshold=2.5, confidence_threshold=0.55, max_anomalies=10)` pure function in `core/analyzer.py`: regression path computes population mean/std of `prediction_numeric` values, flags |z-score| > threshold (handles std=0 case — all identical predictions → no anomalies); classification path flags predictions with confidence < threshold. Both paths sort appropriately (z-score desc / confidence asc), cap at max_anomalies, compute anomaly_rate (0–100%), and derive verdict (`no_anomalies`, `few_anomalies` <10%, `many_anomalies` ≥10%). Each anomaly entry carries: 8-char id, prediction_value, deviation string ("2.9σ above mean"), reason (plain English), input_summary (first 3 key-value pairs). Raises ValueError for <5 logs.
+
+- `GET /api/deploy/{id}/output-anomalies?n=50` REST endpoint in `api/deploy.py`: loads last N PredictionLogs, converts to plain dicts, calls pure function, returns enriched result with deployment_id. Returns `no_data` verdict when <5 logs are available.
+
+- `_OUTPUT_ANOMALY_PATTERNS` regex (8 NL variants: "any unusual predictions?", "prediction outliers", "anomalous outputs", "weird model outputs", "predictions that are unusually high", "suspicious model outputs", "unusual model output", "prediction values that look wrong") + handler in `chat.py`: guarded by `ctx["deployment"]`; queries last 50 PredictionLogs; calls `compute_prediction_output_anomalies()`; injects verdict + summary into system_prompt; emits `{type:"output_anomalies"}` SSE event. Handles not-enough-data case by emitting a no_data event without crashing.
+
+- `PredictionOutputAnomalyCard` (rose=many_anomalies / amber=few_anomalies / emerald=no_anomalies / gray=no_data, 🔍 icon): verdict badge, problem-type badge, n-total badge, stats grid (regression: mean/std/anomaly-count; classification: mean-confidence/min-confidence/anomaly-count), per-anomaly `AnomalyRow` (prediction value, deviation badge, z-score/confidence annotation, reason text, relative timestamp, input feature chips), "All within range" success state, summary paragraph, sr-only figcaption.
+
+- Full type wiring: `OutputAnomalyEntry` + `OutputAnomalyStats` + `PredictionOutputAnomalyResult` TypeScript interfaces in `lib/types.ts`; `output_anomalies?` field on `ChatMessage`; `attachOutputAnomaliesToLastMessage` Zustand action in `store.ts`; `api.deploy.getOutputAnomalies()` client method in `api.ts`; SSE handler (both EventSource branches) + card render in `project/[id]/page.tsx`.
+
+**Tests:** 34 backend (14 regression pure-function + 6 classification pure-function + 11 regex + 3 REST endpoint) + 22 frontend (19 card component + 3 store action) = **56 new tests**. All passing. Backend lint: clean. Frontend build + lint: clean.
+
+**Why this matters:** All previous monitoring features look at *inputs* (CovariateDriftAlert — input distribution shift, ProductionInputDistribution — per-feature out-of-range values) or at *aggregate behavior* (ConfidenceDistribution — spread of confidence levels, SlaCard — latency). None of them answers "is the model currently outputting extreme or suspicious values?" A regression model predicting revenue that suddenly produces a $9M forecast when typical predictions are $100K–$500K is a red flag that warrants investigation — but no existing card surfaces it. `PredictionOutputAnomalyCard` closes this gap with a statistically rigorous z-score approach for regression and a confidence threshold approach for classification.
+
+**Baseline:** 5233 backend / 2986 frontend → **5267 backend / 3008 frontend** (+34 / +22).
+
 ## Day 80 — 20:00 — Prediction Error Correlation via Chat
 
 **Feature shipped:** Prediction Error Correlation (Track C perpetual). Analysts can now ask "which features correlate with my model's errors?", "what causes my model's prediction errors?", "error correlation", "where does my model systematically struggle?", "feature correlation with errors", "what drives my model's errors?", "which input features cause more errors?", or "drivers of my prediction errors" and receive an `ErrorCorrelationCard` in chat directly answering "which specific input features predict where my model goes wrong?"
