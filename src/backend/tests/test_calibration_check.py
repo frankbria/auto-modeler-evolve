@@ -322,9 +322,9 @@ def _train_and_wait(client, csv_bytes, target_col, algorithm, project_name):
         f"/api/features/{dataset_id}/target",
         json={
             "target_column": target_col,
-            "problem_type": "classification"
-            if algorithm != "linear_regression"
-            else "regression",
+            "problem_type": (
+                "classification" if algorithm != "linear_regression" else "regression"
+            ),
         },
     )
 

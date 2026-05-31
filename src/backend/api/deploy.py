@@ -2715,9 +2715,7 @@ def set_accuracy_alert(
             + (
                 f"drops below {thr:.0%}."
                 if problem_type == "classification" and thr is not None
-                else f"exceeds {thr:.1f}%."
-                if thr is not None
-                else ""
+                else f"exceeds {thr:.1f}%." if thr is not None else ""
             )
             if threshold_set
             else "Accuracy alert disabled."
@@ -6334,7 +6332,11 @@ def get_output_distribution_shift(
         raise HTTPException(status_code=404, detail="Feature set not found.")
 
     dataset = session.get(Dataset, feature_set.dataset_id)
-    if dataset is None or not dataset.file_path or not _Path(dataset.file_path).exists():
+    if (
+        dataset is None
+        or not dataset.file_path
+        or not _Path(dataset.file_path).exists()
+    ):
         raise HTTPException(status_code=404, detail="Training dataset not found.")
 
     if not dep.pipeline_path or not _Path(dep.pipeline_path).exists():

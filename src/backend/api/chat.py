@@ -10803,9 +10803,9 @@ def send_message(
                         "prediction_numeric": log.prediction_numeric,
                         "prediction": log.prediction,
                         "confidence": log.confidence,
-                        "created_at": log.created_at.isoformat()
-                        if log.created_at
-                        else "",
+                        "created_at": (
+                            log.created_at.isoformat() if log.created_at else ""
+                        ),
                         "input_features": log.input_features,
                     }
                     for log in _oa_logs_orm
@@ -10863,7 +10863,11 @@ def send_message(
             )
 
             _ods_dep = ctx["deployment"]
-            _ods_run = session.get(ModelRun, _ods_dep.model_run_id) if _ods_dep.model_run_id else None
+            _ods_run = (
+                session.get(ModelRun, _ods_dep.model_run_id)
+                if _ods_dep.model_run_id
+                else None
+            )
 
             # Load recent production predictions
             _ods_logs_orm = session.exec(
@@ -10894,7 +10898,9 @@ def send_message(
                     if _ods_recent_ds
                     else None
                 )
-                _ods_dataset = session.get(Dataset, _ods_fs.dataset_id) if _ods_fs else None
+                _ods_dataset = (
+                    session.get(Dataset, _ods_fs.dataset_id) if _ods_fs else None
+                )
 
                 if (
                     _ods_dataset
@@ -10917,7 +10923,9 @@ def send_message(
                     if len(_ods_train_preds) >= 10:
                         _ods_result = _cpods(_ods_train_preds, _ods_prod_preds)
                         _ods_result["deployment_id"] = _ods_dep.id
-                        _ods_result["problem_type"] = _ods_dep.problem_type or "regression"
+                        _ods_result["problem_type"] = (
+                            _ods_dep.problem_type or "regression"
+                        )
                         output_dist_shift_event = _ods_result
                         _ods_verdict = _ods_result.get("verdict_label", "")
                         _ods_shift_pct = _ods_result.get("mean_shift_pct", 0.0)
@@ -13760,9 +13768,7 @@ def send_message(
             _wu_trend = (
                 "up"
                 if (_wu_change_pct or 0) > 5
-                else "down"
-                if (_wu_change_pct or 0) < -5
-                else "flat"
+                else "down" if (_wu_change_pct or 0) < -5 else "flat"
             )
 
             # Per-day breakdown for the current week (7 entries)
@@ -13781,7 +13787,9 @@ def send_message(
             _wu_feature_tally: dict[str, dict[str, int]] = {}
             _wu_recent_logs = [
                 lg for lg in _wu_logs if lg.created_at >= _wu_week_start
-            ][:100]  # cap to last 100 for performance
+            ][
+                :100
+            ]  # cap to last 100 for performance
             for _wl in _wu_recent_logs:
                 try:
                     _feat_dict: dict = json.loads(_wl.input_features or "{}")
@@ -16580,9 +16588,7 @@ def send_message(
                         else (
                             "healthy"
                             if _n_failed == 0
-                            else "warning"
-                            if _n_failed / _n_total < 0.1
-                            else "critical"
+                            else "warning" if _n_failed / _n_total < 0.1 else "critical"
                         )
                     )
                     _wh_total_events += _n_total
@@ -16641,9 +16647,7 @@ def send_message(
                     else (
                         "warning"
                         if any(d["status"] == "warning" for d in _wh_dep_summaries)
-                        else "no_events"
-                        if _wh_total_events == 0
-                        else "healthy"
+                        else "no_events" if _wh_total_events == 0 else "healthy"
                     )
                 )
             )

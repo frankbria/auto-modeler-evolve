@@ -199,6 +199,7 @@ class TestOutputDistShiftRegex:
 
     def setup_method(self):
         from api.chat import _OUTPUT_DIST_SHIFT_PATTERNS
+
         self.pattern = _OUTPUT_DIST_SHIFT_PATTERNS
 
     def test_matches_distribution_shifted(self):
@@ -225,7 +226,9 @@ class TestOutputDistShiftRegex:
         )
 
     def test_matches_model_outputs_behaving_differently(self):
-        assert self.pattern.search("are my model outputs behaving differently in production?")
+        assert self.pattern.search(
+            "are my model outputs behaving differently in production?"
+        )
 
     def test_no_match_show_me_predictions(self):
         assert not self.pattern.search("show me the top 20 predictions")
@@ -281,6 +284,7 @@ def _db_url(tmp_path):
 async def test_output_distribution_shift_endpoint_no_deployment(_db_url):
     """Returns 404 when deployment not found."""
     from main import app
+
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
     ) as ac:
