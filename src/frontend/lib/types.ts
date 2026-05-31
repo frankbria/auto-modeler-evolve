@@ -546,6 +546,7 @@ export interface ChatMessage {
   confidence_distribution?: ConfidenceDistributionResult
   sample_size_adequacy?: SampleSizeAdequacyResult
   class_feature_importance?: ClassFeatureImportanceResult
+  error_correlation?: ErrorCorrelationResult
 }
 
 export interface RollbackVersionEntry {
@@ -4101,5 +4102,28 @@ export interface ClassFeatureImportanceResult {
   n_classes: number
   n_samples: number
   feature_names: string[]
+  summary: string
+}
+
+export interface ErrorCorrelationFeature {
+  feature: string
+  correlation: number
+  correlation_abs: number
+  direction: "positive" | "negative" | "neutral"
+  rank: number
+}
+
+export interface ErrorCorrelationResult {
+  model_run_id: string
+  algorithm: string
+  target_col: string
+  features: ErrorCorrelationFeature[]
+  error_type: "absolute_residual" | "misclassification"
+  n_total: number
+  n_errors: number
+  error_rate: number | null
+  verdict: "clear_drivers" | "weak_drivers" | "none"
+  verdict_label: string
+  top_driver: string | null
   summary: string
 }

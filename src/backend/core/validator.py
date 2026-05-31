@@ -1657,3 +1657,136 @@ def compute_calibration_check(
         "n_total": n_total,
         "summary": summary,
     }
+
+
+def compute_prediction_error_correlation(
+    X: np.ndarray,
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    feature_names: list[str],
+    problem_type: str,
+) -> dict:
+    """Identify which input features most correlate with prediction errors.
+
+    For regression: error vector = |y_pred - y_true| (absolute residuals).
+    For classification: error vector = (y_pred != y_true).astype(int).
+
+    Returns a sorted list of features with Pearson correlation to the error
+    signal, plus a plain-English verdict and recommendation.
+
+    Returns:
+        dict with keys: features (list of dicts with feature/correlation/
+        correlation_abs/direction/rank), error_type, n_total, n_errors,
+        error_rate, verdict, verdict_label, top_driver, summary.
+
+    Raises:
+        ValueError: if fewer than 10 samples.
+    """
+    MIN_ROWS = 10
+    if len(X) < MIN_ROWS:
+        raise ValueError(
+            f"Dataset has only {len(X)} rows — need at least {MIN_ROWS} for "
+            "error correlation analysis."
+        )
+
+    y_true_arr = np.array(y_true)
+    y_pred_arr = np.array(y_pred)
+
+    if problem_type == "regression":
+        error_vec = np.abs(y_pred_arr.astype(float) - y_true_arr.astype(float))
+        error_type = "absolute_residual"
+        n_errors = int(np.sum(error_vec > 0))
+        error_rate = None
+    else:
+        # Encode both as ints to handle string labels
+        y_true_enc = (y_true_arr != y_true_arr).astype(float)  # init zeros
+        y_pred_enc = y_true_enc.copy()
+        for i, (yt, yp) in enumerate(zip(y_true_arr, y_pred_arr)):
+            y_pred_enc[i] = 0.0 if str(yt) == str(yp) else 1.0
+        error_vec = y_pred_enc
+        error_type = "misclassification"
+        n_errors = int(np.sum(error_vec))
+        error_rate = round(float(n_errors / len(error_vec)), 4)
+
+    # Correlate each numeric feature column with the error vector
+    results = []
+    for i, fname in enumerate(feature_names):
+        col = X[:, i].astype(float)
+        col_std = float(np.std(col))
+        err_std = float(np.std(error_vec))
+        if col_std < 1e-9 or err_std < 1e-9:
+            corr = 0.0
+        else:
+            try:
+                corr = float(np.corrcoef(col, error_vec)[0, 1])
+                if np.isnan(corr):
+                    corr = 0.0
+            except Exception:  # noqa: BLE001
+                corr = 0.0
+
+        direction = "positive" if corr > 0.05 else ("negative" if corr < -0.05 else "neutral")
+        results.append(
+            {
+                "feature": fname,
+                "correlation": round(corr, 4),
+                "correlation_abs": round(abs(corr), 4),
+                "direction": direction,
+            }
+        )
+
+    # Sort by absolute correlation descending, cap at top 10
+    results.sort(key=lambda x: x["correlation_abs"], reverse=True)
+    results = results[:10]
+    for rank_idx, r in enumerate(results, start=1):
+        r["rank"] = rank_idx
+
+    # Verdict based on max absolute correlation
+    max_abs = results[0]["correlation_abs"] if results else 0.0
+    if max_abs >= 0.30:
+        verdict = "clear_drivers"
+        verdict_label = "Clear Error Drivers Found"
+    elif max_abs >= 0.10:
+        verdict = "weak_drivers"
+        verdict_label = "Weak Error Drivers"
+    else:
+        verdict = "none"
+        verdict_label = "No Clear Error Drivers"
+
+    top_driver = results[0]["feature"] if results else None
+    top_corr = results[0]["correlation"] if results else 0.0
+
+    if verdict == "clear_drivers" and top_driver:
+        direction_phrase = (
+            f"higher {top_driver} values are associated with larger errors"
+            if top_corr > 0
+            else f"lower {top_driver} values are associated with larger errors"
+        )
+        summary = (
+            f"Feature '{top_driver}' most strongly correlates with prediction errors "
+            f"(r={top_corr:.2f}). {direction_phrase.capitalize()}. "
+            f"Consider adding more training samples for {top_driver} extremes or engineering "
+            f"interaction features."
+        )
+    elif verdict == "weak_drivers" and top_driver:
+        summary = (
+            f"Weak error correlation found. '{top_driver}' shows the strongest link "
+            f"(r={top_corr:.2f}) — insufficient to explain systematic errors."
+        )
+    else:
+        summary = (
+            "No input feature strongly correlates with prediction errors. "
+            "Errors appear random rather than feature-driven — the model may benefit "
+            "from more training data rather than feature engineering."
+        )
+
+    return {
+        "features": results,
+        "error_type": error_type,
+        "n_total": len(y_true_arr),
+        "n_errors": n_errors,
+        "error_rate": error_rate,
+        "verdict": verdict,
+        "verdict_label": verdict_label,
+        "top_driver": top_driver,
+        "summary": summary,
+    }

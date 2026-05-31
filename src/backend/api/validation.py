@@ -36,6 +36,7 @@ from core.validator import (
     compute_confusion_matrix,
     compute_error_distribution,
     compute_fairness_metrics,
+    compute_prediction_error_correlation,
     compute_prediction_errors,
     compute_residuals,
     compute_segment_performance,
@@ -837,6 +838,49 @@ async def get_calibration_check(
             y_proba_matrix=y_proba_matrix,
             class_names=class_names,
             n_bins=n_bins,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    result["model_run_id"] = model_run_id
+    result["algorithm"] = run.algorithm
+    result["target_col"] = feature_set.target_column
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# 12. Prediction error correlation
+# ---------------------------------------------------------------------------
+
+
+@router.get("/api/models/{model_run_id}/error-correlation")
+def get_error_correlation(
+    model_run_id: str,
+    session: Session = Depends(get_session),
+):
+    """Identify which input features most correlate with prediction errors.
+
+    For regression: correlates each feature with the absolute residual.
+    For classification: correlates each feature with whether the prediction was wrong.
+
+    Returns 404 for unknown model run.
+    """
+    run, feature_set, _dataset, file_path = _load_run_context(model_run_id, session)
+
+    problem_type = feature_set.problem_type or "regression"
+    X, y, feature_cols = _build_Xy(file_path, feature_set)
+
+    fitted_model = joblib.load(run.model_path)
+    y_pred = fitted_model.predict(X)
+
+    try:
+        result = compute_prediction_error_correlation(
+            X=X,
+            y_true=y,
+            y_pred=y_pred,
+            feature_names=feature_cols,
+            problem_type=problem_type,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

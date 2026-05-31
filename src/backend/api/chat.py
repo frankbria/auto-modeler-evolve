@@ -4095,6 +4095,20 @@ _CALIBRATION_CHECK_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+_ERROR_CORRELATION_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"(?:which|what)\s+features?\s+(?:correlate|are\s+correlated|are\s+linked|relate)\s+(?:to|with)\s+(?:my\s+)?(?:model'?s?\s+)?(?:errors?|mistakes?|wrong\s+predictions?)\b|"
+    r"(?:feature|variable)\s+(?:correlation\s+with\s+errors?|error\s+correlation)\b|"
+    r"what\s+(?:causes?|drives?)\s+(?:my\s+)?(?:model'?s?\s+)?(?:prediction\s+)?errors?\b|"
+    r"(?:error\s+correlat(?:es?|ion|ed)|correlat(?:es?|ion|ed)\s+(?:with\s+)?(?:errors?|residuals?))\b|"
+    r"(?:which|what)\s+features?\s+(?:predict|explain)\s+(?:my\s+)?(?:model'?s?\s+)?(?:mistakes?|errors?|wrong\s+predictions?)\b|"
+    r"where\s+does\s+(?:my\s+)?model\s+(?:systematically\s+)?(?:struggle|fail|go\s+wrong)\b|"
+    r"(?:feature\s+)?(?:drivers?|causes?)\s+of\s+(?:my\s+)?(?:model'?s?\s+)?(?:prediction\s+)?errors?\b|"
+    r"(?:what|which)\s+input\s+features?\s+(?:lead\s+to|cause|are\s+responsible\s+for)\s+(?:more\s+)?errors?\b"
+    r")",
+    re.IGNORECASE,
+)
+
 _SIMILAR_RECORDS_PATTERNS = re.compile(
     r"(?i)(?:"
     r"(?:find|show|get)\s+(?:me\s+)?(?:similar|like|nearest|closest)\s+(?:records?|rows?|cases?|customers?|examples?)\b|"
@@ -10667,6 +10681,65 @@ def send_message(
                         )
         except Exception:  # noqa: BLE001
             pass  # Calibration check is nice-to-have; never crash chat
+
+    # Prediction error correlation — which features correlate with errors?
+    # "what causes my model's errors?", "which features drive mistakes?"
+    # Distinct from: ErrorDistributionCard (histogram shape), PredictionErrorCard (worst rows),
+    # FeatureImportanceCard (importance for the target, not for the errors)
+    error_correlation_event: dict | None = None
+    if _ERROR_CORRELATION_PATTERNS.search(body.message) and ctx.get("model_runs"):
+        try:
+            import joblib as _jl_ec
+
+            from core.feature_engine import apply_transformations as _at_ec
+            from core.trainer import prepare_features as _pf_ec
+            from core.validator import compute_prediction_error_correlation as _cpec
+
+            _ec_runs = [mr for mr in ctx["model_runs"] if mr.status == "done"]
+            _ec_run = next(
+                (mr for mr in _ec_runs if mr.is_selected),
+                _ec_runs[0] if _ec_runs else None,
+            )
+            if _ec_run and ctx["dataset"] and ctx.get("feature_set"):
+                _ec_ds = ctx["dataset"]
+                _ec_fs = ctx["feature_set"]
+                if _ec_ds.file_path and Path(_ec_ds.file_path).exists():
+                    _ec_df = pd.read_csv(_ec_ds.file_path)
+                    _ec_transforms = json.loads(_ec_fs.transformations or "[]")
+                    if _ec_transforms:
+                        _ec_df, _ = _at_ec(_ec_df, _ec_transforms)
+                    _ec_target = _ec_fs.target_column
+                    _ec_feat_cols = [c for c in _ec_df.columns if c != _ec_target]
+                    _ec_problem = _ec_fs.problem_type or "regression"
+                    _ec_X, _ec_y, _ = _pf_ec(
+                        _ec_df, _ec_feat_cols, _ec_target, _ec_problem
+                    )
+                    _ec_model = _jl_ec.load(_ec_run.model_path)
+                    _ec_y_pred = _ec_model.predict(_ec_X)
+                    _ec_result = _cpec(
+                        X=_ec_X,
+                        y_true=_ec_y,
+                        y_pred=_ec_y_pred,
+                        feature_names=_ec_feat_cols,
+                        problem_type=_ec_problem,
+                    )
+                    _ec_result["model_run_id"] = _ec_run.id
+                    _ec_result["algorithm"] = _ec_run.algorithm
+                    _ec_result["target_col"] = _ec_target
+                    error_correlation_event = _ec_result
+                    _ec_top = _ec_result.get("top_driver")
+                    _ec_verdict = _ec_result.get("verdict_label", "")
+                    system_prompt += (
+                        f"\n\n## Prediction Error Correlation Analysis\n"
+                        f"Algorithm: {_ec_run.algorithm}\n"
+                        f"Verdict: {_ec_verdict}\n"
+                        f"Summary: {_ec_result['summary']}\n"
+                        f"An ErrorCorrelationCard is shown with a ranked bar chart of features. "
+                        f"Narrate the key insight: "
+                        f"{'Feature ' + repr(_ec_top) + ' is the strongest driver of errors — explain to the analyst what this means and how to act on it.' if _ec_top and _ec_result.get('verdict') == 'clear_drivers' else 'No single feature strongly explains where the model goes wrong — explain that the errors appear data-volume-limited rather than feature-driven.'}"
+                    )
+        except Exception:  # noqa: BLE001
+            pass  # Error correlation is nice-to-have; never crash chat
 
     # Local explanation (feature contribution waterfall) for a specific training row
     # "explain prediction for row 5", "show SHAP values", "what drove this prediction"
@@ -17349,6 +17422,10 @@ def send_message(
         # Emit calibration check result
         if calibration_check_event:
             yield f"data: {json.dumps({'type': 'calibration_check', 'calibration_check': calibration_check_event})}\n\n"
+
+        # Emit prediction error correlation result
+        if error_correlation_event:
+            yield f"data: {json.dumps({'type': 'error_correlation', 'error_correlation': error_correlation_event})}\n\n"
 
         # Emit learning curve analysis result
         if learning_curve_event:

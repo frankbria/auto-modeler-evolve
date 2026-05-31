@@ -186,6 +186,7 @@ interface AppState {
   attachConfidenceDistributionToLastMessage: (confidence_distribution: import("./types").ConfidenceDistributionResult) => void
   attachSampleSizeAdequacyToLastMessage: (sample_size_adequacy: import("./types").SampleSizeAdequacyResult) => void
   attachClassFeatureImportanceToLastMessage: (class_feature_importance: import("./types").ClassFeatureImportanceResult) => void
+  attachErrorCorrelationToLastMessage: (error_correlation: import("./types").ErrorCorrelationResult) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -1535,6 +1536,16 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, class_feature_importance }
+      }
+      return { messages }
+    }),
+
+  attachErrorCorrelationToLastMessage: (error_correlation) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, error_correlation }
       }
       return { messages }
     }),
