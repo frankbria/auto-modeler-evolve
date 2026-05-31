@@ -53,6 +53,29 @@ the time is better spent on real features.
 
 ---
 
+## Day 81 (04:00) — Done
+
+**Track D: Prediction Output Anomaly Detection via Chat** — complete.
+
+Closes the "are my production predictions making sense?" analyst gap. Analysts can ask "any unusual predictions?", "prediction outliers", "anomalous outputs", "weird model outputs", "predictions that are unusually high", or "suspicious model outputs" and receive a `PredictionOutputAnomalyCard` in chat.
+
+**What was built:**
+- `compute_prediction_output_anomalies(logs, problem_type, z_score_threshold=2.5, confidence_threshold=0.55, max_anomalies=10)` pure function in `core/analyzer.py`: regression path computes z-scores from prediction_numeric values and flags |z| > threshold; classification path flags predictions with confidence below threshold. Both paths sort anomalies appropriately (z-score desc for regression, confidence asc for classification), cap at max_anomalies, compute anomaly_rate, and return a verdict (no_anomalies/few_anomalies/many_anomalies). Returns per-entry id, prediction_value, deviation string, reason, input_summary chips (first 3 features). Handles all-identical values (std=0) gracefully with no_anomalies. Raises ValueError for < 5 logs.
+- `GET /api/deploy/{id}/output-anomalies?n=50` REST endpoint in `api/deploy.py`: loads last N PredictionLogs, converts to dicts, calls pure function, returns enriched result with deployment_id. Returns no_data verdict when < 5 logs.
+- `_OUTPUT_ANOMALY_PATTERNS` regex (8 NL variants) + handler in `chat.py`: guarded by `ctx["deployment"]`; loads last 50 PredictionLogs; calls `compute_prediction_output_anomalies()`; injects verdict + summary into system_prompt; emits `{type:"output_anomalies"}` SSE event. Handles the not-enough-data case gracefully.
+- `PredictionOutputAnomalyCard` (rose=many_anomalies, amber=few_anomalies, emerald=no_anomalies, gray=no_data, 🔍 icon): verdict badge, problem-type badge, n-total badge, stats grid (regression: mean/std/anomaly-count; classification: mean-confidence/min-confidence/anomaly-count), per-anomaly `AnomalyRow` with prediction value, deviation badge, z-score/confidence, reason text, relative timestamp, input feature chips, summary paragraph, sr-only figcaption.
+
+**Distinct from:** `AnomalyCard` (input data anomalies via IsolationForest), `CovariateDriftAlertCard` (input distribution shifts), `PredictionErrorCard` (training-time wrong predictions), `ConfidenceDistributionCard` (overall aggregate confidence spread). This is the first feature to look at the *outputs* of production predictions for unusual patterns.
+
+34 backend + 22 frontend = **56 new tests**. Backend lint: clean. Frontend build + lint: clean.
+
+**What's next:**
+- Track C: Minimum viable feature set analysis — "what's the smallest set of features that preserves model accuracy?" (greedy backward elimination)
+- Track D: Prediction output distribution shift — compare distribution of production predictions vs training predictions to detect model behavior change
+- Track B: Automated retraining recommendations — when multiple signals (drift + output anomalies + feedback accuracy) point to degradation, proactively suggest retraining
+
+---
+
 ## Day 80 (04:00) — Done
 
 **Track C: Class-Conditional Feature Importance via Chat** — complete.
