@@ -5406,7 +5406,7 @@ def compute_prediction_output_distribution_shift(
                     "bin_start": float(round(bin_edges[i], 4)),
                     "bin_end": float(round(bin_edges[i + 1], 4)),
                     "count": int(count),
-                    "label": f"{bin_edges[i]:.2f}–{bin_edges[i+1]:.2f}",
+                    "label": f"{bin_edges[i]:.2f}–{bin_edges[i + 1]:.2f}",
                 }
             )
         return bins

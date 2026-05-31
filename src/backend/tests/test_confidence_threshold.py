@@ -140,9 +140,9 @@ def test_confidence_threshold_patterns_set():
         "confidence cutoff 80%",
     ]
     for phrase in phrases:
-        assert _CONFIDENCE_THRESHOLD_PATTERNS.search(
-            phrase
-        ), f"Pattern did not match: {phrase!r}"
+        assert _CONFIDENCE_THRESHOLD_PATTERNS.search(phrase), (
+            f"Pattern did not match: {phrase!r}"
+        )
 
 
 def test_confidence_threshold_patterns_disable():
@@ -155,9 +155,9 @@ def test_confidence_threshold_patterns_disable():
         "clear confidence threshold",
     ]
     for phrase in disable_phrases:
-        assert _DISABLE_CONFIDENCE_THRESHOLD_RE.search(
-            phrase
-        ), f"Disable pattern did not match: {phrase!r}"
+        assert _DISABLE_CONFIDENCE_THRESHOLD_RE.search(phrase), (
+            f"Disable pattern did not match: {phrase!r}"
+        )
 
 
 def test_confidence_threshold_patterns_status():
@@ -170,9 +170,9 @@ def test_confidence_threshold_patterns_status():
         "get confidence threshold",
     ]
     for phrase in status_phrases:
-        assert _CONFIDENCE_THRESHOLD_PATTERNS.search(
-            phrase
-        ), f"Status pattern did not match: {phrase!r}"
+        assert _CONFIDENCE_THRESHOLD_PATTERNS.search(phrase), (
+            f"Status pattern did not match: {phrase!r}"
+        )
 
 
 def test_confidence_threshold_value_re_percent():

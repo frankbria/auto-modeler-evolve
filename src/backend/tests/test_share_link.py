@@ -78,9 +78,9 @@ def test_share_link_patterns_match(phrase: str) -> None:
 def test_share_link_patterns_no_false_positives(phrase: str) -> None:
     from api.chat import _SHARE_LINK_PATTERNS
 
-    assert not _SHARE_LINK_PATTERNS.search(
-        phrase
-    ), f"Pattern falsely matched: {phrase!r}"
+    assert not _SHARE_LINK_PATTERNS.search(phrase), (
+        f"Pattern falsely matched: {phrase!r}"
+    )
 
 
 # ---------------------------------------------------------------------------

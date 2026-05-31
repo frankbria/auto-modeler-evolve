@@ -2715,7 +2715,9 @@ def set_accuracy_alert(
             + (
                 f"drops below {thr:.0%}."
                 if problem_type == "classification" and thr is not None
-                else f"exceeds {thr:.1f}%." if thr is not None else ""
+                else f"exceeds {thr:.1f}%."
+                if thr is not None
+                else ""
             )
             if threshold_set
             else "Accuracy alert disabled."
