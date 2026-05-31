@@ -1724,7 +1724,9 @@ def compute_prediction_error_correlation(
             except Exception:  # noqa: BLE001
                 corr = 0.0
 
-        direction = "positive" if corr > 0.05 else ("negative" if corr < -0.05 else "neutral")
+        direction = (
+            "positive" if corr > 0.05 else ("negative" if corr < -0.05 else "neutral")
+        )
         results.append(
             {
                 "feature": fname,

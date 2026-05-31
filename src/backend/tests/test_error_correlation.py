@@ -14,6 +14,7 @@ from core.validator import compute_prediction_error_correlation
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _X(n=50, n_features=3, seed=42):
     rng = np.random.default_rng(seed)
     return rng.normal(size=(n, n_features))
@@ -27,14 +28,26 @@ def _feature_names(n):
 # Pure function tests
 # ---------------------------------------------------------------------------
 
+
 class TestComputePredictionErrorCorrelation:
     def test_returns_required_keys_regression(self):
         X = _X()
         y = X[:, 0] * 2 + 1
         y_pred = y + np.random.default_rng(0).normal(scale=0.1, size=len(y))
-        result = compute_prediction_error_correlation(X, y, y_pred, _feature_names(3), "regression")
-        for key in ("features", "error_type", "n_total", "n_errors", "error_rate",
-                    "verdict", "verdict_label", "top_driver", "summary"):
+        result = compute_prediction_error_correlation(
+            X, y, y_pred, _feature_names(3), "regression"
+        )
+        for key in (
+            "features",
+            "error_type",
+            "n_total",
+            "n_errors",
+            "error_rate",
+            "verdict",
+            "verdict_label",
+            "top_driver",
+            "summary",
+        ):
             assert key in result, f"Missing key: {key}"
 
     def test_returns_required_keys_classification(self):
@@ -42,30 +55,47 @@ class TestComputePredictionErrorCorrelation:
         y = (X[:, 0] > 0).astype(int)
         y_pred = y.copy()
         y_pred[:10] = 1 - y_pred[:10]  # force some errors
-        result = compute_prediction_error_correlation(X, y, y_pred, _feature_names(3), "classification")
-        for key in ("features", "error_type", "n_total", "n_errors", "error_rate",
-                    "verdict", "verdict_label", "top_driver", "summary"):
+        result = compute_prediction_error_correlation(
+            X, y, y_pred, _feature_names(3), "classification"
+        )
+        for key in (
+            "features",
+            "error_type",
+            "n_total",
+            "n_errors",
+            "error_rate",
+            "verdict",
+            "verdict_label",
+            "top_driver",
+            "summary",
+        ):
             assert key in result, f"Missing key: {key}"
 
     def test_error_type_regression(self):
         X = _X()
         y = X[:, 0] * 2
         y_pred = y + 0.1
-        result = compute_prediction_error_correlation(X, y, y_pred, _feature_names(3), "regression")
+        result = compute_prediction_error_correlation(
+            X, y, y_pred, _feature_names(3), "regression"
+        )
         assert result["error_type"] == "absolute_residual"
 
     def test_error_type_classification(self):
         X = _X()
         y = (X[:, 0] > 0).astype(int)
         y_pred = y.copy()
-        result = compute_prediction_error_correlation(X, y, y_pred, _feature_names(3), "classification")
+        result = compute_prediction_error_correlation(
+            X, y, y_pred, _feature_names(3), "classification"
+        )
         assert result["error_type"] == "misclassification"
 
     def test_error_rate_none_for_regression(self):
         X = _X()
         y = X[:, 0]
         y_pred = y + 0.5
-        result = compute_prediction_error_correlation(X, y, y_pred, _feature_names(3), "regression")
+        result = compute_prediction_error_correlation(
+            X, y, y_pred, _feature_names(3), "regression"
+        )
         assert result["error_rate"] is None
 
     def test_error_rate_present_for_classification(self):
@@ -73,7 +103,9 @@ class TestComputePredictionErrorCorrelation:
         y = (X[:, 0] > 0).astype(int)
         y_pred = y.copy()
         y_pred[:10] = 1 - y_pred[:10]
-        result = compute_prediction_error_correlation(X, y, y_pred, _feature_names(3), "classification")
+        result = compute_prediction_error_correlation(
+            X, y, y_pred, _feature_names(3), "classification"
+        )
         assert result["error_rate"] is not None
         assert 0.0 <= result["error_rate"] <= 1.0
 
@@ -81,14 +113,18 @@ class TestComputePredictionErrorCorrelation:
         X = _X(n=30)
         y = np.ones(30)
         y_pred = np.ones(30)
-        result = compute_prediction_error_correlation(X, y, y_pred, _feature_names(3), "regression")
+        result = compute_prediction_error_correlation(
+            X, y, y_pred, _feature_names(3), "regression"
+        )
         assert result["n_total"] == 30
 
     def test_features_sorted_by_abs_correlation(self):
         X = _X(n=100, n_features=4)
         y = X[:, 0]
         y_pred = y + np.random.default_rng(7).normal(scale=2.0, size=100)
-        result = compute_prediction_error_correlation(X, y, y_pred, _feature_names(4), "regression")
+        result = compute_prediction_error_correlation(
+            X, y, y_pred, _feature_names(4), "regression"
+        )
         abs_corrs = [f["correlation_abs"] for f in result["features"]]
         assert abs_corrs == sorted(abs_corrs, reverse=True)
 
@@ -97,23 +133,35 @@ class TestComputePredictionErrorCorrelation:
         X = _X(n=100, n_features=n_feats)
         y = np.random.default_rng(1).normal(size=100)
         y_pred = y + 0.1
-        result = compute_prediction_error_correlation(X, y, y_pred, _feature_names(n_feats), "regression")
+        result = compute_prediction_error_correlation(
+            X, y, y_pred, _feature_names(n_feats), "regression"
+        )
         assert len(result["features"]) <= 10
 
     def test_feature_entry_has_required_keys(self):
         X = _X()
         y = X[:, 0]
         y_pred = y + 0.2
-        result = compute_prediction_error_correlation(X, y, y_pred, _feature_names(3), "regression")
+        result = compute_prediction_error_correlation(
+            X, y, y_pred, _feature_names(3), "regression"
+        )
         for entry in result["features"]:
-            for key in ("feature", "correlation", "correlation_abs", "direction", "rank"):
+            for key in (
+                "feature",
+                "correlation",
+                "correlation_abs",
+                "direction",
+                "rank",
+            ):
                 assert key in entry
 
     def test_direction_labels_valid(self):
         X = _X(n=80)
         y = X[:, 0]
         y_pred = y + 0.3
-        result = compute_prediction_error_correlation(X, y, y_pred, _feature_names(3), "regression")
+        result = compute_prediction_error_correlation(
+            X, y, y_pred, _feature_names(3), "regression"
+        )
         valid_directions = {"positive", "negative", "neutral"}
         for entry in result["features"]:
             assert entry["direction"] in valid_directions
@@ -122,7 +170,9 @@ class TestComputePredictionErrorCorrelation:
         X = _X()
         y = X[:, 0]
         y_pred = y + 0.2
-        result = compute_prediction_error_correlation(X, y, y_pred, _feature_names(3), "regression")
+        result = compute_prediction_error_correlation(
+            X, y, y_pred, _feature_names(3), "regression"
+        )
         assert result["features"][0]["rank"] == 1
 
     def test_verdict_clear_drivers_when_high_correlation(self):
@@ -133,14 +183,18 @@ class TestComputePredictionErrorCorrelation:
         # Error = f0 * 3, so corr(f0, |residual|) = 1.0
         y = rng.normal(size=n)
         y_pred = y + X[:, 0] * 3
-        result = compute_prediction_error_correlation(X, y, y_pred, ["f0", "f1"], "regression")
+        result = compute_prediction_error_correlation(
+            X, y, y_pred, ["f0", "f1"], "regression"
+        )
         assert result["verdict"] in ("clear_drivers", "weak_drivers")
 
     def test_verdict_none_when_perfect_prediction(self):
         X = _X(n=50)
         y = X[:, 0]
         y_pred = y.copy()  # zero errors
-        result = compute_prediction_error_correlation(X, y, y_pred, _feature_names(3), "regression")
+        result = compute_prediction_error_correlation(
+            X, y, y_pred, _feature_names(3), "regression"
+        )
         # With zero errors, correlation is undefined → should gracefully return none/weak
         assert result["verdict"] in ("none", "weak_drivers", "clear_drivers")
 
@@ -149,29 +203,39 @@ class TestComputePredictionErrorCorrelation:
         y = np.ones(5)
         y_pred = np.ones(5)
         with pytest.raises(ValueError, match="at least 10"):
-            compute_prediction_error_correlation(X, y, y_pred, _feature_names(3), "regression")
+            compute_prediction_error_correlation(
+                X, y, y_pred, _feature_names(3), "regression"
+            )
 
     def test_top_driver_is_first_feature_name(self):
         X = _X()
         y = X[:, 0]
         y_pred = y + 0.5
-        result = compute_prediction_error_correlation(X, y, y_pred, _feature_names(3), "regression")
+        result = compute_prediction_error_correlation(
+            X, y, y_pred, _feature_names(3), "regression"
+        )
         assert result["top_driver"] == result["features"][0]["feature"]
 
     def test_summary_is_string(self):
         X = _X()
         y = X[:, 0]
         y_pred = y + 0.5
-        result = compute_prediction_error_correlation(X, y, y_pred, _feature_names(3), "regression")
+        result = compute_prediction_error_correlation(
+            X, y, y_pred, _feature_names(3), "regression"
+        )
         assert isinstance(result["summary"], str) and len(result["summary"]) > 0
 
     def test_correlation_abs_equals_abs_correlation(self):
         X = _X()
         y = X[:, 0]
         y_pred = y + 0.3
-        result = compute_prediction_error_correlation(X, y, y_pred, _feature_names(3), "regression")
+        result = compute_prediction_error_correlation(
+            X, y, y_pred, _feature_names(3), "regression"
+        )
         for entry in result["features"]:
-            assert abs(entry["correlation"]) == pytest.approx(entry["correlation_abs"], abs=0.0001)
+            assert abs(entry["correlation"]) == pytest.approx(
+                entry["correlation_abs"], abs=0.0001
+            )
 
     def test_string_labels_classification(self):
         X = _X(n=40)
