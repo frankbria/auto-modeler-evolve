@@ -39,6 +39,7 @@ from core.analyzer import (
     compute_deployment_health_item,
     compute_deployments_overview,
     compute_prediction_audit,
+    compute_prediction_output_anomalies,
     compute_usage_pattern,
 )
 from core.deployer import (
@@ -6199,3 +6200,59 @@ def get_deployment_changelog(
         "count": len(entries),
         "entries": entries,
     }
+
+
+@router.get("/api/deploy/{deployment_id}/output-anomalies")
+def get_output_anomalies(
+    deployment_id: str,
+    n: int = 50,
+    session: Session = Depends(get_session),
+):
+    """Detect anomalous prediction output values in the most recent N production logs.
+
+    For regression: flags predictions with |z-score| > 2.5 (unusually extreme values).
+    For classification: flags predictions with confidence below 55% (model was uncertain).
+    Returns verdict, stats, and a ranked list of up to 10 anomalous predictions.
+    """
+    dep = session.get(Deployment, deployment_id)
+    if dep is None:
+        raise HTTPException(status_code=404, detail="Deployment not found.")
+
+    logs_orm = session.exec(
+        select(PredictionLog)
+        .where(PredictionLog.deployment_id == deployment_id)
+        .order_by(PredictionLog.created_at.desc())  # type: ignore[arg-type]
+        .limit(max(n, 5))
+    ).all()
+
+    if len(logs_orm) < 5:
+        return {
+            "deployment_id": deployment_id,
+            "problem_type": dep.problem_type or "regression",
+            "n_total": len(logs_orm),
+            "n_anomalous": 0,
+            "anomaly_rate": 0.0,
+            "verdict": "no_data",
+            "verdict_label": "Not enough predictions yet",
+            "stats": {},
+            "anomalies": [],
+            "summary": f"Only {len(logs_orm)} predictions recorded — need at least 5 to detect anomalies.",
+        }
+
+    log_dicts = [
+        {
+            "id": log.id,
+            "prediction_numeric": log.prediction_numeric,
+            "prediction": log.prediction,
+            "confidence": log.confidence,
+            "created_at": log.created_at.isoformat() if log.created_at else "",
+            "input_features": log.input_features,
+        }
+        for log in logs_orm
+    ]
+
+    problem_type = dep.problem_type or "regression"
+    result = compute_prediction_output_anomalies(log_dicts, problem_type)
+    result["deployment_id"] = deployment_id
+
+    return result

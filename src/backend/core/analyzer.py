@@ -5096,3 +5096,189 @@ def compute_sample_size_adequacy(
         "summary": summary,
         "recommendations": recommendations,
     }
+
+
+# ---------------------------------------------------------------------------
+# Prediction output anomaly detection
+# ---------------------------------------------------------------------------
+
+
+def compute_prediction_output_anomalies(
+    logs: list[dict],
+    problem_type: str,
+    z_score_threshold: float = 2.5,
+    confidence_threshold: float = 0.55,
+    max_anomalies: int = 10,
+) -> dict:
+    """Detect anomalous prediction output values in production logs.
+
+    For regression: flags predictions whose z-score (distance from mean in std units)
+    exceeds z_score_threshold. Helps spot extreme outlier predictions that may indicate
+    unusual inputs or model extrapolation.
+
+    For classification: flags predictions where the model's confidence (max predict_proba)
+    is below confidence_threshold — indicating the model was uncertain about its output.
+
+    Args:
+        logs: List of dicts with keys: id, prediction_numeric, prediction, confidence,
+              created_at, input_features (JSON string).
+        problem_type: "regression" or "classification".
+        z_score_threshold: For regression — min |z-score| to flag as anomalous.
+        confidence_threshold: For classification — max confidence below which a prediction
+              is flagged as anomalous.
+        max_anomalies: Maximum number of anomalies to include in the result.
+
+    Returns:
+        Dict with n_total, n_anomalous, anomaly_rate, verdict, anomalies, stats, summary.
+
+    Raises:
+        ValueError: When fewer than 5 logs are provided.
+    """
+    if len(logs) < 5:
+        raise ValueError("Need at least 5 prediction logs to detect output anomalies.")
+
+    import json as _json
+
+    anomalies: list[dict] = []
+    stats: dict = {}
+
+    if problem_type == "regression":
+        values = [
+            (log["id"], float(log["prediction_numeric"]), log["created_at"], log.get("input_features", "{}"))
+            for log in logs
+            if log.get("prediction_numeric") is not None
+        ]
+        if len(values) < 5:
+            raise ValueError("Need at least 5 numeric predictions to detect output anomalies.")
+
+        nums = np.array([v[1] for v in values])
+        mean_val = float(np.mean(nums))
+        std_val = float(np.std(nums))
+
+        stats = {
+            "mean": round(mean_val, 4),
+            "std": round(std_val, 4),
+            "min": round(float(np.min(nums)), 4),
+            "max": round(float(np.max(nums)), 4),
+        }
+
+        if std_val == 0:
+            # All identical predictions — nothing is anomalous
+            return {
+                "n_total": len(values),
+                "n_anomalous": 0,
+                "anomaly_rate": 0.0,
+                "verdict": "no_anomalies",
+                "verdict_label": "No unusual predictions detected",
+                "problem_type": problem_type,
+                "stats": stats,
+                "anomalies": [],
+                "summary": f"All {len(values)} predictions are identical — the model output is perfectly consistent.",
+            }
+
+        for log_id, val, created_at, input_features in values:
+            z = (val - mean_val) / std_val
+            if abs(z) > z_score_threshold:
+                direction = "above" if z > 0 else "below"
+                try:
+                    input_dict = _json.loads(input_features)
+                    input_summary = {k: v for k, v in list(input_dict.items())[:3]}
+                except Exception:  # noqa: BLE001
+                    input_summary = {}
+                anomalies.append({
+                    "id": str(log_id)[:8],
+                    "prediction_value": str(round(val, 4)),
+                    "z_score": round(abs(z), 2),
+                    "confidence": None,
+                    "deviation": f"{abs(z):.1f}σ {direction} mean",
+                    "reason": f"Prediction is {abs(z):.1f} standard deviations {direction} the typical value of {mean_val:.2f}",
+                    "created_at": str(created_at),
+                    "input_summary": input_summary,
+                })
+
+        # Sort by z-score descending
+        anomalies.sort(key=lambda a: a["z_score"], reverse=True)
+
+    else:
+        # Classification: flag low-confidence predictions
+        values = [
+            (log["id"], log.get("confidence"), log["prediction"], log["created_at"], log.get("input_features", "{}"))
+            for log in logs
+            if log.get("confidence") is not None
+        ]
+        if len(values) < 5:
+            raise ValueError("Need at least 5 predictions with confidence scores to detect output anomalies.")
+
+        confs = np.array([float(v[1]) for v in values])
+        mean_conf = float(np.mean(confs))
+        stats = {
+            "mean_confidence": round(mean_conf, 4),
+            "min_confidence": round(float(np.min(confs)), 4),
+            "max_confidence": round(float(np.max(confs)), 4),
+        }
+
+        for log_id, conf, pred, created_at, input_features in values:
+            conf_f = float(conf)
+            if conf_f < confidence_threshold:
+                try:
+                    input_dict = _json.loads(input_features)
+                    input_summary = {k: v for k, v in list(input_dict.items())[:3]}
+                except Exception:  # noqa: BLE001
+                    input_summary = {}
+                anomalies.append({
+                    "id": str(log_id)[:8],
+                    "prediction_value": str(pred),
+                    "z_score": None,
+                    "confidence": round(conf_f * 100, 1),
+                    "deviation": f"{conf_f * 100:.0f}% confidence",
+                    "reason": f"Model was only {conf_f * 100:.0f}% confident — below the {confidence_threshold * 100:.0f}% threshold for reliable predictions",
+                    "created_at": str(created_at),
+                    "input_summary": input_summary,
+                })
+
+        # Sort by confidence ascending (most uncertain first)
+        anomalies.sort(key=lambda a: a["confidence"] or 0)
+
+    anomalies = anomalies[:max_anomalies]
+    n_total = len(logs)
+    n_anomalous = len(anomalies)
+    anomaly_rate = round(n_anomalous / n_total * 100, 1) if n_total > 0 else 0.0
+
+    if n_anomalous == 0:
+        verdict = "no_anomalies"
+        verdict_label = "No unusual predictions detected"
+    elif anomaly_rate < 10.0:
+        verdict = "few_anomalies"
+        verdict_label = "A few unusual predictions detected"
+    else:
+        verdict = "many_anomalies"
+        verdict_label = "Several unusual predictions detected"
+
+    if problem_type == "regression":
+        if n_anomalous == 0:
+            summary = f"All {n_total} recent predictions fall within the normal range (mean ± {z_score_threshold}σ)."
+        else:
+            summary = (
+                f"{n_anomalous} of {n_total} recent predictions ({anomaly_rate}%) are unusually "
+                f"extreme — more than {z_score_threshold} standard deviations from the typical value of {stats.get('mean', 0):.2f}."
+            )
+    else:
+        if n_anomalous == 0:
+            summary = f"All {n_total} recent predictions exceed the {confidence_threshold * 100:.0f}% confidence threshold."
+        else:
+            summary = (
+                f"{n_anomalous} of {n_total} recent predictions ({anomaly_rate}%) have low model confidence "
+                f"(below {confidence_threshold * 100:.0f}%) — the model was uncertain about these outputs."
+            )
+
+    return {
+        "n_total": n_total,
+        "n_anomalous": n_anomalous,
+        "anomaly_rate": anomaly_rate,
+        "verdict": verdict,
+        "verdict_label": verdict_label,
+        "problem_type": problem_type,
+        "stats": stats,
+        "anomalies": anomalies,
+        "summary": summary,
+    }

@@ -4109,6 +4109,25 @@ _ERROR_CORRELATION_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# Prediction output anomalies: "any unusual predictions?", "extreme prediction values"
+# Distinct from: AnomalyCard (input data anomalies), CovariateDriftAlertCard (input distribution shift),
+# PredictionErrorCard (training-time wrong answers), ConfidenceDistributionCard (aggregate spread).
+# This detects production prediction VALUES that are unusually extreme (regression) or
+# unusually low-confidence (classification).
+_OUTPUT_ANOMALY_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"(?:any|are\s+(?:there|my))\s+(?:unusual|strange|weird|extreme|suspicious|odd)\s+(?:predictions?|outputs?|results?|model\s+outputs?)\b|"
+    r"(?:predictions?|outputs?|results?|model\s+outputs?)\s+(?:outliers?|anomal|out\s+of\s+range|that\s+(?:look|seem)s?\s+wrong)\b|"
+    r"anomal(?:y|ous|ies)\s+(?:in\s+(?:my\s+)?)?(?:predictions?|outputs?|results?|model\s+outputs?)\b|"
+    r"(?:weird|strange|extreme|unexpected|suspicious)\s+(?:model\s+)?(?:outputs?|results?|predictions?)\b|"
+    r"(?:are\s+(?:there|any)|do\s+I\s+have)\s+(?:any\s+)?(?:extreme|outlier|anomal|suspicious)\s+predictions?\b|"
+    r"predictions?\s+(?:that\s+are\s+)?(?:unusually\s+)?(?:high|low|extreme|far\s+(?:from|off))\b|"
+    r"(?:unusual|suspect|suspicious)\s+model\s+(?:outputs?|predictions?|results?)\b|"
+    r"(?:prediction|output)\s+(?:values?\s+)?(?:that\s+(?:look|seem|appear)\s+(?:wrong|off|weird|unusual|extreme))\b"
+    r")",
+    re.IGNORECASE,
+)
+
 _SIMILAR_RECORDS_PATTERNS = re.compile(
     r"(?i)(?:"
     r"(?:find|show|get)\s+(?:me\s+)?(?:similar|like|nearest|closest)\s+(?:records?|rows?|cases?|customers?|examples?)\b|"
@@ -10740,6 +10759,70 @@ def send_message(
                     )
         except Exception:  # noqa: BLE001
             pass  # Error correlation is nice-to-have; never crash chat
+
+    # Prediction output anomaly detection
+    # "any unusual predictions?", "extreme prediction values", "weird model outputs"
+    # Distinct from: AnomalyCard (input anomalies), CovariateDriftAlertCard (input distributions),
+    # PredictionErrorCard (training errors), ConfidenceDistributionCard (aggregate spread).
+    output_anomaly_event: dict | None = None
+    if _OUTPUT_ANOMALY_PATTERNS.search(body.message) and ctx.get("deployment"):
+        try:
+            from core.analyzer import compute_prediction_output_anomalies as _cpoa
+
+            _oa_dep = ctx["deployment"]
+            _oa_logs_orm = session.exec(
+                select(PredictionLog)
+                .where(PredictionLog.deployment_id == _oa_dep.id)
+                .order_by(PredictionLog.created_at.desc())  # type: ignore[arg-type]
+                .limit(50)
+            ).all()
+            _oa_problem_type = _oa_dep.problem_type or "regression"
+            if len(_oa_logs_orm) >= 5:
+                _oa_log_dicts = [
+                    {
+                        "id": log.id,
+                        "prediction_numeric": log.prediction_numeric,
+                        "prediction": log.prediction,
+                        "confidence": log.confidence,
+                        "created_at": log.created_at.isoformat() if log.created_at else "",
+                        "input_features": log.input_features,
+                    }
+                    for log in _oa_logs_orm
+                ]
+                _oa_result = _cpoa(_oa_log_dicts, _oa_problem_type)
+                _oa_result["deployment_id"] = _oa_dep.id
+                output_anomaly_event = _oa_result
+                _oa_verdict = _oa_result.get("verdict_label", "")
+                _oa_n_anomalous = _oa_result.get("n_anomalous", 0)
+                system_prompt += (
+                    f"\n\n## Prediction Output Anomaly Analysis\n"
+                    f"Problem type: {_oa_problem_type}\n"
+                    f"Verdict: {_oa_verdict}\n"
+                    f"Summary: {_oa_result['summary']}\n"
+                    f"A PredictionOutputAnomalyCard is shown in the chat. "
+                    + (
+                        f"Narrate the {_oa_n_anomalous} unusual prediction(s) — "
+                        f"explain what they mean and whether the analyst should investigate the inputs that led to them."
+                        if _oa_n_anomalous > 0
+                        else "Reassure the analyst that all recent predictions look normal."
+                    )
+                )
+            else:
+                _oa_n = len(_oa_logs_orm)
+                output_anomaly_event = {
+                    "deployment_id": _oa_dep.id,
+                    "problem_type": _oa_problem_type,
+                    "n_total": _oa_n,
+                    "n_anomalous": 0,
+                    "anomaly_rate": 0.0,
+                    "verdict": "no_data",
+                    "verdict_label": "Not enough predictions yet",
+                    "stats": {},
+                    "anomalies": [],
+                    "summary": f"Only {_oa_n} prediction{'s' if _oa_n != 1 else ''} recorded — need at least 5 to detect anomalies.",
+                }
+        except Exception:  # noqa: BLE001
+            pass  # Output anomaly detection is nice-to-have; never crash chat
 
     # Local explanation (feature contribution waterfall) for a specific training row
     # "explain prediction for row 5", "show SHAP values", "what drove this prediction"
@@ -17426,6 +17509,10 @@ def send_message(
         # Emit prediction error correlation result
         if error_correlation_event:
             yield f"data: {json.dumps({'type': 'error_correlation', 'error_correlation': error_correlation_event})}\n\n"
+
+        # Emit prediction output anomaly detection result
+        if output_anomaly_event:
+            yield f"data: {json.dumps({'type': 'output_anomalies', 'output_anomalies': output_anomaly_event})}\n\n"
 
         # Emit learning curve analysis result
         if learning_curve_event:
