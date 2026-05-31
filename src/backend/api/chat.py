@@ -10784,7 +10784,9 @@ def send_message(
                         "prediction_numeric": log.prediction_numeric,
                         "prediction": log.prediction,
                         "confidence": log.confidence,
-                        "created_at": log.created_at.isoformat() if log.created_at else "",
+                        "created_at": log.created_at.isoformat()
+                        if log.created_at
+                        else "",
                         "input_features": log.input_features,
                     }
                     for log in _oa_logs_orm

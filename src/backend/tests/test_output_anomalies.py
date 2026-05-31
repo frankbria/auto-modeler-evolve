@@ -168,8 +168,15 @@ class TestComputePredictionOutputAnomaliesRegression:
         logs = _regression_logs([100, 110, 105, 95, 102])
         result = compute_prediction_output_anomalies(logs, "regression")
         required = {
-            "n_total", "n_anomalous", "anomaly_rate", "verdict",
-            "verdict_label", "problem_type", "stats", "anomalies", "summary",
+            "n_total",
+            "n_anomalous",
+            "anomaly_rate",
+            "verdict",
+            "verdict_label",
+            "problem_type",
+            "stats",
+            "anomalies",
+            "summary",
         }
         assert required.issubset(result.keys())
 
@@ -235,7 +242,9 @@ class TestComputePredictionOutputAnomaliesRegression:
         normal = [100.0] * 5
         extreme = [100000.0] * 15
         logs = _regression_logs(normal + extreme)
-        result = compute_prediction_output_anomalies(logs, "regression", max_anomalies=5)
+        result = compute_prediction_output_anomalies(
+            logs, "regression", max_anomalies=5
+        )
         assert len(result["anomalies"]) <= 5
 
     def test_few_anomalies_verdict(self):
@@ -249,7 +258,9 @@ class TestComputePredictionOutputAnomaliesRegression:
         # A spread of 70–150 with threshold 0.5 ensures many exceed it
         values = [70, 75, 80, 85, 88, 90, 95, 100, 105, 110, 115, 120, 130, 140, 150]
         logs = _regression_logs(values)
-        result = compute_prediction_output_anomalies(logs, "regression", z_score_threshold=0.5)
+        result = compute_prediction_output_anomalies(
+            logs, "regression", z_score_threshold=0.5
+        )
         # More than 10% should be flagged with such a low threshold
         assert result["verdict"] == "many_anomalies"
         assert result["n_anomalous"] > len(values) * 0.1
@@ -294,7 +305,11 @@ class TestComputePredictionOutputAnomaliesClassification:
         logs = _classification_logs(confs)
         result = compute_prediction_output_anomalies(logs, "classification")
         if len(result["anomalies"]) >= 2:
-            confidences = [a["confidence"] for a in result["anomalies"] if a["confidence"] is not None]
+            confidences = [
+                a["confidence"]
+                for a in result["anomalies"]
+                if a["confidence"] is not None
+            ]
             assert confidences == sorted(confidences)
 
     def test_classification_anomaly_entry_fields(self):
@@ -317,7 +332,10 @@ class TestComputePredictionOutputAnomaliesClassification:
 
     def test_classification_too_few_confidence_logs_raises(self):
         # Only 4 logs with confidence — but 5 total; if <5 have confidence, raise
-        logs = [_mk_log(log_id=f"x{i}", confidence=None, prediction_numeric=None) for i in range(5)]
+        logs = [
+            _mk_log(log_id=f"x{i}", confidence=None, prediction_numeric=None)
+            for i in range(5)
+        ]
         with pytest.raises(ValueError, match="at least 5"):
             compute_prediction_output_anomalies(logs, "classification")
 
@@ -329,6 +347,7 @@ class TestOutputAnomalyPatterns:
     @pytest.fixture()
     def pattern(self):
         from api.chat import _OUTPUT_ANOMALY_PATTERNS
+
         return _OUTPUT_ANOMALY_PATTERNS
 
     def test_matches_any_unusual_predictions(self, pattern):
@@ -388,5 +407,15 @@ class TestOutputAnomaliesEndpoint:
         resp = await ac.get(f"/api/deploy/{deployment_id}/output-anomalies")
         assert resp.status_code == 200
         data = resp.json()
-        required_keys = {"deployment_id", "n_total", "n_anomalous", "anomaly_rate", "verdict", "verdict_label", "stats", "anomalies", "summary"}
+        required_keys = {
+            "deployment_id",
+            "n_total",
+            "n_anomalous",
+            "anomaly_rate",
+            "verdict",
+            "verdict_label",
+            "stats",
+            "anomalies",
+            "summary",
+        }
         assert required_keys.issubset(data.keys())

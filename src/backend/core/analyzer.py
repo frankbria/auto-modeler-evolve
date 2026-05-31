@@ -5144,12 +5144,19 @@ def compute_prediction_output_anomalies(
 
     if problem_type == "regression":
         values = [
-            (log["id"], float(log["prediction_numeric"]), log["created_at"], log.get("input_features", "{}"))
+            (
+                log["id"],
+                float(log["prediction_numeric"]),
+                log["created_at"],
+                log.get("input_features", "{}"),
+            )
             for log in logs
             if log.get("prediction_numeric") is not None
         ]
         if len(values) < 5:
-            raise ValueError("Need at least 5 numeric predictions to detect output anomalies.")
+            raise ValueError(
+                "Need at least 5 numeric predictions to detect output anomalies."
+            )
 
         nums = np.array([v[1] for v in values])
         mean_val = float(np.mean(nums))
@@ -5185,16 +5192,18 @@ def compute_prediction_output_anomalies(
                     input_summary = {k: v for k, v in list(input_dict.items())[:3]}
                 except Exception:  # noqa: BLE001
                     input_summary = {}
-                anomalies.append({
-                    "id": str(log_id)[:8],
-                    "prediction_value": str(round(val, 4)),
-                    "z_score": round(abs(z), 2),
-                    "confidence": None,
-                    "deviation": f"{abs(z):.1f}σ {direction} mean",
-                    "reason": f"Prediction is {abs(z):.1f} standard deviations {direction} the typical value of {mean_val:.2f}",
-                    "created_at": str(created_at),
-                    "input_summary": input_summary,
-                })
+                anomalies.append(
+                    {
+                        "id": str(log_id)[:8],
+                        "prediction_value": str(round(val, 4)),
+                        "z_score": round(abs(z), 2),
+                        "confidence": None,
+                        "deviation": f"{abs(z):.1f}σ {direction} mean",
+                        "reason": f"Prediction is {abs(z):.1f} standard deviations {direction} the typical value of {mean_val:.2f}",
+                        "created_at": str(created_at),
+                        "input_summary": input_summary,
+                    }
+                )
 
         # Sort by z-score descending
         anomalies.sort(key=lambda a: a["z_score"], reverse=True)
@@ -5202,12 +5211,20 @@ def compute_prediction_output_anomalies(
     else:
         # Classification: flag low-confidence predictions
         values = [
-            (log["id"], log.get("confidence"), log["prediction"], log["created_at"], log.get("input_features", "{}"))
+            (
+                log["id"],
+                log.get("confidence"),
+                log["prediction"],
+                log["created_at"],
+                log.get("input_features", "{}"),
+            )
             for log in logs
             if log.get("confidence") is not None
         ]
         if len(values) < 5:
-            raise ValueError("Need at least 5 predictions with confidence scores to detect output anomalies.")
+            raise ValueError(
+                "Need at least 5 predictions with confidence scores to detect output anomalies."
+            )
 
         confs = np.array([float(v[1]) for v in values])
         mean_conf = float(np.mean(confs))
@@ -5225,16 +5242,18 @@ def compute_prediction_output_anomalies(
                     input_summary = {k: v for k, v in list(input_dict.items())[:3]}
                 except Exception:  # noqa: BLE001
                     input_summary = {}
-                anomalies.append({
-                    "id": str(log_id)[:8],
-                    "prediction_value": str(pred),
-                    "z_score": None,
-                    "confidence": round(conf_f * 100, 1),
-                    "deviation": f"{conf_f * 100:.0f}% confidence",
-                    "reason": f"Model was only {conf_f * 100:.0f}% confident — below the {confidence_threshold * 100:.0f}% threshold for reliable predictions",
-                    "created_at": str(created_at),
-                    "input_summary": input_summary,
-                })
+                anomalies.append(
+                    {
+                        "id": str(log_id)[:8],
+                        "prediction_value": str(pred),
+                        "z_score": None,
+                        "confidence": round(conf_f * 100, 1),
+                        "deviation": f"{conf_f * 100:.0f}% confidence",
+                        "reason": f"Model was only {conf_f * 100:.0f}% confident — below the {confidence_threshold * 100:.0f}% threshold for reliable predictions",
+                        "created_at": str(created_at),
+                        "input_summary": input_summary,
+                    }
+                )
 
         # Sort by confidence ascending (most uncertain first)
         anomalies.sort(key=lambda a: a["confidence"] or 0)
