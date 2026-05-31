@@ -53,6 +53,29 @@ the time is better spent on real features.
 
 ---
 
+## Day 81 (12:00) — Done
+
+**Track D: Prediction Output Distribution Shift via Chat** — complete.
+
+Closes the "is my model producing systematically different output values in production?" analyst gap. Analysts can ask "has the distribution of my predictions shifted?", "output distribution shift", "are my predictions shifting over time?", or "are my model outputs behaving differently in production?" (8 NL variants) and receive a `PredictionOutputDistributionCard` comparing the statistical distribution of production predictions vs training-time predictions using a Kolmogorov-Smirnov test.
+
+**What was built:**
+- `compute_prediction_output_distribution_shift(training_preds, production_preds, n_bins=10)` pure function in `core/analyzer.py`: runs `scipy.stats.ks_2samp()`, computes per-distribution stats (mean/std/min/p25/median/p75/p95/max), derives mean_shift and mean_shift_pct, builds aligned histograms. Verdicts: significant_shift (p < 0.01 or |shift| > 30%), moderate_shift (p < 0.05 or |shift| > 10%), stable. Raises ValueError for < 10 samples in either list.
+- `GET /api/deploy/{id}/output-distribution-shift?n=100` REST endpoint in `api/deploy.py`: loads PredictionLogs for production_preds; re-runs model on training CSV to get training_preds; returns no_data when < 10 production predictions.
+- `_OUTPUT_DIST_SHIFT_PATTERNS` regex (8 NL variants) + handler in `chat.py`: inline pipeline load + predict; injects KS + mean_shift_pct + verdict into system_prompt; emits `{type:"output_distribution_shift"}` SSE event.
+- `PredictionOutputDistributionCard` (emerald=stable / amber=moderate_shift / rose=significant_shift / gray=no_data, 📊 icon): verdict badge, stats row (KS statistic/p-value/mean shift%), Distribution Comparison table (training vs production side-by-side), Recharts BarChart histogram overlay (gray=training, indigo=production), summary paragraph, sr-only figcaption.
+
+**Distinct from:** `DriftCard` (compares input feature distributions with z-score/TVD), `PredictionOutputAnomalyCard` (individual outlier predictions), `compute_training_vs_production` (requires labeled feedback for accuracy comparison). Works without ground-truth labels.
+
+37 backend + 24 frontend = **61 new tests**. Backend lint: clean. Frontend build + lint: clean.
+
+**What's next:**
+- Track C: Minimum viable feature set analysis — "what's the smallest set of features that preserves model accuracy?" (greedy backward elimination)
+- Track B: Automated retraining recommendations — when multiple signals (drift + output anomalies + feedback accuracy) point to degradation, proactively suggest retraining
+- Track D: API usage analytics dashboard enhancement — richer charts for the deployment analytics view
+
+---
+
 ## Day 81 (04:00) — Done
 
 **Track D: Prediction Output Anomaly Detection via Chat** — complete.

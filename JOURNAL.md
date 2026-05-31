@@ -1,5 +1,27 @@
 # Journal
 
+## Day 81 — 12:00 — Prediction Output Distribution Shift via Chat
+
+**Feature shipped:** Prediction Output Distribution Shift (Track D perpetual). Analysts can now ask "has the distribution of my predictions shifted?", "output distribution shift", "are my predictions shifting over time?", "how has my model's output changed?", or "are my model outputs behaving differently in production?" and receive a `PredictionOutputDistributionCard` in chat — comparing the statistical distribution of production prediction values vs training-time predictions using a Kolmogorov-Smirnov test.
+
+**What was built:**
+
+- `compute_prediction_output_distribution_shift(training_preds, production_preds, n_bins=10)` pure function in `core/analyzer.py`: runs `scipy.stats.ks_2samp()` on both prediction arrays (production from PredictionLog, training from re-running the model on the training CSV). Computes per-distribution stats (mean/std/min/p25/median/p75/p95/max), derives `mean_shift` (production_mean − training_mean) and `mean_shift_pct`, builds aligned histograms with shared bin edges for overlay visualization, computes `std_ratio`. Verdicts: `significant_shift` (KS p-value < 0.01 or |mean_shift_pct| > 30%), `moderate_shift` (p < 0.05 or |shift| > 10%), `stable` (otherwise). Raises ValueError for < 10 samples in either list.
+
+- `GET /api/deploy/{id}/output-distribution-shift?n=100` REST endpoint in `api/deploy.py`: loads last N PredictionLogs → production_preds; finds most-recent Dataset via project_id chain, loads joblib pipeline + model to re-predict training CSV → training_preds; returns `no_data` verdict when < 10 production predictions available. Key fix: FeatureSet has no `project_id` or `model_run_id` — must chain through Dataset.project_id → Dataset.id → FeatureSet.dataset_id.
+
+- `_OUTPUT_DIST_SHIFT_PATTERNS` (8 NL variants) + handler in `chat.py`: inline pipeline load + predict (same chain as REST endpoint); injects KS statistic + mean_shift_pct + verdict into system_prompt with plain-English guidance; emits `{type:"output_distribution_shift"}` SSE event.
+
+- `PredictionOutputDistributionCard` (emerald=stable / amber=moderate_shift / rose=significant_shift / gray=no_data, 📊 icon): verdict badge, problem-type badge, n-counts badge, 3-stat row (KS statistic / p-value / mean shift%), Distribution Comparison table (8-row training vs production stats side-by-side), Recharts BarChart histogram overlay (gray=training, indigo=production), summary paragraph, sr-only figcaption.
+
+- Full type wiring: `PredictionDistributionStats` + `PredictionDistHistogramBin` + `PredictionOutputDistributionShiftResult` TypeScript interfaces in `lib/types.ts`; `output_distribution_shift?` on `ChatMessage`; `attachOutputDistributionShiftToLastMessage` Zustand action in `store.ts`; SSE handler (both EventSource branches) + card render in `project/[id]/page.tsx`.
+
+**Tests:** 25 pure-function (required keys, n_counts, stable verdict, significant verdict, moderate verdict, KS statistic range, KS p-value range, stable has high p-value, significant has low p-value, training/production stats keys, histogram bin count, histogram bin keys, histogram counts sum to n, positive/negative mean_shift direction, std_ratio near 1 for same distribution, summary/verdict_label strings, ValueError for too-few samples in either list, mean stats correctness, identical distributions stable) + 12 regex (8 positive + 4 false-positive guards) + 2 REST endpoint (404 missing deployment, no_data verdict with < 10 predictions) = **37 backend tests**. 19 card component + 3 store action + 2 conditional render = **24 frontend tests** (renamed from 24 total). All passing. Backend lint: clean. Frontend build + lint: clean.
+
+**Why this matters:** The three existing monitoring cards each have a blind spot: `PredictionOutputAnomalyCard` finds individual outlier predictions but not systematic shifts; `DriftCard` detects *input* feature distribution changes but not output shifts; `compute_training_vs_production` compares accuracy but requires labeled feedback. The new card fills the gap — it detects when the model's outputs are systematically higher or lower than expected *without requiring any ground-truth labels*, purely from the shape of the prediction value distribution. A regression model that historically predicted $100K–$200K revenue but now consistently outputs $300K–$400K has undergone output distribution shift whether or not those predictions are correct.
+
+**Baseline:** 5267 backend / 3008 frontend → **5304 backend / 3032 frontend** (+37 / +24).
+
 ## Day 81 — 04:00 — Prediction Output Anomaly Detection via Chat
 
 **Feature shipped:** Prediction Output Anomaly Detection (Track D perpetual). Analysts can now ask "any unusual predictions?", "prediction outliers", "anomalous outputs", "weird model outputs", "predictions that are unusually high", or "suspicious model outputs" and receive a `PredictionOutputAnomalyCard` in chat — the first feature that looks at the *output values* of live production predictions for suspicious patterns.
