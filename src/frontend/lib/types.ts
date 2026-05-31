@@ -547,6 +547,7 @@ export interface ChatMessage {
   sample_size_adequacy?: SampleSizeAdequacyResult
   class_feature_importance?: ClassFeatureImportanceResult
   error_correlation?: ErrorCorrelationResult
+  output_anomalies?: PredictionOutputAnomalyResult
 }
 
 export interface RollbackVersionEntry {
@@ -4125,5 +4126,39 @@ export interface ErrorCorrelationResult {
   verdict: "clear_drivers" | "weak_drivers" | "none"
   verdict_label: string
   top_driver: string | null
+  summary: string
+}
+
+export interface OutputAnomalyEntry {
+  id: string
+  prediction_value: string
+  z_score: number | null
+  confidence: number | null
+  deviation: string
+  reason: string
+  created_at: string
+  input_summary: Record<string, unknown>
+}
+
+export interface OutputAnomalyStats {
+  mean?: number
+  std?: number
+  min?: number
+  max?: number
+  mean_confidence?: number
+  min_confidence?: number
+  max_confidence?: number
+}
+
+export interface PredictionOutputAnomalyResult {
+  deployment_id: string
+  n_total: number
+  n_anomalous: number
+  anomaly_rate: number
+  verdict: "no_anomalies" | "few_anomalies" | "many_anomalies" | "no_data"
+  verdict_label: string
+  problem_type: string
+  stats: OutputAnomalyStats
+  anomalies: OutputAnomalyEntry[]
   summary: string
 }

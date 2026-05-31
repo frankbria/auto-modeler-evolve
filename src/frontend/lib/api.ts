@@ -1377,6 +1377,9 @@ export const api = {
     getEmbedCode: (deploymentId: string): Promise<import("@/lib/types").EmbedCodeResult> =>
       fetch(`${API_URL}/api/deploy/${deploymentId}/embed-code`).then((r) => r.json()),
 
+    getOutputAnomalies: (deploymentId: string, n = 50): Promise<import("@/lib/types").PredictionOutputAnomalyResult> =>
+      fetch(`${API_URL}/api/deploy/${deploymentId}/output-anomalies?n=${n}`).then((r) => r.json()),
+
     getShareLink: (
       deploymentId: string,
       featureValues?: Record<string, string>

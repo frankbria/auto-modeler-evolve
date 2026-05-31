@@ -86,6 +86,7 @@ import { ConfidenceDistributionCard } from "@/components/models/confidence-distr
 import { SampleSizeAdequacyCard } from "@/components/models/sample-size-adequacy-card"
 import { ClassFeatureImportanceCard } from "@/components/models/class-feature-importance-card"
 import { ErrorCorrelationCard } from "@/components/chat/error-correlation-card"
+import { PredictionOutputAnomalyCard } from "@/components/deploy/prediction-output-anomaly-card"
 import { OnboardingGuideCard } from "@/components/chat/onboarding-guide-card"
 import { DataVersionHistoryCard } from "@/components/chat/data-version-history-card"
 import { LearningCurveCard } from "@/components/chat/learning-curve-card"
@@ -393,6 +394,7 @@ export default function ProjectWorkspace() {
     attachSampleSizeAdequacyToLastMessage,
     attachClassFeatureImportanceToLastMessage,
     attachErrorCorrelationToLastMessage,
+    attachOutputAnomaliesToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -785,6 +787,8 @@ export default function ProjectWorkspace() {
                 attachClassFeatureImportanceToLastMessage(json.class_feature_importance as import("@/lib/types").ClassFeatureImportanceResult)
               } else if (json.type === "error_correlation" && json.error_correlation) {
                 attachErrorCorrelationToLastMessage(json.error_correlation as import("@/lib/types").ErrorCorrelationResult)
+              } else if (json.type === "output_anomalies" && json.output_anomalies) {
+                attachOutputAnomaliesToLastMessage(json.output_anomalies as import("@/lib/types").PredictionOutputAnomalyResult)
               } else if (json.type === "onboarding_guide" && json.onboarding_guide) {
                 attachOnboardingGuideToLastMessage(json.onboarding_guide as import("@/lib/types").OnboardingGuideResult)
               } else if (json.type === "version_history" && json.version_history) {
@@ -963,6 +967,8 @@ export default function ProjectWorkspace() {
                 attachClassFeatureImportanceToLastMessage(json.class_feature_importance as import("@/lib/types").ClassFeatureImportanceResult)
               } else if (json.type === "error_correlation" && json.error_correlation) {
                 attachErrorCorrelationToLastMessage(json.error_correlation as import("@/lib/types").ErrorCorrelationResult)
+              } else if (json.type === "output_anomalies" && json.output_anomalies) {
+                attachOutputAnomaliesToLastMessage(json.output_anomalies as import("@/lib/types").PredictionOutputAnomalyResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -1123,6 +1129,7 @@ export default function ProjectWorkspace() {
     attachSampleSizeAdequacyToLastMessage,
     attachClassFeatureImportanceToLastMessage,
     attachErrorCorrelationToLastMessage,
+    attachOutputAnomaliesToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -1820,6 +1827,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.error_correlation && (
                       <ErrorCorrelationCard result={msg.error_correlation} />
+                    )}
+                    {msg.output_anomalies && (
+                      <PredictionOutputAnomalyCard result={msg.output_anomalies} />
                     )}
                   </div>
                 </div>
