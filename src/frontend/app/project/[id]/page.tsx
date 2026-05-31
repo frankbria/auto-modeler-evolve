@@ -87,6 +87,7 @@ import { SampleSizeAdequacyCard } from "@/components/models/sample-size-adequacy
 import { ClassFeatureImportanceCard } from "@/components/models/class-feature-importance-card"
 import { ErrorCorrelationCard } from "@/components/chat/error-correlation-card"
 import { PredictionOutputAnomalyCard } from "@/components/deploy/prediction-output-anomaly-card"
+import { PredictionOutputDistributionCard } from "@/components/deploy/prediction-output-distribution-card"
 import { OnboardingGuideCard } from "@/components/chat/onboarding-guide-card"
 import { DataVersionHistoryCard } from "@/components/chat/data-version-history-card"
 import { LearningCurveCard } from "@/components/chat/learning-curve-card"
@@ -395,6 +396,7 @@ export default function ProjectWorkspace() {
     attachClassFeatureImportanceToLastMessage,
     attachErrorCorrelationToLastMessage,
     attachOutputAnomaliesToLastMessage,
+    attachOutputDistributionShiftToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -789,6 +791,8 @@ export default function ProjectWorkspace() {
                 attachErrorCorrelationToLastMessage(json.error_correlation as import("@/lib/types").ErrorCorrelationResult)
               } else if (json.type === "output_anomalies" && json.output_anomalies) {
                 attachOutputAnomaliesToLastMessage(json.output_anomalies as import("@/lib/types").PredictionOutputAnomalyResult)
+              } else if (json.type === "output_distribution_shift" && json.output_distribution_shift) {
+                attachOutputDistributionShiftToLastMessage(json.output_distribution_shift as import("@/lib/types").PredictionOutputDistributionShiftResult)
               } else if (json.type === "onboarding_guide" && json.onboarding_guide) {
                 attachOnboardingGuideToLastMessage(json.onboarding_guide as import("@/lib/types").OnboardingGuideResult)
               } else if (json.type === "version_history" && json.version_history) {
@@ -969,6 +973,8 @@ export default function ProjectWorkspace() {
                 attachErrorCorrelationToLastMessage(json.error_correlation as import("@/lib/types").ErrorCorrelationResult)
               } else if (json.type === "output_anomalies" && json.output_anomalies) {
                 attachOutputAnomaliesToLastMessage(json.output_anomalies as import("@/lib/types").PredictionOutputAnomalyResult)
+              } else if (json.type === "output_distribution_shift" && json.output_distribution_shift) {
+                attachOutputDistributionShiftToLastMessage(json.output_distribution_shift as import("@/lib/types").PredictionOutputDistributionShiftResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -1130,6 +1136,7 @@ export default function ProjectWorkspace() {
     attachClassFeatureImportanceToLastMessage,
     attachErrorCorrelationToLastMessage,
     attachOutputAnomaliesToLastMessage,
+    attachOutputDistributionShiftToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -1830,6 +1837,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.output_anomalies && (
                       <PredictionOutputAnomalyCard result={msg.output_anomalies} />
+                    )}
+                    {msg.output_distribution_shift && (
+                      <PredictionOutputDistributionCard result={msg.output_distribution_shift} />
                     )}
                   </div>
                 </div>

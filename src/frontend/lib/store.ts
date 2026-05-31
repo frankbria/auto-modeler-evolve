@@ -188,6 +188,7 @@ interface AppState {
   attachClassFeatureImportanceToLastMessage: (class_feature_importance: import("./types").ClassFeatureImportanceResult) => void
   attachErrorCorrelationToLastMessage: (error_correlation: import("./types").ErrorCorrelationResult) => void
   attachOutputAnomaliesToLastMessage: (output_anomalies: import("./types").PredictionOutputAnomalyResult) => void
+  attachOutputDistributionShiftToLastMessage: (output_distribution_shift: import("./types").PredictionOutputDistributionShiftResult) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -1557,6 +1558,16 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, output_anomalies }
+      }
+      return { messages }
+    }),
+
+  attachOutputDistributionShiftToLastMessage: (output_distribution_shift) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, output_distribution_shift }
       }
       return { messages }
     }),

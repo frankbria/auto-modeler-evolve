@@ -4128,6 +4128,25 @@ _OUTPUT_ANOMALY_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# Prediction output distribution shift: compares distribution of production predictions
+# vs training-time predictions using KS test. Distinct from:
+# - _DRIFT_PATTERNS (input covariate drift), - _OUTPUT_ANOMALY_PATTERNS (individual outliers),
+# - _PROD_MONITOR_PATTERNS (accuracy degradation using labeled feedback).
+# This works WITHOUT feedback labels — detects model behavior shift from prediction values alone.
+_OUTPUT_DIST_SHIFT_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"(?:has\s+(?:the|my)\s+)?(?:distribution|shape)\s+of\s+(?:my\s+)?(?:predictions?|model\s+outputs?|outputs?)\s+(?:shifted|changed|drifted|moved)\b|"
+    r"(?:output|prediction)\s+distribution\s+(?:shift|drift|change|comparison)\b|"
+    r"(?:are|is)\s+(?:my\s+)?(?:predictions?|outputs?)\s+(?:shifting|drifting|changing)\s+(?:over\s+time|in\s+production)?\b|"
+    r"how\s+has\s+(?:my\s+)?(?:model'?s?\s+)?(?:output|prediction)\s+(?:changed|shifted|drifted)\b|"
+    r"(?:production|live)\s+(?:prediction|output)\s+(?:distribution|profile|pattern)\b|"
+    r"prediction\s+(?:value\s+)?drift\b|"
+    r"(?:compare|comparing)\s+(?:training\s+(?:vs\.?\s+|versus\s+|and\s+))?(?:production\s+)?(?:predictions?|outputs?)\s+(?:distributions?|values?|patterns?)\b|"
+    r"(?:are\s+(?:my\s+)?predictions?|(?:my\s+)?model\s+outputs?)\s+(?:behaving|acting)\s+(?:differently|different)\s+(?:in\s+)?(?:production|practice|the\s+real\s+world)?\b"
+    r")",
+    re.IGNORECASE,
+)
+
 _SIMILAR_RECORDS_PATTERNS = re.compile(
     r"(?i)(?:"
     r"(?:find|show|get)\s+(?:me\s+)?(?:similar|like|nearest|closest)\s+(?:records?|rows?|cases?|customers?|examples?)\b|"
@@ -10826,6 +10845,119 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Output anomaly detection is nice-to-have; never crash chat
 
+    # Prediction output distribution shift
+    # "has the distribution of my predictions shifted?", "output distribution shift"
+    # Compares production prediction distribution vs training-time predictions via KS test.
+    # Does NOT require labeled feedback — works from raw prediction values alone.
+    # Distinct from: DriftCard (input covariate drift), OutputAnomalyCard (individual outliers),
+    # ProdMonitorCard (accuracy degradation requiring feedback labels).
+    output_dist_shift_event: dict | None = None
+    if _OUTPUT_DIST_SHIFT_PATTERNS.search(body.message) and ctx.get("deployment"):
+        try:
+            import joblib as _jl_ods
+            import pandas as _pd_ods
+            from pathlib import Path as _Path_ods
+
+            from core.analyzer import (
+                compute_prediction_output_distribution_shift as _cpods,
+            )
+
+            _ods_dep = ctx["deployment"]
+            _ods_run = session.get(ModelRun, _ods_dep.model_run_id) if _ods_dep.model_run_id else None
+
+            # Load recent production predictions
+            _ods_logs_orm = session.exec(
+                select(PredictionLog)
+                .where(PredictionLog.deployment_id == _ods_dep.id)
+                .order_by(PredictionLog.created_at.desc())  # type: ignore[arg-type]
+                .limit(100)
+            ).all()
+            _ods_prod_preds = [
+                float(log.prediction_numeric)
+                for log in _ods_logs_orm
+                if log.prediction_numeric is not None
+            ]
+
+            if len(_ods_prod_preds) >= 10 and _ods_run:
+                # Get training dataset — FeatureSet links via dataset_id; Dataset via project_id.
+                _ods_recent_ds = session.exec(
+                    select(Dataset)
+                    .where(Dataset.project_id == _ods_dep.project_id)
+                    .order_by(Dataset.created_at.desc())  # type: ignore[arg-type]
+                ).first()
+                _ods_fs = (
+                    session.exec(
+                        select(FeatureSet)
+                        .where(FeatureSet.dataset_id == _ods_recent_ds.id)
+                        .order_by(FeatureSet.created_at.desc())  # type: ignore[arg-type]
+                    ).first()
+                    if _ods_recent_ds
+                    else None
+                )
+                _ods_dataset = session.get(Dataset, _ods_fs.dataset_id) if _ods_fs else None
+
+                if (
+                    _ods_dataset
+                    and _ods_dataset.file_path
+                    and _Path_ods(_ods_dataset.file_path).exists()
+                    and _ods_dep.pipeline_path
+                    and _Path_ods(_ods_dep.pipeline_path).exists()
+                    and _ods_run.model_path
+                    and _Path_ods(_ods_run.model_path).exists()
+                ):
+                    _ods_pipeline = _jl_ods.load(_ods_dep.pipeline_path)
+                    _ods_model = _jl_ods.load(_ods_run.model_path)
+                    _ods_df = _pd_ods.read_csv(_ods_dataset.file_path)
+                    _ods_target = getattr(_ods_pipeline, "target_col", None)
+                    if _ods_target and _ods_target in _ods_df.columns:
+                        _ods_df = _ods_df.drop(columns=[_ods_target])
+                    _ods_X = _ods_pipeline.transform_df(_ods_df)
+                    _ods_train_preds = [float(v) for v in _ods_model.predict(_ods_X)]
+
+                    if len(_ods_train_preds) >= 10:
+                        _ods_result = _cpods(_ods_train_preds, _ods_prod_preds)
+                        _ods_result["deployment_id"] = _ods_dep.id
+                        _ods_result["problem_type"] = _ods_dep.problem_type or "regression"
+                        output_dist_shift_event = _ods_result
+                        _ods_verdict = _ods_result.get("verdict_label", "")
+                        _ods_shift_pct = _ods_result.get("mean_shift_pct", 0.0)
+                        system_prompt += (
+                            f"\n\n## Prediction Output Distribution Shift Analysis\n"
+                            f"Verdict: {_ods_verdict}\n"
+                            f"Mean shift: {_ods_shift_pct:+.1f}% vs training baseline\n"
+                            f"KS statistic: {_ods_result.get('ks_statistic', 'N/A')} "
+                            f"(p={_ods_result.get('ks_p_value', 'N/A')})\n"
+                            f"Summary: {_ods_result['summary']}\n"
+                            "A PredictionOutputDistributionCard is shown in the chat. "
+                            "Narrate the distribution shift finding — explain what a KS test "
+                            "measures in plain English, what the mean shift means for the analyst's "
+                            "model in production, and whether retraining is recommended."
+                        )
+                else:
+                    output_dist_shift_event = {
+                        "deployment_id": _ods_dep.id,
+                        "verdict": "no_data",
+                        "verdict_label": "Training data not accessible",
+                        "n_training": 0,
+                        "n_production": len(_ods_prod_preds),
+                        "summary": "Cannot access training data or model files to compare distributions.",
+                    }
+            else:
+                _ods_n = len(_ods_prod_preds)
+                output_dist_shift_event = {
+                    "deployment_id": _ods_dep.id,
+                    "verdict": "no_data",
+                    "verdict_label": "Not enough production predictions",
+                    "n_training": 0,
+                    "n_production": _ods_n,
+                    "summary": (
+                        f"Only {_ods_n} production prediction{'s' if _ods_n != 1 else ''} recorded — "
+                        "need at least 10 to compare distributions."
+                    ),
+                }
+        except Exception:  # noqa: BLE001
+            pass  # Distribution shift is nice-to-have; never crash chat
+
     # Local explanation (feature contribution waterfall) for a specific training row
     # "explain prediction for row 5", "show SHAP values", "what drove this prediction"
     # Distinct from: PDP (average marginal effect), pred_errors (worst rows), inline prediction
@@ -17515,6 +17647,10 @@ def send_message(
         # Emit prediction output anomaly detection result
         if output_anomaly_event:
             yield f"data: {json.dumps({'type': 'output_anomalies', 'output_anomalies': output_anomaly_event})}\n\n"
+
+        # Emit prediction output distribution shift result
+        if output_dist_shift_event:
+            yield f"data: {json.dumps({'type': 'output_distribution_shift', 'output_distribution_shift': output_dist_shift_event})}\n\n"
 
         # Emit learning curve analysis result
         if learning_curve_event:

@@ -5301,3 +5301,156 @@ def compute_prediction_output_anomalies(
         "anomalies": anomalies,
         "summary": summary,
     }
+
+
+def compute_prediction_output_distribution_shift(
+    training_preds: list[float],
+    production_preds: list[float],
+    n_bins: int = 10,
+) -> dict:
+    """Compare the distribution of training-time predictions vs production predictions.
+
+    Uses the Kolmogorov-Smirnov two-sample test to measure how differently the model
+    is behaving in production compared to training. Works without labeled ground truth —
+    only raw prediction values are needed.
+
+    Distinct from:
+    - DriftCard: compares *input* feature distributions (covariate drift)
+    - compute_training_vs_production: requires labeled feedback to compare accuracy
+    - compute_prediction_output_anomalies: finds individual anomalous production predictions
+
+    Args:
+        training_preds: Predictions from re-running the deployed model on training data.
+        production_preds: Recent production prediction values from PredictionLog.
+        n_bins: Number of histogram bins for visualization.
+
+    Returns:
+        Dict with verdict, KS statistics, per-distribution stats, aligned histograms,
+        mean shift, and plain-English summary.
+
+    Raises:
+        ValueError: When fewer than 10 samples in either list.
+    """
+    if len(training_preds) < 10:
+        raise ValueError(
+            "Need at least 10 training predictions to compare distributions."
+        )
+    if len(production_preds) < 10:
+        raise ValueError(
+            "Need at least 10 production predictions to compare distributions."
+        )
+
+    from scipy.stats import ks_2samp
+
+    train_arr = np.array(training_preds, dtype=float)
+    prod_arr = np.array(production_preds, dtype=float)
+
+    ks_stat, ks_pvalue = ks_2samp(train_arr, prod_arr)
+    ks_stat = float(round(ks_stat, 4))
+    ks_pvalue = float(round(ks_pvalue, 6))
+
+    def _dist_stats(arr: np.ndarray) -> dict:
+        return {
+            "mean": float(round(np.mean(arr), 4)),
+            "std": float(round(np.std(arr), 4)),
+            "min": float(round(np.min(arr), 4)),
+            "p25": float(round(np.percentile(arr, 25), 4)),
+            "median": float(round(np.median(arr), 4)),
+            "p75": float(round(np.percentile(arr, 75), 4)),
+            "p95": float(round(np.percentile(arr, 95), 4)),
+            "max": float(round(np.max(arr), 4)),
+        }
+
+    training_stats = _dist_stats(train_arr)
+    production_stats = _dist_stats(prod_arr)
+
+    mean_shift = float(round(production_stats["mean"] - training_stats["mean"], 4))
+    mean_shift_pct = (
+        float(round(mean_shift / abs(training_stats["mean"]) * 100, 1))
+        if training_stats["mean"] != 0
+        else 0.0
+    )
+    std_ratio = (
+        float(round(production_stats["std"] / training_stats["std"], 3))
+        if training_stats["std"] > 0
+        else None
+    )
+
+    # Verdict: significant → KS p < 0.01 or |mean shift| > 30%
+    #          moderate   → KS p < 0.05 or |mean shift| > 10%
+    #          stable     → otherwise
+    abs_shift = abs(mean_shift_pct)
+    if ks_pvalue < 0.01 or abs_shift > 30:
+        verdict = "significant_shift"
+        verdict_label = "Significant distribution shift detected"
+    elif ks_pvalue < 0.05 or abs_shift > 10:
+        verdict = "moderate_shift"
+        verdict_label = "Moderate distribution shift detected"
+    else:
+        verdict = "stable"
+        verdict_label = "Distribution is stable"
+
+    # Build aligned histograms using shared bin edges
+    combined_min = float(min(train_arr.min(), prod_arr.min()))
+    combined_max = float(max(train_arr.max(), prod_arr.max()))
+    if combined_min == combined_max:
+        combined_max = combined_min + 1.0
+    bin_edges = np.linspace(combined_min, combined_max, n_bins + 1)
+
+    def _build_histogram(arr: np.ndarray) -> list[dict]:
+        counts, _ = np.histogram(arr, bins=bin_edges)
+        bins = []
+        for i, count in enumerate(counts):
+            bins.append(
+                {
+                    "bin_start": float(round(bin_edges[i], 4)),
+                    "bin_end": float(round(bin_edges[i + 1], 4)),
+                    "count": int(count),
+                    "label": f"{bin_edges[i]:.2f}–{bin_edges[i+1]:.2f}",
+                }
+            )
+        return bins
+
+    training_histogram = _build_histogram(train_arr)
+    production_histogram = _build_histogram(prod_arr)
+
+    # Plain-English summary
+    direction_word = "above" if mean_shift > 0 else "below"
+    if verdict == "stable":
+        summary = (
+            f"The model's output distribution is stable. Production predictions "
+            f"(n={len(production_preds)}) closely match the training-time distribution "
+            f"(KS p={ks_pvalue:.3f}, mean shift {abs_shift:.1f}%)."
+        )
+    elif verdict == "moderate_shift":
+        summary = (
+            f"Moderate distribution shift detected. Production predictions are {abs_shift:.1f}% "
+            f"{direction_word} the training baseline on average "
+            f"(KS statistic {ks_stat:.3f}, p={ks_pvalue:.3f}). "
+            f"Monitor closely — consider retraining if the trend continues."
+        )
+    else:
+        summary = (
+            f"Significant distribution shift detected. Production predictions are {abs_shift:.1f}% "
+            f"{direction_word} the training baseline on average "
+            f"(KS statistic {ks_stat:.3f}, p={ks_pvalue:.4f}). "
+            f"The model is behaving very differently in production than during training — "
+            f"retraining with recent data is strongly recommended."
+        )
+
+    return {
+        "n_training": len(training_preds),
+        "n_production": len(production_preds),
+        "verdict": verdict,
+        "verdict_label": verdict_label,
+        "ks_statistic": ks_stat,
+        "ks_p_value": ks_pvalue,
+        "mean_shift": mean_shift,
+        "mean_shift_pct": mean_shift_pct,
+        "std_ratio": std_ratio,
+        "training_stats": training_stats,
+        "production_stats": production_stats,
+        "training_histogram": training_histogram,
+        "production_histogram": production_histogram,
+        "summary": summary,
+    }

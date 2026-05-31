@@ -6256,3 +6256,120 @@ def get_output_anomalies(
     result["deployment_id"] = deployment_id
 
     return result
+
+
+@router.get("/api/deploy/{deployment_id}/output-distribution-shift")
+def get_output_distribution_shift(
+    deployment_id: str,
+    n: int = 100,
+    session: Session = Depends(get_session),
+):
+    """Compare distribution of production predictions vs training-time predictions.
+
+    Re-runs the deployed model on training data to get the training prediction
+    distribution, then compares it to the most recent N production predictions
+    using a KS test. Works without labeled feedback — only raw prediction values.
+    Returns verdict, KS statistics, per-distribution stats, and aligned histograms.
+    """
+    import joblib as _joblib
+    import pandas as _pd
+    from pathlib import Path as _Path
+
+    from core.analyzer import (
+        compute_prediction_output_distribution_shift as _cpods,
+    )
+
+    dep = session.get(Deployment, deployment_id)
+    if dep is None:
+        raise HTTPException(status_code=404, detail="Deployment not found.")
+
+    run = session.get(ModelRun, dep.model_run_id) if dep.model_run_id else None
+    if run is None:
+        raise HTTPException(status_code=404, detail="Model run not found.")
+
+    # Load recent production predictions
+    logs_orm = session.exec(
+        select(PredictionLog)
+        .where(PredictionLog.deployment_id == deployment_id)
+        .order_by(PredictionLog.created_at.desc())  # type: ignore[arg-type]
+        .limit(max(n, 10))
+    ).all()
+
+    prod_preds = [
+        float(log.prediction_numeric)
+        for log in logs_orm
+        if log.prediction_numeric is not None
+    ]
+
+    if len(prod_preds) < 10:
+        return {
+            "deployment_id": deployment_id,
+            "verdict": "no_data",
+            "verdict_label": "Not enough production predictions",
+            "n_training": 0,
+            "n_production": len(prod_preds),
+            "summary": (
+                f"Only {len(prod_preds)} production predictions recorded — "
+                "need at least 10 to compare distributions."
+            ),
+        }
+
+    # Get training dataset + pipeline for training predictions.
+    # FeatureSet links to Dataset via dataset_id; Dataset links to project via project_id.
+    recent_dataset = session.exec(
+        select(Dataset)
+        .where(Dataset.project_id == dep.project_id)
+        .order_by(Dataset.created_at.desc())  # type: ignore[arg-type]
+    ).first()
+    feature_set = (
+        session.exec(
+            select(FeatureSet)
+            .where(FeatureSet.dataset_id == recent_dataset.id)
+            .order_by(FeatureSet.created_at.desc())  # type: ignore[arg-type]
+        ).first()
+        if recent_dataset
+        else None
+    )
+    if feature_set is None:
+        raise HTTPException(status_code=404, detail="Feature set not found.")
+
+    dataset = session.get(Dataset, feature_set.dataset_id)
+    if dataset is None or not dataset.file_path or not _Path(dataset.file_path).exists():
+        raise HTTPException(status_code=404, detail="Training dataset not found.")
+
+    if not dep.pipeline_path or not _Path(dep.pipeline_path).exists():
+        raise HTTPException(status_code=404, detail="Deployment pipeline not found.")
+    if not run.model_path or not _Path(run.model_path).exists():
+        raise HTTPException(status_code=404, detail="Model file not found.")
+
+    try:
+        pipeline = _joblib.load(dep.pipeline_path)
+        model = _joblib.load(run.model_path)
+        df = _pd.read_csv(dataset.file_path)
+
+        target_col = pipeline.target_col if hasattr(pipeline, "target_col") else None
+        if target_col and target_col in df.columns:
+            df = df.drop(columns=[target_col])
+
+        X = pipeline.transform_df(df)
+        training_preds = [float(v) for v in model.predict(X)]
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(
+            status_code=500,
+            detail=f"Could not compute training predictions: {exc}",
+        ) from exc
+
+    if len(training_preds) < 10:
+        return {
+            "deployment_id": deployment_id,
+            "verdict": "no_data",
+            "verdict_label": "Insufficient training data",
+            "n_training": len(training_preds),
+            "n_production": len(prod_preds),
+            "summary": "Not enough training predictions to compare distributions.",
+        }
+
+    result = _cpods(training_preds, prod_preds)
+    result["deployment_id"] = deployment_id
+    result["problem_type"] = dep.problem_type or "regression"
+    return result

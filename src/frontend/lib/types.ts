@@ -548,6 +548,7 @@ export interface ChatMessage {
   class_feature_importance?: ClassFeatureImportanceResult
   error_correlation?: ErrorCorrelationResult
   output_anomalies?: PredictionOutputAnomalyResult
+  output_distribution_shift?: PredictionOutputDistributionShiftResult
 }
 
 export interface RollbackVersionEntry {
@@ -4160,5 +4161,42 @@ export interface PredictionOutputAnomalyResult {
   problem_type: string
   stats: OutputAnomalyStats
   anomalies: OutputAnomalyEntry[]
+  summary: string
+}
+
+export interface PredictionDistributionStats {
+  mean: number
+  std: number
+  min: number
+  p25: number
+  median: number
+  p75: number
+  p95: number
+  max: number
+}
+
+export interface PredictionDistHistogramBin {
+  bin_start: number
+  bin_end: number
+  count: number
+  label: string
+}
+
+export interface PredictionOutputDistributionShiftResult {
+  deployment_id: string
+  n_training: number
+  n_production: number
+  verdict: "stable" | "moderate_shift" | "significant_shift" | "no_data"
+  verdict_label: string
+  ks_statistic?: number
+  ks_p_value?: number
+  mean_shift?: number
+  mean_shift_pct?: number
+  std_ratio?: number | null
+  training_stats?: PredictionDistributionStats
+  production_stats?: PredictionDistributionStats
+  training_histogram?: PredictionDistHistogramBin[]
+  production_histogram?: PredictionDistHistogramBin[]
+  problem_type?: string
   summary: string
 }
