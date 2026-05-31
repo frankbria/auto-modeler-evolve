@@ -1,5 +1,27 @@
 # Journal
 
+## Day 80 — 20:00 — Prediction Error Correlation via Chat
+
+**Feature shipped:** Prediction Error Correlation (Track C perpetual). Analysts can now ask "which features correlate with my model's errors?", "what causes my model's prediction errors?", "error correlation", "where does my model systematically struggle?", "feature correlation with errors", "what drives my model's errors?", "which input features cause more errors?", or "drivers of my prediction errors" and receive an `ErrorCorrelationCard` in chat directly answering "which specific input features predict where my model goes wrong?"
+
+**What was built:**
+
+- `compute_prediction_error_correlation(X, y_true, y_pred, feature_names, problem_type)` pure function in `core/validator.py`: regression path uses |y_pred − y_true| as error vector; classification path uses (y_pred ≠ y_true).astype(int) as misclassification indicator. Computes Pearson correlation of each feature with the error vector, sorts by |correlation| descending (top 10), derives direction labels (positive = higher value → more errors; negative = lower → more errors; neutral = |r| ≤ 0.05). Verdicts: `clear_drivers` (max |r| ≥ 0.30), `weak_drivers` (|r| ≥ 0.10), `none` (all < 0.10). Returns 9-key dict including features list, error_type, verdict, top_driver, summary. Raises ValueError for < 10 rows.
+
+- `GET /api/models/{model_run_id}/error-correlation` REST endpoint in `api/validation.py`: loads run + feature set + dataset, calls `_build_Xy()`, loads joblib model, calls pure function, returns result with model_run_id/algorithm/target_col annotations. 404 for unknown run.
+
+- `_ERROR_CORRELATION_PATTERNS` regex (8 NL variants) + handler in `api/chat.py`: guarded by `ctx["model_runs"]`; applies feature transformations; calls `compute_prediction_error_correlation()`; injects top_driver + verdict into system_prompt with narration guidance; emits `{type:"error_correlation"}` SSE event.
+
+- `ErrorCorrelationCard` (rose border=clear_drivers / amber=weak_drivers / emerald=none, 🔎 icon): verdict badge, algorithm + target badges, stats row (n_total / n_errors / error_rate%), feature list with rank number + correlation bar (rose=positive direction, sky=negative) + r-value + direction arrow (↑/↓/≈), `top-driver-callout` callout div for `clear_drivers` verdict, summary paragraph, sr-only figcaption.
+
+- `ErrorCorrelationFeature` + `ErrorCorrelationResult` TypeScript interfaces; `error_correlation?` on `ChatMessage`; `attachErrorCorrelationToLastMessage` Zustand action; SSE handler + card render in both EventSource branches of `project/[id]/page.tsx`.
+
+**Tests:** 19 pure-function (required keys, error_type, error_rate None for regression/present for classification, n_total, sorted by abs correlation, capped at 10, feature entry keys, direction labels valid, rank starts at 1, clear_drivers verdict with high correlation, none verdict with perfect prediction, too-few-rows ValueError, top_driver = first feature name, summary string, correlation_abs = abs(correlation), string labels for classification) + 8 regex (8 matches) + 4 false-positive guards + 2 endpoint tests (404 unknown, 200 with real run) = 33 backend; 18 card component + 2 store action = 20 frontend = **53 new tests**. All passing. Backend lint: clean. Frontend build + lint: clean.
+
+**Why this matters:** All Track C features added in Days 79–80 (CalibrationCheck, ClassFeatureImportance, ConfidenceDistribution, ThresholdAdvisor, SampleSizeAdequacy) answered "how good is my model?" from different angles. This feature answers a different question: "where does it fail, and can I predict that from my input data?" A high-correlation result means the analyst can target data collection or feature engineering to exactly the range where the model struggles — rather than blindly adding more rows. Distinct from ErrorDistributionCard (histogram shape of errors), PredictionErrorCard (top-N worst rows), and SegmentPerformanceCard (accuracy within one feature's segments) by computing a cross-feature diagnostic of the error signal itself.
+
+**Baseline:** 5200 backend / 2966 frontend → **5233 backend / 2986 frontend** (+33 / +20).
+
 ## Day 80 — 12:00 — Calibration Check via Chat
 
 **Feature shipped:** Calibration Check (Track C perpetual). Analysts can now ask "is my model calibrated?", "calibration check", "are my probabilities reliable?", "can I trust my probability scores?", "what's the brier score?", "reliability diagram", "probability calibration", "are my confidence scores accurate?", or 2 other NL variants and receive a `CalibrationCheckCard` in chat directly answering "when my model says 70% probability, is it actually right ~70% of the time?"
