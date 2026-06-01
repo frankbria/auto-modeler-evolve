@@ -1,5 +1,27 @@
 # Journal
 
+## Day 82 — 04:00 — Feature PSI Ranking via Chat
+
+**Feature shipped:** Feature PSI (Population Stability Index) Ranking (Track D perpetual). Analysts can now ask "which features have drifted the most?", "feature psi analysis", "rank my features by drift", "most drifted input features", or "feature stability analysis" and receive a `FeaturePsiCard` in chat — ranking ALL production input features by how much their statistical distribution has shifted from training, using the industry-standard PSI metric.
+
+**What was built:**
+
+- `compute_feature_psi_ranking(training_df, production_inputs, feature_names, n_bins, max_features)` pure function in `core/analyzer.py`: detects numeric vs categorical feature type; for numeric features, builds equal-frequency bins from training percentiles (bins auto-capped to ensure ≥10 production samples per bin — critical for PSI stability with small samples) and computes PSI = Σ(prod_pct − train_pct) × ln(prod_pct / train_pct) with ε=1e-4 zero-guard; for categorical features, computes per-category PSI across the union of training + production categories, tracking n_new_categories (categories seen in production but not training). Features sorted by PSI descending. Verdicts: `stable` (PSI < 0.10), `watch` (0.10–0.20), `critical` (≥ 0.20). Returns overall verdict (worst feature), overall_psi (mean across features), stable/watch/critical counts. Two helper functions: `_psi_for_numeric()` and `_psi_for_categorical()`. Key engineering decision: auto-cap n_bins = min(n_bins, n_production // 10) prevents spurious critical PSI from binning too finely with insufficient production samples.
+
+- `GET /api/deploy/{id}/feature-psi?n=200` REST endpoint in `api/deploy.py`: loads last N PredictionLogs, JSON-parses input_features, fetches training Dataset via project_id chain, reads training CSV, drops target column, aligns feature names to production keys, calls pure function, returns result enriched with deployment_id/algorithm/target_col. Returns no_data verdict when < 10 production inputs available.
+
+- `_FEATURE_PSI_PATTERNS` (8 NL variants) + handler in `chat.py`: loads 200 PredictionLogs, fetches training data, calls pure function, injects verdict + counts + top drifted feature into system_prompt with plain-English PSI guidance; emits `{type:"feature_psi"}` SSE event.
+
+- `FeaturePsiCard` (adaptive border by verdict, 📊 icon): verdict badge, feature-count badge, sample-count badge; 3-stat grid (critical/watch/stable counts with color-coded boxes); ranked feature list with horizontal PSI bar (rose/amber/emerald by severity), PSI value mono display, severity badge, categorical +N new annotation; overall mean PSI row; PSI legend; plain-English summary paragraph; sr-only figcaption.
+
+- Full type wiring: `FeaturePsiEntry` + `FeaturePsiResult` TypeScript interfaces in `lib/types.ts`; `feature_psi?` on `ChatMessage`; `attachFeaturePsiToLastMessage` Zustand action in `store.ts`; SSE handler (both EventSource branches) + card render in `project/[id]/page.tsx`.
+
+**Tests:** 22 pure-function (required keys, stable verdict, critical verdict, sorted by PSI, feature entry keys, PSI non-negative, severity thresholds, psi_label matches severity, features_analyzed = list length, counts sum to features_analyzed, overall_psi = mean, sample_count, training_count, summary string, categorical type detection, numeric type detection, max_features cap, feature_names filter, error on too-few training rows, error on empty inputs, n_new_categories populated) + 8 regex (positive + false-positive guards) + 3 REST (404 missing deployment, no_data with 0 prediction logs) = **35 backend**. 16 card component + 3 store action = **19 frontend** = **54 new tests**. All passing. Backend lint: clean. Frontend build + lint: clean.
+
+**Why this matters:** The existing `CovariateAlertCard` uses an OOR (out-of-range) approach — it checks what fraction of production values fall outside the training min/max. This is binary: a feature either triggers an alert or it doesn't. PSI is more nuanced: it measures the *shape change* of the entire distribution, not just boundary violations. A feature whose values have all shifted 30% upward but are still within training bounds won't trigger the OOR alert — but PSI will catch it. The ranking view (all features sorted by drift severity) also gives analysts a clear prioritized action list: "investigate `price` first (PSI=0.35), then `region` (PSI=0.14), others are stable."
+
+**Baseline:** 5337 backend / 3053 frontend → **5372 backend / 3072 frontend** (+35 / +19).
+
 ## Day 81 — 20:00 — Performance Baseline & Housekeeping
 
 **Session summary:** Ran end-to-end performance benchmarks (file upload, correlations, model training, single predictions, feature suggestions) and updated `performance_baseline.json` with fresh measurements. Observed some variance from prior runs (training time increased from 72.7ms to 225.5ms, likely due to system load), but no code changes deployed. Auto-formatted backend to maintain consistency. Current test baseline: 5337 backend / 3053 frontend.
