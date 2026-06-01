@@ -4166,6 +4166,25 @@ _FEATURE_PSI_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# Minimum viable feature set: greedy backward elimination to find the smallest
+# feature subset that preserves model accuracy within a tolerance.
+# Distinct from: FeatureSelectionCard (shows importances), ImprovementAdvisor (broad tips),
+# ErrorCorrelationCard (which features predict errors).
+# This answers: "which features can I safely drop without hurting accuracy?"
+_MIN_FEATURE_SET_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"(?:what(?:'?s|\s+is)\s+(?:the\s+)?)?(?:minimum|minimal|smallest|fewest|least)\s+(?:viable\s+)?(?:set\s+of\s+)?features?\s+(?:needed|required|necessary|that\s+(?:I\s+)?(?:need|require))\b|"
+    r"(?:which|what)\s+features?\s+can\s+(?:I|we)\s+(?:safely\s+)?(?:drop|remove|eliminate|prune|cut|delete)\b|"
+    r"(?:simplif(?:y|ied?)\s+(?:my\s+)?(?:model|feature\s+set|features?)|(?:model|feature)\s+simplification)\b|"
+    r"(?:reduce|trim|prune|cut\s+down)\s+(?:my\s+)?(?:feature\s+set|features?|number\s+of\s+features?)\b|"
+    r"(?:feature\s+(?:pruning|reduction|elimination|shrinking)|(?:prune|eliminate|reduce)\s+features?)\b|"
+    r"(?:fewest|minimum|minimal)\s+features?\s+(?:for|that\s+(?:still\s+)?(?:give|maintain|preserve))\s+(?:good|accurate)\s+(?:predictions?|accuracy|performance)\b|"
+    r"(?:which|what)\s+features?\s+(?:are\s+)?(?:redundant|unnecessary|not\s+needed|not\s+important)\b|"
+    r"(?:can\s+I|should\s+I)\s+(?:drop|remove|eliminate|cut)\s+(?:any|some)\s+(?:of\s+(?:the|my)\s+)?features?\b"
+    r")",
+    re.IGNORECASE,
+)
+
 # Model status report: production monitoring briefing for stakeholders.
 # Distinct from: ExecutiveBriefingCard (model design), ModelCardExport (compliance),
 # ConversationExportCard (chat history), PredictionAuditCard (raw stats card).
@@ -11136,6 +11155,87 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # PSI analysis is nice-to-have; never crash chat
 
+    # Minimum viable feature set analysis
+    # "which features can I drop?", "simplify my model", "reduce feature set"
+    # Distinct from: FeatureSelectionCard (importance ranking), ImprovementAdvisor (broad tips),
+    # ErrorCorrelationCard (which features predict errors).
+    min_feature_set_event: dict | None = None
+    if _MIN_FEATURE_SET_PATTERNS.search(body.message) and ctx.get("model_runs"):
+        try:
+            from core.feature_engine import apply_transformations as _at_mfs
+            from core.trainer import (
+                CLASSIFICATION_ALGORITHMS as _CLAS_MFS,
+                REGRESSION_ALGORITHMS as _REG_MFS,
+                prepare_features as _pf_mfs,
+            )
+            from core.validator import compute_min_viable_feature_set as _cmvfs
+
+            _mfs_runs = [mr for mr in ctx["model_runs"] if mr.status == "done"]
+            _mfs_run = next(
+                (mr for mr in _mfs_runs if mr.is_selected),
+                _mfs_runs[0] if _mfs_runs else None,
+            )
+            if _mfs_run and ctx["dataset"] and ctx.get("feature_set"):
+                _mfs_ds = ctx["dataset"]
+                _mfs_fs = ctx["feature_set"]
+                if _mfs_ds.file_path and Path(_mfs_ds.file_path).exists():
+                    import pandas as _pd_mfs
+
+                    _mfs_df = _pd_mfs.read_csv(_mfs_ds.file_path)
+                    _mfs_transforms = json.loads(_mfs_fs.transformations or "[]")
+                    if _mfs_transforms:
+                        _mfs_df, _ = _at_mfs(_mfs_df, _mfs_transforms)
+                    _mfs_target = _mfs_fs.target_column
+                    _mfs_feat_cols = [c for c in _mfs_df.columns if c != _mfs_target]
+                    _mfs_problem = _mfs_fs.problem_type or "regression"
+                    _mfs_X, _mfs_y, _ = _pf_mfs(
+                        _mfs_df, _mfs_feat_cols, _mfs_target, _mfs_problem
+                    )
+                    _mfs_registry = (
+                        _REG_MFS if _mfs_problem == "regression" else _CLAS_MFS
+                    )
+                    if _mfs_run.algorithm in _mfs_registry:
+                        _mfs_algo_info = _mfs_registry[_mfs_run.algorithm]
+                        _mfs_result = _cmvfs(
+                            X=_mfs_X,
+                            y=_mfs_y,
+                            feature_names=_mfs_feat_cols,
+                            model_class=_mfs_algo_info["class"],
+                            model_params=_mfs_algo_info["params"],
+                            problem_type=_mfs_problem,
+                        )
+                        _mfs_result["model_run_id"] = _mfs_run.id
+                        _mfs_result["algorithm"] = _mfs_run.algorithm
+                        _mfs_result["target_col"] = _mfs_target
+                        min_feature_set_event = _mfs_result
+                        _mfs_can = _mfs_result.get("can_simplify")
+                        _mfs_n_orig = _mfs_result.get("n_original", 0)
+                        _mfs_n_min = _mfs_result.get("n_minimal", 0)
+                        _mfs_drop = _mfs_result.get("features_dropped", 0)
+                        _mfs_loss = _mfs_result.get("score_loss", 0.0)
+                        system_prompt += (
+                            f"\n\n## Minimum Viable Feature Set Analysis\n"
+                            f"Algorithm: {_mfs_run.algorithm}\n"
+                            f"Original features: {_mfs_n_orig}\n"
+                            f"Minimal features: {_mfs_n_min}\n"
+                            f"Features dropped: {_mfs_drop}\n"
+                            f"Accuracy loss: {_mfs_loss:.3f}\n"
+                            f"Can simplify: {_mfs_can}\n"
+                            f"Summary: {_mfs_result['summary']}\n"
+                            f"A MinFeatureSetCard is shown. "
+                            + (
+                                f"Narrate that the model can be simplified: "
+                                f"{_mfs_drop} feature(s) can be dropped with minimal accuracy loss. "
+                                f"Suggest the analyst consider retraining with only the retained features "
+                                f"to get a simpler, more robust prediction form."
+                                if _mfs_can
+                                else "Narrate that all current features are needed — removing any one "
+                                "causes accuracy to drop beyond the 2% tolerance."
+                            )
+                        )
+        except Exception:  # noqa: BLE001
+            pass  # Min feature set is nice-to-have; never crash chat
+
     # Model status report export
     # "generate a status report", "monitoring briefing", "production health report for my VP"
     # Distinct from: ExecutiveBriefing (model design), ModelCardExport (compliance docs),
@@ -17961,6 +18061,10 @@ def send_message(
         # Emit feature PSI ranking result
         if feature_psi_event:
             yield f"data: {json.dumps({'type': 'feature_psi', 'feature_psi': feature_psi_event})}\n\n"
+
+        # Emit minimum viable feature set result
+        if min_feature_set_event:
+            yield f"data: {json.dumps({'type': 'min_feature_set', 'min_feature_set': min_feature_set_event})}\n\n"
 
         # Emit model status report event
         if status_report_event:

@@ -550,6 +550,7 @@ export interface ChatMessage {
   output_anomalies?: PredictionOutputAnomalyResult
   output_distribution_shift?: PredictionOutputDistributionShiftResult
   feature_psi?: FeaturePsiResult
+  min_feature_set?: MinFeatureSetResult
   model_status_report?: ModelStatusReportInfo
 }
 
@@ -4243,5 +4244,31 @@ export interface FeaturePsiResult {
   verdict_label: string
   sample_count: number
   training_count: number
+  summary: string
+}
+
+export interface MinFeatureEntry {
+  feature: string
+  importance: number
+  kept: boolean
+  rank: number
+}
+
+export interface MinFeatureSetResult {
+  model_run_id: string
+  algorithm: string
+  target_col: string
+  features: MinFeatureEntry[]
+  n_original: number
+  n_minimal: number
+  features_dropped: number
+  features_retained: string[]
+  features_dropped_list: string[]
+  baseline_score: number
+  minimal_score: number
+  score_loss: number
+  can_simplify: boolean
+  reduction_pct: number
+  metric: string
   summary: string
 }

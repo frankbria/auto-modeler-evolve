@@ -1792,3 +1792,180 @@ def compute_prediction_error_correlation(
         "top_driver": top_driver,
         "summary": summary,
     }
+
+
+# ---------------------------------------------------------------------------
+# 13. Minimum viable feature set (greedy backward elimination)
+# ---------------------------------------------------------------------------
+
+
+def compute_min_viable_feature_set(
+    X: np.ndarray,
+    y: np.ndarray,
+    feature_names: list[str],
+    model_class: Any,
+    model_params: dict,
+    problem_type: str,
+    tolerance: float = 0.02,
+    max_rows: int = 2000,
+    cv: int = 3,
+) -> dict:
+    """Find the smallest subset of features that preserves model accuracy.
+
+    Uses greedy backward elimination: removes the least-important feature
+    at each step (by the trained model's importances) only if accuracy loss
+    remains within ``tolerance``.  Sub-samples to ``max_rows`` for speed.
+
+    Args:
+        X: Feature matrix (n_samples, n_features).
+        y: Target vector.
+        feature_names: Column names for X.
+        model_class: Unfitted sklearn estimator class.
+        model_params: Constructor kwargs for model_class.
+        problem_type: "regression" or "classification".
+        tolerance: Maximum allowed accuracy drop (e.g., 0.02 = 2%).
+        max_rows: Sub-sample threshold for speed.
+        cv: Number of cross-validation folds.
+
+    Returns:
+        dict with keys: features (list of dicts), n_original, n_minimal,
+        features_dropped, features_retained, features_dropped_list,
+        baseline_score, minimal_score, score_loss, can_simplify,
+        reduction_pct, metric, summary.
+
+    Raises:
+        ValueError: if fewer than 10 samples or fewer than 2 features.
+    """
+    MIN_ROWS = 10
+    MIN_FEATURES = 2
+    if len(X) < MIN_ROWS:
+        raise ValueError(
+            f"Dataset has only {len(X)} rows — need at least {MIN_ROWS} rows."
+        )
+    if X.shape[1] < MIN_FEATURES:
+        raise ValueError(
+            f"Need at least {MIN_FEATURES} features for elimination analysis."
+        )
+
+    # Sub-sample for speed
+    n = min(len(X), max_rows)
+    if n < len(X):
+        rng = np.random.default_rng(42)
+        idx = rng.choice(len(X), size=n, replace=False)
+        X_use = X[idx]
+        y_use = y[idx]
+    else:
+        X_use = X
+        y_use = y
+
+    metric = "r2" if problem_type == "regression" else "accuracy"
+    scoring = "r2" if problem_type == "regression" else "accuracy"
+
+    def _score(X_sub: np.ndarray) -> float:
+        m = model_class(**model_params)
+        scores = cross_val_score(m, X_sub, y_use, cv=cv, scoring=scoring)
+        return float(np.mean(scores))
+
+    # Baseline: all features
+    baseline_score = _score(X_use)
+
+    # Get feature importances from a freshly-trained model (not CV)
+    fitted = model_class(**model_params)
+    fitted.fit(X_use, y_use)
+    if hasattr(fitted, "feature_importances_"):
+        importances = np.array(fitted.feature_importances_, dtype=float)
+    elif hasattr(fitted, "coef_"):
+        coef = np.array(fitted.coef_)
+        importances = np.abs(coef.ravel())[: X_use.shape[1]]
+    else:
+        importances = np.ones(X_use.shape[1])
+
+    # Build initial feature index list sorted by importance ascending
+    n_feat = X_use.shape[1]
+    feature_names_list = list(feature_names)
+    remaining_idx = list(range(n_feat))
+
+    # Greedy elimination: try removing the least-important remaining feature
+    dropped_idx: list[int] = []
+    current_score = baseline_score
+
+    for _ in range(n_feat - 1):  # always keep at least 1 feature
+        if len(remaining_idx) <= 1:
+            break
+        # Find least-important remaining feature
+        imp_remaining = [(idx, importances[idx]) for idx in remaining_idx]
+        imp_remaining.sort(key=lambda t: t[1])
+        candidate_idx, _ = imp_remaining[0]
+
+        # Trial score without the candidate
+        trial_idx = [i for i in remaining_idx if i != candidate_idx]
+        trial_score = _score(X_use[:, trial_idx])
+
+        score_loss = baseline_score - trial_score
+        if score_loss <= tolerance:
+            dropped_idx.append(candidate_idx)
+            remaining_idx = trial_idx
+            current_score = trial_score
+        else:
+            break  # dropping this feature costs too much — stop
+
+    # Build per-feature result list (original order)
+    features_retained = [feature_names_list[i] for i in remaining_idx]
+    features_dropped_list = [feature_names_list[i] for i in dropped_idx]
+
+    feature_entries: list[dict] = []
+    for rank_i, fname in enumerate(feature_names_list, start=1):
+        imp_val = round(float(importances[rank_i - 1]), 6)
+        kept = fname in features_retained
+        feature_entries.append(
+            {
+                "feature": fname,
+                "importance": imp_val,
+                "kept": kept,
+                "rank": rank_i,
+            }
+        )
+
+    n_original = n_feat
+    n_minimal = len(features_retained)
+    n_dropped = len(features_dropped_list)
+    score_loss_final = round(baseline_score - current_score, 4)
+    reduction_pct = round(n_dropped / n_original * 100, 1) if n_original > 0 else 0.0
+    can_simplify = n_dropped > 0
+
+    # Plain-English summary
+    metric_label = "R²" if metric == "r2" else "accuracy"
+    bs_disp = f"{baseline_score:.3f}" if metric == "r2" else f"{baseline_score:.1%}"
+    ms_disp = f"{current_score:.3f}" if metric == "r2" else f"{current_score:.1%}"
+
+    if can_simplify:
+        summary = (
+            f"Your model can be simplified from {n_original} to {n_minimal} features "
+            f"(dropping {n_dropped}, a {reduction_pct:.0f}% reduction) while keeping "
+            f"{metric_label} at {ms_disp} (vs {bs_disp} with all features, "
+            f"loss of {score_loss_final:.3f}). "
+            f"Dropped: {', '.join(features_dropped_list[:5])}"
+            + (f" and {len(features_dropped_list) - 5} more." if n_dropped > 5 else ".")
+        )
+    else:
+        summary = (
+            f"All {n_original} features are needed — removing any one of them causes "
+            f"{metric_label} to drop by more than the {tolerance:.0%} tolerance. "
+            f"Baseline {metric_label}: {bs_disp}."
+        )
+
+    return {
+        "features": feature_entries,
+        "n_original": n_original,
+        "n_minimal": n_minimal,
+        "features_dropped": n_dropped,
+        "features_retained": features_retained,
+        "features_dropped_list": features_dropped_list,
+        "baseline_score": round(baseline_score, 4),
+        "minimal_score": round(current_score, 4),
+        "score_loss": score_loss_final,
+        "can_simplify": can_simplify,
+        "reduction_pct": reduction_pct,
+        "metric": metric,
+        "summary": summary,
+    }

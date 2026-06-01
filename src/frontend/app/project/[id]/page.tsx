@@ -89,6 +89,7 @@ import { ErrorCorrelationCard } from "@/components/chat/error-correlation-card"
 import { PredictionOutputAnomalyCard } from "@/components/deploy/prediction-output-anomaly-card"
 import { PredictionOutputDistributionCard } from "@/components/deploy/prediction-output-distribution-card"
 import { FeaturePsiCard } from "@/components/deploy/feature-psi-card"
+import { MinFeatureSetCard } from "@/components/models/min-feature-set-card"
 import { ModelStatusReportCard } from "@/components/deploy/model-status-report-card"
 import { OnboardingGuideCard } from "@/components/chat/onboarding-guide-card"
 import { DataVersionHistoryCard } from "@/components/chat/data-version-history-card"
@@ -400,6 +401,7 @@ export default function ProjectWorkspace() {
     attachOutputAnomaliesToLastMessage,
     attachOutputDistributionShiftToLastMessage,
     attachFeaturePsiToLastMessage,
+    attachMinFeatureSetToLastMessage,
     attachModelStatusReportToLastMessage,
   } = useAppStore()
 
@@ -799,6 +801,8 @@ export default function ProjectWorkspace() {
                 attachOutputDistributionShiftToLastMessage(json.output_distribution_shift as import("@/lib/types").PredictionOutputDistributionShiftResult)
               } else if (json.type === "feature_psi" && json.feature_psi) {
                 attachFeaturePsiToLastMessage(json.feature_psi as import("@/lib/types").FeaturePsiResult)
+              } else if (json.type === "min_feature_set" && json.min_feature_set) {
+                attachMinFeatureSetToLastMessage(json.min_feature_set as import("@/lib/types").MinFeatureSetResult)
               } else if (json.type === "model_status_report" && json.model_status_report) {
                 attachModelStatusReportToLastMessage(json.model_status_report as import("@/lib/types").ModelStatusReportInfo)
               } else if (json.type === "onboarding_guide" && json.onboarding_guide) {
@@ -985,6 +989,8 @@ export default function ProjectWorkspace() {
                 attachOutputDistributionShiftToLastMessage(json.output_distribution_shift as import("@/lib/types").PredictionOutputDistributionShiftResult)
               } else if (json.type === "feature_psi" && json.feature_psi) {
                 attachFeaturePsiToLastMessage(json.feature_psi as import("@/lib/types").FeaturePsiResult)
+              } else if (json.type === "min_feature_set" && json.min_feature_set) {
+                attachMinFeatureSetToLastMessage(json.min_feature_set as import("@/lib/types").MinFeatureSetResult)
               } else if (json.type === "model_status_report" && json.model_status_report) {
                 attachModelStatusReportToLastMessage(json.model_status_report as import("@/lib/types").ModelStatusReportInfo)
               } else if (json.type === "done") {
@@ -1150,6 +1156,7 @@ export default function ProjectWorkspace() {
     attachOutputAnomaliesToLastMessage,
     attachOutputDistributionShiftToLastMessage,
     attachFeaturePsiToLastMessage,
+    attachMinFeatureSetToLastMessage,
     attachModelStatusReportToLastMessage,
   ])
 
@@ -1857,6 +1864,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.feature_psi && (
                       <FeaturePsiCard result={msg.feature_psi} />
+                    )}
+                    {msg.min_feature_set && (
+                      <MinFeatureSetCard result={msg.min_feature_set} />
                     )}
                     {msg.model_status_report && (
                       <ModelStatusReportCard info={msg.model_status_report} />

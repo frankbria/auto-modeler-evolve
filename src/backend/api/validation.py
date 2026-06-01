@@ -36,6 +36,7 @@ from core.validator import (
     compute_confusion_matrix,
     compute_error_distribution,
     compute_fairness_metrics,
+    compute_min_viable_feature_set,
     compute_prediction_error_correlation,
     compute_prediction_errors,
     compute_residuals,
@@ -881,6 +882,65 @@ def get_error_correlation(
             y_pred=y_pred,
             feature_names=feature_cols,
             problem_type=problem_type,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    result["model_run_id"] = model_run_id
+    result["algorithm"] = run.algorithm
+    result["target_col"] = feature_set.target_column
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# 13. Minimum viable feature set
+# ---------------------------------------------------------------------------
+
+
+@router.get("/api/models/{model_run_id}/min-feature-set")
+def get_min_feature_set(
+    model_run_id: str,
+    tolerance: float = 0.02,
+    session: Session = Depends(get_session),
+):
+    """Greedy backward elimination: find the smallest feature subset that
+    preserves model accuracy within ``tolerance``.
+
+    Returns 404 for unknown model run, 400 for unsupported conditions.
+    """
+    run, feature_set, _dataset, file_path = _load_run_context(model_run_id, session)
+
+    if tolerance < 0 or tolerance > 1:
+        raise HTTPException(
+            status_code=400,
+            detail="tolerance must be between 0 and 1 (e.g., 0.02 for 2%).",
+        )
+
+    problem_type = feature_set.problem_type or "regression"
+    X, y, feature_cols = _build_Xy(file_path, feature_set)
+
+    registry = (
+        REGRESSION_ALGORITHMS if problem_type == "regression" else CLASSIFICATION_ALGORITHMS
+    )
+    if run.algorithm not in registry:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Algorithm '{run.algorithm}' is not in the registry.",
+        )
+    algo_info = registry[run.algorithm]
+    model_class = algo_info["class"]
+    model_params = algo_info["params"]
+
+    try:
+        result = compute_min_viable_feature_set(
+            X=X,
+            y=y,
+            feature_names=feature_cols,
+            model_class=model_class,
+            model_params=model_params,
+            problem_type=problem_type,
+            tolerance=tolerance,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
