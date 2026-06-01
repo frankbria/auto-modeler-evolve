@@ -53,6 +53,27 @@ the time is better spent on real features.
 
 ---
 
+## Day 82 (12:00) — Done
+
+**Track C: Minimum Viable Feature Set via Chat** — complete.
+
+Closes the "which of my current features can I safely drop?" analyst gap. Analysts can ask "which features can I drop?", "simplify my model", "reduce my feature set", "feature pruning", "fewest features for good predictions", "which features are redundant?", "what's the minimum features needed?", or "can I drop any features?" (8 NL variants) and receive a `MinFeatureSetCard` showing the result of greedy backward elimination.
+
+**What was built:**
+- `compute_min_viable_feature_set(X, y, feature_names, model_class, model_params, problem_type, tolerance=0.02, max_rows=2000, cv=3)` pure function in `core/validator.py`: sub-samples for speed, computes baseline CV score, fits model for importances, greedily removes least-important features while score loss ≤ tolerance. Returns n_original, n_minimal, can_simplify, features_retained/dropped lists, baseline/minimal scores, reduction_pct, summary.
+- `GET /api/models/{model_run_id}/min-feature-set?tolerance=0.02` REST endpoint in `api/validation.py`.
+- `_MIN_FEATURE_SET_PATTERNS` (8 NL variants) + handler in `chat.py`.
+- `MinFeatureSetCard` (sky border when can_simplify): score comparison grid, ranked feature list with importance bars, retained/dropped two-column summary.
+
+35 backend + 20 frontend = **55 new tests**. Backend lint: clean. Frontend build + lint: clean.
+
+**What's next:**
+- Track C: Class imbalance detection + SMOTE/class-weights handling — "my model is biased toward the majority class"
+- Track D: Automated retraining signal aggregation — when drift + output anomalies + PSI all point to degradation, proactively recommend retraining with a single confidence score
+- Track B: Multi-model ensemble via chat — "combine my top 3 models into an ensemble"
+
+---
+
 ## Day 81 (12:00) — Done
 
 **Track D: Prediction Output Distribution Shift via Chat** — complete.
