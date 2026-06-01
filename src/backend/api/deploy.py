@@ -6377,3 +6377,216 @@ def get_output_distribution_shift(
     result["deployment_id"] = deployment_id
     result["problem_type"] = dep.problem_type or "regression"
     return result
+
+
+@router.get("/api/deploy/{deployment_id}/status-report")
+def get_model_status_report(
+    deployment_id: str,
+    session: Session = Depends(get_session),
+):
+    """Return a self-contained HTML monitoring status report for the deployment.
+
+    Combines prediction volume, health score, SLA compliance, active alerts,
+    and feedback accuracy into one shareable stakeholder document.
+    Distinct from: model card (training/compliance focus), conversation export
+    (chat history), PDF report (metrics only).
+    """
+    from fastapi.responses import HTMLResponse as _HTMLResponse
+
+    from core.report_generator import generate_model_status_report_html as _gen_sr
+
+    from datetime import timezone as _tz2, timedelta as _sr_td
+    from models.project import Project as _SRProject
+
+    dep = session.get(Deployment, deployment_id)
+    if dep is None:
+        raise HTTPException(status_code=404, detail="Deployment not found.")
+
+    run = session.get(ModelRun, dep.model_run_id) if dep.model_run_id else None
+    project = session.get(_SRProject, dep.project_id) if dep.project_id else None
+
+    # Algorithm plain name
+    from api.models import _algorithm_plain_name as _apn
+
+    algorithm_plain = _apn(run.algorithm if run else "") if run else "Unknown"
+
+    # Prediction volume
+    now_utc = datetime.now(UTC)
+    today_start = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
+    week_start = now_utc - _sr_td(days=7)
+    month_start = now_utc - _sr_td(days=30)
+
+    all_logs = session.exec(
+        select(PredictionLog)
+        .where(PredictionLog.deployment_id == deployment_id)
+        .order_by(PredictionLog.created_at.desc())  # type: ignore[arg-type]
+    ).all()
+
+    predictions_today = sum(
+        1
+        for log in all_logs
+        if log.created_at and log.created_at.replace(tzinfo=_tz2.utc) >= today_start
+    )
+    predictions_7d = sum(
+        1
+        for log in all_logs
+        if log.created_at and log.created_at.replace(tzinfo=_tz2.utc) >= week_start
+    )
+    predictions_30d = sum(
+        1
+        for log in all_logs
+        if log.created_at and log.created_at.replace(tzinfo=_tz2.utc) >= month_start
+    )
+    predictions_total = dep.request_count or len(all_logs)
+
+    # Health score
+    health_item = compute_deployment_health_item(
+        deployment_id=deployment_id,
+        algorithm=dep.algorithm,
+        target_column=dep.target_column,
+        created_at=dep.created_at or datetime.now(UTC),
+        request_count=len(all_logs),
+        last_predicted_at=dep.last_predicted_at,
+        environment=getattr(dep, "environment", "staging") or "staging",
+    )
+    health_score = int(health_item.get("health_score", 0))
+    health_status = health_item.get("status", "unknown")
+
+    # SLA
+    latency_values = [
+        log.response_ms for log in all_logs if log.response_ms is not None
+    ]
+    p50_ms = p95_ms = p99_ms = None
+    sla_alert = False
+    if latency_values:
+        sorted_lat = sorted(latency_values)
+
+        def _pct(vals: list, pct: float) -> float:
+            idx = (len(vals) - 1) * pct
+            lo, hi = int(idx), min(int(idx) + 1, len(vals) - 1)
+            return vals[lo] + (vals[hi] - vals[lo]) * (idx - lo)
+
+        p50_ms = _pct(sorted_lat, 0.50)
+        p95_ms = _pct(sorted_lat, 0.95)
+        p99_ms = _pct(sorted_lat, 0.99)
+        sla_alert = p95_ms > 500.0
+
+    # Feedback accuracy
+    feedback_accuracy: float | None = None
+    feedback_accuracy_label: str | None = None
+    try:
+        fb_records = session.exec(
+            select(FeedbackRecord).where(
+                FeedbackRecord.deployment_id == deployment_id,
+                FeedbackRecord.is_correct.is_not(None),  # type: ignore[attr-defined]
+            )
+        ).all()
+        if len(fb_records) >= 5:
+            correct = sum(1 for r in fb_records if r.is_correct)
+            feedback_accuracy = correct / len(fb_records)
+            feedback_accuracy_label = (
+                "excellent"
+                if feedback_accuracy >= 0.9
+                else "good"
+                if feedback_accuracy >= 0.8
+                else "moderate"
+                if feedback_accuracy >= 0.6
+                else "needs attention"
+            )
+    except Exception:  # noqa: BLE001
+        pass
+
+    # Active alerts: stale model or no predictions
+    alerts: list[dict] = []
+    if dep.created_at:
+        from datetime import timezone as _tz3
+
+        age_days = (datetime.now(UTC) - dep.created_at.replace(tzinfo=_tz3.utc)).days
+        if age_days > 90:
+            alerts.append(
+                {
+                    "severity": "critical",
+                    "message": f"Model is {age_days} days old",
+                    "recommendation": "Consider retraining with recent data.",
+                }
+            )
+        elif age_days > 60:
+            alerts.append(
+                {
+                    "severity": "warning",
+                    "message": f"Model is {age_days} days old",
+                    "recommendation": "Retrain soon to keep predictions current.",
+                }
+            )
+    if predictions_total == 0:
+        alerts.append(
+            {
+                "severity": "warning",
+                "message": "No predictions recorded yet",
+                "recommendation": "Share the prediction dashboard URL with stakeholders.",
+            }
+        )
+
+    # Recommendations (derived from health + SLA)
+    recommendations: list[str] = []
+    top_issue = health_item.get("top_issue", "")
+    if top_issue:
+        recommendations.append(top_issue)
+    if sla_alert:
+        recommendations.append(
+            "p95 latency exceeds 500 ms SLA target — consider optimizing model complexity or infrastructure."
+        )
+    if feedback_accuracy is not None and feedback_accuracy < 0.7:
+        recommendations.append(
+            "Feedback-based accuracy is below 70% — consider retraining with more recent data."
+        )
+    if not recommendations:
+        recommendations.append(
+            "Model is performing within expected parameters. Continue monitoring for changes in volume or latency."
+        )
+
+    deployed_at_str = (
+        dep.created_at.strftime("%B %d, %Y") if dep.created_at else "Unknown"
+    )
+    project_name = project.name if project else "Unnamed Project"
+    target_column = (
+        dep.target_column or (run.feature_set_id and "target" or "target")
+        if run
+        else "target"
+    )
+    # Resolve target column from feature set if needed
+    if not dep.target_column and run and run.feature_set_id:
+        fs = session.get(FeatureSet, run.feature_set_id)
+        if fs and fs.target_column:
+            target_column = fs.target_column
+
+    html_content = _gen_sr(
+        project_name=project_name,
+        algorithm_plain=algorithm_plain,
+        problem_type=dep.problem_type or "regression",
+        target_column=target_column,
+        is_active=dep.is_active,
+        deployed_at=deployed_at_str,
+        environment=getattr(dep, "environment", "staging") or "staging",
+        predictions_today=predictions_today,
+        predictions_7d=predictions_7d,
+        predictions_30d=predictions_30d,
+        predictions_total=predictions_total,
+        health_score=health_score,
+        health_status=health_status,
+        p50_ms=p50_ms,
+        p95_ms=p95_ms,
+        p99_ms=p99_ms,
+        sla_alert=sla_alert,
+        alerts=alerts,
+        feedback_accuracy=feedback_accuracy,
+        feedback_accuracy_label=feedback_accuracy_label,
+        recommendations=recommendations,
+    )
+
+    safe_name = (project_name or "project").replace(" ", "_")[:30]
+    filename = f"status_report_{safe_name}.html"
+    return _HTMLResponse(
+        content=html_content,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

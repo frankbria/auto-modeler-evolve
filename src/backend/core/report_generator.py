@@ -557,3 +557,244 @@ def html_escape(text: str) -> str:
         .replace(">", "&gt;")
         .replace('"', "&quot;")
     )
+
+
+def generate_model_status_report_html(
+    *,
+    project_name: str,
+    algorithm_plain: str,
+    problem_type: str,
+    target_column: str,
+    is_active: bool,
+    deployed_at: str,
+    environment: str = "staging",
+    predictions_today: int = 0,
+    predictions_7d: int = 0,
+    predictions_30d: int = 0,
+    predictions_total: int = 0,
+    health_score: int = 0,
+    health_status: str = "unknown",
+    p50_ms: float | None = None,
+    p95_ms: float | None = None,
+    p99_ms: float | None = None,
+    sla_alert: bool = False,
+    alerts: list[dict] | None = None,
+    feedback_accuracy: float | None = None,
+    feedback_accuracy_label: str | None = None,
+    recommendations: list[str] | None = None,
+) -> str:
+    """Return a self-contained HTML monitoring status report as a string.
+
+    Combines all production monitoring signals — volume, health, SLA, alerts,
+    and feedback accuracy — into one shareable stakeholder document.
+    """
+    generated_at = datetime.now(UTC).strftime("%B %d, %Y at %H:%M UTC")
+    alerts = alerts or []
+    recommendations = recommendations or []
+
+    # Health score color
+    if health_score >= 75:
+        health_color = "#059669"
+        health_label_color = "#d1fae5"
+        health_text = "Healthy"
+    elif health_score >= 50:
+        health_color = "#d97706"
+        health_label_color = "#fef3c7"
+        health_text = "Warning"
+    else:
+        health_color = "#dc2626"
+        health_label_color = "#fee2e2"
+        health_text = "Critical"
+
+    # Override from status if provided
+    if health_status == "healthy":
+        health_color, health_label_color, health_text = "#059669", "#d1fae5", "Healthy"
+    elif health_status == "warning":
+        health_color, health_label_color, health_text = "#d97706", "#fef3c7", "Warning"
+    elif health_status == "critical":
+        health_color, health_label_color, health_text = "#dc2626", "#fee2e2", "Critical"
+
+    health_bar_pct = max(0, min(100, health_score))
+
+    # SLA section
+    sla_color = "#dc2626" if sla_alert else "#059669"
+    sla_badge = (
+        '<span style="background:#fee2e2;color:#dc2626;padding:2px 8px;border-radius:12px;font-size:0.75rem;font-weight:600">SLA Alert</span>'
+        if sla_alert
+        else '<span style="background:#d1fae5;color:#059669;padding:2px 8px;border-radius:12px;font-size:0.75rem;font-weight:600">Within SLA</span>'
+    )
+
+    def _fmt_ms(v: float | None) -> str:
+        if v is None:
+            return "—"
+        return f"{v:.0f} ms"
+
+    sla_rows = f"""
+        <tr style="background:#f9fafb">
+          <td style="padding:8px 12px;font-size:0.875rem;color:#374151">p50 (Median)</td>
+          <td style="padding:8px 12px;font-size:0.875rem;text-align:right;font-weight:600;color:{sla_color}">{_fmt_ms(p50_ms)}</td>
+        </tr>
+        <tr>
+          <td style="padding:8px 12px;font-size:0.875rem;color:#374151">p95</td>
+          <td style="padding:8px 12px;font-size:0.875rem;text-align:right;font-weight:600;color:{sla_color}">{_fmt_ms(p95_ms)}</td>
+        </tr>
+        <tr style="background:#f9fafb">
+          <td style="padding:8px 12px;font-size:0.875rem;color:#374151">p99</td>
+          <td style="padding:8px 12px;font-size:0.875rem;text-align:right;font-weight:600;color:{sla_color}">{_fmt_ms(p99_ms)}</td>
+        </tr>"""
+
+    # Alerts section
+    alert_rows_html = ""
+    if alerts:
+        rows = []
+        for a in alerts:
+            severity = a.get("severity", "warning")
+            badge_color = "#dc2626" if severity == "critical" else "#d97706"
+            badge_bg = "#fee2e2" if severity == "critical" else "#fef3c7"
+            rows.append(f"""<tr>
+              <td style="padding:8px 12px;font-size:0.875rem">
+                <span style="background:{badge_bg};color:{badge_color};padding:2px 8px;border-radius:12px;font-size:0.75rem;font-weight:600">
+                  {html_escape(severity.capitalize())}
+                </span>
+              </td>
+              <td style="padding:8px 12px;font-size:0.875rem;color:#374151">{html_escape(a.get("message", ""))}</td>
+              <td style="padding:8px 12px;font-size:0.875rem;color:#6b7280">{html_escape(a.get("recommendation", ""))}</td>
+            </tr>""")
+        alert_rows_html = "".join(rows)
+        alerts_section = f"""<h2 style="font-size:1rem;font-weight:600;color:#92400e;margin:1.5rem 0 0.5rem">&#9888; Active Alerts</h2>
+        <table style="width:100%;border-collapse:collapse;border:1px solid #fef3c7;border-radius:6px">
+          <thead>
+            <tr style="background:#fffbeb">
+              <th style="padding:8px 12px;text-align:left;font-size:0.75rem;color:#92400e">Severity</th>
+              <th style="padding:8px 12px;text-align:left;font-size:0.75rem;color:#92400e">Alert</th>
+              <th style="padding:8px 12px;text-align:left;font-size:0.75rem;color:#92400e">Recommendation</th>
+            </tr>
+          </thead>
+          <tbody>{alert_rows_html}</tbody>
+        </table>"""
+    else:
+        alerts_section = """<h2 style="font-size:1rem;font-weight:600;color:#065f46;margin:1.5rem 0 0.5rem">&#10003; No Active Alerts</h2>
+        <p style="font-size:0.875rem;color:#374151">All monitoring checks are passing. No immediate action required.</p>"""
+
+    # Feedback accuracy section
+    feedback_html = ""
+    if feedback_accuracy is not None:
+        acc_pct = round(feedback_accuracy * 100, 1)
+        acc_color = (
+            "#059669" if acc_pct >= 80 else "#d97706" if acc_pct >= 60 else "#dc2626"
+        )
+        feedback_html = f"""<h2 style="font-size:1rem;font-weight:600;color:#1e40af;margin:1.5rem 0 0.5rem">
+            Real-World Performance
+        </h2>
+        <p style="font-size:0.875rem;color:#374151">
+            Feedback-based accuracy:
+            <strong style="color:{acc_color}">{acc_pct}%</strong>
+            {("— " + html_escape(feedback_accuracy_label)) if feedback_accuracy_label else ""}
+        </p>"""
+
+    # Recommendations
+    rec_html = ""
+    if recommendations:
+        rec_items = "".join(
+            f'<li style="margin-bottom:6px;font-size:0.875rem;color:#374151">{html_escape(r)}</li>'
+            for r in recommendations
+        )
+        rec_html = f"""<h2 style="font-size:1rem;font-weight:600;color:#1e40af;margin:1.5rem 0 0.5rem">
+            Recommendations
+        </h2>
+        <ul style="margin:0;padding-left:1.2rem">{rec_items}</ul>"""
+
+    # Status / environment badges
+    status_color = "#059669" if is_active else "#6b7280"
+    status_label = "&#9679; Live" if is_active else "&#9675; Offline"
+    env_badge = (
+        '<span style="background:#d1fae5;color:#065f46;padding:2px 8px;border-radius:12px;font-size:0.75rem;font-weight:600">Production</span>'
+        if environment == "production"
+        else '<span style="background:#fef3c7;color:#92400e;padding:2px 8px;border-radius:12px;font-size:0.75rem;font-weight:600">Staging</span>'
+    )
+    problem_label = "Regression" if problem_type == "regression" else "Classification"
+    safe_project = html_escape(project_name)
+    safe_algo = html_escape(algorithm_plain)
+    safe_target = html_escape(target_column)
+
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Model Status Report — {safe_project}</title>
+</head>
+<body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f9fafb;margin:0;padding:24px">
+  <div style="max-width:760px;margin:0 auto;background:#fff;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,0.1);padding:32px">
+
+    <div style="border-bottom:2px solid #e5e7eb;padding-bottom:16px;margin-bottom:24px">
+      <h1 style="font-size:1.5rem;font-weight:700;color:#111827;margin:0 0 8px">
+        Model Status Report
+      </h1>
+      <p style="font-size:1rem;font-weight:600;color:#374151;margin:0 0 12px">{safe_project}</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <span style="color:{status_color};font-weight:600;font-size:0.875rem">{status_label}</span>
+        {env_badge}
+        <span style="background:#eff6ff;color:#1d4ed8;padding:2px 8px;border-radius:12px;font-size:0.75rem;font-weight:600">{safe_algo}</span>
+        <span style="background:#f3f4f6;color:#374151;padding:2px 8px;border-radius:12px;font-size:0.75rem;font-weight:600">Target: {safe_target}</span>
+        <span style="background:#f3f4f6;color:#374151;padding:2px 8px;border-radius:12px;font-size:0.75rem;font-weight:600">{problem_label}</span>
+      </div>
+      <p style="font-size:0.75rem;color:#9ca3af;margin:8px 0 0">Deployed: {html_escape(deployed_at)}</p>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px">
+      <div style="background:#eff6ff;border-radius:8px;padding:16px;text-align:center">
+        <div style="font-size:2rem;font-weight:700;color:#1d4ed8">{predictions_today:,}</div>
+        <div style="font-size:0.75rem;color:#3730a3;font-weight:600;text-transform:uppercase;letter-spacing:0.05em">Today</div>
+      </div>
+      <div style="background:#f0fdf4;border-radius:8px;padding:16px;text-align:center">
+        <div style="font-size:2rem;font-weight:700;color:#15803d">{predictions_7d:,}</div>
+        <div style="font-size:0.75rem;color:#166534;font-weight:600;text-transform:uppercase;letter-spacing:0.05em">Last 7 Days</div>
+      </div>
+      <div style="background:#fafaf9;border-radius:8px;padding:16px;text-align:center">
+        <div style="font-size:2rem;font-weight:700;color:#374151">{predictions_30d:,}</div>
+        <div style="font-size:0.75rem;color:#6b7280;font-weight:600;text-transform:uppercase;letter-spacing:0.05em">Last 30 Days</div>
+      </div>
+      <div style="background:#fafaf9;border-radius:8px;padding:16px;text-align:center">
+        <div style="font-size:2rem;font-weight:700;color:#374151">{predictions_total:,}</div>
+        <div style="font-size:0.75rem;color:#6b7280;font-weight:600;text-transform:uppercase;letter-spacing:0.05em">All Time</div>
+      </div>
+    </div>
+
+    <h2 style="font-size:1rem;font-weight:600;color:#1e40af;margin:0 0 8px">Model Health</h2>
+    <div style="background:{health_label_color};border-radius:8px;padding:12px 16px;margin-bottom:16px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <span style="font-weight:600;color:{health_color}">{health_text}</span>
+        <span style="font-weight:700;color:{health_color};font-size:1.25rem">{health_score}/100</span>
+      </div>
+      <div style="background:rgba(0,0,0,0.1);border-radius:4px;height:8px;overflow:hidden">
+        <div style="background:{health_color};height:8px;width:{health_bar_pct}%;border-radius:4px"></div>
+      </div>
+    </div>
+
+    <h2 style="font-size:1rem;font-weight:600;color:#1e40af;margin:1.5rem 0 0.5rem">
+      API Latency &nbsp; {sla_badge}
+    </h2>
+    <table style="width:100%;border-collapse:collapse;border:1px solid #e5e7eb;border-radius:6px;margin-bottom:8px">
+      <tbody>{sla_rows}
+        <tr>
+          <td style="padding:8px 12px;font-size:0.75rem;color:#9ca3af" colspan="2">
+            SLA target: p95 &lt; 500 ms
+          </td>
+        </tr>
+      </tbody>
+    </table>
+
+    {alerts_section}
+
+    {feedback_html}
+
+    {rec_html}
+
+    <div style="border-top:1px solid #e5e7eb;margin-top:2rem;padding-top:1rem;font-size:0.75rem;color:#9ca3af;text-align:center">
+      Generated {generated_at} &nbsp;·&nbsp; <strong>AutoModeler</strong>
+      — AI-powered data modeling for business analysts
+    </div>
+  </div>
+</body>
+</html>"""

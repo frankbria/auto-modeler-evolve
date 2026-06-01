@@ -549,6 +549,7 @@ export interface ChatMessage {
   error_correlation?: ErrorCorrelationResult
   output_anomalies?: PredictionOutputAnomalyResult
   output_distribution_shift?: PredictionOutputDistributionShiftResult
+  model_status_report?: ModelStatusReportInfo
 }
 
 export interface RollbackVersionEntry {
@@ -4198,5 +4199,23 @@ export interface PredictionOutputDistributionShiftResult {
   training_histogram?: PredictionDistHistogramBin[]
   production_histogram?: PredictionDistHistogramBin[]
   problem_type?: string
+  summary: string
+}
+
+export interface ModelStatusReportInfo {
+  deployment_id: string
+  project_name: string
+  algorithm_plain: string
+  problem_type: string
+  target_column: string
+  health_score: number
+  health_status: string
+  predictions_today: number
+  predictions_7d: number
+  predictions_30d: number
+  predictions_total: number
+  sla_ok: boolean
+  p95_ms: number | null
+  download_url: string
   summary: string
 }

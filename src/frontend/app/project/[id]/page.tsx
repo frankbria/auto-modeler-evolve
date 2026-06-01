@@ -88,6 +88,7 @@ import { ClassFeatureImportanceCard } from "@/components/models/class-feature-im
 import { ErrorCorrelationCard } from "@/components/chat/error-correlation-card"
 import { PredictionOutputAnomalyCard } from "@/components/deploy/prediction-output-anomaly-card"
 import { PredictionOutputDistributionCard } from "@/components/deploy/prediction-output-distribution-card"
+import { ModelStatusReportCard } from "@/components/deploy/model-status-report-card"
 import { OnboardingGuideCard } from "@/components/chat/onboarding-guide-card"
 import { DataVersionHistoryCard } from "@/components/chat/data-version-history-card"
 import { LearningCurveCard } from "@/components/chat/learning-curve-card"
@@ -397,6 +398,7 @@ export default function ProjectWorkspace() {
     attachErrorCorrelationToLastMessage,
     attachOutputAnomaliesToLastMessage,
     attachOutputDistributionShiftToLastMessage,
+    attachModelStatusReportToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -793,6 +795,8 @@ export default function ProjectWorkspace() {
                 attachOutputAnomaliesToLastMessage(json.output_anomalies as import("@/lib/types").PredictionOutputAnomalyResult)
               } else if (json.type === "output_distribution_shift" && json.output_distribution_shift) {
                 attachOutputDistributionShiftToLastMessage(json.output_distribution_shift as import("@/lib/types").PredictionOutputDistributionShiftResult)
+              } else if (json.type === "model_status_report" && json.model_status_report) {
+                attachModelStatusReportToLastMessage(json.model_status_report as import("@/lib/types").ModelStatusReportInfo)
               } else if (json.type === "onboarding_guide" && json.onboarding_guide) {
                 attachOnboardingGuideToLastMessage(json.onboarding_guide as import("@/lib/types").OnboardingGuideResult)
               } else if (json.type === "version_history" && json.version_history) {
@@ -975,6 +979,8 @@ export default function ProjectWorkspace() {
                 attachOutputAnomaliesToLastMessage(json.output_anomalies as import("@/lib/types").PredictionOutputAnomalyResult)
               } else if (json.type === "output_distribution_shift" && json.output_distribution_shift) {
                 attachOutputDistributionShiftToLastMessage(json.output_distribution_shift as import("@/lib/types").PredictionOutputDistributionShiftResult)
+              } else if (json.type === "model_status_report" && json.model_status_report) {
+                attachModelStatusReportToLastMessage(json.model_status_report as import("@/lib/types").ModelStatusReportInfo)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -1137,6 +1143,7 @@ export default function ProjectWorkspace() {
     attachErrorCorrelationToLastMessage,
     attachOutputAnomaliesToLastMessage,
     attachOutputDistributionShiftToLastMessage,
+    attachModelStatusReportToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -1840,6 +1847,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.output_distribution_shift && (
                       <PredictionOutputDistributionCard result={msg.output_distribution_shift} />
+                    )}
+                    {msg.model_status_report && (
+                      <ModelStatusReportCard info={msg.model_status_report} />
                     )}
                   </div>
                 </div>

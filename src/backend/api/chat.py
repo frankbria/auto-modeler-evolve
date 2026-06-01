@@ -4147,6 +4147,23 @@ _OUTPUT_DIST_SHIFT_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# Model status report: production monitoring briefing for stakeholders.
+# Distinct from: ExecutiveBriefingCard (model design), ModelCardExport (compliance),
+# ConversationExportCard (chat history), PredictionAuditCard (raw stats card).
+_STATUS_REPORT_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"(?:generate|create|export|download|produce|build|get|give\s+me)\s+(?:a\s+)?(?:(?:production\s+|deployment\s+|model\s+)?status|monitoring|health|production)\s+report\b|"
+    r"(?:monitoring|model\s+health|deployment\s+health|production\s+health)\s+(?:report|briefing|summary|document|export)\b|"
+    r"(?:download|export)\s+(?:the\s+)?(?:monitoring|health|status|production)\s+(?:report|summary|document)\b|"
+    r"(?:status|health)\s+report\s+(?:for\s+(?:my\s+)?)?(?:stakeholders?|(?:my\s+)?(?:vp|manager|boss|leadership|team))\b|"
+    r"(?:shareable|share)\s+(?:a\s+)?(?:monitoring|health|status)\s+(?:report|summary|document)\b|"
+    r"(?:send|share)\s+(?:my\s+)?(?:model|deployment)\s+(?:status|health)\s+(?:to|with|for)\b|"
+    r"(?:generate|create|export)\s+(?:a\s+)?(?:weekly|daily|monthly)\s+(?:model\s+)?status\s+report\b|"
+    r"model\s+(?:health|status|monitoring)\s+(?:brief|briefing|report|document|export)\b"
+    r")",
+    re.IGNORECASE,
+)
+
 _SIMILAR_RECORDS_PATTERNS = re.compile(
     r"(?i)(?:"
     r"(?:find|show|get)\s+(?:me\s+)?(?:similar|like|nearest|closest)\s+(?:records?|rows?|cases?|customers?|examples?)\b|"
@@ -10966,6 +10983,134 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Distribution shift is nice-to-have; never crash chat
 
+    # Model status report export
+    # "generate a status report", "monitoring briefing", "production health report for my VP"
+    # Distinct from: ExecutiveBriefing (model design), ModelCardExport (compliance docs),
+    # ConversationExport (chat history), PredictionAudit (inline stats card).
+    status_report_event: dict | None = None
+    if _STATUS_REPORT_PATTERNS.search(body.message) and ctx.get("deployment"):
+        try:
+            from datetime import timedelta as _sr_td, timezone as _srtz
+
+            _sr_dep = ctx["deployment"]
+            _sr_run = ctx.get("model_runs") and ctx["model_runs"][0]
+
+            # Prediction volume
+            _sr_now = datetime.now(UTC)
+            _sr_today_start = _sr_now.replace(hour=0, minute=0, second=0, microsecond=0)
+            _sr_week_start = _sr_now - _sr_td(days=7)
+            _sr_month_start = _sr_now - _sr_td(days=30)
+
+            _sr_all_logs = session.exec(
+                select(PredictionLog)
+                .where(PredictionLog.deployment_id == _sr_dep.id)
+                .order_by(PredictionLog.created_at.desc())  # type: ignore[arg-type]
+            ).all()
+
+            _sr_today = sum(
+                1
+                for log in _sr_all_logs
+                if log.created_at
+                and log.created_at.replace(tzinfo=_srtz.utc) >= _sr_today_start
+            )
+            _sr_7d = sum(
+                1
+                for log in _sr_all_logs
+                if log.created_at
+                and log.created_at.replace(tzinfo=_srtz.utc) >= _sr_week_start
+            )
+            _sr_30d = sum(
+                1
+                for log in _sr_all_logs
+                if log.created_at
+                and log.created_at.replace(tzinfo=_srtz.utc) >= _sr_month_start
+            )
+            _sr_total = _sr_dep.request_count or len(_sr_all_logs)
+
+            # Health score
+            from core.analyzer import compute_deployment_health_item as _sr_cdhi
+
+            _sr_health = _sr_cdhi(
+                deployment_id=_sr_dep.id,
+                algorithm=_sr_dep.algorithm,
+                target_column=_sr_dep.target_column,
+                created_at=_sr_dep.created_at or datetime.now(UTC),
+                request_count=len(_sr_all_logs),
+                last_predicted_at=_sr_dep.last_predicted_at,
+                environment=getattr(_sr_dep, "environment", "staging") or "staging",
+            )
+
+            # SLA
+            _sr_lats = [
+                log.response_ms for log in _sr_all_logs if log.response_ms is not None
+            ]
+            _sr_p95: float | None = None
+            if _sr_lats:
+                _sorted = sorted(_sr_lats)
+                _n = len(_sorted)
+                _idx = (_n - 1) * 0.95
+                _lo, _hi = int(_idx), min(int(_idx) + 1, _n - 1)
+                _sr_p95 = _sorted[_lo] + (_sorted[_hi] - _sorted[_lo]) * (_idx - _lo)
+
+            # Build download URL
+            _sr_download_url = f"/api/deploy/{_sr_dep.id}/status-report"
+            _sr_algo_plain = _sr_run.algorithm if _sr_run else "unknown"
+            try:
+                from api.models import _algorithm_plain_name as _sr_apn
+
+                _sr_algo_plain = _sr_apn(_sr_run.algorithm if _sr_run else "")
+            except Exception:  # noqa: BLE001
+                pass
+
+            _sr_health_score = int(_sr_health.get("health_score", 0))
+            _sr_health_status = _sr_health.get("status", "unknown")
+            _sr_sla_ok = _sr_p95 is None or _sr_p95 <= 500.0
+
+            status_report_event = {
+                "deployment_id": _sr_dep.id,
+                "project_name": ctx["project"].name
+                if ctx.get("project")
+                else "Project",
+                "algorithm_plain": _sr_algo_plain,
+                "problem_type": _sr_dep.problem_type or "regression",
+                "target_column": _sr_dep.target_column or "target",
+                "health_score": _sr_health_score,
+                "health_status": _sr_health_status,
+                "predictions_today": _sr_today,
+                "predictions_7d": _sr_7d,
+                "predictions_30d": _sr_30d,
+                "predictions_total": _sr_total,
+                "sla_ok": _sr_sla_ok,
+                "p95_ms": _sr_p95,
+                "download_url": _sr_download_url,
+                "summary": (
+                    f"Model health: {_sr_health_status} ({_sr_health_score}/100). "
+                    f"{_sr_7d} predictions in the last 7 days. "
+                    + (
+                        f"SLA: p95 {_sr_p95:.0f} ms — within target."
+                        if _sr_sla_ok and _sr_p95
+                        else ""
+                    )
+                    + (
+                        f"SLA alert: p95 {_sr_p95:.0f} ms exceeds 500 ms target."
+                        if not _sr_sla_ok and _sr_p95
+                        else ""
+                    )
+                ),
+            }
+            system_prompt += (
+                f"\n\n## Model Status Report Ready\n"
+                f"Health: {_sr_health_status} ({_sr_health_score}/100)\n"
+                f"Predictions: {_sr_today} today / {_sr_7d} this week / {_sr_30d} this month / {_sr_total} all-time\n"
+                f"SLA: {'Within target' if _sr_sla_ok else f'Alert — p95 {_sr_p95:.0f} ms'}\n"
+                "A ModelStatusReportCard is shown in the chat with a download link. "
+                "Tell the analyst their model's health status in one sentence, summarise "
+                "the prediction volume in plain English, mention the SLA status, and "
+                "invite them to download the full report to share with stakeholders."
+            )
+        except Exception:  # noqa: BLE001
+            pass  # Status report is nice-to-have; never crash chat
+
     # Local explanation (feature contribution waterfall) for a specific training row
     # "explain prediction for row 5", "show SHAP values", "what drove this prediction"
     # Distinct from: PDP (average marginal effect), pred_errors (worst rows), inline prediction
@@ -17659,6 +17804,10 @@ def send_message(
         # Emit prediction output distribution shift result
         if output_dist_shift_event:
             yield f"data: {json.dumps({'type': 'output_distribution_shift', 'output_distribution_shift': output_dist_shift_event})}\n\n"
+
+        # Emit model status report event
+        if status_report_event:
+            yield f"data: {json.dumps({'type': 'model_status_report', 'model_status_report': status_report_event})}\n\n"
 
         # Emit learning curve analysis result
         if learning_curve_event:
