@@ -5642,7 +5642,9 @@ def compute_feature_psi_ranking(
         verdict_label = f"{critical_count} feature{'s' if critical_count > 1 else ''} with major shift"
     elif watch_count > 0:
         verdict = "watch"
-        verdict_label = f"{watch_count} feature{'s' if watch_count > 1 else ''} with minor shift"
+        verdict_label = (
+            f"{watch_count} feature{'s' if watch_count > 1 else ''} with minor shift"
+        )
     else:
         verdict = "stable"
         verdict_label = "All features stable"

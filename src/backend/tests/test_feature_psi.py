@@ -31,11 +31,13 @@ def _stable_df_and_inputs() -> tuple[pd.DataFrame, list[dict]]:
     """
     rng = np.random.default_rng(0)
     n_train = 500
-    df = pd.DataFrame({
-        "revenue": rng.normal(100, 10, n_train).tolist(),
-        "units": rng.integers(1, 50, n_train).tolist(),
-        "region": rng.choice(["East", "West", "North"], n_train).tolist(),
-    })
+    df = pd.DataFrame(
+        {
+            "revenue": rng.normal(100, 10, n_train).tolist(),
+            "units": rng.integers(1, 50, n_train).tolist(),
+            "region": rng.choice(["East", "West", "North"], n_train).tolist(),
+        }
+    )
     prod_inputs = [
         {
             "revenue": float(rng.normal(100, 10)),
@@ -53,15 +55,17 @@ def _drifted_df_and_inputs() -> tuple[pd.DataFrame, list[dict]]:
     """
     rng = np.random.default_rng(1)
     n_train = 500
-    df = pd.DataFrame({
-        "revenue": rng.normal(100, 10, n_train).tolist(),
-        "units": rng.integers(1, 20, n_train).tolist(),
-    })
+    df = pd.DataFrame(
+        {
+            "revenue": rng.normal(100, 10, n_train).tolist(),
+            "units": rng.integers(1, 20, n_train).tolist(),
+        }
+    )
     # Production has a completely different distribution (mean shift ~10σ)
     prod_inputs = [
         {
             "revenue": float(rng.normal(200, 10)),  # massive shift
-            "units": int(rng.integers(1, 20)),      # same as training
+            "units": int(rng.integers(1, 20)),  # same as training
         }
         for _ in range(200)
     ]
@@ -151,14 +155,18 @@ class TestComputeFeaturePsiRanking:
     def test_counts_sum_to_features_analyzed(self):
         df, inputs = _stable_df_and_inputs()
         result = compute_feature_psi_ranking(df, inputs)
-        total = result["stable_count"] + result["watch_count"] + result["critical_count"]
+        total = (
+            result["stable_count"] + result["watch_count"] + result["critical_count"]
+        )
         assert total == result["features_analyzed"]
 
     def test_overall_psi_is_mean_of_feature_psi(self):
         df, inputs = _stable_df_and_inputs()
         result = compute_feature_psi_ranking(df, inputs)
         if result["features_analyzed"] > 0:
-            expected = sum(f["psi"] for f in result["features"]) / result["features_analyzed"]
+            expected = (
+                sum(f["psi"] for f in result["features"]) / result["features_analyzed"]
+            )
             assert abs(result["overall_psi"] - round(expected, 4)) < 1e-6
 
     def test_sample_count_matches_production_inputs(self):
@@ -180,14 +188,18 @@ class TestComputeFeaturePsiRanking:
     def test_categorical_feature_type_detection(self):
         df, inputs = _stable_df_and_inputs()
         result = compute_feature_psi_ranking(df, inputs)
-        region_feat = next((f for f in result["features"] if f["feature"] == "region"), None)
+        region_feat = next(
+            (f for f in result["features"] if f["feature"] == "region"), None
+        )
         assert region_feat is not None
         assert region_feat["feature_type"] == "categorical"
 
     def test_numeric_feature_type_detection(self):
         df, inputs = _stable_df_and_inputs()
         result = compute_feature_psi_ranking(df, inputs)
-        rev_feat = next((f for f in result["features"] if f["feature"] == "revenue"), None)
+        rev_feat = next(
+            (f for f in result["features"] if f["feature"] == "revenue"), None
+        )
         assert rev_feat is not None
         assert rev_feat["feature_type"] == "numeric"
 
@@ -195,7 +207,9 @@ class TestComputeFeaturePsiRanking:
         rng = np.random.default_rng(7)
         n = 200
         df = pd.DataFrame({f"col{i}": rng.normal(0, 1, n).tolist() for i in range(20)})
-        inputs = [{f"col{i}": float(rng.normal(0, 1)) for i in range(20)} for _ in range(150)]
+        inputs = [
+            {f"col{i}": float(rng.normal(0, 1)) for i in range(20)} for _ in range(150)
+        ]
         result = compute_feature_psi_ranking(df, inputs, max_features=5)
         assert result["features_analyzed"] <= 5
 

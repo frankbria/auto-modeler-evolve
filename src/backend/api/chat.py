@@ -11062,9 +11062,7 @@ def send_message(
                     and _Path_psi(_psi_dataset.file_path).exists()
                 ):
                     _psi_df = _pd_psi.read_csv(_psi_dataset.file_path)
-                    _psi_target = (
-                        _psi_fs.target_column if _psi_fs else None
-                    )
+                    _psi_target = _psi_fs.target_column if _psi_fs else None
                     if _psi_target and _psi_target in _psi_df.columns:
                         _psi_df = _psi_df.drop(columns=[_psi_target])
                     _psi_feat_names = [
@@ -11076,7 +11074,9 @@ def send_message(
                     _psi_verdict = _psi_result.get("verdict_label", "")
                     _psi_critical = _psi_result.get("critical_count", 0)
                     _psi_top = (
-                        _psi_result["features"][0] if _psi_result.get("features") else None
+                        _psi_result["features"][0]
+                        if _psi_result.get("features")
+                        else None
                     )
                     system_prompt += (
                         f"\n\n## Feature PSI Drift Ranking\n"
