@@ -1,5 +1,27 @@
 # Journal
 
+## Day 82 — 12:00 — Minimum Viable Feature Set via Chat
+
+**Feature shipped:** Minimum Viable Feature Set Analysis (Track C perpetual). Analysts can now ask "which features can I drop?", "simplify my model", "reduce my feature set", "feature pruning", "fewest features for good predictions", "which features are redundant?", or "what's the minimum features needed?" and receive a `MinFeatureSetCard` in chat — showing the result of greedy backward elimination: the smallest feature subset that preserves model accuracy within a 2% tolerance.
+
+**What was built:**
+
+- `compute_min_viable_feature_set(X, y, feature_names, model_class, model_params, problem_type, tolerance=0.02, max_rows=2000, cv=3)` pure function in `core/validator.py`: sub-samples to max_rows for speed; computes baseline CV score (R² or accuracy); fits model once to extract feature importances (feature_importances_ for tree models, coef_ for linear); sorts features by importance ascending (least important first); greedily removes candidates, re-running 3-fold CV each time — keeps the drop if score loss ≤ tolerance, stops on first feature that would exceed tolerance. Returns: features list (feature/importance/kept/rank), n_original, n_minimal, features_dropped, features_retained list, features_dropped_list, baseline_score, minimal_score, score_loss, can_simplify, reduction_pct, metric, summary. Raises ValueError for <10 rows or <2 features.
+
+- `GET /api/models/{model_run_id}/min-feature-set?tolerance=0.02` REST endpoint in `api/validation.py`: standard run context loading, calls `_build_Xy`, looks up algorithm from registry, calls pure function, returns result with model_run_id/algorithm/target_col. 400 for invalid tolerance range.
+
+- `_MIN_FEATURE_SET_PATTERNS` (8 NL variants) + handler in `chat.py`: selects the is_selected (or first completed) model run; loads CSV, applies feature transforms; calls pure function; injects n_original, n_minimal, features_dropped, score_loss, can_simplify + summary into system_prompt; emits `{type:"min_feature_set"}` SSE event.
+
+- `MinFeatureSetCard` (sky border when can_simplify, slate otherwise, ✂️ icon): algorithm + target badges, droppable/all-needed count badge; 3-column score comparison grid (baseline/minimal/loss colored by magnitude); ranked feature list with ✓/✗ indicator, strikethrough for dropped features, horizontal importance bar; retained/dropped two-column summary (sky for retained, slate for dropped); reduction % stat; summary paragraph; sr-only figcaption.
+
+- Full type wiring: `MinFeatureEntry` + `MinFeatureSetResult` TypeScript interfaces in `lib/types.ts`; `min_feature_set?` on `ChatMessage`; `attachMinFeatureSetToLastMessage` Zustand action in `store.ts`; SSE handler (both EventSource branches) + card render in `project/[id]/page.tsx`.
+
+**Tests:** 23 pure-function (required keys, n_original, metrics, feature list length, entry keys, retained+dropped=original, list lengths, score loss non-negative, can_simplify with noise features, can_simplify False with all-important features, reduction_pct consistency, summary string, score ranges, kept/dropped flags, ValueError for too-few rows, ValueError for too-few features, subsampling, tree model, classification) + 10 regex (8 positive + 2 false-positive guards) + 2 REST (404 unknown, 200 with valid run) = **35 backend**. 18 card component + 2 store action = **20 frontend** = **55 new tests**. All passing. Backend lint: clean. Frontend build + lint: clean.
+
+**Why this matters:** Deployed prediction forms can accumulate many features over time, especially after feature engineering. A 20-field form confuses VP-level users on the shareable dashboard and increases drift risk (more features = more surfaces for distribution shift). The minimum viable set identifies which features are actually load-bearing for accuracy — enabling analysts to retrain with only the essential columns for a cleaner, more robust deployment. Distinct from: `FeatureSelectionCard` (shows importance rankings but doesn't identify which to *drop*), `ImprovementAdvisorCard` (broad suggestions), `ErrorCorrelationCard` (which features predict errors). This answers the specific question: "which of my current features can I safely delete?"
+
+**Baseline:** 5372 backend / 3072 frontend → **5407 backend / 3092 frontend** (+35 / +20).
+
 ## Day 82 — 04:00 — Feature PSI Ranking via Chat
 
 **Feature shipped:** Feature PSI (Population Stability Index) Ranking (Track D perpetual). Analysts can now ask "which features have drifted the most?", "feature psi analysis", "rank my features by drift", "most drifted input features", or "feature stability analysis" and receive a `FeaturePsiCard` in chat — ranking ALL production input features by how much their statistical distribution has shifted from training, using the industry-standard PSI metric.
