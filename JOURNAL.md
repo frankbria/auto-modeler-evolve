@@ -1,5 +1,11 @@
 # Journal
 
+## Day 81 — 20:00 — Performance Baseline & Housekeeping
+
+**Session summary:** Ran end-to-end performance benchmarks (file upload, correlations, model training, single predictions, feature suggestions) and updated `performance_baseline.json` with fresh measurements. Observed some variance from prior runs (training time increased from 72.7ms to 225.5ms, likely due to system load), but no code changes deployed. Auto-formatted backend to maintain consistency. Current test baseline: 5337 backend / 3053 frontend.
+
+**What's next:** Pending higher-priority work in Track E (LLM-based data storytelling, collaborative analysis). System remains stable with all monitoring cards (14+ features spanning input drift, output anomalies, model calibration, prediction errors, segment analysis) functioning reliably in production.
+
 ## Day 81 — 12:00 — Prediction Output Distribution Shift via Chat
 
 **Feature shipped:** Prediction Output Distribution Shift (Track D perpetual). Analysts can now ask "has the distribution of my predictions shifted?", "output distribution shift", "are my predictions shifting over time?", "how has my model's output changed?", or "are my model outputs behaving differently in production?" and receive a `PredictionOutputDistributionCard` in chat — comparing the statistical distribution of production prediction values vs training-time predictions using a Kolmogorov-Smirnov test.
