@@ -1,4 +1,5 @@
 """Tests for minimum viable feature set (greedy backward elimination)."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -18,6 +19,7 @@ from core.validator import compute_min_viable_feature_set
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_regression(n=200, n_feat=5, noise=0.1, seed=0):
     rng = np.random.default_rng(seed)
@@ -40,6 +42,7 @@ def _make_classification(n=200, n_feat=5, seed=0):
 # Pure-function tests
 # ---------------------------------------------------------------------------
 
+
 class TestComputeMinViableFeatureSet:
     def test_required_keys(self):
         X, y, names = _make_regression()
@@ -47,10 +50,19 @@ class TestComputeMinViableFeatureSet:
             X, y, names, LinearRegression, {}, "regression"
         )
         for key in (
-            "features", "n_original", "n_minimal", "features_dropped",
-            "features_retained", "features_dropped_list",
-            "baseline_score", "minimal_score", "score_loss",
-            "can_simplify", "reduction_pct", "metric", "summary",
+            "features",
+            "n_original",
+            "n_minimal",
+            "features_dropped",
+            "features_retained",
+            "features_dropped_list",
+            "baseline_score",
+            "minimal_score",
+            "score_loss",
+            "can_simplify",
+            "reduction_pct",
+            "metric",
+            "summary",
         ):
             assert key in result, f"Missing key: {key}"
 
@@ -213,7 +225,12 @@ class TestComputeMinViableFeatureSet:
         X = rng.standard_normal((5000, 4))
         y = X[:, 0] + 0.5 * rng.standard_normal(5000)
         result = compute_min_viable_feature_set(
-            X, y, ["a", "b", "c", "d"], LinearRegression, {}, "regression",
+            X,
+            y,
+            ["a", "b", "c", "d"],
+            LinearRegression,
+            {},
+            "regression",
             max_rows=200,
         )
         assert "n_original" in result
@@ -284,6 +301,7 @@ class TestMinFeatureSetPatterns:
 def _make_test_app():
     from fastapi import FastAPI
     from api.validation import router
+
     app = FastAPI()
     app.include_router(router)
     return app
@@ -314,6 +332,7 @@ def _seed_db_with_run(tmp_path: Path):
     # Train a model
     model_path = tmp_path / "model.joblib"
     from sklearn.linear_model import LinearRegression
+
     m = LinearRegression()
     m.fit(X, y)
     joblib.dump(m, model_path)
@@ -374,6 +393,7 @@ class TestMinFeatureSetEndpoint:
         app.include_router(router)
 
         import api.validation as val_mod
+
         orig = val_mod.get_session
 
         def override():
@@ -397,6 +417,7 @@ class TestMinFeatureSetEndpoint:
         app.include_router(router)
 
         import api.validation as val_mod
+
         orig = val_mod.get_session
 
         def override():

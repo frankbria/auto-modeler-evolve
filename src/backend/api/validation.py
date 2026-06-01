@@ -921,7 +921,9 @@ def get_min_feature_set(
     X, y, feature_cols = _build_Xy(file_path, feature_set)
 
     registry = (
-        REGRESSION_ALGORITHMS if problem_type == "regression" else CLASSIFICATION_ALGORITHMS
+        REGRESSION_ALGORITHMS
+        if problem_type == "regression"
+        else CLASSIFICATION_ALGORITHMS
     )
     if run.algorithm not in registry:
         raise HTTPException(
