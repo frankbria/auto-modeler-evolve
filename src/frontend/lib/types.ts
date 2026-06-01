@@ -549,6 +549,7 @@ export interface ChatMessage {
   error_correlation?: ErrorCorrelationResult
   output_anomalies?: PredictionOutputAnomalyResult
   output_distribution_shift?: PredictionOutputDistributionShiftResult
+  feature_psi?: FeaturePsiResult
   model_status_report?: ModelStatusReportInfo
 }
 
@@ -4217,5 +4218,30 @@ export interface ModelStatusReportInfo {
   sla_ok: boolean
   p95_ms: number | null
   download_url: string
+  summary: string
+}
+
+export interface FeaturePsiEntry {
+  feature: string
+  feature_type: 'numeric' | 'categorical'
+  psi: number
+  psi_label: string
+  severity: 'stable' | 'watch' | 'critical'
+  n_new_categories: number | null
+  n_dropped_categories: number | null
+}
+
+export interface FeaturePsiResult {
+  deployment_id: string
+  features: FeaturePsiEntry[]
+  features_analyzed: number
+  stable_count: number
+  watch_count: number
+  critical_count: number
+  overall_psi: number
+  verdict: string
+  verdict_label: string
+  sample_count: number
+  training_count: number
   summary: string
 }

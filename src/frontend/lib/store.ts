@@ -189,6 +189,7 @@ interface AppState {
   attachErrorCorrelationToLastMessage: (error_correlation: import("./types").ErrorCorrelationResult) => void
   attachOutputAnomaliesToLastMessage: (output_anomalies: import("./types").PredictionOutputAnomalyResult) => void
   attachOutputDistributionShiftToLastMessage: (output_distribution_shift: import("./types").PredictionOutputDistributionShiftResult) => void
+  attachFeaturePsiToLastMessage: (feature_psi: import("./types").FeaturePsiResult) => void
   attachModelStatusReportToLastMessage: (model_status_report: import("./types").ModelStatusReportInfo) => void
 }
 
@@ -1569,6 +1570,16 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, output_distribution_shift }
+      }
+      return { messages }
+    }),
+
+  attachFeaturePsiToLastMessage: (feature_psi) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, feature_psi }
       }
       return { messages }
     }),

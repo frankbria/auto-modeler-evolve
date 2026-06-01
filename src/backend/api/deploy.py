@@ -6590,3 +6590,123 @@ def get_model_status_report(
         content=html_content,
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@router.get("/api/deploy/{deployment_id}/feature-psi")
+def get_feature_psi(
+    deployment_id: str,
+    n: int = 200,
+    session: Session = Depends(get_session),
+):
+    """Rank all input features by PSI between training and production distributions.
+
+    Loads the training dataset and recent production prediction inputs, then
+    computes the Population Stability Index (PSI) for each feature. Features
+    are ranked by drift severity. PSI < 0.10 = stable, 0.10-0.20 = watch,
+    ≥ 0.20 = critical.
+    """
+    import pandas as _pd
+    from pathlib import Path as _Path
+
+    from core.analyzer import compute_feature_psi_ranking as _cpsr
+
+    dep = session.get(Deployment, deployment_id)
+    if dep is None:
+        raise HTTPException(status_code=404, detail="Deployment not found.")
+
+    run = session.get(ModelRun, dep.model_run_id) if dep.model_run_id else None
+    if run is None:
+        raise HTTPException(status_code=404, detail="Model run not found.")
+
+    # Load recent production prediction inputs
+    logs_orm = session.exec(
+        select(PredictionLog)
+        .where(PredictionLog.deployment_id == deployment_id)
+        .order_by(PredictionLog.created_at.desc())  # type: ignore[arg-type]
+        .limit(max(n, 20))
+    ).all()
+
+    production_inputs = []
+    for log in logs_orm:
+        try:
+            import json as _json
+
+            if log.input_features:
+                inp = (
+                    _json.loads(log.input_features)
+                    if isinstance(log.input_features, str)
+                    else log.input_features
+                )
+                production_inputs.append(inp)
+        except Exception:  # noqa: BLE001
+            pass
+
+    if len(production_inputs) < 10:
+        return {
+            "deployment_id": deployment_id,
+            "verdict": "no_data",
+            "verdict_label": "Not enough production predictions",
+            "features": [],
+            "features_analyzed": 0,
+            "stable_count": 0,
+            "watch_count": 0,
+            "critical_count": 0,
+            "overall_psi": 0.0,
+            "sample_count": len(production_inputs),
+            "training_count": 0,
+            "summary": (
+                f"Only {len(production_inputs)} production predictions recorded — "
+                "need at least 10 to compute PSI."
+            ),
+        }
+
+    # Get training dataset
+    recent_dataset = session.exec(
+        select(Dataset)
+        .where(Dataset.project_id == dep.project_id)
+        .order_by(Dataset.created_at.desc())  # type: ignore[arg-type]
+    ).first()
+    feature_set = (
+        session.exec(
+            select(FeatureSet)
+            .where(FeatureSet.dataset_id == recent_dataset.id)
+            .order_by(FeatureSet.created_at.desc())  # type: ignore[arg-type]
+        ).first()
+        if recent_dataset
+        else None
+    )
+    if feature_set is None:
+        raise HTTPException(status_code=404, detail="Feature set not found.")
+
+    dataset = session.get(Dataset, feature_set.dataset_id)
+    if (
+        dataset is None
+        or not dataset.file_path
+        or not _Path(dataset.file_path).exists()
+    ):
+        raise HTTPException(status_code=404, detail="Training dataset not found.")
+
+    try:
+        df = _pd.read_csv(dataset.file_path)
+        # Drop target column if present
+        target_col = feature_set.target_column
+        if target_col and target_col in df.columns:
+            df = df.drop(columns=[target_col])
+        feature_names = [k for k in production_inputs[0].keys() if k in df.columns]
+        if not feature_names:
+            feature_names = list(df.columns)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(
+            status_code=500,
+            detail=f"Could not read training data: {exc}",
+        ) from exc
+
+    try:
+        result = _cpsr(df, production_inputs, feature_names)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    result["deployment_id"] = deployment_id
+    result["algorithm"] = run.algorithm
+    result["target_col"] = feature_set.target_column
+    return result

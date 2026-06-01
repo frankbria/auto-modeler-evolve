@@ -5454,3 +5454,230 @@ def compute_prediction_output_distribution_shift(
         "production_histogram": production_histogram,
         "summary": summary,
     }
+
+
+def _psi_for_numeric(
+    training_values: list[float],
+    production_values: list[float],
+    n_bins: int,
+) -> float:
+    """Compute PSI between two numeric value lists using equal-frequency training bins."""
+    import numpy as _np
+
+    train_arr = _np.array(training_values, dtype=float)
+    prod_arr = _np.array(production_values, dtype=float)
+
+    # Cap bins to ensure at least 10 production samples per bin (prevents spurious drift)
+    safe_bins = max(2, min(n_bins, len(prod_arr) // 10))
+
+    # Build bin edges from training percentiles (equal-frequency bins)
+    percentiles = _np.linspace(0, 100, safe_bins + 1)
+    bin_edges = _np.unique(_np.percentile(train_arr, percentiles))
+    if len(bin_edges) < 2:
+        return 0.0  # all identical values — no drift measurable
+
+    # Extend edges to catch all production values
+    bin_edges[0] = -_np.inf
+    bin_edges[-1] = _np.inf
+
+    train_counts, _ = _np.histogram(train_arr, bins=bin_edges)
+    prod_counts, _ = _np.histogram(prod_arr, bins=bin_edges)
+
+    n_train = len(train_arr)
+    n_prod = len(prod_arr)
+    if n_train == 0 or n_prod == 0:
+        return 0.0
+
+    eps = 1e-4  # avoid log(0)
+    train_pct = _np.clip(train_counts / n_train, eps, None)
+    prod_pct = _np.clip(prod_counts / n_prod, eps, None)
+
+    psi = float(_np.sum((prod_pct - train_pct) * _np.log(prod_pct / train_pct)))
+    return round(max(0.0, psi), 4)
+
+
+def _psi_for_categorical(
+    training_values: list,
+    production_values: list,
+) -> tuple[float, int, int]:
+    """Compute PSI for a categorical feature. Returns (psi, n_new_cats, n_dropped_cats)."""
+    import numpy as _np
+
+    train_str = [str(v) for v in training_values]
+    prod_str = [str(v) for v in production_values]
+    n_train = len(train_str)
+    n_prod = len(prod_str)
+    if n_train == 0 or n_prod == 0:
+        return 0.0, 0, 0
+
+    # Gather all unique categories
+    train_cats = set(train_str)
+    prod_cats = set(prod_str)
+    all_cats = train_cats | prod_cats
+    n_new = len(prod_cats - train_cats)
+    n_dropped = len(train_cats - prod_cats)
+
+    eps = 1e-4
+    psi = 0.0
+    for cat in all_cats:
+        t_pct = max(train_str.count(cat) / n_train, eps)
+        p_pct = max(prod_str.count(cat) / n_prod, eps)
+        psi += (p_pct - t_pct) * _np.log(p_pct / t_pct)
+
+    return round(max(0.0, float(psi)), 4), n_new, n_dropped
+
+
+def compute_feature_psi_ranking(
+    training_df,
+    production_inputs: list[dict],
+    feature_names: list[str] | None = None,
+    *,
+    n_bins: int = 10,
+    max_features: int = 15,
+) -> dict:
+    """Rank all input features by their PSI (Population Stability Index) between
+    training data and recent production predictions.
+
+    PSI measures distributional shift per feature:
+    - PSI < 0.10: Stable (no significant change)
+    - 0.10 ≤ PSI < 0.20: Watch (minor change — monitor)
+    - PSI ≥ 0.20: Critical (major change — investigate)
+
+    Args:
+        training_df: pandas DataFrame of training data (features only, no target).
+        production_inputs: list of dicts from PredictionLog.input_features.
+        feature_names: columns to analyse; defaults to all columns in training_df.
+        n_bins: number of equal-frequency bins for numeric PSI (default 10).
+        max_features: cap on features analysed (default 15).
+
+    Returns:
+        Dict with features (sorted by PSI desc), counts, overall_psi, verdict, summary.
+
+    Raises:
+        ValueError: if training_df has < 10 rows or production_inputs is empty.
+    """
+    if training_df is None or len(training_df) < 10:
+        raise ValueError("Training dataset must have at least 10 rows.")
+    if not production_inputs:
+        raise ValueError("production_inputs must not be empty.")
+
+    cols = list(feature_names or training_df.columns)[:max_features]
+
+    features_result = []
+    for col in cols:
+        if col not in training_df.columns:
+            continue
+
+        train_vals = training_df[col].dropna().tolist()
+        prod_vals = [
+            inp[col] for inp in production_inputs if col in inp and inp[col] is not None
+        ]
+        if len(train_vals) < 5 or len(prod_vals) < 5:
+            continue
+
+        # Determine feature type
+        numeric_count = 0
+        for v in prod_vals:
+            try:
+                float(v)
+                numeric_count += 1
+            except (TypeError, ValueError):
+                pass
+        is_numeric = (numeric_count / len(prod_vals)) > 0.5
+
+        if is_numeric:
+            try:
+                t_floats = [float(v) for v in train_vals]
+                p_floats = [float(v) for v in prod_vals]
+            except (TypeError, ValueError):
+                is_numeric = False
+
+        if is_numeric:
+            psi = _psi_for_numeric(t_floats, p_floats, n_bins)
+            feature_entry = {
+                "feature": col,
+                "feature_type": "numeric",
+                "psi": psi,
+                "n_new_categories": None,
+                "n_dropped_categories": None,
+            }
+        else:
+            psi, n_new, n_dropped = _psi_for_categorical(train_vals, prod_vals)
+            feature_entry = {
+                "feature": col,
+                "feature_type": "categorical",
+                "psi": psi,
+                "n_new_categories": n_new,
+                "n_dropped_categories": n_dropped,
+            }
+
+        if psi >= 0.20:
+            feature_entry["severity"] = "critical"
+            feature_entry["psi_label"] = "Critical"
+        elif psi >= 0.10:
+            feature_entry["severity"] = "watch"
+            feature_entry["psi_label"] = "Watch"
+        else:
+            feature_entry["severity"] = "stable"
+            feature_entry["psi_label"] = "Stable"
+
+        features_result.append(feature_entry)
+
+    # Sort by PSI descending
+    features_result.sort(key=lambda x: x["psi"], reverse=True)
+
+    stable_count = sum(1 for f in features_result if f["severity"] == "stable")
+    watch_count = sum(1 for f in features_result if f["severity"] == "watch")
+    critical_count = sum(1 for f in features_result if f["severity"] == "critical")
+    features_analyzed = len(features_result)
+
+    overall_psi = (
+        round(sum(f["psi"] for f in features_result) / features_analyzed, 4)
+        if features_analyzed > 0
+        else 0.0
+    )
+
+    if critical_count > 0:
+        verdict = "critical"
+        verdict_label = f"{critical_count} feature{'s' if critical_count > 1 else ''} with major shift"
+    elif watch_count > 0:
+        verdict = "watch"
+        verdict_label = f"{watch_count} feature{'s' if watch_count > 1 else ''} with minor shift"
+    else:
+        verdict = "stable"
+        verdict_label = "All features stable"
+
+    top = features_result[0] if features_result else None
+    if critical_count > 0 and top:
+        summary = (
+            f"{critical_count} of {features_analyzed} input feature(s) show major distribution "
+            f"shift (PSI ≥ 0.20). The most drifted feature is '{top['feature']}' "
+            f"(PSI = {top['psi']:.3f}). These features should be investigated — "
+            f"data pipeline changes or concept drift may be responsible."
+        )
+    elif watch_count > 0 and top:
+        top_watch = next((f for f in features_result if f["severity"] != "stable"), top)
+        summary = (
+            f"{watch_count} of {features_analyzed} input feature(s) show minor distribution "
+            f"shift (PSI 0.10–0.20). The most shifted is '{top_watch['feature']}' "
+            f"(PSI = {top_watch['psi']:.3f}). Monitor these features for continued change."
+        )
+    else:
+        summary = (
+            f"All {features_analyzed} analyzed feature(s) are stable "
+            f"(PSI < 0.10). Production inputs closely match the training distribution."
+        )
+
+    return {
+        "features": features_result,
+        "features_analyzed": features_analyzed,
+        "stable_count": stable_count,
+        "watch_count": watch_count,
+        "critical_count": critical_count,
+        "overall_psi": overall_psi,
+        "verdict": verdict,
+        "verdict_label": verdict_label,
+        "sample_count": len(production_inputs),
+        "training_count": len(training_df),
+        "summary": summary,
+    }

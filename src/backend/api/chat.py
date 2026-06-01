@@ -4147,6 +4147,25 @@ _OUTPUT_DIST_SHIFT_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# Feature PSI (Population Stability Index) ranking: ranks all input features by how much
+# their production distribution has drifted from training. Distinct from:
+# - _COVARIATE_DRIFT_PATTERNS (OOR-based binary alert per feature),
+# - _DRIFT_PATTERNS (aggregate prediction drift), - _OUTPUT_DIST_SHIFT_PATTERNS (output values).
+# PSI is the industry-standard metric for monitoring input feature drift in production models.
+_FEATURE_PSI_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"(?:which|what)\s+(?:input\s+)?features?\s+(?:have\s+)?(?:drifted|shifted|changed)\s+(?:the\s+most|most|most\s+significantly)\b|"
+    r"feature\s+(?:psi|population\s+stability|drift\s+ranking|drift\s+rank|stability\s+index|stability\s+ranking|stability\s+analysis)\b|"
+    r"(?:psi|population\s+stability\s+index)\s+(?:analysis|ranking|report|check|by\s+feature|per\s+feature|for\s+(?:my\s+)?features?)\b|"
+    r"rank\s+(?:my\s+)?(?:input\s+)?features?\s+by\s+drift\b|"
+    r"(?:most|top)\s+drifted?\s+(?:input\s+)?features?\b|"
+    r"(?:input\s+)?feature\s+(?:distribution\s+)?drift\s+(?:ranking|report|breakdown|by\s+feature|analysis|summary)\b|"
+    r"how\s+much\s+(?:have\s+(?:my\s+)?)?(?:input\s+)?features?\s+(?:changed|drifted|shifted)\b|"
+    r"(?:input\s+)?feature\s+stability\s+(?:analysis|report|breakdown|ranking|check)\b"
+    r")",
+    re.IGNORECASE,
+)
+
 # Model status report: production monitoring briefing for stakeholders.
 # Distinct from: ExecutiveBriefingCard (model design), ModelCardExport (compliance),
 # ConversationExportCard (chat history), PredictionAuditCard (raw stats card).
@@ -10983,6 +11002,140 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Distribution shift is nice-to-have; never crash chat
 
+    # Feature PSI (Population Stability Index) ranking
+    # "which features have drifted the most?", "feature psi", "rank features by drift"
+    # Distinct from: _COVARIATE_DRIFT_PATTERNS (OOR-based alert per feature),
+    # _DRIFT_PATTERNS (aggregate prediction drift), _OUTPUT_DIST_SHIFT_PATTERNS (output values).
+    feature_psi_event: dict | None = None
+    if _FEATURE_PSI_PATTERNS.search(body.message) and ctx.get("deployment"):
+        try:
+            import json as _json_psi
+            import pandas as _pd_psi
+            from pathlib import Path as _Path_psi
+
+            from core.analyzer import compute_feature_psi_ranking as _cpsr
+
+            _psi_dep = ctx["deployment"]
+
+            # Load recent production prediction inputs
+            _psi_logs = session.exec(
+                select(PredictionLog)
+                .where(PredictionLog.deployment_id == _psi_dep.id)
+                .order_by(PredictionLog.created_at.desc())  # type: ignore[arg-type]
+                .limit(200)
+            ).all()
+            _psi_inputs: list[dict] = []
+            for _log in _psi_logs:
+                try:
+                    if _log.input_features:
+                        _inp = (
+                            _json_psi.loads(_log.input_features)
+                            if isinstance(_log.input_features, str)
+                            else _log.input_features
+                        )
+                        _psi_inputs.append(_inp)
+                except Exception:  # noqa: BLE001
+                    pass
+
+            if len(_psi_inputs) >= 10:
+                _psi_recent_ds = session.exec(
+                    select(Dataset)
+                    .where(Dataset.project_id == _psi_dep.project_id)
+                    .order_by(Dataset.created_at.desc())  # type: ignore[arg-type]
+                ).first()
+                _psi_fs = (
+                    session.exec(
+                        select(FeatureSet)
+                        .where(FeatureSet.dataset_id == _psi_recent_ds.id)
+                        .order_by(FeatureSet.created_at.desc())  # type: ignore[arg-type]
+                    ).first()
+                    if _psi_recent_ds
+                    else None
+                )
+                _psi_dataset = (
+                    session.get(Dataset, _psi_fs.dataset_id) if _psi_fs else None
+                )
+
+                if (
+                    _psi_dataset
+                    and _psi_dataset.file_path
+                    and _Path_psi(_psi_dataset.file_path).exists()
+                ):
+                    _psi_df = _pd_psi.read_csv(_psi_dataset.file_path)
+                    _psi_target = (
+                        _psi_fs.target_column if _psi_fs else None
+                    )
+                    if _psi_target and _psi_target in _psi_df.columns:
+                        _psi_df = _psi_df.drop(columns=[_psi_target])
+                    _psi_feat_names = [
+                        k for k in _psi_inputs[0].keys() if k in _psi_df.columns
+                    ] or list(_psi_df.columns)
+                    _psi_result = _cpsr(_psi_df, _psi_inputs, _psi_feat_names)
+                    _psi_result["deployment_id"] = _psi_dep.id
+                    feature_psi_event = _psi_result
+                    _psi_verdict = _psi_result.get("verdict_label", "")
+                    _psi_critical = _psi_result.get("critical_count", 0)
+                    _psi_top = (
+                        _psi_result["features"][0] if _psi_result.get("features") else None
+                    )
+                    system_prompt += (
+                        f"\n\n## Feature PSI Drift Ranking\n"
+                        f"Verdict: {_psi_verdict}\n"
+                        f"Features analyzed: {_psi_result.get('features_analyzed', 0)}\n"
+                        f"Critical (PSI≥0.20): {_psi_critical} | "
+                        f"Watch (0.10-0.20): {_psi_result.get('watch_count', 0)} | "
+                        f"Stable (<0.10): {_psi_result.get('stable_count', 0)}\n"
+                        + (
+                            f"Most drifted feature: '{_psi_top['feature']}' "
+                            f"(PSI = {_psi_top['psi']:.3f})\n"
+                            if _psi_top
+                            else ""
+                        )
+                        + f"Summary: {_psi_result['summary']}\n"
+                        "A FeaturePsiCard is shown in the chat. "
+                        "Explain what PSI means in plain English: it measures how much the "
+                        "statistical distribution of a feature has changed between training and "
+                        "production. PSI < 0.10 = stable, 0.10-0.20 = minor shift to watch, "
+                        "≥ 0.20 = major shift needing investigation. "
+                        "Guide the analyst on which features to investigate and what action to take."
+                    )
+                else:
+                    feature_psi_event = {
+                        "deployment_id": _psi_dep.id,
+                        "verdict": "no_data",
+                        "verdict_label": "Training data not accessible",
+                        "features": [],
+                        "features_analyzed": 0,
+                        "stable_count": 0,
+                        "watch_count": 0,
+                        "critical_count": 0,
+                        "overall_psi": 0.0,
+                        "sample_count": len(_psi_inputs),
+                        "training_count": 0,
+                        "summary": "Cannot access the training dataset to compute PSI.",
+                    }
+            else:
+                _psi_n = len(_psi_inputs)
+                feature_psi_event = {
+                    "deployment_id": _psi_dep.id,
+                    "verdict": "no_data",
+                    "verdict_label": "Not enough production predictions",
+                    "features": [],
+                    "features_analyzed": 0,
+                    "stable_count": 0,
+                    "watch_count": 0,
+                    "critical_count": 0,
+                    "overall_psi": 0.0,
+                    "sample_count": _psi_n,
+                    "training_count": 0,
+                    "summary": (
+                        f"Only {_psi_n} production prediction{'s' if _psi_n != 1 else ''} "
+                        "recorded — need at least 10 to compute PSI."
+                    ),
+                }
+        except Exception:  # noqa: BLE001
+            pass  # PSI analysis is nice-to-have; never crash chat
+
     # Model status report export
     # "generate a status report", "monitoring briefing", "production health report for my VP"
     # Distinct from: ExecutiveBriefing (model design), ModelCardExport (compliance docs),
@@ -17804,6 +17957,10 @@ def send_message(
         # Emit prediction output distribution shift result
         if output_dist_shift_event:
             yield f"data: {json.dumps({'type': 'output_distribution_shift', 'output_distribution_shift': output_dist_shift_event})}\n\n"
+
+        # Emit feature PSI ranking result
+        if feature_psi_event:
+            yield f"data: {json.dumps({'type': 'feature_psi', 'feature_psi': feature_psi_event})}\n\n"
 
         # Emit model status report event
         if status_report_event:
