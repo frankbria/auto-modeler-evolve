@@ -1,5 +1,29 @@
 # Journal
 
+## Day 83 — 04:00 — Production Prediction Value Trend via Chat
+
+**Feature shipped:** Production Prediction Value Trend (Track D perpetual). Analysts can now ask "are my predictions trending up?", "prediction value trend", "show me how my predictions have changed over time", "regression output trend", "prediction value history", or "show prediction time series" (8 NL variants in `_PRED_VALUE_TREND_PATTERNS`) and receive a `PredictionValueTrendCard` in chat — a Recharts LineChart showing mean regression prediction values per day with directional verdict (trending_up / stable / trending_down) and overall % change.
+
+**What was built:**
+
+- `compute_prediction_value_trend(logs_data, period, n_periods)` pure function in `core/analyzer.py`: floors timestamps to day/week buckets, computes per-period mean/count/min/max, uses numpy polyfit (degree 1) to derive slope, assigns direction from `overall_change_pct = (last_mean − first_mean) / |first_mean| × 100` — `trending_up` (>+5%), `trending_down` (<-5%), `stable` (otherwise). Handles ISO-format string timestamps, skips None prediction_numeric, caps to n_periods most-recent buckets. Raises ValueError for <2 periods with data or no numeric predictions.
+
+- `GET /api/deploy/{id}/prediction-value-trend?period=day&n=200` REST endpoint in `api/deploy.py`: returns `not_applicable` for classification deployments, `no_data` when <2 periods available.
+
+- `_PRED_VALUE_TREND_PATTERNS` (8 NL variants) + handler in `chat.py`: guarded by regression problem_type; loads 200 PredictionLogs in ascending order (critical for correct trend direction); injects direction + change_pct + summary into system_prompt; emits `{type:"prediction_value_trend"}` SSE event.
+
+- `PredictionValueTrendCard` (emerald=trending_up / rose=trending_down / amber=stable / gray=no_data, 📈 icon): direction badge with arrow (↗/↘/→), first/last period average stats, net-change percentage stat, Recharts LineChart with period means, period count + n_total predictions footer, summary paragraph, sr-only figcaption.
+
+- Full type wiring: `PredictionValueTrendPeriod` + `PredictionValueTrendResult` TypeScript interfaces in `lib/types.ts`; `prediction_value_trend?` on `ChatMessage`; `attachPredictionValueTrendToLastMessage` Zustand action in `store.ts`; SSE handler (both EventSource branches) + card render in `project/[id]/page.tsx`.
+
+**Tests:** 21 pure-function (required keys, stable/up/down verdicts, period entry keys, period count accuracy, first/last mean, n_total, slope sign, n_periods cap, None-skipping, ISO timestamp parsing, summary string, summary content for up/down, ValueError for insufficient data, week grouping, overall_change_pct formula, direction_label string) + 10 regex (positive matches) + 4 regex negative guards + 3 REST endpoint integration = **38 backend**. 16 card component + 2 store action = **18 frontend** = **56 new tests**. All passing. Backend lint: clean. Frontend build + TypeScript: clean.
+
+**Key implementation detail:** Logs must be loaded in `ascending` order for the trend to show oldest → newest left to right. Loading in descending order (as most endpoints do for "latest N") would produce an inverted chart and incorrect first/last period mean assignment. The chat handler explicitly sorts `order_by(PredictionLog.created_at.asc())`.
+
+**Why this matters:** The existing monitoring cards answer "is my model degraded?" (Retraining Readiness), "are individual predictions weird?" (Output Anomalies), and "has the distribution shifted?" (Output Distribution Shift). None answer the simplest business question: "Is my model predicting higher or lower numbers this week compared to last week?" Analysts who see predictions climbing upward need to know whether that reflects real business growth or model drift. The PredictionValueTrendCard gives a VP-shareable "↗ Trending Up +22%" answer at a glance.
+
+**Baseline:** 5455 backend / 3110 frontend → **5493 backend / 3128 frontend** (+38 / +18).
+
 ## Day 82 — 20:00 — Retraining Readiness Assessment via Chat
 
 **Feature shipped:** Retraining Readiness Assessment (Track D perpetual). Analysts can now ask "should I retrain my model?", "retrain recommendation", "is my model degrading?", "retraining readiness", "do I need to retrain?", or "model degradation score" and receive a `RetrainingReadinessCard` in chat — a composite 0-100 urgency score that aggregates all available monitoring signals (model age, prediction anomaly rate, confidence trend, feedback accuracy) into a single verdict: stable / monitor / retrain_soon / retrain_now.
