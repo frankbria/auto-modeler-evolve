@@ -20,7 +20,6 @@ import db as db_module
 from api.chat import _PRED_VALUE_TREND_PATTERNS
 from core.analyzer import compute_prediction_value_trend
 
-
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
 
@@ -127,10 +126,14 @@ def test_n_total_is_sum_of_counts():
 
 def test_slope_sign_matches_direction():
     """Slope is positive for trending_up and negative for trending_down."""
-    up_result = compute_prediction_value_trend(_make_logs([10, 20, 30, 40, 50, 60, 70, 80, 90, 100]))
+    up_result = compute_prediction_value_trend(
+        _make_logs([10, 20, 30, 40, 50, 60, 70, 80, 90, 100])
+    )
     assert up_result["slope"] > 0
 
-    down_result = compute_prediction_value_trend(_make_logs([100, 90, 80, 70, 60, 50, 40, 30, 20, 10]))
+    down_result = compute_prediction_value_trend(
+        _make_logs([100, 90, 80, 70, 60, 50, 40, 30, 20, 10])
+    )
     assert down_result["slope"] < 0
 
 
@@ -158,7 +161,10 @@ def test_iso_string_created_at():
     base = datetime(2025, 3, 1)
     logs = [
         {"prediction_numeric": 50.0, "created_at": base.isoformat()},
-        {"prediction_numeric": 60.0, "created_at": (base + timedelta(days=1)).isoformat()},
+        {
+            "prediction_numeric": 60.0,
+            "created_at": (base + timedelta(days=1)).isoformat(),
+        },
     ]
     result = compute_prediction_value_trend(logs)
     assert result["n_total"] == 2
@@ -177,7 +183,11 @@ def test_summary_mentions_trend_up():
     logs = _make_logs([100, 115, 130, 145, 160, 175, 190, 205, 220, 235])
     result = compute_prediction_value_trend(logs)
     assert result["direction"] == "trending_up"
-    assert "increased" in result["summary"].lower() or "higher" in result["summary"].lower() or "increase" in result["summary"].lower()
+    assert (
+        "increased" in result["summary"].lower()
+        or "higher" in result["summary"].lower()
+        or "increase" in result["summary"].lower()
+    )
 
 
 def test_summary_mentions_trend_down():
@@ -185,7 +195,11 @@ def test_summary_mentions_trend_down():
     logs = _make_logs([235, 220, 205, 190, 175, 160, 145, 130, 115, 100])
     result = compute_prediction_value_trend(logs)
     assert result["direction"] == "trending_down"
-    assert "decreased" in result["summary"].lower() or "lower" in result["summary"].lower() or "decrease" in result["summary"].lower()
+    assert (
+        "decreased" in result["summary"].lower()
+        or "lower" in result["summary"].lower()
+        or "decrease" in result["summary"].lower()
+    )
 
 
 def test_insufficient_data_raises():
@@ -204,7 +218,10 @@ def test_empty_logs_raises():
 def test_all_none_raises():
     """All-None prediction_numeric raises ValueError."""
     base = datetime(2025, 1, 1)
-    logs = [{"prediction_numeric": None, "created_at": base + timedelta(days=i)} for i in range(5)]
+    logs = [
+        {"prediction_numeric": None, "created_at": base + timedelta(days=i)}
+        for i in range(5)
+    ]
     with pytest.raises(ValueError):
         compute_prediction_value_trend(logs)
 
@@ -213,7 +230,13 @@ def test_week_period_grouping():
     """period='week' groups daily predictions into ISO week buckets."""
     # 14 days = 2 weeks
     base = datetime(2025, 1, 6)  # Monday
-    logs = [{"prediction_numeric": float(i * 10 + 100), "created_at": base + timedelta(days=i)} for i in range(14)]
+    logs = [
+        {
+            "prediction_numeric": float(i * 10 + 100),
+            "created_at": base + timedelta(days=i),
+        }
+        for i in range(14)
+    ]
     result = compute_prediction_value_trend(logs, period="week")
     assert result["n_periods_with_data"] == 2
 

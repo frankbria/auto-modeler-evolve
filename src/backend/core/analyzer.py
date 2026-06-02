@@ -6053,7 +6053,11 @@ def compute_prediction_value_trend(
         period_mean = float(np.mean(vals))
         periods_out.append(
             {
-                "period_label": pk.strftime("%b %d") if period == "day" else pk.strftime("Week of %b %d"),
+                "period_label": (
+                    pk.strftime("%b %d")
+                    if period == "day"
+                    else pk.strftime("Week of %b %d")
+                ),
                 "period_start": pk.isoformat(),
                 "mean": round(period_mean, 4),
                 "count": len(vals),
@@ -6071,7 +6075,9 @@ def compute_prediction_value_trend(
     first_mean = float(means[0])
     last_mean = float(means[-1])
     overall_change_pct = (
-        ((last_mean - first_mean) / abs(first_mean)) * 100 if abs(first_mean) > 1e-9 else 0.0
+        ((last_mean - first_mean) / abs(first_mean)) * 100
+        if abs(first_mean) > 1e-9
+        else 0.0
     )
     slope_pct_per_period = (
         (slope / abs(first_mean)) * 100 if abs(first_mean) > 1e-9 else 0.0

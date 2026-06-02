@@ -20,7 +20,6 @@ import db as db_module
 from api.chat import _FEATURE_PSI_PATTERNS
 from core.analyzer import compute_feature_psi_ranking
 
-
 # ─── Pure function helpers ─────────────────────────────────────────────────────
 
 
