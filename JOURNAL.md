@@ -1,5 +1,29 @@
 # Journal
 
+## Day 83 — 12:00 — Deployment Monitoring Signal Digest via Chat
+
+**Feature shipped:** Deployment Monitoring Signal Digest (Track B perpetual). Analysts can now ask "show all my monitoring signals", "monitoring signal digest", "deployment diagnostics", "give me a full monitoring overview", "comprehensive monitoring check", or "monitoring signals at a glance" (8 NL variants in `_MONITORING_DIGEST_PATTERNS`) and receive a `MonitoringDigestCard` in chat — a "mission control" compact overview of ALL active monitoring signal verdicts in a single card.
+
+**What was built:**
+
+- `compute_deployment_monitoring_digest(anomaly_result, value_trend_result, dist_shift_result, readiness_result, usage_7d, usage_prev_7d, problem_type)` pure function in `core/analyzer.py`: aggregates up to 5 pre-computed signal results into a structured digest. Each signal maps to green/amber/red severity (output anomalies: no/few/many → green/amber/red; value trend: stable=green/trending=amber, regression only; distribution shift: stable/moderate/significant → green/amber/red; retraining readiness: stable/monitor=green|amber/retrain_soon=amber/retrain_now=red; usage activity: active/declining/none → green/amber/amber). Overall health: critical (≥2 red) / warning (1 red) / watching (≥1 amber) / healthy (all green). Score = 100 − red×25 − amber×10. Priority actions drawn from readiness recommendations + signal callouts (capped at 3).
+
+- `GET /api/deploy/{id}/monitoring-digest?n=100` REST endpoint in `api/deploy.py`: computes all signals inline (anomalies, value trend, dist shift via pipeline reload, retraining readiness from z-scores/confidence trend) and returns digest enriched with deployment_id/algorithm/target_col.
+
+- `_MONITORING_DIGEST_PATTERNS` (8 NL variants) + handler in `chat.py`: computes all signals from session queries inline, injects overall_health + score + firing count + summary into system_prompt, emits `{type:"monitoring_digest"}` SSE event. Also fixed pre-existing duplicate `return result` in `api/deploy.py` prediction-value-trend endpoint.
+
+- `MonitoringDigestCard` (blue=healthy / amber=watching / orange=warning / rose=critical, 📡 icon): overall health badge, score/100, signals-need-attention badge, target column; signal list (role="list", each row: icon + label + colored status dot + verdict_label + finding text, tinted by severity); priority actions amber box (→ bullets); summary paragraph; sr-only figcaption.
+
+- Full type wiring: `MonitoringDigestSignal` + `MonitoringDigestResult` TypeScript interfaces in `lib/types.ts`; `monitoring_digest?` on `ChatMessage`; `attachMonitoringDigestToLastMessage` Zustand action in `store.ts`; SSE handler (both EventSource branches) + card render in `project/[id]/page.tsx`.
+
+**Tests:** 24 pure-function (required keys, all severity mappings, health aggregation logic, score formula, priority actions, summary) + 10 regex (8 positive + 2 false-positive guards) = **34 backend**. 15 card component + 2 store action = **17 frontend** = **51 new tests**. All passing. Backend lint: clean. Frontend build + TypeScript: clean.
+
+**Key implementation detail:** The digest computes all signals inline in the chat handler (same pattern as `RetrainingReadinessCard`) rather than calling REST endpoints, to avoid circular HTTP dependencies and ensure the computation happens within the existing session context. The distribution shift signal requires loading the training CSV and running the model to generate training predictions — this adds latency but provides the most complete picture.
+
+**Why this matters:** Analysts now have 15+ individual monitoring cards but getting a complete picture requires asking 6 separate questions and scrolling through 6 separate cards. The `MonitoringDigestCard` acts as the "mission control" view — showing every signal's current verdict at a glance. Distinct from `ModelStatusReportCard` (download-only, covers basic health+volume+SLA) and `RetrainingReadinessCard` (synthesizes signals into a single retrain decision) by presenting ALL signal verdicts explicitly in a compact, scannable format optimized for a VP-facing status check.
+
+**Baseline:** 5493 backend / 3128 frontend → **5527 backend / 3145 frontend** (+34 / +17).
+
 ## Day 83 — 04:00 — Production Prediction Value Trend via Chat
 
 **Feature shipped:** Production Prediction Value Trend (Track D perpetual). Analysts can now ask "are my predictions trending up?", "prediction value trend", "show me how my predictions have changed over time", "regression output trend", "prediction value history", or "show prediction time series" (8 NL variants in `_PRED_VALUE_TREND_PATTERNS`) and receive a `PredictionValueTrendCard` in chat — a Recharts LineChart showing mean regression prediction values per day with directional verdict (trending_up / stable / trending_down) and overall % change.
