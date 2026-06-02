@@ -53,6 +53,27 @@ the time is better spent on real features.
 
 ---
 
+## Day 83 (04:00) — Done
+
+**Track D: Production Prediction Value Trend via Chat** — complete.
+
+Closes the "are my model's outputs systematically drifting upward or downward over time?" analyst gap. Analysts can ask "are my predictions trending up?", "prediction value trend", "show me how my predictions have changed over time", "regression output trend" (8 NL variants) and receive a `PredictionValueTrendCard` showing a day-by-day LineChart of mean prediction values with direction verdict (trending_up / stable / trending_down) and overall % change.
+
+**What was built:**
+- `compute_prediction_value_trend(logs_data, period, n_periods)` pure function in `core/analyzer.py`: period bucketing, per-period stats, numpy polyfit slope, direction from overall_change_pct
+- `GET /api/deploy/{id}/prediction-value-trend?period=day&n=200` REST endpoint in `api/deploy.py`
+- `_PRED_VALUE_TREND_PATTERNS` (8 NL variants) + handler in `chat.py`: regression-only guard, ascending-order log load
+- `PredictionValueTrendCard` (emerald/rose/amber/gray, 📈): direction badge, first/last stats, net-change pct, Recharts LineChart
+
+38 backend + 18 frontend = **56 new tests**. Backend lint: clean. Frontend build + TypeScript: clean.
+
+**What's next:**
+- Track C: Classification threshold optimizer via chat — "what confidence threshold maximizes my F1 score?" (sweeps thresholds with precision/recall tradeoff — distinct from the existing `ThresholdAnalysisCard` which is for pre-deployment advice; this would be a deployment-level card using production data)
+- Track B: Multi-signal monitoring dashboard summary — auto-generate a weekly deployment health digest combining all monitoring signal verdicts
+- Track D: Prediction value comparison across deployments — "is my new model predicting higher values than my old one?"
+
+---
+
 ## Day 82 (20:00) — Done
 
 **Track D: Retraining Readiness Assessment via Chat** — complete.
