@@ -403,7 +403,9 @@ def generate_model_card_html(
         score_color = (
             "#059669"
             if brier_score < 0.1
-            else "#d97706" if brier_score < 0.2 else "#dc2626"
+            else "#d97706"
+            if brier_score < 0.2
+            else "#dc2626"
         )
         cal_html = f"""<h2 style="font-size:1rem;font-weight:600;color:#1e40af;margin:1.5rem 0 0.5rem">
             Calibration

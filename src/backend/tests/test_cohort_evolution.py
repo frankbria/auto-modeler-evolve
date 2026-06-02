@@ -65,9 +65,9 @@ class TestCohortEvolutionRegex:
         ],
     )
     def test_matches(self, phrase):
-        assert _COHORT_EVOLUTION_PATTERNS.search(
-            phrase
-        ), f"Expected match for: {phrase!r}"
+        assert _COHORT_EVOLUTION_PATTERNS.search(phrase), (
+            f"Expected match for: {phrase!r}"
+        )
 
     @pytest.mark.parametrize(
         "phrase",
@@ -79,9 +79,9 @@ class TestCohortEvolutionRegex:
         ],
     )
     def test_no_false_positives(self, phrase):
-        assert not _COHORT_EVOLUTION_PATTERNS.search(
-            phrase
-        ), f"Unexpected match for: {phrase!r}"
+        assert not _COHORT_EVOLUTION_PATTERNS.search(phrase), (
+            f"Unexpected match for: {phrase!r}"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -280,9 +280,9 @@ class TestComputeCohortEvolution:
         result = self._run()
         for shift in result["shifts"]:
             for cs in shift["categorical_shifts"]:
-                assert (
-                    abs(cs["change"]) >= 5.0
-                ), f"Small shift leaked: column={cs['column']}, change={cs['change']}"
+                assert abs(cs["change"]) >= 5.0, (
+                    f"Small shift leaked: column={cs['column']}, change={cs['change']}"
+                )
 
     def test_shift_change_calculated_correctly(self):
         result = self._run()
