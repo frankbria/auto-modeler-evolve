@@ -147,7 +147,10 @@ class TestComputeRetrainingReadiness:
 
     def test_score_is_0_to_100(self):
         result = compute_retraining_readiness(
-            age_days=200, anomaly_rate=0.20, confidence_trend="declining", feedback_verdict="poor"
+            age_days=200,
+            anomaly_rate=0.20,
+            confidence_trend="declining",
+            feedback_verdict="poor",
         )
         assert 0 <= result["score"] <= 100
 
@@ -172,7 +175,10 @@ class TestComputeRetrainingReadiness:
 
     def test_stable_verdict_for_all_green(self):
         result = compute_retraining_readiness(
-            age_days=10, anomaly_rate=0.01, confidence_trend="stable", feedback_verdict="good"
+            age_days=10,
+            anomaly_rate=0.01,
+            confidence_trend="stable",
+            feedback_verdict="good",
         )
         assert result["verdict"] == "stable"
 
@@ -277,7 +283,9 @@ async def ac(tmp_path):
 
 @pytest.mark.anyio
 async def test_retraining_readiness_404_unknown(ac):
-    resp = await ac.get("/api/deploy/00000000-0000-0000-0000-000000000000/retraining-readiness")
+    resp = await ac.get(
+        "/api/deploy/00000000-0000-0000-0000-000000000000/retraining-readiness"
+    )
     assert resp.status_code == 404
 
 
@@ -300,7 +308,10 @@ async def test_retraining_readiness_200_with_deployment(ac, tmp_path):
     pipeline_path = model_dir / "pipeline.joblib"
     model_path = model_dir / "model.joblib"
     from core.deployer import PredictionPipeline
-    pp = PredictionPipeline(feature_names=["x"], feature_means={"x": 3.0}, column_types={"x": "numeric"})
+
+    pp = PredictionPipeline(
+        feature_names=["x"], feature_means={"x": 3.0}, column_types={"x": "numeric"}
+    )
     joblib.dump(pp, pipeline_path)
     reg = LinearRegression().fit([[1], [2], [3], [4], [5]], [2, 4, 6, 8, 10])
     joblib.dump(reg, model_path)

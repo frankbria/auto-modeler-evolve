@@ -11271,7 +11271,9 @@ def send_message(
             # Signal 1: model age
             _rr_age_days: int | None = None
             if _rr_run and _rr_run.created_at:
-                _rr_age_days = (datetime.now(UTC).replace(tzinfo=None) - _rr_run.created_at).days
+                _rr_age_days = (
+                    datetime.now(UTC).replace(tzinfo=None) - _rr_run.created_at
+                ).days
 
             # Signal 2: anomaly rate or confidence trend from PredictionLogs
             _rr_logs = session.exec(
@@ -11299,7 +11301,9 @@ def send_message(
                             _rr_std = 0.0
                         if _rr_std > 0:
                             _rr_n_anom = sum(
-                                1 for v in _rr_num_preds if abs(v - _rr_mean) / _rr_std > 2.5
+                                1
+                                for v in _rr_num_preds
+                                if abs(v - _rr_mean) / _rr_std > 2.5
                             )
                             _rr_anomaly_rate = _rr_n_anom / len(_rr_num_preds)
                         else:
@@ -11332,7 +11336,9 @@ def send_message(
                 if _rr_problem == "classification":
                     _rr_rated = [fb for fb in _rr_fb_recs if fb.is_correct is not None]
                     if _rr_rated:
-                        _rr_acc = sum(1 for fb in _rr_rated if fb.is_correct is True) / len(_rr_rated)
+                        _rr_acc = sum(
+                            1 for fb in _rr_rated if fb.is_correct is True
+                        ) / len(_rr_rated)
                         if _rr_acc >= 0.85:
                             _rr_fb_verdict = "excellent"
                         elif _rr_acc >= 0.70:
@@ -11347,7 +11353,9 @@ def send_message(
                         if fb.actual_value is not None and fb.prediction_log_id:
                             _rr_log_e = session.get(PredictionLog, fb.prediction_log_id)
                             if _rr_log_e and _rr_log_e.prediction_numeric is not None:
-                                _rr_pairs.append((fb.actual_value, _rr_log_e.prediction_numeric))
+                                _rr_pairs.append(
+                                    (fb.actual_value, _rr_log_e.prediction_numeric)
+                                )
                     if _rr_pairs:
                         _rr_mae = sum(abs(a - p) for a, p in _rr_pairs) / len(_rr_pairs)
                         _rr_avg_act = sum(a for a, _ in _rr_pairs) / len(_rr_pairs)

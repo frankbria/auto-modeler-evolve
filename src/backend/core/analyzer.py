@@ -5819,7 +5819,9 @@ def compute_retraining_readiness(  # noqa: PLR0912, PLR0915
             psi_detail = f"{psi_critical_count} input features show critical distribution shift (PSI ≥ 0.20)"
         elif psi_critical_count == 1:
             psi_contribution = 15
-            psi_detail = "1 input feature shows critical distribution shift (PSI ≥ 0.20)"
+            psi_detail = (
+                "1 input feature shows critical distribution shift (PSI ≥ 0.20)"
+            )
         else:
             psi_contribution = 0
             psi_detail = "No input features show critical distribution shift"
@@ -5839,10 +5841,14 @@ def compute_retraining_readiness(  # noqa: PLR0912, PLR0915
     if output_shift_verdict is not None and output_shift_verdict != "no_data":
         if output_shift_verdict == "significant_shift":
             shift_contribution = 25
-            shift_detail = "Production prediction distribution significantly differs from training"
+            shift_detail = (
+                "Production prediction distribution significantly differs from training"
+            )
         elif output_shift_verdict == "moderate_shift":
             shift_contribution = 10
-            shift_detail = "Production prediction distribution moderately differs from training"
+            shift_detail = (
+                "Production prediction distribution moderately differs from training"
+            )
         else:
             shift_contribution = 0
             shift_detail = "Prediction output distribution is stable"
@@ -5866,7 +5872,9 @@ def compute_retraining_readiness(  # noqa: PLR0912, PLR0915
             "signals_available": 0,
             "signals_firing": 0,
             "top_reason": None,
-            "recommendations": ["Collect more production data to assess retraining need."],
+            "recommendations": [
+                "Collect more production data to assess retraining need."
+            ],
             "summary": "No monitoring signals available yet. Run predictions and submit feedback to build a picture of model health.",
         }
 
@@ -5907,15 +5915,21 @@ def compute_retraining_readiness(  # noqa: PLR0912, PLR0915
     if verdict in ("retrain_now", "retrain_soon"):
         recs.append("Retrain the model on fresh data to restore accuracy.")
     if any(s["name"] == "psi_drift" and s["is_firing"] for s in signals):
-        recs.append("Investigate input feature distribution changes — your data pipeline may have shifted.")
+        recs.append(
+            "Investigate input feature distribution changes — your data pipeline may have shifted."
+        )
     if any(s["name"] == "feedback_accuracy" and s["is_firing"] for s in signals):
-        recs.append("Review recent predictions where feedback was submitted to identify failure patterns.")
+        recs.append(
+            "Review recent predictions where feedback was submitted to identify failure patterns."
+        )
     if any(s["name"] == "model_age" and s["is_firing"] for s in signals):
         recs.append("Upload a fresh dataset and retrain to reflect current patterns.")
     if verdict == "monitor":
         recs.append("Continue monitoring — no immediate action needed.")
     if verdict == "stable":
-        recs.append("Model is performing well. Keep collecting feedback to maintain visibility.")
+        recs.append(
+            "Model is performing well. Keep collecting feedback to maintain visibility."
+        )
 
     # summary
     available = len(signals)

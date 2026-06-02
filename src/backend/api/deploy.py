@@ -6780,9 +6780,7 @@ def get_retraining_readiness(
         else:
             # classification confidence trend
             confidence_values = [
-                lg.confidence
-                for lg in reversed(logs)
-                if lg.confidence is not None
+                lg.confidence for lg in reversed(logs) if lg.confidence is not None
             ]
             if len(confidence_values) >= 5:
                 half = len(confidence_values) // 2
