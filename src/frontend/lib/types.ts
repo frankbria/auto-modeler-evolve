@@ -551,6 +551,7 @@ export interface ChatMessage {
   output_distribution_shift?: PredictionOutputDistributionShiftResult
   feature_psi?: FeaturePsiResult
   min_feature_set?: MinFeatureSetResult
+  retraining_readiness?: RetrainingReadinessResult
   model_status_report?: ModelStatusReportInfo
 }
 
@@ -4270,5 +4271,32 @@ export interface MinFeatureSetResult {
   can_simplify: boolean
   reduction_pct: number
   metric: string
+  summary: string
+}
+
+export interface RetrainingReadinessSignal {
+  name: string
+  label: string
+  value_str: string
+  score_contribution: number
+  is_firing: boolean
+  detail: string
+}
+
+export interface RetrainingReadinessResult {
+  deployment_id?: string
+  algorithm?: string | null
+  target_col?: string | null
+  problem_type?: string
+  n_logs_checked?: number
+  n_feedback?: number
+  score: number
+  verdict: 'stable' | 'monitor' | 'retrain_soon' | 'retrain_now'
+  verdict_label: string
+  signals: RetrainingReadinessSignal[]
+  signals_available: number
+  signals_firing: number
+  top_reason: string | null
+  recommendations: string[]
   summary: string
 }

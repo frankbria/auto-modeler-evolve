@@ -5683,3 +5683,272 @@ def compute_feature_psi_ranking(
         "training_count": len(training_df),
         "summary": summary,
     }
+
+
+# ---------------------------------------------------------------------------
+# Retraining Readiness
+# ---------------------------------------------------------------------------
+
+_RETRAIN_VERDICTS = {
+    "stable": "No action needed",
+    "monitor": "Worth watching",
+    "retrain_soon": "Retrain recommended",
+    "retrain_now": "Retrain urgently",
+}
+
+
+def compute_retraining_readiness(  # noqa: PLR0912, PLR0915
+    age_days: int | None = None,
+    anomaly_rate: float | None = None,
+    confidence_trend: str | None = None,
+    feedback_verdict: str | None = None,
+    psi_critical_count: int | None = None,
+    output_shift_verdict: str | None = None,
+) -> dict:
+    """Aggregate monitoring signals into a 0-100 retraining urgency score.
+
+    Higher score means more evidence that the model should be retrained.
+    Each signal contributes a weighted sub-score; available signals are
+    normalized so the total always ranges 0-100.
+
+    Returns a dict with: score, verdict, verdict_label, signals,
+    signals_available, signals_firing, top_reason, recommendations, summary.
+    """
+    signals = []
+
+    # --- model age ---
+    age_contribution = 0
+    if age_days is not None:
+        if age_days > 180:
+            age_contribution = 40
+            age_detail = f"Trained {age_days} days ago (very old)"
+        elif age_days > 90:
+            age_contribution = 25
+            age_detail = f"Trained {age_days} days ago (aging)"
+        elif age_days > 60:
+            age_contribution = 15
+            age_detail = f"Trained {age_days} days ago (getting old)"
+        elif age_days > 30:
+            age_contribution = 5
+            age_detail = f"Trained {age_days} days ago (acceptable)"
+        else:
+            age_contribution = 0
+            age_detail = f"Trained {age_days} days ago (fresh)"
+        signals.append(
+            {
+                "name": "model_age",
+                "label": "Model Age",
+                "value_str": f"{age_days} days",
+                "score_contribution": age_contribution,
+                "is_firing": age_contribution > 0,
+                "detail": age_detail,
+            }
+        )
+
+    # --- prediction anomaly rate ---
+    anomaly_contribution = 0
+    if anomaly_rate is not None:
+        if anomaly_rate >= 0.15:
+            anomaly_contribution = 30
+            anom_detail = f"Anomaly rate {anomaly_rate:.0%} (high)"
+        elif anomaly_rate >= 0.05:
+            anomaly_contribution = 15
+            anom_detail = f"Anomaly rate {anomaly_rate:.0%} (elevated)"
+        else:
+            anomaly_contribution = 0
+            anom_detail = f"Anomaly rate {anomaly_rate:.0%} (normal)"
+        signals.append(
+            {
+                "name": "anomaly_rate",
+                "label": "Prediction Anomalies",
+                "value_str": f"{anomaly_rate:.0%} anomalous",
+                "score_contribution": anomaly_contribution,
+                "is_firing": anomaly_contribution > 0,
+                "detail": anom_detail,
+            }
+        )
+
+    # --- confidence trend ---
+    conf_contribution = 0
+    if confidence_trend is not None:
+        if confidence_trend == "declining":
+            conf_contribution = 20
+            conf_detail = "Model confidence is declining over time"
+        else:
+            conf_contribution = 0
+            conf_detail = f"Confidence trend: {confidence_trend}"
+        signals.append(
+            {
+                "name": "confidence_trend",
+                "label": "Confidence Trend",
+                "value_str": confidence_trend.replace("_", " ").capitalize(),
+                "score_contribution": conf_contribution,
+                "is_firing": conf_contribution > 0,
+                "detail": conf_detail,
+            }
+        )
+
+    # --- feedback accuracy ---
+    fb_contribution = 0
+    if feedback_verdict is not None:
+        if feedback_verdict == "poor":
+            fb_contribution = 30
+            fb_detail = "Real-world accuracy is poor"
+        elif feedback_verdict == "moderate":
+            fb_contribution = 15
+            fb_detail = "Real-world accuracy is moderate"
+        else:
+            fb_contribution = 0
+            fb_detail = f"Feedback verdict: {feedback_verdict}"
+        signals.append(
+            {
+                "name": "feedback_accuracy",
+                "label": "Feedback Accuracy",
+                "value_str": feedback_verdict.replace("_", " ").capitalize(),
+                "score_contribution": fb_contribution,
+                "is_firing": fb_contribution > 0,
+                "detail": fb_detail,
+            }
+        )
+
+    # --- PSI critical features ---
+    psi_contribution = 0
+    if psi_critical_count is not None:
+        if psi_critical_count >= 2:
+            psi_contribution = 25
+            psi_detail = f"{psi_critical_count} input features show critical distribution shift (PSI ≥ 0.20)"
+        elif psi_critical_count == 1:
+            psi_contribution = 15
+            psi_detail = "1 input feature shows critical distribution shift (PSI ≥ 0.20)"
+        else:
+            psi_contribution = 0
+            psi_detail = "No input features show critical distribution shift"
+        signals.append(
+            {
+                "name": "psi_drift",
+                "label": "Input Feature Drift (PSI)",
+                "value_str": f"{psi_critical_count} critical feature(s)",
+                "score_contribution": psi_contribution,
+                "is_firing": psi_contribution > 0,
+                "detail": psi_detail,
+            }
+        )
+
+    # --- output distribution shift ---
+    shift_contribution = 0
+    if output_shift_verdict is not None and output_shift_verdict != "no_data":
+        if output_shift_verdict == "significant_shift":
+            shift_contribution = 25
+            shift_detail = "Production prediction distribution significantly differs from training"
+        elif output_shift_verdict == "moderate_shift":
+            shift_contribution = 10
+            shift_detail = "Production prediction distribution moderately differs from training"
+        else:
+            shift_contribution = 0
+            shift_detail = "Prediction output distribution is stable"
+        signals.append(
+            {
+                "name": "output_shift",
+                "label": "Output Distribution Shift",
+                "value_str": output_shift_verdict.replace("_", " ").capitalize(),
+                "score_contribution": shift_contribution,
+                "is_firing": shift_contribution > 0,
+                "detail": shift_detail,
+            }
+        )
+
+    if not signals:
+        return {
+            "score": 0,
+            "verdict": "stable",
+            "verdict_label": _RETRAIN_VERDICTS["stable"],
+            "signals": [],
+            "signals_available": 0,
+            "signals_firing": 0,
+            "top_reason": None,
+            "recommendations": ["Collect more production data to assess retraining need."],
+            "summary": "No monitoring signals available yet. Run predictions and submit feedback to build a picture of model health.",
+        }
+
+    # --- aggregate: normalize each contribution by the max possible from its signal ---
+    max_by_signal = {
+        "model_age": 40,
+        "anomaly_rate": 30,
+        "confidence_trend": 20,
+        "feedback_accuracy": 30,
+        "psi_drift": 25,
+        "output_shift": 25,
+    }
+    total_possible = sum(max_by_signal[s["name"]] for s in signals)
+    raw_total = sum(s["score_contribution"] for s in signals)
+    score = int(round(raw_total / total_possible * 100)) if total_possible > 0 else 0
+    score = min(100, max(0, score))
+
+    # verdict
+    if score >= 80:
+        verdict = "retrain_now"
+    elif score >= 60:
+        verdict = "retrain_soon"
+    elif score >= 30:
+        verdict = "monitor"
+    else:
+        verdict = "stable"
+
+    # top reason = highest-contributing firing signal
+    firing = sorted(
+        [s for s in signals if s["is_firing"]],
+        key=lambda s: s["score_contribution"],
+        reverse=True,
+    )
+    top_reason = firing[0]["detail"] if firing else None
+
+    # recommendations
+    recs: list[str] = []
+    if verdict in ("retrain_now", "retrain_soon"):
+        recs.append("Retrain the model on fresh data to restore accuracy.")
+    if any(s["name"] == "psi_drift" and s["is_firing"] for s in signals):
+        recs.append("Investigate input feature distribution changes — your data pipeline may have shifted.")
+    if any(s["name"] == "feedback_accuracy" and s["is_firing"] for s in signals):
+        recs.append("Review recent predictions where feedback was submitted to identify failure patterns.")
+    if any(s["name"] == "model_age" and s["is_firing"] for s in signals):
+        recs.append("Upload a fresh dataset and retrain to reflect current patterns.")
+    if verdict == "monitor":
+        recs.append("Continue monitoring — no immediate action needed.")
+    if verdict == "stable":
+        recs.append("Model is performing well. Keep collecting feedback to maintain visibility.")
+
+    # summary
+    available = len(signals)
+    firing_count = len(firing)
+    if verdict == "stable":
+        summary = (
+            f"All {available} available monitoring signal(s) are within normal range. "
+            "No retraining action is needed at this time."
+        )
+    elif verdict == "monitor":
+        summary = (
+            f"{firing_count} of {available} signal(s) are elevated. "
+            f"Keep an eye on this — {top_reason.lower() if top_reason else 'trends may worsen'}."
+        )
+    elif verdict == "retrain_soon":
+        summary = (
+            f"{firing_count} of {available} signal(s) indicate model degradation. "
+            f"Retraining is recommended. Key concern: {top_reason.lower() if top_reason else 'model quality has declined'}."
+        )
+    else:
+        summary = (
+            f"{firing_count} of {available} signal(s) point to significant model degradation. "
+            f"Retrain urgently. Main concern: {top_reason.lower() if top_reason else 'multiple quality indicators are alarming'}."
+        )
+
+    return {
+        "score": score,
+        "verdict": verdict,
+        "verdict_label": _RETRAIN_VERDICTS[verdict],
+        "signals": signals,
+        "signals_available": available,
+        "signals_firing": firing_count,
+        "top_reason": top_reason,
+        "recommendations": recs,
+        "summary": summary,
+    }

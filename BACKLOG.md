@@ -49,7 +49,9 @@ the time is better spent on real features.
 
 ## Currently Working On
 
-*(nothing)*
+**Track D: Retraining Readiness Assessment via Chat** (Day 82 20:00)
+
+Aggregates all monitoring signals (model age, prediction anomaly rate, confidence trend, feedback accuracy, optional PSI + output shift) into a single composite 0-100 retraining urgency score. Closes the gap where analysts have individual monitoring cards but no unified "should I retrain now?" answer. `compute_retraining_readiness()` pure function + REST endpoint + chat card.
 
 ---
 

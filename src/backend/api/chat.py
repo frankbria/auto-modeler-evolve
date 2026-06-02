@@ -4185,6 +4185,25 @@ _MIN_FEATURE_SET_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# Retraining readiness: aggregate all monitoring signals into a single score.
+# Distinct from: ProjectHealthCard (age+usage only), PredictionAuditCard (raw stats),
+# ModelHealthCard (deployment health score), individual drift/anomaly/PSI cards.
+_RETRAIN_READINESS_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"(?:should\s+(?:I|we)\s+(?:retrain|update|rebuild|refresh|re-train)\s+(?:my\s+)?(?:model|predictor))|"
+    r"(?:(?:is\s+(?:it|my\s+model)\s+)?(?:time|ready)\s+to\s+retrain)|"
+    r"(?:retraining?\s+(?:readiness|recommendation|signal|assessment|check|urgency|score|analysis))|"
+    r"(?:retrain\s+(?:recommendation|signal|check|assessment|urgency|score))|"
+    r"(?:do\s+I\s+need\s+to\s+retrain)|"
+    r"(?:(?:is\s+)?my\s+model\s+(?:degrading|decaying|deteriorating|getting\s+worse|needing\s+update|getting\s+worse))|"
+    r"(?:model\s+(?:is\s+)?(?:getting\s+worse|deteriorating|degrading\s+in\s+production))|"
+    r"(?:comprehensive\s+model\s+(?:health|quality)\s+(?:check|assessment|score))|"
+    r"(?:aggregate\s+(?:drift|monitoring)\s+signals?)|"
+    r"(?:model\s+(?:degradation|decay)\s+(?:score|check|assessment))"
+    r")",
+    re.IGNORECASE,
+)
+
 # Model status report: production monitoring briefing for stakeholders.
 # Distinct from: ExecutiveBriefingCard (model design), ModelCardExport (compliance),
 # ConversationExportCard (chat history), PredictionAuditCard (raw stats card).
@@ -11236,6 +11255,146 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Min feature set is nice-to-have; never crash chat
 
+    # Retraining readiness assessment
+    # "should I retrain my model?", "retrain recommendation", "is my model degrading?"
+    # Distinct from: ProjectHealthCard (age+usage only), PredictionAuditCard (raw stats).
+    retrain_readiness_event: dict | None = None
+    if _RETRAIN_READINESS_PATTERNS.search(body.message) and ctx.get("deployment"):
+        try:
+            from core.analyzer import compute_retraining_readiness as _crr
+            import statistics as _rr_stats
+
+            _rr_dep = ctx["deployment"]
+            _rr_problem = _rr_dep.problem_type or "regression"
+            _rr_run = (ctx.get("model_runs") or [None])[0]
+
+            # Signal 1: model age
+            _rr_age_days: int | None = None
+            if _rr_run and _rr_run.created_at:
+                _rr_age_days = (datetime.now(UTC).replace(tzinfo=None) - _rr_run.created_at).days
+
+            # Signal 2: anomaly rate or confidence trend from PredictionLogs
+            _rr_logs = session.exec(
+                select(PredictionLog)
+                .where(PredictionLog.deployment_id == _rr_dep.id)
+                .order_by(PredictionLog.created_at.desc())  # type: ignore[attr-defined]
+                .limit(100)
+            ).all()
+
+            _rr_anomaly_rate: float | None = None
+            _rr_conf_trend: str | None = None
+
+            if len(_rr_logs) >= 5:
+                if _rr_problem == "regression":
+                    _rr_num_preds = [
+                        lg.prediction_numeric
+                        for lg in _rr_logs
+                        if lg.prediction_numeric is not None
+                    ]
+                    if len(_rr_num_preds) >= 5:
+                        _rr_mean = _rr_stats.mean(_rr_num_preds)
+                        try:
+                            _rr_std = _rr_stats.stdev(_rr_num_preds)
+                        except Exception:  # noqa: BLE001
+                            _rr_std = 0.0
+                        if _rr_std > 0:
+                            _rr_n_anom = sum(
+                                1 for v in _rr_num_preds if abs(v - _rr_mean) / _rr_std > 2.5
+                            )
+                            _rr_anomaly_rate = _rr_n_anom / len(_rr_num_preds)
+                        else:
+                            _rr_anomaly_rate = 0.0
+                else:
+                    _rr_conf_vals = [
+                        lg.confidence
+                        for lg in reversed(_rr_logs)
+                        if lg.confidence is not None
+                    ]
+                    if len(_rr_conf_vals) >= 5:
+                        _rr_half = len(_rr_conf_vals) // 2
+                        _rr_first = sum(_rr_conf_vals[:_rr_half]) / _rr_half
+                        _rr_second = sum(_rr_conf_vals[_rr_half:]) / max(
+                            1, len(_rr_conf_vals) - _rr_half
+                        )
+                        if _rr_second - _rr_first > 0.03:
+                            _rr_conf_trend = "improving"
+                        elif _rr_first - _rr_second > 0.03:
+                            _rr_conf_trend = "declining"
+                        else:
+                            _rr_conf_trend = "stable"
+
+            # Signal 3: feedback verdict
+            _rr_fb_verdict: str | None = None
+            _rr_fb_recs = session.exec(
+                select(FeedbackRecord).where(FeedbackRecord.deployment_id == _rr_dep.id)
+            ).all()
+            if len(_rr_fb_recs) >= 3:
+                if _rr_problem == "classification":
+                    _rr_rated = [fb for fb in _rr_fb_recs if fb.is_correct is not None]
+                    if _rr_rated:
+                        _rr_acc = sum(1 for fb in _rr_rated if fb.is_correct is True) / len(_rr_rated)
+                        if _rr_acc >= 0.85:
+                            _rr_fb_verdict = "excellent"
+                        elif _rr_acc >= 0.70:
+                            _rr_fb_verdict = "good"
+                        elif _rr_acc >= 0.55:
+                            _rr_fb_verdict = "moderate"
+                        else:
+                            _rr_fb_verdict = "poor"
+                else:
+                    _rr_pairs = []
+                    for fb in _rr_fb_recs:
+                        if fb.actual_value is not None and fb.prediction_log_id:
+                            _rr_log_e = session.get(PredictionLog, fb.prediction_log_id)
+                            if _rr_log_e and _rr_log_e.prediction_numeric is not None:
+                                _rr_pairs.append((fb.actual_value, _rr_log_e.prediction_numeric))
+                    if _rr_pairs:
+                        _rr_mae = sum(abs(a - p) for a, p in _rr_pairs) / len(_rr_pairs)
+                        _rr_avg_act = sum(a for a, _ in _rr_pairs) / len(_rr_pairs)
+                        _rr_pct_err = (_rr_mae / (abs(_rr_avg_act) + 1e-9)) * 100
+                        if _rr_pct_err <= 5:
+                            _rr_fb_verdict = "excellent"
+                        elif _rr_pct_err <= 15:
+                            _rr_fb_verdict = "good"
+                        elif _rr_pct_err <= 30:
+                            _rr_fb_verdict = "moderate"
+                        else:
+                            _rr_fb_verdict = "poor"
+
+            _rr_result = _crr(
+                age_days=_rr_age_days,
+                anomaly_rate=_rr_anomaly_rate,
+                confidence_trend=_rr_conf_trend,
+                feedback_verdict=_rr_fb_verdict,
+            )
+            _rr_result["deployment_id"] = _rr_dep.id
+            _rr_result["algorithm"] = _rr_run.algorithm if _rr_run else None
+            _rr_result["target_col"] = _rr_dep.target_column
+            _rr_result["problem_type"] = _rr_problem
+            _rr_result["n_logs_checked"] = len(_rr_logs)
+            retrain_readiness_event = _rr_result
+
+            _rr_score = _rr_result.get("score", 0)
+            _rr_verdict = _rr_result.get("verdict", "stable")
+            _rr_label = _rr_result.get("verdict_label", "No action needed")
+            _rr_top = _rr_result.get("top_reason") or "no specific concern detected"
+            system_prompt += (
+                f"\n\n## Retraining Readiness Assessment\n"
+                f"Score: {_rr_score}/100\n"
+                f"Verdict: {_rr_verdict} ({_rr_label})\n"
+                f"Main concern: {_rr_top}\n"
+                f"Summary: {_rr_result.get('summary', '')}\n"
+                f"A RetrainingReadinessCard is shown with the full breakdown. "
+                f"Narrate the verdict in plain English. "
+                + (
+                    "Recommend retraining and explain what signals triggered this. "
+                    if _rr_verdict in ("retrain_now", "retrain_soon")
+                    else "Reassure the analyst that no immediate action is needed. "
+                )
+            )
+        except Exception:  # noqa: BLE001
+            pass  # Retraining readiness is nice-to-have; never crash chat
+
     # Model status report export
     # "generate a status report", "monitoring briefing", "production health report for my VP"
     # Distinct from: ExecutiveBriefing (model design), ModelCardExport (compliance docs),
@@ -18065,6 +18224,10 @@ def send_message(
         # Emit minimum viable feature set result
         if min_feature_set_event:
             yield f"data: {json.dumps({'type': 'min_feature_set', 'min_feature_set': min_feature_set_event})}\n\n"
+
+        # Emit retraining readiness assessment
+        if retrain_readiness_event:
+            yield f"data: {json.dumps({'type': 'retraining_readiness', 'retraining_readiness': retrain_readiness_event})}\n\n"
 
         # Emit model status report event
         if status_report_event:

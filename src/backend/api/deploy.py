@@ -40,6 +40,7 @@ from core.analyzer import (
     compute_deployments_overview,
     compute_prediction_audit,
     compute_prediction_output_anomalies,
+    compute_retraining_readiness,
     compute_usage_pattern,
 )
 from core.deployer import (
@@ -6709,4 +6710,128 @@ def get_feature_psi(
     result["deployment_id"] = deployment_id
     result["algorithm"] = run.algorithm
     result["target_col"] = feature_set.target_column
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Retraining readiness assessment
+# ---------------------------------------------------------------------------
+
+
+@router.get("/api/deploy/{deployment_id}/retraining-readiness")
+def get_retraining_readiness(
+    deployment_id: str,
+    n: int = Query(default=100, ge=5, le=500),
+    session: Session = Depends(get_session),
+) -> dict:
+    """Aggregate monitoring signals into a single retraining urgency score.
+
+    Computes from:
+    - Model age (days since the training run was created)
+    - Prediction anomaly rate (z-score outliers in recent regression predictions)
+    - Confidence trend direction (classification only)
+    - Feedback accuracy verdict (if feedback has been submitted)
+    """
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment or not deployment.is_active:
+        raise HTTPException(status_code=404, detail="Deployment not found.")
+
+    run = session.get(ModelRun, deployment.model_run_id)
+
+    # --- signal 1: model age ---
+    age_days: int | None = None
+    if run and run.created_at:
+        age_days = (datetime.now(UTC).replace(tzinfo=None) - run.created_at).days
+
+    # --- signal 2: prediction anomaly rate ---
+    logs = session.exec(
+        select(PredictionLog)
+        .where(PredictionLog.deployment_id == deployment_id)
+        .order_by(PredictionLog.created_at.desc())  # type: ignore[attr-defined]
+        .limit(n)
+    ).all()
+
+    anomaly_rate: float | None = None
+    confidence_trend: str | None = None
+
+    problem_type = deployment.problem_type or "regression"
+    if len(logs) >= 5:
+        if problem_type == "regression":
+            numeric_preds = [
+                lg.prediction_numeric
+                for lg in logs
+                if lg.prediction_numeric is not None
+            ]
+            if len(numeric_preds) >= 5:
+                import statistics as _stats
+
+                mean_p = _stats.mean(numeric_preds)
+                try:
+                    std_p = _stats.stdev(numeric_preds)
+                except Exception:  # noqa: BLE001
+                    std_p = 0.0
+                if std_p > 0:
+                    n_anomalies = sum(
+                        1 for v in numeric_preds if abs(v - mean_p) / std_p > 2.5
+                    )
+                    anomaly_rate = n_anomalies / len(numeric_preds)
+                else:
+                    anomaly_rate = 0.0
+        else:
+            # classification confidence trend
+            confidence_values = [
+                lg.confidence
+                for lg in reversed(logs)
+                if lg.confidence is not None
+            ]
+            if len(confidence_values) >= 5:
+                half = len(confidence_values) // 2
+                first_half_mean = sum(confidence_values[:half]) / half
+                second_half_mean = sum(confidence_values[half:]) / max(
+                    1, len(confidence_values) - half
+                )
+                if second_half_mean - first_half_mean > 0.03:
+                    confidence_trend = "improving"
+                elif first_half_mean - second_half_mean > 0.03:
+                    confidence_trend = "declining"
+                else:
+                    confidence_trend = "stable"
+
+    # --- signal 3: feedback verdict ---
+    feedback_verdict: str | None = None
+    fb_problem_type, fb_metric, n_fb = _compute_feedback_accuracy_simple(
+        session, deployment
+    )
+    if n_fb >= 3 and fb_metric is not None:
+        if fb_problem_type == "classification":
+            if fb_metric >= 0.85:
+                feedback_verdict = "excellent"
+            elif fb_metric >= 0.70:
+                feedback_verdict = "good"
+            elif fb_metric >= 0.55:
+                feedback_verdict = "moderate"
+            else:
+                feedback_verdict = "poor"
+        else:  # regression: pct_error
+            if fb_metric <= 5:
+                feedback_verdict = "excellent"
+            elif fb_metric <= 15:
+                feedback_verdict = "good"
+            elif fb_metric <= 30:
+                feedback_verdict = "moderate"
+            else:
+                feedback_verdict = "poor"
+
+    result = compute_retraining_readiness(
+        age_days=age_days,
+        anomaly_rate=anomaly_rate,
+        confidence_trend=confidence_trend,
+        feedback_verdict=feedback_verdict,
+    )
+    result["deployment_id"] = deployment_id
+    result["algorithm"] = run.algorithm if run else None
+    result["target_col"] = deployment.target_column
+    result["problem_type"] = problem_type
+    result["n_logs_checked"] = len(logs)
+    result["n_feedback"] = n_fb
     return result
