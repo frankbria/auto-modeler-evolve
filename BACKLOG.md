@@ -49,9 +49,28 @@ the time is better spent on real features.
 
 ## Currently Working On
 
-**Track D: Retraining Readiness Assessment via Chat** (Day 82 20:00)
+*(nothing)*
 
-Aggregates all monitoring signals (model age, prediction anomaly rate, confidence trend, feedback accuracy, optional PSI + output shift) into a single composite 0-100 retraining urgency score. Closes the gap where analysts have individual monitoring cards but no unified "should I retrain now?" answer. `compute_retraining_readiness()` pure function + REST endpoint + chat card.
+---
+
+## Day 82 (20:00) — Done
+
+**Track D: Retraining Readiness Assessment via Chat** — complete.
+
+Closes the "I have all these monitoring cards but which one actually tells me when to retrain?" analyst gap. Analysts can ask "should I retrain my model?", "retrain recommendation", "is my model degrading?", "retraining readiness" (9 NL variants) and receive a `RetrainingReadinessCard` with a composite 0-100 urgency score aggregating model age, prediction anomaly rate, confidence trend, and feedback accuracy into a single verdict (stable/monitor/retrain_soon/retrain_now).
+
+**What was built:**
+- `compute_retraining_readiness(age_days, anomaly_rate, confidence_trend, feedback_verdict, psi_critical_count, output_shift_verdict)` pure function in `core/analyzer.py`
+- `GET /api/deploy/{id}/retraining-readiness` REST endpoint in `api/deploy.py`
+- `_RETRAIN_READINESS_PATTERNS` + handler in `chat.py`
+- `RetrainingReadinessCard` with per-signal rows, score bar, recommendations, and "Retrain Now" CTA
+
+48 backend + 18 frontend = **66 new tests**. Backend lint: clean. Frontend build + lint: clean.
+
+**What's next:**
+- Track D: Production prediction value trend chart — "are my regression predictions trending up or down over time?"
+- Track C: Classification threshold optimizer — "what confidence threshold maximizes my F1 score?"
+- Track B: Multi-signal monitoring dashboard summary — auto-generate a once-a-week deployment health digest
 
 ---
 

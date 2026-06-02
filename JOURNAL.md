@@ -1,5 +1,29 @@
 # Journal
 
+## Day 82 — 20:00 — Retraining Readiness Assessment via Chat
+
+**Feature shipped:** Retraining Readiness Assessment (Track D perpetual). Analysts can now ask "should I retrain my model?", "retrain recommendation", "is my model degrading?", "retraining readiness", "do I need to retrain?", or "model degradation score" and receive a `RetrainingReadinessCard` in chat — a composite 0-100 urgency score that aggregates all available monitoring signals (model age, prediction anomaly rate, confidence trend, feedback accuracy) into a single verdict: stable / monitor / retrain_soon / retrain_now.
+
+**What was built:**
+
+- `compute_retraining_readiness(age_days, anomaly_rate, confidence_trend, feedback_verdict, psi_critical_count, output_shift_verdict)` pure function in `core/analyzer.py`: each signal contributes a weighted sub-score — model age (max 40 pts), prediction anomaly rate (max 30 pts), confidence trend (max 20 pts), feedback accuracy verdict (max 30 pts), PSI critical features (max 25 pts), output distribution shift (max 25 pts). Raw contributions normalized by total possible from available signals to produce a 0-100 score. Verdicts: stable (<30), monitor (30-59), retrain_soon (60-79), retrain_now (≥80). Returns score, verdict, verdict_label, signals list (each with name/label/value_str/score_contribution/is_firing/detail), top_reason, recommendations, summary. Returns stable + guidance when no signals available.
+
+- `GET /api/deploy/{id}/retraining-readiness?n=100` REST endpoint in `api/deploy.py`: computes age_days from ModelRun.created_at, anomaly_rate from z-scores in recent PredictionLog regression predictions (or confidence trend for classification), feedback_verdict from FeedbackRecord via `_compute_feedback_accuracy_simple()`.
+
+- `_RETRAIN_READINESS_PATTERNS` (9 NL variants) + handler in `chat.py`: same signal computation inline from session queries; injects score+verdict+top_reason into system_prompt; emits `{type:"retraining_readiness"}` SSE event.
+
+- `RetrainingReadinessCard` (emerald=stable / amber=monitor / orange=retrain_soon / rose=retrain_now, verdict emoji): score progress bar (role="progressbar"), per-signal rows with ✓/! indicator and contribution bars, recommendations list, "Retrain Model Now" CTA button for urgent verdicts, summary paragraph, sr-only figcaption.
+
+- Full type wiring: `RetrainingReadinessSignal` + `RetrainingReadinessResult` TypeScript interfaces in `lib/types.ts`; `retraining_readiness?` on `ChatMessage`; `attachRetrainingReadinessToLastMessage` Zustand action in `store.ts`; SSE handler (both EventSource branches) + card render in `project/[id]/page.tsx`.
+
+**Tests:** 28 pure-function (required keys, stable/monitor/retrain_soon/retrain_now thresholds, per-signal contributions, score normalization, firing detection, top_reason, recommendations, summary string, no-signals case) + 13 regex (positive + false-positive guards) + 7 REST endpoint integration (404 unknown, 200 with deployment + age signals) = **48 backend**. 16 card component + 2 store action = **18 frontend** = **66 new tests**. All passing. Backend lint: clean. Frontend build + lint: clean.
+
+**Key implementation details:** One route ordering bug found and fixed immediately — placed endpoint at end of deploy.py file which is after the embedded standalone `server.py` FastAPI app that's used for the ZIP export feature. The `@router.get("/{deployment_id}/retraining-readiness")` path was being registered on the inner `app` object instead of the deploy `router`. Fixed by using the full path pattern `@router.get("/api/deploy/{deployment_id}/retraining-readiness")` consistent with all other recent endpoints in that file.
+
+**Why this matters:** Analysts now have 14+ individual monitoring cards (PSI, output anomalies, distribution shift, confidence trend, covariate drift, etc.) but no unified signal. Every card requires a separate chat question. The `RetrainingReadinessCard` acts as a "smart synthesizer" — a colleague who reads all the monitoring signals and says "here's my bottom line: your model is aging + confidence is declining, you should retrain soon." Distinct from `ProjectHealthCard` (which only checks age + usage) and `PredictionAuditCard` (which shows raw volume stats).
+
+**Baseline:** 5407 backend / 3092 frontend → **5455 backend / 3110 frontend** (+48 / +18).
+
 ## Day 82 — 12:00 — Minimum Viable Feature Set via Chat
 
 **Feature shipped:** Minimum Viable Feature Set Analysis (Track C perpetual). Analysts can now ask "which features can I drop?", "simplify my model", "reduce my feature set", "feature pruning", "fewest features for good predictions", "which features are redundant?", or "what's the minimum features needed?" and receive a `MinFeatureSetCard` in chat — showing the result of greedy backward elimination: the smallest feature subset that preserves model accuracy within a 2% tolerance.
