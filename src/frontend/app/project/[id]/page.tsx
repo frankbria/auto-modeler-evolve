@@ -91,6 +91,7 @@ import { PredictionOutputDistributionCard } from "@/components/deploy/prediction
 import { FeaturePsiCard } from "@/components/deploy/feature-psi-card"
 import { MinFeatureSetCard } from "@/components/models/min-feature-set-card"
 import { RetrainingReadinessCard } from "@/components/deploy/retraining-readiness-card"
+import { PredictionValueTrendCard } from "@/components/deploy/prediction-value-trend-card"
 import { ModelStatusReportCard } from "@/components/deploy/model-status-report-card"
 import { OnboardingGuideCard } from "@/components/chat/onboarding-guide-card"
 import { DataVersionHistoryCard } from "@/components/chat/data-version-history-card"
@@ -404,6 +405,7 @@ export default function ProjectWorkspace() {
     attachFeaturePsiToLastMessage,
     attachMinFeatureSetToLastMessage,
     attachRetrainingReadinessToLastMessage,
+    attachPredictionValueTrendToLastMessage,
     attachModelStatusReportToLastMessage,
   } = useAppStore()
 
@@ -807,6 +809,8 @@ export default function ProjectWorkspace() {
                 attachMinFeatureSetToLastMessage(json.min_feature_set as import("@/lib/types").MinFeatureSetResult)
               } else if (json.type === "retraining_readiness" && json.retraining_readiness) {
                 attachRetrainingReadinessToLastMessage(json.retraining_readiness as import("@/lib/types").RetrainingReadinessResult)
+              } else if (json.type === "prediction_value_trend" && json.prediction_value_trend) {
+                attachPredictionValueTrendToLastMessage(json.prediction_value_trend as import("@/lib/types").PredictionValueTrendResult)
               } else if (json.type === "model_status_report" && json.model_status_report) {
                 attachModelStatusReportToLastMessage(json.model_status_report as import("@/lib/types").ModelStatusReportInfo)
               } else if (json.type === "onboarding_guide" && json.onboarding_guide) {
@@ -997,6 +1001,8 @@ export default function ProjectWorkspace() {
                 attachMinFeatureSetToLastMessage(json.min_feature_set as import("@/lib/types").MinFeatureSetResult)
               } else if (json.type === "retraining_readiness" && json.retraining_readiness) {
                 attachRetrainingReadinessToLastMessage(json.retraining_readiness as import("@/lib/types").RetrainingReadinessResult)
+              } else if (json.type === "prediction_value_trend" && json.prediction_value_trend) {
+                attachPredictionValueTrendToLastMessage(json.prediction_value_trend as import("@/lib/types").PredictionValueTrendResult)
               } else if (json.type === "model_status_report" && json.model_status_report) {
                 attachModelStatusReportToLastMessage(json.model_status_report as import("@/lib/types").ModelStatusReportInfo)
               } else if (json.type === "done") {
@@ -1164,6 +1170,7 @@ export default function ProjectWorkspace() {
     attachFeaturePsiToLastMessage,
     attachMinFeatureSetToLastMessage,
     attachRetrainingReadinessToLastMessage,
+    attachPredictionValueTrendToLastMessage,
     attachModelStatusReportToLastMessage,
   ])
 
@@ -1880,6 +1887,9 @@ export default function ProjectWorkspace() {
                         data={msg.retraining_readiness}
                         onActionClick={handleSendMessage}
                       />
+                    )}
+                    {msg.prediction_value_trend && (
+                      <PredictionValueTrendCard result={msg.prediction_value_trend} />
                     )}
                     {msg.model_status_report && (
                       <ModelStatusReportCard info={msg.model_status_report} />

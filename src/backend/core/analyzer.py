@@ -5966,3 +5966,164 @@ def compute_retraining_readiness(  # noqa: PLR0912, PLR0915
         "recommendations": recs,
         "summary": summary,
     }
+
+
+# ---------------------------------------------------------------------------
+# Production prediction value trend
+# ---------------------------------------------------------------------------
+
+
+def compute_prediction_value_trend(
+    logs_data: list[dict],
+    period: str = "day",
+    n_periods: int = 14,
+) -> dict:
+    """Compute how mean regression prediction values have trended over time.
+
+    Parameters
+    ----------
+    logs_data:
+        List of dicts with keys ``prediction_numeric`` (float | None) and
+        ``created_at`` (datetime or ISO-format string).
+    period:
+        Grouping granularity — "day" (default) or "week".
+    n_periods:
+        Maximum number of recent periods to include (default 14).
+
+    Returns
+    -------
+    Dict with keys: periods (list), n_total, n_periods_with_data, direction,
+    direction_label, slope, slope_pct_per_period, first_period_mean,
+    last_period_mean, overall_change_pct, summary.
+
+    Raises
+    ------
+    ValueError
+        If fewer than 2 periods have prediction data.
+    """
+    # Filter to numeric regression predictions only
+    valid: list[tuple[datetime, float]] = []
+    for row in logs_data:
+        val = row.get("prediction_numeric")
+        ts = row.get("created_at")
+        if val is None or ts is None:
+            continue
+        try:
+            v = float(val)
+        except (TypeError, ValueError):
+            continue
+        if isinstance(ts, str):
+            try:
+                ts = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+            except ValueError:
+                continue
+        # Normalise to naive UTC for consistent comparison
+        if hasattr(ts, "tzinfo") and ts.tzinfo is not None:
+            ts = ts.replace(tzinfo=None)
+        valid.append((ts, v))
+
+    if not valid:
+        raise ValueError("No numeric regression predictions found in logs.")
+
+    valid.sort(key=lambda t: t[0])
+
+    # Floor timestamps to the requested period
+    def _floor(ts: datetime, p: str) -> datetime:
+        if p == "week":
+            # Monday of the ISO week
+            return ts - pd.Timedelta(days=ts.weekday())
+        return datetime(ts.year, ts.month, ts.day)
+
+    from collections import defaultdict as _defaultdict
+
+    buckets: dict[datetime, list[float]] = _defaultdict(list)
+    for ts, val in valid:
+        buckets[_floor(ts, period)].append(val)
+
+    # Keep only the n_periods most-recent periods
+    sorted_keys = sorted(buckets.keys())[-n_periods:]
+    if len(sorted_keys) < 2:
+        raise ValueError(
+            f"Need at least 2 periods with data; only {len(sorted_keys)} found."
+        )
+
+    periods_out: list[dict] = []
+    for pk in sorted_keys:
+        vals = buckets[pk]
+        period_mean = float(np.mean(vals))
+        periods_out.append(
+            {
+                "period_label": pk.strftime("%b %d") if period == "day" else pk.strftime("Week of %b %d"),
+                "period_start": pk.isoformat(),
+                "mean": round(period_mean, 4),
+                "count": len(vals),
+                "min": round(float(np.min(vals)), 4),
+                "max": round(float(np.max(vals)), 4),
+            }
+        )
+
+    means = np.array([p["mean"] for p in periods_out], dtype=float)
+    x = np.arange(len(means), dtype=float)
+
+    coeffs = np.polyfit(x, means, 1)
+    slope = float(coeffs[0])
+
+    first_mean = float(means[0])
+    last_mean = float(means[-1])
+    overall_change_pct = (
+        ((last_mean - first_mean) / abs(first_mean)) * 100 if abs(first_mean) > 1e-9 else 0.0
+    )
+    slope_pct_per_period = (
+        (slope / abs(first_mean)) * 100 if abs(first_mean) > 1e-9 else 0.0
+    )
+
+    if overall_change_pct > 5.0:
+        direction = "trending_up"
+        direction_label = "Trending Up"
+    elif overall_change_pct < -5.0:
+        direction = "trending_down"
+        direction_label = "Trending Down"
+    else:
+        direction = "stable"
+        direction_label = "Stable"
+
+    n_total = sum(p["count"] for p in periods_out)
+    n_periods_with_data = len(periods_out)
+
+    change_str = (
+        f"{overall_change_pct:+.1f}%"
+        if abs(overall_change_pct) >= 0.1
+        else "no net change"
+    )
+    if direction == "trending_up":
+        summary = (
+            f"Prediction values have increased {change_str} over the last "
+            f"{n_periods_with_data} {period}(s) ({n_total} predictions). "
+            "Your model is consistently producing higher outputs — verify this reflects real-world change."
+        )
+    elif direction == "trending_down":
+        summary = (
+            f"Prediction values have decreased {change_str} over the last "
+            f"{n_periods_with_data} {period}(s) ({n_total} predictions). "
+            "Your model is producing lower outputs over time — consider whether this is expected or a sign of drift."
+        )
+    else:
+        summary = (
+            f"Prediction values are stable ({change_str}) over the last "
+            f"{n_periods_with_data} {period}(s) ({n_total} predictions). "
+            "No systematic upward or downward trend detected."
+        )
+
+    return {
+        "periods": periods_out,
+        "n_total": n_total,
+        "n_periods_with_data": n_periods_with_data,
+        "direction": direction,
+        "direction_label": direction_label,
+        "slope": round(slope, 6),
+        "slope_pct_per_period": round(slope_pct_per_period, 4),
+        "first_period_mean": round(first_mean, 4),
+        "last_period_mean": round(last_mean, 4),
+        "overall_change_pct": round(overall_change_pct, 2),
+        "summary": summary,
+    }

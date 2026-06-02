@@ -40,6 +40,7 @@ from core.analyzer import (
     compute_deployments_overview,
     compute_prediction_audit,
     compute_prediction_output_anomalies,
+    compute_prediction_value_trend,
     compute_retraining_readiness,
     compute_usage_pattern,
 )
@@ -6832,4 +6833,71 @@ def get_retraining_readiness(
     result["problem_type"] = problem_type
     result["n_logs_checked"] = len(logs)
     result["n_feedback"] = n_fb
+    return result
+
+
+@router.get("/api/deploy/{deployment_id}/prediction-value-trend")
+def get_prediction_value_trend(
+    deployment_id: str,
+    period: str = Query(default="day", pattern="^(day|week)$"),
+    n: int = Query(default=200, ge=5, le=1000),
+    session: Session = Depends(get_session),
+) -> dict:
+    """Time-series trend of mean regression prediction values grouped by day or week."""
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment or not deployment.is_active:
+        raise HTTPException(status_code=404, detail="Deployment not found.")
+
+    problem_type = deployment.problem_type or "regression"
+    if problem_type != "regression":
+        return {
+            "deployment_id": deployment_id,
+            "direction": "not_applicable",
+            "direction_label": "Classification model",
+            "periods": [],
+            "n_total": 0,
+            "n_periods_with_data": 0,
+            "slope": 0.0,
+            "slope_pct_per_period": 0.0,
+            "first_period_mean": 0.0,
+            "last_period_mean": 0.0,
+            "overall_change_pct": 0.0,
+            "summary": "Prediction value trends are only available for regression models.",
+        }
+
+    logs = session.exec(
+        select(PredictionLog)
+        .where(PredictionLog.deployment_id == deployment_id)
+        .order_by(PredictionLog.created_at.desc())  # type: ignore[attr-defined]
+        .limit(n)
+    ).all()
+
+    logs_data = [
+        {"prediction_numeric": lg.prediction_numeric, "created_at": lg.created_at}
+        for lg in logs
+    ]
+
+    try:
+        result = compute_prediction_value_trend(logs_data, period=period)
+    except ValueError as exc:
+        return {
+            "deployment_id": deployment_id,
+            "direction": "no_data",
+            "direction_label": "Not enough data",
+            "periods": [],
+            "n_total": len(logs),
+            "n_periods_with_data": 0,
+            "slope": 0.0,
+            "slope_pct_per_period": 0.0,
+            "first_period_mean": 0.0,
+            "last_period_mean": 0.0,
+            "overall_change_pct": 0.0,
+            "summary": str(exc),
+        }
+
+    result["deployment_id"] = deployment_id
+    result["algorithm"] = deployment.algorithm
+    result["target_col"] = deployment.target_column
+    result["period"] = period
+    return result
     return result

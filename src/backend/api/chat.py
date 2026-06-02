@@ -4204,6 +4204,23 @@ _RETRAIN_READINESS_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# Prediction value trend: regression output trend over time.
+# Distinct from: _OUTPUT_DIST_SHIFT_PATTERNS (overall distribution shape change),
+# _OUTPUT_ANOMALY_PATTERNS (individual outlier predictions).
+_PRED_VALUE_TREND_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"(?:(?:are|have)\s+my\s+(?:predictions?|model\s+outputs?)\s+(?:are\s+)?(?:trending|going|moving|changing|shifting|increasing|decreasing))|"
+    r"(?:prediction\s+(?:values?\s+)?trend(?:ing|s)?)|"
+    r"(?:(?:my\s+)?(?:regression\s+)?output\s+(?:values?\s+)?trend(?:ing|s)?)|"
+    r"(?:(?:are\s+my\s+)?predictions?\s+(?:going\s+(?:up|down)|increasing|decreasing|rising|falling)\s+over\s+time)|"
+    r"(?:show\s+(?:me\s+)?(?:how\s+)?(?:my\s+)?(?:predictions?\s+(?:have\s+)?(?:changed|evolved|trended|moved)|prediction\s+(?:values?\s+)?(?:over|through)\s+time))|"
+    r"(?:(?:prediction|model\s+output)s?\s+(?:values?\s+)?(?:over|through|across)\s+time)|"
+    r"(?:(?:are\s+my\s+)?model\s+outputs?\s+(?:are\s+)?(?:getting\s+(?:higher|lower)|trending|shifting)(?:\s+(?:over\s+time|lately|recently))?)|"
+    r"(?:(?:regression\s+)?prediction\s+(?:values?\s+)?(?:history|timeline|time\s+series))"
+    r")",
+    re.IGNORECASE,
+)
+
 # Model status report: production monitoring briefing for stakeholders.
 # Distinct from: ExecutiveBriefingCard (model design), ModelCardExport (compliance),
 # ConversationExportCard (chat history), PredictionAuditCard (raw stats card).
@@ -11403,6 +11420,50 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Retraining readiness is nice-to-have; never crash chat
 
+    # Prediction value trend (regression only)
+    # "are my predictions trending up?", "prediction value trend", "model output trend over time"
+    # Distinct from: OutputDistributionShift (distribution shape), OutputAnomalyCard (outliers).
+    pred_value_trend_event: dict | None = None
+    if _PRED_VALUE_TREND_PATTERNS.search(body.message) and ctx.get("deployment"):
+        try:
+            from core.analyzer import compute_prediction_value_trend as _cpvt
+
+            _pvt_dep = ctx["deployment"]
+            _pvt_problem = _pvt_dep.problem_type or "regression"
+            if _pvt_problem == "regression":
+                _pvt_logs = session.exec(
+                    select(PredictionLog)
+                    .where(PredictionLog.deployment_id == _pvt_dep.id)
+                    .order_by(PredictionLog.created_at.asc())  # type: ignore[attr-defined]
+                    .limit(200)
+                ).all()
+                _pvt_logs_data = [
+                    {
+                        "prediction_numeric": lg.prediction_numeric,
+                        "created_at": lg.created_at,
+                    }
+                    for lg in _pvt_logs
+                ]
+                _pvt_result = _cpvt(_pvt_logs_data, period="day")
+                _pvt_result["deployment_id"] = _pvt_dep.id
+                _pvt_result["algorithm"] = _pvt_dep.algorithm
+                _pvt_result["target_col"] = _pvt_dep.target_column
+                _pvt_result["period"] = "day"
+                pred_value_trend_event = _pvt_result
+                _pvt_dir = _pvt_result.get("direction_label", "Stable")
+                _pvt_chg = _pvt_result.get("overall_change_pct", 0.0)
+                system_prompt += (
+                    f"\n\n## Prediction Value Trend\n"
+                    f"Direction: {_pvt_dir}\n"
+                    f"Overall change: {_pvt_chg:+.1f}% across {_pvt_result.get('n_periods_with_data', 0)} days\n"
+                    f"Summary: {_pvt_result.get('summary', '')}\n"
+                    f"A PredictionValueTrendCard is shown with a chart. "
+                    f"Narrate the trend in plain English, noting whether predictions are rising, "
+                    f"falling, or holding steady and what this might mean for the analyst's business. "
+                )
+        except Exception:  # noqa: BLE001
+            pass  # Prediction value trend is nice-to-have; never crash chat
+
     # Model status report export
     # "generate a status report", "monitoring briefing", "production health report for my VP"
     # Distinct from: ExecutiveBriefing (model design), ModelCardExport (compliance docs),
@@ -18236,6 +18297,10 @@ def send_message(
         # Emit retraining readiness assessment
         if retrain_readiness_event:
             yield f"data: {json.dumps({'type': 'retraining_readiness', 'retraining_readiness': retrain_readiness_event})}\n\n"
+
+        # Emit prediction value trend
+        if pred_value_trend_event:
+            yield f"data: {json.dumps({'type': 'prediction_value_trend', 'prediction_value_trend': pred_value_trend_event})}\n\n"
 
         # Emit model status report event
         if status_report_event:

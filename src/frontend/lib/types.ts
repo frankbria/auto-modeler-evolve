@@ -552,6 +552,7 @@ export interface ChatMessage {
   feature_psi?: FeaturePsiResult
   min_feature_set?: MinFeatureSetResult
   retraining_readiness?: RetrainingReadinessResult
+  prediction_value_trend?: PredictionValueTrendResult
   model_status_report?: ModelStatusReportInfo
 }
 
@@ -4298,5 +4299,32 @@ export interface RetrainingReadinessResult {
   signals_firing: number
   top_reason: string | null
   recommendations: string[]
+  summary: string
+}
+
+export interface PredictionValueTrendPeriod {
+  period_label: string
+  period_start: string
+  mean: number
+  count: number
+  min: number
+  max: number
+}
+
+export interface PredictionValueTrendResult {
+  deployment_id?: string
+  algorithm?: string | null
+  target_col?: string | null
+  period?: string
+  periods: PredictionValueTrendPeriod[]
+  n_total: number
+  n_periods_with_data: number
+  direction: 'trending_up' | 'trending_down' | 'stable' | 'no_data' | 'not_applicable'
+  direction_label: string
+  slope: number
+  slope_pct_per_period: number
+  first_period_mean: number
+  last_period_mean: number
+  overall_change_pct: number
   summary: string
 }

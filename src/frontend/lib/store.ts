@@ -192,6 +192,7 @@ interface AppState {
   attachFeaturePsiToLastMessage: (feature_psi: import("./types").FeaturePsiResult) => void
   attachMinFeatureSetToLastMessage: (min_feature_set: import("./types").MinFeatureSetResult) => void
   attachRetrainingReadinessToLastMessage: (retraining_readiness: import("./types").RetrainingReadinessResult) => void
+  attachPredictionValueTrendToLastMessage: (prediction_value_trend: import("./types").PredictionValueTrendResult) => void
   attachModelStatusReportToLastMessage: (model_status_report: import("./types").ModelStatusReportInfo) => void
 }
 
@@ -1602,6 +1603,16 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, retraining_readiness }
+      }
+      return { messages }
+    }),
+
+  attachPredictionValueTrendToLastMessage: (prediction_value_trend) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, prediction_value_trend }
       }
       return { messages }
     }),
