@@ -6133,3 +6133,290 @@ def compute_prediction_value_trend(
         "overall_change_pct": round(overall_change_pct, 2),
         "summary": summary,
     }
+
+
+# ---------------------------------------------------------------------------
+# Deployment monitoring signal digest
+# ---------------------------------------------------------------------------
+
+
+def compute_deployment_monitoring_digest(
+    anomaly_result: dict | None = None,
+    value_trend_result: dict | None = None,
+    dist_shift_result: dict | None = None,
+    readiness_result: dict | None = None,
+    usage_7d: int = 0,
+    usage_prev_7d: int = 0,
+    problem_type: str = "regression",
+) -> dict:
+    """Aggregate all available monitoring signal verdicts into a single digest.
+
+    Parameters
+    ----------
+    anomaly_result:
+        Output from compute_prediction_output_anomalies (or None if unavailable).
+    value_trend_result:
+        Output from compute_prediction_value_trend (regression only, or None).
+    dist_shift_result:
+        Output from compute_prediction_output_distribution_shift (or None).
+    readiness_result:
+        Output from compute_retraining_readiness (or None).
+    usage_7d:
+        Prediction count for the last 7 days.
+    usage_prev_7d:
+        Prediction count for the prior 7 days (for trend comparison).
+    problem_type:
+        "regression" or "classification".
+
+    Returns
+    -------
+    Dict with keys: signals (list), overall_health, overall_score, signals_total,
+    signals_firing, priority_actions (list), summary.
+    """
+    signals: list[dict] = []
+
+    # --- Signal 1: Output anomalies ---
+    if anomaly_result is not None:
+        _av = anomaly_result.get("verdict", "no_data")
+        if _av == "no_anomalies":
+            _asev, _avl = "green", "No anomalies"
+            _afind = "All production predictions are within normal range."
+        elif _av == "few_anomalies":
+            _ar = anomaly_result.get("anomaly_rate", 0.0)
+            _asev, _avl = "amber", "Some anomalies"
+            _afind = f"{_ar:.0%} of predictions are statistical outliers — worth monitoring."
+        elif _av == "many_anomalies":
+            _ar = anomaly_result.get("anomaly_rate", 0.0)
+            _asev, _avl = "red", "Many anomalies"
+            _afind = f"{_ar:.0%} of predictions are anomalous — investigate input patterns."
+        else:
+            _asev, _avl = "gray", "No data"
+            _afind = "Not enough prediction data to assess anomalies."
+        signals.append(
+            {
+                "signal_key": "output_anomalies",
+                "signal_label": "Output Anomalies",
+                "verdict": _av,
+                "verdict_label": _avl,
+                "severity": _asev,
+                "finding": _afind,
+                "icon": "🔍",
+                "is_available": _av != "no_data",
+            }
+        )
+
+    # --- Signal 2: Prediction value trend (regression only) ---
+    if problem_type == "regression":
+        if value_trend_result is not None:
+            _tv = value_trend_result.get("direction", "stable")
+            _tc = value_trend_result.get("overall_change_pct", 0.0)
+            if _tv == "stable":
+                _tsev, _tvl = "green", "Stable trend"
+                _tfind = f"Prediction values are stable ({_tc:+.1f}% net change)."
+            elif _tv == "trending_up":
+                _tsev, _tvl = "amber", "Trending up"
+                _tfind = f"Prediction values increased {_tc:+.1f}% — verify this reflects real-world change."
+            else:
+                _tsev, _tvl = "amber", "Trending down"
+                _tfind = f"Prediction values decreased {_tc:+.1f}% — may indicate model drift."
+            signals.append(
+                {
+                    "signal_key": "value_trend",
+                    "signal_label": "Prediction Value Trend",
+                    "verdict": _tv,
+                    "verdict_label": _tvl,
+                    "severity": _tsev,
+                    "finding": _tfind,
+                    "icon": "📈",
+                    "is_available": True,
+                }
+            )
+        else:
+            signals.append(
+                {
+                    "signal_key": "value_trend",
+                    "signal_label": "Prediction Value Trend",
+                    "verdict": "no_data",
+                    "verdict_label": "No data",
+                    "severity": "gray",
+                    "finding": "Not enough predictions to compute trend.",
+                    "icon": "📈",
+                    "is_available": False,
+                }
+            )
+
+    # --- Signal 3: Output distribution shift ---
+    if dist_shift_result is not None:
+        _dv = dist_shift_result.get("verdict", "no_data")
+        if _dv == "stable":
+            _dsev, _dvl = "green", "Stable"
+            _dfind = "Output distribution matches training — no shift detected."
+        elif _dv == "moderate_shift":
+            _ds = dist_shift_result.get("mean_shift_pct", 0.0)
+            _dsev, _dvl = "amber", "Moderate shift"
+            _dfind = f"Prediction distribution shifted {_ds:+.1f}% from training — monitor closely."
+        elif _dv == "significant_shift":
+            _ds = dist_shift_result.get("mean_shift_pct", 0.0)
+            _dsev, _dvl = "red", "Significant shift"
+            _dfind = f"Major output distribution shift ({_ds:+.1f}%) — model behaviour has changed."
+        else:
+            _dsev, _dvl = "gray", "No data"
+            _dfind = "Not enough production predictions to assess distribution shift."
+        signals.append(
+            {
+                "signal_key": "dist_shift",
+                "signal_label": "Output Distribution",
+                "verdict": _dv,
+                "verdict_label": _dvl,
+                "severity": _dsev,
+                "finding": _dfind,
+                "icon": "📊",
+                "is_available": _dv != "no_data",
+            }
+        )
+
+    # --- Signal 4: Retraining readiness ---
+    if readiness_result is not None:
+        _rv = readiness_result.get("verdict", "stable")
+        _rs = readiness_result.get("score", 0)
+        if _rv == "stable":
+            _rsev, _rvl = "green", "No action needed"
+            _rfind = f"Retraining score {_rs}/100 — model is healthy."
+        elif _rv == "monitor":
+            _rsev, _rvl = "amber", "Monitor signals"
+            _rfind = f"Retraining score {_rs}/100 — some signals warrant attention."
+        elif _rv == "retrain_soon":
+            _rsev, _rvl = "amber", "Retrain soon"
+            _rfind = f"Retraining score {_rs}/100 — consider retraining in the coming days."
+        else:
+            _rsev, _rvl = "red", "Retrain now"
+            _rfind = f"Retraining score {_rs}/100 — multiple signals indicate degradation."
+        signals.append(
+            {
+                "signal_key": "retraining_readiness",
+                "signal_label": "Retraining Readiness",
+                "verdict": _rv,
+                "verdict_label": _rvl,
+                "severity": _rsev,
+                "finding": _rfind,
+                "icon": "🔄",
+                "is_available": True,
+            }
+        )
+
+    # --- Signal 5: Usage activity ---
+    if usage_7d > 0 and usage_prev_7d > 0:
+        _usage_ratio = usage_7d / usage_prev_7d
+        if _usage_ratio >= 0.8:
+            _usev, _uvl = "green", "Active"
+            _ufind = f"{usage_7d} predictions this week (vs {usage_prev_7d} last week) — normal activity."
+        elif _usage_ratio >= 0.5:
+            _usev, _uvl = "amber", "Declining usage"
+            _ufind = f"{usage_7d} predictions this week vs {usage_prev_7d} last week — usage dropped {(1 - _usage_ratio):.0%}."
+        else:
+            _usev, _uvl = "amber", "Low usage"
+            _ufind = f"Only {usage_7d} predictions this week vs {usage_prev_7d} last week — significant drop."
+    elif usage_7d > 0:
+        _usev, _uvl = "green", "Active"
+        _ufind = f"{usage_7d} predictions in the last 7 days."
+    else:
+        _usev, _uvl = "amber", "No recent activity"
+        _ufind = "No predictions in the last 7 days — verify the endpoint is being called."
+    signals.append(
+        {
+            "signal_key": "usage_activity",
+            "signal_label": "Usage Activity",
+            "verdict": "active" if _usev == "green" else "low",
+            "verdict_label": _uvl,
+            "severity": _usev,
+            "finding": _ufind,
+            "icon": "📡",
+            "is_available": True,
+        }
+    )
+
+    # --- Aggregate health ---
+    red_count = sum(1 for s in signals if s["severity"] == "red")
+    amber_count = sum(1 for s in signals if s["severity"] == "amber")
+
+    if red_count >= 2:
+        overall_health = "critical"
+    elif red_count == 1:
+        overall_health = "warning"
+    elif amber_count >= 1:
+        overall_health = "watching"
+    else:
+        overall_health = "healthy"
+
+    overall_score = max(0, 100 - red_count * 25 - amber_count * 10)
+    signals_total = sum(1 for s in signals if s["is_available"])
+    signals_firing = amber_count + red_count
+
+    # --- Priority actions ---
+    priority_actions: list[str] = []
+    if readiness_result and readiness_result.get("verdict") in ("retrain_now", "retrain_soon"):
+        recs = readiness_result.get("recommendations", [])
+        for rec in recs[:2]:
+            if rec not in priority_actions:
+                priority_actions.append(rec)
+    if any(s["signal_key"] == "dist_shift" and s["severity"] == "red" for s in signals):
+        priority_actions.append(
+            "Investigate significant output distribution shift — run 'output distribution shift' for details."
+        )
+    if any(s["signal_key"] == "output_anomalies" and s["severity"] == "red" for s in signals):
+        priority_actions.append(
+            "Review anomalous production predictions — run 'show prediction anomalies' for details."
+        )
+    if any(s["signal_key"] == "dist_shift" and s["severity"] == "amber" for s in signals) and len(
+        priority_actions
+    ) < 3:
+        priority_actions.append(
+            "Monitor output distribution — moderate shift detected since training."
+        )
+    if any(
+        s["signal_key"] == "usage_activity" and s["severity"] == "amber" for s in signals
+    ) and len(priority_actions) < 3:
+        priority_actions.append(
+            "Check API endpoint availability — prediction volume has dropped."
+        )
+    priority_actions = priority_actions[:3]
+
+    # --- Summary ---
+    available_names = [
+        s["signal_label"] for s in signals if s["is_available"]
+    ]
+    if overall_health == "healthy":
+        summary = (
+            f"All {signals_total} monitoring signals are healthy — no action needed. "
+            f"Signals checked: {', '.join(available_names)}."
+        )
+    elif overall_health in ("warning", "critical"):
+        red_signals = [s["signal_label"] for s in signals if s["severity"] == "red"]
+        summary = (
+            f"{red_count} signal{'s' if red_count > 1 else ''} need{'s' if red_count == 1 else ''} "
+            f"attention: {', '.join(red_signals)}. "
+            + (
+                f"Additional {amber_count} signal{'s' if amber_count > 1 else ''} "
+                f"{'are' if amber_count > 1 else 'is'} worth watching."
+                if amber_count > 0
+                else "Address these before sharing results with stakeholders."
+            )
+        )
+    else:
+        amber_signals = [s["signal_label"] for s in signals if s["severity"] == "amber"]
+        summary = (
+            f"{amber_count} signal{'s' if amber_count > 1 else ''} "
+            f"{'warrant' if amber_count > 1 else 'warrants'} monitoring: "
+            f"{', '.join(amber_signals)}. No immediate action required."
+        )
+
+    return {
+        "signals": signals,
+        "overall_health": overall_health,
+        "overall_score": overall_score,
+        "signals_total": signals_total,
+        "signals_firing": signals_firing,
+        "priority_actions": priority_actions,
+        "summary": summary,
+        "problem_type": problem_type,
+    }

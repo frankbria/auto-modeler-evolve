@@ -4221,6 +4221,24 @@ _PRED_VALUE_TREND_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# Deployment monitoring signal digest: compact "mission control" overview of ALL
+# monitoring signal verdicts in one card.
+# Distinct from: ModelStatusReportCard (download-only, basic health+volume),
+# RetrainingReadinessCard (single retrain decision), ProjectHealthCard (age+usage only).
+_MONITORING_DIGEST_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"(?:show\s+(?:me\s+)?(?:all\s+(?:my\s+)?)?monitoring\s+signals?)\b|"
+    r"(?:monitoring\s+(?:signal\s+)?digest)\b|"
+    r"(?:deployment\s+(?:diagnostics?|signal\s+(?:dashboard|overview|summary)))\b|"
+    r"(?:(?:show|give|get)\s+(?:me\s+)?(?:a\s+)?(?:full\s+)?monitoring\s+(?:signals?\s+)?overview)\b|"
+    r"(?:all\s+(?:my\s+)?(?:deployment\s+)?monitoring\s+signals?)\b|"
+    r"(?:comprehensive\s+monitoring\s+(?:check|overview|summary|signals?))\b|"
+    r"(?:what\s+(?:are|do)\s+(?:all\s+)?my\s+monitoring\s+signals?\s+(?:say|show|look\s+like)?)\b|"
+    r"(?:monitoring\s+signals?\s+(?:at\s+a\s+glance|dashboard|all\s+at\s+once))\b"
+    r")",
+    re.IGNORECASE,
+)
+
 # Model status report: production monitoring briefing for stakeholders.
 # Distinct from: ExecutiveBriefingCard (model design), ModelCardExport (compliance),
 # ConversationExportCard (chat history), PredictionAuditCard (raw stats card).
@@ -11464,6 +11482,224 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Prediction value trend is nice-to-have; never crash chat
 
+    # Deployment monitoring signal digest
+    # "show all my monitoring signals", "monitoring signal digest", "deployment diagnostics"
+    # Distinct from: ModelStatusReportCard (download-only export), RetrainingReadinessCard
+    # (single retrain verdict), ProjectHealthCard (age+usage health score only).
+    monitoring_digest_event: dict | None = None
+    if _MONITORING_DIGEST_PATTERNS.search(body.message) and ctx.get("deployment"):
+        try:
+            from datetime import timedelta as _md_td
+
+            from core.analyzer import compute_deployment_monitoring_digest as _cdmd
+
+            _md_dep = ctx["deployment"]
+            _md_problem = _md_dep.problem_type or "regression"
+            _md_run = (ctx.get("model_runs") or [None])[0]
+
+            # Load prediction logs
+            _md_logs = session.exec(
+                select(PredictionLog)
+                .where(PredictionLog.deployment_id == _md_dep.id)
+                .order_by(PredictionLog.created_at.desc())  # type: ignore[attr-defined]
+                .limit(100)
+            ).all()
+
+            _md_now = datetime.now(UTC)
+            _md_week_ago = _md_now - _md_td(days=7)
+            _md_two_weeks_ago = _md_now - _md_td(days=14)
+            _md_usage_7d = sum(
+                1
+                for lg in _md_logs
+                if lg.created_at and lg.created_at.replace(tzinfo=UTC) >= _md_week_ago
+            )
+            _md_usage_prev = sum(
+                1
+                for lg in _md_logs
+                if lg.created_at
+                and _md_two_weeks_ago <= lg.created_at.replace(tzinfo=UTC) < _md_week_ago
+            )
+
+            # Output anomalies
+            _md_anomaly_result: dict | None = None
+            if len(_md_logs) >= 5:
+                from core.analyzer import (
+                    compute_prediction_output_anomalies as _md_cpoa,
+                )
+
+                _md_log_dicts = [
+                    {
+                        "prediction_numeric": lg.prediction_numeric,
+                        "confidence": lg.confidence,
+                        "prediction_value": lg.prediction_value,
+                        "created_at": lg.created_at,
+                        "id": lg.id,
+                        "input_features": lg.input_features,
+                    }
+                    for lg in _md_logs
+                ]
+                try:
+                    _md_anomaly_result = _md_cpoa(_md_log_dicts, problem_type=_md_problem)
+                except Exception:  # noqa: BLE001
+                    pass
+
+            # Prediction value trend (regression only)
+            _md_trend_result: dict | None = None
+            if _md_problem == "regression" and len(_md_logs) >= 5:
+                from core.analyzer import (
+                    compute_prediction_value_trend as _md_cpvt,
+                )
+
+                _md_logs_asc = sorted(
+                    _md_logs, key=lambda lg: lg.created_at or datetime.min
+                )
+                _md_trend_data = [
+                    {"prediction_numeric": lg.prediction_numeric, "created_at": lg.created_at}
+                    for lg in _md_logs_asc
+                ]
+                try:
+                    _md_trend_result = _md_cpvt(_md_trend_data, period="day")
+                except Exception:  # noqa: BLE001
+                    pass
+
+            # Output distribution shift
+            _md_dist_result: dict | None = None
+            if len(_md_logs) >= 10 and _md_run and _md_run.model_path:
+                try:
+                    from pathlib import Path as _mdPath
+
+                    import joblib as _md_jl
+                    import pandas as _md_pd
+                    import json as _md_json
+                    from core.analyzer import (
+                        compute_prediction_output_distribution_shift as _md_cpods,
+                    )
+
+                    _md_fs = ctx.get("feature_set")
+                    _md_ds = ctx.get("dataset")
+                    if (
+                        _md_fs
+                        and _md_ds
+                        and _mdPath(_md_ds.file_path).exists()
+                        and _mdPath(_md_run.model_path).exists()
+                    ):
+                        _md_df_train = _md_pd.read_csv(_md_ds.file_path)
+                        _md_transforms = _md_json.loads(_md_fs.transformations or "[]")
+                        if _md_transforms:
+                            from core.feature_engine import (
+                                apply_transformations as _md_at,
+                            )
+
+                            _md_df_train, _ = _md_at(_md_df_train, _md_transforms)
+                        _md_target = _md_fs.target_column
+                        _md_feats = [c for c in _md_df_train.columns if c != _md_target]
+                        _md_X = _md_df_train[_md_feats].fillna(0)
+                        _md_pipeline = _md_jl.load(_md_run.model_path)
+                        _md_train_preds = _md_pipeline.predict(_md_X).tolist()
+                        _md_prod_preds = [
+                            lg.prediction_numeric
+                            for lg in _md_logs
+                            if lg.prediction_numeric is not None
+                        ]
+                        if len(_md_prod_preds) >= 10:
+                            _md_dist_result = _md_cpods(_md_train_preds, _md_prod_preds)
+                except Exception:  # noqa: BLE001
+                    pass
+
+            # Retraining readiness (reuse signal computation pattern)
+            _md_readiness_result: dict | None = None
+            try:
+                import statistics as _md_stats
+                from core.analyzer import compute_retraining_readiness as _md_crr
+
+                _md_age_days: int | None = None
+                if _md_run and _md_run.created_at:
+                    _md_age_days = (
+                        datetime.now(UTC).replace(tzinfo=None) - _md_run.created_at
+                    ).days
+
+                _md_anomaly_rate: float | None = None
+                _md_conf_trend: str | None = None
+                if len(_md_logs) >= 5:
+                    if _md_problem == "regression":
+                        _md_num_preds = [
+                            lg.prediction_numeric
+                            for lg in _md_logs
+                            if lg.prediction_numeric is not None
+                        ]
+                        if len(_md_num_preds) >= 5:
+                            _md_mean = _md_stats.mean(_md_num_preds)
+                            try:
+                                _md_std = _md_stats.stdev(_md_num_preds)
+                            except Exception:  # noqa: BLE001
+                                _md_std = 0.0
+                            if _md_std > 0:
+                                _md_anomaly_rate = sum(
+                                    1 for v in _md_num_preds if abs(v - _md_mean) / _md_std > 2.5
+                                ) / len(_md_num_preds)
+                            else:
+                                _md_anomaly_rate = 0.0
+                    else:
+                        _md_conf_vals = [
+                            lg.confidence
+                            for lg in reversed(_md_logs)
+                            if lg.confidence is not None
+                        ]
+                        if len(_md_conf_vals) >= 5:
+                            _md_half = len(_md_conf_vals) // 2
+                            _md_first_h = sum(_md_conf_vals[:_md_half]) / _md_half
+                            _md_second_h = sum(_md_conf_vals[_md_half:]) / max(
+                                1, len(_md_conf_vals) - _md_half
+                            )
+                            if _md_second_h - _md_first_h > 0.03:
+                                _md_conf_trend = "improving"
+                            elif _md_first_h - _md_second_h > 0.03:
+                                _md_conf_trend = "declining"
+                            else:
+                                _md_conf_trend = "stable"
+
+                _md_readiness_result = _md_crr(
+                    age_days=_md_age_days,
+                    anomaly_rate=_md_anomaly_rate,
+                    confidence_trend=_md_conf_trend,
+                )
+            except Exception:  # noqa: BLE001
+                pass
+
+            _md_result = _cdmd(
+                anomaly_result=_md_anomaly_result,
+                value_trend_result=_md_trend_result,
+                dist_shift_result=_md_dist_result,
+                readiness_result=_md_readiness_result,
+                usage_7d=_md_usage_7d,
+                usage_prev_7d=_md_usage_prev,
+                problem_type=_md_problem,
+            )
+            _md_result["deployment_id"] = _md_dep.id
+            _md_result["algorithm"] = _md_run.algorithm if _md_run else _md_dep.algorithm
+            _md_result["target_col"] = _md_dep.target_column
+            monitoring_digest_event = _md_result
+
+            _md_health = _md_result.get("overall_health", "healthy")
+            _md_score = _md_result.get("overall_score", 100)
+            _md_firing = _md_result.get("signals_firing", 0)
+            _md_total = _md_result.get("signals_total", 0)
+            system_prompt += (
+                f"\n\n## Deployment Monitoring Signal Digest\n"
+                f"Overall health: {_md_health} (score: {_md_score}/100)\n"
+                f"Signals firing: {_md_firing} of {_md_total} checked\n"
+                f"Summary: {_md_result.get('summary', '')}\n"
+                f"A MonitoringDigestCard is shown with all signal verdicts. "
+                f"Narrate the overall health in plain English. "
+                + (
+                    "Highlight the most urgent signals and recommend next steps. "
+                    if _md_firing > 0
+                    else "Congratulate the analyst that all monitoring signals look good. "
+                )
+            )
+        except Exception:  # noqa: BLE001
+            pass  # Monitoring digest is nice-to-have; never crash chat
+
     # Model status report export
     # "generate a status report", "monitoring briefing", "production health report for my VP"
     # Distinct from: ExecutiveBriefing (model design), ModelCardExport (compliance docs),
@@ -18301,6 +18537,10 @@ def send_message(
         # Emit prediction value trend
         if pred_value_trend_event:
             yield f"data: {json.dumps({'type': 'prediction_value_trend', 'prediction_value_trend': pred_value_trend_event})}\n\n"
+
+        # Emit monitoring signal digest
+        if monitoring_digest_event:
+            yield f"data: {json.dumps({'type': 'monitoring_digest', 'monitoring_digest': monitoring_digest_event})}\n\n"
 
         # Emit model status report event
         if status_report_event:

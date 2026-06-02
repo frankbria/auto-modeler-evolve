@@ -553,6 +553,7 @@ export interface ChatMessage {
   min_feature_set?: MinFeatureSetResult
   retraining_readiness?: RetrainingReadinessResult
   prediction_value_trend?: PredictionValueTrendResult
+  monitoring_digest?: MonitoringDigestResult
   model_status_report?: ModelStatusReportInfo
 }
 
@@ -4326,5 +4327,30 @@ export interface PredictionValueTrendResult {
   first_period_mean: number
   last_period_mean: number
   overall_change_pct: number
+  summary: string
+}
+
+export interface MonitoringDigestSignal {
+  signal_key: string
+  signal_label: string
+  verdict: string
+  verdict_label: string
+  severity: "green" | "amber" | "red" | "gray"
+  finding: string
+  icon: string
+  is_available: boolean
+}
+
+export interface MonitoringDigestResult {
+  deployment_id: string
+  algorithm: string | null
+  target_col: string | null
+  problem_type: string
+  signals: MonitoringDigestSignal[]
+  overall_health: "healthy" | "watching" | "warning" | "critical"
+  overall_score: number
+  signals_total: number
+  signals_firing: number
+  priority_actions: string[]
   summary: string
 }

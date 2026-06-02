@@ -37,6 +37,7 @@ from core.analyzer import (
     compute_covariate_drift_alert,
     compute_confidence_trend,
     compute_deployment_health_item,
+    compute_deployment_monitoring_digest,
     compute_deployments_overview,
     compute_prediction_audit,
     compute_prediction_output_anomalies,
@@ -6902,4 +6903,212 @@ def get_prediction_value_trend(
     result["target_col"] = deployment.target_column
     result["period"] = period
     return result
-    return result
+
+
+@router.get("/api/deploy/{deployment_id}/monitoring-digest")
+def get_monitoring_digest(
+    deployment_id: str,
+    n: int = Query(default=100, ge=5, le=500),
+    session: Session = Depends(get_session),
+) -> dict:
+    """Aggregate all available monitoring signal verdicts into a single digest."""
+    from datetime import timedelta as _td
+
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment or not deployment.is_active:
+        raise HTTPException(status_code=404, detail="Deployment not found.")
+
+    problem_type = deployment.problem_type or "regression"
+
+    logs = session.exec(
+        select(PredictionLog)
+        .where(PredictionLog.deployment_id == deployment_id)
+        .order_by(PredictionLog.created_at.desc())  # type: ignore[attr-defined]
+        .limit(n)
+    ).all()
+
+    # --- Usage counts ---
+    _now = datetime.now(UTC)
+    _week_ago = _now - _td(days=7)
+    _two_weeks_ago = _now - _td(days=14)
+    usage_7d = sum(
+        1
+        for lg in logs
+        if lg.created_at
+        and lg.created_at.replace(tzinfo=UTC) >= _week_ago
+    )
+    usage_prev_7d = sum(
+        1
+        for lg in logs
+        if lg.created_at
+        and _two_weeks_ago <= lg.created_at.replace(tzinfo=UTC) < _week_ago
+    )
+
+    # --- Output anomalies ---
+    anomaly_result: dict | None = None
+    if len(logs) >= 5:
+        try:
+            logs_dicts = [
+                {
+                    "prediction_numeric": lg.prediction_numeric,
+                    "confidence": lg.confidence,
+                    "prediction_value": lg.prediction_value,
+                    "created_at": lg.created_at,
+                    "id": lg.id,
+                    "input_features": lg.input_features,
+                }
+                for lg in logs
+            ]
+            anomaly_result = compute_prediction_output_anomalies(
+                logs_dicts, problem_type=problem_type
+            )
+        except Exception:  # noqa: BLE001
+            pass
+
+    # --- Prediction value trend (regression only) ---
+    value_trend_result: dict | None = None
+    if problem_type == "regression" and len(logs) >= 5:
+        try:
+            logs_asc = sorted(
+                logs, key=lambda lg: lg.created_at or datetime.min
+            )
+            logs_trend_data = [
+                {"prediction_numeric": lg.prediction_numeric, "created_at": lg.created_at}
+                for lg in logs_asc
+            ]
+            value_trend_result = compute_prediction_value_trend(logs_trend_data, period="day")
+        except Exception:  # noqa: BLE001
+            pass
+
+    # --- Output distribution shift ---
+    dist_shift_result: dict | None = None
+    if len(logs) >= 10:
+        try:
+            from core.analyzer import (
+                compute_prediction_output_distribution_shift as _cpods,
+            )
+
+            run_stmt = (
+                select(ModelRun)
+                .where(ModelRun.project_id == deployment.project_id)
+                .where(ModelRun.is_selected == True)  # noqa: E712
+            )
+            run = session.exec(run_stmt).first()
+            if not run:
+                run_stmt2 = (
+                    select(ModelRun)
+                    .where(ModelRun.project_id == deployment.project_id)
+                    .where(ModelRun.status == "done")
+                )
+                run = session.exec(run_stmt2).first()
+
+            if run:
+                fs_stmt = (
+                    select(FeatureSet)
+                    .where(FeatureSet.dataset_id.in_(  # type: ignore[attr-defined]
+                        select(Dataset.id).where(Dataset.project_id == deployment.project_id)
+                    ))
+                    .where(FeatureSet.is_active == True)  # noqa: E712
+                )
+                fs = session.exec(fs_stmt).first()
+                ds_stmt = (
+                    select(Dataset).where(Dataset.project_id == deployment.project_id)
+                )
+                ds = session.exec(ds_stmt).first()
+
+                if fs and ds and Path(ds.file_path).exists() and Path(run.model_path).exists():
+                    import joblib as _jl
+                    import pandas as _pd
+                    import json as _json
+
+                    _df_train = _pd.read_csv(ds.file_path)
+                    _transforms = _json.loads(fs.transformations or "[]")
+                    if _transforms:
+                        from core.feature_engine import apply_transformations as _at
+                        _df_train, _ = _at(_df_train, _transforms)
+                    _target = fs.target_column
+                    _features = [c for c in _df_train.columns if c != _target]
+                    _X_train = _df_train[_features].fillna(0)
+                    _pipeline = _jl.load(run.model_path)
+                    training_preds = _pipeline.predict(_X_train).tolist()
+                    production_preds = [
+                        lg.prediction_numeric
+                        for lg in logs
+                        if lg.prediction_numeric is not None
+                    ]
+                    if len(production_preds) >= 10:
+                        dist_shift_result = _cpods(training_preds, production_preds)
+        except Exception:  # noqa: BLE001
+            pass
+
+    # --- Retraining readiness ---
+    readiness_result: dict | None = None
+    try:
+        import statistics as _stats
+
+        run_stmt = (
+            select(ModelRun)
+            .where(ModelRun.project_id == deployment.project_id)
+            .where(ModelRun.status == "done")
+        )
+        run = session.exec(run_stmt).first()
+
+        age_days: int | None = None
+        if run and run.created_at:
+            age_days = (datetime.now(UTC).replace(tzinfo=None) - run.created_at).days
+
+        anomaly_rate: float | None = None
+        conf_trend: str | None = None
+        if len(logs) >= 5:
+            if problem_type == "regression":
+                num_preds = [
+                    lg.prediction_numeric for lg in logs if lg.prediction_numeric is not None
+                ]
+                if len(num_preds) >= 5:
+                    _mean = _stats.mean(num_preds)
+                    try:
+                        _std = _stats.stdev(num_preds)
+                    except Exception:  # noqa: BLE001
+                        _std = 0.0
+                    if _std > 0:
+                        anomaly_rate = sum(
+                            1 for v in num_preds if abs(v - _mean) / _std > 2.5
+                        ) / len(num_preds)
+                    else:
+                        anomaly_rate = 0.0
+            else:
+                conf_vals = [
+                    lg.confidence for lg in reversed(logs) if lg.confidence is not None
+                ]
+                if len(conf_vals) >= 5:
+                    half = len(conf_vals) // 2
+                    first = sum(conf_vals[:half]) / half
+                    second = sum(conf_vals[half:]) / max(1, len(conf_vals) - half)
+                    if second - first > 0.03:
+                        conf_trend = "improving"
+                    elif first - second > 0.03:
+                        conf_trend = "declining"
+                    else:
+                        conf_trend = "stable"
+
+        readiness_result = compute_retraining_readiness(
+            age_days=age_days,
+            anomaly_rate=anomaly_rate,
+            confidence_trend=conf_trend,
+        )
+    except Exception:  # noqa: BLE001
+        pass
+
+    digest = compute_deployment_monitoring_digest(
+        anomaly_result=anomaly_result,
+        value_trend_result=value_trend_result,
+        dist_shift_result=dist_shift_result,
+        readiness_result=readiness_result,
+        usage_7d=usage_7d,
+        usage_prev_7d=usage_prev_7d,
+        problem_type=problem_type,
+    )
+    digest["deployment_id"] = deployment_id
+    digest["algorithm"] = deployment.algorithm
+    digest["target_col"] = deployment.target_column
+    return digest
