@@ -37,7 +37,9 @@ class TestComputeDeploymentMonitoringDigest:
         result = compute_deployment_monitoring_digest(
             anomaly_result={"verdict": "no_anomalies", "anomaly_rate": 0.0}
         )
-        anom = next(s for s in result["signals"] if s["signal_key"] == "output_anomalies")
+        anom = next(
+            s for s in result["signals"] if s["signal_key"] == "output_anomalies"
+        )
         assert anom["severity"] == "green"
         assert anom["is_available"] is True
 
@@ -45,7 +47,9 @@ class TestComputeDeploymentMonitoringDigest:
         result = compute_deployment_monitoring_digest(
             anomaly_result={"verdict": "few_anomalies", "anomaly_rate": 0.07}
         )
-        anom = next(s for s in result["signals"] if s["signal_key"] == "output_anomalies")
+        anom = next(
+            s for s in result["signals"] if s["signal_key"] == "output_anomalies"
+        )
         assert anom["severity"] == "amber"
         assert "7%" in anom["finding"]
 
@@ -53,14 +57,18 @@ class TestComputeDeploymentMonitoringDigest:
         result = compute_deployment_monitoring_digest(
             anomaly_result={"verdict": "many_anomalies", "anomaly_rate": 0.15}
         )
-        anom = next(s for s in result["signals"] if s["signal_key"] == "output_anomalies")
+        anom = next(
+            s for s in result["signals"] if s["signal_key"] == "output_anomalies"
+        )
         assert anom["severity"] == "red"
 
     def test_anomaly_no_data_is_gray(self):
         result = compute_deployment_monitoring_digest(
             anomaly_result={"verdict": "no_data"}
         )
-        anom = next(s for s in result["signals"] if s["signal_key"] == "output_anomalies")
+        anom = next(
+            s for s in result["signals"] if s["signal_key"] == "output_anomalies"
+        )
         assert anom["severity"] == "gray"
         assert anom["is_available"] is False
 
@@ -107,24 +115,36 @@ class TestComputeDeploymentMonitoringDigest:
         result = compute_deployment_monitoring_digest(
             readiness_result={"verdict": "stable", "score": 0, "recommendations": []}
         )
-        rr = next(s for s in result["signals"] if s["signal_key"] == "retraining_readiness")
+        rr = next(
+            s for s in result["signals"] if s["signal_key"] == "retraining_readiness"
+        )
         assert rr["severity"] == "green"
 
     def test_readiness_retrain_now_is_red(self):
         result = compute_deployment_monitoring_digest(
-            readiness_result={"verdict": "retrain_now", "score": 85, "recommendations": ["Retrain immediately."]}
+            readiness_result={
+                "verdict": "retrain_now",
+                "score": 85,
+                "recommendations": ["Retrain immediately."],
+            }
         )
-        rr = next(s for s in result["signals"] if s["signal_key"] == "retraining_readiness")
+        rr = next(
+            s for s in result["signals"] if s["signal_key"] == "retraining_readiness"
+        )
         assert rr["severity"] == "red"
 
     def test_usage_active_is_green(self):
         result = compute_deployment_monitoring_digest(usage_7d=50, usage_prev_7d=45)
-        usage = next(s for s in result["signals"] if s["signal_key"] == "usage_activity")
+        usage = next(
+            s for s in result["signals"] if s["signal_key"] == "usage_activity"
+        )
         assert usage["severity"] == "green"
 
     def test_usage_zero_is_amber(self):
         result = compute_deployment_monitoring_digest(usage_7d=0, usage_prev_7d=30)
-        usage = next(s for s in result["signals"] if s["signal_key"] == "usage_activity")
+        usage = next(
+            s for s in result["signals"] if s["signal_key"] == "usage_activity"
+        )
         assert usage["severity"] == "amber"
 
     def test_one_red_signal_gives_warning(self):
@@ -169,7 +189,10 @@ class TestComputeDeploymentMonitoringDigest:
             readiness_result={
                 "verdict": "retrain_now",
                 "score": 90,
-                "recommendations": ["Retrain your model now.", "Check for distribution shift."],
+                "recommendations": [
+                    "Retrain your model now.",
+                    "Check for distribution shift.",
+                ],
             }
         )
         assert len(result["priority_actions"]) >= 1
@@ -199,8 +222,14 @@ class TestComputeDeploymentMonitoringDigest:
         )
         for signal in result["signals"]:
             for key in [
-                "signal_key", "signal_label", "verdict", "verdict_label",
-                "severity", "finding", "icon", "is_available",
+                "signal_key",
+                "signal_label",
+                "verdict",
+                "verdict_label",
+                "severity",
+                "finding",
+                "icon",
+                "is_available",
             ]:
                 assert key in signal, f"Signal missing key: {key}"
 

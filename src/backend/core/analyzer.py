@@ -6184,11 +6184,15 @@ def compute_deployment_monitoring_digest(
         elif _av == "few_anomalies":
             _ar = anomaly_result.get("anomaly_rate", 0.0)
             _asev, _avl = "amber", "Some anomalies"
-            _afind = f"{_ar:.0%} of predictions are statistical outliers — worth monitoring."
+            _afind = (
+                f"{_ar:.0%} of predictions are statistical outliers — worth monitoring."
+            )
         elif _av == "many_anomalies":
             _ar = anomaly_result.get("anomaly_rate", 0.0)
             _asev, _avl = "red", "Many anomalies"
-            _afind = f"{_ar:.0%} of predictions are anomalous — investigate input patterns."
+            _afind = (
+                f"{_ar:.0%} of predictions are anomalous — investigate input patterns."
+            )
         else:
             _asev, _avl = "gray", "No data"
             _afind = "Not enough prediction data to assess anomalies."
@@ -6287,10 +6291,14 @@ def compute_deployment_monitoring_digest(
             _rfind = f"Retraining score {_rs}/100 — some signals warrant attention."
         elif _rv == "retrain_soon":
             _rsev, _rvl = "amber", "Retrain soon"
-            _rfind = f"Retraining score {_rs}/100 — consider retraining in the coming days."
+            _rfind = (
+                f"Retraining score {_rs}/100 — consider retraining in the coming days."
+            )
         else:
             _rsev, _rvl = "red", "Retrain now"
-            _rfind = f"Retraining score {_rs}/100 — multiple signals indicate degradation."
+            _rfind = (
+                f"Retraining score {_rs}/100 — multiple signals indicate degradation."
+            )
         signals.append(
             {
                 "signal_key": "retraining_readiness",
@@ -6321,7 +6329,9 @@ def compute_deployment_monitoring_digest(
         _ufind = f"{usage_7d} predictions in the last 7 days."
     else:
         _usev, _uvl = "amber", "No recent activity"
-        _ufind = "No predictions in the last 7 days — verify the endpoint is being called."
+        _ufind = (
+            "No predictions in the last 7 days — verify the endpoint is being called."
+        )
     signals.append(
         {
             "signal_key": "usage_activity",
@@ -6354,7 +6364,10 @@ def compute_deployment_monitoring_digest(
 
     # --- Priority actions ---
     priority_actions: list[str] = []
-    if readiness_result and readiness_result.get("verdict") in ("retrain_now", "retrain_soon"):
+    if readiness_result and readiness_result.get("verdict") in (
+        "retrain_now",
+        "retrain_soon",
+    ):
         recs = readiness_result.get("recommendations", [])
         for rec in recs[:2]:
             if rec not in priority_actions:
@@ -6363,28 +6376,37 @@ def compute_deployment_monitoring_digest(
         priority_actions.append(
             "Investigate significant output distribution shift — run 'output distribution shift' for details."
         )
-    if any(s["signal_key"] == "output_anomalies" and s["severity"] == "red" for s in signals):
+    if any(
+        s["signal_key"] == "output_anomalies" and s["severity"] == "red"
+        for s in signals
+    ):
         priority_actions.append(
             "Review anomalous production predictions — run 'show prediction anomalies' for details."
         )
-    if any(s["signal_key"] == "dist_shift" and s["severity"] == "amber" for s in signals) and len(
-        priority_actions
-    ) < 3:
+    if (
+        any(
+            s["signal_key"] == "dist_shift" and s["severity"] == "amber"
+            for s in signals
+        )
+        and len(priority_actions) < 3
+    ):
         priority_actions.append(
             "Monitor output distribution — moderate shift detected since training."
         )
-    if any(
-        s["signal_key"] == "usage_activity" and s["severity"] == "amber" for s in signals
-    ) and len(priority_actions) < 3:
+    if (
+        any(
+            s["signal_key"] == "usage_activity" and s["severity"] == "amber"
+            for s in signals
+        )
+        and len(priority_actions) < 3
+    ):
         priority_actions.append(
             "Check API endpoint availability — prediction volume has dropped."
         )
     priority_actions = priority_actions[:3]
 
     # --- Summary ---
-    available_names = [
-        s["signal_label"] for s in signals if s["is_available"]
-    ]
+    available_names = [s["signal_label"] for s in signals if s["is_available"]]
     if overall_health == "healthy":
         summary = (
             f"All {signals_total} monitoring signals are healthy — no action needed. "

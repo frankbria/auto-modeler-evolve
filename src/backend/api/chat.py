@@ -11517,7 +11517,9 @@ def send_message(
                 1
                 for lg in _md_logs
                 if lg.created_at
-                and _md_two_weeks_ago <= lg.created_at.replace(tzinfo=UTC) < _md_week_ago
+                and _md_two_weeks_ago
+                <= lg.created_at.replace(tzinfo=UTC)
+                < _md_week_ago
             )
 
             # Output anomalies
@@ -11539,7 +11541,9 @@ def send_message(
                     for lg in _md_logs
                 ]
                 try:
-                    _md_anomaly_result = _md_cpoa(_md_log_dicts, problem_type=_md_problem)
+                    _md_anomaly_result = _md_cpoa(
+                        _md_log_dicts, problem_type=_md_problem
+                    )
                 except Exception:  # noqa: BLE001
                     pass
 
@@ -11554,7 +11558,10 @@ def send_message(
                     _md_logs, key=lambda lg: lg.created_at or datetime.min
                 )
                 _md_trend_data = [
-                    {"prediction_numeric": lg.prediction_numeric, "created_at": lg.created_at}
+                    {
+                        "prediction_numeric": lg.prediction_numeric,
+                        "created_at": lg.created_at,
+                    }
                     for lg in _md_logs_asc
                 ]
                 try:
@@ -11635,7 +11642,9 @@ def send_message(
                                 _md_std = 0.0
                             if _md_std > 0:
                                 _md_anomaly_rate = sum(
-                                    1 for v in _md_num_preds if abs(v - _md_mean) / _md_std > 2.5
+                                    1
+                                    for v in _md_num_preds
+                                    if abs(v - _md_mean) / _md_std > 2.5
                                 ) / len(_md_num_preds)
                             else:
                                 _md_anomaly_rate = 0.0
@@ -11676,7 +11685,9 @@ def send_message(
                 problem_type=_md_problem,
             )
             _md_result["deployment_id"] = _md_dep.id
-            _md_result["algorithm"] = _md_run.algorithm if _md_run else _md_dep.algorithm
+            _md_result["algorithm"] = (
+                _md_run.algorithm if _md_run else _md_dep.algorithm
+            )
             _md_result["target_col"] = _md_dep.target_column
             monitoring_digest_event = _md_result
 

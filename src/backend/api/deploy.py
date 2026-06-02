@@ -6934,8 +6934,7 @@ def get_monitoring_digest(
     usage_7d = sum(
         1
         for lg in logs
-        if lg.created_at
-        and lg.created_at.replace(tzinfo=UTC) >= _week_ago
+        if lg.created_at and lg.created_at.replace(tzinfo=UTC) >= _week_ago
     )
     usage_prev_7d = sum(
         1
@@ -6969,14 +6968,17 @@ def get_monitoring_digest(
     value_trend_result: dict | None = None
     if problem_type == "regression" and len(logs) >= 5:
         try:
-            logs_asc = sorted(
-                logs, key=lambda lg: lg.created_at or datetime.min
-            )
+            logs_asc = sorted(logs, key=lambda lg: lg.created_at or datetime.min)
             logs_trend_data = [
-                {"prediction_numeric": lg.prediction_numeric, "created_at": lg.created_at}
+                {
+                    "prediction_numeric": lg.prediction_numeric,
+                    "created_at": lg.created_at,
+                }
                 for lg in logs_asc
             ]
-            value_trend_result = compute_prediction_value_trend(logs_trend_data, period="day")
+            value_trend_result = compute_prediction_value_trend(
+                logs_trend_data, period="day"
+            )
         except Exception:  # noqa: BLE001
             pass
 
@@ -7005,18 +7007,27 @@ def get_monitoring_digest(
             if run:
                 fs_stmt = (
                     select(FeatureSet)
-                    .where(FeatureSet.dataset_id.in_(  # type: ignore[attr-defined]
-                        select(Dataset.id).where(Dataset.project_id == deployment.project_id)
-                    ))
+                    .where(
+                        FeatureSet.dataset_id.in_(  # type: ignore[attr-defined]
+                            select(Dataset.id).where(
+                                Dataset.project_id == deployment.project_id
+                            )
+                        )
+                    )
                     .where(FeatureSet.is_active == True)  # noqa: E712
                 )
                 fs = session.exec(fs_stmt).first()
-                ds_stmt = (
-                    select(Dataset).where(Dataset.project_id == deployment.project_id)
+                ds_stmt = select(Dataset).where(
+                    Dataset.project_id == deployment.project_id
                 )
                 ds = session.exec(ds_stmt).first()
 
-                if fs and ds and Path(ds.file_path).exists() and Path(run.model_path).exists():
+                if (
+                    fs
+                    and ds
+                    and Path(ds.file_path).exists()
+                    and Path(run.model_path).exists()
+                ):
                     import joblib as _jl
                     import pandas as _pd
                     import json as _json
@@ -7025,6 +7036,7 @@ def get_monitoring_digest(
                     _transforms = _json.loads(fs.transformations or "[]")
                     if _transforms:
                         from core.feature_engine import apply_transformations as _at
+
                         _df_train, _ = _at(_df_train, _transforms)
                     _target = fs.target_column
                     _features = [c for c in _df_train.columns if c != _target]
@@ -7062,7 +7074,9 @@ def get_monitoring_digest(
         if len(logs) >= 5:
             if problem_type == "regression":
                 num_preds = [
-                    lg.prediction_numeric for lg in logs if lg.prediction_numeric is not None
+                    lg.prediction_numeric
+                    for lg in logs
+                    if lg.prediction_numeric is not None
                 ]
                 if len(num_preds) >= 5:
                     _mean = _stats.mean(num_preds)
