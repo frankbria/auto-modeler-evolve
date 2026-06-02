@@ -53,6 +53,27 @@ the time is better spent on real features.
 
 ---
 
+## Day 83 (12:00) — Done
+
+**Track B: Deployment Monitoring Signal Digest via Chat** — complete.
+
+Closes the "I have 15+ monitoring cards but need to ask 6 questions to get a complete picture" analyst gap. Analysts can ask "show all my monitoring signals", "monitoring signal digest", "deployment diagnostics", or "monitoring overview" (8 NL variants) and receive a `MonitoringDigestCard` showing ALL active monitoring signal verdicts in a single compact "mission control" view.
+
+**What was built:**
+- `compute_deployment_monitoring_digest()` pure function in `core/analyzer.py`: aggregates 5 signals (output anomalies, value trend, dist shift, retraining readiness, usage activity), each mapped to green/amber/red severity. Overall health: critical/warning/watching/healthy. Score = 100 − red×25 − amber×10. Priority actions (top 3).
+- `GET /api/deploy/{id}/monitoring-digest` REST endpoint
+- `_MONITORING_DIGEST_PATTERNS` (8 NL variants) + handler in `chat.py`
+- `MonitoringDigestCard` (blue/amber/orange/rose, 📡): signal list with severity dots, priority actions, summary
+
+34 backend + 17 frontend = **51 new tests**. Backend lint: clean. Frontend build + TypeScript: clean.
+
+**What's next:**
+- Track C: Classification threshold optimizer using production feedback data — "what confidence threshold maximizes my real-world F1 score?"
+- Track D: Prediction value comparison across deployment versions — "is my retrained model predicting higher values on production?"
+- Track B: Auto-trigger weekly monitoring digest via webhook — scheduled digest computation + webhook dispatch
+
+---
+
 ## Day 83 (04:00) — Done
 
 **Track D: Production Prediction Value Trend via Chat** — complete.
