@@ -1,5 +1,29 @@
 # Journal
 
+## Day 83 — 20:00 — Production Feedback Threshold Optimizer via Chat
+
+**Feature shipped:** Production Feedback Threshold Optimizer (Track C perpetual). Analysts can now ask "what confidence threshold maximizes my production F1?", "optimize my classification threshold from feedback", "best threshold based on actual outcomes", "real-world threshold analysis", or 4 other NL variants (8 total in `_PROD_THRESHOLD_OPT_PATTERNS`) and receive a `ProductionThresholdOptimizerCard` — the first feature that uses actual `FeedbackRecord` outcomes (real-world labels) to find the optimal confidence threshold.
+
+**What was built:**
+
+- `compute_production_threshold_optimizer(feedback_pairs)` pure function in `core/validator.py`: sweeps 19 confidence thresholds (0.05–0.95), computing precision (accuracy of served predictions), recall (fraction of correct predictions served), F1, and coverage at each threshold. Returns the threshold that maximizes production F1, along with comparison vs the default 0.5 threshold, verdict (improved/same), and a plain-English summary.
+
+- `GET /api/deploy/{id}/production-threshold-optimizer` REST endpoint in `api/deploy.py`: loads `FeedbackRecord` entries with `actual_label` + `prediction_log_id`, joins to `PredictionLog` for confidence scores, builds `(confidence, predicted_label, actual_label)` triples, calls pure function. Returns `no_data` when < 5 usable pairs; `not_applicable` for regression deployments.
+
+- `_PROD_THRESHOLD_OPT_PATTERNS` (8 NL variants) + handler in `chat.py`: guards on classification problem_type; builds feedback_pairs inline from session; emits `{type:"production_threshold_optimizer"}` SSE event. System_prompt injects optimal_threshold + optimal_f1 + n_feedback with plain-English explanation of what confidence threshold means for analysts.
+
+- `ProductionThresholdOptimizerCard` (amber=improved / emerald=same / gray=no_data): verdict badge ("⚡ Optimal ≠ Default" or "✓ Default Is Optimal"), n_feedback + algorithm badges; optimal-threshold stat grid (F1/precision/recall/coverage); 3-column comparison row (overall accuracy / current F1 @ 50% / F1 gain); Recharts LineChart with F1/precision/recall sweep + dashed vertical reference line at optimal threshold; summary paragraph; sr-only figcaption.
+
+- Full type wiring: `ProductionThresholdSweepPoint` + `ProductionThresholdOptimizerResult` TypeScript interfaces in `lib/types.ts`; `production_threshold_optimizer?` on `ChatMessage`; `attachProductionThresholdOptimizerToLastMessage` Zustand action in `store.ts`; SSE handler (both EventSource branches) + card render in `project/[id]/page.tsx`.
+
+**Tests:** 25 pure-function (required keys, sweep length 19, threshold range, sweep entry keys, n_feedback matches input, accuracy range, optimal F1 is max, coverage decreases with threshold, n_served consistent, n_correct_total, F1 scores non-negative, verdict_same for all-correct, verdict_improved for mixed-confidence, precision at high threshold, recall at low threshold, raises on too-few pairs, handles None confidence, summary contains n_feedback, optimal_coverage in range, etc.) + 10 regex (8 positive + 2 false-positive guards) + 1 REST 404 + 1 REST no_data = **36 backend**. 15 card component + 2 store action = **17 frontend** = **53 new tests**. All passing. Backend lint: clean. Frontend build + TypeScript: clean.
+
+**Key implementation detail:** The production threshold optimizer is conceptually different from `ThresholdAnalysisCard` (training data) — it uses `precision = (served and correct) / served` and `recall = (served and correct) / (all correct)`, where "served" means confidence ≥ threshold. This gives a coverage-vs-accuracy tradeoff curve using real production outcomes rather than held-out training data. The `feedback_pairs` must have `prediction_log_id` → `PredictionLog.confidence` for the sweep to work.
+
+**Why this matters:** The existing `ThresholdAnalysisCard` helps analysts pick a threshold before deployment using training data. This new card answers a different question: "Given what I've seen in production, was my threshold right?" An analyst who has recorded 50 real-world outcomes can now discover "at 65% confidence, my model gets 82% accuracy and serves 60% of predictions" — rather than relying on training statistics that may not reflect real-world class balance or drift. Distinct from `FeedbackAccuracyCard` (reports overall real-world accuracy) and `RetrainingReadinessCard` (recommends retrain decision).
+
+**Baseline:** 5527 backend / 3145 frontend → **5563 backend / 3162 frontend** (+36 / +17).
+
 ## Day 83 — 12:00 — Deployment Monitoring Signal Digest via Chat
 
 **Feature shipped:** Deployment Monitoring Signal Digest (Track B perpetual). Analysts can now ask "show all my monitoring signals", "monitoring signal digest", "deployment diagnostics", "give me a full monitoring overview", "comprehensive monitoring check", or "monitoring signals at a glance" (8 NL variants in `_MONITORING_DIGEST_PATTERNS`) and receive a `MonitoringDigestCard` in chat — a "mission control" compact overview of ALL active monitoring signal verdicts in a single card.
