@@ -7326,7 +7326,15 @@ def get_prediction_distribution_comparison(
 # Weekly monitoring digest webhook schedule
 # ---------------------------------------------------------------------------
 
-_DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+_DAY_NAMES = [
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+    "Sunday",
+]
 
 
 @router.get("/api/deploy/{deployment_id}/weekly-digest-config")
@@ -7385,7 +7393,9 @@ def update_weekly_digest_config(
         raise HTTPException(status_code=404, detail="Deployment not found")
 
     if not 0 <= day_of_week <= 6:
-        raise HTTPException(status_code=422, detail="day_of_week must be 0 (Monday) through 6 (Sunday)")
+        raise HTTPException(
+            status_code=422, detail="day_of_week must be 0 (Monday) through 6 (Sunday)"
+        )
     if not 0 <= send_hour <= 23:
         raise HTTPException(status_code=422, detail="send_hour must be 0–23 (UTC)")
 
@@ -7401,6 +7411,7 @@ def update_weekly_digest_config(
         cfg.send_hour = send_hour
     else:
         import uuid
+
         cfg = WeeklyDigestConfig(
             id=str(uuid.uuid4()),
             deployment_id=deployment_id,
@@ -7448,4 +7459,8 @@ def delete_weekly_digest_config(
         session.delete(cfg)
         session.commit()
 
-    return {"deployment_id": deployment_id, "action": "deleted", "summary": "Weekly digest schedule removed."}
+    return {
+        "deployment_id": deployment_id,
+        "action": "deleted",
+        "summary": "Weekly digest schedule removed.",
+    }

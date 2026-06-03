@@ -17047,19 +17047,30 @@ def send_message(
 
             # Extract day-of-week from message (default Monday=0)
             _wd_day_names = {
-                "monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3,
-                "friday": 4, "saturday": 5, "sunday": 6,
+                "monday": 0,
+                "tuesday": 1,
+                "wednesday": 2,
+                "thursday": 3,
+                "friday": 4,
+                "saturday": 5,
+                "sunday": 6,
             }
             _wd_day_names_reverse = {v: k for k, v in _wd_day_names.items()}
             _wd_day_match = _WEEKLY_DIGEST_DAY_RE.search(body.message)
-            _wd_day = _wd_day_names.get(_wd_day_match.group(1).lower(), 0) if _wd_day_match else 0
+            _wd_day = (
+                _wd_day_names.get(_wd_day_match.group(1).lower(), 0)
+                if _wd_day_match
+                else 0
+            )
 
             # Extract send hour from message (default 9)
             _wd_hour = 9
             _wd_hour_match = _WEEKLY_DIGEST_HOUR_RE.search(body.message)
             if _wd_hour_match:
                 _raw_hour = int(_wd_hour_match.group(1))
-                _wd_suffix = body.message[_wd_hour_match.start():_wd_hour_match.end()].lower()
+                _wd_suffix = body.message[
+                    _wd_hour_match.start() : _wd_hour_match.end()
+                ].lower()
                 if "pm" in _wd_suffix and _raw_hour < 12:
                     _raw_hour += 12
                 elif "am" in _wd_suffix and _raw_hour == 12:
@@ -17076,7 +17087,10 @@ def send_message(
             # Determine intent
             _is_status = bool(
                 re.search(r"(?i)\b(show|check|status|what\s+is|what's)\b", body.message)
-                and not re.search(r"(?i)\b(enable|set\s+up|schedule|configure|send|disable|turn|start|stop|cancel)\b", body.message)
+                and not re.search(
+                    r"(?i)\b(enable|set\s+up|schedule|configure|send|disable|turn|start|stop|cancel)\b",
+                    body.message,
+                )
             )
 
             if _is_status and _wd_existing:
@@ -17086,9 +17100,13 @@ def send_message(
                     "action": "status",
                     "enabled": _wd_existing.enabled,
                     "day_of_week": _wd_existing.day_of_week,
-                    "day_name": _wd_day_names_reverse.get(_wd_existing.day_of_week, "monday").title(),
+                    "day_name": _wd_day_names_reverse.get(
+                        _wd_existing.day_of_week, "monday"
+                    ).title(),
                     "send_hour": _wd_existing.send_hour,
-                    "last_sent_at": _wd_existing.last_sent_at.isoformat() if _wd_existing.last_sent_at else None,
+                    "last_sent_at": _wd_existing.last_sent_at.isoformat()
+                    if _wd_existing.last_sent_at
+                    else None,
                     "summary": (
                         f"Weekly digest is {'enabled' if _wd_existing.enabled else 'disabled'}. "
                         + (
@@ -17109,7 +17127,9 @@ def send_message(
                     "action": "disabled",
                     "enabled": False,
                     "day_of_week": _wd_existing.day_of_week if _wd_existing else 0,
-                    "day_name": _wd_day_names_reverse.get(_wd_existing.day_of_week if _wd_existing else 0, "monday").title(),
+                    "day_name": _wd_day_names_reverse.get(
+                        _wd_existing.day_of_week if _wd_existing else 0, "monday"
+                    ).title(),
                     "send_hour": _wd_existing.send_hour if _wd_existing else 9,
                     "last_sent_at": None,
                     "summary": "Weekly monitoring digest has been disabled.",
@@ -17117,6 +17137,7 @@ def send_message(
             else:
                 # Enable / create or reconfigure
                 import uuid as _uuid_mod
+
                 if _wd_existing:
                     _wd_existing.enabled = True
                     _wd_existing.day_of_week = _wd_day
