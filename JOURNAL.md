@@ -1,5 +1,33 @@
 # Journal
 
+## Day 84 — 12:00 — Automated Weekly Monitoring Digest Webhook
+
+**Feature shipped:** Automated Weekly Monitoring Digest Webhook (Track D perpetual). Analysts can now say "enable weekly monitoring digest", "schedule a weekly monitoring report", "send me a weekly digest every Friday", or 5 other NL variants (8 total in `_WEEKLY_DIGEST_PATTERNS`) and configure AutoModeler to automatically compute ALL deployment monitoring signals every week and dispatch the full report to registered `weekly_digest` webhooks — no manual asking required. Closes the "passive monitoring" gap: analysts who configure monitoring signals no longer need to remember to check them; the system proactively dispatches a complete health report to Slack/Teams/PagerDuty/Zapier.
+
+**What was built:**
+
+- `WeeklyDigestConfig` SQLModel table (`id`, `deployment_id` indexed, `enabled`, `day_of_week` 0-6, `send_hour` UTC 0-23, `last_sent_at`): persists the weekly digest schedule per deployment. Auto-created via `SQLModel.metadata.create_all()`.
+
+- `should_send_weekly_digest(day_of_week, send_hour, last_sent_at, now)` independently testable pure function in `core/scheduler.py`: fires when today's weekday matches, current hour ≥ send_hour, and not already sent today (prevents duplicate dispatches within the same day). Handles all 7 weekdays, any UTC hour, and the last-sent-last-week → should-fire-today transition correctly.
+
+- `_run_weekly_digest(config_id)` in `core/scheduler.py`: loads deployment + last 200 PredictionLogs, calls `compute_prediction_output_anomalies()` and `compute_prediction_value_trend()` for signal computation, passes all to `compute_deployment_monitoring_digest()`, stamps `last_sent_at`, dispatches via `EVENT_WEEKLY_DIGEST` webhook. Always best-effort — never crashes the scheduler.
+
+- `_scheduler_loop()` extended: queries all enabled `WeeklyDigestConfig` rows alongside `BatchSchedule` rows every 60s; for each due digest, starts a daemon thread running `_run_weekly_digest()`.
+
+- `EVENT_WEEKLY_DIGEST = "weekly_digest"` added to `ALL_EVENTS` in `core/webhook.py` — analysts register webhooks for this event type just like `batch_complete` or `drift_detected`.
+
+- REST endpoints in `api/deploy.py`: `GET /api/deploy/{id}/weekly-digest-config` (status), `PUT` (enable/configure day+time), `DELETE` (remove schedule). All return `day_name` for human-readable display.
+
+- Chat handler in `api/chat.py`: `_WEEKLY_DIGEST_PATTERNS` (8 NL variants), `_WEEKLY_DIGEST_DAY_RE` + `_WEEKLY_DIGEST_HOUR_RE` + `_WEEKLY_DIGEST_DISABLE_RE` sub-detectors; handler detects enable/disable/status intent, parses day-of-week name and UTC hour from message, upserts `WeeklyDigestConfig`; emits `{type:"weekly_digest_config"}` SSE event. System prompt injection explains what the weekly digest does and prompts analyst to register a webhook if they haven't.
+
+- `WeeklyDigestConfigCard` (teal border=enabled / slate=disabled, 📅 icon): Enabled/Disabled badge, day/send-time 2-column grid, last-sent date, webhook note explaining the `weekly_digest` event type, summary paragraph, sr-only figcaption.
+
+- Full type wiring: `WeeklyDigestConfigResult` TypeScript interface in `lib/types.ts`; `weekly_digest_config?` on `ChatMessage`; `attachWeeklyDigestConfigToLastMessage` Zustand action in `store.ts`; SSE handler (both EventSource branches) + card render in `project/[id]/page.tsx`.
+
+**Tests:** 8 pure-function (`should_send_weekly_digest` — correct day, wrong day, before hour, already-sent-today, sent-last-week, exact-hour, all-7-weekdays, wrong-day-no-last-sent) + 10 regex (8 positive + 2 false-positive guards) + 4 REST (404 not-found, roundtrip enable/configure/delete) = **22 backend**. 16 card component + 2 store action = **18 frontend** = **40 new tests**. Plus 1 updated `test_webhook_notifications.py` test to account for `ALL_EVENTS` growing to 8. All passing. Backend lint: clean. Frontend build + TypeScript: clean.
+
+**Baseline:** 5598 backend / 3181 frontend → **5620 backend / 3199 frontend** (+22 / +18).
+
 ## Day 84 — 04:00 — Deployment Prediction Distribution Comparison via Chat
 
 **Feature shipped:** Deployment Prediction Distribution Comparison (Track D perpetual). Analysts can now ask "is my new deployment predicting higher values?", "compare my deployment prediction distributions", "deployment version prediction comparison", "old vs new deployment predictions", or 4 other NL variants (8 total in `_DEPLOY_PRED_DIST_COMPARE_PATTERNS`) and receive a `DeploymentPredictionDistributionCard` — the first feature comparing *production prediction values* across two deployments. Distinct from `DeploymentVersionComparisonCard` (training metrics) and `PredictionValueTrendCard` (trend within a single deployment).

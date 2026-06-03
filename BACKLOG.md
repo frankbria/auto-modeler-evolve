@@ -53,6 +53,31 @@ the time is better spent on real features.
 
 ---
 
+## Day 84 (12:00) — Done
+
+**Track D: Automated Weekly Monitoring Digest Webhook** — complete.
+
+Closes the "passive monitoring" gap — analysts never need to remember to check their model health. AutoModeler automatically computes all monitoring signals (anomalies, drift, retraining readiness, output distribution shift) every week and dispatches a complete health report to registered `weekly_digest` webhooks (Slack, Teams, PagerDuty, Zapier).
+
+**What was built:**
+- `WeeklyDigestConfig` SQLModel table per deployment (day_of_week, send_hour, last_sent_at)
+- `should_send_weekly_digest()` pure function: fires when today matches day + hour + not yet sent today
+- `_run_weekly_digest()`: computes full monitoring digest inline, dispatches via `EVENT_WEEKLY_DIGEST` webhook
+- Scheduler extended to check enabled digest configs in the same 60s loop as batch jobs
+- `EVENT_WEEKLY_DIGEST` added to `ALL_EVENTS` in `core/webhook.py`
+- REST: `GET/PUT/DELETE /api/deploy/{id}/weekly-digest-config`
+- Chat: 8 NL variants, day-of-week + time parsing, enable/disable/status intent
+- `WeeklyDigestConfigCard` (teal/slate border, 📅 icon)
+
+22 backend + 18 frontend = **40 new tests**. Backend lint: clean. Frontend build + TypeScript: clean.
+
+**What's next:**
+- Track C: Per-class threshold tuning — "optimize the threshold for each class in my multiclass model"
+- Track B: Model Promotion Readiness Check — "is my model ready to move to production?"
+- Track D: Deployment Capacity Planning — "how long will it take to process X predictions?"
+
+---
+
 ## Day 84 (04:00) — Done
 
 **Track D: Deployment Prediction Distribution Comparison via Chat** — complete.
