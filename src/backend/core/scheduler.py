@@ -228,14 +228,160 @@ def _run_job(schedule_id: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Weekly monitoring digest
+# ---------------------------------------------------------------------------
+
+_DAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+
+
+def should_send_weekly_digest(
+    day_of_week: int,
+    send_hour: int,
+    last_sent_at: "datetime | None",
+    now: "datetime",
+) -> bool:
+    """Return True when a weekly digest is due.
+
+    Fires when all of the following are true:
+    - today's weekday matches day_of_week
+    - current hour >= send_hour
+    - not already sent today (last_sent_at is None or was before today)
+    """
+    if now.weekday() != day_of_week:
+        return False
+    if now.hour < send_hour:
+        return False
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    if last_sent_at is not None and last_sent_at >= today_start:
+        return False
+    return True
+
+
+def _run_weekly_digest(config_id: str) -> None:
+    """Compute monitoring digest for the deployment and dispatch via webhook."""
+    from db import engine
+    from models.deployment import Deployment
+    from models.prediction_log import PredictionLog
+    from models.weekly_digest_config import WeeklyDigestConfig
+    from sqlmodel import Session, select
+
+    from core.analyzer import (
+        compute_deployment_monitoring_digest,
+        compute_prediction_output_anomalies,
+        compute_prediction_value_trend,
+    )
+    from core.webhook import EVENT_WEEKLY_DIGEST, dispatch_webhooks
+
+    with Session(engine) as session:
+        cfg = session.get(WeeklyDigestConfig, config_id)
+        if not cfg or not cfg.enabled:
+            return
+        deployment = session.get(Deployment, cfg.deployment_id)
+        if not deployment or not deployment.is_active:
+            return
+
+        # Load recent prediction logs for signal computation
+        logs = session.exec(
+            select(PredictionLog)
+            .where(PredictionLog.deployment_id == deployment.id)
+            .order_by(PredictionLog.created_at.desc())  # type: ignore[arg-type]
+            .limit(200)
+        ).all()
+
+        logs_data = [
+            {
+                "prediction_numeric": r.prediction_numeric,
+                "confidence": r.confidence,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+            }
+            for r in logs
+        ]
+
+        problem_type = deployment.problem_type or "regression"
+
+        # Compute individual signals (best-effort — never crash)
+        anomaly_result = None
+        value_trend_result = None
+        dist_shift_result = None
+        readiness_result = None
+
+        try:
+            if len(logs_data) >= 5:
+                anomaly_result = compute_prediction_output_anomalies(
+                    logs_data, problem_type
+                )
+        except Exception:
+            pass
+
+        try:
+            if problem_type == "regression" and len(logs_data) >= 2:
+                value_trend_result = compute_prediction_value_trend(logs_data, "day", 30)
+        except Exception:
+            pass
+
+        # Usage 7-day comparison
+        from datetime import timedelta
+
+        now = datetime.now(UTC).replace(tzinfo=None)
+        cutoff_7d = now - timedelta(days=7)
+        cutoff_14d = now - timedelta(days=14)
+        usage_7d = sum(
+            1
+            for r in logs
+            if r.created_at and r.created_at >= cutoff_7d
+        )
+        usage_prev_7d = sum(
+            1
+            for r in logs
+            if r.created_at and cutoff_14d <= r.created_at < cutoff_7d
+        )
+
+        digest = compute_deployment_monitoring_digest(
+            anomaly_result,
+            value_trend_result,
+            dist_shift_result,
+            readiness_result,
+            usage_7d,
+            usage_prev_7d,
+            problem_type,
+        )
+
+        # Stamp sent time
+        cfg.last_sent_at = now
+        session.add(cfg)
+        session.commit()
+
+    # Dispatch webhook (outside session)
+    dispatch_webhooks(
+        deployment.id,
+        EVENT_WEEKLY_DIGEST,
+        {
+            "overall_health": digest["overall_health"],
+            "health_score": digest["health_score"],
+            "signals_total": len(digest.get("signals", [])),
+            "signals_firing": sum(
+                1
+                for s in digest.get("signals", [])
+                if s.get("severity") in ("amber", "red")
+            ),
+            "priority_actions": digest.get("priority_actions", []),
+            "summary": digest.get("summary", ""),
+            "algorithm": deployment.algorithm or "",
+            "target_column": deployment.target_column or "",
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
 # Scheduler loop
 # ---------------------------------------------------------------------------
 
 
 def _scheduler_loop() -> None:
-    """Check every 60 seconds for due batch jobs."""
+    """Check every 60 seconds for due batch jobs and weekly digests."""
     from db import engine
     from models.batch_schedule import BatchSchedule
+    from models.weekly_digest_config import WeeklyDigestConfig
     from sqlmodel import Session, select
 
     while True:
@@ -250,11 +396,36 @@ def _scheduler_loop() -> None:
                 ).all()
                 due_ids = [s.id for s in due]
 
+                # Find weekly digests due to send
+                digest_cfgs = session.exec(
+                    select(WeeklyDigestConfig).where(
+                        WeeklyDigestConfig.enabled == True,  # noqa: E712
+                    )
+                ).all()
+                digest_ids = [
+                    c.id
+                    for c in digest_cfgs
+                    if should_send_weekly_digest(
+                        c.day_of_week, c.send_hour, c.last_sent_at, now
+                    )
+                ]
+
             for sid in due_ids:
                 try:
                     _run_job(sid)
                 except Exception as exc:
                     logger.error("Scheduler: job %s raised: %s", sid, exc)
+
+            for did in digest_ids:
+                try:
+                    t = threading.Thread(
+                        target=_run_weekly_digest,
+                        args=(did,),
+                        daemon=True,
+                    )
+                    t.start()
+                except Exception as exc:
+                    logger.error("Scheduler: weekly digest %s raised: %s", did, exc)
 
         except Exception as exc:
             logger.error("Scheduler loop error: %s", exc)

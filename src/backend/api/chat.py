@@ -4548,6 +4548,28 @@ _CROSS_DEPLOY_PRED_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+_WEEKLY_DIGEST_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"enable\s+(?:the\s+)?weekly\s+(?:monitoring\s+)?digest\b|"
+    r"(?:set\s+up|schedule|configure|turn\s+on|start)\s+(?:a\s+)?weekly\s+(?:monitoring\s+)?(?:digest|report|summary|alert)\b|"
+    r"send\s+(?:me\s+)?(?:a\s+)?weekly\s+(?:monitoring\s+)?(?:digest|report|summary|update)\b|"
+    r"(?:disable|turn\s+off|stop|cancel|remove)\s+(?:the\s+)?weekly\s+(?:monitoring\s+)?(?:digest|report|summary)\b|"
+    r"(?:show|check|what\s+is|status\s+of)\s+(?:my\s+)?weekly\s+(?:monitoring\s+)?(?:digest|report|schedule)\b|"
+    r"weekly\s+(?:monitoring\s+)?digest\s+(?:status|config(?:uration)?|schedule)\b|"
+    r"auto(?:matic(?:ally)?)?\s+(?:send|schedule|dispatch)\s+(?:monitoring\s+)?(?:digest|report|summary)\s+weekly\b|"
+    r"weekly\s+model\s+health\s+report\b"
+    r")",
+    re.IGNORECASE,
+)
+
+_WEEKLY_DIGEST_DAY_RE = re.compile(
+    r"(?i)\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b"
+)
+_WEEKLY_DIGEST_HOUR_RE = re.compile(r"(?i)\bat\s+(\d{1,2})(?::00)?\s*(?:am|pm|utc)?\b")
+_WEEKLY_DIGEST_DISABLE_RE = re.compile(
+    r"(?i)\b(disable|turn\s+off|stop|cancel|remove)\b"
+)
+
 # Matches "Key = Value", "Key: Value", "Key is Value" patterns in a message
 _KV_PAIR_RE = re.compile(
     r"\b([A-Za-z_][\w\s]{0,30}?)\s*(?:=|:|\s+is\s+|\s+equals?\s+|\s+of\s+)\s*"
@@ -17010,6 +17032,138 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Nice-to-have; never crash chat
 
+    # Weekly Monitoring Digest Webhook Configuration
+    # "enable weekly monitoring digest", "schedule weekly model health report"
+    weekly_digest_event: dict | None = None
+    if _WEEKLY_DIGEST_PATTERNS.search(body.message) and ctx["deployment"]:
+        try:
+            from models.weekly_digest_config import (
+                WeeklyDigestConfig as _WeeklyDigestConfig,
+            )
+
+            _wd_dep = ctx["deployment"]
+            _wd_dep_id = _wd_dep.id if hasattr(_wd_dep, "id") else str(_wd_dep)
+            _wd_is_disable = bool(_WEEKLY_DIGEST_DISABLE_RE.search(body.message))
+
+            # Extract day-of-week from message (default Monday=0)
+            _wd_day_names = {
+                "monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3,
+                "friday": 4, "saturday": 5, "sunday": 6,
+            }
+            _wd_day_names_reverse = {v: k for k, v in _wd_day_names.items()}
+            _wd_day_match = _WEEKLY_DIGEST_DAY_RE.search(body.message)
+            _wd_day = _wd_day_names.get(_wd_day_match.group(1).lower(), 0) if _wd_day_match else 0
+
+            # Extract send hour from message (default 9)
+            _wd_hour = 9
+            _wd_hour_match = _WEEKLY_DIGEST_HOUR_RE.search(body.message)
+            if _wd_hour_match:
+                _raw_hour = int(_wd_hour_match.group(1))
+                _wd_suffix = body.message[_wd_hour_match.start():_wd_hour_match.end()].lower()
+                if "pm" in _wd_suffix and _raw_hour < 12:
+                    _raw_hour += 12
+                elif "am" in _wd_suffix and _raw_hour == 12:
+                    _raw_hour = 0
+                _wd_hour = max(0, min(23, _raw_hour))
+
+            # Check existing config first (to determine action = status/enable/disable)
+            _wd_existing = session.exec(
+                select(_WeeklyDigestConfig).where(
+                    _WeeklyDigestConfig.deployment_id == _wd_dep_id
+                )
+            ).first()
+
+            # Determine intent
+            _is_status = bool(
+                re.search(r"(?i)\b(show|check|status|what\s+is|what's)\b", body.message)
+                and not re.search(r"(?i)\b(enable|set\s+up|schedule|configure|send|disable|turn|start|stop|cancel)\b", body.message)
+            )
+
+            if _is_status and _wd_existing:
+                # Status only — don't modify
+                weekly_digest_event = {
+                    "deployment_id": _wd_dep_id,
+                    "action": "status",
+                    "enabled": _wd_existing.enabled,
+                    "day_of_week": _wd_existing.day_of_week,
+                    "day_name": _wd_day_names_reverse.get(_wd_existing.day_of_week, "monday").title(),
+                    "send_hour": _wd_existing.send_hour,
+                    "last_sent_at": _wd_existing.last_sent_at.isoformat() if _wd_existing.last_sent_at else None,
+                    "summary": (
+                        f"Weekly digest is {'enabled' if _wd_existing.enabled else 'disabled'}. "
+                        + (
+                            f"Sends every {_wd_day_names_reverse.get(_wd_existing.day_of_week, 'monday').title()} at {_wd_existing.send_hour:02d}:00 UTC to registered `weekly_digest` webhooks."
+                            if _wd_existing.enabled
+                            else "Enable it to receive automatic monitoring reports."
+                        )
+                    ),
+                }
+            elif _wd_is_disable:
+                # Disable existing config
+                if _wd_existing:
+                    _wd_existing.enabled = False
+                    session.add(_wd_existing)
+                    session.commit()
+                weekly_digest_event = {
+                    "deployment_id": _wd_dep_id,
+                    "action": "disabled",
+                    "enabled": False,
+                    "day_of_week": _wd_existing.day_of_week if _wd_existing else 0,
+                    "day_name": _wd_day_names_reverse.get(_wd_existing.day_of_week if _wd_existing else 0, "monday").title(),
+                    "send_hour": _wd_existing.send_hour if _wd_existing else 9,
+                    "last_sent_at": None,
+                    "summary": "Weekly monitoring digest has been disabled.",
+                }
+            else:
+                # Enable / create or reconfigure
+                import uuid as _uuid_mod
+                if _wd_existing:
+                    _wd_existing.enabled = True
+                    _wd_existing.day_of_week = _wd_day
+                    _wd_existing.send_hour = _wd_hour
+                    session.add(_wd_existing)
+                else:
+                    _wd_new = _WeeklyDigestConfig(
+                        id=str(_uuid_mod.uuid4()),
+                        deployment_id=_wd_dep_id,
+                        enabled=True,
+                        day_of_week=_wd_day,
+                        send_hour=_wd_hour,
+                    )
+                    session.add(_wd_new)
+                session.commit()
+
+                _wd_day_str = _wd_day_names_reverse.get(_wd_day, "monday").title()
+                weekly_digest_event = {
+                    "deployment_id": _wd_dep_id,
+                    "action": "enabled",
+                    "enabled": True,
+                    "day_of_week": _wd_day,
+                    "day_name": _wd_day_str,
+                    "send_hour": _wd_hour,
+                    "last_sent_at": None,
+                    "summary": (
+                        f"Weekly monitoring digest enabled. AutoModeler will automatically "
+                        f"compute all deployment monitoring signals (anomalies, drift, retraining readiness, etc.) "
+                        f"every {_wd_day_str} at {_wd_hour:02d}:00 UTC and dispatch the report to all webhooks "
+                        f"registered for `weekly_digest` events."
+                    ),
+                }
+
+            # System prompt injection
+            _wd_action = weekly_digest_event.get("action", "enabled")
+            system_prompt += (
+                f"\n\n## Weekly Monitoring Digest Configuration\n"
+                f"Action: {_wd_action}. {weekly_digest_event.get('summary', '')}\n"
+                "Explain to the analyst what the weekly digest does: it automatically computes "
+                "ALL monitoring signals (anomalies, drift, retraining readiness) every week and "
+                "sends a summary to registered webhooks (Slack, Teams, PagerDuty, Zapier, etc.). "
+                "Mention they need a webhook registered with `weekly_digest` event type to receive it. "
+                "If they haven't registered a webhook yet, suggest: 'register a webhook at <URL> for weekly_digest events'."
+            )
+        except Exception:  # noqa: BLE001
+            pass  # Nice-to-have; never crash chat
+
     # Training vs Production Performance Monitor
     prod_monitor_event: dict | None = None
     if _PROD_MONITOR_PATTERNS.search(body.message) and ctx["deployment"]:
@@ -19059,6 +19213,9 @@ def send_message(
 
         if deploy_pred_dist_compare_event:
             yield f"data: {json.dumps({'type': 'deploy_pred_dist_compare', 'deploy_pred_dist_compare': deploy_pred_dist_compare_event})}\n\n"
+
+        if weekly_digest_event:
+            yield f"data: {json.dumps({'type': 'weekly_digest_config', 'weekly_digest_config': weekly_digest_event})}\n\n"
 
         if prod_monitor_event:
             yield f"data: {json.dumps({'type': 'prod_performance', 'prod_performance': prod_monitor_event})}\n\n"

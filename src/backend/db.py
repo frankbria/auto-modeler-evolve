@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from models.weekly_digest_config import WeeklyDigestConfig as _WeeklyDigestConfig  # noqa: F401
 from sqlmodel import Session, SQLModel, create_engine
 
 DATA_DIR = Path(__file__).parent / "data"

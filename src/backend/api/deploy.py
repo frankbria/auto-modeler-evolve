@@ -80,6 +80,7 @@ from models.deployment_changelog import (
     CHANGE_API_KEY_ADDED,
     CHANGE_API_KEY_REMOVED,
 )
+from models.weekly_digest_config import WeeklyDigestConfig
 
 router = APIRouter(tags=["deployment"])
 
@@ -7319,3 +7320,132 @@ def get_prediction_distribution_comparison(
     result["baseline_algorithm"] = baseline_run.algorithm if baseline_run else "Unknown"
     result["target_col"] = current_dep.target_column
     return result
+
+
+# ---------------------------------------------------------------------------
+# Weekly monitoring digest webhook schedule
+# ---------------------------------------------------------------------------
+
+_DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+
+
+@router.get("/api/deploy/{deployment_id}/weekly-digest-config")
+def get_weekly_digest_config(
+    deployment_id: str,
+    session: Session = Depends(get_session),
+):
+    """Return the weekly monitoring digest configuration for a deployment."""
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment:
+        raise HTTPException(status_code=404, detail="Deployment not found")
+
+    cfg = session.exec(
+        select(WeeklyDigestConfig).where(
+            WeeklyDigestConfig.deployment_id == deployment_id
+        )
+    ).first()
+
+    if not cfg:
+        return {
+            "deployment_id": deployment_id,
+            "enabled": False,
+            "day_of_week": 0,
+            "day_name": "Monday",
+            "send_hour": 9,
+            "last_sent_at": None,
+            "summary": "Weekly digest is not configured. Enable it to receive automatic monitoring reports.",
+        }
+
+    return {
+        "deployment_id": deployment_id,
+        "enabled": cfg.enabled,
+        "day_of_week": cfg.day_of_week,
+        "day_name": _DAY_NAMES[cfg.day_of_week],
+        "send_hour": cfg.send_hour,
+        "last_sent_at": cfg.last_sent_at.isoformat() if cfg.last_sent_at else None,
+        "summary": (
+            f"Weekly digest enabled — sends every {_DAY_NAMES[cfg.day_of_week]} at {cfg.send_hour:02d}:00 UTC."
+            if cfg.enabled
+            else "Weekly digest is disabled."
+        ),
+    }
+
+
+@router.put("/api/deploy/{deployment_id}/weekly-digest-config")
+def update_weekly_digest_config(
+    deployment_id: str,
+    enabled: bool = True,
+    day_of_week: int = 0,
+    send_hour: int = 9,
+    session: Session = Depends(get_session),
+):
+    """Enable or reconfigure the weekly monitoring digest for a deployment."""
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment:
+        raise HTTPException(status_code=404, detail="Deployment not found")
+
+    if not 0 <= day_of_week <= 6:
+        raise HTTPException(status_code=422, detail="day_of_week must be 0 (Monday) through 6 (Sunday)")
+    if not 0 <= send_hour <= 23:
+        raise HTTPException(status_code=422, detail="send_hour must be 0–23 (UTC)")
+
+    cfg = session.exec(
+        select(WeeklyDigestConfig).where(
+            WeeklyDigestConfig.deployment_id == deployment_id
+        )
+    ).first()
+
+    if cfg:
+        cfg.enabled = enabled
+        cfg.day_of_week = day_of_week
+        cfg.send_hour = send_hour
+    else:
+        import uuid
+        cfg = WeeklyDigestConfig(
+            id=str(uuid.uuid4()),
+            deployment_id=deployment_id,
+            enabled=enabled,
+            day_of_week=day_of_week,
+            send_hour=send_hour,
+        )
+
+    session.add(cfg)
+    session.commit()
+
+    action = "enabled" if enabled else "disabled"
+    return {
+        "deployment_id": deployment_id,
+        "action": action,
+        "enabled": enabled,
+        "day_of_week": day_of_week,
+        "day_name": _DAY_NAMES[day_of_week],
+        "send_hour": send_hour,
+        "summary": (
+            f"Weekly digest {action}. Reports will be sent every {_DAY_NAMES[day_of_week]} at {send_hour:02d}:00 UTC to registered webhooks."
+            if enabled
+            else "Weekly digest disabled."
+        ),
+    }
+
+
+@router.delete("/api/deploy/{deployment_id}/weekly-digest-config")
+def delete_weekly_digest_config(
+    deployment_id: str,
+    session: Session = Depends(get_session),
+):
+    """Disable and remove the weekly monitoring digest configuration."""
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment:
+        raise HTTPException(status_code=404, detail="Deployment not found")
+
+    cfg = session.exec(
+        select(WeeklyDigestConfig).where(
+            WeeklyDigestConfig.deployment_id == deployment_id
+        )
+    ).first()
+
+    if cfg:
+        session.delete(cfg)
+        session.commit()
+
+    return {"deployment_id": deployment_id, "action": "deleted", "summary": "Weekly digest schedule removed."}
