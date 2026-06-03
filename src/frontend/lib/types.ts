@@ -557,6 +557,7 @@ export interface ChatMessage {
   model_status_report?: ModelStatusReportInfo
   production_threshold_optimizer?: ProductionThresholdOptimizerResult
   deploy_pred_dist_compare?: DeploymentPredictionComparisonResult
+  weekly_digest_config?: WeeklyDigestConfigResult
 }
 
 export interface RollbackVersionEntry {
@@ -4427,4 +4428,15 @@ export interface DeploymentPredictionComparisonResult {
   // Classification fields
   class_shifts?: DeploymentPredictionClassShift[]
   n_classes?: number
+}
+
+export interface WeeklyDigestConfigResult {
+  deployment_id: string
+  action: "enabled" | "disabled" | "status"
+  enabled: boolean
+  day_of_week: number
+  day_name: string
+  send_hour: number
+  last_sent_at: string | null
+  summary: string
 }

@@ -197,6 +197,7 @@ interface AppState {
   attachModelStatusReportToLastMessage: (model_status_report: import("./types").ModelStatusReportInfo) => void
   attachProductionThresholdOptimizerToLastMessage: (production_threshold_optimizer: import("./types").ProductionThresholdOptimizerResult) => void
   attachDeployPredDistCompareToLastMessage: (deploy_pred_dist_compare: import("./types").DeploymentPredictionComparisonResult) => void
+  attachWeeklyDigestConfigToLastMessage: (weekly_digest_config: import("./types").WeeklyDigestConfigResult) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -1656,6 +1657,16 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, deploy_pred_dist_compare }
+      }
+      return { messages }
+    }),
+
+  attachWeeklyDigestConfigToLastMessage: (weekly_digest_config) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, weekly_digest_config }
       }
       return { messages }
     }),
