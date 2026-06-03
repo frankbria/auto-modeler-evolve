@@ -3792,6 +3792,24 @@ _PROD_THRESHOLD_OPT_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# Deployment prediction distribution comparison —
+# "is my new deployment predicting higher values than my old one?"
+# Distinct from _VERSION_COMPARE_PATTERNS (training metrics) and
+# _PRED_VALUE_TREND_PATTERNS (trend within one deployment).
+_DEPLOY_PRED_DIST_COMPARE_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"(?:are|is)\s+(?:my\s+)?(?:new|current|latest|retrained)\s+(?:deployment|model|version)\s+(?:predicting|producing|generating)\s+(?:higher|lower|different|more|less)\s+(?:values?|predictions?|outputs?|results?)\b|"
+    r"compare\s+(?:my\s+)?(?:deployment|model)\s+prediction\s+(?:distributions?|values?|outputs?)\b|"
+    r"deployment\s+prediction\s+(?:distribution\s+)?comparison\b|"
+    r"(?:how\s+different|how\s+similar)\s+are\s+(?:my\s+)?(?:deployment|model)\s+predictions?\b|"
+    r"(?:is|has)\s+(?:my\s+)?(?:retrained?|new|updated)\s+(?:model|deployment)\s+(?:changed?\s+(?:its\s+)?predictions?|(?:predicting|producing)\s+differently)\b|"
+    r"production\s+prediction\s+(?:distribution\s+)?(?:comparison|shift|change)\s+(?:across|between)\s+(?:versions?|deployments?)\b|"
+    r"(?:old|previous|prior|baseline)\s+(?:vs?\.?|versus)\s+(?:new|current|latest)\s+(?:deployment|model)\s+predictions?\b|"
+    r"deployment\s+(?:version\s+)?prediction\s+(?:value\s+)?comparison\b"
+    r")",
+    re.IGNORECASE,
+)
+
 _CV_SCORE_DIST_PATTERNS = re.compile(
     r"(?i)(?:"
     r"how\s+(?:consistent|stable|reliable|variable)\s+is\s+(?:my\s+)?(?:model|prediction)\b|"
@@ -16848,6 +16866,134 @@ def send_message(
             except Exception:  # noqa: BLE001
                 pass  # Nice-to-have; never crash chat
 
+    # Deployment Prediction Distribution Comparison
+    # "is my new deployment predicting higher values than my old one?"
+    deploy_pred_dist_compare_event: dict | None = None
+    if _DEPLOY_PRED_DIST_COMPARE_PATTERNS.search(body.message) and ctx["deployment"]:
+        try:
+            from core.analyzer import (
+                compute_deployment_prediction_comparison as _compute_dpdc,
+            )
+
+            _dpdc_dep = ctx["deployment"]
+            _dpdc_dep_id = _dpdc_dep.id if hasattr(_dpdc_dep, "id") else str(_dpdc_dep)
+            _dpdc_project_id = _dpdc_dep.project_id if hasattr(_dpdc_dep, "project_id") else None
+            _dpdc_problem_type = getattr(_dpdc_dep, "problem_type", None) or "regression"
+
+            # Find the most recent OTHER active deployment for this project
+            _dpdc_baseline_dep: object | None = None
+            if _dpdc_project_id:
+                _other_deps = list(
+                    session.exec(
+                        select(Deployment)
+                        .where(Deployment.project_id == _dpdc_project_id)
+                        .where(Deployment.is_active == True)  # noqa: E712
+                        .where(Deployment.id != _dpdc_dep_id)
+                        .order_by(Deployment.created_at.desc())
+                    ).all()
+                )
+                if _other_deps:
+                    _dpdc_baseline_dep = _other_deps[0]
+
+            if _dpdc_baseline_dep is None:
+                deploy_pred_dist_compare_event = {
+                    "verdict": "no_data",
+                    "summary": (
+                        "Only one active deployment found. Retrain and redeploy to create "
+                        "a second deployment for production prediction comparison."
+                    ),
+                    "n_current": 0,
+                    "n_baseline": 0,
+                }
+            else:
+                _dpdc_baseline_id = (
+                    _dpdc_baseline_dep.id  # type: ignore[attr-defined]
+                    if hasattr(_dpdc_baseline_dep, "id")
+                    else str(_dpdc_baseline_dep)
+                )
+                _N_LOGS = 200
+
+                _dpdc_current_logs_orm = list(
+                    session.exec(
+                        select(PredictionLog)
+                        .where(PredictionLog.deployment_id == _dpdc_dep_id)
+                        .order_by(PredictionLog.created_at.desc())
+                        .limit(_N_LOGS)
+                    ).all()
+                )
+                _dpdc_baseline_logs_orm = list(
+                    session.exec(
+                        select(PredictionLog)
+                        .where(PredictionLog.deployment_id == _dpdc_baseline_id)
+                        .order_by(PredictionLog.created_at.desc())
+                        .limit(_N_LOGS)
+                    ).all()
+                )
+
+                if len(_dpdc_current_logs_orm) < 5 or len(_dpdc_baseline_logs_orm) < 5:
+                    deploy_pred_dist_compare_event = {
+                        "verdict": "no_data",
+                        "n_current": len(_dpdc_current_logs_orm),
+                        "n_baseline": len(_dpdc_baseline_logs_orm),
+                        "summary": (
+                            f"Not enough predictions to compare: "
+                            f"{len(_dpdc_current_logs_orm)} current, "
+                            f"{len(_dpdc_baseline_logs_orm)} baseline. "
+                            "Need at least 5 in each deployment."
+                        ),
+                    }
+                else:
+                    _dpdc_current_dicts = [
+                        {
+                            "prediction": lg.prediction,
+                            "prediction_numeric": lg.prediction_numeric,
+                            "confidence": lg.confidence,
+                        }
+                        for lg in _dpdc_current_logs_orm
+                    ]
+                    _dpdc_baseline_dicts = [
+                        {
+                            "prediction": lg.prediction,
+                            "prediction_numeric": lg.prediction_numeric,
+                            "confidence": lg.confidence,
+                        }
+                        for lg in _dpdc_baseline_logs_orm
+                    ]
+
+                    _dpdc_result = _compute_dpdc(
+                        _dpdc_baseline_dicts,
+                        _dpdc_current_dicts,
+                        _dpdc_problem_type,
+                    )
+
+                    _dpdc_baseline_run = session.get(ModelRun, _dpdc_baseline_dep.model_run_id) if hasattr(_dpdc_baseline_dep, "model_run_id") else None  # type: ignore[attr-defined]
+                    _dpdc_current_run = session.get(ModelRun, _dpdc_dep.model_run_id) if hasattr(_dpdc_dep, "model_run_id") else None
+
+                    _dpdc_result["deployment_id"] = _dpdc_dep_id
+                    _dpdc_result["baseline_deployment_id"] = _dpdc_baseline_id
+                    _dpdc_result["current_algorithm"] = (
+                        _dpdc_current_run.algorithm if _dpdc_current_run else "Unknown"
+                    )
+                    _dpdc_result["baseline_algorithm"] = (
+                        _dpdc_baseline_run.algorithm if _dpdc_baseline_run else "Unknown"
+                    )
+                    _dpdc_result["target_col"] = getattr(_dpdc_dep, "target_column", "target")
+
+                    deploy_pred_dist_compare_event = _dpdc_result
+
+                    # System prompt injection
+                    _dpdc_verdict = _dpdc_result.get("verdict", "")
+                    _dpdc_summary = _dpdc_result.get("summary", "")
+                    system_prompt += (
+                        "\n\n## Deployment Prediction Distribution Comparison\n"
+                        f"{_dpdc_summary}\n"
+                        "Summarise whether the new deployment is predicting higher, lower, "
+                        "or similar values compared to the previous one. "
+                        "Mention what this could mean for the business analyst's use case."
+                    )
+        except Exception:  # noqa: BLE001
+            pass  # Nice-to-have; never crash chat
+
     # Training vs Production Performance Monitor
     prod_monitor_event: dict | None = None
     if _PROD_MONITOR_PATTERNS.search(body.message) and ctx["deployment"]:
@@ -18894,6 +19040,9 @@ def send_message(
 
         if prod_threshold_opt_event:
             yield f"data: {json.dumps({'type': 'production_threshold_optimizer', 'production_threshold_optimizer': prod_threshold_opt_event})}\n\n"
+
+        if deploy_pred_dist_compare_event:
+            yield f"data: {json.dumps({'type': 'deploy_pred_dist_compare', 'deploy_pred_dist_compare': deploy_pred_dist_compare_event})}\n\n"
 
         if prod_monitor_event:
             yield f"data: {json.dumps({'type': 'prod_performance', 'prod_performance': prod_monitor_event})}\n\n"

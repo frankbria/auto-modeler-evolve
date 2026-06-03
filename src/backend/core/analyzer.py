@@ -6442,3 +6442,198 @@ def compute_deployment_monitoring_digest(
         "summary": summary,
         "problem_type": problem_type,
     }
+
+
+# ---------------------------------------------------------------------------
+# Deployment prediction distribution comparison
+# ---------------------------------------------------------------------------
+
+
+def compute_deployment_prediction_comparison(
+    baseline_logs: list[dict],
+    current_logs: list[dict],
+    problem_type: str,
+) -> dict:
+    """Compare production prediction distributions across two deployments.
+
+    Answers "is my retrained model predicting higher values in production than
+    my previous deployment?"
+
+    For regression: compares mean/median/std/min/max prediction_numeric values,
+    computes mean shift and direction verdict.
+    For classification: compares class frequency distributions, identifies
+    which class changed most.
+
+    Args:
+        baseline_logs: PredictionLog dicts from the older deployment.
+        current_logs:  PredictionLog dicts from the newer deployment.
+        problem_type:  "regression" or "classification".
+
+    Returns:
+        Dict with baseline_stats, current_stats, verdict, mean_shift_pct (regression),
+        class_shifts (classification), n_baseline, n_current, and plain-English summary.
+
+    Raises:
+        ValueError: When fewer than 5 samples in either log list.
+    """
+    if len(baseline_logs) < 5:
+        raise ValueError(
+            f"Need at least 5 baseline predictions to compare. Got {len(baseline_logs)}."
+        )
+    if len(current_logs) < 5:
+        raise ValueError(
+            f"Need at least 5 current predictions to compare. Got {len(current_logs)}."
+        )
+
+    n_baseline = len(baseline_logs)
+    n_current = len(current_logs)
+
+    if problem_type == "regression":
+        baseline_vals = [
+            float(lg["prediction_numeric"])
+            for lg in baseline_logs
+            if lg.get("prediction_numeric") is not None
+        ]
+        current_vals = [
+            float(lg["prediction_numeric"])
+            for lg in current_logs
+            if lg.get("prediction_numeric") is not None
+        ]
+
+        if len(baseline_vals) < 5 or len(current_vals) < 5:
+            raise ValueError(
+                "Not enough numeric prediction values to compare distributions."
+            )
+
+        b_arr = np.array(baseline_vals, dtype=float)
+        c_arr = np.array(current_vals, dtype=float)
+
+        def _stats(arr: np.ndarray) -> dict:
+            return {
+                "mean": float(round(np.mean(arr), 4)),
+                "median": float(round(np.median(arr), 4)),
+                "std": float(round(np.std(arr), 4)),
+                "min": float(round(np.min(arr), 4)),
+                "max": float(round(np.max(arr), 4)),
+                "p25": float(round(np.percentile(arr, 25), 4)),
+                "p75": float(round(np.percentile(arr, 75), 4)),
+                "n": len(arr),
+            }
+
+        baseline_stats = _stats(b_arr)
+        current_stats = _stats(c_arr)
+
+        b_mean = baseline_stats["mean"]
+        c_mean = current_stats["mean"]
+        mean_shift = float(round(c_mean - b_mean, 4))
+        mean_shift_pct = (
+            float(round(mean_shift / abs(b_mean) * 100, 1)) if b_mean != 0 else 0.0
+        )
+
+        if mean_shift_pct > 5:
+            verdict = "current_higher"
+            verdict_label = f"New deployment predicts higher values (+{mean_shift_pct:.1f}%)"
+        elif mean_shift_pct < -5:
+            verdict = "current_lower"
+            verdict_label = f"New deployment predicts lower values ({mean_shift_pct:.1f}%)"
+        else:
+            verdict = "similar"
+            verdict_label = "Similar prediction levels across deployments"
+
+        summary = (
+            f"Compared {n_baseline} predictions from the previous deployment to "
+            f"{n_current} from the current one. "
+            f"Previous mean: {b_mean:.4g}. Current mean: {c_mean:.4g}. "
+            + (
+                f"The new deployment is predicting {abs(mean_shift_pct):.1f}% "
+                f"{'higher' if mean_shift_pct > 0 else 'lower'} on average."
+                if verdict != "similar"
+                else "Prediction levels are broadly similar between deployments."
+            )
+        )
+
+        return {
+            "problem_type": "regression",
+            "verdict": verdict,
+            "verdict_label": verdict_label,
+            "mean_shift": mean_shift,
+            "mean_shift_pct": mean_shift_pct,
+            "baseline_stats": baseline_stats,
+            "current_stats": current_stats,
+            "n_baseline": n_baseline,
+            "n_current": n_current,
+            "summary": summary,
+        }
+
+    else:
+        # Classification — compare class frequency distributions
+        from collections import Counter
+
+        def _parse_label(lg: dict) -> str:
+            raw = lg.get("prediction", "")
+            try:
+                import json as _json
+
+                return str(_json.loads(raw))
+            except Exception:  # noqa: BLE001
+                return str(raw)
+
+        b_counts = Counter(_parse_label(lg) for lg in baseline_logs)
+        c_counts = Counter(_parse_label(lg) for lg in current_logs)
+
+        all_classes = sorted(set(b_counts) | set(c_counts))
+
+        class_shifts = []
+        for cls in all_classes:
+            b_pct = round(b_counts.get(cls, 0) / n_baseline * 100, 1)
+            c_pct = round(c_counts.get(cls, 0) / n_current * 100, 1)
+            shift_pct = round(c_pct - b_pct, 1)
+            class_shifts.append(
+                {
+                    "class_label": cls,
+                    "baseline_pct": b_pct,
+                    "current_pct": c_pct,
+                    "shift_pct": shift_pct,
+                }
+            )
+
+        # Sort by absolute shift descending
+        class_shifts.sort(key=lambda x: abs(x["shift_pct"]), reverse=True)
+
+        # Verdict: largest absolute shift
+        max_shift = max((abs(s["shift_pct"]) for s in class_shifts), default=0.0)
+        if max_shift >= 10:
+            biggest = class_shifts[0]
+            dir_word = "increased" if biggest["shift_pct"] > 0 else "decreased"
+            verdict = "distribution_shifted"
+            verdict_label = (
+                f"Class '{biggest['class_label']}' {dir_word} "
+                f"by {abs(biggest['shift_pct']):.1f} percentage points"
+            )
+        else:
+            verdict = "similar"
+            verdict_label = "Class distribution is similar across deployments"
+
+        summary = (
+            f"Compared class distributions across {n_baseline} baseline and "
+            f"{n_current} current predictions. "
+            + (
+                f"Biggest shift: '{class_shifts[0]['class_label']}' "
+                f"{'up' if class_shifts[0]['shift_pct'] > 0 else 'down'} "
+                f"{abs(class_shifts[0]['shift_pct']):.1f}pp "
+                f"({class_shifts[0]['baseline_pct']}% → {class_shifts[0]['current_pct']}%)."
+                if class_shifts
+                else "No class shifts detected."
+            )
+        )
+
+        return {
+            "problem_type": "classification",
+            "verdict": verdict,
+            "verdict_label": verdict_label,
+            "class_shifts": class_shifts,
+            "n_classes": len(all_classes),
+            "n_baseline": n_baseline,
+            "n_current": n_current,
+            "summary": summary,
+        }

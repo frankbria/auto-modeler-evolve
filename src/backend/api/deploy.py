@@ -38,6 +38,7 @@ from core.analyzer import (
     compute_confidence_trend,
     compute_deployment_health_item,
     compute_deployment_monitoring_digest,
+    compute_deployment_prediction_comparison,
     compute_deployments_overview,
     compute_prediction_audit,
     compute_prediction_output_anomalies,
@@ -7225,4 +7226,97 @@ def get_production_threshold_optimizer(
     result["deployment_id"] = deployment_id
     result["algorithm"] = run.algorithm if run else "Unknown"
     result["target_col"] = deployment.target_column
+    return result
+
+
+@router.get("/api/deploy/{deployment_id}/prediction-distribution-comparison")
+def get_prediction_distribution_comparison(
+    deployment_id: str,
+    vs: str = Query(..., description="The baseline deployment ID to compare against"),
+    n: int = Query(200, ge=10, le=2000),
+    session: Session = Depends(get_session),
+):
+    """Compare production prediction distributions between two deployments.
+
+    Returns ``verdict: "no_data"`` when either deployment has fewer than 5 predictions.
+    """
+    current_dep = session.get(Deployment, deployment_id)
+    if not current_dep:
+        raise HTTPException(status_code=404, detail="Deployment not found.")
+
+    baseline_dep = session.get(Deployment, vs)
+    if not baseline_dep:
+        raise HTTPException(status_code=404, detail="Baseline deployment not found.")
+
+    problem_type = current_dep.problem_type or "regression"
+
+    # Load prediction logs for both deployments
+    current_logs_orm = session.exec(
+        select(PredictionLog)
+        .where(PredictionLog.deployment_id == deployment_id)
+        .order_by(PredictionLog.created_at.desc())
+        .limit(n)
+    ).all()
+
+    baseline_logs_orm = session.exec(
+        select(PredictionLog)
+        .where(PredictionLog.deployment_id == vs)
+        .order_by(PredictionLog.created_at.desc())
+        .limit(n)
+    ).all()
+
+    if len(current_logs_orm) < 5 or len(baseline_logs_orm) < 5:
+        return {
+            "verdict": "no_data",
+            "n_current": len(current_logs_orm),
+            "n_baseline": len(baseline_logs_orm),
+            "deployment_id": deployment_id,
+            "baseline_deployment_id": vs,
+            "summary": (
+                f"Not enough predictions to compare: "
+                f"{len(current_logs_orm)} current, {len(baseline_logs_orm)} baseline. "
+                "Need at least 5 in each deployment."
+            ),
+        }
+
+    baseline_dicts = [
+        {
+            "prediction": lg.prediction,
+            "prediction_numeric": lg.prediction_numeric,
+            "confidence": lg.confidence,
+        }
+        for lg in baseline_logs_orm
+    ]
+    current_dicts = [
+        {
+            "prediction": lg.prediction,
+            "prediction_numeric": lg.prediction_numeric,
+            "confidence": lg.confidence,
+        }
+        for lg in current_logs_orm
+    ]
+
+
+    try:
+        result = compute_deployment_prediction_comparison(
+            baseline_dicts, current_dicts, problem_type
+        )
+    except ValueError as exc:
+        return {
+            "verdict": "no_data",
+            "n_current": len(current_logs_orm),
+            "n_baseline": len(baseline_logs_orm),
+            "deployment_id": deployment_id,
+            "baseline_deployment_id": vs,
+            "summary": str(exc),
+        }
+
+    current_run = session.get(ModelRun, current_dep.model_run_id)
+    baseline_run = session.get(ModelRun, baseline_dep.model_run_id)
+
+    result["deployment_id"] = deployment_id
+    result["baseline_deployment_id"] = vs
+    result["current_algorithm"] = current_run.algorithm if current_run else "Unknown"
+    result["baseline_algorithm"] = baseline_run.algorithm if baseline_run else "Unknown"
+    result["target_col"] = current_dep.target_column
     return result

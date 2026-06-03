@@ -556,6 +556,7 @@ export interface ChatMessage {
   monitoring_digest?: MonitoringDigestResult
   model_status_report?: ModelStatusReportInfo
   production_threshold_optimizer?: ProductionThresholdOptimizerResult
+  deploy_pred_dist_compare?: DeploymentPredictionComparisonResult
 }
 
 export interface RollbackVersionEntry {
@@ -4386,4 +4387,44 @@ export interface ProductionThresholdOptimizerResult {
   n_correct_total?: number
   overall_accuracy?: number
   summary: string
+}
+
+export interface DeploymentPredictionDistStats {
+  mean: number
+  median: number
+  std: number
+  min: number
+  max: number
+  p25: number
+  p75: number
+  n: number
+}
+
+export interface DeploymentPredictionClassShift {
+  class_label: string
+  baseline_pct: number
+  current_pct: number
+  shift_pct: number
+}
+
+export interface DeploymentPredictionComparisonResult {
+  verdict: "current_higher" | "current_lower" | "similar" | "distribution_shifted" | "no_data"
+  verdict_label: string
+  problem_type: string
+  n_baseline: number
+  n_current: number
+  summary: string
+  deployment_id?: string
+  baseline_deployment_id?: string
+  current_algorithm?: string
+  baseline_algorithm?: string
+  target_col?: string
+  // Regression fields
+  mean_shift?: number
+  mean_shift_pct?: number
+  baseline_stats?: DeploymentPredictionDistStats
+  current_stats?: DeploymentPredictionDistStats
+  // Classification fields
+  class_shifts?: DeploymentPredictionClassShift[]
+  n_classes?: number
 }

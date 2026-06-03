@@ -120,6 +120,7 @@ import { WebhookHealthSummaryCard } from "@/components/deploy/webhook-health-sum
 import { ExecutiveBriefingCard } from "@/components/deploy/executive-briefing-card"
 import { ServiceExportChatCard } from "@/components/deploy/service-export-chat-card"
 import { DeploymentVersionComparisonCard } from "@/components/deploy/deployment-version-comparison-card"
+import { DeploymentPredictionDistributionCard } from "@/components/deploy/deployment-prediction-distribution-card"
 import { EnsembleRecommendationCard } from "@/components/models/ensemble-recommendation-card"
 import { TuningChatCard } from "@/components/models/tuning-chat-card"
 import { CvScoreDistributionCard } from "@/components/models/cv-score-distribution-card"
@@ -411,6 +412,7 @@ export default function ProjectWorkspace() {
     attachMonitoringDigestToLastMessage,
     attachModelStatusReportToLastMessage,
     attachProductionThresholdOptimizerToLastMessage,
+    attachDeployPredDistCompareToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -821,6 +823,8 @@ export default function ProjectWorkspace() {
                 attachModelStatusReportToLastMessage(json.model_status_report as import("@/lib/types").ModelStatusReportInfo)
               } else if (json.type === "production_threshold_optimizer" && json.production_threshold_optimizer) {
                 attachProductionThresholdOptimizerToLastMessage(json.production_threshold_optimizer as import("@/lib/types").ProductionThresholdOptimizerResult)
+              } else if (json.type === "deploy_pred_dist_compare" && json.deploy_pred_dist_compare) {
+                attachDeployPredDistCompareToLastMessage(json.deploy_pred_dist_compare as import("@/lib/types").DeploymentPredictionComparisonResult)
               } else if (json.type === "onboarding_guide" && json.onboarding_guide) {
                 attachOnboardingGuideToLastMessage(json.onboarding_guide as import("@/lib/types").OnboardingGuideResult)
               } else if (json.type === "version_history" && json.version_history) {
@@ -1017,6 +1021,8 @@ export default function ProjectWorkspace() {
                 attachModelStatusReportToLastMessage(json.model_status_report as import("@/lib/types").ModelStatusReportInfo)
               } else if (json.type === "production_threshold_optimizer" && json.production_threshold_optimizer) {
                 attachProductionThresholdOptimizerToLastMessage(json.production_threshold_optimizer as import("@/lib/types").ProductionThresholdOptimizerResult)
+              } else if (json.type === "deploy_pred_dist_compare" && json.deploy_pred_dist_compare) {
+                attachDeployPredDistCompareToLastMessage(json.deploy_pred_dist_compare as import("@/lib/types").DeploymentPredictionComparisonResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -1186,6 +1192,7 @@ export default function ProjectWorkspace() {
     attachMonitoringDigestToLastMessage,
     attachModelStatusReportToLastMessage,
     attachProductionThresholdOptimizerToLastMessage,
+    attachDeployPredDistCompareToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -1913,6 +1920,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.production_threshold_optimizer && (
                       <ProductionThresholdOptimizerCard result={msg.production_threshold_optimizer} />
+                    )}
+                    {msg.deploy_pred_dist_compare && (
+                      <DeploymentPredictionDistributionCard result={msg.deploy_pred_dist_compare} />
                     )}
                   </div>
                 </div>
