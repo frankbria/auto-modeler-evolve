@@ -6,7 +6,6 @@ from __future__ import annotations
 from api.chat import _MONITORING_DIGEST_PATTERNS
 from core.analyzer import compute_deployment_monitoring_digest
 
-
 # ---------------------------------------------------------------------------
 # 1. Pure function tests
 # ---------------------------------------------------------------------------

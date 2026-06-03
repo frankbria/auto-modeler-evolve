@@ -9,7 +9,6 @@ from sqlmodel import SQLModel, create_engine, Session
 import db as db_module
 from core.validator import compute_production_threshold_optimizer
 
-
 # ---------------------------------------------------------------------------
 # Fixture helpers
 # ---------------------------------------------------------------------------
@@ -54,9 +53,13 @@ def _make_mixed_confidence(n=30):
     pairs = []
     for i in range(n):
         if i % 3 == 0:
-            pairs.append({"confidence": 0.55, "predicted_label": "yes", "actual_label": "no"})
+            pairs.append(
+                {"confidence": 0.55, "predicted_label": "yes", "actual_label": "no"}
+            )
         else:
-            pairs.append({"confidence": 0.90, "predicted_label": "yes", "actual_label": "yes"})
+            pairs.append(
+                {"confidence": 0.90, "predicted_label": "yes", "actual_label": "yes"}
+            )
     return pairs
 
 
@@ -204,10 +207,12 @@ class TestComputeProductionThresholdOptimizerPure:
 
     def test_raises_on_too_few_pairs(self):
         with pytest.raises(ValueError, match="at least 5"):
-            compute_production_threshold_optimizer([
-                {"confidence": 0.9, "predicted_label": "a", "actual_label": "a"},
-                {"confidence": 0.6, "predicted_label": "b", "actual_label": "b"},
-            ])
+            compute_production_threshold_optimizer(
+                [
+                    {"confidence": 0.9, "predicted_label": "a", "actual_label": "a"},
+                    {"confidence": 0.6, "predicted_label": "b", "actual_label": "b"},
+                ]
+            )
 
     def test_handles_missing_confidence_gracefully(self):
         """Pairs with None confidence are treated as 0.0."""
@@ -342,7 +347,12 @@ async def test_get_production_threshold_optimizer_no_data(client, db_engine):
         session.commit()
         session.refresh(proj)
 
-        ds = Dataset(project_id=proj.id, filename="test.csv", file_path="/tmp/test.csv", row_count=100)
+        ds = Dataset(
+            project_id=proj.id,
+            filename="test.csv",
+            file_path="/tmp/test.csv",
+            row_count=100,
+        )
         session.add(ds)
         session.commit()
         session.refresh(ds)

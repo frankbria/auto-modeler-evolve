@@ -171,12 +171,12 @@ class TestFeatureSchemaRanges:
 
         for entry in cat_entries:
             assert "options" in entry, f"categorical {entry['name']} missing 'options'"
-            assert "min" not in entry, (
-                f"categorical {entry['name']} should not have 'min'"
-            )
-            assert "p5" not in entry, (
-                f"categorical {entry['name']} should not have 'p5'"
-            )
+            assert (
+                "min" not in entry
+            ), f"categorical {entry['name']} should not have 'min'"
+            assert (
+                "p5" not in entry
+            ), f"categorical {entry['name']} should not have 'p5'"
 
     def test_numeric_values_are_floats(self, client):
         """min/max/p5/p95 are numeric (float/int), not None."""
@@ -189,9 +189,9 @@ class TestFeatureSchemaRanges:
                 continue
             for field in ("min", "max", "p5", "p95"):
                 val = entry.get(field)
-                assert isinstance(val, (int, float)), (
-                    f"{entry['name']}.{field} should be numeric, got {type(val)}"
-                )
+                assert isinstance(
+                    val, (int, float)
+                ), f"{entry['name']}.{field} should be numeric, got {type(val)}"
 
     def test_schema_preserved_alongside_new_fields(self, client):
         """mean, median, std still present after adding range fields."""

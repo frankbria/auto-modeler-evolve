@@ -2043,7 +2043,9 @@ def compute_production_threshold_optimizer(
         )
 
     best_point = max(sweep, key=lambda p: p["f1"])
-    current_point = next((p for p in sweep if abs(p["threshold"] - 0.50) < 0.001), sweep[9])
+    current_point = next(
+        (p for p in sweep if abs(p["threshold"] - 0.50) < 0.001), sweep[9]
+    )
 
     overall_accuracy = n_correct_total / n_total if n_total > 0 else 0.0
 
