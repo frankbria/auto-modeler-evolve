@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from datetime import datetime
 
-
 # ---------------------------------------------------------------------------
 # Pure-function tests: should_send_weekly_digest
 # ---------------------------------------------------------------------------

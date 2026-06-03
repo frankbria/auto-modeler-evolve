@@ -315,7 +315,9 @@ def _run_weekly_digest(config_id: str) -> None:
 
         try:
             if problem_type == "regression" and len(logs_data) >= 2:
-                value_trend_result = compute_prediction_value_trend(logs_data, "day", 30)
+                value_trend_result = compute_prediction_value_trend(
+                    logs_data, "day", 30
+                )
         except Exception:
             pass
 
@@ -325,15 +327,9 @@ def _run_weekly_digest(config_id: str) -> None:
         now = datetime.now(UTC).replace(tzinfo=None)
         cutoff_7d = now - timedelta(days=7)
         cutoff_14d = now - timedelta(days=14)
-        usage_7d = sum(
-            1
-            for r in logs
-            if r.created_at and r.created_at >= cutoff_7d
-        )
+        usage_7d = sum(1 for r in logs if r.created_at and r.created_at >= cutoff_7d)
         usage_prev_7d = sum(
-            1
-            for r in logs
-            if r.created_at and cutoff_14d <= r.created_at < cutoff_7d
+            1 for r in logs if r.created_at and cutoff_14d <= r.created_at < cutoff_7d
         )
 
         digest = compute_deployment_monitoring_digest(
