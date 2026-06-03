@@ -14673,7 +14673,9 @@ def send_message(
             _wu_trend = (
                 "up"
                 if (_wu_change_pct or 0) > 5
-                else "down" if (_wu_change_pct or 0) < -5 else "flat"
+                else "down"
+                if (_wu_change_pct or 0) < -5
+                else "flat"
             )
 
             # Per-day breakdown for the current week (7 entries)
@@ -14692,9 +14694,7 @@ def send_message(
             _wu_feature_tally: dict[str, dict[str, int]] = {}
             _wu_recent_logs = [
                 lg for lg in _wu_logs if lg.created_at >= _wu_week_start
-            ][
-                :100
-            ]  # cap to last 100 for performance
+            ][:100]  # cap to last 100 for performance
             for _wl in _wu_recent_logs:
                 try:
                     _feat_dict: dict = json.loads(_wl.input_features or "{}")
@@ -16970,7 +16970,11 @@ def send_message(
                         _dpdc_problem_type,
                     )
 
-                    _dpdc_baseline_run = session.get(ModelRun, _dpdc_baseline_dep.model_run_id) if hasattr(_dpdc_baseline_dep, "model_run_id") else None  # type: ignore[attr-defined]
+                    _dpdc_baseline_run = (
+                        session.get(ModelRun, _dpdc_baseline_dep.model_run_id)
+                        if hasattr(_dpdc_baseline_dep, "model_run_id")
+                        else None
+                    )  # type: ignore[attr-defined]
                     _dpdc_current_run = (
                         session.get(ModelRun, _dpdc_dep.model_run_id)
                         if hasattr(_dpdc_dep, "model_run_id")
@@ -17726,7 +17730,9 @@ def send_message(
                         else (
                             "healthy"
                             if _n_failed == 0
-                            else "warning" if _n_failed / _n_total < 0.1 else "critical"
+                            else "warning"
+                            if _n_failed / _n_total < 0.1
+                            else "critical"
                         )
                     )
                     _wh_total_events += _n_total
@@ -17785,7 +17791,9 @@ def send_message(
                     else (
                         "warning"
                         if any(d["status"] == "warning" for d in _wh_dep_summaries)
-                        else "no_events" if _wh_total_events == 0 else "healthy"
+                        else "no_events"
+                        if _wh_total_events == 0
+                        else "healthy"
                     )
                 )
             )
