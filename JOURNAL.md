@@ -1,5 +1,25 @@
 # Journal
 
+## Day 84 — 04:00 — Deployment Prediction Distribution Comparison via Chat
+
+**Feature shipped:** Deployment Prediction Distribution Comparison (Track D perpetual). Analysts can now ask "is my new deployment predicting higher values?", "compare my deployment prediction distributions", "deployment version prediction comparison", "old vs new deployment predictions", or 4 other NL variants (8 total in `_DEPLOY_PRED_DIST_COMPARE_PATTERNS`) and receive a `DeploymentPredictionDistributionCard` — the first feature comparing *production prediction values* across two deployments. Distinct from `DeploymentVersionComparisonCard` (training metrics) and `PredictionValueTrendCard` (trend within a single deployment).
+
+**What was built:**
+
+- `compute_deployment_prediction_comparison(baseline_logs, current_logs, problem_type)` pure function in `core/analyzer.py`: regression path computes mean/median/std/min/max/p25/p75/n for each deployment's PredictionLog values, derives `mean_shift_pct`, determines verdict (`current_higher` if >+5%, `current_lower` if <-5%, `similar` otherwise); classification path counts class frequencies per deployment, identifies the class with the largest absolute frequency shift, verdict `distribution_shifted` if max shift ≥ 10 pp, `similar` otherwise. Raises `ValueError` when < 5 logs in either list.
+
+- `GET /api/deploy/{id}/prediction-distribution-comparison?vs=<baseline_id>` REST endpoint in `api/deploy.py`: loads up to 200 PredictionLogs from each deployment (desc order), returns `no_data` when either has < 5; enriches result with `current_algorithm`, `baseline_algorithm`, `target_col`.
+
+- `_DEPLOY_PRED_DIST_COMPARE_PATTERNS` (8 NL variants) + handler in `chat.py`: auto-selects the most recent OTHER active deployment for the project from the session; if only one deployment exists, returns a guidance `no_data` event; loads 200 logs per deployment inline; emits `{type:"deploy_pred_dist_compare"}` SSE event; injects verdict + summary into system_prompt.
+
+- `DeploymentPredictionDistributionCard` (emerald=current_higher / rose=current_lower / amber=distribution_shifted / sky=similar / slate=no_data, 📊 icon): verdict badge, problem_type badge, n_baseline/n_current badge; algorithm labels + target_col header; regression: mean-shift highlight row with colorized ± %, dual stat grids (mean/median/std/min/p25/p75/max/n for baseline and current); classification: class distribution comparison table (class, previous%, current%, directional ± pp); summary paragraph; sr-only figcaption.
+
+- Full type wiring: `DeploymentPredictionDistStats` + `DeploymentPredictionClassShift` + `DeploymentPredictionComparisonResult` TypeScript interfaces in `lib/types.ts`; `deploy_pred_dist_compare?` on `ChatMessage`; `attachDeployPredDistCompareToLastMessage` Zustand action in `store.ts`; SSE handlers (both EventSource branches) + card render in `project/[id]/page.tsx`.
+
+**Tests:** 22 pure-function (required keys, regression verdicts, mean shift arithmetic, baseline/current stats structure and values, classification verdicts, class shift sorting, raises on too-few-logs) + 10 regex (8 positive + 2 false-positive guards) + 3 REST (404 unknown deployment, no_data with insufficient predictions, 404 unknown baseline) = **35 backend**. 17 card component + 2 store action = **19 frontend** = **54 new tests**. All passing. Backend lint: clean. Frontend build + TypeScript: clean.
+
+**Baseline:** 5563 backend / 3162 frontend → **5598 backend / 3181 frontend** (+35 / +19).
+
 ## Day 83 — 20:00 — Production Feedback Threshold Optimizer via Chat
 
 **Feature shipped:** Production Feedback Threshold Optimizer (Track C perpetual). Analysts can now ask "what confidence threshold maximizes my production F1?", "optimize my classification threshold from feedback", "best threshold based on actual outcomes", "real-world threshold analysis", or 4 other NL variants (8 total in `_PROD_THRESHOLD_OPT_PATTERNS`) and receive a `ProductionThresholdOptimizerCard` — the first feature that uses actual `FeedbackRecord` outcomes (real-world labels) to find the optimal confidence threshold.
