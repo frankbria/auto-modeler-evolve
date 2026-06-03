@@ -53,6 +53,27 @@ the time is better spent on real features.
 
 ---
 
+## Day 84 (04:00) — Done
+
+**Track D: Deployment Prediction Distribution Comparison via Chat** — complete.
+
+Closes the "did my retrained model actually change how it predicts in production?" analyst gap. Analysts can ask "is my new deployment predicting higher values?", "compare my deployment prediction distributions", "deployment version prediction comparison", or "old vs new deployment predictions" (8 NL variants) and receive a `DeploymentPredictionDistributionCard` comparing production prediction distributions across the two most recent active deployments.
+
+**What was built:**
+- `compute_deployment_prediction_comparison(baseline_logs, current_logs, problem_type)` pure function in `core/analyzer.py`: regression path computes mean/median/std/min/max/p25/p75 for each deployment and determines direction verdict (current_higher / current_lower / similar); classification path computes class frequency distributions and largest shift (distribution_shifted / similar).
+- `GET /api/deploy/{id}/prediction-distribution-comparison?vs=<baseline_id>` REST endpoint in `api/deploy.py`.
+- `_DEPLOY_PRED_DIST_COMPARE_PATTERNS` (8 NL variants) + handler in `chat.py`: auto-selects most recent OTHER active deployment, loads 200 logs per deployment, emits `{type:"deploy_pred_dist_compare"}` SSE event.
+- `DeploymentPredictionDistributionCard` (emerald/rose/amber/sky/slate by verdict): stat grids for regression, class-shift table for classification.
+
+35 backend + 19 frontend = **54 new tests**. Backend lint: clean. Frontend build + TypeScript: clean.
+
+**What's next:**
+- Track B: Auto-trigger weekly monitoring digest via webhook — scheduled digest computation + webhook dispatch
+- Track C: Per-class threshold tuning — "optimize the threshold independently for each class in my multiclass model"
+- Track D: Input feature importance drift — "which input features changed most in distribution since I deployed?"
+
+---
+
 ## Day 83 (20:00) — Done
 
 **Track C: Production Feedback Threshold Optimizer via Chat** — complete.
