@@ -94,6 +94,7 @@ import { RetrainingReadinessCard } from "@/components/deploy/retraining-readines
 import { PredictionValueTrendCard } from "@/components/deploy/prediction-value-trend-card"
 import { MonitoringDigestCard } from "@/components/deploy/monitoring-digest-card"
 import { ModelStatusReportCard } from "@/components/deploy/model-status-report-card"
+import { ProductionThresholdOptimizerCard } from "@/components/deploy/production-threshold-optimizer-card"
 import { OnboardingGuideCard } from "@/components/chat/onboarding-guide-card"
 import { DataVersionHistoryCard } from "@/components/chat/data-version-history-card"
 import { LearningCurveCard } from "@/components/chat/learning-curve-card"
@@ -409,6 +410,7 @@ export default function ProjectWorkspace() {
     attachPredictionValueTrendToLastMessage,
     attachMonitoringDigestToLastMessage,
     attachModelStatusReportToLastMessage,
+    attachProductionThresholdOptimizerToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -817,6 +819,8 @@ export default function ProjectWorkspace() {
                 attachMonitoringDigestToLastMessage(json.monitoring_digest as import("@/lib/types").MonitoringDigestResult)
               } else if (json.type === "model_status_report" && json.model_status_report) {
                 attachModelStatusReportToLastMessage(json.model_status_report as import("@/lib/types").ModelStatusReportInfo)
+              } else if (json.type === "production_threshold_optimizer" && json.production_threshold_optimizer) {
+                attachProductionThresholdOptimizerToLastMessage(json.production_threshold_optimizer as import("@/lib/types").ProductionThresholdOptimizerResult)
               } else if (json.type === "onboarding_guide" && json.onboarding_guide) {
                 attachOnboardingGuideToLastMessage(json.onboarding_guide as import("@/lib/types").OnboardingGuideResult)
               } else if (json.type === "version_history" && json.version_history) {
@@ -1011,6 +1015,8 @@ export default function ProjectWorkspace() {
                 attachMonitoringDigestToLastMessage(json.monitoring_digest as import("@/lib/types").MonitoringDigestResult)
               } else if (json.type === "model_status_report" && json.model_status_report) {
                 attachModelStatusReportToLastMessage(json.model_status_report as import("@/lib/types").ModelStatusReportInfo)
+              } else if (json.type === "production_threshold_optimizer" && json.production_threshold_optimizer) {
+                attachProductionThresholdOptimizerToLastMessage(json.production_threshold_optimizer as import("@/lib/types").ProductionThresholdOptimizerResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -1179,6 +1185,7 @@ export default function ProjectWorkspace() {
     attachPredictionValueTrendToLastMessage,
     attachMonitoringDigestToLastMessage,
     attachModelStatusReportToLastMessage,
+    attachProductionThresholdOptimizerToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -1903,6 +1910,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.model_status_report && (
                       <ModelStatusReportCard info={msg.model_status_report} />
+                    )}
+                    {msg.production_threshold_optimizer && (
+                      <ProductionThresholdOptimizerCard result={msg.production_threshold_optimizer} />
                     )}
                   </div>
                 </div>

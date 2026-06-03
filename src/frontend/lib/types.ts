@@ -555,6 +555,7 @@ export interface ChatMessage {
   prediction_value_trend?: PredictionValueTrendResult
   monitoring_digest?: MonitoringDigestResult
   model_status_report?: ModelStatusReportInfo
+  production_threshold_optimizer?: ProductionThresholdOptimizerResult
 }
 
 export interface RollbackVersionEntry {
@@ -4352,5 +4353,37 @@ export interface MonitoringDigestResult {
   signals_total: number
   signals_firing: number
   priority_actions: string[]
+  summary: string
+}
+
+export interface ProductionThresholdSweepPoint {
+  threshold: number
+  precision: number
+  recall: number
+  f1: number
+  coverage: number
+  n_served: number
+}
+
+export interface ProductionThresholdOptimizerResult {
+  deployment_id?: string
+  algorithm?: string | null
+  target_col?: string | null
+  verdict: "improved" | "same" | "no_data" | "not_applicable"
+  verdict_label: string
+  sweep?: ProductionThresholdSweepPoint[]
+  optimal_threshold?: number
+  optimal_f1?: number
+  optimal_precision?: number
+  optimal_recall?: number
+  optimal_coverage?: number
+  current_threshold?: number
+  current_f1?: number
+  current_precision?: number
+  current_recall?: number
+  current_coverage?: number
+  n_feedback?: number
+  n_correct_total?: number
+  overall_accuracy?: number
   summary: string
 }

@@ -1969,3 +1969,129 @@ def compute_min_viable_feature_set(
         "metric": metric,
         "summary": summary,
     }
+
+
+# ---------------------------------------------------------------------------
+# Production feedback threshold optimizer
+# ---------------------------------------------------------------------------
+
+
+def compute_production_threshold_optimizer(
+    feedback_pairs: list[dict],
+) -> dict:
+    """Find the optimal confidence threshold using real production feedback outcomes.
+
+    feedback_pairs: list of dicts with keys:
+        - confidence: float (0.0–1.0, model confidence for this prediction)
+        - predicted_label: str (what the model predicted)
+        - actual_label: str (ground truth recorded by the analyst)
+
+    Sweeps confidence thresholds from 0.05 to 0.95 and computes:
+        - precision: accuracy among predictions served at that threshold
+        - recall: fraction of all correct predictions that are served
+        - f1: harmonic mean of precision and recall
+        - coverage: fraction of total predictions that are served
+
+    Returns a dict with sweep data and the optimal threshold (max F1).
+    Raises ValueError when fewer than 5 feedback pairs are provided.
+    """
+    if len(feedback_pairs) < 5:
+        raise ValueError(
+            "Need at least 5 feedback pairs with confidence scores to "
+            "compute production threshold optimization."
+        )
+
+    n_total = len(feedback_pairs)
+
+    # Total correct predictions in the feedback set (denominator for recall)
+    n_correct_total = sum(
+        1
+        for p in feedback_pairs
+        if str(p.get("predicted_label", "")) == str(p.get("actual_label", ""))
+    )
+
+    thresholds = [round(t * 0.05, 2) for t in range(1, 20)]  # 0.05 … 0.95
+
+    sweep: list[dict] = []
+    for thr in thresholds:
+        served = [p for p in feedback_pairs if (p.get("confidence") or 0.0) >= thr]
+        n_served = len(served)
+        n_correct_served = sum(
+            1
+            for p in served
+            if str(p.get("predicted_label", "")) == str(p.get("actual_label", ""))
+        )
+
+        precision = n_correct_served / n_served if n_served > 0 else 0.0
+        recall = n_correct_served / n_correct_total if n_correct_total > 0 else 0.0
+        coverage = n_served / n_total
+        f1 = (
+            2 * precision * recall / (precision + recall)
+            if (precision + recall) > 0
+            else 0.0
+        )
+
+        sweep.append(
+            {
+                "threshold": thr,
+                "precision": round(precision, 4),
+                "recall": round(recall, 4),
+                "f1": round(f1, 4),
+                "coverage": round(coverage, 4),
+                "n_served": n_served,
+            }
+        )
+
+    best_point = max(sweep, key=lambda p: p["f1"])
+    current_point = next((p for p in sweep if abs(p["threshold"] - 0.50) < 0.001), sweep[9])
+
+    overall_accuracy = n_correct_total / n_total if n_total > 0 else 0.0
+
+    if best_point["f1"] > current_point["f1"] + 0.01:
+        verdict = "improved"
+        verdict_label = "Optimal ≠ Default"
+        if best_point["threshold"] > 0.50:
+            thr_advice = (
+                f"Raising the threshold from 50% to {int(best_point['threshold'] * 100)}% "
+                f"improves accuracy by filtering out low-confidence predictions "
+                f"(coverage: {int(best_point['coverage'] * 100)}% of predictions served)."
+            )
+        else:
+            thr_advice = (
+                f"Lowering the threshold to {int(best_point['threshold'] * 100)}% "
+                f"increases coverage without sacrificing accuracy "
+                f"({int(best_point['coverage'] * 100)}% of predictions served)."
+            )
+    else:
+        verdict = "same"
+        verdict_label = "Default Is Optimal"
+        thr_advice = "The default 50% threshold is already near-optimal for your production data."
+
+    summary = (
+        f"Based on {n_total} real-world outcomes "
+        f"(overall accuracy: {overall_accuracy:.0%}): "
+        f"at threshold {int(best_point['threshold'] * 100)}%, "
+        f"your model achieves F1={best_point['f1']:.2f} with "
+        f"{int(best_point['coverage'] * 100)}% coverage. "
+        f"{thr_advice}"
+    )
+
+    return {
+        "sweep": sweep,
+        "optimal_threshold": best_point["threshold"],
+        "optimal_f1": best_point["f1"],
+        "optimal_precision": best_point["precision"],
+        "optimal_recall": best_point["recall"],
+        "optimal_coverage": best_point["coverage"],
+        "current_threshold": 0.50,
+        "current_f1": current_point["f1"],
+        "current_precision": current_point["precision"],
+        "current_recall": current_point["recall"],
+        "current_coverage": current_point["coverage"],
+        "n_feedback": n_total,
+        "n_correct_total": n_correct_total,
+        "overall_accuracy": round(overall_accuracy, 4),
+        "verdict": verdict,
+        "verdict_label": verdict_label,
+        "summary": summary,
+    }

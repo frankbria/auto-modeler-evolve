@@ -7126,3 +7126,103 @@ def get_monitoring_digest(
     digest["algorithm"] = deployment.algorithm
     digest["target_col"] = deployment.target_column
     return digest
+
+
+# ---------------------------------------------------------------------------
+# Production feedback threshold optimizer
+# ---------------------------------------------------------------------------
+
+
+@router.get("/api/deploy/{deployment_id}/production-threshold-optimizer")
+def get_production_threshold_optimizer(
+    deployment_id: str,
+    session: Session = Depends(get_session),
+) -> dict:
+    """Find the optimal confidence threshold using real production feedback outcomes.
+
+    For classification deployments: sweeps confidence thresholds (0.05–0.95) using
+    actual outcomes recorded in FeedbackRecord. At each threshold, computes precision
+    (accuracy of served predictions), recall (fraction of correct predictions served),
+    and F1. Returns the threshold that maximizes production F1.
+
+    Returns ``verdict: "not_applicable"`` for regression deployments.
+    Returns ``verdict: "no_data"`` when fewer than 5 usable feedback pairs exist.
+    """
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment:
+        raise HTTPException(status_code=404, detail="Deployment not found.")
+
+    problem_type = deployment.problem_type or "classification"
+    if problem_type == "regression":
+        return {
+            "verdict": "not_applicable",
+            "summary": "Threshold optimization is only applicable to classification models.",
+            "deployment_id": deployment_id,
+        }
+
+    # Load feedback records with actual_label and linked prediction log
+    feedback_records = session.exec(
+        select(FeedbackRecord).where(
+            FeedbackRecord.deployment_id == deployment_id,
+            FeedbackRecord.actual_label.is_not(None),
+            FeedbackRecord.prediction_log_id.is_not(None),
+        )
+    ).all()
+
+    if len(feedback_records) < 5:
+        return {
+            "verdict": "no_data",
+            "n_feedback": len(feedback_records),
+            "summary": (
+                f"Only {len(feedback_records)} feedback records with labels found. "
+                "Need at least 5 to compute threshold optimization. "
+                "Record actual outcomes after making predictions to build up feedback data."
+            ),
+            "deployment_id": deployment_id,
+        }
+
+    # Load linked PredictionLogs for confidence scores
+    log_ids = [fb.prediction_log_id for fb in feedback_records]
+    logs = session.exec(
+        select(PredictionLog).where(PredictionLog.id.in_(log_ids))
+    ).all()
+    logs_map = {log.id: log for log in logs}
+
+    # Build (confidence, predicted_label, actual_label) triples
+    feedback_pairs: list[dict] = []
+    for fb in feedback_records:
+        log = logs_map.get(fb.prediction_log_id)  # type: ignore[arg-type]
+        if log is None or log.confidence is None:
+            continue
+        try:
+            predicted_label = str(json.loads(log.prediction))
+        except Exception:  # noqa: BLE001
+            predicted_label = str(log.prediction)
+        feedback_pairs.append(
+            {
+                "confidence": log.confidence,
+                "predicted_label": predicted_label,
+                "actual_label": str(fb.actual_label),
+            }
+        )
+
+    if len(feedback_pairs) < 5:
+        return {
+            "verdict": "no_data",
+            "n_feedback": len(feedback_pairs),
+            "summary": (
+                f"Only {len(feedback_pairs)} feedback records with confidence scores found. "
+                "Need at least 5 to compute threshold optimization. "
+                "Confidence scores require the prediction to have been made after deployment."
+            ),
+            "deployment_id": deployment_id,
+        }
+
+    from core.validator import compute_production_threshold_optimizer
+
+    result = compute_production_threshold_optimizer(feedback_pairs)
+    run = session.get(ModelRun, deployment.model_run_id)
+    result["deployment_id"] = deployment_id
+    result["algorithm"] = run.algorithm if run else "Unknown"
+    result["target_col"] = deployment.target_column
+    return result

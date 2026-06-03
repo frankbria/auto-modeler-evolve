@@ -195,6 +195,7 @@ interface AppState {
   attachPredictionValueTrendToLastMessage: (prediction_value_trend: import("./types").PredictionValueTrendResult) => void
   attachMonitoringDigestToLastMessage: (monitoring_digest: import("./types").MonitoringDigestResult) => void
   attachModelStatusReportToLastMessage: (model_status_report: import("./types").ModelStatusReportInfo) => void
+  attachProductionThresholdOptimizerToLastMessage: (production_threshold_optimizer: import("./types").ProductionThresholdOptimizerResult) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -1634,6 +1635,16 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, model_status_report }
+      }
+      return { messages }
+    }),
+
+  attachProductionThresholdOptimizerToLastMessage: (production_threshold_optimizer) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, production_threshold_optimizer }
       }
       return { messages }
     }),

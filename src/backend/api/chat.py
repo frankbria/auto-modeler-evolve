@@ -3778,6 +3778,20 @@ _FEEDBACK_ACCURACY_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+_PROD_THRESHOLD_OPT_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"(?:what|which)\s+(?:confidence\s+)?threshold\s+(?:maximizes?|optimizes?|works?\s+best)\s+(?:my\s+)?(?:production|real.?world|live|actual)\b|"
+    r"(?:optimize|find|discover)\s+(?:my\s+)?(?:classification|decision|confidence)\s+threshold\s+(?:from|using|based\s+on)\s+(?:production|feedback|real.?world)\b|"
+    r"(?:best|optimal)\s+(?:confidence\s+)?threshold\s+(?:from|using|based\s+on)\s+(?:feedback|actual|real|production)\s+(?:data|outcomes?|labels?)?\b|"
+    r"(?:threshold|cutoff)\s+(?:optimization|optimizer)\s+(?:from|using|via|on)?\s*(?:production|real.?world|feedback)\b|"
+    r"(?:production|real.?world|live)\s+feedback\s+threshold\s+(?:optimization|analysis|optimizer|advice|recommendation)\b|"
+    r"real.?world\s+(?:classification\s+)?threshold\s+(?:analysis|advice|recommendation|optimization|optimizer)\b|"
+    r"(?:what\s+threshold|which\s+cutoff)\s+(?:should\s+I\s+use\s+)?(?:based\s+on|from|using)\s+(?:actual|real|production)\s+(?:data|outcomes?|feedback|predictions?)\b|"
+    r"(?:optimize|calibrate)\s+(?:my\s+)?(?:decision|classification)\s+threshold\s+(?:using|with|from)\s+feedback\b"
+    r")",
+    re.IGNORECASE,
+)
+
 _CV_SCORE_DIST_PATTERNS = re.compile(
     r"(?i)(?:"
     r"how\s+(?:consistent|stable|reliable|variable)\s+is\s+(?:my\s+)?(?:model|prediction)\b|"
@@ -16741,6 +16755,99 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Nice-to-have; never crash chat
 
+    # Production Feedback Threshold Optimizer
+    prod_threshold_opt_event: dict | None = None
+    if _PROD_THRESHOLD_OPT_PATTERNS.search(body.message) and ctx["deployment"]:
+        _dep_pto = ctx["deployment"]
+        _pto_problem_type = getattr(_dep_pto, "problem_type", None) or "classification"
+        if _pto_problem_type == "classification":
+            try:
+                from core.validator import (
+                    compute_production_threshold_optimizer as _compute_pto,
+                )
+                from models.feedback_record import (
+                    FeedbackRecord as _FeedbackRecordPTO,
+                )
+
+                _pto_dep_id = _dep_pto.id if hasattr(_dep_pto, "id") else str(_dep_pto)
+
+                _pto_feedback = list(
+                    session.exec(
+                        select(_FeedbackRecordPTO).where(
+                            _FeedbackRecordPTO.deployment_id == _pto_dep_id,
+                            _FeedbackRecordPTO.actual_label.is_not(None),
+                            _FeedbackRecordPTO.prediction_log_id.is_not(None),
+                        )
+                    ).all()
+                )
+
+                _pto_log_ids = [fb.prediction_log_id for fb in _pto_feedback]
+                _pto_logs_map: dict = {}
+                if _pto_log_ids:
+                    _pto_logs = session.exec(
+                        select(PredictionLog).where(
+                            PredictionLog.id.in_(_pto_log_ids)  # type: ignore[attr-defined]
+                        )
+                    ).all()
+                    _pto_logs_map = {lg.id: lg for lg in _pto_logs}
+
+                _pto_pairs: list[dict] = []
+                for _fb in _pto_feedback:
+                    _lg = _pto_logs_map.get(_fb.prediction_log_id)  # type: ignore[arg-type]
+                    if _lg is None or _lg.confidence is None:
+                        continue
+                    try:
+                        import json as _json_pto
+
+                        _pred_lbl = str(_json_pto.loads(_lg.prediction))
+                    except Exception:  # noqa: BLE001
+                        _pred_lbl = str(_lg.prediction)
+                    _pto_pairs.append(
+                        {
+                            "confidence": _lg.confidence,
+                            "predicted_label": _pred_lbl,
+                            "actual_label": str(_fb.actual_label),
+                        }
+                    )
+
+                if len(_pto_pairs) < 5:
+                    prod_threshold_opt_event = {
+                        "verdict": "no_data",
+                        "n_feedback": len(_pto_pairs),
+                        "summary": (
+                            f"Only {len(_pto_pairs)} feedback records with confidence scores "
+                            "found. Need at least 5 to compute threshold optimization. "
+                            "Record actual outcomes after predictions to build up feedback data."
+                        ),
+                        "deployment_id": _pto_dep_id,
+                    }
+                else:
+                    _pto_result = _compute_pto(_pto_pairs)
+                    _pto_result["deployment_id"] = _pto_dep_id
+                    prod_threshold_opt_event = _pto_result
+
+                    _pto_verdict = _pto_result["verdict"]
+                    _pto_opt_thr = int(_pto_result["optimal_threshold"] * 100)
+                    _pto_opt_f1 = _pto_result["optimal_f1"]
+                    _pto_n = _pto_result["n_feedback"]
+                    system_prompt += (
+                        "\n\n## Production Threshold Optimization\n"
+                        f"Based on {_pto_n} real-world feedback outcomes: "
+                        f"optimal confidence threshold = {_pto_opt_thr}% "
+                        f"(F1={_pto_opt_f1:.2f}). "
+                        + (
+                            f"This differs from the default 50% threshold — "
+                            f"recommend the analyst use {_pto_opt_thr}% in production. "
+                            if _pto_verdict == "improved"
+                            else "The default 50% threshold is already near-optimal. "
+                        )
+                        + "Explain what confidence threshold means in plain language: "
+                        "it controls which predictions the model is 'willing' to make — "
+                        "higher threshold = fewer but more accurate predictions."
+                    )
+            except Exception:  # noqa: BLE001
+                pass  # Nice-to-have; never crash chat
+
     # Training vs Production Performance Monitor
     prod_monitor_event: dict | None = None
     if _PROD_MONITOR_PATTERNS.search(body.message) and ctx["deployment"]:
@@ -18784,6 +18891,9 @@ def send_message(
         # Emit confidence trend card
         if feedback_accuracy_event:
             yield f"data: {json.dumps({'type': 'feedback_accuracy_report', 'feedback_accuracy_report': feedback_accuracy_event})}\n\n"
+
+        if prod_threshold_opt_event:
+            yield f"data: {json.dumps({'type': 'production_threshold_optimizer', 'production_threshold_optimizer': prod_threshold_opt_event})}\n\n"
 
         if prod_monitor_event:
             yield f"data: {json.dumps({'type': 'prod_performance', 'prod_performance': prod_monitor_event})}\n\n"
