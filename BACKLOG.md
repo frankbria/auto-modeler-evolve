@@ -53,6 +53,27 @@ the time is better spent on real features.
 
 ---
 
+## Day 83 (20:00) — Done
+
+**Track C: Production Feedback Threshold Optimizer via Chat** — complete.
+
+Closes the "was my confidence threshold right for production?" analyst gap. Analysts can ask "what confidence threshold maximizes my production F1?", "optimize my classification threshold from feedback", "best threshold based on actual outcomes", or "real-world threshold analysis" (8 NL variants) and receive a `ProductionThresholdOptimizerCard` showing the optimal confidence threshold derived from real `FeedbackRecord` outcomes. Distinct from `ThresholdAnalysisCard` (training-time data only).
+
+**What was built:**
+- `compute_production_threshold_optimizer(feedback_pairs)` pure function in `core/validator.py`: sweeps 19 thresholds (0.05–0.95), precision/recall/F1/coverage at each. Returns optimal threshold (max F1), verdict (improved/same), comparison vs 0.5 default.
+- `GET /api/deploy/{id}/production-threshold-optimizer` REST endpoint in `api/deploy.py`: joins `FeedbackRecord` + `PredictionLog` for (confidence, predicted_label, actual_label) triples. `no_data` when < 5 pairs.
+- `_PROD_THRESHOLD_OPT_PATTERNS` (8 NL variants) + handler in `chat.py`: classification-only guard, feedback_pairs built inline.
+- `ProductionThresholdOptimizerCard` (amber=improved / emerald=same / gray=no_data): stat grid (F1/precision/recall/coverage), comparison row (overall accuracy / current F1 / F1 gain), Recharts sweep chart with dashed optimal reference line.
+
+36 backend + 17 frontend = **53 new tests**. Backend lint: clean. Frontend build + TypeScript: clean.
+
+**What's next:**
+- Track D: Prediction value comparison across deployment versions — "is my retrained model predicting higher values on production vs my previous deployment?"
+- Track B: Auto-trigger weekly monitoring digest via webhook — scheduled digest computation + webhook dispatch
+- Track C: Per-class threshold tuning — "optimize the threshold independently for each class in my multiclass model"
+
+---
+
 ## Day 83 (12:00) — Done
 
 **Track B: Deployment Monitoring Signal Digest via Chat** — complete.
