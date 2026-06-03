@@ -78,9 +78,9 @@ def test_embed_code_patterns_match(phrase: str) -> None:
 def test_embed_code_patterns_no_false_positives(phrase: str) -> None:
     from api.chat import _EMBED_CODE_PATTERNS
 
-    assert not _EMBED_CODE_PATTERNS.search(
-        phrase
-    ), f"Pattern falsely matched: {phrase!r}"
+    assert not _EMBED_CODE_PATTERNS.search(phrase), (
+        f"Pattern falsely matched: {phrase!r}"
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -364,7 +364,11 @@ def _build_summary(
         quality = (
             "excellent"
             if pct >= 85
-            else "good" if pct >= 70 else "moderate" if pct >= 55 else "limited"
+            else "good"
+            if pct >= 70
+            else "moderate"
+            if pct >= 55
+            else "limited"
         )
         base = f"Your model explains {pct}% of variation in the target — {quality} predictive power."
     else:
@@ -372,7 +376,11 @@ def _build_summary(
         quality = (
             "excellent"
             if pct >= 90
-            else "good" if pct >= 80 else "moderate" if pct >= 70 else "limited"
+            else "good"
+            if pct >= 80
+            else "moderate"
+            if pct >= 70
+            else "limited"
         )
         base = f"Your model achieves {pct}% accuracy — {quality} performance."
 
