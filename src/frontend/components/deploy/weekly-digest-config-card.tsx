@@ -6,11 +6,6 @@ interface Props {
   data: WeeklyDigestConfigResult
 }
 
-const DAY_LABELS = [
-  "Monday", "Tuesday", "Wednesday", "Thursday",
-  "Friday", "Saturday", "Sunday",
-]
-
 export default function WeeklyDigestConfigCard({ data }: Props) {
   const {
     action,

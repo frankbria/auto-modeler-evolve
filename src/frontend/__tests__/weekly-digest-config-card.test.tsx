@@ -2,6 +2,7 @@ import React from "react"
 import { render, screen } from "@testing-library/react"
 import WeeklyDigestConfigCard from "@/components/deploy/weekly-digest-config-card"
 import { WeeklyDigestConfigResult } from "@/lib/types"
+import { useAppStore } from "@/lib/store"
 
 const enabledData: WeeklyDigestConfigResult = {
   deployment_id: "dep-1",
@@ -128,7 +129,6 @@ describe("WeeklyDigestConfigCard", () => {
 
 describe("attachWeeklyDigestConfigToLastMessage store action", () => {
   it("attaches weekly_digest_config to the last assistant message", () => {
-    const { useAppStore } = require("@/lib/store")
     const store = useAppStore.getState()
 
     store.setMessages([
@@ -143,7 +143,6 @@ describe("attachWeeklyDigestConfigToLastMessage store action", () => {
   })
 
   it("does not attach to user messages", () => {
-    const { useAppStore } = require("@/lib/store")
     const store = useAppStore.getState()
 
     store.setMessages([
