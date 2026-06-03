@@ -14673,9 +14673,7 @@ def send_message(
             _wu_trend = (
                 "up"
                 if (_wu_change_pct or 0) > 5
-                else "down"
-                if (_wu_change_pct or 0) < -5
-                else "flat"
+                else "down" if (_wu_change_pct or 0) < -5 else "flat"
             )
 
             # Per-day breakdown for the current week (7 entries)
@@ -14694,7 +14692,9 @@ def send_message(
             _wu_feature_tally: dict[str, dict[str, int]] = {}
             _wu_recent_logs = [
                 lg for lg in _wu_logs if lg.created_at >= _wu_week_start
-            ][:100]  # cap to last 100 for performance
+            ][
+                :100
+            ]  # cap to last 100 for performance
             for _wl in _wu_recent_logs:
                 try:
                     _feat_dict: dict = json.loads(_wl.input_features or "{}")
@@ -16877,8 +16877,12 @@ def send_message(
 
             _dpdc_dep = ctx["deployment"]
             _dpdc_dep_id = _dpdc_dep.id if hasattr(_dpdc_dep, "id") else str(_dpdc_dep)
-            _dpdc_project_id = _dpdc_dep.project_id if hasattr(_dpdc_dep, "project_id") else None
-            _dpdc_problem_type = getattr(_dpdc_dep, "problem_type", None) or "regression"
+            _dpdc_project_id = (
+                _dpdc_dep.project_id if hasattr(_dpdc_dep, "project_id") else None
+            )
+            _dpdc_problem_type = (
+                getattr(_dpdc_dep, "problem_type", None) or "regression"
+            )
 
             # Find the most recent OTHER active deployment for this project
             _dpdc_baseline_dep: object | None = None
@@ -16967,7 +16971,11 @@ def send_message(
                     )
 
                     _dpdc_baseline_run = session.get(ModelRun, _dpdc_baseline_dep.model_run_id) if hasattr(_dpdc_baseline_dep, "model_run_id") else None  # type: ignore[attr-defined]
-                    _dpdc_current_run = session.get(ModelRun, _dpdc_dep.model_run_id) if hasattr(_dpdc_dep, "model_run_id") else None
+                    _dpdc_current_run = (
+                        session.get(ModelRun, _dpdc_dep.model_run_id)
+                        if hasattr(_dpdc_dep, "model_run_id")
+                        else None
+                    )
 
                     _dpdc_result["deployment_id"] = _dpdc_dep_id
                     _dpdc_result["baseline_deployment_id"] = _dpdc_baseline_id
@@ -16975,9 +16983,13 @@ def send_message(
                         _dpdc_current_run.algorithm if _dpdc_current_run else "Unknown"
                     )
                     _dpdc_result["baseline_algorithm"] = (
-                        _dpdc_baseline_run.algorithm if _dpdc_baseline_run else "Unknown"
+                        _dpdc_baseline_run.algorithm
+                        if _dpdc_baseline_run
+                        else "Unknown"
                     )
-                    _dpdc_result["target_col"] = getattr(_dpdc_dep, "target_column", "target")
+                    _dpdc_result["target_col"] = getattr(
+                        _dpdc_dep, "target_column", "target"
+                    )
 
                     deploy_pred_dist_compare_event = _dpdc_result
 
@@ -17714,9 +17726,7 @@ def send_message(
                         else (
                             "healthy"
                             if _n_failed == 0
-                            else "warning"
-                            if _n_failed / _n_total < 0.1
-                            else "critical"
+                            else "warning" if _n_failed / _n_total < 0.1 else "critical"
                         )
                     )
                     _wh_total_events += _n_total
@@ -17775,9 +17785,7 @@ def send_message(
                     else (
                         "warning"
                         if any(d["status"] == "warning" for d in _wh_dep_summaries)
-                        else "no_events"
-                        if _wh_total_events == 0
-                        else "healthy"
+                        else "no_events" if _wh_total_events == 0 else "healthy"
                     )
                 )
             )

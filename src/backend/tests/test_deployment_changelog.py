@@ -295,9 +295,9 @@ def test_changelog_deployed_entry(deployed):
     resp = client.get(f"/api/deploy/{dep_id}/changelog")
     data = resp.json()
     entries = data["entries"]
-    assert any(e["change_type"] == "deployed" for e in entries), (
-        f"Expected 'deployed' entry in changelog; got: {[e['change_type'] for e in entries]}"
-    )
+    assert any(
+        e["change_type"] == "deployed" for e in entries
+    ), f"Expected 'deployed' entry in changelog; got: {[e['change_type'] for e in entries]}"
 
 
 def test_changelog_entry_required_fields(deployed):
@@ -344,9 +344,9 @@ def test_changelog_undeploy_entry(deployed):
 
         entries = session.exec(select(_DCL).where(_DCL.deployment_id == dep_id)).all()
     change_types = [e.change_type for e in entries]
-    assert "undeployed" in change_types, (
-        f"Expected undeployed entry; got: {change_types}"
-    )
+    assert (
+        "undeployed" in change_types
+    ), f"Expected undeployed entry; got: {change_types}"
 
 
 def test_changelog_entries_newest_first(deployed):
@@ -446,9 +446,9 @@ def test_chat_emits_deployment_changelog_event(deployed):
 
     events = _chat_events(client, proj_id, "show my deployment changelog")
     event_types = [e.get("type") for e in events]
-    assert "deployment_changelog" in event_types, (
-        f"Expected deployment_changelog event; got: {event_types}"
-    )
+    assert (
+        "deployment_changelog" in event_types
+    ), f"Expected deployment_changelog event; got: {event_types}"
 
 
 def test_chat_changelog_event_fields(deployed):

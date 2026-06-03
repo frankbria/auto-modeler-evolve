@@ -73,12 +73,18 @@ def client(tmp_path):
 
 def _reg_logs(values: list[float]) -> list[dict]:
     """Build regression prediction log dicts."""
-    return [{"prediction": str(v), "prediction_numeric": v, "confidence": None} for v in values]
+    return [
+        {"prediction": str(v), "prediction_numeric": v, "confidence": None}
+        for v in values
+    ]
 
 
 def _cls_logs(labels: list[str]) -> list[dict]:
     """Build classification prediction log dicts."""
-    return [{"prediction": json.dumps(lbl), "prediction_numeric": None, "confidence": 0.8} for lbl in labels]
+    return [
+        {"prediction": json.dumps(lbl), "prediction_numeric": None, "confidence": 0.8}
+        for lbl in labels
+    ]
 
 
 class TestComputeDeploymentPredictionComparison:
@@ -86,11 +92,23 @@ class TestComputeDeploymentPredictionComparison:
 
     def setup_method(self):
         from core.analyzer import compute_deployment_prediction_comparison
+
         self.fn = compute_deployment_prediction_comparison
 
     def test_regression_required_keys(self):
         result = self.fn(_reg_logs([1.0] * 10), _reg_logs([2.0] * 10), "regression")
-        for key in ("verdict", "verdict_label", "problem_type", "n_baseline", "n_current", "summary", "mean_shift", "mean_shift_pct", "baseline_stats", "current_stats"):
+        for key in (
+            "verdict",
+            "verdict_label",
+            "problem_type",
+            "n_baseline",
+            "n_current",
+            "summary",
+            "mean_shift",
+            "mean_shift_pct",
+            "baseline_stats",
+            "current_stats",
+        ):
             assert key in result, f"Missing key: {key}"
 
     def test_regression_n_counts(self):
@@ -160,12 +178,25 @@ class TestComputeDeploymentPredictionComparison:
             self.fn(_reg_logs([1.0] * 10), _reg_logs([2.0] * 2), "regression")
 
     def test_classification_required_keys(self):
-        result = self.fn(_cls_logs(["yes"] * 10), _cls_logs(["yes"] * 10), "classification")
-        for key in ("verdict", "verdict_label", "problem_type", "n_baseline", "n_current", "summary", "class_shifts", "n_classes"):
+        result = self.fn(
+            _cls_logs(["yes"] * 10), _cls_logs(["yes"] * 10), "classification"
+        )
+        for key in (
+            "verdict",
+            "verdict_label",
+            "problem_type",
+            "n_baseline",
+            "n_current",
+            "summary",
+            "class_shifts",
+            "n_classes",
+        ):
             assert key in result, f"Missing key: {key}"
 
     def test_classification_class_shifts_structure(self):
-        result = self.fn(_cls_logs(["yes"] * 10), _cls_logs(["no"] * 10), "classification")
+        result = self.fn(
+            _cls_logs(["yes"] * 10), _cls_logs(["no"] * 10), "classification"
+        )
         for shift in result["class_shifts"]:
             for key in ("class_label", "baseline_pct", "current_pct", "shift_pct"):
                 assert key in shift
@@ -183,7 +214,11 @@ class TestComputeDeploymentPredictionComparison:
         assert result["verdict"] == "similar"
 
     def test_classification_n_classes_correct(self):
-        result = self.fn(_cls_logs(["a", "b", "c"] * 4), _cls_logs(["a", "b", "c"] * 4), "classification")
+        result = self.fn(
+            _cls_logs(["a", "b", "c"] * 4),
+            _cls_logs(["a", "b", "c"] * 4),
+            "classification",
+        )
         assert result["n_classes"] == 3
 
     def test_classification_shifts_sorted_by_absolute(self):
@@ -211,6 +246,7 @@ class TestComputeDeploymentPredictionComparison:
 @pytest.fixture
 def pattern():
     from api.chat import _DEPLOY_PRED_DIST_COMPARE_PATTERNS
+
     return _DEPLOY_PRED_DIST_COMPARE_PATTERNS
 
 
@@ -237,7 +273,9 @@ class TestDeployPredDistComparePatterns:
         assert pattern.search("deployment version prediction comparison")
 
     def test_production_prediction_distribution_across_versions(self, pattern):
-        assert pattern.search("production prediction distribution comparison across versions")
+        assert pattern.search(
+            "production prediction distribution comparison across versions"
+        )
 
     def test_false_positive_general_compare(self, pattern):
         # "compare my features" should NOT match

@@ -6532,10 +6532,14 @@ def compute_deployment_prediction_comparison(
 
         if mean_shift_pct > 5:
             verdict = "current_higher"
-            verdict_label = f"New deployment predicts higher values (+{mean_shift_pct:.1f}%)"
+            verdict_label = (
+                f"New deployment predicts higher values (+{mean_shift_pct:.1f}%)"
+            )
         elif mean_shift_pct < -5:
             verdict = "current_lower"
-            verdict_label = f"New deployment predicts lower values ({mean_shift_pct:.1f}%)"
+            verdict_label = (
+                f"New deployment predicts lower values ({mean_shift_pct:.1f}%)"
+            )
         else:
             verdict = "similar"
             verdict_label = "Similar prediction levels across deployments"
