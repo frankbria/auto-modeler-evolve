@@ -53,6 +53,19 @@ the time is better spent on real features.
 
 ---
 
+## Day 85 (12:00) — Done
+
+**Track D: Deployment Throughput Assessment** — complete.
+
+Closes the "can my deployment handle my batch workload?" analyst gap. Uses actual measured `response_ms` from PredictionLogs to derive p50/p95/p99 latency, max RPS, and time-to-process N records. Analysts say "how long to process 1000 predictions?", "throughput assessment", "how fast can my deployment process?", or 5 other NL variants and receive a `DeploymentThroughputCard` with latency stats, serial duration estimate, and verdict (instant/fast/moderate/slow/very_slow). Distinct from `cost_estimate` (quota/rate-limit-based) and `quota_runway` (quota burn rate).
+
+**What's next:**
+- Track C: Per-class threshold tuning — "optimize the threshold for each class in my multiclass model"
+- Track B: Comparative Model Improvement Plan — "create a ranked improvement roadmap for all my models"
+- Track D: Input Feature Drift Ranking — "which input features changed most in distribution since I deployed?"
+
+---
+
 ## Day 85 (04:00) — Done
 
 **Track D: Deployment Comparison Scorecard** — complete.
