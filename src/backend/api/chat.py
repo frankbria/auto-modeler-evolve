@@ -4641,6 +4641,7 @@ def _extract_throughput_n(message: str) -> int:
     except ValueError:
         return 1000
 
+
 # Matches "Key = Value", "Key: Value", "Key is Value" patterns in a message
 _KV_PAIR_RE = re.compile(
     r"\b([A-Za-z_][\w\s]{0,30}?)\s*(?:=|:|\s+is\s+|\s+equals?\s+|\s+of\s+)\s*"

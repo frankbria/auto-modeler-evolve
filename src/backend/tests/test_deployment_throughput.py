@@ -214,7 +214,9 @@ def test_throughput_summary_nonempty():
 
 def test_throughput_endpoint_404():
     client = TestClient(app)
-    resp = client.get("/api/deploy/00000000-0000-0000-0000-000000000000/throughput-assessment")
+    resp = client.get(
+        "/api/deploy/00000000-0000-0000-0000-000000000000/throughput-assessment"
+    )
     assert resp.status_code == 404
 
 

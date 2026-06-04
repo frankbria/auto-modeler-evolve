@@ -6818,9 +6818,7 @@ def compute_deployment_throughput(log_dicts: list[dict], target_n: int = 1000) -
         ``{"verdict": "no_data", ...}`` with null latency fields.
     """
     valid_ms = sorted(
-        float(d["response_ms"])
-        for d in log_dicts
-        if d.get("response_ms") is not None
+        float(d["response_ms"]) for d in log_dicts if d.get("response_ms") is not None
     )
 
     if len(valid_ms) < 5:
@@ -6863,7 +6861,9 @@ def compute_deployment_throughput(log_dicts: list[dict], target_n: int = 1000) -
     else:
         verdict = "very_slow"
 
-    serial_duration = _format_duration(serial_seconds) if serial_seconds is not None else None
+    serial_duration = (
+        _format_duration(serial_seconds) if serial_seconds is not None else None
+    )
 
     rps_str = f"{max_rps:.1f}" if max_rps is not None else "unknown"
     dur_str = serial_duration or "unknown"
@@ -6883,7 +6883,9 @@ def compute_deployment_throughput(log_dicts: list[dict], target_n: int = 1000) -
         "p99_ms": round(p99, 1),
         "mean_ms": round(mean_ms, 1),
         "max_rps": max_rps,
-        "serial_seconds": round(serial_seconds, 2) if serial_seconds is not None else None,
+        "serial_seconds": round(serial_seconds, 2)
+        if serial_seconds is not None
+        else None,
         "serial_duration": serial_duration,
         "summary": summary,
     }

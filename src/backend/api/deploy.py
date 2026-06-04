@@ -7583,7 +7583,9 @@ def get_deployment_throughput(
         .limit(200)
     ).all()
 
-    log_dicts = [{"response_ms": r.response_ms} for r in logs if r.response_ms is not None]
+    log_dicts = [
+        {"response_ms": r.response_ms} for r in logs if r.response_ms is not None
+    ]
     target_n = max(1, n)
     result = compute_deployment_throughput(log_dicts, target_n=target_n)
     result["deployment_id"] = deployment_id
