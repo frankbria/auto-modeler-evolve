@@ -559,6 +559,7 @@ export interface ChatMessage {
   deploy_pred_dist_compare?: DeploymentPredictionComparisonResult
   weekly_digest_config?: WeeklyDigestConfigResult
   promotion_readiness?: PromotionReadinessResult
+  deployment_scorecard?: DeploymentScorecardResult
 }
 
 export interface RollbackVersionEntry {
@@ -4476,5 +4477,32 @@ export interface PromotionReadinessResult {
   primary_metric_name: string
   n_rows: number
   n_features: number
+  summary: string
+}
+
+export interface DeploymentScorecardEntry {
+  rank: number
+  deployment_id: string
+  algorithm: string
+  algorithm_plain: string
+  target_column: string
+  environment: string
+  request_count: number
+  feedback_accuracy: number | null
+  p95_ms: number | null
+  age_days: number
+  deployed_at: string | null
+  dashboard_url: string | null
+  composite_score: number
+  usage_score: number
+  sla_score: number | null
+  accuracy_score: number | null
+  freshness_score: number
+}
+
+export interface DeploymentScorecardResult {
+  total: number
+  entries: DeploymentScorecardEntry[]
+  winner_id: string | null
   summary: string
 }

@@ -6641,3 +6641,146 @@ def compute_deployment_prediction_comparison(
             "n_current": n_current,
             "summary": summary,
         }
+
+
+# ---------------------------------------------------------------------------
+# Deployment Comparison Scorecard
+# ---------------------------------------------------------------------------
+
+
+def _usage_score(request_count: int) -> int:
+    """0-100 score based on log-scale prediction volume."""
+    if request_count <= 0:
+        return 0
+    import math
+
+    # 1 pred → 20, 10 → 40, 100 → 60, 1000 → 80, 10000+ → 100
+    log_val = math.log10(max(request_count, 1))
+    return min(100, int(log_val * 25))
+
+
+def _sla_score(p95_ms: float | None) -> int | None:
+    """0-100 score from p95 latency; None when no SLA data available."""
+    if p95_ms is None:
+        return None
+    if p95_ms <= 100:
+        return 100
+    if p95_ms >= 2000:
+        return 0
+    # Linear decay 100ms → 2000ms
+    return max(0, int(100 - (p95_ms - 100) * 100 / 1900))
+
+
+def _freshness_score(age_days: int) -> int:
+    """0-100 score based on deployment age."""
+    if age_days < 7:
+        return 100
+    if age_days < 30:
+        return 80
+    if age_days < 60:
+        return 60
+    if age_days < 90:
+        return 40
+    if age_days < 180:
+        return 20
+    return 0
+
+
+def compute_deployment_scorecard(entries: list[dict]) -> dict:
+    """Rank project deployments by composite production performance score.
+
+    Pure function — no database or filesystem access.
+
+    Each entry must contain:
+        deployment_id: str
+        algorithm_plain: str
+        target_column: str
+        environment: str
+        request_count: int
+        feedback_accuracy: float | None   (0–1 scale from FeedbackRecord)
+        p95_ms: float | None              (SLA p95 latency in ms)
+        age_days: int
+
+    Returns a dict with:
+        total: int
+        entries: list of scored + ranked entry dicts (score-sorted descending)
+        winner_id: str | None
+        summary: str
+    """
+    if not entries:
+        return {
+            "total": 0,
+            "entries": [],
+            "winner_id": None,
+            "summary": "No active deployments found for this project.",
+        }
+
+    scored: list[dict] = []
+    for entry in entries:
+        usc = _usage_score(entry.get("request_count", 0))
+        ssc = _sla_score(entry.get("p95_ms"))
+        fsc: int | None = None
+        raw_acc = entry.get("feedback_accuracy")
+        if raw_acc is not None:
+            fsc = int(float(raw_acc) * 100)
+        fresh = _freshness_score(entry.get("age_days", 0))
+
+        # Weighted composite — availability-aware
+        weights: list[tuple[int, float]] = [(usc, 0.40), (fresh, 0.20)]
+        if fsc is not None:
+            weights.append((fsc, 0.30))
+        if ssc is not None:
+            weights.append((ssc, 0.10))
+
+        total_w = sum(w for _, w in weights)
+        composite = int(sum(v * w for v, w in weights) / total_w) if total_w > 0 else 0
+
+        scored.append(
+            {
+                **entry,
+                "usage_score": usc,
+                "sla_score": ssc,
+                "accuracy_score": fsc,
+                "freshness_score": fresh,
+                "composite_score": composite,
+            }
+        )
+
+    # Sort by composite score descending, then by request_count as tiebreaker
+    scored.sort(key=lambda e: (e["composite_score"], e.get("request_count", 0)), reverse=True)
+
+    for i, e in enumerate(scored):
+        e["rank"] = i + 1
+
+    winner = scored[0] if scored else None
+    winner_id = winner["deployment_id"] if winner else None
+
+    # Build summary
+    total = len(scored)
+    if total == 1:
+        summary = (
+            f"1 deployment: {winner['algorithm_plain']} → {winner['target_column']} "
+            f"(score {winner['composite_score']}/100, "
+            f"{winner.get('request_count', 0)} predictions)."
+        )
+    else:
+        runner = scored[1] if len(scored) > 1 else None
+        gap = winner["composite_score"] - runner["composite_score"] if runner else 0
+        summary = (
+            f"{total} deployments ranked. Top performer: "
+            f"{winner['algorithm_plain']} → {winner['target_column']} "
+            f"(score {winner['composite_score']}/100). "
+        )
+        if gap >= 20:
+            summary += f"Leads by {gap} points."
+        elif gap >= 5:
+            summary += f"Narrow lead of {gap} points."
+        else:
+            summary += "Very close competition."
+
+    return {
+        "total": total,
+        "entries": scored,
+        "winner_id": winner_id,
+        "summary": summary,
+    }

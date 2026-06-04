@@ -39,6 +39,7 @@ from core.analyzer import (
     compute_deployment_health_item,
     compute_deployment_monitoring_digest,
     compute_deployment_prediction_comparison,
+    compute_deployment_scorecard,
     compute_deployments_overview,
     compute_prediction_audit,
     compute_prediction_output_anomalies,
@@ -7464,3 +7465,91 @@ def delete_weekly_digest_config(
         "action": "deleted",
         "summary": "Weekly digest schedule removed.",
     }
+
+
+@router.get("/api/projects/{project_id}/deployment-scorecard")
+def get_deployment_scorecard(
+    project_id: str,
+    session: Session = Depends(get_session),
+):
+    """Return all active deployments for a project ranked by composite production score.
+
+    Composite score (0-100) is derived from:
+    - Usage (request volume, log-scaled) — weight 40%
+    - Freshness (model age) — weight 20%
+    - Feedback accuracy (real-world performance, when available) — weight 30%
+    - SLA p95 latency (when available) — weight 10%
+    """
+    now = datetime.now(UTC).replace(tzinfo=None)
+
+    active_deps = list(
+        session.exec(
+            select(Deployment).where(
+                Deployment.project_id == project_id,
+                Deployment.is_active == True,  # noqa: E712
+            )
+        ).all()
+    )
+
+    if not active_deps:
+        return compute_deployment_scorecard([])
+
+    from core.analyzer import _ALGO_SHORT  # noqa: PLC0415
+
+    entries: list[dict] = []
+    for dep in active_deps:
+        # Compute age
+        try:
+            dep_created = dep.created_at.replace(tzinfo=None) if dep.created_at else now
+            age_days = (now - dep_created).days
+        except Exception:  # noqa: BLE001
+            age_days = 0
+
+        # Feedback accuracy
+        feedback_accuracy: float | None = None
+        fb_rows = list(
+            session.exec(
+                select(FeedbackRecord).where(
+                    FeedbackRecord.deployment_id == dep.id,
+                    FeedbackRecord.is_correct != None,  # noqa: E711
+                )
+            ).all()
+        )
+        if fb_rows:
+            correct = sum(1 for r in fb_rows if r.is_correct)
+            feedback_accuracy = correct / len(fb_rows)
+
+        # SLA p95 latency
+        p95_ms: float | None = None
+        latency_rows = list(
+            session.exec(
+                select(PredictionLog).where(
+                    PredictionLog.deployment_id == dep.id,
+                    PredictionLog.response_ms != None,  # noqa: E711
+                )
+            ).all()
+        )
+        if len(latency_rows) >= 5:
+            sorted_ms = sorted(r.response_ms for r in latency_rows if r.response_ms is not None)
+            idx = int(len(sorted_ms) * 0.95)
+            p95_ms = sorted_ms[min(idx, len(sorted_ms) - 1)]
+
+        algo_plain = _ALGO_SHORT.get(dep.algorithm or "", dep.algorithm or "Model")
+
+        entries.append(
+            {
+                "deployment_id": dep.id,
+                "algorithm": dep.algorithm,
+                "algorithm_plain": algo_plain,
+                "target_column": dep.target_column or "target",
+                "environment": dep.environment or "staging",
+                "request_count": dep.request_count or 0,
+                "feedback_accuracy": feedback_accuracy,
+                "p95_ms": p95_ms,
+                "age_days": age_days,
+                "deployed_at": dep.created_at.isoformat() if dep.created_at else None,
+                "dashboard_url": dep.dashboard_url,
+            }
+        )
+
+    return compute_deployment_scorecard(entries)

@@ -4589,6 +4589,23 @@ _PROMOTION_READINESS_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# Deployment Comparison Scorecard — rank all project deployments by production performance.
+# Distinct from _DEPLOYMENTS_OVERVIEW_PATTERNS (global all-deployment health dashboard)
+# and _HEALTH_SUMMARY_PATTERNS (single-project health alerts).
+_DEPLOY_SCORECARD_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"rank(?:\s+(?:all\s+)?(?:my\s+)?)?deployments?(?:\s+(?:by\s+)?(?:performance|score|production))?\b|"
+    r"deployment\s+(?:comparison\s+)?scorecard\b|"
+    r"(?:which|what)\s+deployment\s+(?:performs?\s+best|is\s+best|is\s+top|is\s+(?:the\s+)?winner)\b|"
+    r"compare\s+(?:my\s+)?deployments?\s+(?:by\s+)?performance\b|"
+    r"deployment\s+leaderboard\b|"
+    r"best[\s-]performing\s+deployment\b|"
+    r"(?:how\s+do|how\s+are)\s+(?:my\s+)?deployments?\s+(?:compare|performing)\b|"
+    r"production\s+performance\s+rank(?:ing)?\b"
+    r")",
+    re.IGNORECASE,
+)
+
 # Matches "Key = Value", "Key: Value", "Key is Value" patterns in a message
 _KV_PAIR_RE = re.compile(
     r"\b([A-Za-z_][\w\s]{0,30}?)\s*(?:=|:|\s+is\s+|\s+equals?\s+|\s+of\s+)\s*"
@@ -5568,6 +5585,100 @@ def send_message(
                 )
             except Exception:  # noqa: BLE001
                 pass  # Nice-to-have; never crash chat
+
+    # Deployment Comparison Scorecard — "rank my deployments by performance"
+    # Scoped to current project. Distinct from _DEPLOYMENTS_OVERVIEW_PATTERNS (global
+    # all-deployment health) and _HEALTH_SUMMARY_PATTERNS (project-level alerts).
+    deploy_scorecard_event: dict | None = None
+    if _DEPLOY_SCORECARD_PATTERNS.search(body.message):
+        try:
+            from core.analyzer import (
+                _ALGO_SHORT as _algo_short_map,
+                compute_deployment_scorecard as _cds,
+            )
+            from models.feedback_record import FeedbackRecord as _FeedbackRecord
+
+            _now_sc = datetime.now(UTC).replace(tzinfo=None)
+            _sc_deps = list(
+                session.exec(
+                    select(Deployment).where(
+                        Deployment.project_id == body.project_id,
+                        Deployment.is_active == True,  # noqa: E712
+                    )
+                ).all()
+            )
+            _sc_entries: list[dict] = []
+            for _sc_dep in _sc_deps:
+                try:
+                    _sc_age = (
+                        _now_sc - _sc_dep.created_at.replace(tzinfo=None)
+                    ).days if _sc_dep.created_at else 0
+                except Exception:  # noqa: BLE001
+                    _sc_age = 0
+
+                # Feedback accuracy
+                _sc_fb: float | None = None
+                _sc_fb_rows = list(
+                    session.exec(
+                        select(_FeedbackRecord).where(
+                            _FeedbackRecord.deployment_id == _sc_dep.id,
+                            _FeedbackRecord.is_correct != None,  # noqa: E711
+                        )
+                    ).all()
+                )
+                if _sc_fb_rows:
+                    _sc_fb = sum(1 for r in _sc_fb_rows if r.is_correct) / len(_sc_fb_rows)
+
+                # SLA p95
+                _sc_p95: float | None = None
+                _sc_ms_rows = list(
+                    session.exec(
+                        select(PredictionLog).where(
+                            PredictionLog.deployment_id == _sc_dep.id,
+                            PredictionLog.response_ms != None,  # noqa: E711
+                        )
+                    ).all()
+                )
+                if len(_sc_ms_rows) >= 5:
+                    _sc_sorted = sorted(
+                        r.response_ms for r in _sc_ms_rows if r.response_ms is not None
+                    )
+                    _sc_idx = int(len(_sc_sorted) * 0.95)
+                    _sc_p95 = _sc_sorted[min(_sc_idx, len(_sc_sorted) - 1)]
+
+                _sc_entries.append(
+                    {
+                        "deployment_id": _sc_dep.id,
+                        "algorithm": _sc_dep.algorithm,
+                        "algorithm_plain": _algo_short_map.get(
+                            _sc_dep.algorithm or "", _sc_dep.algorithm or "Model"
+                        ),
+                        "target_column": _sc_dep.target_column or "target",
+                        "environment": _sc_dep.environment or "staging",
+                        "request_count": _sc_dep.request_count or 0,
+                        "feedback_accuracy": _sc_fb,
+                        "p95_ms": _sc_p95,
+                        "age_days": _sc_age,
+                        "deployed_at": (
+                            _sc_dep.created_at.isoformat() if _sc_dep.created_at else None
+                        ),
+                        "dashboard_url": _sc_dep.dashboard_url,
+                    }
+                )
+
+            deploy_scorecard_event = _cds(_sc_entries)
+            _sc_sum = deploy_scorecard_event["summary"]
+            _sc_total = deploy_scorecard_event["total"]
+            system_prompt += (
+                f"\n\n## Deployment Comparison Scorecard ({_sc_total} deployments)\n"
+                f"{_sc_sum}\n"
+                "Present the ranked list to the analyst conversationally. "
+                "If one deployment clearly leads, say so. "
+                "If they're close, note that. "
+                "If there's only one deployment, explain the score signals instead."
+            )
+        except Exception:  # noqa: BLE001
+            pass  # Nice-to-have; never crash chat
 
     # Narrative model comparison summary — "compare my models", no criteria required
     # Fires before _MODEL_SELECT_PATTERNS so the simpler intent is caught first
@@ -18852,6 +18963,10 @@ def send_message(
         # Emit promotion readiness checklist if computed
         if promotion_readiness_event:
             yield f"data: {json.dumps({'type': 'promotion_readiness', 'promotion_readiness': promotion_readiness_event})}\n\n"
+
+        # Emit deployment comparison scorecard if computed
+        if deploy_scorecard_event:
+            yield f"data: {json.dumps({'type': 'deployment_scorecard', 'deployment_scorecard': deploy_scorecard_event})}\n\n"
 
         # Emit model comparison summary if computed
         if model_comparison_summary_event:

@@ -123,6 +123,7 @@ import { DeploymentVersionComparisonCard } from "@/components/deploy/deployment-
 import { DeploymentPredictionDistributionCard } from "@/components/deploy/deployment-prediction-distribution-card"
 import WeeklyDigestConfigCard from "@/components/deploy/weekly-digest-config-card"
 import { PromotionReadinessCard } from "@/components/models/promotion-readiness-card"
+import { DeploymentScorecardCard } from "@/components/deploy/deployment-scorecard-card"
 import { EnsembleRecommendationCard } from "@/components/models/ensemble-recommendation-card"
 import { TuningChatCard } from "@/components/models/tuning-chat-card"
 import { CvScoreDistributionCard } from "@/components/models/cv-score-distribution-card"
@@ -417,6 +418,7 @@ export default function ProjectWorkspace() {
     attachDeployPredDistCompareToLastMessage,
     attachWeeklyDigestConfigToLastMessage,
     attachPromotionReadinessToLastMessage,
+    attachDeploymentScorecardToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -833,6 +835,8 @@ export default function ProjectWorkspace() {
                 attachWeeklyDigestConfigToLastMessage(json.weekly_digest_config as import("@/lib/types").WeeklyDigestConfigResult)
               } else if (json.type === "promotion_readiness" && json.promotion_readiness) {
                 attachPromotionReadinessToLastMessage(json.promotion_readiness as import("@/lib/types").PromotionReadinessResult)
+              } else if (json.type === "deployment_scorecard" && json.deployment_scorecard) {
+                attachDeploymentScorecardToLastMessage(json.deployment_scorecard as import("@/lib/types").DeploymentScorecardResult)
               } else if (json.type === "onboarding_guide" && json.onboarding_guide) {
                 attachOnboardingGuideToLastMessage(json.onboarding_guide as import("@/lib/types").OnboardingGuideResult)
               } else if (json.type === "version_history" && json.version_history) {
@@ -1035,6 +1039,8 @@ export default function ProjectWorkspace() {
                 attachWeeklyDigestConfigToLastMessage(json.weekly_digest_config as import("@/lib/types").WeeklyDigestConfigResult)
               } else if (json.type === "promotion_readiness" && json.promotion_readiness) {
                 attachPromotionReadinessToLastMessage(json.promotion_readiness as import("@/lib/types").PromotionReadinessResult)
+              } else if (json.type === "deployment_scorecard" && json.deployment_scorecard) {
+                attachDeploymentScorecardToLastMessage(json.deployment_scorecard as import("@/lib/types").DeploymentScorecardResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -1946,6 +1952,9 @@ export default function ProjectWorkspace() {
                         result={msg.promotion_readiness}
                         onActionClick={handleSendMessage}
                       />
+                    )}
+                    {msg.deployment_scorecard && (
+                      <DeploymentScorecardCard result={msg.deployment_scorecard} />
                     )}
                   </div>
                 </div>
