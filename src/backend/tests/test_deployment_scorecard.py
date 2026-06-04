@@ -21,7 +21,6 @@ from core.analyzer import (
     compute_deployment_scorecard,
 )
 from main import app
-from db import engine
 from models.deployment import Deployment
 
 
@@ -269,6 +268,8 @@ def test_scorecard_empty_project(client):
 
 
 def test_scorecard_returns_active_deployments(client):
+    from db import engine
+
     project_id = str(uuid.uuid4())
     dep_id = str(uuid.uuid4())
     with Session(engine) as s:
@@ -297,6 +298,8 @@ def test_scorecard_returns_active_deployments(client):
 
 
 def test_scorecard_inactive_not_included(client):
+    from db import engine
+
     project_id = str(uuid.uuid4())
     dep_id = str(uuid.uuid4())
     with Session(engine) as s:
