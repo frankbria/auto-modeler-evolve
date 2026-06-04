@@ -7,6 +7,6 @@
   "profile_cached_ms": 1.2,
   "feature_suggestions_ms": 4.6,
   "recommendations_ms": 1.8,
-  "backend_tests": 5620,
-  "frontend_tests": 3199
+  "backend_tests": 5662,
+  "frontend_tests": 3225
 }
