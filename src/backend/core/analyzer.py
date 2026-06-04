@@ -6747,7 +6747,9 @@ def compute_deployment_scorecard(entries: list[dict]) -> dict:
         )
 
     # Sort by composite score descending, then by request_count as tiebreaker
-    scored.sort(key=lambda e: (e["composite_score"], e.get("request_count", 0)), reverse=True)
+    scored.sort(
+        key=lambda e: (e["composite_score"], e.get("request_count", 0)), reverse=True
+    )
 
     for i, e in enumerate(scored):
         e["rank"] = i + 1

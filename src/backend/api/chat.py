@@ -5611,8 +5611,10 @@ def send_message(
             for _sc_dep in _sc_deps:
                 try:
                     _sc_age = (
-                        _now_sc - _sc_dep.created_at.replace(tzinfo=None)
-                    ).days if _sc_dep.created_at else 0
+                        (_now_sc - _sc_dep.created_at.replace(tzinfo=None)).days
+                        if _sc_dep.created_at
+                        else 0
+                    )
                 except Exception:  # noqa: BLE001
                     _sc_age = 0
 
@@ -5627,7 +5629,9 @@ def send_message(
                     ).all()
                 )
                 if _sc_fb_rows:
-                    _sc_fb = sum(1 for r in _sc_fb_rows if r.is_correct) / len(_sc_fb_rows)
+                    _sc_fb = sum(1 for r in _sc_fb_rows if r.is_correct) / len(
+                        _sc_fb_rows
+                    )
 
                 # SLA p95
                 _sc_p95: float | None = None
@@ -5660,7 +5664,9 @@ def send_message(
                         "p95_ms": _sc_p95,
                         "age_days": _sc_age,
                         "deployed_at": (
-                            _sc_dep.created_at.isoformat() if _sc_dep.created_at else None
+                            _sc_dep.created_at.isoformat()
+                            if _sc_dep.created_at
+                            else None
                         ),
                         "dashboard_url": _sc_dep.dashboard_url,
                     }

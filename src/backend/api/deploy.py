@@ -7530,7 +7530,9 @@ def get_deployment_scorecard(
             ).all()
         )
         if len(latency_rows) >= 5:
-            sorted_ms = sorted(r.response_ms for r in latency_rows if r.response_ms is not None)
+            sorted_ms = sorted(
+                r.response_ms for r in latency_rows if r.response_ms is not None
+            )
             idx = int(len(sorted_ms) * 0.95)
             p95_ms = sorted_ms[min(idx, len(sorted_ms) - 1)]
 
