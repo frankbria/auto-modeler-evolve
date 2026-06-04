@@ -53,6 +53,19 @@ the time is better spent on real features.
 
 ---
 
+## Day 85 (04:00) — Done
+
+**Track D: Deployment Comparison Scorecard** — complete.
+
+Closes the "I have multiple deployments — which one is performing best in production?" analyst gap. Ranks all active project deployments by composite score (usage volume 40%, feedback accuracy 30%, freshness 20%, SLA latency 10%). Analysts say "rank my deployments by performance", "deployment scorecard", "deployment leaderboard", or 5 other NL variants and receive a `DeploymentScorecardCard` with ranked entries, rank medals for top 3, Top Performer badge, composite score bars, and per-signal pills.
+
+**What's next:**
+- Track C: Per-class threshold tuning — "optimize the threshold for each class in my multiclass model"
+- Track B: Comparative Model Improvement Plan — "create a ranked improvement roadmap for all my models"
+- Track D: Deployment Capacity Planning — "how long will it take to process X predictions per day?"
+
+---
+
 ## Day 84 (20:00) — Done
 
 **Track B: Model Promotion Readiness Check** — complete.
