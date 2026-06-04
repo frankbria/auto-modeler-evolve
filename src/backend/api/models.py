@@ -1057,7 +1057,9 @@ def get_promotion_readiness(run_id: str, session: Session = Depends(get_session)
 
     metrics_dict: dict = {}
     if run.metrics:
-        metrics_dict = json.loads(run.metrics) if isinstance(run.metrics, str) else run.metrics
+        metrics_dict = (
+            json.loads(run.metrics) if isinstance(run.metrics, str) else run.metrics
+        )
 
     algorithm = run.algorithm or ""
 
@@ -1068,7 +1070,12 @@ def get_promotion_readiness(run_id: str, session: Session = Depends(get_session)
         n_rows=n_rows,
         n_features=n_features,
     )
-    return {"run_id": run_id, "project_id": project_id, "target_col": target_col, **result}
+    return {
+        "run_id": run_id,
+        "project_id": project_id,
+        "target_col": target_col,
+        **result,
+    }
 
 
 @router.get("/api/models/{run_id}/calibration")

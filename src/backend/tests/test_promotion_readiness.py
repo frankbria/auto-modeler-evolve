@@ -5,8 +5,6 @@ Covers:
 - GET /api/models/{run_id}/promotion-readiness REST endpoint
 - _PROMOTION_READINESS_PATTERNS regex: positive matches and false-positive guards
 """
-import io
-import time
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -116,7 +114,12 @@ class TestPromotionReadinessGates:
         assert "R²" in quality_gate["detail"]
 
     def test_borderline_r2_warns_quality_gate(self):
-        metrics = {**self.BASE_METRICS_GOOD_REG, "r2": 0.70, "train_r2": 0.72, "cv_mean": 0.69}
+        metrics = {
+            **self.BASE_METRICS_GOOD_REG,
+            "r2": 0.70,
+            "train_r2": 0.72,
+            "cv_mean": 0.69,
+        }
         result = compute_promotion_readiness(
             metrics=metrics,
             algorithm="linear_regression",
@@ -128,7 +131,12 @@ class TestPromotionReadinessGates:
         assert quality_gate["status"] == "warn"
 
     def test_low_accuracy_fails_quality_gate(self):
-        metrics = {**self.BASE_METRICS_GOOD_CLS, "accuracy": 0.60, "train_accuracy": 0.62, "cv_mean": 0.59}
+        metrics = {
+            **self.BASE_METRICS_GOOD_CLS,
+            "accuracy": 0.60,
+            "train_accuracy": 0.62,
+            "cv_mean": 0.59,
+        }
         result = compute_promotion_readiness(
             metrics=metrics,
             algorithm="logistic_regression",
@@ -277,7 +285,9 @@ class TestPromotionReadinessGates:
             n_rows=50,
             n_features=10,
         )
-        rpf_gate = next(g for g in result["gates"] if g["gate"] == "sample_feature_ratio")
+        rpf_gate = next(
+            g for g in result["gates"] if g["gate"] == "sample_feature_ratio"
+        )
         assert rpf_gate["status"] == "fail"
 
     def test_good_rpf_passes_sample_feature_ratio_gate(self):
@@ -288,7 +298,9 @@ class TestPromotionReadinessGates:
             n_rows=500,
             n_features=10,
         )
-        rpf_gate = next(g for g in result["gates"] if g["gate"] == "sample_feature_ratio")
+        rpf_gate = next(
+            g for g in result["gates"] if g["gate"] == "sample_feature_ratio"
+        )
         assert rpf_gate["status"] == "pass"
 
 
@@ -352,11 +364,23 @@ class TestPromotionReadinessVerdicts:
             n_features=10,
         )
         required = [
-            "overall_verdict", "verdict_label", "verdict_color",
-            "passed_count", "warn_count", "fail_count", "total_count",
-            "gates", "blocking_issues", "warnings",
-            "algorithm", "problem_type", "primary_metric", "primary_metric_name",
-            "n_rows", "n_features", "summary",
+            "overall_verdict",
+            "verdict_label",
+            "verdict_color",
+            "passed_count",
+            "warn_count",
+            "fail_count",
+            "total_count",
+            "gates",
+            "blocking_issues",
+            "warnings",
+            "algorithm",
+            "problem_type",
+            "primary_metric",
+            "primary_metric_name",
+            "n_rows",
+            "n_features",
+            "summary",
         ]
         for key in required:
             assert key in result, f"Missing key: {key}"
@@ -422,12 +446,9 @@ SAMPLE_CSV = b"""revenue,units,region
 240,24,North
 """
 
-SAMPLE_CSV_BIG = (
-    b"revenue,units,region\n"
-    + b"".join(
-        f"{50 + (i % 300)},{5 + (i % 30)},{'East' if i % 3 == 0 else 'West'}\n".encode()
-        for i in range(300)
-    )
+SAMPLE_CSV_BIG = b"revenue,units,region\n" + b"".join(
+    f"{50 + (i % 300)},{5 + (i % 30)},{'East' if i % 3 == 0 else 'West'}\n".encode()
+    for i in range(300)
 )
 
 
@@ -595,6 +616,7 @@ class TestPromotionReadinessPatterns:
     @pytest.fixture(autouse=True)
     def pattern(self):
         from api.chat import _PROMOTION_READINESS_PATTERNS
+
         self.pat = _PROMOTION_READINESS_PATTERNS
 
     def _match(self, text):

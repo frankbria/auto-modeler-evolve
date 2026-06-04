@@ -1818,124 +1818,224 @@ def compute_promotion_readiness(
     _primary, _pname = _primary_metric(metrics, problem_type)
     if problem_type == "regression":
         q_pass, q_warn = _REG_QUALITY_PASS, _REG_QUALITY_WARN
-        q_pass_detail = f"R² {_primary:.3f} ≥ {q_pass} — explains most variance in the data."
+        q_pass_detail = (
+            f"R² {_primary:.3f} ≥ {q_pass} — explains most variance in the data."
+        )
         q_warn_detail = f"R² {_primary:.3f} is acceptable but below the {q_pass} target for production."
         q_fail_detail = f"R² {_primary:.3f} is below {q_warn} — predictions will be unreliable in production."
         q_rec_warn = f"Consider collecting more data or trying an ensemble model to push R² above {q_pass}."
         q_rec_fail = f"R² below {q_warn} is generally too low for production use. Investigate feature selection and model choice."
     else:
         q_pass, q_warn = _CLS_QUALITY_PASS, _CLS_QUALITY_WARN
-        q_pass_detail = f"Accuracy {_primary:.1%} ≥ {q_pass:.0%} — model is classifying reliably."
+        q_pass_detail = (
+            f"Accuracy {_primary:.1%} ≥ {q_pass:.0%} — model is classifying reliably."
+        )
         q_warn_detail = f"Accuracy {_primary:.1%} is acceptable but below the {q_pass:.0%} production target."
         q_fail_detail = f"Accuracy {_primary:.1%} is below {q_warn:.0%} — too many misclassifications for production use."
         q_rec_warn = f"Try class weighting, SMOTE, or an ensemble to improve accuracy above {q_pass:.0%}."
         q_rec_fail = f"Accuracy below {q_warn:.0%} is generally too low. Review class imbalance, feature engineering, and algorithm choice."
 
     if _primary >= q_pass:
-        gates.append({"gate": "model_quality", "label": "Model Quality",
-                       "status": _GATE_PASS, "detail": q_pass_detail, "recommendation": ""})
+        gates.append(
+            {
+                "gate": "model_quality",
+                "label": "Model Quality",
+                "status": _GATE_PASS,
+                "detail": q_pass_detail,
+                "recommendation": "",
+            }
+        )
     elif _primary >= q_warn:
-        gates.append({"gate": "model_quality", "label": "Model Quality",
-                       "status": _GATE_WARN, "detail": q_warn_detail, "recommendation": q_rec_warn})
+        gates.append(
+            {
+                "gate": "model_quality",
+                "label": "Model Quality",
+                "status": _GATE_WARN,
+                "detail": q_warn_detail,
+                "recommendation": q_rec_warn,
+            }
+        )
     else:
-        gates.append({"gate": "model_quality", "label": "Model Quality",
-                       "status": _GATE_FAIL, "detail": q_fail_detail, "recommendation": q_rec_fail})
+        gates.append(
+            {
+                "gate": "model_quality",
+                "label": "Model Quality",
+                "status": _GATE_FAIL,
+                "detail": q_fail_detail,
+                "recommendation": q_rec_fail,
+            }
+        )
 
     # --- Gate 2: CV stability (skip if cv_std not available) ---
     cv_std = metrics.get("cv_std")
     cv_mean = metrics.get("cv_mean")
     if cv_std is not None:
         if cv_std < _CV_STD_PASS:
-            gates.append({"gate": "cv_stability", "label": "Cross-Validation Stability",
-                           "status": _GATE_PASS,
-                           "detail": f"CV std {cv_std:.3f} — predictions are consistent across data splits.",
-                           "recommendation": ""})
+            gates.append(
+                {
+                    "gate": "cv_stability",
+                    "label": "Cross-Validation Stability",
+                    "status": _GATE_PASS,
+                    "detail": f"CV std {cv_std:.3f} — predictions are consistent across data splits.",
+                    "recommendation": "",
+                }
+            )
         elif cv_std < _CV_STD_WARN:
-            gates.append({"gate": "cv_stability", "label": "Cross-Validation Stability",
-                           "status": _GATE_WARN,
-                           "detail": f"CV std {cv_std:.3f} — some variance across folds; model may be sensitive to data splits.",
-                           "recommendation": "Consider collecting more data or adding regularization to improve fold-to-fold consistency."})
+            gates.append(
+                {
+                    "gate": "cv_stability",
+                    "label": "Cross-Validation Stability",
+                    "status": _GATE_WARN,
+                    "detail": f"CV std {cv_std:.3f} — some variance across folds; model may be sensitive to data splits.",
+                    "recommendation": "Consider collecting more data or adding regularization to improve fold-to-fold consistency.",
+                }
+            )
         else:
-            gates.append({"gate": "cv_stability", "label": "Cross-Validation Stability",
-                           "status": _GATE_FAIL,
-                           "detail": f"CV std {cv_std:.3f} — high variance across folds indicates unstable predictions.",
-                           "recommendation": "A CV std ≥ 0.10 means predictions vary significantly across data subsets. Investigate overfitting or data quality issues."})
+            gates.append(
+                {
+                    "gate": "cv_stability",
+                    "label": "Cross-Validation Stability",
+                    "status": _GATE_FAIL,
+                    "detail": f"CV std {cv_std:.3f} — high variance across folds indicates unstable predictions.",
+                    "recommendation": "A CV std ≥ 0.10 means predictions vary significantly across data subsets. Investigate overfitting or data quality issues.",
+                }
+            )
 
     # --- Gate 3: Overfitting risk (train vs CV gap) ---
     train_score = metrics.get("train_r2", metrics.get("train_accuracy"))
     if train_score is not None and cv_mean is not None:
         gap = float(train_score) - float(cv_mean)
         if gap < _GAP_PASS:
-            gates.append({"gate": "overfitting", "label": "Overfitting Risk",
-                           "status": _GATE_PASS,
-                           "detail": f"Train-CV gap {gap:.3f} — model generalizes well to unseen data.",
-                           "recommendation": ""})
+            gates.append(
+                {
+                    "gate": "overfitting",
+                    "label": "Overfitting Risk",
+                    "status": _GATE_PASS,
+                    "detail": f"Train-CV gap {gap:.3f} — model generalizes well to unseen data.",
+                    "recommendation": "",
+                }
+            )
         elif gap < _GAP_WARN:
-            gates.append({"gate": "overfitting", "label": "Overfitting Risk",
-                           "status": _GATE_WARN,
-                           "detail": f"Train-CV gap {gap:.3f} — slight overfitting detected; may perform somewhat worse in production.",
-                           "recommendation": "Add regularization or reduce model complexity to close the train/validation gap."})
+            gates.append(
+                {
+                    "gate": "overfitting",
+                    "label": "Overfitting Risk",
+                    "status": _GATE_WARN,
+                    "detail": f"Train-CV gap {gap:.3f} — slight overfitting detected; may perform somewhat worse in production.",
+                    "recommendation": "Add regularization or reduce model complexity to close the train/validation gap.",
+                }
+            )
         else:
-            gates.append({"gate": "overfitting", "label": "Overfitting Risk",
-                           "status": _GATE_FAIL,
-                           "detail": f"Train-CV gap {gap:.3f} — significant overfitting. Production accuracy will likely be much lower than reported.",
-                           "recommendation": "Gap ≥ 0.20 is a red flag. Reduce model complexity, add regularization, or collect more diverse training data."})
+            gates.append(
+                {
+                    "gate": "overfitting",
+                    "label": "Overfitting Risk",
+                    "status": _GATE_FAIL,
+                    "detail": f"Train-CV gap {gap:.3f} — significant overfitting. Production accuracy will likely be much lower than reported.",
+                    "recommendation": "Gap ≥ 0.20 is a red flag. Reduce model complexity, add regularization, or collect more diverse training data.",
+                }
+            )
 
     # --- Gate 4: Calibration (classification only, skip if Brier not available) ---
     if problem_type == "classification":
         brier = metrics.get("brier_score")
         if brier is not None:
             if brier < _BRIER_PASS:
-                gates.append({"gate": "calibration", "label": "Confidence Calibration",
-                               "status": _GATE_PASS,
-                               "detail": f"Brier score {brier:.3f} — confidence scores are reliable (lower is better).",
-                               "recommendation": ""})
+                gates.append(
+                    {
+                        "gate": "calibration",
+                        "label": "Confidence Calibration",
+                        "status": _GATE_PASS,
+                        "detail": f"Brier score {brier:.3f} — confidence scores are reliable (lower is better).",
+                        "recommendation": "",
+                    }
+                )
             elif brier < _BRIER_WARN:
-                gates.append({"gate": "calibration", "label": "Confidence Calibration",
-                               "status": _GATE_WARN,
-                               "detail": f"Brier score {brier:.3f} — confidence scores are somewhat reliable but could be better.",
-                               "recommendation": "Retrain with calibration enabled to produce more trustworthy probability estimates."})
+                gates.append(
+                    {
+                        "gate": "calibration",
+                        "label": "Confidence Calibration",
+                        "status": _GATE_WARN,
+                        "detail": f"Brier score {brier:.3f} — confidence scores are somewhat reliable but could be better.",
+                        "recommendation": "Retrain with calibration enabled to produce more trustworthy probability estimates.",
+                    }
+                )
             else:
-                gates.append({"gate": "calibration", "label": "Confidence Calibration",
-                               "status": _GATE_FAIL,
-                               "detail": f"Brier score {brier:.3f} — confidence scores are unreliable. A VP dashboard showing '80% confident' may not be trustworthy.",
-                               "recommendation": "Retrain with CalibratedClassifierCV. The model's probability outputs are not well-calibrated for production use."})
+                gates.append(
+                    {
+                        "gate": "calibration",
+                        "label": "Confidence Calibration",
+                        "status": _GATE_FAIL,
+                        "detail": f"Brier score {brier:.3f} — confidence scores are unreliable. A VP dashboard showing '80% confident' may not be trustworthy.",
+                        "recommendation": "Retrain with CalibratedClassifierCV. The model's probability outputs are not well-calibrated for production use.",
+                    }
+                )
 
     # --- Gate 5: Data volume ---
     if n_rows >= _ROWS_PASS:
-        gates.append({"gate": "data_volume", "label": "Training Data Volume",
-                       "status": _GATE_PASS,
-                       "detail": f"{n_rows:,} training rows — sufficient data volume.",
-                       "recommendation": ""})
+        gates.append(
+            {
+                "gate": "data_volume",
+                "label": "Training Data Volume",
+                "status": _GATE_PASS,
+                "detail": f"{n_rows:,} training rows — sufficient data volume.",
+                "recommendation": "",
+            }
+        )
     elif n_rows >= _ROWS_WARN:
-        gates.append({"gate": "data_volume", "label": "Training Data Volume",
-                       "status": _GATE_WARN,
-                       "detail": f"Only {n_rows:,} training rows — model may struggle with edge cases not seen in training.",
-                       "recommendation": f"Aim for ≥ {_ROWS_PASS} rows for reliable production predictions. Consider collecting more historical data."})
+        gates.append(
+            {
+                "gate": "data_volume",
+                "label": "Training Data Volume",
+                "status": _GATE_WARN,
+                "detail": f"Only {n_rows:,} training rows — model may struggle with edge cases not seen in training.",
+                "recommendation": f"Aim for ≥ {_ROWS_PASS} rows for reliable production predictions. Consider collecting more historical data.",
+            }
+        )
     else:
-        gates.append({"gate": "data_volume", "label": "Training Data Volume",
-                       "status": _GATE_FAIL,
-                       "detail": f"Only {n_rows:,} training rows — too few for reliable production use.",
-                       "recommendation": f"Models trained on fewer than {_ROWS_WARN} rows are highly unreliable. Collect substantially more data before deploying."})
+        gates.append(
+            {
+                "gate": "data_volume",
+                "label": "Training Data Volume",
+                "status": _GATE_FAIL,
+                "detail": f"Only {n_rows:,} training rows — too few for reliable production use.",
+                "recommendation": f"Models trained on fewer than {_ROWS_WARN} rows are highly unreliable. Collect substantially more data before deploying.",
+            }
+        )
 
     # --- Gate 6: Sample-to-feature ratio ---
     if n_features > 0:
         rpf = n_rows / n_features
         if rpf >= _RPF_PASS:
-            gates.append({"gate": "sample_feature_ratio", "label": "Sample-to-Feature Ratio",
-                           "status": _GATE_PASS,
-                           "detail": f"{rpf:.0f}× rows per feature — healthy ratio for reliable predictions.",
-                           "recommendation": ""})
+            gates.append(
+                {
+                    "gate": "sample_feature_ratio",
+                    "label": "Sample-to-Feature Ratio",
+                    "status": _GATE_PASS,
+                    "detail": f"{rpf:.0f}× rows per feature — healthy ratio for reliable predictions.",
+                    "recommendation": "",
+                }
+            )
         elif rpf >= _RPF_WARN:
-            gates.append({"gate": "sample_feature_ratio", "label": "Sample-to-Feature Ratio",
-                           "status": _GATE_WARN,
-                           "detail": f"{rpf:.0f}× rows per feature — borderline ratio; model may be overfit.",
-                           "recommendation": "Aim for ≥ 20 rows per feature. Consider removing weak features or collecting more data."})
+            gates.append(
+                {
+                    "gate": "sample_feature_ratio",
+                    "label": "Sample-to-Feature Ratio",
+                    "status": _GATE_WARN,
+                    "detail": f"{rpf:.0f}× rows per feature — borderline ratio; model may be overfit.",
+                    "recommendation": "Aim for ≥ 20 rows per feature. Consider removing weak features or collecting more data.",
+                }
+            )
         else:
-            gates.append({"gate": "sample_feature_ratio", "label": "Sample-to-Feature Ratio",
-                           "status": _GATE_FAIL,
-                           "detail": f"{rpf:.0f}× rows per feature — too few samples for the number of features.",
-                           "recommendation": "With < 10 rows per feature the model is almost certainly overfit. Remove features or add data before deploying."})
+            gates.append(
+                {
+                    "gate": "sample_feature_ratio",
+                    "label": "Sample-to-Feature Ratio",
+                    "status": _GATE_FAIL,
+                    "detail": f"{rpf:.0f}× rows per feature — too few samples for the number of features.",
+                    "recommendation": "With < 10 rows per feature the model is almost certainly overfit. Remove features or add data before deploying.",
+                }
+            )
 
     # --- Aggregate verdict ---
     passed = [g for g in gates if g["status"] == _GATE_PASS]

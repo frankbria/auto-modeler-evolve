@@ -5494,7 +5494,9 @@ def send_message(
                 from core.advisor import (
                     compute_promotion_readiness as _compute_promo,
                 )
-                from core.feature_engine import apply_transformations as _apply_transforms
+                from core.feature_engine import (
+                    apply_transformations as _apply_transforms,
+                )
                 from core.trainer import prepare_features as _prepare_feat
 
                 _sel_r = next((mr for mr in completed_runs if mr.is_selected), None)
@@ -5504,7 +5506,12 @@ def send_message(
                 _pr_pt = (
                     "classification"
                     if _pr_algo.endswith("_classifier")
-                    or _pr_algo in {"logistic_regression", "voting_classifier", "stacking_classifier"}
+                    or _pr_algo
+                    in {
+                        "logistic_regression",
+                        "voting_classifier",
+                        "stacking_classifier",
+                    }
                     else "regression"
                 )
                 _pr_nrows = 0
@@ -5514,6 +5521,7 @@ def send_message(
                     _pr_fs = ctx["feature_set"]
                     if _pr_ds.file_path and Path(_pr_ds.file_path).exists():
                         import pandas as _pd_pr
+
                         _pr_df = _pd_pr.read_csv(_pr_ds.file_path)
                         _pr_transforms = json.loads(_pr_fs.transformations or "[]")
                         if _pr_transforms:
