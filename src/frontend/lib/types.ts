@@ -558,6 +558,7 @@ export interface ChatMessage {
   production_threshold_optimizer?: ProductionThresholdOptimizerResult
   deploy_pred_dist_compare?: DeploymentPredictionComparisonResult
   weekly_digest_config?: WeeklyDigestConfigResult
+  promotion_readiness?: PromotionReadinessResult
 }
 
 export interface RollbackVersionEntry {
@@ -4438,5 +4439,42 @@ export interface WeeklyDigestConfigResult {
   day_name: string
   send_hour: number
   last_sent_at: string | null
+  summary: string
+}
+
+// ---------------------------------------------------------------------------
+// Model Promotion Readiness Check
+// ---------------------------------------------------------------------------
+
+export type PromotionGateStatus = "pass" | "warn" | "fail"
+export type PromotionVerdict = "ready" | "ready_with_warnings" | "not_ready"
+
+export interface PromotionReadinessGate {
+  gate: string
+  label: string
+  status: PromotionGateStatus
+  detail: string
+  recommendation: string
+}
+
+export interface PromotionReadinessResult {
+  run_id: string
+  project_id: string
+  overall_verdict: PromotionVerdict
+  verdict_label: string
+  verdict_color: string
+  passed_count: number
+  warn_count: number
+  fail_count: number
+  total_count: number
+  gates: PromotionReadinessGate[]
+  blocking_issues: string[]
+  warnings: string[]
+  algorithm: string
+  problem_type: string
+  primary_metric: number
+  primary_metric_name: string
+  n_rows: number
+  n_features: number
   summary: string
 }

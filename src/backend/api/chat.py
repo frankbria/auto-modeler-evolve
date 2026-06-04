@@ -4570,6 +4570,25 @@ _WEEKLY_DIGEST_DISABLE_RE = re.compile(
     r"(?i)\b(disable|turn\s+off|stop|cancel|remove)\b"
 )
 
+# Model promotion readiness check — "is my model ready to go to production?"
+# Distinct from _READINESS_PATTERNS (broad "deploy/ready?" intent) and
+# _QUALITY_PATTERNS ("how good is my model?") — these ask for a structured
+# go/no-go checklist with per-gate statuses.
+_PROMOTION_READINESS_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"promotion\s+readiness\b|"
+    r"ready\s+to\s+promote\b|"
+    r"promote\s+(?:my\s+)?model\s+(?:to\s+)?(?:production|live|prod)\b|"
+    r"pre[- ]?deployment\s+check(?:list)?\b|"
+    r"deployment\s+(?:gate|checklist|check)\b|"
+    r"go[/\s-]?no[/\s-]?go\s*(?:check|decision|assessment)?\b|"
+    r"production\s+readiness\s+check(?:list)?\b|"
+    r"all\s+(?:quality\s+)?checks?\s+pass\b|"
+    r"(?:run|do|perform)\s+(?:a\s+)?readiness\s+check(?:list)?\b"
+    r")",
+    re.IGNORECASE,
+)
+
 # Matches "Key = Value", "Key: Value", "Key is Value" patterns in a message
 _KV_PAIR_RE = re.compile(
     r"\b([A-Za-z_][\w\s]{0,30}?)\s*(?:=|:|\s+is\s+|\s+equals?\s+|\s+of\s+)\s*"
@@ -5458,6 +5477,86 @@ def send_message(
                     "Communicate this quality assessment conversationally. Use the label "
                     "and metric value. If quality is below 'Good', be encouraging and "
                     "point to specific next steps."
+                )
+            except Exception:  # noqa: BLE001
+                pass  # Nice-to-have; never crash chat
+
+    # Promotion readiness check — "is my model ready to promote to production?"
+    # Aggregates quality gates (primary metric, CV stability, overfitting, calibration,
+    # data volume, sample-to-feature ratio) into a go/no-go checklist.
+    # Distinct from _QUALITY_PATTERNS (single quality score) and
+    # _READINESS_PATTERNS (broad deploy intent).
+    promotion_readiness_event: dict | None = None
+    if _PROMOTION_READINESS_PATTERNS.search(body.message) and ctx["model_runs"]:
+        completed_runs = [mr for mr in ctx["model_runs"] if mr.status == "done"]
+        if completed_runs:
+            try:
+                from core.advisor import (
+                    compute_promotion_readiness as _compute_promo,
+                )
+                from core.feature_engine import apply_transformations as _apply_transforms
+                from core.trainer import prepare_features as _prepare_feat
+
+                _sel_r = next((mr for mr in completed_runs if mr.is_selected), None)
+                _pr_run = _sel_r or completed_runs[-1]
+                _pr_metrics = json.loads(_pr_run.metrics or "{}")
+                _pr_algo = _pr_run.algorithm or ""
+                _pr_pt = (
+                    "classification"
+                    if _pr_algo.endswith("_classifier")
+                    or _pr_algo in {"logistic_regression", "voting_classifier", "stacking_classifier"}
+                    else "regression"
+                )
+                _pr_nrows = 0
+                _pr_nfeats = 0
+                if ctx.get("dataset") and ctx.get("feature_set"):
+                    _pr_ds = ctx["dataset"]
+                    _pr_fs = ctx["feature_set"]
+                    if _pr_ds.file_path and Path(_pr_ds.file_path).exists():
+                        import pandas as _pd_pr
+                        _pr_df = _pd_pr.read_csv(_pr_ds.file_path)
+                        _pr_transforms = json.loads(_pr_fs.transformations or "[]")
+                        if _pr_transforms:
+                            _pr_df, _ = _apply_transforms(_pr_df, _pr_transforms)
+                        _pr_tc = _pr_fs.target_column or ""
+                        _pr_fcols = [c for c in _pr_df.columns if c != _pr_tc]
+                        try:
+                            _pr_Xarr, _pr_yarr, _ = _prepare_feat(
+                                _pr_df, _pr_fcols, _pr_tc, _pr_pt
+                            )
+                            _pr_nrows = len(_pr_Xarr)
+                            _pr_nfeats = (
+                                _pr_Xarr.shape[1]
+                                if hasattr(_pr_Xarr, "shape")
+                                else len(_pr_fcols)
+                            )
+                        except Exception:  # noqa: BLE001
+                            pass
+
+                promotion_readiness_event = _compute_promo(
+                    metrics=_pr_metrics,
+                    algorithm=_pr_algo,
+                    problem_type=_pr_pt,
+                    n_rows=_pr_nrows,
+                    n_features=_pr_nfeats,
+                )
+                promotion_readiness_event["run_id"] = _pr_run.id
+                promotion_readiness_event["project_id"] = body.project_id
+
+                _pr_verdict = promotion_readiness_event["verdict_label"]
+                _pr_fail = promotion_readiness_event["fail_count"]
+                _pr_warn = promotion_readiness_event["warn_count"]
+                _pr_pass = promotion_readiness_event["passed_count"]
+                _pr_sum = promotion_readiness_event["summary"]
+                system_prompt += (
+                    f"\n\n## Promotion Readiness Assessment (just computed)\n"
+                    f"Algorithm: {_pr_algo} | Verdict: {_pr_verdict}\n"
+                    f"Gates: {_pr_pass} passed, {_pr_warn} warnings, {_pr_fail} failed\n"
+                    f"Summary: {_pr_sum}\n"
+                    "Walk the analyst through the checklist results conversationally. "
+                    "If not ready, focus on the specific blocking issues and what to fix. "
+                    "If ready with warnings, acknowledge the warnings but be encouraging. "
+                    "If fully ready, celebrate — this is a good milestone!"
                 )
             except Exception:  # noqa: BLE001
                 pass  # Nice-to-have; never crash chat
@@ -18741,6 +18840,10 @@ def send_message(
         # Emit model quality score if computed
         if model_quality_event:
             yield f"data: {json.dumps({'type': 'model_quality_score', 'model_quality_score': model_quality_event})}\n\n"
+
+        # Emit promotion readiness checklist if computed
+        if promotion_readiness_event:
+            yield f"data: {json.dumps({'type': 'promotion_readiness', 'promotion_readiness': promotion_readiness_event})}\n\n"
 
         # Emit model comparison summary if computed
         if model_comparison_summary_event:

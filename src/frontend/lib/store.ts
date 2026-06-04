@@ -198,6 +198,7 @@ interface AppState {
   attachProductionThresholdOptimizerToLastMessage: (production_threshold_optimizer: import("./types").ProductionThresholdOptimizerResult) => void
   attachDeployPredDistCompareToLastMessage: (deploy_pred_dist_compare: import("./types").DeploymentPredictionComparisonResult) => void
   attachWeeklyDigestConfigToLastMessage: (weekly_digest_config: import("./types").WeeklyDigestConfigResult) => void
+  attachPromotionReadinessToLastMessage: (promotion_readiness: import("./types").PromotionReadinessResult) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -1667,6 +1668,16 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, weekly_digest_config }
+      }
+      return { messages }
+    }),
+
+  attachPromotionReadinessToLastMessage: (promotion_readiness) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, promotion_readiness }
       }
       return { messages }
     }),

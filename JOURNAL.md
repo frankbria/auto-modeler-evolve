@@ -1,5 +1,25 @@
 # Journal
 
+## Day 84 — 20:00 — Model Promotion Readiness Check
+
+**Feature shipped:** Model Promotion Readiness Check (Track B perpetual). Analysts can now say "promotion readiness check", "ready to promote?", "pre-deployment checklist", "deployment gate", "go/no-go assessment", "production readiness check", "do all checks pass?", "run a readiness check" (9 NL variants in `_PROMOTION_READINESS_PATTERNS`) and receive a `PromotionReadinessCard` with a structured go/no-go checklist that synthesizes all available quality signals into a single deployment decision. Closes the "am I confident enough to click Deploy?" analyst gap — previously analysts had to run 6 separate quality cards and mentally combine them.
+
+**What was built:**
+
+- `compute_promotion_readiness(metrics, algorithm, problem_type, n_rows, n_features)` pure function in `core/advisor.py`: evaluates 6 independent gates — **Model Quality** (primary metric vs regression/classification thresholds), **CV Stability** (cv_std: <0.05 pass, <0.10 warn, ≥0.10 fail), **Overfitting Risk** (train-CV gap: <0.10 pass, <0.20 warn, ≥0.20 fail), **Calibration** (Brier score, classification only), **Data Volume** (n_rows: ≥200 pass, ≥50 warn, <50 fail), **Sample-to-Feature Ratio** (rows/features: ≥20 pass, ≥10 warn, <10 fail). Overall verdict: `ready` (0 fail + 0 warn), `ready_with_warnings` (0 fail + ≥1 warn), `not_ready` (≥1 fail). Returns per-gate status + blocking_issues list + warnings list + summary. Gates skip gracefully when metrics not available (e.g., CV stability skipped if cv_std absent).
+
+- `GET /api/models/{run_id}/promotion-readiness` REST endpoint in `api/models.py`: loads run + active feature set + CSV; calls `prepare_features()` to get accurate n_rows/n_features; 400 for non-done runs, 404 for missing run.
+
+- `_PROMOTION_READINESS_PATTERNS` + handler in `api/chat.py`: guards on `ctx["model_runs"]`; loads CSV + transformations for n_rows/n_features accuracy; injects verdict + gate summary into system_prompt so Claude can walk the analyst through blocking issues conversationally; emits `{type:"promotion_readiness"}` SSE event. Distinct from `_READINESS_PATTERNS` (broad deploy intent) and `_QUALITY_PATTERNS` (single quality score).
+
+- `PromotionReadinessCard` (emerald=ready / amber=ready_with_warnings / rose=not_ready): verdict badge (🚀/⚠️/🛑 icon), passed/warn/fail count summary, per-gate `GateRow` (✓/⚠/✗ icon + Pass/Warning/Fail badge + detail + italic recommendation), blocking issues callout with `role="alert"`, summary paragraph, "Deploy my model →" CTA button when ready or ready_with_warnings (fires `onActionClick`).
+
+- Full TypeScript wiring: `PromotionReadinessGate` + `PromotionReadinessResult` interfaces in `lib/types.ts`; `promotion_readiness?` on `ChatMessage`; `api.models.promotionReadiness()` client method; `attachPromotionReadinessToLastMessage` Zustand action; SSE handlers + card render wired in both EventSource branches of workspace `page.tsx`.
+
+**Tests:** 28 pure-function (all 6 gates: pass/warn/fail paths, skip when missing metrics, verdict aggregation, required keys, summary non-empty) + 4 false-positive guards + 10 regex (9 positive + 4 false-positive guards, with go/no-go hyphen handling) + 3 REST endpoint integration (404 unknown run, 400 pending run, 200 done run) = **42 backend**. 23 card component (borders, badges, gate list, blocking issues callout, CTA button, action callback, missing callout when no fails) + 3 store action = **26 frontend** = **68 new tests**. Backend lint: clean. Frontend build + TypeScript + lint: clean.
+
+**Baseline:** 5620 backend / 3199 frontend → **5662 backend / 3225 frontend** (+42 / +26).
+
 ## Day 84 — 12:00 — Automated Weekly Monitoring Digest Webhook
 
 **Feature shipped:** Automated Weekly Monitoring Digest Webhook (Track D perpetual). Analysts can now say "enable weekly monitoring digest", "schedule a weekly monitoring report", "send me a weekly digest every Friday", or 5 other NL variants (8 total in `_WEEKLY_DIGEST_PATTERNS`) and configure AutoModeler to automatically compute ALL deployment monitoring signals every week and dispatch the full report to registered `weekly_digest` webhooks — no manual asking required. Closes the "passive monitoring" gap: analysts who configure monitoring signals no longer need to remember to check them; the system proactively dispatches a complete health report to Slack/Teams/PagerDuty/Zapier.

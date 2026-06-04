@@ -981,6 +981,96 @@ def get_sample_size_adequacy(run_id: str, session: Session = Depends(get_session
     }
 
 
+@router.get("/api/models/{run_id}/promotion-readiness")
+def get_promotion_readiness(run_id: str, session: Session = Depends(get_session)):
+    """Return a go/no-go promotion readiness assessment for the given model run.
+
+    Aggregates all quality signals stored in ModelRun.metrics into a structured
+    checklist of gates (model quality, CV stability, overfitting risk, calibration,
+    data volume, sample-to-feature ratio) with per-gate pass/warn/fail statuses.
+    """
+    from core.advisor import compute_promotion_readiness
+    from core.feature_engine import apply_transformations
+    from core.trainer import prepare_features
+
+    run = session.get(ModelRun, run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Model run not found")
+    if run.status != "done":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Model is not done (status: {run.status}). Train the model first.",
+        )
+
+    project_id = run.project_id
+    dataset = session.exec(
+        select(Dataset).where(Dataset.project_id == project_id)
+    ).first()
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    feature_set = session.exec(
+        select(FeatureSet).where(
+            FeatureSet.dataset_id == dataset.id,
+            FeatureSet.is_active == True,  # noqa: E712
+        )
+    ).first()
+    if not feature_set or not feature_set.target_column:
+        raise HTTPException(
+            status_code=400, detail="No active feature set with target column"
+        )
+
+    file_path = Path(dataset.file_path)
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Dataset file not found on disk")
+
+    df = pd.read_csv(file_path)
+    transforms = json.loads(feature_set.transformations or "[]")
+    if transforms:
+        df, _ = apply_transformations(df, transforms)
+
+    target_col = feature_set.target_column
+    problem_type = (
+        (feature_set.problem_type if feature_set else None)
+        or run.algorithm.endswith("_classifier")
+        and "classification"
+        or "regression"
+    )
+    if run.algorithm in {
+        "logistic_regression",
+        "voting_classifier",
+        "stacking_classifier",
+    }:
+        problem_type = "classification"
+    elif run.algorithm.endswith("_classifier"):
+        problem_type = "classification"
+
+    feature_cols = [c for c in df.columns if c != target_col]
+
+    try:
+        X_arr, _y, _ = prepare_features(df, feature_cols, target_col, problem_type)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    n_rows = len(X_arr)
+    n_features = X_arr.shape[1] if hasattr(X_arr, "shape") else len(feature_cols)
+
+    metrics_dict: dict = {}
+    if run.metrics:
+        metrics_dict = json.loads(run.metrics) if isinstance(run.metrics, str) else run.metrics
+
+    algorithm = run.algorithm or ""
+
+    result = compute_promotion_readiness(
+        metrics=metrics_dict,
+        algorithm=algorithm,
+        problem_type=problem_type,
+        n_rows=n_rows,
+        n_features=n_features,
+    )
+    return {"run_id": run_id, "project_id": project_id, "target_col": target_col, **result}
+
+
 @router.get("/api/models/{run_id}/calibration")
 def get_calibration(run_id: str, session: Session = Depends(get_session)):
     """Return calibration curve data and Brier score for a trained classifier.

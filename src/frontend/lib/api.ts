@@ -751,6 +751,12 @@ export const api = {
         return r.json()
       }),
 
+    promotionReadiness: (runId: string): Promise<import("./types").PromotionReadinessResult> =>
+      fetch(`${API_URL}/api/models/${runId}/promotion-readiness`).then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        return r.json()
+      }),
+
     crossModelFeatures: (projectId: string): Promise<import("./types").CrossModelFeatureResult> =>
       fetch(`${API_URL}/api/models/${projectId}/cross-model-features`).then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`)

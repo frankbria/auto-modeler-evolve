@@ -53,6 +53,28 @@ the time is better spent on real features.
 
 ---
 
+## Day 84 (20:00) — Done
+
+**Track B: Model Promotion Readiness Check** — complete.
+
+Closes the "is my model good enough to deploy?" analyst gap. Synthesizes all available quality signals (primary metric, CV stability, overfitting gap, Brier calibration, data volume, sample-to-feature ratio) into a single go/no-go checklist with per-gate pass/warn/fail statuses. Analysts say "promotion readiness check", "ready to promote?", "deployment gate", "go/no-go assessment", or "pre-deployment checklist" and receive a `PromotionReadinessCard` with blocking issues highlighted and a "Deploy my model" CTA button when ready.
+
+**What was built:**
+- `compute_promotion_readiness(metrics, algorithm, problem_type, n_rows, n_features)` pure function in `core/advisor.py`: 6 gates (model quality, CV stability, overfitting risk, calibration, data volume, sample-feature ratio); verdicts: ready/ready_with_warnings/not_ready; aggregates blocking_issues and warnings lists
+- `GET /api/models/{run_id}/promotion-readiness` REST endpoint in `api/models.py`: loads run + feature set + CSV, computes n_rows/n_features, calls pure function; 400 for non-done runs, 404 for missing run
+- `_PROMOTION_READINESS_PATTERNS` (9 NL variants: promotion readiness, ready to promote, pre-deployment checklist, deployment gate, go/no-go, production readiness check, all checks pass, run a readiness check) + handler in `api/chat.py`; loads dataset + feature set for accurate n_rows/n_features; emits `{type:"promotion_readiness"}` SSE event; injects verdict + gate summary into system_prompt
+- `PromotionReadinessCard` (emerald=ready / amber=ready_with_warnings / rose=not_ready, 🚀/⚠️/🛑 icon): verdict badge, passed/warn/fail count, per-gate rows with Pass/Warning/Fail badges and recommendation text, blocking issues callout with role="alert", summary paragraph, "Deploy my model →" CTA button (ready/ready_with_warnings only)
+- Full TypeScript wiring: `PromotionReadinessGate`, `PromotionReadinessResult` interfaces in `lib/types.ts`; `promotion_readiness?` on `ChatMessage`; `api.models.promotionReadiness()` client method; `attachPromotionReadinessToLastMessage` Zustand action; SSE handlers + card render in both EventSource branches of `page.tsx`
+
+42 backend + 26 frontend = **68 new tests**. Backend lint: clean. Frontend build + TypeScript + lint: clean.
+
+**What's next:**
+- Track C: Per-class threshold tuning — "optimize the threshold independently for each class in my multiclass model"
+- Track B: Comparative Model Improvement Plan — "create a ranked roadmap to improve all my models"
+- Track D: Deployment Comparison Scorecard — "rank all my deployments by production performance"
+
+---
+
 ## Day 84 (12:00) — Done
 
 **Track D: Automated Weekly Monitoring Digest Webhook** — complete.
