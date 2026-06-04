@@ -1,5 +1,27 @@
 # Journal
 
+## Day 85 — 04:00 — Deployment Comparison Scorecard
+
+**Feature shipped:** Deployment Comparison Scorecard (Track D perpetual). Analysts can now say "rank my deployments by performance", "deployment scorecard", "deployment leaderboard", "which deployment performs best", "compare my deployments by performance", or 6 other NL variants (8 total in `_DEPLOY_SCORECARD_PATTERNS`) and receive a `DeploymentScorecardCard` ranking all active project deployments by composite production score. Closes the "I have multiple deployed model versions — which one is actually performing best in production?" analyst gap — previously, analysts had no single view combining usage volume, real-world accuracy, SLA health, and model freshness.
+
+**What was built:**
+
+- `_usage_score()`, `_sla_score()`, `_freshness_score()` scoring helpers + `compute_deployment_scorecard(entries)` pure function in `core/analyzer.py`: availability-aware weighted composite (usage 40%, feedback accuracy 30% when available, freshness 20%, SLA 10% when available); ranks entries descending; plain-English summary names winner and lead gap. No DB access — all signals passed in as pre-computed dicts.
+
+- `GET /api/projects/{project_id}/deployment-scorecard` REST endpoint in `api/deploy.py`: queries all `is_active` deployments for the project, computes feedback accuracy from `FeedbackRecord.is_correct`, p95 latency from `PredictionLog.response_ms`, and age from `created_at`. Returns scored + ranked list from the pure function.
+
+- `_DEPLOY_SCORECARD_PATTERNS` (8 NL variants) + handler in `api/chat.py`: scoped to current project (not global overview like `_DEPLOYMENTS_OVERVIEW_PATTERNS`); imports `_FeedbackRecord` locally; injects winner + summary into `system_prompt`; emits `{type:"deployment_scorecard"}` SSE event in the single `stream_response()` generator.
+
+- `DeploymentScorecardCard` (amber border, 🏆 icon): N-deployments badge, rank medals (🥇🥈🥉) for top 3, "Top Performer" badge on winner entry, composite score bar (emerald ≥70/amber ≥45/rose otherwise), signal pills (🔢 predictions, 📅 age, 🎯 feedback accuracy, ⚡ SLA p95) — gracefully shows "No feedback"/"No SLA data" when signals unavailable; Production/Staging env badge; summary footer; empty-state for zero deployments.
+
+- Full TypeScript wiring: `DeploymentScorecardEntry` + `DeploymentScorecardResult` interfaces in `lib/types.ts`; `deployment_scorecard?` on `ChatMessage`; `attachDeploymentScorecardToLastMessage` Zustand action in `store.ts`; SSE handlers + card render in both EventSource branches of `project/[id]/page.tsx`.
+
+**Tests:** 7 `_usage_score` + 7 `_sla_score` + 6 `_freshness_score` + 16 `compute_deployment_scorecard` pure-function + 3 REST endpoint + 11 regex (8 positive + 3 false-positive guards, "list my deployments" and "deployment dashboard" guarded) = **53 backend**. 17 card component (empty state, rank medals, Top Performer badge, entry testids, score bar, env badges, signal pills, summary) + 3 store action = **21 frontend** = **74 new tests**. All passing. Backend lint: clean. Frontend build + TypeScript + lint: clean.
+
+**Key design decision:** Scoped to the current project (not all deployments) — distinct from `_DEPLOYMENTS_OVERVIEW_PATTERNS` (global all-deployment health across all projects). The regex required fixing: `rank...deployments?\s+(?:by...)?` was requiring trailing content; changed to `deployments?(?:\s+...)?` to match bare "rank all my deployments".
+
+**Baseline:** 5662 backend / 3225 frontend → **5715 backend / 3246 frontend** (+53 / +21).
+
 ## Day 84 — 20:00 — Model Promotion Readiness Check
 
 **Feature shipped:** Model Promotion Readiness Check (Track B perpetual). Analysts can now say "promotion readiness check", "ready to promote?", "pre-deployment checklist", "deployment gate", "go/no-go assessment", "production readiness check", "do all checks pass?", "run a readiness check" (9 NL variants in `_PROMOTION_READINESS_PATTERNS`) and receive a `PromotionReadinessCard` with a structured go/no-go checklist that synthesizes all available quality signals into a single deployment decision. Closes the "am I confident enough to click Deploy?" analyst gap — previously analysts had to run 6 separate quality cards and mentally combine them.
