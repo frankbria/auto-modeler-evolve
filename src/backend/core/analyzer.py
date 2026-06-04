@@ -6786,3 +6786,104 @@ def compute_deployment_scorecard(entries: list[dict]) -> dict:
         "winner_id": winner_id,
         "summary": summary,
     }
+
+
+def _format_duration(seconds: float) -> str:
+    """Return a human-readable duration string for a given number of seconds."""
+    if seconds < 1:
+        return f"{seconds * 1000:.0f} ms"
+    if seconds < 60:
+        return f"{seconds:.1f} seconds"
+    if seconds < 3600:
+        m = int(seconds // 60)
+        s = int(seconds % 60)
+        return f"{m} minute{'s' if m != 1 else ''}" + (f" {s}s" if s else "")
+    h = int(seconds // 3600)
+    m = int((seconds % 3600) // 60)
+    return f"{h} hour{'s' if h != 1 else ''}" + (f" {m}m" if m else "")
+
+
+def compute_deployment_throughput(log_dicts: list[dict], target_n: int = 1000) -> dict:
+    """Estimate throughput capacity from measured prediction latencies.
+
+    Pure function — no database or filesystem access.
+
+    Args:
+        log_dicts: List of dicts with ``response_ms`` key (float or None).
+        target_n: Number of predictions to estimate processing time for.
+
+    Returns:
+        Dict with latency stats, throughput estimates, and plain-English summary.
+        When fewer than 5 valid latency samples are available, returns
+        ``{"verdict": "no_data", ...}`` with null latency fields.
+    """
+    valid_ms = sorted(
+        float(d["response_ms"])
+        for d in log_dicts
+        if d.get("response_ms") is not None
+    )
+
+    if len(valid_ms) < 5:
+        return {
+            "verdict": "no_data",
+            "n_samples": len(valid_ms),
+            "target_n": target_n,
+            "p50_ms": None,
+            "p95_ms": None,
+            "p99_ms": None,
+            "mean_ms": None,
+            "max_rps": None,
+            "serial_seconds": None,
+            "serial_duration": None,
+            "summary": "Not enough latency data yet — make at least 5 predictions to see throughput estimates.",
+        }
+
+    n = len(valid_ms)
+    p50 = valid_ms[int(n * 0.50)]
+    p95 = valid_ms[min(int(n * 0.95), n - 1)]
+    p99 = valid_ms[min(int(n * 0.99), n - 1)]
+    mean_ms = sum(valid_ms) / n
+
+    # Conservative single-threaded throughput: 1 request per p95 latency
+    max_rps = round(1000.0 / p95, 2) if p95 > 0 else None
+
+    # Serial processing estimate (one at a time, p95 latency per request)
+    serial_seconds = (target_n * p95 / 1000.0) if p95 > 0 else None
+
+    if serial_seconds is None:
+        verdict = "no_data"
+    elif serial_seconds < 5:
+        verdict = "instant"
+    elif serial_seconds < 60:
+        verdict = "fast"
+    elif serial_seconds < 600:
+        verdict = "moderate"
+    elif serial_seconds < 3600:
+        verdict = "slow"
+    else:
+        verdict = "very_slow"
+
+    serial_duration = _format_duration(serial_seconds) if serial_seconds is not None else None
+
+    rps_str = f"{max_rps:.1f}" if max_rps is not None else "unknown"
+    dur_str = serial_duration or "unknown"
+
+    summary = (
+        f"Based on {n} measured predictions, your deployment's p95 latency is {p95:.0f} ms. "
+        f"Single-threaded throughput: ~{rps_str} requests/second. "
+        f"Processing {target_n:,} predictions serially would take ~{dur_str}."
+    )
+
+    return {
+        "verdict": verdict,
+        "n_samples": n,
+        "target_n": target_n,
+        "p50_ms": round(p50, 1),
+        "p95_ms": round(p95, 1),
+        "p99_ms": round(p99, 1),
+        "mean_ms": round(mean_ms, 1),
+        "max_rps": max_rps,
+        "serial_seconds": round(serial_seconds, 2) if serial_seconds is not None else None,
+        "serial_duration": serial_duration,
+        "summary": summary,
+    }

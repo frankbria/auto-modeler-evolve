@@ -40,6 +40,7 @@ from core.analyzer import (
     compute_deployment_monitoring_digest,
     compute_deployment_prediction_comparison,
     compute_deployment_scorecard,
+    compute_deployment_throughput,
     compute_deployments_overview,
     compute_prediction_audit,
     compute_prediction_output_anomalies,
@@ -7555,3 +7556,35 @@ def get_deployment_scorecard(
         )
 
     return compute_deployment_scorecard(entries)
+
+
+@router.get("/api/deploy/{deployment_id}/throughput-assessment")
+def get_deployment_throughput(
+    deployment_id: str,
+    n: int = 1000,
+    session: Session = Depends(get_session),
+) -> dict:
+    """Return latency-based throughput capacity assessment for a deployment.
+
+    Uses actual measured response_ms values from PredictionLogs to estimate
+    real single-threaded processing capacity and time-to-process N records.
+    """
+    dep = session.get(Deployment, deployment_id)
+    if not dep:
+        raise HTTPException(status_code=404, detail="Deployment not found")
+
+    logs = session.exec(
+        select(PredictionLog)
+        .where(
+            PredictionLog.deployment_id == deployment_id,
+            PredictionLog.response_ms != None,  # noqa: E711
+        )
+        .order_by(PredictionLog.created_at.desc())  # type: ignore[union-attr]
+        .limit(200)
+    ).all()
+
+    log_dicts = [{"response_ms": r.response_ms} for r in logs if r.response_ms is not None]
+    target_n = max(1, n)
+    result = compute_deployment_throughput(log_dicts, target_n=target_n)
+    result["deployment_id"] = deployment_id
+    return result

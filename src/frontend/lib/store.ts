@@ -200,6 +200,7 @@ interface AppState {
   attachWeeklyDigestConfigToLastMessage: (weekly_digest_config: import("./types").WeeklyDigestConfigResult) => void
   attachPromotionReadinessToLastMessage: (promotion_readiness: import("./types").PromotionReadinessResult) => void
   attachDeploymentScorecardToLastMessage: (deployment_scorecard: import("./types").DeploymentScorecardResult) => void
+  attachThroughputAssessmentToLastMessage: (throughput_assessment: import("./types").DeploymentThroughputResult) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -1689,6 +1690,16 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, deployment_scorecard }
+      }
+      return { messages }
+    }),
+
+  attachThroughputAssessmentToLastMessage: (throughput_assessment) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, throughput_assessment }
       }
       return { messages }
     }),

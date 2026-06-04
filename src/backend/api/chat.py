@@ -4606,6 +4606,41 @@ _DEPLOY_SCORECARD_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+_THROUGHPUT_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"how\s+long\s+(?:to|would\s+it\s+take\s+to)\s+(?:process|batch|run|score)\s+\d|"
+    r"(?:throughput|processing\s+time|batch\s+time)\s+(?:assessment|estimate|analysis|for)?\b|"
+    r"how\s+fast\s+(?:can|does|is)\s+(?:my\s+)?(?:deployment|model|api|endpoint)\s+(?:process|handle|predict|run)\b|"
+    r"(?:max(?:imum)?|peak)\s+(?:requests?|predictions?)\s+per\s+(?:second|minute|hour)\b|"
+    r"(?:latency|speed)\s+capacity\b|"
+    r"how\s+many\s+(?:predictions?|requests?)\s+per\s+second\b|"
+    r"(?:can\s+(?:it|this|my\s+(?:deployment|model|api))\s+handle|deployment\s+can\s+process)\s+\d|"
+    r"time\s+to\s+(?:process|batch|score)\s+(?:my\s+)?(?:data|dataset|records?|predictions?)\b"
+    r")",
+    re.IGNORECASE,
+)
+
+_THROUGHPUT_N_RE = re.compile(
+    r"\b(\d[\d,]*(?:\.\d+)?[km]?)\s*(?:predictions?|requests?|records?|rows?|calls?|items?)\b",
+    re.IGNORECASE,
+)
+
+
+def _extract_throughput_n(message: str) -> int:
+    """Extract a target prediction count from a throughput message, default 1000."""
+    m = _THROUGHPUT_N_RE.search(message)
+    if not m:
+        return 1000
+    raw = m.group(1).replace(",", "").lower()
+    if raw.endswith("k"):
+        return max(1, int(float(raw[:-1]) * 1000))
+    if raw.endswith("m"):
+        return max(1, int(float(raw[:-1]) * 1_000_000))
+    try:
+        return max(1, int(float(raw)))
+    except ValueError:
+        return 1000
+
 # Matches "Key = Value", "Key: Value", "Key is Value" patterns in a message
 _KV_PAIR_RE = re.compile(
     r"\b([A-Za-z_][\w\s]{0,30}?)\s*(?:=|:|\s+is\s+|\s+equals?\s+|\s+of\s+)\s*"
@@ -5683,6 +5718,59 @@ def send_message(
                 "If they're close, note that. "
                 "If there's only one deployment, explain the score signals instead."
             )
+        except Exception:  # noqa: BLE001
+            pass  # Nice-to-have; never crash chat
+
+    # Deployment throughput assessment — latency-based capacity from PredictionLog response_ms.
+    # Distinct from _COST_ESTIMATE_PATTERNS (quota/rate-limit-based) — this uses measured latency.
+    throughput_event: dict | None = None
+    if _THROUGHPUT_PATTERNS.search(body.message) and ctx["deployment"]:
+        try:
+            from core.analyzer import compute_deployment_throughput as _cdt
+
+            _tp_dep = ctx["deployment"]
+            _tp_dep_id = _tp_dep.id if hasattr(_tp_dep, "id") else str(_tp_dep)
+            _tp_logs = list(
+                session.exec(
+                    select(PredictionLog)
+                    .where(
+                        PredictionLog.deployment_id == _tp_dep_id,
+                        PredictionLog.response_ms != None,  # noqa: E711
+                    )
+                    .order_by(PredictionLog.created_at.desc())  # type: ignore[union-attr]
+                    .limit(200)
+                ).all()
+            )
+            _tp_log_dicts = [
+                {"response_ms": r.response_ms}
+                for r in _tp_logs
+                if r.response_ms is not None
+            ]
+            _tp_n = _extract_throughput_n(body.message)
+            throughput_event = _cdt(_tp_log_dicts, target_n=_tp_n)
+            throughput_event["deployment_id"] = _tp_dep_id
+
+            _tp_verdict = throughput_event.get("verdict", "no_data")
+            _tp_p95 = throughput_event.get("p95_ms")
+            _tp_rps = throughput_event.get("max_rps")
+            _tp_dur = throughput_event.get("serial_duration", "unknown")
+
+            if _tp_verdict == "no_data":
+                system_prompt += (
+                    "\n\n## Throughput Assessment\n"
+                    "Not enough latency data to estimate throughput for this deployment. "
+                    "Encourage the analyst to make a few predictions first."
+                )
+            else:
+                system_prompt += (
+                    f"\n\n## Throughput Assessment\n"
+                    f"p95 latency: {_tp_p95:.0f} ms. "
+                    f"Max single-threaded throughput: ~{_tp_rps:.1f} requests/second. "
+                    f"Processing {_tp_n:,} predictions serially takes ~{_tp_dur}. "
+                    "Present this as a plain-English capacity summary. "
+                    "If the analyst specified a target load, assess whether it's feasible. "
+                    "Suggest batching or parallelism for large workloads."
+                )
         except Exception:  # noqa: BLE001
             pass  # Nice-to-have; never crash chat
 
@@ -18973,6 +19061,10 @@ def send_message(
         # Emit deployment comparison scorecard if computed
         if deploy_scorecard_event:
             yield f"data: {json.dumps({'type': 'deployment_scorecard', 'deployment_scorecard': deploy_scorecard_event})}\n\n"
+
+        # Emit throughput assessment if computed
+        if throughput_event:
+            yield f"data: {json.dumps({'type': 'throughput_assessment', 'throughput_assessment': throughput_event})}\n\n"
 
         # Emit model comparison summary if computed
         if model_comparison_summary_event:

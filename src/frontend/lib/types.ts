@@ -560,6 +560,7 @@ export interface ChatMessage {
   weekly_digest_config?: WeeklyDigestConfigResult
   promotion_readiness?: PromotionReadinessResult
   deployment_scorecard?: DeploymentScorecardResult
+  throughput_assessment?: DeploymentThroughputResult
 }
 
 export interface RollbackVersionEntry {
@@ -4504,5 +4505,20 @@ export interface DeploymentScorecardResult {
   total: number
   entries: DeploymentScorecardEntry[]
   winner_id: string | null
+  summary: string
+}
+
+export interface DeploymentThroughputResult {
+  deployment_id: string
+  verdict: 'instant' | 'fast' | 'moderate' | 'slow' | 'very_slow' | 'no_data'
+  n_samples: number
+  target_n: number
+  p50_ms: number | null
+  p95_ms: number | null
+  p99_ms: number | null
+  mean_ms: number | null
+  max_rps: number | null
+  serial_seconds: number | null
+  serial_duration: string | null
   summary: string
 }

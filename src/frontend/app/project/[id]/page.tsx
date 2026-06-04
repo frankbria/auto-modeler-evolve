@@ -124,6 +124,7 @@ import { DeploymentPredictionDistributionCard } from "@/components/deploy/deploy
 import WeeklyDigestConfigCard from "@/components/deploy/weekly-digest-config-card"
 import { PromotionReadinessCard } from "@/components/models/promotion-readiness-card"
 import { DeploymentScorecardCard } from "@/components/deploy/deployment-scorecard-card"
+import { DeploymentThroughputCard } from "@/components/deploy/deployment-throughput-card"
 import { EnsembleRecommendationCard } from "@/components/models/ensemble-recommendation-card"
 import { TuningChatCard } from "@/components/models/tuning-chat-card"
 import { CvScoreDistributionCard } from "@/components/models/cv-score-distribution-card"
@@ -419,6 +420,7 @@ export default function ProjectWorkspace() {
     attachWeeklyDigestConfigToLastMessage,
     attachPromotionReadinessToLastMessage,
     attachDeploymentScorecardToLastMessage,
+    attachThroughputAssessmentToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -837,6 +839,8 @@ export default function ProjectWorkspace() {
                 attachPromotionReadinessToLastMessage(json.promotion_readiness as import("@/lib/types").PromotionReadinessResult)
               } else if (json.type === "deployment_scorecard" && json.deployment_scorecard) {
                 attachDeploymentScorecardToLastMessage(json.deployment_scorecard as import("@/lib/types").DeploymentScorecardResult)
+              } else if (json.type === "throughput_assessment" && json.throughput_assessment) {
+                attachThroughputAssessmentToLastMessage(json.throughput_assessment as import("@/lib/types").DeploymentThroughputResult)
               } else if (json.type === "onboarding_guide" && json.onboarding_guide) {
                 attachOnboardingGuideToLastMessage(json.onboarding_guide as import("@/lib/types").OnboardingGuideResult)
               } else if (json.type === "version_history" && json.version_history) {
@@ -1041,6 +1045,8 @@ export default function ProjectWorkspace() {
                 attachPromotionReadinessToLastMessage(json.promotion_readiness as import("@/lib/types").PromotionReadinessResult)
               } else if (json.type === "deployment_scorecard" && json.deployment_scorecard) {
                 attachDeploymentScorecardToLastMessage(json.deployment_scorecard as import("@/lib/types").DeploymentScorecardResult)
+              } else if (json.type === "throughput_assessment" && json.throughput_assessment) {
+                attachThroughputAssessmentToLastMessage(json.throughput_assessment as import("@/lib/types").DeploymentThroughputResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -1213,6 +1219,8 @@ export default function ProjectWorkspace() {
     attachDeployPredDistCompareToLastMessage,
     attachWeeklyDigestConfigToLastMessage,
     attachPromotionReadinessToLastMessage,
+    attachDeploymentScorecardToLastMessage,
+    attachThroughputAssessmentToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -1955,6 +1963,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.deployment_scorecard && (
                       <DeploymentScorecardCard result={msg.deployment_scorecard} />
+                    )}
+                    {msg.throughput_assessment && (
+                      <DeploymentThroughputCard result={msg.throughput_assessment} />
                     )}
                   </div>
                 </div>
