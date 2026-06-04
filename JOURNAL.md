@@ -1,5 +1,27 @@
 # Journal
 
+## Day 85 — 12:00 — Deployment Throughput Assessment
+
+**Feature shipped:** Deployment Throughput Assessment (Track D perpetual). Analysts can now say "how long to process 1000 predictions?", "throughput assessment", "how fast can my deployment process requests?", "maximum requests per second", or 5 other NL variants (8 total in `_THROUGHPUT_PATTERNS`) and receive a `DeploymentThroughputCard` showing latency-based capacity analysis. Closes the "can my deployment handle my batch workload?" analyst gap — distinct from the existing `cost_estimate` (quota/rate-limit-based) and `quota_runway` features. Uses actual measured `response_ms` values from PredictionLogs to estimate real single-threaded throughput and time-to-process N records.
+
+**What was built:**
+
+- `_format_duration(seconds)` + `compute_deployment_throughput(log_dicts, target_n)` pure functions in `core/analyzer.py`: computes p50/p95/p99/mean from measured latency, derives max_rps = 1000/p95 (conservative single-threaded estimate), serial_seconds = target_n × p95/1000, human-readable duration, and verdicts: no_data (<5 samples), instant (<5s), fast (<60s), moderate (<600s), slow (<3600s), very_slow (≥3600s).
+
+- `GET /api/deploy/{id}/throughput-assessment?n=1000` REST endpoint in `api/deploy.py`: loads last 200 PredictionLogs with response_ms, calls pure function, enriches with deployment_id. 404 for unknown deployments.
+
+- `_THROUGHPUT_PATTERNS` (8 NL variants) + `_extract_throughput_n()` helper + handler in `api/chat.py`: guarded by `ctx["deployment"]`; loads 200 PredictionLogs; injects p95 + max_rps + duration into system_prompt so Claude narrates the capacity estimate naturally; emits `{type:"throughput_assessment"}` SSE event. Distinct from `_COST_ESTIMATE_PATTERNS` (which uses configured rate_limit_rpm, not measured latency).
+
+- `DeploymentThroughputCard` (sky=fast / amber=moderate / orange=slow / rose=very_slow / emerald=instant / muted=no_data, ⚡ icon): verdict badge, target_n badge, p50/p95/p99/RPS stat boxes, duration estimate row, sample count note, summary paragraph, sr-only figcaption.
+
+- Full TypeScript wiring: `DeploymentThroughputResult` interface in `lib/types.ts`; `throughput_assessment?` on `ChatMessage`; `attachThroughputAssessmentToLastMessage` Zustand action; SSE handlers (both EventSource branches) + card render in `project/[id]/page.tsx`.
+
+**Tests:** 7 `_format_duration` + 14 `compute_deployment_throughput` pure-function (no_data conditions, latency stats, all 5 verdicts, target_n scaling, required keys, summary) + 4 `_extract_throughput_n` + 3 REST endpoint (404, no_data, with_data, custom n) + 12 regex (10 positive + 2 false-positive guards) = **43 backend**. 21 frontend (card renders, all 5 verdict colors, no_data state, stat boxes, duration row, sample count, summary, sr-only figcaption, 3 store action tests) = **21 frontend** = **64 new tests**. All passing. Backend lint: clean. Frontend build + TypeScript + lint: clean.
+
+**Key design decision:** The `_THROUGHPUT_PATTERNS` matches on actual timing questions ("how long to process", "batch time", "throughput") while `_COST_ESTIMATE_PATTERNS` matches on quota/capacity questions ("how many can handle", "capacity plan"). No overlap — tested with 2 false-positive guards. Single-threaded p95 estimate is explicitly labeled as a conservative baseline; analyst can reason about parallelism themselves.
+
+**Baseline:** 5715 backend / 3246 frontend → **5758 backend / 3267 frontend** (+43 / +21).
+
 ## Day 85 — 04:00 — Deployment Comparison Scorecard
 
 **Feature shipped:** Deployment Comparison Scorecard (Track D perpetual). Analysts can now say "rank my deployments by performance", "deployment scorecard", "deployment leaderboard", "which deployment performs best", "compare my deployments by performance", or 6 other NL variants (8 total in `_DEPLOY_SCORECARD_PATTERNS`) and receive a `DeploymentScorecardCard` ranking all active project deployments by composite production score. Closes the "I have multiple deployed model versions — which one is actually performing best in production?" analyst gap — previously, analysts had no single view combining usage volume, real-world accuracy, SLA health, and model freshness.
