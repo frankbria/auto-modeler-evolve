@@ -1255,6 +1255,30 @@ guides them forward through the natural flow.
       wired in workspace page.
       *Day 33 (04:00): 25 backend + 15 frontend = 40 new tests. Total: 3035 backend + 1592 frontend = 4627. Backend lint: clean. Frontend build + lint: clean.*
 
+- [x] **Deployment Comparison Scorecard** — Analysts can say "rank my deployments by performance",
+      "deployment scorecard", "deployment leaderboard", "which deployment performs best", or 7 other
+      NL variants (8 total in `_DEPLOY_SCORECARD_PATTERNS`) and receive a `DeploymentScorecardCard`
+      ranking all active project deployments by composite production score. Closes the "I have multiple
+      deployed versions — which one is actually doing best in production?" analyst gap.
+      `compute_deployment_scorecard(entries)` pure function in `core/analyzer.py`: computes per-deployment
+      `usage_score` (log-scale prediction volume: 0–100), `sla_score` (from p95 latency; None when no
+      data), `accuracy_score` (from FeedbackRecord is_correct; None when no feedback), `freshness_score`
+      (age-based: 100 for <7 days, decaying to 0 for ≥180 days); availability-aware weighted composite
+      (usage 40%, feedback 30% when available, freshness 20%, SLA 10% when available); ranks entries
+      descending by composite score; plain-English summary names winner and lead gap. `GET /api/projects/
+      {project_id}/deployment-scorecard` REST endpoint in `api/deploy.py`: queries all `is_active`
+      deployments, computes signals inline (FeedbackRecord for accuracy, PredictionLog.response_ms for
+      p95, created_at for age). `_DEPLOY_SCORECARD_PATTERNS` (8 NL variants) + handler in `chat.py`:
+      scoped to current project; emits `{type:"deployment_scorecard"}` SSE event; injects winner +
+      summary into system_prompt. `DeploymentScorecardCard` (amber border, 🏆 icon): N-deployments badge,
+      rank medals (🥇🥈🥉) for top 3, "Top Performer" badge on winner, composite score bar (emerald ≥70,
+      amber ≥45, rose otherwise), signal pills (🔢 prediction count, 📅 age, 🎯 feedback accuracy, ⚡
+      SLA p95), Production/Staging environment badge; "No feedback" and "No SLA data" pills when signals
+      unavailable; summary footer. `DeploymentScorecardEntry` + `DeploymentScorecardResult` TypeScript
+      interfaces; `deployment_scorecard?` on `ChatMessage`; `attachDeploymentScorecardToLastMessage`
+      Zustand action; SSE handlers + card render wired in both EventSource branches of `page.tsx`.
+      *Day 85 (04:00): 53 backend + 21 frontend = 74 new tests. Baseline: 5662 backend / 3225 frontend → **5715 backend / 3246 frontend** (+53 / +21). Backend lint: clean. Frontend build + TypeScript + lint: clean.*
+
 #### Track E — End-to-End Polish
 
 > The "lunch break" success criterion: a business analyst uploads quarterly sales data and
