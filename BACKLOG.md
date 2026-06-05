@@ -49,9 +49,20 @@ the time is better spent on real features.
 
 ## Currently Working On
 
-**Track C: Per-Class Threshold Tuning** — Day 85 (20:00)
+*(nothing)*
 
-Closes the "what confidence cutoff should I use for each class?" multiclass analyst gap. For classification models with multiple classes, the existing `ThresholdAnalysisCard` sweeps a single global threshold (binary or max-confidence proxy). This feature independently optimizes each class's confidence threshold using one-vs-rest F1 maximization, so analysts can say "use 70% for high-risk but only 40% for low-risk" — a real need for churn, fraud, and priority-routing use cases.
+---
+
+## Day 85 (20:00) — Done
+
+**Track C: Per-Class Threshold Tuning** — complete.
+
+Closes the "what confidence cutoff should I use for each class?" multiclass analyst gap. Analysts say "per-class threshold tuning", "optimize threshold for each class", "class-specific thresholds", or 5 other NL variants (8 total) and receive a `PerClassThresholdCard` showing the optimal confidence threshold for each class independently via one-vs-rest F1 maximization. Violet-bordered when actionable, with direction badges (↑ Raise/↓ Lower/✓ Default), F1-gain badges, per-class recommendations, and expandable sweep charts.
+
+**What's next:**
+- Track D: Deployment-level confidence threshold configuration — "set a minimum confidence of 70% for serving predictions" (distinct from PerClassThresholdCard which is advisory)
+- Track B: Comparative Model Improvement Plan — "create a ranked improvement roadmap for all my models"
+- Track C: Per-class weighted training — "train with higher weight on rare/important classes"
 
 ---
 
