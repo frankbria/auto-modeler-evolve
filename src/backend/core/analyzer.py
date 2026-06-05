@@ -6938,9 +6938,9 @@ def compute_drift_importance_ranking(
         }
 
     # Cap to top max_features (already sorted importance-descending by identify_weak_features)
-    top_features = [fi for fi in feature_importances if fi.get("importance") is not None][
-        :max_features
-    ]
+    top_features = [
+        fi for fi in feature_importances if fi.get("importance") is not None
+    ][:max_features]
 
     # Compute median importance for priority thresholds
     imp_values = sorted(fi["importance"] for fi in top_features)
@@ -6998,7 +6998,9 @@ def compute_drift_importance_ranking(
                     unseen = sum(1 for v in values if str(v) not in known)
                     drift_pct = unseen / len(values)
                     if drift_pct > 0:
-                        drift_details = f"{drift_pct:.0%} unseen categories not in training"
+                        drift_details = (
+                            f"{drift_pct:.0%} unseen categories not in training"
+                        )
                     else:
                         drift_details = "All categories seen during training"
                 else:

@@ -16986,7 +16986,11 @@ def send_message(
             _dir_feature_importances: list[dict] = []
             if _dir_dep_obj:
                 _dir_run = session.get(ModelRun, _dir_dep_obj.model_run_id)
-                if _dir_run and _dir_run.model_path and Path(_dir_run.model_path).exists():
+                if (
+                    _dir_run
+                    and _dir_run.model_path
+                    and Path(_dir_run.model_path).exists()
+                ):
                     _dir_feat_cols: list[str] = []
                     if getattr(_dir_dep_obj, "feature_names", None):
                         try:

@@ -96,10 +96,17 @@ class TestComputeDriftImportanceRanking:
 
     def test_high_verdict_moderate_drift(self):
         # 20% OOR but feature is below median importance → "high" not "critical"
-        inputs = [{"revenue": 500.0, "units": 20}, {"revenue": 150.0, "units": 15},
-                  {"revenue": 150.0, "units": 15}, {"revenue": 150.0, "units": 15},
-                  {"revenue": 150.0, "units": 15}]
-        ranges = {"revenue": {"min": 100.0, "max": 300.0}, "units": {"min": 10, "max": 30}}
+        inputs = [
+            {"revenue": 500.0, "units": 20},
+            {"revenue": 150.0, "units": 15},
+            {"revenue": 150.0, "units": 15},
+            {"revenue": 150.0, "units": 15},
+            {"revenue": 150.0, "units": 15},
+        ]
+        ranges = {
+            "revenue": {"min": 100.0, "max": 300.0},
+            "units": {"min": 10, "max": 30},
+        }
         fi = _importances(["revenue", "units"], [0.1, 0.9])
         result = compute_drift_importance_ranking(inputs, ranges, fi)
         assert result["verdict"] in ("attention", "monitoring", "action_required")
@@ -108,7 +115,10 @@ class TestComputeDriftImportanceRanking:
         # revenue: 40% OOR, importance 0.6  → risk_score = 0.4 * 0.6
         # units: 0% OOR, importance 0.3     → risk_score = 0
         inputs = [{"revenue": float(v), "units": 15} for v in [500, 600, 150, 150, 150]]
-        ranges = {"revenue": {"min": 100.0, "max": 300.0}, "units": {"min": 10, "max": 30}}
+        ranges = {
+            "revenue": {"min": 100.0, "max": 300.0},
+            "units": {"min": 10, "max": 30},
+        }
         fi = _importances(["revenue", "units"], [0.6, 0.3])
         result = compute_drift_importance_ranking(inputs, ranges, fi)
         ranked = result["ranked_features"]
@@ -176,8 +186,16 @@ class TestComputeDriftImportanceRanking:
         fi = _importances(["revenue"], [1.0])
         result = compute_drift_importance_ranking(inputs, ranges, fi)
         row = result["ranked_features"][0]
-        for key in ["name", "importance_pct", "rank", "drift_pct", "risk_score",
-                    "priority", "feature_type", "drift_details"]:
+        for key in [
+            "name",
+            "importance_pct",
+            "rank",
+            "drift_pct",
+            "risk_score",
+            "priority",
+            "feature_type",
+            "drift_details",
+        ]:
             assert key in row, f"Missing key: {key}"
 
     def test_summary_is_non_empty_string(self):

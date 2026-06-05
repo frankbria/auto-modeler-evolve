@@ -7661,7 +7661,9 @@ def get_drift_importance_ranking(
             except Exception:  # noqa: BLE001
                 pass
 
-    result = compute_drift_importance_ranking(all_inputs, feature_ranges, feature_importances)
+    result = compute_drift_importance_ranking(
+        all_inputs, feature_ranges, feature_importances
+    )
     result["deployment_id"] = deployment_id
     if run_id:
         result["run_id"] = run_id
