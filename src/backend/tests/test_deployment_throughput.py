@@ -20,7 +20,6 @@ from models.deployment import Deployment
 from models.prediction_log import PredictionLog
 from models.project import Project
 
-
 # ---------------------------------------------------------------------------
 # _format_duration
 # ---------------------------------------------------------------------------

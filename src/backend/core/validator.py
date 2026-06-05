@@ -1413,9 +1413,7 @@ def compute_per_class_threshold_analysis(
             )
         else:
             direction = "keep"
-            recommendation = (
-                f"Default 50% is already optimal for '{cls_name}'."
-            )
+            recommendation = f"Default 50% is already optimal for '{cls_name}'."
 
         if is_actionable:
             n_actionable += 1

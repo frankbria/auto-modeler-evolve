@@ -23,7 +23,6 @@ from core.analyzer import (
 from main import app
 from models.deployment import Deployment
 
-
 # ---------------------------------------------------------------------------
 # _usage_score
 # ---------------------------------------------------------------------------

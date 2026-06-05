@@ -6883,9 +6883,9 @@ def compute_deployment_throughput(log_dicts: list[dict], target_n: int = 1000) -
         "p99_ms": round(p99, 1),
         "mean_ms": round(mean_ms, 1),
         "max_rps": max_rps,
-        "serial_seconds": round(serial_seconds, 2)
-        if serial_seconds is not None
-        else None,
+        "serial_seconds": (
+            round(serial_seconds, 2) if serial_seconds is not None else None
+        ),
         "serial_duration": serial_duration,
         "summary": summary,
     }

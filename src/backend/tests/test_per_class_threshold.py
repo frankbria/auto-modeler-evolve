@@ -90,7 +90,9 @@ class TestPerClassThresholdSweep:
         y, p = _make_multiclass_data()
         result = compute_per_class_threshold_analysis(y, p)
         for cls in result["classes"]:
-            assert len(cls["sweep"]) == 19, f"Class {cls['class_name']} sweep has wrong length"
+            assert (
+                len(cls["sweep"]) == 19
+            ), f"Class {cls['class_name']} sweep has wrong length"
 
     def test_sweep_thresholds_range(self):
         y, p = _make_multiclass_data()
@@ -111,7 +113,9 @@ class TestPerClassThresholdSweep:
         result = compute_per_class_threshold_analysis(y, p)
         valid = {"raise", "lower", "keep"}
         for cls in result["classes"]:
-            assert cls["direction"] in valid, f"Unexpected direction: {cls['direction']}"
+            assert (
+                cls["direction"] in valid
+            ), f"Unexpected direction: {cls['direction']}"
 
     def test_direction_logic(self):
         y, p = _make_multiclass_data()
@@ -172,8 +176,12 @@ class TestPerClassThresholdClassNames:
 class TestPerClassThresholdEdgeCases:
     def test_raises_on_too_few_samples(self):
         y = np.array([0, 1, 0, 1, 0])
-        p = np.column_stack([1 - np.array([0.3, 0.7, 0.4, 0.8, 0.2]),
-                             np.array([0.3, 0.7, 0.4, 0.8, 0.2])])
+        p = np.column_stack(
+            [
+                1 - np.array([0.3, 0.7, 0.4, 0.8, 0.2]),
+                np.array([0.3, 0.7, 0.4, 0.8, 0.2]),
+            ]
+        )
         with pytest.raises(ValueError, match="10 samples"):
             compute_per_class_threshold_analysis(y, p)
 
@@ -187,13 +195,17 @@ class TestPerClassThresholdEdgeCases:
         y, p = _make_multiclass_data()
         result = compute_per_class_threshold_analysis(y, p)
         for cls in result["classes"]:
-            assert cls["f1_gain"] >= 0, f"Negative f1_gain for class {cls['class_name']}"
+            assert (
+                cls["f1_gain"] >= 0
+            ), f"Negative f1_gain for class {cls['class_name']}"
 
     def test_prevalence_sums_approximately_one(self):
         y, p = _make_multiclass_data()
         result = compute_per_class_threshold_analysis(y, p)
         total = sum(c["prevalence"] for c in result["classes"])
-        assert abs(total - 1.0) < 0.05  # approximately 1 (one-vs-rest, so should be close)
+        assert (
+            abs(total - 1.0) < 0.05
+        )  # approximately 1 (one-vs-rest, so should be close)
 
     def test_n_actionable_consistent(self):
         y, p = _make_multiclass_data()
@@ -220,7 +232,10 @@ class TestPerClassThresholdSummary:
         p = np.ones((n, 3)) / 3  # uniform → all thresholds near default
         result = compute_per_class_threshold_analysis(y, p)
         if result["n_actionable"] == 0:
-            assert "default" in result["summary"].lower() or "optimal" in result["summary"].lower()
+            assert (
+                "default" in result["summary"].lower()
+                or "optimal" in result["summary"].lower()
+            )
 
 
 # ---------------------------------------------------------------------------

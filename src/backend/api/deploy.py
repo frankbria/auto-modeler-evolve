@@ -2722,9 +2722,7 @@ def set_accuracy_alert(
             + (
                 f"drops below {thr:.0%}."
                 if problem_type == "classification" and thr is not None
-                else f"exceeds {thr:.1f}%."
-                if thr is not None
-                else ""
+                else f"exceeds {thr:.1f}%." if thr is not None else ""
             )
             if threshold_set
             else "Accuracy alert disabled."
@@ -6497,9 +6495,7 @@ def get_model_status_report(
                 else (
                     "good"
                     if feedback_accuracy >= 0.8
-                    else "moderate"
-                    if feedback_accuracy >= 0.6
-                    else "needs attention"
+                    else "moderate" if feedback_accuracy >= 0.6 else "needs attention"
                 )
             )
     except Exception:  # noqa: BLE001

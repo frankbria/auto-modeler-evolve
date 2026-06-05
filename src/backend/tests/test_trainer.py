@@ -356,9 +356,9 @@ class TestTrainSingleModel:
             X, y, "linear_regression", "regression", tmp_path, "cv_stable"
         )
         # Well-fitting linear model should have low CV std
-        assert result["metrics"]["cv_std"] < 0.1, (
-            "Expected stable CV for clean linear data"
-        )
+        assert (
+            result["metrics"]["cv_std"] < 0.1
+        ), "Expected stable CV for clean linear data"
 
 
 # ---------------------------------------------------------------------------
