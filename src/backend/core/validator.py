@@ -1311,6 +1311,160 @@ def compute_threshold_analysis(
 
 
 # ---------------------------------------------------------------------------
+# Per-class threshold analysis (multiclass one-vs-rest sweep)
+# ---------------------------------------------------------------------------
+
+
+def compute_per_class_threshold_analysis(
+    y_true: np.ndarray,
+    y_proba: np.ndarray,
+    class_names: list[str] | None = None,
+) -> dict:
+    """Independently sweep confidence thresholds for each class using one-vs-rest.
+
+    y_true  — integer-encoded true labels (shape: n_samples)
+    y_proba — probability matrix (shape: n_samples × n_classes) from predict_proba
+    class_names — optional human-readable names indexed by class integer
+
+    Returns a dict with:
+      classes    — list of per-class result dicts (see below)
+      n_classes  — number of classes analysed
+      n_samples  — total sample count
+      summary    — plain-English summary of actionable threshold changes
+    """
+    if len(y_true) < 10:
+        raise ValueError("Need at least 10 samples for per-class threshold analysis.")
+
+    y_true_arr = np.array(y_true)
+    y_proba_arr = np.array(y_proba)
+
+    unique_classes = sorted(set(y_true_arr.tolist()))
+    n_classes = len(unique_classes)
+    if n_classes < 2:
+        raise ValueError("Need at least 2 classes.")
+    if y_proba_arr.ndim != 2 or y_proba_arr.shape[1] != n_classes:
+        raise ValueError(
+            f"y_proba must be (n_samples, {n_classes}); got shape {y_proba_arr.shape}."
+        )
+
+    thresholds = [round(t * 0.05, 2) for t in range(1, 20)]  # 0.05 … 0.95
+
+    class_results: list[dict] = []
+    n_actionable = 0
+
+    for idx, cls_int in enumerate(unique_classes):
+        cls_name = (
+            class_names[cls_int]
+            if class_names and cls_int < len(class_names)
+            else str(cls_int)
+        )
+        y_bin = (y_true_arr == cls_int).astype(int)
+        n_positive = int(y_bin.sum())
+        prevalence = n_positive / len(y_bin)
+
+        # Use the class column's probability for one-vs-rest
+        col_idx = cls_int if cls_int < y_proba_arr.shape[1] else idx
+        col_idx = min(col_idx, y_proba_arr.shape[1] - 1)
+        scores = y_proba_arr[:, col_idx]
+
+        sweep: list[dict] = []
+        for thr in thresholds:
+            y_pred_bin = (scores >= thr).astype(int)
+            tp = int(((y_pred_bin == 1) & (y_bin == 1)).sum())
+            fp = int(((y_pred_bin == 1) & (y_bin == 0)).sum())
+            fn = int(((y_pred_bin == 0) & (y_bin == 1)).sum())
+            pred_pos = tp + fp
+            actual_pos = tp + fn
+
+            prec = tp / pred_pos if pred_pos > 0 else 0.0
+            rec = tp / actual_pos if actual_pos > 0 else 0.0
+            f1 = 2 * prec * rec / (prec + rec) if (prec + rec) > 0 else 0.0
+            pos_rate = pred_pos / len(y_bin)
+
+            sweep.append(
+                {
+                    "threshold": thr,
+                    "precision": round(prec, 4),
+                    "recall": round(rec, 4),
+                    "f1": round(f1, 4),
+                    "positive_rate": round(pos_rate, 4),
+                }
+            )
+
+        best = max(sweep, key=lambda p: p["f1"])
+        default_pt = next((p for p in sweep if p["threshold"] == 0.50), sweep[9])
+
+        f1_gain = round(best["f1"] - default_pt["f1"], 4)
+        is_actionable = abs(best["threshold"] - 0.50) >= 0.10 and f1_gain > 0.02
+
+        if best["threshold"] > 0.50:
+            direction = "raise"
+            recommendation = (
+                f"Raise to {int(best['threshold'] * 100)}%: "
+                f"fewer false '{cls_name}' predictions, "
+                f"+{int(f1_gain * 100)}pp F1 gain."
+            )
+        elif best["threshold"] < 0.50:
+            direction = "lower"
+            recommendation = (
+                f"Lower to {int(best['threshold'] * 100)}%: "
+                f"catch more '{cls_name}' cases, "
+                f"+{int(f1_gain * 100)}pp F1 gain."
+            )
+        else:
+            direction = "keep"
+            recommendation = (
+                f"Default 50% is already optimal for '{cls_name}'."
+            )
+
+        if is_actionable:
+            n_actionable += 1
+
+        class_results.append(
+            {
+                "class_name": cls_name,
+                "class_index": cls_int,
+                "n_positive": n_positive,
+                "prevalence": round(prevalence, 4),
+                "sweep": sweep,
+                "optimal_threshold": best["threshold"],
+                "optimal_f1": best["f1"],
+                "optimal_precision": best["precision"],
+                "optimal_recall": best["recall"],
+                "default_f1": default_pt["f1"],
+                "f1_gain": f1_gain,
+                "direction": direction,
+                "recommendation": recommendation,
+                "is_actionable": is_actionable,
+            }
+        )
+
+    # Summary
+    actionable_classes = [c for c in class_results if c["is_actionable"]]
+    if not actionable_classes:
+        summary = (
+            f"All {n_classes} classes perform near-optimally at the default 50% "
+            "confidence threshold — no changes recommended."
+        )
+    else:
+        names = ", ".join(f"'{c['class_name']}'" for c in actionable_classes[:3])
+        summary = (
+            f"{n_actionable} of {n_classes} classes benefit from threshold tuning: "
+            f"{names}. "
+            "Adjusting per-class thresholds can meaningfully improve precision or recall "
+            "for those specific outcomes."
+        )
+
+    return {
+        "classes": class_results,
+        "n_classes": n_classes,
+        "n_samples": len(y_true_arr),
+        "n_actionable": n_actionable,
+        "summary": summary,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Confidence distribution analysis
 # ---------------------------------------------------------------------------
 

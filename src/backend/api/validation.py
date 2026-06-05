@@ -37,6 +37,7 @@ from core.validator import (
     compute_error_distribution,
     compute_fairness_metrics,
     compute_min_viable_feature_set,
+    compute_per_class_threshold_analysis,
     compute_prediction_error_correlation,
     compute_prediction_errors,
     compute_residuals,
@@ -680,7 +681,65 @@ def get_threshold_analysis(
 
 
 # ---------------------------------------------------------------------------
-# 9. Confidence distribution analysis
+# 9. Per-class threshold analysis (multiclass one-vs-rest)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/api/models/{model_run_id}/per-class-threshold")
+def get_per_class_threshold(
+    model_run_id: str,
+    session: Session = Depends(get_session),
+):
+    """Return per-class optimal thresholds via one-vs-rest sweep.
+
+    For each class independently finds the confidence threshold (0.05–0.95)
+    that maximises F1 score in a one-vs-rest binary framing.
+
+    Only available for classification models with predict_proba support.
+    Returns 400 for regression models, models without probability output,
+    or binary models (use /threshold-analysis for binary).
+    """
+    run, feature_set, _dataset, file_path = _load_run_context(model_run_id, session)
+
+    problem_type = feature_set.problem_type or "regression"
+    if problem_type != "classification":
+        raise HTTPException(
+            status_code=400,
+            detail="Per-class threshold analysis is only available for classification models.",
+        )
+
+    X, y, _feature_cols = _build_Xy(file_path, feature_set)
+
+    fitted_model = joblib.load(run.model_path)
+
+    if not hasattr(fitted_model, "predict_proba"):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Algorithm '{run.algorithm}' does not support probability output "
+                "required for per-class threshold analysis."
+            ),
+        )
+
+    proba = fitted_model.predict_proba(X)
+    classes = fitted_model.classes_.tolist()
+    class_names = [str(c) for c in classes]
+
+    result = compute_per_class_threshold_analysis(
+        y_true=y,
+        y_proba=proba,
+        class_names=class_names,
+    )
+
+    result["model_run_id"] = model_run_id
+    result["algorithm"] = run.algorithm
+    result["target_col"] = feature_set.target_column
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# 10. Confidence distribution analysis
 # ---------------------------------------------------------------------------
 
 

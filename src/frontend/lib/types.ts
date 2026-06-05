@@ -543,6 +543,7 @@ export interface ChatMessage {
   feature_redundancy?: FeatureRedundancyResult
   target_leakage?: TargetLeakageResult
   threshold_analysis?: ThresholdAnalysisResult
+  per_class_threshold?: PerClassThresholdResult
   confidence_distribution?: ConfidenceDistributionResult
   sample_size_adequacy?: SampleSizeAdequacyResult
   class_feature_importance?: ClassFeatureImportanceResult
@@ -4520,5 +4521,41 @@ export interface DeploymentThroughputResult {
   max_rps: number | null
   serial_seconds: number | null
   serial_duration: string | null
+  summary: string
+}
+
+export interface PerClassThresholdSweepPoint {
+  threshold: number
+  precision: number
+  recall: number
+  f1: number
+  positive_rate: number
+}
+
+export interface PerClassThresholdEntry {
+  class_name: string
+  class_index: number
+  n_positive: number
+  prevalence: number
+  sweep: PerClassThresholdSweepPoint[]
+  optimal_threshold: number
+  optimal_f1: number
+  optimal_precision: number
+  optimal_recall: number
+  default_f1: number
+  f1_gain: number
+  direction: 'raise' | 'lower' | 'keep'
+  recommendation: string
+  is_actionable: boolean
+}
+
+export interface PerClassThresholdResult {
+  model_run_id: string
+  algorithm: string
+  target_col: string
+  classes: PerClassThresholdEntry[]
+  n_classes: number
+  n_samples: number
+  n_actionable: number
   summary: string
 }

@@ -82,6 +82,7 @@ import { OverfittingAnalysisCard } from "@/components/models/overfitting-analysi
 import { FeatureRedundancyCard } from "@/components/models/feature-redundancy-card"
 import { TargetLeakageCard } from "@/components/models/target-leakage-card"
 import { ThresholdAnalysisCard } from "@/components/models/threshold-analysis-card"
+import { PerClassThresholdCard } from "@/components/models/per-class-threshold-card"
 import { ConfidenceDistributionCard } from "@/components/models/confidence-distribution-card"
 import { SampleSizeAdequacyCard } from "@/components/models/sample-size-adequacy-card"
 import { ClassFeatureImportanceCard } from "@/components/models/class-feature-importance-card"
@@ -403,6 +404,7 @@ export default function ProjectWorkspace() {
     attachFeatureRedundancyToLastMessage,
     attachTargetLeakageToLastMessage,
     attachThresholdAnalysisToLastMessage,
+    attachPerClassThresholdToLastMessage,
     attachConfidenceDistributionToLastMessage,
     attachSampleSizeAdequacyToLastMessage,
     attachClassFeatureImportanceToLastMessage,
@@ -804,6 +806,8 @@ export default function ProjectWorkspace() {
               } else if (json.type === "target_leakage" && json.target_leakage) {
                 attachTargetLeakageToLastMessage(json.target_leakage as import("@/lib/types").TargetLeakageResult)
               } else if (json.type === "threshold_analysis" && json.threshold_analysis) {
+              } else if (json.type === "per_class_threshold" && json.per_class_threshold) {
+                attachPerClassThresholdToLastMessage(json.per_class_threshold as import("@/lib/types").PerClassThresholdResult)
                 attachThresholdAnalysisToLastMessage(json.threshold_analysis as import("@/lib/types").ThresholdAnalysisResult)
               } else if (json.type === "confidence_distribution" && json.confidence_distribution) {
                 attachConfidenceDistributionToLastMessage(json.confidence_distribution as import("@/lib/types").ConfidenceDistributionResult)
@@ -1010,6 +1014,8 @@ export default function ProjectWorkspace() {
               } else if (json.type === "target_leakage" && json.target_leakage) {
                 attachTargetLeakageToLastMessage(json.target_leakage as import("@/lib/types").TargetLeakageResult)
               } else if (json.type === "threshold_analysis" && json.threshold_analysis) {
+              } else if (json.type === "per_class_threshold" && json.per_class_threshold) {
+                attachPerClassThresholdToLastMessage(json.per_class_threshold as import("@/lib/types").PerClassThresholdResult)
                 attachThresholdAnalysisToLastMessage(json.threshold_analysis as import("@/lib/types").ThresholdAnalysisResult)
               } else if (json.type === "confidence_distribution" && json.confidence_distribution) {
                 attachConfidenceDistributionToLastMessage(json.confidence_distribution as import("@/lib/types").ConfidenceDistributionResult)
@@ -1203,6 +1209,7 @@ export default function ProjectWorkspace() {
     attachFeatureRedundancyToLastMessage,
     attachTargetLeakageToLastMessage,
     attachThresholdAnalysisToLastMessage,
+    attachPerClassThresholdToLastMessage,
     attachConfidenceDistributionToLastMessage,
     attachSampleSizeAdequacyToLastMessage,
     attachClassFeatureImportanceToLastMessage,
@@ -1906,6 +1913,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.threshold_analysis && (
                       <ThresholdAnalysisCard result={msg.threshold_analysis} />
+                    )}
+                    {msg.per_class_threshold && (
+                      <PerClassThresholdCard result={msg.per_class_threshold} />
                     )}
                     {msg.confidence_distribution && (
                       <ConfidenceDistributionCard result={msg.confidence_distribution} />

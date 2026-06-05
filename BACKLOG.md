@@ -49,7 +49,9 @@ the time is better spent on real features.
 
 ## Currently Working On
 
-*(nothing)*
+**Track C: Per-Class Threshold Tuning** — Day 85 (20:00)
+
+Closes the "what confidence cutoff should I use for each class?" multiclass analyst gap. For classification models with multiple classes, the existing `ThresholdAnalysisCard` sweeps a single global threshold (binary or max-confidence proxy). This feature independently optimizes each class's confidence threshold using one-vs-rest F1 maximization, so analysts can say "use 70% for high-risk but only 40% for low-risk" — a real need for churn, fraud, and priority-routing use cases.
 
 ---
 

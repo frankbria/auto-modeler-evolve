@@ -4069,6 +4069,23 @@ _THRESHOLD_ADVISOR_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# Per-class threshold tuning: optimize the confidence threshold independently for each class.
+# Distinct from: _THRESHOLD_ADVISOR_PATTERNS (single global threshold for binary/max-confidence),
+# _PROD_THRESHOLD_OPT_PATTERNS (uses production feedback), _CONFIDENCE_DIST_PATTERNS (distribution).
+_PER_CLASS_THRESHOLD_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"per.class\s+(?:threshold|cutoff|confidence)\s*(?:tuning|analysis|optimization|setting|advisor)?\b|"
+    r"(?:optimize|tune|set|find)\s+(?:the\s+)?threshold\s+(?:for\s+)?(?:each|every|all)\s+(?:class|label|category)\b|"
+    r"(?:class.specific|class.level|per.class|different)\s+(?:threshold|cutoff|confidence\s+threshold)\b|"
+    r"(?:independent|separate)\s+(?:threshold|cutoff)\s+(?:per|for\s+each)\s+class\b|"
+    r"(?:multiclass|multi.class)\s+threshold\s+(?:tuning|analysis|optimization|advisor)\b|"
+    r"(?:different|individual)\s+(?:confidence|probability)\s+(?:threshold|cutoff)\s+(?:for\s+each|per)\s+(?:class|label|outcome)\b|"
+    r"optimize\s+(?:threshold|cutoff)\s+(?:independently|per.class|by\s+class|for\s+each\s+class)\b|"
+    r"what\s+(?:threshold|cutoff)\s+should\s+I\s+use\s+(?:per\s+class|for\s+each\s+class|by\s+class|for\s+each\s+category)\b"
+    r")",
+    re.IGNORECASE,
+)
+
 _CONFIDENCE_DIST_PATTERNS = re.compile(
     r"(?i)(?:"
     r"(?:show|display|plot|visualize)\s+(?:me\s+)?(?:the\s+)?confidence\s+distribution\b|"
@@ -8493,6 +8510,103 @@ def send_message(
                         )
         except Exception:  # noqa: BLE001
             pass  # Threshold advisor is nice-to-have; never crash chat
+
+    # Per-class threshold tuning
+    # "optimize threshold for each class", "per-class confidence cutoff", "multiclass threshold analysis"
+    # Distinct from _THRESHOLD_ADVISOR_PATTERNS (single global threshold, binary/max-confidence proxy)
+    per_class_threshold_event: dict | None = None
+    if _PER_CLASS_THRESHOLD_PATTERNS.search(body.message) and ctx["model_runs"]:
+        try:
+            from core.validator import compute_per_class_threshold_analysis as _cpct
+
+            import joblib as _jl_pct
+            import numpy as _np_pct
+
+            _done_cls_pct = [
+                r
+                for r in ctx["model_runs"]
+                if r.status == "done" and r.model_path and Path(r.model_path).exists()
+            ]
+            _cls_runs_pct = []
+            _cls_fsets_pct: dict[str, object] = {}
+            for _r_pct in _done_cls_pct:
+                _fset_pct = session.get(FeatureSet, _r_pct.feature_set_id)
+                if (
+                    _fset_pct
+                    and (_fset_pct.problem_type or "regression") == "classification"
+                ):
+                    _cls_runs_pct.append(_r_pct)
+                    _cls_fsets_pct[_r_pct.id] = _fset_pct
+
+            if _cls_runs_pct:
+                _sel_pct = (
+                    next((r for r in _cls_runs_pct if r.is_selected), None)
+                    or _cls_runs_pct[0]
+                )
+                _fset_pct2 = _cls_fsets_pct[_sel_pct.id]
+                _ds_pct = ctx["dataset"]
+                if _ds_pct and Path(_ds_pct.file_path).exists():
+                    import pandas as _pd_pct
+                    from core.feature_engine import apply_transformations as _apply_pct
+                    from core.trainer import prepare_features as _pf_pct
+
+                    _df_pct = _pd_pct.read_csv(Path(_ds_pct.file_path))
+                    _tfms_pct = __import__("json").loads(
+                        _fset_pct2.transformations or "[]"
+                    )
+                    if _tfms_pct:
+                        _df_pct, _ = _apply_pct(_df_pct, _tfms_pct)
+
+                    _target_pct = _fset_pct2.target_column
+                    _feat_cols_pct = [c for c in _df_pct.columns if c != _target_pct]
+                    _X_pct, _y_pct, _ = _pf_pct(
+                        _df_pct, _feat_cols_pct, _target_pct, "classification"
+                    )
+
+                    _model_pct = _jl_pct.load(_sel_pct.model_path)
+                    if hasattr(_model_pct, "predict_proba"):
+                        _proba_pct = _model_pct.predict_proba(_X_pct)
+                        _classes_pct = [str(c) for c in _model_pct.classes_.tolist()]
+
+                        _pct_result = _cpct(
+                            y_true=_np_pct.array(_y_pct),
+                            y_proba=_proba_pct,
+                            class_names=_classes_pct,
+                        )
+
+                        per_class_threshold_event = {
+                            "model_run_id": _sel_pct.id,
+                            "algorithm": _sel_pct.algorithm,
+                            "target_col": _target_pct,
+                            **_pct_result,
+                        }
+
+                        _actionable_pct = [
+                            c for c in _pct_result["classes"] if c["is_actionable"]
+                        ]
+                        if _actionable_pct:
+                            _pct_hints = "; ".join(
+                                f"'{c['class_name']}' → {int(c['optimal_threshold'] * 100)}% "
+                                f"(+{int(c['f1_gain'] * 100)}pp F1)"
+                                for c in _actionable_pct[:3]
+                            )
+                            system_prompt += (
+                                f"\n\n## Per-Class Threshold Analysis\n"
+                                f"{_pct_result['summary']} "
+                                f"Actionable changes: {_pct_hints}. "
+                                "Explain to the analyst: different classes often benefit from different "
+                                "confidence thresholds. High-stakes classes (fraud, churn, urgent) "
+                                "often need a lower threshold to catch more cases, while low-risk "
+                                "classes can use higher thresholds to reduce false alarms."
+                            )
+                        else:
+                            system_prompt += (
+                                f"\n\n## Per-Class Threshold Analysis\n"
+                                f"{_pct_result['summary']} "
+                                "Tell the analyst the default 50% threshold is working well for all classes."
+                            )
+        except Exception:  # noqa: BLE001
+            pass  # Per-class threshold analysis is nice-to-have; never crash chat
 
     # Confidence distribution analysis
     confidence_dist_event: dict | None = None
@@ -19655,6 +19769,9 @@ def send_message(
 
         if threshold_analysis_event:
             yield f"data: {json.dumps({'type': 'threshold_analysis', 'threshold_analysis': threshold_analysis_event})}\n\n"
+
+        if per_class_threshold_event:
+            yield f"data: {json.dumps({'type': 'per_class_threshold', 'per_class_threshold': per_class_threshold_event})}\n\n"
 
         if confidence_dist_event:
             yield f"data: {json.dumps({'type': 'confidence_distribution', 'confidence_distribution': confidence_dist_event})}\n\n"
