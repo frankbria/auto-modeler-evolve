@@ -2730,7 +2730,9 @@ _CUSTOM_WEIGHT_KV_RE = re.compile(
 )
 
 
-def _detect_custom_class_weights(message: str, class_names: list[str]) -> dict[str, float]:
+def _detect_custom_class_weights(
+    message: str, class_names: list[str]
+) -> dict[str, float]:
     """Extract custom class weight multipliers from a natural language message.
 
     Returns {class_name: weight} for classes with specified weights.
@@ -9392,17 +9394,14 @@ def send_message(
                     _counts_cw = _df_cw[_target_cw].value_counts()
                     _minority_cw = str(_counts_cw.index[-1])
                     _parsed_weights_cw = {
-                        c: (2.0 if c == _minority_cw else 1.0)
-                        for c in _class_names_cw
+                        c: (2.0 if c == _minority_cw else 1.0) for c in _class_names_cw
                     }
 
                 if _parsed_weights_cw:
                     for _c_cw in _class_names_cw:
                         _parsed_weights_cw.setdefault(_c_cw, 1.0)
 
-                    _feature_cols_cw = [
-                        c for c in _df_cw.columns if c != _target_cw
-                    ]
+                    _feature_cols_cw = [c for c in _df_cw.columns if c != _target_cw]
                     _recs_cw = _rec_models_cw(
                         "classification", _ds_cw.row_count, _ds_cw.column_count
                     )

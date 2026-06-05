@@ -134,8 +134,12 @@ class TestTrainSingleModelCustomWeights:
         X, y = _make_imbalanced_classification_data()
         le = _make_label_encoder(["0", "1"])
         result = self.train(
-            X, y, "logistic_regression", "classification",
-            self.model_dir, "run-lr-cw",
+            X,
+            y,
+            "logistic_regression",
+            "classification",
+            self.model_dir,
+            "run-lr-cw",
             custom_class_weights={"0": 1.0, "1": 4.0},
             label_encoder=le,
         )
@@ -145,8 +149,12 @@ class TestTrainSingleModelCustomWeights:
         X, y = _make_imbalanced_classification_data()
         le = _make_label_encoder(["0", "1"])
         result = self.train(
-            X, y, "random_forest_classifier", "classification",
-            self.model_dir, "run-rf-cw",
+            X,
+            y,
+            "random_forest_classifier",
+            "classification",
+            self.model_dir,
+            "run-rf-cw",
             custom_class_weights={"0": 1.0, "1": 5.0},
             label_encoder=le,
         )
@@ -156,8 +164,12 @@ class TestTrainSingleModelCustomWeights:
         X, y = _make_imbalanced_classification_data()
         le = _make_label_encoder(["0", "1"])
         result = self.train(
-            X, y, "gradient_boosting_classifier", "classification",
-            self.model_dir, "run-gbc-cw",
+            X,
+            y,
+            "gradient_boosting_classifier",
+            "classification",
+            self.model_dir,
+            "run-gbc-cw",
             custom_class_weights={"0": 1.0, "1": 3.0},
             label_encoder=le,
         )
@@ -169,8 +181,12 @@ class TestTrainSingleModelCustomWeights:
         y = rng.standard_normal(20)
         le = _make_label_encoder(["0", "1"])
         result = self.train(
-            X, y, "linear_regression", "regression",
-            self.model_dir, "run-reg-cw",
+            X,
+            y,
+            "linear_regression",
+            "regression",
+            self.model_dir,
+            "run-reg-cw",
             custom_class_weights={"0": 1.0, "1": 5.0},
             label_encoder=le,
         )
@@ -179,8 +195,12 @@ class TestTrainSingleModelCustomWeights:
     def test_no_custom_weights_behaves_normally(self):
         X, y = _make_imbalanced_classification_data()
         result = self.train(
-            X, y, "logistic_regression", "classification",
-            self.model_dir, "run-lr-no-cw",
+            X,
+            y,
+            "logistic_regression",
+            "classification",
+            self.model_dir,
+            "run-lr-no-cw",
             custom_class_weights=None,
         )
         assert result["metrics"]["accuracy"] >= 0
@@ -189,8 +209,12 @@ class TestTrainSingleModelCustomWeights:
         """When label_encoder is None, fall back to integer-keyed lookup."""
         X, y = _make_imbalanced_classification_data()
         result = self.train(
-            X, y, "logistic_regression", "classification",
-            self.model_dir, "run-lr-nole",
+            X,
+            y,
+            "logistic_regression",
+            "classification",
+            self.model_dir,
+            "run-lr-nole",
             custom_class_weights={"0": 1.0, "1": 4.0},
             label_encoder=None,
         )
@@ -201,8 +225,12 @@ class TestTrainSingleModelCustomWeights:
         X, y = _make_imbalanced_classification_data()
         le = _make_label_encoder(["0", "1"])
         result = self.train(
-            X, y, "logistic_regression", "classification",
-            self.model_dir, "run-lr-both",
+            X,
+            y,
+            "logistic_regression",
+            "classification",
+            self.model_dir,
+            "run-lr-both",
             imbalance_strategy="class_weight",
             custom_class_weights={"0": 1.0, "1": 4.0},
             label_encoder=le,
@@ -214,8 +242,12 @@ class TestTrainSingleModelCustomWeights:
         X, y = _make_imbalanced_classification_data()
         le = _make_label_encoder(["0", "1"])
         result = self.train(
-            X, y, "neural_network_classifier", "classification",
-            self.model_dir, "run-nn-cw",
+            X,
+            y,
+            "neural_network_classifier",
+            "classification",
+            self.model_dir,
+            "run-nn-cw",
             custom_class_weights={"0": 1.0, "1": 3.0},
             label_encoder=le,
         )
