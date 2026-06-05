@@ -243,9 +243,9 @@ class TestBatchResultsPatterns:
         ],
     )
     def test_positive_match(self, phrase):
-        assert (
-            self.pattern.search(phrase) is not None
-        ), f"Expected match for: {phrase!r}"
+        assert self.pattern.search(phrase) is not None, (
+            f"Expected match for: {phrase!r}"
+        )
 
     @pytest.mark.parametrize(
         "phrase",

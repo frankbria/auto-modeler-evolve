@@ -224,9 +224,9 @@ def test_production_sorted_before_staging():
     ]
     result = compute_deployments_overview(deps)
     sorted_ids = [d["deployment_id"] for d in result["deployments"]]
-    assert (
-        sorted_ids[0] == "prod-1"
-    ), "production should come first regardless of health score"
+    assert sorted_ids[0] == "prod-1", (
+        "production should come first regardless of health score"
+    )
     assert set(sorted_ids[1:]) == {"staging-1", "staging-2"}
 
 

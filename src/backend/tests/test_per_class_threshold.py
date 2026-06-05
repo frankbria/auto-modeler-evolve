@@ -90,9 +90,9 @@ class TestPerClassThresholdSweep:
         y, p = _make_multiclass_data()
         result = compute_per_class_threshold_analysis(y, p)
         for cls in result["classes"]:
-            assert (
-                len(cls["sweep"]) == 19
-            ), f"Class {cls['class_name']} sweep has wrong length"
+            assert len(cls["sweep"]) == 19, (
+                f"Class {cls['class_name']} sweep has wrong length"
+            )
 
     def test_sweep_thresholds_range(self):
         y, p = _make_multiclass_data()
@@ -113,9 +113,9 @@ class TestPerClassThresholdSweep:
         result = compute_per_class_threshold_analysis(y, p)
         valid = {"raise", "lower", "keep"}
         for cls in result["classes"]:
-            assert (
-                cls["direction"] in valid
-            ), f"Unexpected direction: {cls['direction']}"
+            assert cls["direction"] in valid, (
+                f"Unexpected direction: {cls['direction']}"
+            )
 
     def test_direction_logic(self):
         y, p = _make_multiclass_data()
@@ -195,9 +195,9 @@ class TestPerClassThresholdEdgeCases:
         y, p = _make_multiclass_data()
         result = compute_per_class_threshold_analysis(y, p)
         for cls in result["classes"]:
-            assert (
-                cls["f1_gain"] >= 0
-            ), f"Negative f1_gain for class {cls['class_name']}"
+            assert cls["f1_gain"] >= 0, (
+                f"Negative f1_gain for class {cls['class_name']}"
+            )
 
     def test_prevalence_sums_approximately_one(self):
         y, p = _make_multiclass_data()
