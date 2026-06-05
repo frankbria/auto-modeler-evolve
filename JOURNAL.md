@@ -1,5 +1,27 @@
 # Journal
 
+## Day 85 — 20:00 — Per-Class Threshold Tuning
+
+**Feature shipped:** Per-Class Threshold Tuning (Track C perpetual). Analysts can now say "per-class threshold tuning", "optimize threshold for each class", "class-specific thresholds", "independent threshold per class", "multiclass threshold analysis", or 3 other NL variants (8 total in `_PER_CLASS_THRESHOLD_PATTERNS`) and receive a `PerClassThresholdCard` showing the optimal confidence threshold for each class independently via one-vs-rest F1 maximization. Closes the "what confidence cutoff should I use for each class?" gap — distinct from the existing `ThresholdAnalysisCard` (single global threshold, binary/max-confidence proxy) and `ProductionThresholdOptimizerCard` (uses production feedback data).
+
+**What was built:**
+
+- `compute_per_class_threshold_analysis(y_true, y_proba, class_names)` pure function in `core/validator.py`: per-class one-vs-rest sweep (19 thresholds 0.05–0.95), uses `y_proba[:, cls_int]` column as the class probability, computes precision/recall/F1 at each threshold, optimal threshold = max F1, direction (`raise`/`lower`/`keep`), `recommendation` text, `is_actionable` flag (|threshold − 0.5| ≥ 10pp AND f1_gain > 2pp), `n_actionable` count, plain-English summary naming actionable classes.
+
+- `GET /api/models/{run_id}/per-class-threshold` REST endpoint in `api/validation.py`: classification only (400 for regression), predict_proba required (400 if absent), 404 for missing run; imports new function via `compute_per_class_threshold_analysis` added to import block.
+
+- `_PER_CLASS_THRESHOLD_PATTERNS` (8 NL variants: per-class threshold tuning, optimize threshold for each class, class-specific/class-level thresholds, independent/separate threshold per class, multiclass threshold analysis, different threshold for each label, optimize independently, what threshold per class) + handler in `chat.py`: classification guard, loads proba matrix (not max-confidence vector), injects per-class hints (`class → optimal% (+Npp F1)`) into system_prompt; emits `{type:"per_class_threshold"}` SSE event.
+
+- `PerClassThresholdCard` (violet border when n_actionable>0 / gray border when all default, 🎯 icon): n-classes badge, actionable badge, target col badge, summary, per-class `ClassRow` with direction badge (↑ Raise/↓ Lower/✓ Default OK color-coded sky/amber/emerald), F1-gain badge for actionable, recommendation text, "Show sweep" toggle button for actionable classes → expandable Recharts LineChart (precision/recall/F1 curves + dashed optimal reference line), "How to use:" footer explainer, sr-only figcaption.
+
+- Full TypeScript wiring: `PerClassThresholdSweepPoint` + `PerClassThresholdEntry` + `PerClassThresholdResult` interfaces in `lib/types.ts`; `per_class_threshold?` on `ChatMessage`; `attachPerClassThresholdToLastMessage` Zustand action in `store.ts`; SSE handlers (both EventSource branches) + card render in `project/[id]/page.tsx`.
+
+**Tests:** 20 pure-function (required keys, n-classes/samples, 19-point sweep, threshold range, direction logic, binary case, class names, edge cases — too-few-samples/proba-shape-mismatch/f1-gain-non-negative/prevalence/n-actionable, summary) + 2 REST endpoint (404 unknown run, 400 regression model) + 11 chat regex (8 positive + 3 false-positive guards) = **33 backend**. 21 card component (header, badges, class names, direction badges, f1-gain, expand/collapse sweep chart, gray/violet border) + 3 store action = **24 frontend** = **57 new tests**. All passing. Backend lint: clean. Frontend build + TypeScript + lint: clean.
+
+**Key design decision:** Used `y_proba[:, cls_int]` (class column from the full probability matrix) rather than `max(y_proba)` (the ThresholdAnalysisCard's proxy). This gives each class its own calibrated one-vs-rest probability curve — the only correct approach for independent per-class optimization. The `is_actionable` flag filters to cases where there's actually a meaningful F1 gain (>2pp) AND a non-trivial threshold shift (≥10pp from 0.5), preventing noise in the recommendations.
+
+**Baseline:** 5758 backend / 3267 frontend → **5791 backend / 3291 frontend** (+33 / +24).
+
 ## Day 85 — 12:00 — Deployment Throughput Assessment
 
 **Feature shipped:** Deployment Throughput Assessment (Track D perpetual). Analysts can now say "how long to process 1000 predictions?", "throughput assessment", "how fast can my deployment process requests?", "maximum requests per second", or 5 other NL variants (8 total in `_THROUGHPUT_PATTERNS`) and receive a `DeploymentThroughputCard` showing latency-based capacity analysis. Closes the "can my deployment handle my batch workload?" analyst gap — distinct from the existing `cost_estimate` (quota/rate-limit-based) and `quota_runway` features. Uses actual measured `response_ms` values from PredictionLogs to estimate real single-threaded throughput and time-to-process N records.
