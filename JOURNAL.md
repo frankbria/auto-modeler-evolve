@@ -1,5 +1,25 @@
 # Journal
 
+## Day 86 — 04:00 — Per-Class Custom Weighted Training
+
+**Feature shipped:** Per-Class Custom Weighted Training (Track C perpetual). Analysts can now say "give 3x weight to class churn", "class fraud=10, normal=1", "custom class weights", "5 times more weight to positive", or 4 other NL variants (8 total in `_CUSTOM_CLASS_WEIGHT_PATTERNS`) and training launches with their analyst-specified per-class weight multipliers applied. Closes the "I want the model to pay more attention to my rare/important class" gap — distinct from `_BALANCE_TRAIN_PATTERNS` (balanced auto-weighting) and `PerClassThresholdCard` (advisory threshold tuning, post-training).
+
+**What was built:**
+
+- `train_single_model()` in `core/trainer.py`: new `custom_class_weights: dict | None` (format: `{str_class: float_weight}`) + `label_encoder` params. Converts string class names to integer indices via `label_encoder.classes_`; applies as `class_weight` dict param for LR/RF/LGBM (which support it in constructor); converts to per-sample `sample_weight` array for GBC/XGB (which support it in fit but not constructor); neural_network_classifier trains normally (MLP has no sklearn class_weight/sample_weight support — graceful); skips `CalibratedClassifierCV` when custom weights applied (same reason as balanced: distribution is intentionally shifted); `imbalance_strategy` takes precedence when both are specified.
+
+- `_train_in_background()` in `api/models.py`: new `custom_class_weights` param; captures LabelEncoder as `_le` from `prepare_features()` (was previously discarded via `_`) and passes to `train_single_model()`.
+
+- `api/chat.py`: `_CUSTOM_CLASS_WEIGHT_PATTERNS` (8 NL variants: give Nx weight to class X, Nx weight for, custom/manual/per-class weights, class weights: X=N, weight class X as N, higher weight on X when training, penalize misclassification of X more, N times more weight on X) + 3 extraction regexes (`_CUSTOM_WEIGHT_MULTIPLIER_RE`, `_CUSTOM_WEIGHT_TIMES_RE`, `_CUSTOM_WEIGHT_KV_RE`) + `_detect_custom_class_weights(message, class_names)` pure helper (case-insensitive class name matching against known classes). Handler fires before `_BALANCE_TRAIN_PATTERNS`; classification-only guard; gets class names from DataFrame target column; parses weights; smart default: 2x minority class when pattern matched but no specific weights parsed; fills missing classes with 1.0; emits `training_started_event` with extra `custom_class_weights` dict field.
+
+- Frontend: `custom_class_weights?: Record<string, number>` added to `TrainingStartedResult` in `types.ts`. `TrainingStartedCard` shows amber ⚖️ "Custom weights" badge when present + "Class weights applied:" section with per-class `class=Nx` chips sorted by weight descending + "with custom class weights" in description text.
+
+**Tests:** 11 regex/helper unit (8 positive pattern matches, 3 false-positive guards, 6 `_detect_custom_class_weights` extraction) + 8 trainer function (LR/RF/GBC with custom weights, regression ignored, no weights no-op, no-LabelEncoder fallback, imbalance_strategy precedence, neural_network graceful) + 6 total = **25 backend**. 9 frontend (badge present/absent, chips testids, chip content format, description text, list section, single weight) = **9 frontend** = **34 new tests**. All passing. Backend lint: clean. Frontend build + TypeScript + lint: clean.
+
+**Key design decision:** Passed `custom_class_weights` as `{str_class: float_weight}` all the way through (not pre-converted to int keys) so the chat handler stays readable and the conversion happens close to the sklearn call where the LabelEncoder is available. The `imbalance_strategy` short-circuit (`not imbalance_strategy` guard in trainer) prevents accidental double-application when an analyst uses both balanced training and custom weights in the same message — balanced wins since it was explicitly requested through a separate, more specific pattern.
+
+**Baseline:** 5791 backend / 3291 frontend → **5816 backend / 3300 frontend** (+25 / +9).
+
 ## Day 85 — 20:00 — Per-Class Threshold Tuning
 
 **Feature shipped:** Per-Class Threshold Tuning (Track C perpetual). Analysts can now say "per-class threshold tuning", "optimize threshold for each class", "class-specific thresholds", "independent threshold per class", "multiclass threshold analysis", or 3 other NL variants (8 total in `_PER_CLASS_THRESHOLD_PATTERNS`) and receive a `PerClassThresholdCard` showing the optimal confidence threshold for each class independently via one-vs-rest F1 maximization. Closes the "what confidence cutoff should I use for each class?" gap — distinct from the existing `ThresholdAnalysisCard` (single global threshold, binary/max-confidence proxy) and `ProductionThresholdOptimizerCard` (uses production feedback data).

@@ -53,6 +53,27 @@ the time is better spent on real features.
 
 ---
 
+## Day 86 (04:00) — Done
+
+**Track C: Per-Class Custom Weighted Training** — complete.
+
+Closes the "I want the model to pay more attention to my rare/important class" analyst gap — distinct from balanced class weighting (auto, uses inverse frequency) and from PerClassThresholdCard (advisory, post-training). Analysts say "give 3x weight to class churn", "class fraud=10, normal=1", "per-class custom weights", "5 times more weight to positive", or 4 other NL variants (8 total in `_CUSTOM_CLASS_WEIGHT_PATTERNS`) and training launches with their exact multipliers applied per class. Smart default: when pattern matches but no specific weights are named, applies 2x to the minority class automatically.
+
+**What was built:**
+- `train_single_model()` extended with `custom_class_weights: dict | None` + `label_encoder` params; converts str class names → int indices via LabelEncoder; applies `class_weight` dict param for LR/RF/LGBM, `sample_weight` array for GBC/XGB; neural_network gracefully trains normally (no sklearn support); skips CalibratedClassifierCV when custom weights applied; imbalance_strategy takes precedence when both specified
+- `_train_in_background()` extended with `custom_class_weights` param; captures LabelEncoder from `prepare_features()` and passes to trainer
+- `_CUSTOM_CLASS_WEIGHT_PATTERNS` (8 NL variants) + `_CUSTOM_WEIGHT_MULTIPLIER_RE` + `_CUSTOM_WEIGHT_TIMES_RE` + `_CUSTOM_WEIGHT_KV_RE` + `_detect_custom_class_weights()` helper (multiplier/times/kv extraction, case-insensitive class name matching) in `api/chat.py`; handler fires before `_BALANCE_TRAIN_PATTERNS` and `_TRAIN_PATTERNS`; classification-only guard; emits `training_started_event` with `custom_class_weights` dict
+- `TrainingStartedResult.custom_class_weights?: Record<string, number>` TypeScript field; `TrainingStartedCard` shows amber ⚖️ "Custom weights" badge + per-class `class=Nx` chips + "with custom class weights" description text
+
+**Tests:** 25 backend (11 regex/helper unit + 8 trainer function + 6 pattern/guard) + 9 frontend (badge present/absent, chips render, content, description text) = **34 new tests**. All passing. Backend lint: clean. Frontend build + TypeScript + lint: clean.
+
+**What's next:**
+- Track D: Input Feature Drift Ranking by importance — "which of my input features drifted the most AND matters most to my model?" (cross-referencing PSI drift scores with feature importance to prioritize monitoring attention)
+- Track B: Comparative Model Improvement Plan — "create a ranked improvement roadmap for all my models" (aggregates improvement suggestions across all model runs, deduplicates, ranks by cross-model impact)
+- Track C: Cost-Sensitive Training via Misclassification Cost Matrix — "false positives for fraud cost $1000, false negatives cost $10" (extends per-class weights with asymmetric FP/FN costs)
+
+---
+
 ## Day 85 (20:00) — Done
 
 **Track C: Per-Class Threshold Tuning** — complete.
