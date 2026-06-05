@@ -202,6 +202,7 @@ interface AppState {
   attachPromotionReadinessToLastMessage: (promotion_readiness: import("./types").PromotionReadinessResult) => void
   attachDeploymentScorecardToLastMessage: (deployment_scorecard: import("./types").DeploymentScorecardResult) => void
   attachThroughputAssessmentToLastMessage: (throughput_assessment: import("./types").DeploymentThroughputResult) => void
+  attachDriftImportanceRankingToLastMessage: (drift_importance_ranking: import("./types").DriftImportanceRankingResult) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -1711,6 +1712,16 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, throughput_assessment }
+      }
+      return { messages }
+    }),
+
+  attachDriftImportanceRankingToLastMessage: (drift_importance_ranking) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, drift_importance_ranking }
       }
       return { messages }
     }),

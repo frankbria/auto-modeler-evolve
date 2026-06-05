@@ -1,5 +1,25 @@
 # Journal
 
+## Day 86 — 12:00 — Input Feature Drift Ranking by Importance
+
+**Feature shipped:** Input Feature Drift Ranking by Importance (Track D perpetual). Analysts can now say "which features drifted the most", "drift ranking by importance", "rank my drifted features", "most important drifting features", "feature drift risk", "drift vs importance", "top risk drift features", or 1 other NL variant (8 total in `_DRIFT_IMPORTANCE_PATTERNS`) and receive a `DriftImportanceCard` that cross-references production OOR/unseen rates with feature importances to rank which drifted features actually matter for prediction quality. Closes the "I know inputs are drifting but which ones should I care about?" gap — distinct from `CovariateDriftAlertCard` (flags ALL features above threshold, no importance weighting).
+
+**What was built:**
+
+- `compute_drift_importance_ranking(all_inputs, feature_ranges, feature_importances, max_features=15)` pure function in `core/analyzer.py`: collects production values per feature from PredictionLog input dicts; computes `drift_pct` = OOR% for numeric features (values outside training min/max) and unseen% for categorical (values not in `known_categories`); cross-references with normalized `importance_pct` from `identify_weak_features()`; computes `risk_score = drift_pct × importance_pct`; classifies `priority` (`critical` = drift≥20% AND importance≥median, `high` = drift≥10% or drift≥5%+top-half importance, `medium` = drift≥2%, `low` = any drift, `no_drift`); sorts by risk_score descending; derives `verdict` (`action_required`/`attention`/`monitoring`/`clear`/`no_importances`); returns `ranked_features` list + counts + `n_features` + `n_samples` + `summary`.
+
+- `GET /api/deploy/{id}/drift-importance-ranking` REST endpoint in `api/deploy.py`: loads 500 PredictionLogs, parses feature_ranges from PredictionPipeline via `load_pipeline()`, resolves feature columns from `Deployment.feature_names` (falls back to `feature_ranges` keys), loads model via joblib, calls `identify_weak_features()`, passes to pure function; 404 if deployment not found.
+
+- `_DRIFT_IMPORTANCE_PATTERNS` (8 NL variants) + handler in `api/chat.py`: guarded by `ctx["deployment"]`; loads logs + pipeline + model inline; calls `identify_weak_features()` for importances; calls `compute_drift_importance_ranking()`; injects verdict + critical/high counts + summary into system_prompt; emits `{type:"drift_importance_ranking"}` SSE event. Follows `except Exception: pass` — nice-to-have, never crash chat.
+
+- `DriftImportanceCard` in `components/deploy/drift-importance-card.tsx`: rose border=action_required / amber=attention / sky=monitoring / emerald=clear / muted=no_importances (🎯 icon); verdict badge + feature-count badge + sample-count badge; priority alert callout (role="alert") when critical_count or high_count > 0; features table (thead: Feature/Priority/Importance/Drift/Details) with `FeatureRow` per feature: name, Priority badge (color per level), dual progress bars (`ImportanceBar`=indigo, `DriftBar`=color-coded by magnitude: rose≥20%, amber≥10%, sky≥2%, emerald otherwise), drift_details text (hidden on mobile); `no_importances` fallback message; summary paragraph; sr-only figcaption.
+
+- Full TypeScript wiring: `DriftImportancePriority` union type + `DriftImportanceVerdict` union type + `DriftImportanceFeature` + `DriftImportanceRankingResult` interfaces in `lib/types.ts`; `drift_importance_ranking?` on `ChatMessage`; `attachDriftImportanceRankingToLastMessage` Zustand action in `store.ts`; SSE handlers + card render in both EventSource branches of `project/[id]/page.tsx`.
+
+**Tests:** 15 pure-function (empty importances, None importances, clear verdict, critical verdict, high verdict, ranked by risk_score, categorical drift, numeric drift pct, max_features cap, empty inputs no drift, required keys, feature row keys, summary, missing ranges, priority no_drift/medium) + 18 regex (8 positive + 8 negative + test_high_verdict_moderate_drift + test_ranking_sorted) + 4 endpoint (404, no-predictions, required fields, no-model-path) + 3 chat handler (no-deploy, emits event, event structure) = **49 backend**. 17 card component + 3 store action = **20 frontend** = **69 new tests**. All passing. Backend lint: clean. Frontend build + TypeScript + lint: clean.
+
+**Baseline:** 5816 backend / 3300 frontend → **5865 backend / 3320 frontend** (+49 / +20).
+
 ## Day 86 — 04:00 — Per-Class Custom Weighted Training
 
 **Feature shipped:** Per-Class Custom Weighted Training (Track C perpetual). Analysts can now say "give 3x weight to class churn", "class fraud=10, normal=1", "custom class weights", "5 times more weight to positive", or 4 other NL variants (8 total in `_CUSTOM_CLASS_WEIGHT_PATTERNS`) and training launches with their analyst-specified per-class weight multipliers applied. Closes the "I want the model to pay more attention to my rare/important class" gap — distinct from `_BALANCE_TRAIN_PATTERNS` (balanced auto-weighting) and `PerClassThresholdCard` (advisory threshold tuning, post-training).

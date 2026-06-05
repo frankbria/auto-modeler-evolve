@@ -42,6 +42,7 @@ from core.analyzer import (
     compute_deployment_scorecard,
     compute_deployment_throughput,
     compute_deployments_overview,
+    compute_drift_importance_ranking,
     compute_prediction_audit,
     compute_prediction_output_anomalies,
     compute_prediction_value_trend,
@@ -7589,4 +7590,81 @@ def get_deployment_throughput(
     target_n = max(1, n)
     result = compute_deployment_throughput(log_dicts, target_n=target_n)
     result["deployment_id"] = deployment_id
+    return result
+
+
+@router.get("/api/deploy/{deployment_id}/drift-importance-ranking")
+def get_drift_importance_ranking(
+    deployment_id: str,
+    session: Session = Depends(get_session),
+) -> dict:
+    """Return input feature drift ranked by model feature importance.
+
+    Cross-references OOR/unseen rates from production inputs against feature
+    importances to surface which drifted features most affect prediction quality.
+    """
+    dep = session.get(Deployment, deployment_id)
+    if not dep:
+        raise HTTPException(status_code=404, detail="Deployment not found")
+
+    logs = session.exec(
+        select(PredictionLog)
+        .where(PredictionLog.deployment_id == deployment_id)
+        .order_by(PredictionLog.created_at.desc())  # type: ignore[union-attr]
+        .limit(500)
+    ).all()
+
+    all_inputs: list[dict] = []
+    for log in logs:
+        try:
+            parsed = json.loads(log.input_features)
+            if isinstance(parsed, dict):
+                all_inputs.append(parsed)
+        except Exception:  # noqa: BLE001
+            pass
+
+    feature_ranges: dict = {}
+    if dep.pipeline_path:
+        try:
+            from core.deployer import load_pipeline as _lp_dir
+
+            _pipeline_dir = _lp_dir(dep.pipeline_path)
+            feature_ranges = getattr(_pipeline_dir, "feature_ranges", {})
+        except Exception:  # noqa: BLE001
+            pass
+
+    feature_importances: list[dict] = []
+    algorithm: str | None = dep.algorithm
+    run_id: str | None = None
+
+    run = session.get(ModelRun, dep.model_run_id)
+    if run and run.model_path and Path(run.model_path).exists():
+        run_id = run.id
+        feat_cols: list[str] = []
+        if dep.feature_names:
+            try:
+                feat_cols = json.loads(dep.feature_names)
+            except Exception:  # noqa: BLE001
+                pass
+        if not feat_cols and feature_ranges:
+            feat_cols = list(feature_ranges.keys())
+        if feat_cols:
+            try:
+                import joblib as _jl_dir
+
+                from core.trainer import identify_weak_features as _iwf_dir
+
+                _model_dir = _jl_dir.load(run.model_path)
+                _iwf_result = _iwf_dir(_model_dir, feat_cols)
+                if _iwf_result.get("has_importances", False):
+                    feature_importances = _iwf_result.get("feature_importances", [])
+            except Exception:  # noqa: BLE001
+                pass
+
+    result = compute_drift_importance_ranking(all_inputs, feature_ranges, feature_importances)
+    result["deployment_id"] = deployment_id
+    if run_id:
+        result["run_id"] = run_id
+    if algorithm:
+        result["algorithm"] = algorithm
     return result

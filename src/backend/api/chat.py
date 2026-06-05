@@ -3681,6 +3681,20 @@ _COVARIATE_DRIFT_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+_DRIFT_IMPORTANCE_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"(?:which|what)\s+(?:input\s+)?features?\s+(?:drifted|drift(?:ing)?)\s+(?:the\s+)?most\b|"
+    r"drift\s+(?:rank(?:ing|ed)?|importance|by\s+importance)\b|"
+    r"(?:rank|priorit(?:ize|y))\s+(?:my\s+)?(?:drifted?|drift(?:ing)?)\s+features?\b|"
+    r"(?:most\s+)?important\s+(?:drifted?|drift(?:ing)?)\s+features?\b|"
+    r"(?:which|what)\s+drift\s+(?:matters?|impact(?:s)?|affect(?:s)?)\b|"
+    r"feature\s+drift\s+(?:risk|ranking|priority|impact)\b|"
+    r"drift\s+(?:vs|versus|and)\s+importance\b|"
+    r"(?:high(?:est)?|top)\s+risk\s+(?:drift(?:ed|ing)?|input)\s+features?\b"
+    r")",
+    re.IGNORECASE,
+)
+
 _QUOTA_RUNWAY_PATTERNS = re.compile(
     r"(?i)(?:"
     r"(?:will|can)\s+(?:my\s+)?quota\s+(?:last|cover|handle)\s+(?:the\s+)?month\b|"
@@ -16927,6 +16941,90 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Covariate drift alert is nice-to-have; never crash chat
 
+    # Drift × importance ranking — "which drifted features matter most?"
+    drift_importance_event: dict | None = None
+    if _DRIFT_IMPORTANCE_PATTERNS.search(body.message) and ctx["deployment"]:
+        try:
+            import json as _json_dir
+            import joblib as _jl_dir
+
+            from core.analyzer import (
+                compute_drift_importance_ranking as _compute_dir,
+            )
+            from core.trainer import identify_weak_features as _iwf_dir
+
+            _dir_dep = ctx["deployment"]
+            _dir_dep_id = _dir_dep.id if hasattr(_dir_dep, "id") else str(_dir_dep)
+            _dir_dep_obj = session.get(Deployment, _dir_dep_id)
+
+            _dir_logs = session.exec(
+                select(PredictionLog)
+                .where(PredictionLog.deployment_id == _dir_dep_id)
+                .order_by(PredictionLog.created_at.desc())
+                .limit(500)
+            ).all()
+
+            _dir_all_inputs: list[dict] = []
+            for _dir_log in _dir_logs:
+                try:
+                    _dir_parsed = _json_dir.loads(_dir_log.input_features)
+                    if isinstance(_dir_parsed, dict):
+                        _dir_all_inputs.append(_dir_parsed)
+                except Exception:  # noqa: BLE001
+                    pass
+
+            _dir_feature_ranges: dict = {}
+            if _dir_dep_obj and getattr(_dir_dep_obj, "pipeline_path", None):
+                try:
+                    from core.deployer import load_pipeline as _load_pipeline_dir
+
+                    _dir_pipeline = _load_pipeline_dir(_dir_dep_obj.pipeline_path)
+                    _dir_feature_ranges = getattr(_dir_pipeline, "feature_ranges", {})
+                except Exception:  # noqa: BLE001
+                    pass
+
+            _dir_feature_importances: list[dict] = []
+            if _dir_dep_obj:
+                _dir_run = session.get(ModelRun, _dir_dep_obj.model_run_id)
+                if _dir_run and _dir_run.model_path and Path(_dir_run.model_path).exists():
+                    _dir_feat_cols: list[str] = []
+                    if getattr(_dir_dep_obj, "feature_names", None):
+                        try:
+                            _dir_feat_cols = _json_dir.loads(_dir_dep_obj.feature_names)
+                        except Exception:  # noqa: BLE001
+                            pass
+                    if not _dir_feat_cols and _dir_feature_ranges:
+                        _dir_feat_cols = list(_dir_feature_ranges.keys())
+                    if _dir_feat_cols:
+                        try:
+                            _dir_model = _jl_dir.load(_dir_run.model_path)
+                            _dir_iwf = _iwf_dir(_dir_model, _dir_feat_cols)
+                            if _dir_iwf.get("has_importances", False):
+                                _dir_feature_importances = _dir_iwf.get(
+                                    "feature_importances", []
+                                )
+                        except Exception:  # noqa: BLE001
+                            pass
+
+            _dir_result = _compute_dir(
+                _dir_all_inputs, _dir_feature_ranges, _dir_feature_importances
+            )
+            _dir_result["deployment_id"] = _dir_dep_id
+            drift_importance_event = _dir_result
+
+            system_prompt += (
+                f"\n\n## Drift × Importance Ranking\n"
+                f"Verdict: {_dir_result['verdict']}. "
+                f"{_dir_result['summary']} "
+                f"Critical features (high drift + high importance): {_dir_result['critical_count']}. "
+                f"High-priority: {_dir_result['high_count']}. "
+                "Explain which features to watch and why — focus on the ones that both drift "
+                "and are important to predictions. Recommend retraining if critical features found."
+            )
+
+        except Exception:  # noqa: BLE001
+            pass  # Drift importance ranking is nice-to-have; never crash chat
+
     # Quota runway / capacity planning (forward-looking projection)
     quota_runway_event: dict | None = None
     if _QUOTA_RUNWAY_PATTERNS.search(body.message) and ctx["deployment"]:
@@ -19835,6 +19933,10 @@ def send_message(
         # Emit covariate drift alert card
         if covariate_drift_alert_event:
             yield f"data: {json.dumps({'type': 'covariate_drift_alert', 'covariate_drift_alert': covariate_drift_alert_event})}\n\n"
+
+        # Emit drift × importance ranking card
+        if drift_importance_event:
+            yield f"data: {json.dumps({'type': 'drift_importance_ranking', 'drift_importance_ranking': drift_importance_event})}\n\n"
 
         # Emit quota runway / capacity planning card
         if quota_runway_event:

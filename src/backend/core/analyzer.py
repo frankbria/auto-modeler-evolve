@@ -6889,3 +6889,214 @@ def compute_deployment_throughput(log_dicts: list[dict], target_n: int = 1000) -
         "serial_duration": serial_duration,
         "summary": summary,
     }
+
+
+def compute_drift_importance_ranking(
+    all_inputs: list[dict],
+    feature_ranges: dict[str, dict],
+    feature_importances: list[dict],
+    *,
+    max_features: int = 15,
+) -> dict:
+    """Rank input features by combined drift severity and model importance.
+
+    Cross-references production input OOR/unseen rates with feature importances
+    to identify which drifted features most affect prediction quality.
+
+    Args:
+        all_inputs: Parsed input_features dicts from PredictionLog records.
+        feature_ranges: {feature: {"min", "max"} or {"known_categories": [...]}}
+                        from PredictionPipeline.
+        feature_importances: [{name, importance, rank, is_weak}] from
+                             identify_weak_features() — importance normalized to sum=1.
+        max_features: Maximum number of top-importance features to analyse.
+
+    Returns:
+        Dict with ranked_features, verdict, priority counts, n_features,
+        n_samples, has_importances, and summary.
+    """
+    n_samples = len(all_inputs)
+
+    if not feature_importances or all(
+        fi.get("importance") is None for fi in feature_importances
+    ):
+        return {
+            "has_importances": False,
+            "ranked_features": [],
+            "n_features": 0,
+            "n_samples": n_samples,
+            "critical_count": 0,
+            "high_count": 0,
+            "medium_count": 0,
+            "low_count": 0,
+            "no_drift_count": 0,
+            "verdict": "no_importances",
+            "summary": (
+                "Feature importances are not available for this model type. "
+                "Try Random Forest or Gradient Boosting for built-in importance ranking."
+            ),
+        }
+
+    # Cap to top max_features (already sorted importance-descending by identify_weak_features)
+    top_features = [fi for fi in feature_importances if fi.get("importance") is not None][
+        :max_features
+    ]
+
+    # Compute median importance for priority thresholds
+    imp_values = sorted(fi["importance"] for fi in top_features)
+    median_importance = imp_values[len(imp_values) // 2] if imp_values else 0.0
+
+    # Build lookup: feature -> production values (skip None)
+    feat_values: dict[str, list] = {}
+    for inp in all_inputs:
+        for k, v in inp.items():
+            if v is not None:
+                feat_values.setdefault(k, []).append(v)
+
+    ranked: list[dict] = []
+    for fi in top_features:
+        feat = fi["name"]
+        raw_imp = fi["importance"]
+        importance_pct = round(raw_imp * 100, 2)
+        rank = fi.get("rank", 0)
+
+        drift_pct = 0.0
+        feature_type = "unknown"
+        drift_details = "No training range data available"
+
+        values = feat_values.get(feat, [])
+        if values:
+            numeric: list[float] = []
+            for v in values:
+                try:
+                    numeric.append(float(v))
+                except (TypeError, ValueError):
+                    pass
+
+            ranges = feature_ranges.get(feat, {})
+
+            if len(numeric) > len(values) * 0.5:
+                feature_type = "numeric"
+                train_min = ranges.get("min")
+                train_max = ranges.get("max")
+                if train_min is not None and train_max is not None:
+                    oor = sum(1 for v in numeric if v < train_min or v > train_max)
+                    drift_pct = oor / len(numeric)
+                    if drift_pct > 0:
+                        drift_details = (
+                            f"{drift_pct:.0%} outside training range "
+                            f"[{train_min:.3g}, {train_max:.3g}]"
+                        )
+                    else:
+                        drift_details = "All values within training range"
+                else:
+                    drift_details = "No numeric range data"
+            else:
+                feature_type = "categorical"
+                known = {str(c) for c in ranges.get("known_categories", [])}
+                if known:
+                    unseen = sum(1 for v in values if str(v) not in known)
+                    drift_pct = unseen / len(values)
+                    if drift_pct > 0:
+                        drift_details = f"{drift_pct:.0%} unseen categories not in training"
+                    else:
+                        drift_details = "All categories seen during training"
+                else:
+                    drift_details = "No category data available"
+        elif not all_inputs:
+            drift_details = "No predictions yet"
+
+        drift_pct_display = round(drift_pct * 100, 1)
+        risk_score = round(drift_pct * raw_imp * 100, 4)
+
+        if drift_pct >= 0.20 and raw_imp >= median_importance:
+            priority = "critical"
+        elif drift_pct >= 0.10 or (drift_pct >= 0.05 and raw_imp >= median_importance):
+            priority = "high"
+        elif drift_pct >= 0.02:
+            priority = "medium"
+        elif drift_pct > 0:
+            priority = "low"
+        else:
+            priority = "no_drift"
+
+        ranked.append(
+            {
+                "name": feat,
+                "importance_pct": importance_pct,
+                "rank": rank,
+                "drift_pct": drift_pct_display,
+                "risk_score": risk_score,
+                "priority": priority,
+                "feature_type": feature_type,
+                "drift_details": drift_details,
+            }
+        )
+
+    ranked.sort(key=lambda x: x["risk_score"], reverse=True)
+
+    critical_count = sum(1 for r in ranked if r["priority"] == "critical")
+    high_count = sum(1 for r in ranked if r["priority"] == "high")
+    medium_count = sum(1 for r in ranked if r["priority"] == "medium")
+    low_count = sum(1 for r in ranked if r["priority"] == "low")
+    no_drift_count = sum(1 for r in ranked if r["priority"] == "no_drift")
+
+    if critical_count > 0:
+        verdict = "action_required"
+    elif high_count > 0:
+        verdict = "attention"
+    elif medium_count + low_count > 0:
+        verdict = "monitoring"
+    else:
+        verdict = "clear"
+
+    drifting_important = [r for r in ranked if r["priority"] in ("critical", "high")]
+    if not drifting_important:
+        if medium_count + low_count == 0:
+            summary = (
+                f"No input drift detected across {len(ranked)} feature"
+                f"{'s' if len(ranked) != 1 else ''} "
+                f"({n_samples} recent prediction{'s' if n_samples != 1 else ''}). "
+                "Your model is seeing representative production inputs."
+            )
+        else:
+            feat_list = ", ".join(
+                f"'{r['name']}'" for r in ranked if r["priority"] in ("medium", "low")
+            )[:80]
+            summary = (
+                f"Minor drift in {medium_count + low_count} low-importance "
+                f"feature{'s' if medium_count + low_count != 1 else ''} ({feat_list}). "
+                "No significant impact on prediction quality."
+            )
+    elif critical_count > 0:
+        top_names = ", ".join(
+            f"'{r['name']}'" for r in ranked[:3] if r["priority"] == "critical"
+        )
+        summary = (
+            f"{critical_count} critical feature{'s' if critical_count != 1 else ''} "
+            f"({top_names}) — high drift in your most important predictors. "
+            "Retraining is recommended."
+        )
+    else:
+        top_names = ", ".join(
+            f"'{r['name']}'" for r in ranked[:3] if r["priority"] == "high"
+        )
+        summary = (
+            f"{high_count} high-priority feature{'s' if high_count != 1 else ''} "
+            f"({top_names}) showing meaningful drift. "
+            "Monitor closely and consider retraining."
+        )
+
+    return {
+        "has_importances": True,
+        "ranked_features": ranked,
+        "n_features": len(ranked),
+        "n_samples": n_samples,
+        "critical_count": critical_count,
+        "high_count": high_count,
+        "medium_count": medium_count,
+        "low_count": low_count,
+        "no_drift_count": no_drift_count,
+        "verdict": verdict,
+        "summary": summary,
+    }

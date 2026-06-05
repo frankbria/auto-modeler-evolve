@@ -563,6 +563,7 @@ export interface ChatMessage {
   promotion_readiness?: PromotionReadinessResult
   deployment_scorecard?: DeploymentScorecardResult
   throughput_assessment?: DeploymentThroughputResult
+  drift_importance_ranking?: DriftImportanceRankingResult
 }
 
 export interface RollbackVersionEntry {
@@ -4558,5 +4559,36 @@ export interface PerClassThresholdResult {
   n_classes: number
   n_samples: number
   n_actionable: number
+  summary: string
+}
+
+export type DriftImportancePriority = 'critical' | 'high' | 'medium' | 'low' | 'no_drift'
+export type DriftImportanceVerdict = 'action_required' | 'attention' | 'monitoring' | 'clear' | 'no_importances'
+
+export interface DriftImportanceFeature {
+  name: string
+  importance_pct: number
+  rank: number
+  drift_pct: number
+  risk_score: number
+  priority: DriftImportancePriority
+  feature_type: 'numeric' | 'categorical' | 'unknown'
+  drift_details: string
+}
+
+export interface DriftImportanceRankingResult {
+  deployment_id: string
+  run_id?: string
+  algorithm?: string
+  has_importances: boolean
+  ranked_features: DriftImportanceFeature[]
+  n_features: number
+  n_samples: number
+  critical_count: number
+  high_count: number
+  medium_count: number
+  low_count: number
+  no_drift_count: number
+  verdict: DriftImportanceVerdict
   summary: string
 }

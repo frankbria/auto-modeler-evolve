@@ -126,6 +126,7 @@ import WeeklyDigestConfigCard from "@/components/deploy/weekly-digest-config-car
 import { PromotionReadinessCard } from "@/components/models/promotion-readiness-card"
 import { DeploymentScorecardCard } from "@/components/deploy/deployment-scorecard-card"
 import { DeploymentThroughputCard } from "@/components/deploy/deployment-throughput-card"
+import { DriftImportanceCard } from "@/components/deploy/drift-importance-card"
 import { EnsembleRecommendationCard } from "@/components/models/ensemble-recommendation-card"
 import { TuningChatCard } from "@/components/models/tuning-chat-card"
 import { CvScoreDistributionCard } from "@/components/models/cv-score-distribution-card"
@@ -423,6 +424,7 @@ export default function ProjectWorkspace() {
     attachPromotionReadinessToLastMessage,
     attachDeploymentScorecardToLastMessage,
     attachThroughputAssessmentToLastMessage,
+    attachDriftImportanceRankingToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -845,6 +847,8 @@ export default function ProjectWorkspace() {
                 attachDeploymentScorecardToLastMessage(json.deployment_scorecard as import("@/lib/types").DeploymentScorecardResult)
               } else if (json.type === "throughput_assessment" && json.throughput_assessment) {
                 attachThroughputAssessmentToLastMessage(json.throughput_assessment as import("@/lib/types").DeploymentThroughputResult)
+              } else if (json.type === "drift_importance_ranking" && json.drift_importance_ranking) {
+                attachDriftImportanceRankingToLastMessage(json.drift_importance_ranking as import("@/lib/types").DriftImportanceRankingResult)
               } else if (json.type === "onboarding_guide" && json.onboarding_guide) {
                 attachOnboardingGuideToLastMessage(json.onboarding_guide as import("@/lib/types").OnboardingGuideResult)
               } else if (json.type === "version_history" && json.version_history) {
@@ -1053,6 +1057,8 @@ export default function ProjectWorkspace() {
                 attachDeploymentScorecardToLastMessage(json.deployment_scorecard as import("@/lib/types").DeploymentScorecardResult)
               } else if (json.type === "throughput_assessment" && json.throughput_assessment) {
                 attachThroughputAssessmentToLastMessage(json.throughput_assessment as import("@/lib/types").DeploymentThroughputResult)
+              } else if (json.type === "drift_importance_ranking" && json.drift_importance_ranking) {
+                attachDriftImportanceRankingToLastMessage(json.drift_importance_ranking as import("@/lib/types").DriftImportanceRankingResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -1228,6 +1234,7 @@ export default function ProjectWorkspace() {
     attachPromotionReadinessToLastMessage,
     attachDeploymentScorecardToLastMessage,
     attachThroughputAssessmentToLastMessage,
+    attachDriftImportanceRankingToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -1976,6 +1983,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.throughput_assessment && (
                       <DeploymentThroughputCard result={msg.throughput_assessment} />
+                    )}
+                    {msg.drift_importance_ranking && (
+                      <DriftImportanceCard result={msg.drift_importance_ranking} />
                     )}
                   </div>
                 </div>

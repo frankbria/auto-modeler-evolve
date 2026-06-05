@@ -53,6 +53,28 @@ the time is better spent on real features.
 
 ---
 
+## Day 86 (12:00) — Done
+
+**Track D: Input Feature Drift Ranking by Importance** — complete.
+
+Closes the "which of my drifted input features actually matters for my model?" analyst gap — distinct from `CovariateDriftAlertCard` (flags ALL features above a threshold, no importance weighting). Analysts say "which features drifted the most", "drift ranking by importance", "rank my drifted features", "feature drift risk", "drift vs importance", "top risk drift features", or 2 other NL variants (8 total in `_DRIFT_IMPORTANCE_PATTERNS`) and receive a `DriftImportanceCard` showing all model features ranked by risk_score = drift% × importance%, with per-row Priority badges (Critical / High / Medium / Low / No Drift), importance + drift progress bars, and drift details.
+
+**What was built:**
+- `compute_drift_importance_ranking(all_inputs, feature_ranges, feature_importances, max_features=15)` pure function in `core/analyzer.py`: collects production values per feature, computes OOR% for numeric (min/max bounds) and unseen% for categorical (known_categories), cross-references with normalized importance_pct from `identify_weak_features()`, computes risk_score = drift_pct × importance_pct, classifies priority (critical/high/medium/low/no_drift), sorts descending by risk_score, derives verdict (action_required/attention/monitoring/clear/no_importances)
+- `GET /api/deploy/{id}/drift-importance-ranking` REST endpoint in `api/deploy.py`: loads 500 PredictionLogs, parses feature_ranges from PredictionPipeline, loads model + runs `identify_weak_features()` using `Deployment.feature_names`, calls pure function
+- `_DRIFT_IMPORTANCE_PATTERNS` (8 NL variants) + handler in `api/chat.py`: loads logs + pipeline + model importances inline; injects verdict + critical/high counts into system_prompt; emits `{type:"drift_importance_ranking"}` SSE event; guarded by `ctx["deployment"]`
+- `DriftImportanceCard` (rose=action_required / amber=attention / sky=monitoring / emerald=clear / muted=no_importances, 🎯 icon): verdict badge, feature-count + sample-count badges, priority alert callout (role="alert") when critical/high features exist, features table with Priority badge + dual progress bars (importance=indigo, drift=color-coded) + drift details, no-importances message, summary paragraph, sr-only figcaption
+- Full TypeScript wiring: `DriftImportanceFeature` + `DriftImportanceRankingResult` interfaces; `drift_importance_ranking?` on `ChatMessage`; `attachDriftImportanceRankingToLastMessage` Zustand action; SSE handlers + card render in both EventSource branches of `page.tsx`
+
+**Tests:** 49 backend (15 pure function + 18 regex + 4 endpoint + 3 chat handler) + 20 frontend (17 card + 3 store) = **69 new tests**. All passing. Backend lint: clean. Frontend build + TypeScript + lint: clean.
+
+**What's next:**
+- Track B: Comparative Model Improvement Plan — "create a ranked improvement roadmap for all my models"
+- Track C: Cost-Sensitive Training via Misclassification Cost Matrix — "false positives cost $1000, false negatives cost $10"
+- Track D: Deployment Feature Drift Webhook — fire webhook when a critical-priority feature drifts above threshold
+
+---
+
 ## Day 86 (04:00) — Done
 
 **Track C: Per-Class Custom Weighted Training** — complete.
