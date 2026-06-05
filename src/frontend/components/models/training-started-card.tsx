@@ -38,6 +38,10 @@ export function TrainingStartedCard({ result, onNavigateToModels }: TrainingStar
     result.problem_type === "classification" ? "Classification" : "Regression"
   const strategy = result.imbalance_strategy ? STRATEGY_LABELS[result.imbalance_strategy] : null
   const excluded = result.excluded_features ?? []
+  const customWeights = result.custom_class_weights ?? null
+  const customWeightEntries = customWeights
+    ? Object.entries(customWeights).sort(([, a], [, b]) => b - a)
+    : []
 
   return (
     <div
@@ -53,6 +57,14 @@ export function TrainingStartedCard({ result, onNavigateToModels }: TrainingStar
             data-testid="imbalance-strategy-badge"
           >
             {strategy.label}
+          </span>
+        )}
+        {customWeightEntries.length > 0 && (
+          <span
+            className="inline-flex items-center rounded border border-amber-300 bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800"
+            data-testid="custom-class-weights-badge"
+          >
+            ⚖️ Custom weights
           </span>
         )}
         {excluded.length > 0 && (
@@ -74,6 +86,9 @@ export function TrainingStartedCard({ result, onNavigateToModels }: TrainingStar
         {strategy && (
           <span className="text-muted-foreground"> with {strategy.label.toLowerCase()}</span>
         )}
+        {customWeightEntries.length > 0 && (
+          <span className="text-muted-foreground"> with custom class weights</span>
+        )}
         {excluded.length > 0 && (
           <span className="text-muted-foreground"> without weak features</span>
         )}
@@ -83,6 +98,22 @@ export function TrainingStartedCard({ result, onNavigateToModels }: TrainingStar
           <Badge key={algo} variant="outline">{algoLabel(algo)}</Badge>
         ))}
       </div>
+      {customWeightEntries.length > 0 && (
+        <div className="mt-2" data-testid="custom-class-weights-list">
+          <p className="mb-1 text-xs font-medium text-muted-foreground">Class weights applied:</p>
+          <div className="flex flex-wrap gap-1">
+            {customWeightEntries.map(([cls, w]) => (
+              <span
+                key={cls}
+                className="rounded border border-amber-300 bg-amber-50 px-1.5 py-0.5 font-mono text-xs text-amber-800"
+                data-testid={`class-weight-chip-${cls}`}
+              >
+                {cls}={w}x
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
       {excluded.length > 0 && (
         <div className="mt-2" data-testid="excluded-features-list">
           <p className="mb-1 text-xs font-medium text-muted-foreground">Excluded (low importance):</p>

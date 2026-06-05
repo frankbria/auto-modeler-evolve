@@ -2695,6 +2695,68 @@ def _detect_balance_strategy(message: str) -> str:
     return "class_weight"
 
 
+# ---------------------------------------------------------------------------
+# Custom per-class weighted training
+# Distinct from _BALANCE_TRAIN_PATTERNS (which uses balanced/auto class weighting).
+# These patterns match analyst requests for SPECIFIC weight multipliers per class:
+# "give 3x weight to churn", "class fraud=10, normal=1", "per-class custom weights".
+# ---------------------------------------------------------------------------
+_CUSTOM_CLASS_WEIGHT_PATTERNS = re.compile(
+    r"(?:"
+    r"(?:give|assign|set|apply)\s+(?:\w+\s+){0,3}(?:\d+(?:\.\d+)?[x×]?|higher|more|extra|greater|increased)\s+"
+    r"(?:weight|importance|priority|penalty|cost)\s+(?:to|on|for)\s+(?:class\s+)?['\"]?\w|"
+    r"\d+(?:\.\d+)?[x×]\s+(?:more\s+)?(?:weight|importance|penalty)?\s*(?:to|on|for|of)\s+(?:class\s+)?['\"]?\w|"
+    r"(?:custom|manual|per[- ]class|user[- ]defined)\s+(?:custom\s+)?class\s+weights?|"
+    r"per[- ]class\s+(?:custom\s+)?weights?|"
+    r"class\s+weights?\s*:\s*\w+\s*[=:]\s*\d|"
+    r"weight\s+(?:class\s+)?['\"]?\w+['\"]?\s+(?:as|at|with|by)\s+\d|"
+    r"(?:higher|more|extra|greater)\s+(?:weight|importance|penalty)\s+(?:on|for|to)\s+(?:class\s+)?['\"]?\w+['\"]?\s+(?:when\s+)?training|"
+    r"penali[sz]e\s+misclassif(?:ication|ied)s?\s+of\s+(?:class\s+)?['\"]?\w|"
+    r"\d+\s+times?\s+(?:more\s+)?(?:weight|importance)\s+(?:on|for|to)\s+(?:class\s+)?['\"]?\w"
+    r")",
+    re.IGNORECASE,
+)
+
+_CUSTOM_WEIGHT_MULTIPLIER_RE = re.compile(
+    r"(\d+(?:\.\d+)?)\s*[x×]\s+(?:more\s+)?(?:weight|importance|penalty)?\s*(?:to|on|for|of)\s+(?:class\s+)?['\"]?([\w][\w\s]*?)['\"]?\b",
+    re.IGNORECASE,
+)
+_CUSTOM_WEIGHT_TIMES_RE = re.compile(
+    r"(\d+(?:\.\d+)?)\s+times?\s+(?:more\s+)?(?:weight|importance)\s+(?:to|on|for)\s+(?:class\s+)?['\"]?([\w][\w\s]*?)['\"]?\b",
+    re.IGNORECASE,
+)
+_CUSTOM_WEIGHT_KV_RE = re.compile(
+    r"['\"]?([\w][\w\s]*?)['\"]?\s*[=:]\s*(\d+(?:\.\d+)?)\s*(?:[xX×]|times?)?(?:[,;\s]|$)",
+)
+
+
+def _detect_custom_class_weights(message: str, class_names: list[str]) -> dict[str, float]:
+    """Extract custom class weight multipliers from a natural language message.
+
+    Returns {class_name: weight} for classes with specified weights.
+    Empty dict if no specific weights can be parsed.
+    """
+    weights: dict[str, float] = {}
+    class_lower = {c.lower(): c for c in class_names}
+
+    for m in _CUSTOM_WEIGHT_MULTIPLIER_RE.finditer(message):
+        mult_str, cls_str = m.group(1), m.group(2).strip()
+        if cls_str.lower() in class_lower:
+            weights[class_lower[cls_str.lower()]] = float(mult_str)
+
+    for m in _CUSTOM_WEIGHT_TIMES_RE.finditer(message):
+        mult_str, cls_str = m.group(1), m.group(2).strip()
+        if cls_str.lower() in class_lower:
+            weights[class_lower[cls_str.lower()]] = float(mult_str)
+
+    for m in _CUSTOM_WEIGHT_KV_RE.finditer(message):
+        cls_str, weight_str = m.group(1).strip(), m.group(2)
+        if cls_str.lower() in class_lower:
+            weights[class_lower[cls_str.lower()]] = float(weight_str)
+
+    return weights
+
+
 _PRESET_NAME_RE = re.compile(
     r"(?:called|named)\s+['\"]?([A-Za-z0-9][A-Za-z0-9 _\-]*?)['\"]?\s*"
     r"(?=\s+with\s+|\s*:\s*[A-Za-z]|\s*,\s*[A-Za-z]|$)",
@@ -9275,6 +9337,139 @@ def send_message(
                         )
         except Exception:  # noqa: BLE001
             pass  # Weak-feature retrain is nice-to-have; never crash chat
+
+    # Custom per-class weighted training ("give 3x weight to churn", "class fraud=10, normal=1").
+    # Must fire BEFORE _BALANCE_TRAIN_PATTERNS and _TRAIN_PATTERNS.
+    if (
+        _CUSTOM_CLASS_WEIGHT_PATTERNS.search(body.message)
+        and ctx["dataset"]
+        and ctx["feature_set"]
+        and not training_started_event
+    ):
+        try:
+            import queue as _queue_cw
+            import threading as _threading_cw
+
+            from api.models import (
+                MODELS_DIR as _MODELS_DIR_CW,
+                _lock as _train_lock_cw,
+                _train_in_background,
+                _training_counters,
+                _training_queues,
+            )
+            from core.trainer import recommend_models as _rec_models_cw
+            from models.model_run import ModelRun as _ModelRun_cw
+
+            _ds_cw = ctx["dataset"]
+            _fs_cw = ctx["feature_set"]
+            _file_path_cw = Path(_ds_cw.file_path)
+
+            if (
+                _file_path_cw.exists()
+                and _fs_cw
+                and _fs_cw.target_column
+                and _fs_cw.problem_type == "classification"
+            ):
+                _target_cw = _fs_cw.target_column
+                _df_cw = _load_working_df(_file_path_cw, _active_filter_conditions)
+
+                _transforms_cw_raw = json.loads(_fs_cw.transformations or "[]")
+                if _transforms_cw_raw:
+                    from core.feature_engine import apply_transformations as _apply_t_cw
+
+                    _df_cw, _ = _apply_t_cw(_df_cw, _transforms_cw_raw)
+
+                _class_names_cw = sorted(
+                    [str(c) for c in _df_cw[_target_cw].dropna().unique()]
+                )
+                _parsed_weights_cw = _detect_custom_class_weights(
+                    body.message, _class_names_cw
+                )
+
+                # Smart default: if pattern matched but no specific weights found,
+                # apply 2x to the minority class (the most common analyst intent).
+                if not _parsed_weights_cw and len(_class_names_cw) >= 2:
+                    _counts_cw = _df_cw[_target_cw].value_counts()
+                    _minority_cw = str(_counts_cw.index[-1])
+                    _parsed_weights_cw = {
+                        c: (2.0 if c == _minority_cw else 1.0)
+                        for c in _class_names_cw
+                    }
+
+                if _parsed_weights_cw:
+                    for _c_cw in _class_names_cw:
+                        _parsed_weights_cw.setdefault(_c_cw, 1.0)
+
+                    _feature_cols_cw = [
+                        c for c in _df_cw.columns if c != _target_cw
+                    ]
+                    _recs_cw = _rec_models_cw(
+                        "classification", _ds_cw.row_count, _ds_cw.column_count
+                    )
+                    _algo_names_cw = [r["algorithm"] for r in _recs_cw[:3]]
+                    _model_dir_cw = _MODELS_DIR_CW / project_id
+
+                    with _train_lock_cw:
+                        _training_queues[project_id] = _queue_cw.Queue()
+                        _training_counters[project_id] = len(_algo_names_cw)
+
+                    _run_ids_cw: list[str] = []
+                    with Session(session.bind) as _tr_s_cw:
+                        for _algo_cw in _algo_names_cw:
+                            _run_cw = _ModelRun_cw(
+                                project_id=project_id,
+                                feature_set_id=_fs_cw.id,
+                                algorithm=_algo_cw,
+                                hyperparameters=json.dumps({}),
+                                status="pending",
+                            )
+                            _tr_s_cw.add(_run_cw)
+                            _tr_s_cw.commit()
+                            _tr_s_cw.refresh(_run_cw)
+                            _run_ids_cw.append(_run_cw.id)
+
+                            _t_cw = _threading_cw.Thread(
+                                target=_train_in_background,
+                                args=(
+                                    _run_cw.id,
+                                    project_id,
+                                    _df_cw.copy(),
+                                    _feature_cols_cw,
+                                    _target_cw,
+                                    _algo_cw,
+                                    "classification",
+                                    _model_dir_cw,
+                                    None,
+                                ),
+                                kwargs={"custom_class_weights": _parsed_weights_cw},
+                                daemon=True,
+                            )
+                            _t_cw.start()
+
+                    _weight_summary_cw = ", ".join(
+                        f"{c}={w:.1g}x" for c, w in sorted(_parsed_weights_cw.items())
+                    )
+                    training_started_event = {
+                        "project_id": project_id,
+                        "target_column": _target_cw,
+                        "problem_type": "classification",
+                        "algorithms": _algo_names_cw,
+                        "run_count": len(_run_ids_cw),
+                        "status": "started",
+                        "custom_class_weights": _parsed_weights_cw,
+                    }
+                    system_prompt += (
+                        f"\n\n## Custom Class Weight Training Started\n"
+                        f"Training {len(_algo_names_cw)} model(s) to predict '{_target_cw}' "
+                        f"with custom class weights: {_weight_summary_cw}. "
+                        f"Classes with higher weights influence the model more during learning. "
+                        f"Algorithms: {', '.join(_algo_names_cw)}.\n"
+                        "Tell the user training started with their custom class weights applied. "
+                        "Check the Models tab for real-time progress."
+                    )
+
+        except Exception:  # noqa: BLE001
+            pass  # Custom class weight training is nice-to-have; never crash chat
 
     # Check for balance-corrected training request ("train with class weighting",
     # "apply SMOTE and retrain", etc.). Must fire BEFORE _TRAIN_PATTERNS so the

@@ -917,6 +917,8 @@ def train_single_model(
     imbalance_strategy: Optional[str] = None,
     split_strategy: str = "random",
     date_col_used: Optional[str] = None,
+    custom_class_weights: Optional[dict] = None,
+    label_encoder: Optional[object] = None,
 ) -> dict:
     """Train one sklearn model, compute held-out metrics, and save to disk.
 
@@ -989,6 +991,37 @@ def train_single_model(
         elif imbalance_strategy == "threshold":
             apply_threshold_tuning = True
 
+    # ---- Custom per-class weights (distinct from balanced imbalance_strategy) ----
+    # Allows analysts to specify exact multipliers per class, e.g. {"churn": 3.0, "no_churn": 1.0}
+    _custom_sample_weights: Optional[np.ndarray] = None
+    _using_custom_weights = False
+    if (
+        custom_class_weights
+        and problem_type == "classification"
+        and not info.get("is_ensemble")
+        and not imbalance_strategy
+    ):
+        _cw_int: dict[int, float] = {}
+        if label_encoder is not None and hasattr(label_encoder, "classes_"):
+            for _cls_s, _w in custom_class_weights.items():
+                _idx_arr = np.where(label_encoder.classes_ == _cls_s)[0]
+                if _idx_arr.size > 0:
+                    _cw_int[int(_idx_arr[0])] = float(_w)
+        else:
+            for _uv in np.unique(y_train):
+                if str(_uv) in custom_class_weights:
+                    _cw_int[int(_uv)] = float(custom_class_weights[str(_uv)])
+
+        if _cw_int:
+            _using_custom_weights = True
+            if algorithm in _CLASS_WEIGHT_PARAM_ALGOS:
+                params["class_weight"] = _cw_int
+            elif algorithm in _SAMPLE_WEIGHT_FIT_ALGOS:
+                _custom_sample_weights = np.array(
+                    [_cw_int.get(int(yi), 1.0) for yi in y_train]
+                )
+            # neural_network_classifier: no class_weight/sample_weight support; train normally
+
     # Calibration is applied for classifiers unless threshold tuning or SMOTE is
     # selected (those strategies already manipulate probabilities / training distribution).
     # Also skip for sample_weight algorithms (GBC, XGB with class_weight) because
@@ -1002,6 +1035,7 @@ def train_single_model(
             and algorithm in _SAMPLE_WEIGHT_FIT_ALGOS
         )
         or len(X_train) < 30
+        or _using_custom_weights
     )
 
     start = time.time()
@@ -1014,6 +1048,8 @@ def train_single_model(
     ):
         sample_weights = compute_sample_weight("balanced", y_train)
         model.fit(X_train, y_train, sample_weight=sample_weights)
+    elif _custom_sample_weights is not None:
+        model.fit(X_train, y_train, sample_weight=_custom_sample_weights)
     else:
         model.fit(X_train, y_train)
 

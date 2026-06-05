@@ -162,6 +162,7 @@ export interface TrainingStartedResult {
   status: "started"
   imbalance_strategy?: "class_weight" | "smote" | "threshold"
   excluded_features?: string[]
+  custom_class_weights?: Record<string, number>
 }
 
 export interface DeployedResult {

@@ -214,3 +214,63 @@ describe("TrainingStartedCard excluded_features", () => {
     expect(screen.getByText(/without weak features/i)).toBeInTheDocument()
   })
 })
+
+// --- Custom class weights tests -----------------------------------------
+
+const customWeightsResult: TrainingStartedResult = {
+  ...classificationResult,
+  custom_class_weights: { churn: 5, no_churn: 1 },
+}
+
+const singleClassWeightResult: TrainingStartedResult = {
+  ...classificationResult,
+  custom_class_weights: { fraud: 10 },
+}
+
+describe("TrainingStartedCard custom_class_weights", () => {
+  it("does not show custom-class-weights-badge when no custom_class_weights", () => {
+    render(<TrainingStartedCard result={trainingStarted} />)
+    expect(screen.queryByTestId("custom-class-weights-badge")).not.toBeInTheDocument()
+  })
+
+  it("shows custom-class-weights-badge when custom_class_weights present", () => {
+    render(<TrainingStartedCard result={customWeightsResult} />)
+    expect(screen.getByTestId("custom-class-weights-badge")).toBeInTheDocument()
+  })
+
+  it("badge text contains 'Custom weights'", () => {
+    render(<TrainingStartedCard result={customWeightsResult} />)
+    expect(screen.getByTestId("custom-class-weights-badge")).toHaveTextContent(/Custom weights/i)
+  })
+
+  it("shows custom-class-weights-list section when weights present", () => {
+    render(<TrainingStartedCard result={customWeightsResult} />)
+    expect(screen.getByTestId("custom-class-weights-list")).toBeInTheDocument()
+  })
+
+  it("does not show custom-class-weights-list when no custom_class_weights", () => {
+    render(<TrainingStartedCard result={trainingStarted} />)
+    expect(screen.queryByTestId("custom-class-weights-list")).not.toBeInTheDocument()
+  })
+
+  it("renders per-class weight chips with class name and multiplier", () => {
+    render(<TrainingStartedCard result={customWeightsResult} />)
+    expect(screen.getByTestId("class-weight-chip-churn")).toBeInTheDocument()
+    expect(screen.getByTestId("class-weight-chip-no_churn")).toBeInTheDocument()
+  })
+
+  it("chip shows weight value formatted as 'class=Nx'", () => {
+    render(<TrainingStartedCard result={customWeightsResult} />)
+    expect(screen.getByTestId("class-weight-chip-churn")).toHaveTextContent("churn=5x")
+  })
+
+  it("shows 'with custom class weights' in description text", () => {
+    render(<TrainingStartedCard result={customWeightsResult} />)
+    expect(screen.getByText(/with custom class weights/i)).toBeInTheDocument()
+  })
+
+  it("renders single class weight chip correctly", () => {
+    render(<TrainingStartedCard result={singleClassWeightResult} />)
+    expect(screen.getByTestId("class-weight-chip-fraud")).toHaveTextContent("fraud=10x")
+  })
+})

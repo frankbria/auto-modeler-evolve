@@ -215,6 +215,7 @@ def _train_in_background(
     model_dir: Path,
     imbalance_strategy: str | None = None,
     split_strategy: str = "random",
+    custom_class_weights: dict | None = None,
 ) -> None:
     """Runs in a daemon thread. Updates ModelRun status in DB and pushes SSE events."""
     # Mark as training
@@ -253,7 +254,7 @@ def _train_in_background(
                 # No date column found — fall back to random split silently
                 effective_split = "random"
 
-        X, y, _ = prepare_features(df, feature_cols, target_col, problem_type)
+        X, y, _le = prepare_features(df, feature_cols, target_col, problem_type)
         result = train_single_model(
             X,
             y,
@@ -264,6 +265,8 @@ def _train_in_background(
             imbalance_strategy=imbalance_strategy,
             split_strategy=effective_split,
             date_col_used=date_col_used,
+            custom_class_weights=custom_class_weights,
+            label_encoder=_le,
         )
 
         # Augment metrics with sampling info (if dataset was sub-sampled)
