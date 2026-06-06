@@ -7176,9 +7176,7 @@ def compute_segment_drift(
     sorted_segs = sorted(grouped.items(), key=lambda x: len(x[1]), reverse=True)
     sorted_segs = sorted_segs[:max_segments]
 
-    feature_names = [
-        f for f in feature_ranges if f != segment_column
-    ]
+    feature_names = [f for f in feature_ranges if f != segment_column]
 
     def _drift_for_inputs(inputs: list[dict]) -> tuple[float, list[dict]]:
         """Compute mean drift % across features for a set of inputs."""
@@ -7187,7 +7185,9 @@ def compute_segment_drift(
             frange = feature_ranges.get(feat)
             if frange is None:
                 continue
-            values = [inp[feat] for inp in inputs if feat in inp and inp[feat] is not None]
+            values = [
+                inp[feat] for inp in inputs if feat in inp and inp[feat] is not None
+            ]
             if not values:
                 continue
 
@@ -7216,7 +7216,9 @@ def compute_segment_drift(
         if not feature_drifts:
             return 0.0, []
 
-        overall = round(sum(f["drift_pct"] for f in feature_drifts) / len(feature_drifts), 2)
+        overall = round(
+            sum(f["drift_pct"] for f in feature_drifts) / len(feature_drifts), 2
+        )
         top3 = sorted(feature_drifts, key=lambda f: f["drift_pct"], reverse=True)[:3]
         return overall, top3
 
@@ -7250,9 +7252,11 @@ def compute_segment_drift(
     low_count = sum(1 for s in segments if s["status"] == "low")
     minimal_count = sum(1 for s in segments if s["status"] == "minimal")
     total_samples = sum(s["sample_count"] for s in segments)
-    avg_drift = round(
-        sum(s["drift_score"] for s in segments) / len(segments), 2
-    ) if segments else 0.0
+    avg_drift = (
+        round(sum(s["drift_score"] for s in segments) / len(segments), 2)
+        if segments
+        else 0.0
+    )
 
     max_drift_segment = segments[0]["name"] if segments else None
 

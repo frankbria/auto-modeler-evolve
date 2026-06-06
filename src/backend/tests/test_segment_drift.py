@@ -32,9 +32,18 @@ def test_empty_inputs_returns_no_data():
 def test_required_keys_present():
     result = compute_segment_drift([], "region", FEATURE_RANGES)
     for key in (
-        "segment_column", "n_segments", "n_samples", "segments",
-        "max_drift_segment", "avg_drift_score", "high_count",
-        "moderate_count", "low_count", "minimal_count", "verdict", "summary",
+        "segment_column",
+        "n_segments",
+        "n_samples",
+        "segments",
+        "max_drift_segment",
+        "avg_drift_score",
+        "high_count",
+        "moderate_count",
+        "low_count",
+        "minimal_count",
+        "verdict",
+        "summary",
     ):
         assert key in result, f"Missing key: {key}"
 
@@ -112,7 +121,10 @@ def test_verdict_concentrated():
     result = compute_segment_drift(high_inputs + low_inputs, "region", FEATURE_RANGES)
     # East: drift=100%, West: drift=0% → concentrated
     assert result["verdict"] in ("concentrated", "widespread")  # concentrated expected
-    if result["segments"][0]["drift_score"] > result["segments"][1]["drift_score"] * 1.5:
+    if (
+        result["segments"][0]["drift_score"]
+        > result["segments"][1]["drift_score"] * 1.5
+    ):
         assert result["verdict"] == "concentrated"
 
 
@@ -158,7 +170,9 @@ def test_top_drifting_features_capped_at_3():
         "region": {"known_categories": ["A"]},
         **{f"feat{i}": {"min": 0.0, "max": 1.0} for i in range(10)},
     }
-    inputs = [{"region": "A", **{f"feat{i}": 100.0 for i in range(10)}} for _ in range(10)]
+    inputs = [
+        {"region": "A", **{f"feat{i}": 100.0 for i in range(10)}} for _ in range(10)
+    ]
     result = compute_segment_drift(inputs, "region", ranges)
     for seg in result["segments"]:
         assert len(seg["top_drifting_features"]) <= 3
@@ -291,6 +305,7 @@ def _create_test_deployment(session_engine):
 
 def test_segment_drift_no_logs_returns_no_data(client):
     from db import engine
+
     dep_id = _create_test_deployment(engine)
     resp = client.get(f"/api/deploy/{dep_id}/segment-drift")
     assert resp.status_code == 200
@@ -301,9 +316,17 @@ def test_segment_drift_no_logs_returns_no_data(client):
 
 def test_segment_drift_required_fields_in_response(client):
     from db import engine
+
     dep_id = _create_test_deployment(engine)
     resp = client.get(f"/api/deploy/{dep_id}/segment-drift")
     assert resp.status_code == 200
     data = resp.json()
-    for key in ("deployment_id", "n_segments", "n_samples", "segments", "verdict", "summary"):
+    for key in (
+        "deployment_id",
+        "n_segments",
+        "n_samples",
+        "segments",
+        "verdict",
+        "summary",
+    ):
         assert key in data, f"Missing field: {key}"
