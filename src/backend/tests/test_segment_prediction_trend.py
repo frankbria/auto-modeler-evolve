@@ -13,11 +13,14 @@ from core.analyzer import compute_segment_prediction_trend
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _now():
     return datetime.utcnow()
 
 
-def _log(seg_val: str, pred: float, days_ago: int = 0, confidence: float | None = None) -> dict:
+def _log(
+    seg_val: str, pred: float, days_ago: int = 0, confidence: float | None = None
+) -> dict:
     ts = _now() - timedelta(days=days_ago)
     return {
         "prediction_numeric": pred,
@@ -75,8 +78,18 @@ def test_single_log_not_enough_data():
 
 def test_missing_segment_col_excluded():
     logs = [
-        {"prediction_numeric": 50.0, "confidence": None, "created_at": _now(), "input_features_dict": {"units": 5.0}},
-        {"prediction_numeric": 60.0, "confidence": None, "created_at": _now(), "input_features_dict": {"units": 6.0}},
+        {
+            "prediction_numeric": 50.0,
+            "confidence": None,
+            "created_at": _now(),
+            "input_features_dict": {"units": 5.0},
+        },
+        {
+            "prediction_numeric": 60.0,
+            "confidence": None,
+            "created_at": _now(),
+            "input_features_dict": {"units": 6.0},
+        },
     ]
     result = compute_segment_prediction_trend(logs, "region")
     assert result["verdict"] == "no_data"
@@ -104,8 +117,17 @@ def test_segment_entry_required_fields():
     result = compute_segment_prediction_trend(logs, "region")
     assert result["n_segments"] >= 1
     seg = result["segments"][0]
-    for key in ("name", "n_samples", "n_days_with_data", "direction", "direction_label",
-                "change_pct", "first_mean", "last_mean", "daily_stats"):
+    for key in (
+        "name",
+        "n_samples",
+        "n_days_with_data",
+        "direction",
+        "direction_label",
+        "change_pct",
+        "first_mean",
+        "last_mean",
+        "daily_stats",
+    ):
         assert key in seg, f"Missing segment key: {key}"
 
 
@@ -188,7 +210,9 @@ def test_classification_uses_confidence():
         _cls_log("Premium", 0.60, days_ago=10),
         _cls_log("Premium", 0.90, days_ago=0),
     ]
-    result = compute_segment_prediction_trend(logs, "category", problem_type="classification")
+    result = compute_segment_prediction_trend(
+        logs, "category", problem_type="classification"
+    )
     assert result["n_segments"] == 1
     seg = result["segments"][0]
     assert seg["last_mean"] > seg["first_mean"]
@@ -349,7 +373,9 @@ def test_endpoint_returns_no_data_without_logs(client):
     from db import engine
 
     dep_id = _create_deployment(engine)
-    resp = client.get(f"/api/deploy/{dep_id}/segment-prediction-trend?segment_col=region")
+    resp = client.get(
+        f"/api/deploy/{dep_id}/segment-prediction-trend?segment_col=region"
+    )
     assert resp.status_code == 200
     data = resp.json()
     assert data["verdict"] == "no_data"
@@ -371,7 +397,9 @@ def test_endpoint_required_fields_in_response(client):
     from db import engine
 
     dep_id = _create_deployment(engine)
-    resp = client.get(f"/api/deploy/{dep_id}/segment-prediction-trend?segment_col=region")
+    resp = client.get(
+        f"/api/deploy/{dep_id}/segment-prediction-trend?segment_col=region"
+    )
     assert resp.status_code == 200
     data = resp.json()
     for key in (

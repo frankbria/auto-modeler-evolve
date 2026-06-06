@@ -7419,8 +7419,12 @@ def compute_segment_prediction_trend(
         }
 
     # Keep top max_segments by sample count
-    seg_counts = {seg: sum(len(v) for v in days.items()) for seg, days in segment_day_vals.items()}
-    top_segs = sorted(seg_counts, key=lambda s: seg_counts[s], reverse=True)[:max_segments]
+    seg_counts = {
+        seg: sum(len(v) for v in days.items()) for seg, days in segment_day_vals.items()
+    }
+    top_segs = sorted(seg_counts, key=lambda s: seg_counts[s], reverse=True)[
+        :max_segments
+    ]
 
     segments_out: list[dict] = []
     for seg in top_segs:
@@ -7508,9 +7512,7 @@ def compute_segment_prediction_trend(
         )
     elif len(stable_segs) == len(segments_out):
         verdict = "stable"
-        summary = (
-            f"All {len(segments_out)} '{segment_column}' segments are stable with minimal change."
-        )
+        summary = f"All {len(segments_out)} '{segment_column}' segments are stable with minimal change."
     else:
         verdict = "mixed"
         summary = (

@@ -17292,7 +17292,11 @@ def send_message(
                     f"Verdict: {_spt_verdict}. {_spt_summary} "
                     f"Segments analysed: {_spt_n}. "
                     + (f"Most improved: '{_spt_improved}'. " if _spt_improved else "")
-                    + (f"Most declining: '{_spt_declining}'. " if _spt_declining else "")
+                    + (
+                        f"Most declining: '{_spt_declining}'. "
+                        if _spt_declining
+                        else ""
+                    )
                     + "A SegmentPredictionTrendCard is shown with per-segment trend lines. "
                     "Narrate which segments are improving or declining, what this might mean "
                     "for the business, and whether segment-level retraining is recommended."
