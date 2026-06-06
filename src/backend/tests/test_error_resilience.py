@@ -148,9 +148,9 @@ class TestUploadErrorHandling:
         # Insights should flag duplicates
         insights = resp.json().get("insights", [])
         dup_insight = next((i for i in insights if i["type"] == "duplicates"), None)
-        assert dup_insight is not None, (
-            f"Expected duplicate insight but got: {insights}"
-        )
+        assert (
+            dup_insight is not None
+        ), f"Expected duplicate insight but got: {insights}"
 
 
 # ---------------------------------------------------------------------------

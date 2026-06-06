@@ -588,9 +588,9 @@ def test_overlay_chart_emits_line_chart_event(client, project_and_ts_dataset):
             pass
 
     assert "chart" in event_types, f"Expected chart event. Got: {event_types}"
-    assert any(ce.get("chart_type") == "line" for ce in chart_events), (
-        f"Expected line chart. Got: {chart_events}"
-    )
+    assert any(
+        ce.get("chart_type") == "line" for ce in chart_events
+    ), f"Expected line chart. Got: {chart_events}"
     # Overlay chart has both 'revenue' and 'units' as y_keys
     overlay = next((ce for ce in chart_events if ce.get("chart_type") == "line"), None)
     assert overlay is not None

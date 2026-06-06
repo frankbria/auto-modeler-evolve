@@ -2723,9 +2723,7 @@ def set_accuracy_alert(
             + (
                 f"drops below {thr:.0%}."
                 if problem_type == "classification" and thr is not None
-                else f"exceeds {thr:.1f}%."
-                if thr is not None
-                else ""
+                else f"exceeds {thr:.1f}%." if thr is not None else ""
             )
             if threshold_set
             else "Accuracy alert disabled."
@@ -6498,9 +6496,7 @@ def get_model_status_report(
                 else (
                     "good"
                     if feedback_accuracy >= 0.8
-                    else "moderate"
-                    if feedback_accuracy >= 0.6
-                    else "needs attention"
+                    else "moderate" if feedback_accuracy >= 0.6 else "needs attention"
                 )
             )
     except Exception:  # noqa: BLE001
@@ -7673,7 +7669,9 @@ def get_drift_importance_ranking(
     # Fire feature-drift webhook if enabled and critical features found (background)
     if getattr(dep, "feature_drift_alert_enabled", False):
         critical_features = [
-            f for f in result.get("ranked_features", []) if f.get("priority") in ("action_required", "attention")
+            f
+            for f in result.get("ranked_features", [])
+            if f.get("priority") in ("action_required", "attention")
         ]
         if critical_features:
             threading.Thread(
@@ -7724,7 +7722,9 @@ def _check_and_fire_feature_drift_alert(
             _s.add(_dep)
             _s.commit()
 
-        top_features = [f.get("feature") for f in critical_features[:5] if f.get("feature")]
+        top_features = [
+            f.get("feature") for f in critical_features[:5] if f.get("feature")
+        ]
         dispatch_webhooks(
             deployment_id,
             EVENT_FEATURE_DRIFT,
