@@ -53,6 +53,28 @@ the time is better spent on real features.
 
 ---
 
+## Day 87 (12:00) — Done
+
+**Track D: Deployment Prediction Value Trend by Segment** — complete.
+
+Closes the "is my average predicted revenue trending up or down for the West region?" analyst gap — distinct from `PredictionValueTrendCard` (overall trend, no segment breakdown) and `SegmentDriftCard` (input distribution drift, not output values). Analysts say "prediction trend by segment", "prediction trends per region", "which segment is improving?", "which category is declining?", "segment-level prediction trend", "how are my predictions changing for each region?", or 2 other NL variants (8 total in `_SEGMENT_PRED_TREND_PATTERNS`) and receive a `SegmentPredictionTrendCard` with per-segment sparklines showing whether predictions are trending up, down, or stable for each group.
+
+**What was built:**
+- `compute_segment_prediction_trend(logs_data, segment_column, problem_type, n_days=30, max_segments=8)` pure function in `core/analyzer.py`: groups enriched prediction log dicts by segment column value, computes daily means, derives change_pct (first-to-last), direction (>+2%/period=trending_up, <-2%=trending_down, else stable), sorts by |change_pct| desc; verdicts: diverging/all_improving/all_declining/mixed/stable/no_data
+- `GET /api/deploy/{id}/segment-prediction-trend?segment_col=region&n=200&n_days=30` REST endpoint with auto-detect first categorical feature
+- `_SEGMENT_PRED_TREND_PATTERNS` (8 NL variants) + handler in `chat.py` guarded by `ctx["deployment"]`; reuses `_detect_segment_col()` for auto-detection; emits `{type:"segment_pred_trend"}` SSE event
+- `SegmentPredictionTrendCard` (amber=diverging / emerald=all_improving / rose=all_declining / sky=mixed / muted=stable, 📈 icon): verdict badge, column + segments + days badges, summary, most-improved/declining callouts, per-segment rows with direction badge + change% + first/latest/samples grid + Recharts sparkline (color-coded), empty state, sr-only figcaption
+- Full TypeScript wiring: `SegmentPredTrendResult` and child interfaces; `attachSegmentPredTrendToLastMessage` Zustand action; SSE handlers + card render in both EventSource branches of `page.tsx`
+
+**Tests:** 42 backend (17 pure-function + 14 regex + 4 REST endpoint + 7 helper) + 19 frontend (16 card component + 3 store action) = **61 new tests**. All passing. Backend lint: clean. Frontend build + TypeScript + lint: clean.
+
+**What's next:**
+- Track C: Cost-Sensitive Training via Misclassification Cost Matrix — "false positives cost $1000, false negatives cost $10"
+- Track B: Comparative Model Improvement Plan — "create a ranked improvement roadmap for all my models"
+- Track D: Confidence Calibration Trend by Segment — "is my model less confident for West region predictions over time?"
+
+---
+
 ## Day 87 (04:00) — Done
 
 **Track D: Deployment Segment Drift Detection** — complete.

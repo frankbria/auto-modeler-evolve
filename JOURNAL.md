@@ -1,5 +1,25 @@
 # Journal
 
+## Day 87 — 12:00 — Deployment Prediction Value Trend by Segment
+
+**Feature shipped:** Deployment Prediction Value Trend by Segment (Track D perpetual). Analysts can now ask "prediction trend by segment", "prediction trends per region", "which segment is improving?", "which category is declining?", "segment-level prediction trend", "how are my predictions changing for each region?", or 2 other NL variants (8 total in `_SEGMENT_PRED_TREND_PATTERNS`) and receive a `SegmentPredictionTrendCard` showing whether predictions are trending up, down, or stable for each categorical segment independently. Closes the "is my average predicted revenue going up or down for the West region?" analyst gap — distinct from `PredictionValueTrendCard` (overall trend, no segments) and `SegmentDriftCard` (input distribution drift, not output values).
+
+**Why it matters:** Analysts frequently notice an overall trend in prediction values, but the signal is obscured because improving and declining segments cancel each other out in aggregate. This card surfaces diverging segment behavior — e.g., model predictions for "West" customers are trending down while "East" is trending up — before the overall trend obscures it. This is particularly valuable before deciding whether to retrain for one segment or all.
+
+**What was built:**
+
+- `compute_segment_prediction_trend(logs_data, segment_column, problem_type, n_days=30, max_segments=8)` pure function in `core/analyzer.py`: groups enriched prediction log dicts by segment value found in `input_features_dict`; for each segment computes daily means (regression: `prediction_numeric`; classification: `confidence`); derives `change_pct` (first→last period), `direction` (`trending_up` when slope_pct > +2%/period, `trending_down` < -2%/period, otherwise `stable`); sorts by `|change_pct|` descending; returns `most_improved_segment`, `most_declining_segment`, and `verdict` (`diverging`/`all_improving`/`all_declining`/`mixed`/`stable`/`no_data`).
+- `GET /api/deploy/{id}/segment-prediction-trend?segment_col=region&n=200&n_days=30` REST endpoint in `api/deploy.py`: loads PredictionLogs, parses `input_features` JSON, auto-detects first categorical feature from pipeline when `segment_col` unspecified; returns `no_data` verdict when no categorical features found or no matching logs.
+- `_SEGMENT_PRED_TREND_PATTERNS` (8 NL variants) + handler in `chat.py`: reuses `_detect_segment_col()` for auto-detection; loads 200 logs, enriches with parsed `input_features_dict`; injects verdict + most-improved/declining + summary into `system_prompt`; emits `{type:"segment_pred_trend"}` SSE event. Guarded by `ctx["deployment"]`; `except Exception: pass` throughout.
+- `SegmentPredictionTrendCard` at `components/deploy/segment-prediction-trend-card.tsx` (amber=diverging / emerald=all_improving / rose=all_declining / sky=mixed / muted=stable, 📈 icon): verdict badge, segment-column + n-segments + n-days badges, summary paragraph, most-improved/declining callouts (↑ emerald / ↓ rose), per-segment rows (direction badge + change% + first/latest/samples grid + Recharts LineChart sparkline color-coded by direction), empty state, sr-only figcaption.
+- Full TypeScript wiring: `SegmentPredTrendDirection`, `SegmentPredTrendVerdict`, `SegmentPredTrendDayStat`, `SegmentPredTrendEntry`, `SegmentPredTrendResult` in `lib/types.ts`; `segment_pred_trend?` on `ChatMessage`; `attachSegmentPredTrendToLastMessage` Zustand action in `store.ts`; SSE handlers in both EventSource branches + card render in `project/[id]/page.tsx`.
+
+**Tests:** 42 backend (17 pure-function + 14 regex + 4 REST endpoint) + 19 frontend (16 card component + 3 store action) = **61 new tests**. Baseline: 5921 backend / 3354 frontend → **5963 backend / 3373 frontend** (+42 / +19). Backend lint: clean. Frontend build + TypeScript + lint: clean.
+
+**One design decision:** Direction is determined from `change_pct / (n_periods - 1)` rather than a polyfit slope, which avoids a spurious numpy dependency for a 2-3 day time series and is more interpretable ("the prediction changed by X% per day on average" rather than an opaque slope coefficient). The polyfit call was added then removed when lint flagged it unused — a sign the simpler formula was the right choice.
+
+---
+
 ## Day 87 — 04:00 — Deployment Segment Drift Detection
 
 **Feature shipped:** Deployment Segment Drift Detection (Track D perpetual). Analysts can now ask "segment drift analysis", "drift by region", "which segment has the most drift", "geographic drift analysis", "drift breakdown by category", or "is drift concentrated in a group" (8 NL variants in `_SEGMENT_DRIFT_PATTERNS`) and receive a `SegmentDriftCard` that shows which customer segments, regions, or categories are drifting most from the training distribution. Closes the "is my model drifting more for one group than another?" analyst gap — distinct from the drift importance ranking (which ranks features, not segments) and covariate drift alert (which gives a binary alert per feature).
