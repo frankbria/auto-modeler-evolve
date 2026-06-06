@@ -566,6 +566,7 @@ export interface ChatMessage {
   drift_importance_ranking?: DriftImportanceRankingResult
   feature_drift_alert_config?: FeatureDriftAlertConfig
   segment_drift?: SegmentDriftResult
+  segment_pred_trend?: SegmentPredTrendResult
 }
 
 export interface RollbackVersionEntry {
@@ -4634,4 +4635,49 @@ export interface DriftImportanceRankingResult {
   no_drift_count: number
   verdict: DriftImportanceVerdict
   summary: string
+}
+
+// ---------------------------------------------------------------------------
+// Segment Prediction Value Trend (Track D perpetual)
+// ---------------------------------------------------------------------------
+
+export type SegmentPredTrendDirection = 'trending_up' | 'stable' | 'trending_down'
+export type SegmentPredTrendVerdict =
+  | 'diverging'
+  | 'all_improving'
+  | 'all_declining'
+  | 'mixed'
+  | 'stable'
+  | 'no_data'
+
+export interface SegmentPredTrendDayStat {
+  date: string
+  mean: number
+  count: number
+}
+
+export interface SegmentPredTrendEntry {
+  name: string
+  n_samples: number
+  n_days_with_data: number
+  direction: SegmentPredTrendDirection
+  direction_label: string
+  change_pct: number
+  first_mean: number
+  last_mean: number
+  daily_stats: SegmentPredTrendDayStat[]
+}
+
+export interface SegmentPredTrendResult {
+  deployment_id: string
+  segment_column: string
+  problem_type: string
+  n_segments: number
+  n_samples: number
+  segments: SegmentPredTrendEntry[]
+  most_improved_segment: string | null
+  most_declining_segment: string | null
+  verdict: SegmentPredTrendVerdict
+  summary: string
+  n_days: number
 }

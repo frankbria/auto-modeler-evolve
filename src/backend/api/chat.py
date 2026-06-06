@@ -3748,6 +3748,24 @@ def _detect_segment_col(message: str, feature_ranges: dict) -> str | None:
     return None
 
 
+# Per-segment prediction value trend: how prediction outputs are changing over time
+# for each segment (region, category, customer type). Distinct from:
+# - _PRED_VALUE_TREND_PATTERNS: overall trend, no segment breakdown
+# - _SEGMENT_DRIFT_PATTERNS: input distribution drift, not output values
+_SEGMENT_PRED_TREND_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"prediction\s+trends?\s+(?:by|per|across|for)\s+(?:segment|region|group|category|segments?)\b|"
+    r"(?:which|what)\s+(?:segment|region|group|category)\s+is\s+(?:improving|growing|declining|trending|rising|falling)\b|"
+    r"(?:is|are)\s+(?:my\s+)?predictions?\s+(?:for\s+\w+\s+)?(?:trending|going|moving)\s+(?:up|down|higher|lower)(?:\s+for\s+(?:my\s+)?(?:segment|region|group|category))?\b|"
+    r"(?:average|mean)\s+prediction\s+(?:for\s+\w+\s+)?(?:trending|trend|changing)\b|"
+    r"(?:segment|region|category|group)-level\s+prediction\s+trend\b|"
+    r"how\s+are\s+(?:my\s+)?predictions?\s+changing\s+(?:for|by|across)\s+(?:each\s+)?(?:segment|region|group|category)\b|"
+    r"prediction\s+trends?\s+(?:per|by|for|across)\s+(?:each\s+)?(?:segment|region|category|group)\b|"
+    r"(?:which|what)\s+(?:segment|region|group|category)\s+(?:is|has)\s+(?:the\s+)?(?:highest|lowest|most\s+(?:improved|declined))\s+prediction\b"
+    r")",
+    re.IGNORECASE,
+)
+
 _QUOTA_RUNWAY_PATTERNS = re.compile(
     r"(?i)(?:"
     r"(?:will|can)\s+(?:my\s+)?quota\s+(?:last|cover|handle)\s+(?:the\s+)?month\b|"
@@ -17207,6 +17225,82 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Segment drift is nice-to-have; never crash chat
 
+    # Segment prediction value trend: per-segment output trend analysis
+    # "prediction trend by region", "which segment is improving?", "is West trending up?"
+    # Distinct from segment drift (input dist) and overall prediction value trend (no segments).
+    segment_pred_trend_event: dict | None = None
+    if _SEGMENT_PRED_TREND_PATTERNS.search(body.message) and ctx["deployment"]:
+        try:
+            import json as _spt_json
+
+            from core.analyzer import compute_segment_prediction_trend as _cspt
+
+            _spt_dep = ctx["deployment"]
+            _spt_dep_id = _spt_dep.id if hasattr(_spt_dep, "id") else str(_spt_dep)
+            _spt_dep_obj = session.get(Deployment, _spt_dep_id)
+            _spt_problem = getattr(_spt_dep_obj, "problem_type", None) or "regression"
+
+            _spt_logs = session.exec(
+                select(PredictionLog)
+                .where(PredictionLog.deployment_id == _spt_dep_id)
+                .order_by(PredictionLog.created_at.desc())
+                .limit(200)
+            ).all()
+
+            _spt_feature_ranges: dict = {}
+            if _spt_dep_obj and getattr(_spt_dep_obj, "pipeline_path", None):
+                try:
+                    from core.deployer import load_pipeline as _load_pipeline_spt
+
+                    _spt_pipeline = _load_pipeline_spt(_spt_dep_obj.pipeline_path)
+                    _spt_feature_ranges = getattr(_spt_pipeline, "feature_ranges", {})
+                except Exception:  # noqa: BLE001
+                    pass
+
+            _spt_col = _detect_segment_col(body.message, _spt_feature_ranges)
+
+            if _spt_col:
+                _spt_logs_data: list[dict] = []
+                for _spt_lg in _spt_logs:
+                    _spt_ifd: dict = {}
+                    try:
+                        _spt_parsed = _spt_json.loads(_spt_lg.input_features)
+                        if isinstance(_spt_parsed, dict):
+                            _spt_ifd = _spt_parsed
+                    except Exception:  # noqa: BLE001
+                        pass
+                    _spt_logs_data.append(
+                        {
+                            "prediction_numeric": _spt_lg.prediction_numeric,
+                            "confidence": _spt_lg.confidence,
+                            "created_at": _spt_lg.created_at,
+                            "input_features_dict": _spt_ifd,
+                        }
+                    )
+
+                _spt_result = _cspt(_spt_logs_data, _spt_col, _spt_problem)
+                _spt_result["deployment_id"] = _spt_dep_id
+                segment_pred_trend_event = _spt_result
+
+                _spt_verdict = _spt_result.get("verdict", "no_data")
+                _spt_summary = _spt_result.get("summary", "")
+                _spt_n = _spt_result.get("n_segments", 0)
+                _spt_improved = _spt_result.get("most_improved_segment")
+                _spt_declining = _spt_result.get("most_declining_segment")
+                system_prompt += (
+                    f"\n\n## Segment Prediction Value Trend (by '{_spt_col}')\n"
+                    f"Verdict: {_spt_verdict}. {_spt_summary} "
+                    f"Segments analysed: {_spt_n}. "
+                    + (f"Most improved: '{_spt_improved}'. " if _spt_improved else "")
+                    + (f"Most declining: '{_spt_declining}'. " if _spt_declining else "")
+                    + "A SegmentPredictionTrendCard is shown with per-segment trend lines. "
+                    "Narrate which segments are improving or declining, what this might mean "
+                    "for the business, and whether segment-level retraining is recommended."
+                )
+
+        except Exception:  # noqa: BLE001
+            pass  # Segment prediction trend is nice-to-have; never crash chat
+
     # Quota runway / capacity planning (forward-looking projection)
     quota_runway_event: dict | None = None
     if _QUOTA_RUNWAY_PATTERNS.search(body.message) and ctx["deployment"]:
@@ -20125,6 +20219,9 @@ def send_message(
 
         if segment_drift_event:
             yield f"data: {json.dumps({'type': 'segment_drift', 'segment_drift': segment_drift_event})}\n\n"
+
+        if segment_pred_trend_event:
+            yield f"data: {json.dumps({'type': 'segment_pred_trend', 'segment_pred_trend': segment_pred_trend_event})}\n\n"
 
         # Emit quota runway / capacity planning card
         if quota_runway_event:

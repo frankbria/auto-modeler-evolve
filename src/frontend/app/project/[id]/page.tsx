@@ -129,6 +129,7 @@ import { DeploymentThroughputCard } from "@/components/deploy/deployment-through
 import { DriftImportanceCard } from "@/components/deploy/drift-importance-card"
 import { FeatureDriftAlertCard } from "@/components/deploy/feature-drift-alert-card"
 import { SegmentDriftCard } from "@/components/deploy/segment-drift-card"
+import { SegmentPredictionTrendCard } from "@/components/deploy/segment-prediction-trend-card"
 import { EnsembleRecommendationCard } from "@/components/models/ensemble-recommendation-card"
 import { TuningChatCard } from "@/components/models/tuning-chat-card"
 import { CvScoreDistributionCard } from "@/components/models/cv-score-distribution-card"
@@ -429,6 +430,7 @@ export default function ProjectWorkspace() {
     attachDriftImportanceRankingToLastMessage,
     attachFeatureDriftAlertConfigToLastMessage,
     attachSegmentDriftToLastMessage,
+    attachSegmentPredTrendToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -857,6 +859,8 @@ export default function ProjectWorkspace() {
                 attachFeatureDriftAlertConfigToLastMessage(json.feature_drift_alert_config as import("@/lib/types").FeatureDriftAlertConfig)
               } else if (json.type === "segment_drift" && json.segment_drift) {
                 attachSegmentDriftToLastMessage(json.segment_drift as import("@/lib/types").SegmentDriftResult)
+              } else if (json.type === "segment_pred_trend" && json.segment_pred_trend) {
+                attachSegmentPredTrendToLastMessage(json.segment_pred_trend as import("@/lib/types").SegmentPredTrendResult)
               } else if (json.type === "onboarding_guide" && json.onboarding_guide) {
                 attachOnboardingGuideToLastMessage(json.onboarding_guide as import("@/lib/types").OnboardingGuideResult)
               } else if (json.type === "version_history" && json.version_history) {
@@ -1071,6 +1075,8 @@ export default function ProjectWorkspace() {
                 attachFeatureDriftAlertConfigToLastMessage(json.feature_drift_alert_config as import("@/lib/types").FeatureDriftAlertConfig)
               } else if (json.type === "segment_drift" && json.segment_drift) {
                 attachSegmentDriftToLastMessage(json.segment_drift as import("@/lib/types").SegmentDriftResult)
+              } else if (json.type === "segment_pred_trend" && json.segment_pred_trend) {
+                attachSegmentPredTrendToLastMessage(json.segment_pred_trend as import("@/lib/types").SegmentPredTrendResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -1249,6 +1255,7 @@ export default function ProjectWorkspace() {
     attachDriftImportanceRankingToLastMessage,
     attachFeatureDriftAlertConfigToLastMessage,
     attachSegmentDriftToLastMessage,
+    attachSegmentPredTrendToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -2006,6 +2013,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.segment_drift && (
                       <SegmentDriftCard result={msg.segment_drift} />
+                    )}
+                    {msg.segment_pred_trend && (
+                      <SegmentPredictionTrendCard result={msg.segment_pred_trend} />
                     )}
                   </div>
                 </div>

@@ -48,6 +48,7 @@ from core.analyzer import (
     compute_prediction_value_trend,
     compute_retraining_readiness,
     compute_segment_drift,
+    compute_segment_prediction_trend,
     compute_usage_pattern,
 )
 from core.deployer import (
@@ -7894,5 +7895,94 @@ def get_segment_drift(
         }
 
     result = compute_segment_drift(all_inputs, segment_col, feature_ranges)
+    result["deployment_id"] = deployment_id
+    return result
+
+
+@router.get("/api/deploy/{deployment_id}/segment-prediction-trend")
+def get_segment_prediction_trend(
+    deployment_id: str,
+    segment_col: str | None = None,
+    n: int = Query(default=200, ge=10, le=1000),
+    n_days: int = Query(default=30, ge=7, le=90),
+    session: Session = Depends(get_session),
+) -> dict:
+    """Return per-segment prediction value trends over time.
+
+    Groups recent prediction logs by a categorical feature column and
+    shows whether each segment's predicted values are trending up, down,
+    or staying stable.
+    """
+    dep = session.get(Deployment, deployment_id)
+    if not dep:
+        raise HTTPException(status_code=404, detail="Deployment not found")
+
+    logs = session.exec(
+        select(PredictionLog)
+        .where(PredictionLog.deployment_id == deployment_id)
+        .order_by(PredictionLog.created_at.desc())  # type: ignore[union-attr]
+        .limit(n)
+    ).all()
+
+    # Resolve segment column: prefer caller's value; auto-detect from pipeline
+    feature_ranges: dict = {}
+    if dep.pipeline_path:
+        try:
+            from core.deployer import load_pipeline as _lp_spt
+
+            _pipeline_spt = _lp_spt(dep.pipeline_path)
+            feature_ranges = getattr(_pipeline_spt, "feature_ranges", {})
+        except Exception:  # noqa: BLE001
+            pass
+
+    if not segment_col:
+        for feat, frange in feature_ranges.items():
+            if "known_categories" in frange:
+                segment_col = feat
+                break
+
+    if not segment_col:
+        return {
+            "deployment_id": deployment_id,
+            "segment_column": None,
+            "problem_type": dep.problem_type or "regression",
+            "n_segments": 0,
+            "n_samples": 0,
+            "segments": [],
+            "most_improved_segment": None,
+            "most_declining_segment": None,
+            "verdict": "no_data",
+            "summary": (
+                "No categorical features found for segment trend analysis. "
+                "Specify a segment_col parameter or ensure the model has categorical features."
+            ),
+            "n_days": n_days,
+        }
+
+    logs_data: list[dict] = []
+    for log in logs:
+        input_features_dict: dict = {}
+        try:
+            parsed = json.loads(log.input_features)
+            if isinstance(parsed, dict):
+                input_features_dict = parsed
+        except Exception:  # noqa: BLE001
+            pass
+        logs_data.append(
+            {
+                "prediction_numeric": log.prediction_numeric,
+                "confidence": log.confidence,
+                "created_at": log.created_at,
+                "input_features_dict": input_features_dict,
+            }
+        )
+
+    problem_type = dep.problem_type or "regression"
+    result = compute_segment_prediction_trend(
+        logs_data,
+        segment_col,
+        problem_type,
+        n_days=n_days,
+    )
     result["deployment_id"] = deployment_id
     return result

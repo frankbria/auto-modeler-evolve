@@ -404,3 +404,62 @@ describe("attachSegmentDriftToLastMessage", () => {
     expect(msgs[0].segment_drift).toBeUndefined()
   })
 })
+
+// ---------------------------------------------------------------------------
+// attachSegmentPredTrendToLastMessage
+// ---------------------------------------------------------------------------
+
+import type { SegmentPredTrendResult } from "../lib/types"
+
+const makeSegmentPredTrend = (): SegmentPredTrendResult => ({
+  deployment_id: "dep-spt",
+  segment_column: "region",
+  problem_type: "regression",
+  n_segments: 2,
+  n_samples: 20,
+  segments: [
+    {
+      name: "East",
+      n_samples: 10,
+      n_days_with_data: 3,
+      direction: "trending_up",
+      direction_label: "Trending Up",
+      change_pct: 30.0,
+      first_mean: 100.0,
+      last_mean: 130.0,
+      daily_stats: [],
+    },
+  ],
+  most_improved_segment: "East",
+  most_declining_segment: null,
+  verdict: "all_improving",
+  summary: "All segments are improving.",
+  n_days: 30,
+})
+
+describe("attachSegmentPredTrendToLastMessage", () => {
+  it("attaches segment prediction trend to the last assistant message", () => {
+    act(() => useAppStore.getState().addMessage(makeMessage("assistant", "Here is the trend:")))
+    act(() => useAppStore.getState().attachSegmentPredTrendToLastMessage(makeSegmentPredTrend()))
+    expect(useAppStore.getState().messages[0].segment_pred_trend).toBeDefined()
+    expect(useAppStore.getState().messages[0].segment_pred_trend?.verdict).toBe("all_improving")
+  })
+
+  it("does not attach to a user message", () => {
+    act(() => useAppStore.getState().addMessage(makeMessage("user", "show segment trend")))
+    act(() => useAppStore.getState().attachSegmentPredTrendToLastMessage(makeSegmentPredTrend()))
+    expect(useAppStore.getState().messages[0].segment_pred_trend).toBeUndefined()
+  })
+
+  it("attaches to the last message only", () => {
+    act(() => {
+      useAppStore.getState().addMessage(makeMessage("assistant", "first"))
+      useAppStore.getState().addMessage(makeMessage("user", "which segment is improving"))
+      useAppStore.getState().addMessage(makeMessage("assistant", "second"))
+    })
+    act(() => useAppStore.getState().attachSegmentPredTrendToLastMessage(makeSegmentPredTrend()))
+    const msgs = useAppStore.getState().messages
+    expect(msgs[2].segment_pred_trend).toBeDefined()
+    expect(msgs[0].segment_pred_trend).toBeUndefined()
+  })
+})

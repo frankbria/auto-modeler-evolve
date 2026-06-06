@@ -7320,3 +7320,213 @@ def compute_segment_drift(
         "verdict": verdict,
         "summary": summary,
     }
+
+
+def compute_segment_prediction_trend(
+    logs_data: list[dict],
+    segment_column: str,
+    problem_type: str = "regression",
+    *,
+    n_days: int = 30,
+    max_segments: int = 8,
+) -> dict:
+    """Compute per-segment prediction value trends over time.
+
+    Each log dict must have:
+        - ``prediction_numeric`` (float|None) — for regression
+        - ``confidence`` (float|None) — for classification
+        - ``created_at`` (datetime|str) — timestamp
+        - ``input_features_dict`` (dict) — parsed input features
+
+    Args:
+        logs_data: List of enriched prediction log dicts.
+        segment_column: Categorical feature name to group by.
+        problem_type: ``"regression"`` or ``"classification"``.
+        n_days: How many days of history to analyse.
+        max_segments: Cap on number of segments to return.
+
+    Returns:
+        Dict with ``segments`` (sorted by |change_pct| desc), ``verdict``,
+        ``summary``, and metadata.
+
+    Raises:
+        ValueError: If fewer than 2 logs have valid data.
+    """
+    from collections import defaultdict as _dd
+    from datetime import timedelta as _td
+
+    cutoff = datetime.utcnow() - _td(days=n_days)
+
+    def _parse_ts(ts: object) -> datetime | None:
+        if isinstance(ts, datetime):
+            return ts.replace(tzinfo=None) if ts.tzinfo else ts
+        if isinstance(ts, str):
+            try:
+                dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+                return dt.replace(tzinfo=None)
+            except ValueError:
+                return None
+        return None
+
+    # Group values by (segment_value, date)
+    # For regression: use prediction_numeric; for classification: use confidence
+    segment_day_vals: dict[str, dict[str, list[float]]] = _dd(lambda: _dd(list))
+    total = 0
+    for row in logs_data:
+        ts = _parse_ts(row.get("created_at"))
+        if ts is None or ts < cutoff:
+            continue
+        seg_val = None
+        ifd = row.get("input_features_dict")
+        if isinstance(ifd, dict):
+            seg_val = ifd.get(segment_column)
+        if seg_val is None:
+            continue
+        seg_key = str(seg_val).strip()
+        if not seg_key:
+            continue
+
+        if problem_type == "regression":
+            val = row.get("prediction_numeric")
+        else:
+            val = row.get("confidence")
+        if val is None:
+            continue
+        try:
+            val = float(val)
+        except (TypeError, ValueError):
+            continue
+
+        day_key = ts.strftime("%Y-%m-%d")
+        segment_day_vals[seg_key][day_key].append(val)
+        total += 1
+
+    if total < 2:
+        return {
+            "segment_column": segment_column,
+            "problem_type": problem_type,
+            "n_segments": 0,
+            "n_samples": total,
+            "segments": [],
+            "most_improved_segment": None,
+            "most_declining_segment": None,
+            "verdict": "no_data",
+            "summary": (
+                f"Not enough prediction data to compute segment trends "
+                f"(need ≥2 predictions, found {total})."
+            ),
+            "n_days": n_days,
+        }
+
+    # Keep top max_segments by sample count
+    seg_counts = {seg: sum(len(v) for v in days.items()) for seg, days in segment_day_vals.items()}
+    top_segs = sorted(seg_counts, key=lambda s: seg_counts[s], reverse=True)[:max_segments]
+
+    segments_out: list[dict] = []
+    for seg in top_segs:
+        days_map = segment_day_vals[seg]
+        if not days_map:
+            continue
+        sorted_days = sorted(days_map.keys())
+        daily_stats = [
+            {
+                "date": d,
+                "mean": round(float(np.mean(days_map[d])), 4),
+                "count": len(days_map[d]),
+            }
+            for d in sorted_days
+        ]
+        n_samples = sum(s["count"] for s in daily_stats)
+        if len(daily_stats) < 2:
+            direction = "stable"
+            direction_label = "Stable"
+            change_pct = 0.0
+        else:
+            first_mean = daily_stats[0]["mean"]
+            last_mean = daily_stats[-1]["mean"]
+            if abs(first_mean) > 1e-9:
+                change_pct = round((last_mean - first_mean) / abs(first_mean) * 100, 2)
+            else:
+                change_pct = 0.0
+            slope_pct = change_pct / max(len(daily_stats) - 1, 1)
+            if slope_pct > 2.0:
+                direction = "trending_up"
+                direction_label = "Trending Up"
+            elif slope_pct < -2.0:
+                direction = "trending_down"
+                direction_label = "Trending Down"
+            else:
+                direction = "stable"
+                direction_label = "Stable"
+
+        segments_out.append(
+            {
+                "name": seg,
+                "n_samples": n_samples,
+                "n_days_with_data": len(daily_stats),
+                "direction": direction,
+                "direction_label": direction_label,
+                "change_pct": change_pct,
+                "first_mean": daily_stats[0]["mean"],
+                "last_mean": daily_stats[-1]["mean"],
+                "daily_stats": daily_stats,
+            }
+        )
+
+    # Sort by absolute change_pct desc so most-moving segments appear first
+    segments_out.sort(key=lambda s: abs(s["change_pct"]), reverse=True)
+
+    up_segs = [s for s in segments_out if s["direction"] == "trending_up"]
+    down_segs = [s for s in segments_out if s["direction"] == "trending_down"]
+    stable_segs = [s for s in segments_out if s["direction"] == "stable"]
+
+    most_improved = up_segs[0]["name"] if up_segs else None
+    most_declining = down_segs[0]["name"] if down_segs else None
+
+    if not segments_out:
+        verdict = "no_data"
+        summary = f"No '{segment_column}' segments found in recent prediction logs."
+    elif len(up_segs) > 0 and len(down_segs) > 0:
+        verdict = "diverging"
+        summary = (
+            f"Predictions are diverging across '{segment_column}' segments: "
+            f"{len(up_segs)} trending up, {len(down_segs)} trending down. "
+            f"'{up_segs[0]['name']}' is improving most (+{up_segs[0]['change_pct']:.1f}%), "
+            f"while '{down_segs[0]['name']}' is declining most ({down_segs[0]['change_pct']:.1f}%)."
+        )
+    elif len(up_segs) == len(segments_out):
+        verdict = "all_improving"
+        summary = (
+            f"All {len(segments_out)} '{segment_column}' segments are trending upward. "
+            f"'{up_segs[0]['name']}' leads with +{up_segs[0]['change_pct']:.1f}% change."
+        )
+    elif len(down_segs) == len(segments_out):
+        verdict = "all_declining"
+        summary = (
+            f"All {len(segments_out)} '{segment_column}' segments are trending downward. "
+            f"'{down_segs[0]['name']}' leads with {down_segs[0]['change_pct']:.1f}% change."
+        )
+    elif len(stable_segs) == len(segments_out):
+        verdict = "stable"
+        summary = (
+            f"All {len(segments_out)} '{segment_column}' segments are stable with minimal change."
+        )
+    else:
+        verdict = "mixed"
+        summary = (
+            f"Mixed trends across '{segment_column}' segments: "
+            f"{len(up_segs)} improving, {len(down_segs)} declining, {len(stable_segs)} stable."
+        )
+
+    return {
+        "segment_column": segment_column,
+        "problem_type": problem_type,
+        "n_segments": len(segments_out),
+        "n_samples": total,
+        "segments": segments_out,
+        "most_improved_segment": most_improved,
+        "most_declining_segment": most_declining,
+        "verdict": verdict,
+        "summary": summary,
+        "n_days": n_days,
+    }
