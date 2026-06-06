@@ -53,6 +53,31 @@ the time is better spent on real features.
 
 ---
 
+## Day 86 (20:00) — Done
+
+**Track D: Deployment Feature Drift Alert Webhook** — complete.
+
+Closes the "I want to be automatically notified when my important features drift — without polling the dashboard" analyst gap. Extends the Day 86 (12:00) drift importance ranking feature with push notifications. Analysts say "enable feature drift alerts", "turn on drift webhook", "alert me when features drift", "notify me on critical feature drift", "feature drift alert", "webhook on feature drift", "proactive drift alerts", "automatic drift notification" (8 NL variants in `_FEATURE_DRIFT_ALERT_PATTERNS`) to receive a `FeatureDriftAlertCard` and toggle automatic webhook delivery.
+
+**What was built:**
+- `EVENT_FEATURE_DRIFT = "feature_drift"` added to `core/webhook.py` `ALL_EVENTS`
+- `Deployment.feature_drift_alert_enabled` + `Deployment.feature_drift_alert_last_fired_at` fields; inline migrations in `db.py`
+- `_check_and_fire_feature_drift_alert(deployment_id, critical_features, cooldown_hours=24)` helper in `api/deploy.py`: 24-hour cooldown gate, stamps `last_fired_at` before dispatching, fires `EVENT_FEATURE_DRIFT` webhooks with `{critical_feature_count, top_critical_features, message}` payload; `except Exception: pass` throughout
+- `GET /api/deploy/{id}/drift-importance-ranking` wires background thread when alert enabled + action_required/attention features present
+- `PUT /api/deploy/{id}/feature-drift-alert` + `GET /api/deploy/{id}/feature-drift-alert-status` REST endpoints
+- `_FEATURE_DRIFT_ALERT_PATTERNS` (8 NL variants) + `_DISABLE_FEATURE_DRIFT_ALERT_RE` + `_STATUS_FEATURE_DRIFT_ALERT_RE` in `api/chat.py`; handler enables/disables/reads config; emits `{type:"feature_drift_alert_config"}` SSE event
+- `FeatureDriftAlertCard` (sky border, 🔔 icon): Enabled/Disabled badge, summary text, cooldown info block, last-fired timestamp, "No alerts fired yet" message, footer help text
+- Full TypeScript wiring: `FeatureDriftAlertConfig` interface; `feature_drift_alert_config?` on `ChatMessage`; `attachFeatureDriftAlertConfigToLastMessage` Zustand action; SSE handlers + card render in both EventSource branches of `page.tsx`
+
+**Tests:** 21 backend (3 constant/model + 7 helper unit + 5 REST endpoint + 6 regex) + 16 frontend (13 card + 3 store) = **37 new tests**. All passing. Backend lint: clean. Frontend build + TypeScript + lint: clean.
+
+**What's next:**
+- Track C: Cost-Sensitive Training via Misclassification Cost Matrix — "false positives cost $1000, false negatives cost $10"
+- Track B: Comparative Model Improvement Plan — "create a ranked improvement roadmap for all my models"
+- Track D: Deployment Geographic/Segment Drift Detection — "is my model drifting more in one region than another?"
+
+---
+
 ## Day 86 (12:00) — Done
 
 **Track D: Input Feature Drift Ranking by Importance** — complete.

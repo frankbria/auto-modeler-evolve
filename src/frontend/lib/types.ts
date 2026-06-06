@@ -564,6 +564,7 @@ export interface ChatMessage {
   deployment_scorecard?: DeploymentScorecardResult
   throughput_assessment?: DeploymentThroughputResult
   drift_importance_ranking?: DriftImportanceRankingResult
+  feature_drift_alert_config?: FeatureDriftAlertConfig
 }
 
 export interface RollbackVersionEntry {
@@ -1115,6 +1116,14 @@ export interface AccuracyAlertConfig {
   metric_label: string
   current_metric: number | null
   n_feedback: number
+  summary: string
+}
+
+export interface FeatureDriftAlertConfig {
+  deployment_id: string
+  feature_drift_alert_enabled: boolean
+  feature_drift_alert_last_fired_at: string | null
+  cooldown_hours: number
   summary: string
 }
 

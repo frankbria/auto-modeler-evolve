@@ -3695,6 +3695,30 @@ _DRIFT_IMPORTANCE_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+_FEATURE_DRIFT_ALERT_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"(?:enable|turn\s+on|activate|set\s+up)\s+(?:feature\s+)?drift\s+(?:alerts?|webhooks?|notifications?|alarms?)\b|"
+    r"(?:disable|turn\s+off|deactivate|remove)\s+(?:feature\s+)?drift\s+(?:alerts?|webhooks?|notifications?|alarms?)\b|"
+    r"(?:alert|notify|warn|ping)\s+(?:me\s+)?when\s+(?:input\s+)?features?\s+drift\b|"
+    r"(?:alert|notify|warn|ping)\s+(?:me\s+)?(?:on|when)\s+(?:critical\s+)?feature\s+drift\b|"
+    r"feature\s+drift\s+(?:alerts?|webhooks?|notifications?|alarms?)\b|"
+    r"webhook\s+(?:on|when|for)\s+(?:critical\s+)?feature\s+drift\b|"
+    r"(?:proactive|automatic)\s+(?:feature\s+)?drift\s+(?:alerts?|notifications?)\b|"
+    r"(?:status|check)\s+(?:of\s+)?feature\s+drift\s+(?:alerts?|webhooks?|notifications?)\b"
+    r")",
+    re.IGNORECASE,
+)
+
+_DISABLE_FEATURE_DRIFT_ALERT_RE = re.compile(
+    r"\b(?:disable|turn\s+off|deactivate|remove)\s+(?:feature\s+)?drift\s+(?:alert|webhook|notification|alarm)",
+    re.IGNORECASE,
+)
+
+_STATUS_FEATURE_DRIFT_ALERT_RE = re.compile(
+    r"\b(?:status|check)\s+(?:of\s+)?feature\s+drift\s+(?:alert|webhook|notification)",
+    re.IGNORECASE,
+)
+
 _QUOTA_RUNWAY_PATTERNS = re.compile(
     r"(?i)(?:"
     r"(?:will|can)\s+(?:my\s+)?quota\s+(?:last|cover|handle)\s+(?:the\s+)?month\b|"
@@ -17029,6 +17053,65 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Drift importance ranking is nice-to-have; never crash chat
 
+    # Feature drift alert configuration via chat
+    feature_drift_alert_event: dict | None = None
+    if _FEATURE_DRIFT_ALERT_PATTERNS.search(body.message) and ctx["deployment"]:
+        try:
+            _fda_dep = ctx["deployment"]
+            _fda_dep_id = _fda_dep.id if hasattr(_fda_dep, "id") else str(_fda_dep)
+            _fda_dep_obj = session.get(Deployment, _fda_dep_id)
+
+            if _fda_dep_obj:
+                _disable_fda = bool(_DISABLE_FEATURE_DRIFT_ALERT_RE.search(body.message))
+                _status_fda = bool(_STATUS_FEATURE_DRIFT_ALERT_RE.search(body.message))
+
+                if _disable_fda:
+                    _fda_dep_obj.feature_drift_alert_enabled = False
+                    _fda_dep_obj.feature_drift_alert_last_fired_at = None
+                    session.add(_fda_dep_obj)
+                    session.commit()
+                    session.refresh(_fda_dep_obj)
+                elif not _status_fda:
+                    # Enable intent
+                    _fda_dep_obj.feature_drift_alert_enabled = True
+                    session.add(_fda_dep_obj)
+                    session.commit()
+                    session.refresh(_fda_dep_obj)
+
+                _fda_enabled = bool(
+                    getattr(_fda_dep_obj, "feature_drift_alert_enabled", False)
+                )
+                _fda_last = getattr(
+                    _fda_dep_obj, "feature_drift_alert_last_fired_at", None
+                )
+                feature_drift_alert_event = {
+                    "deployment_id": _fda_dep_id,
+                    "feature_drift_alert_enabled": _fda_enabled,
+                    "feature_drift_alert_last_fired_at": (
+                        _fda_last.isoformat() if _fda_last else None
+                    ),
+                    "cooldown_hours": 24,
+                    "summary": (
+                        "Feature drift alerting is enabled. A webhook fires (max once per 24 hours) "
+                        "when critical-priority drifted features are detected. "
+                        "Webhooks must be registered to receive notifications."
+                        if _fda_enabled
+                        else "Feature drift alerting is disabled."
+                    ),
+                }
+                system_prompt += (
+                    f"\n\n## Feature Drift Alert Configuration\n"
+                    f"{'Enabled' if _fda_enabled else 'Disabled'}. "
+                    f"{feature_drift_alert_event['summary']} "
+                    "Tell the analyst the current drift alert setting in plain English. "
+                    "If enabled, explain that a webhook fires when critical-priority features "
+                    "(high drift × high importance) are detected — max once per 24 hours. "
+                    "If disabled, confirm and suggest they can enable it at any time. "
+                    "Remind them that webhooks must be registered first."
+                )
+        except Exception:  # noqa: BLE001
+            pass  # Feature drift alert config is nice-to-have; never crash chat
+
     # Quota runway / capacity planning (forward-looking projection)
     quota_runway_event: dict | None = None
     if _QUOTA_RUNWAY_PATTERNS.search(body.message) and ctx["deployment"]:
@@ -19941,6 +20024,9 @@ def send_message(
         # Emit drift × importance ranking card
         if drift_importance_event:
             yield f"data: {json.dumps({'type': 'drift_importance_ranking', 'drift_importance_ranking': drift_importance_event})}\n\n"
+
+        if feature_drift_alert_event:
+            yield f"data: {json.dumps({'type': 'feature_drift_alert_config', 'feature_drift_alert_config': feature_drift_alert_event})}\n\n"
 
         # Emit quota runway / capacity planning card
         if quota_runway_event:

@@ -1,5 +1,29 @@
 # Journal
 
+## Day 86 — 20:00 — Deployment Feature Drift Alert Webhook
+
+**Feature shipped:** Deployment Feature Drift Alert Webhook (Track D perpetual). Analysts can now say "enable feature drift alerts", "turn on drift webhook", "alert me when features drift", "notify me on critical feature drift", "feature drift alert", "webhook on feature drift", "proactive drift alerts", "automatic drift notification", "disable drift alert", or "status of feature drift alert" (8 NL variants in `_FEATURE_DRIFT_ALERT_PATTERNS`) and receive a `FeatureDriftAlertCard` that confirms the current alert configuration. When enabled, a webhook fires automatically (max once per 24 hours) whenever the drift importance ranking detects `action_required` or `attention` priority features. Closes the "I want to be automatically notified when my important features drift — without polling the dashboard" analyst gap; natural follow-on to the Day 86 (12:00) drift importance ranking feature.
+
+**Why it matters:** Before this feature, analysts had to manually ask "which features drifted most?" to check for critical drift. Now the system proactively fires webhooks to Slack, PagerDuty, or any HTTP endpoint when high-importance features show significant distribution shift — turning a reactive workflow into a proactive one.
+
+**What was built:**
+
+- `EVENT_FEATURE_DRIFT = "feature_drift"` added to `core/webhook.py` `ALL_EVENTS` (9 events total)
+- `Deployment.feature_drift_alert_enabled: bool = False` and `Deployment.feature_drift_alert_last_fired_at: Optional[datetime] = None` fields added to `models/deployment.py`; two inline migration rows in `db.py._apply_migrations()`
+- `_check_and_fire_feature_drift_alert(deployment_id, critical_features, cooldown_hours=24)` helper in `api/deploy.py`: opens own DB session via `_fda_engine`; checks `feature_drift_alert_enabled`; applies 24-hour cooldown gate via `feature_drift_alert_last_fired_at`; stamps timestamp **before** dispatching to prevent racing threads; calls `dispatch_webhooks(EVENT_FEATURE_DRIFT, {critical_feature_count, top_critical_features[5], message})`; full `except Exception: pass` wrapper (best-effort, never crashes)
+- `GET /api/deploy/{id}/drift-importance-ranking` extended to spawn daemon thread after returning result when alert enabled + `ranked_features` contains any `action_required`/`attention` entries
+- `PUT /api/deploy/{id}/feature-drift-alert` REST endpoint: accepts `{"enabled": bool}`; resets `feature_drift_alert_last_fired_at` on disable; returns current config + cooldown_hours + summary
+- `GET /api/deploy/{id}/feature-drift-alert-status` REST endpoint: returns enabled flag, last_fired_at, cooldown_hours, summary
+- `_FEATURE_DRIFT_ALERT_PATTERNS` regex (8 NL variants with plural `s?` support) + `_DISABLE_FEATURE_DRIFT_ALERT_RE` + `_STATUS_FEATURE_DRIFT_ALERT_RE` sub-patterns for intent disambiguation in `api/chat.py`; handler enables/disables/reads config based on pattern match; injects summary into system_prompt; emits `{type:"feature_drift_alert_config", feature_drift_alert_config: {...}}` SSE event
+- `FeatureDriftAlertCard` at `src/frontend/components/deploy/feature-drift-alert-card.tsx` (sky border, 🔔 icon): Enabled/Disabled badge, summary paragraph, cooldown info block showing hours, last-fired timestamp badge, "No alerts fired yet" message when enabled + unfired, footer configuration help
+- Full TypeScript wiring: `FeatureDriftAlertConfig` interface in `lib/types.ts`; `feature_drift_alert_config?` on `ChatMessage`; `attachFeatureDriftAlertConfigToLastMessage` Zustand action in `lib/store.ts`; SSE handlers in both EventSource branches of `page.tsx`; card render after `DriftImportanceCard`
+
+**One bug fixed:** `test_webhook_notifications.py::test_all_events_constant_has_expected_entries` hardcoded `len(ALL_EVENTS) == 8` — updated to 9.
+
+**Tests:** 21 backend (3 constant/model field + 7 `_check_and_fire` helper unit + 5 REST endpoint + 6 regex/sub-pattern) + 16 frontend (13 card render + 3 Zustand store) = **37 new tests**. Baseline: 5865 backend / 3320 frontend → **5886 backend / 3336 frontend** (+21 / +16). Backend lint: clean. Frontend build + TypeScript: clean.
+
+---
+
 ## Day 86 — 12:00 — Input Feature Drift Ranking by Importance
 
 **Feature shipped:** Input Feature Drift Ranking by Importance (Track D perpetual). Analysts can now say "which features drifted the most", "drift ranking by importance", "rank my drifted features", "most important drifting features", "feature drift risk", "drift vs importance", "top risk drift features", or 1 other NL variant (8 total in `_DRIFT_IMPORTANCE_PATTERNS`) and receive a `DriftImportanceCard` that cross-references production OOR/unseen rates with feature importances to rank which drifted features actually matter for prediction quality. Closes the "I know inputs are drifting but which ones should I care about?" gap — distinct from `CovariateDriftAlertCard` (flags ALL features above threshold, no importance weighting).

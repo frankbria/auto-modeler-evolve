@@ -7669,4 +7669,147 @@ def get_drift_importance_ranking(
         result["run_id"] = run_id
     if algorithm:
         result["algorithm"] = algorithm
+
+    # Fire feature-drift webhook if enabled and critical features found (background)
+    if getattr(dep, "feature_drift_alert_enabled", False):
+        critical_features = [
+            f for f in result.get("ranked_features", []) if f.get("priority") in ("action_required", "attention")
+        ]
+        if critical_features:
+            threading.Thread(
+                target=_check_and_fire_feature_drift_alert,
+                args=(deployment_id, critical_features),
+                daemon=True,
+            ).start()
+
     return result
+
+
+# ---------------------------------------------------------------------------
+# Feature drift alert endpoints
+# ---------------------------------------------------------------------------
+
+_FEATURE_DRIFT_ALERT_COOLDOWN_HOURS = 24.0
+
+
+def _check_and_fire_feature_drift_alert(
+    deployment_id: str,
+    critical_features: list[dict],
+    cooldown_hours: float = _FEATURE_DRIFT_ALERT_COOLDOWN_HOURS,
+) -> None:
+    """Fire feature_drift webhook when critical-priority features are detected.
+
+    Uses a 24-hour cooldown gate per deployment to prevent alert storms.
+    Runs in a daemon background thread — never blocks the prediction path.
+    """
+    try:
+        from core.webhook import EVENT_FEATURE_DRIFT, dispatch_webhooks
+
+        from db import engine as _fda_engine
+        from sqlmodel import Session as _FDA_Session
+
+        with _FDA_Session(_fda_engine) as _s:
+            _dep = _s.get(Deployment, deployment_id)
+            if _dep is None or not getattr(_dep, "feature_drift_alert_enabled", False):
+                return
+
+            _now = datetime.now(UTC).replace(tzinfo=None)
+            _last = getattr(_dep, "feature_drift_alert_last_fired_at", None)
+            if _last is not None:
+                _elapsed_h = (_now - _last).total_seconds() / 3600
+                if _elapsed_h < cooldown_hours:
+                    return  # cooldown active
+
+            _dep.feature_drift_alert_last_fired_at = _now
+            _s.add(_dep)
+            _s.commit()
+
+        top_features = [f.get("feature") for f in critical_features[:5] if f.get("feature")]
+        dispatch_webhooks(
+            deployment_id,
+            EVENT_FEATURE_DRIFT,
+            {
+                "critical_feature_count": len(critical_features),
+                "top_critical_features": top_features,
+                "message": (
+                    f"Feature drift alert: {len(critical_features)} input feature(s) have drifted "
+                    f"into critical territory — {', '.join(top_features[:3])}. "
+                    "These features have high model importance and significant distribution shift. "
+                    "Consider retraining with recent data."
+                ),
+            },
+        )
+    except Exception:
+        pass  # Best-effort; never crash the prediction path
+
+
+class FeatureDriftAlertRequest(BaseModel):
+    enabled: bool
+
+
+@router.put("/api/deploy/{deployment_id}/feature-drift-alert")
+def set_feature_drift_alert(
+    deployment_id: str,
+    body: FeatureDriftAlertRequest,
+    session: Session = Depends(get_session),
+):
+    """Enable or disable the feature drift alert for a deployment.
+
+    When enabled, a ``feature_drift`` webhook fires (max once per 24 hours)
+    whenever ``GET /drift-importance-ranking`` detects critical-priority features.
+    Webhooks must be registered separately to receive notifications.
+    """
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment:
+        raise HTTPException(status_code=404, detail="Deployment not found")
+
+    deployment.feature_drift_alert_enabled = body.enabled
+    if not body.enabled:
+        deployment.feature_drift_alert_last_fired_at = None
+    session.add(deployment)
+    session.commit()
+    session.refresh(deployment)
+
+    last_fired = getattr(deployment, "feature_drift_alert_last_fired_at", None)
+    return {
+        "deployment_id": deployment_id,
+        "feature_drift_alert_enabled": body.enabled,
+        "feature_drift_alert_last_fired_at": (
+            last_fired.isoformat() if last_fired else None
+        ),
+        "cooldown_hours": _FEATURE_DRIFT_ALERT_COOLDOWN_HOURS,
+        "summary": (
+            "Feature drift alerting enabled. A webhook fires (max once per 24 hours) "
+            "when critical-priority drifted features are detected. "
+            "Webhooks must be registered to receive notifications."
+            if body.enabled
+            else "Feature drift alerting disabled."
+        ),
+    }
+
+
+@router.get("/api/deploy/{deployment_id}/feature-drift-alert-status")
+def get_feature_drift_alert_status(
+    deployment_id: str,
+    session: Session = Depends(get_session),
+):
+    """Return the current feature drift alert configuration for a deployment."""
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment:
+        raise HTTPException(status_code=404, detail="Deployment not found")
+
+    enabled = bool(getattr(deployment, "feature_drift_alert_enabled", False))
+    last_fired = getattr(deployment, "feature_drift_alert_last_fired_at", None)
+    return {
+        "deployment_id": deployment_id,
+        "feature_drift_alert_enabled": enabled,
+        "feature_drift_alert_last_fired_at": (
+            last_fired.isoformat() if last_fired else None
+        ),
+        "cooldown_hours": _FEATURE_DRIFT_ALERT_COOLDOWN_HOURS,
+        "summary": (
+            "Feature drift alerting is enabled. Webhooks fire when critical-priority features are detected."
+            if enabled
+            else "Feature drift alerting is disabled."
+        ),
+    }

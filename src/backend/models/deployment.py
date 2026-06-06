@@ -55,3 +55,6 @@ class Deployment(SQLModel, table=True):
     dashboard_description: Optional[str] = None
     # SLA latency alert: timestamp of last sla_exceeded webhook fire (cooldown gate)
     sla_alert_last_fired_at: Optional[datetime] = None
+    # Feature drift alert: fire webhook when critical-priority features detected
+    feature_drift_alert_enabled: bool = Field(default=False)
+    feature_drift_alert_last_fired_at: Optional[datetime] = None

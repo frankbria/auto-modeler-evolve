@@ -203,6 +203,7 @@ interface AppState {
   attachDeploymentScorecardToLastMessage: (deployment_scorecard: import("./types").DeploymentScorecardResult) => void
   attachThroughputAssessmentToLastMessage: (throughput_assessment: import("./types").DeploymentThroughputResult) => void
   attachDriftImportanceRankingToLastMessage: (drift_importance_ranking: import("./types").DriftImportanceRankingResult) => void
+  attachFeatureDriftAlertConfigToLastMessage: (feature_drift_alert_config: import("./types").FeatureDriftAlertConfig) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -1722,6 +1723,16 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, drift_importance_ranking }
+      }
+      return { messages }
+    }),
+
+  attachFeatureDriftAlertConfigToLastMessage: (feature_drift_alert_config) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, feature_drift_alert_config }
       }
       return { messages }
     }),

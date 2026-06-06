@@ -40,6 +40,8 @@ def _apply_migrations():
         ("deployment", "sla_alert_last_fired_at", "TEXT"),
         ("project", "last_ensemble_suggest_run_count", "INTEGER"),
         ("project", "last_low_accuracy_guidance_run_count", "INTEGER"),
+        ("deployment", "feature_drift_alert_enabled", "INTEGER NOT NULL DEFAULT 0"),
+        ("deployment", "feature_drift_alert_last_fired_at", "TEXT"),
     ]
     with engine.connect() as conn:
         for table, col, definition in migrations:

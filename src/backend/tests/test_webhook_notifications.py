@@ -406,4 +406,4 @@ def test_all_events_constant_has_expected_entries():
     assert EVENT_PREDICTION_ALERT in ALL_EVENTS
     assert EVENT_SLA_EXCEEDED in ALL_EVENTS
     assert EVENT_WEEKLY_DIGEST in ALL_EVENTS
-    assert len(ALL_EVENTS) == 8
+    assert len(ALL_EVENTS) == 9
