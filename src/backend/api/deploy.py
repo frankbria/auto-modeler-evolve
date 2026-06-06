@@ -47,6 +47,7 @@ from core.analyzer import (
     compute_prediction_output_anomalies,
     compute_prediction_value_trend,
     compute_retraining_readiness,
+    compute_segment_drift,
     compute_usage_pattern,
 )
 from core.deployer import (
@@ -7817,3 +7818,81 @@ def get_feature_drift_alert_status(
             else "Feature drift alerting is disabled."
         ),
     }
+
+
+# ---------------------------------------------------------------------------
+# Segment drift detection endpoint
+# ---------------------------------------------------------------------------
+
+
+@router.get("/api/deploy/{deployment_id}/segment-drift")
+def get_segment_drift(
+    deployment_id: str,
+    segment_col: str | None = None,
+    session: Session = Depends(get_session),
+) -> dict:
+    """Return per-segment drift scores to reveal which groups drift most.
+
+    Groups prediction log inputs by a categorical column and computes
+    drift vs the training distribution per segment.
+    """
+    dep = session.get(Deployment, deployment_id)
+    if not dep:
+        raise HTTPException(status_code=404, detail="Deployment not found")
+
+    logs = session.exec(
+        select(PredictionLog)
+        .where(PredictionLog.deployment_id == deployment_id)
+        .order_by(PredictionLog.created_at.desc())  # type: ignore[union-attr]
+        .limit(300)
+    ).all()
+
+    all_inputs: list[dict] = []
+    for log in logs:
+        try:
+            parsed = json.loads(log.input_features)
+            if isinstance(parsed, dict):
+                all_inputs.append(parsed)
+        except Exception:  # noqa: BLE001
+            pass
+
+    feature_ranges: dict = {}
+    if dep.pipeline_path:
+        try:
+            from core.deployer import load_pipeline as _lp_seg
+
+            _pipeline_seg = _lp_seg(dep.pipeline_path)
+            feature_ranges = getattr(_pipeline_seg, "feature_ranges", {})
+        except Exception:  # noqa: BLE001
+            pass
+
+    # Auto-detect segment column if not specified: first categorical feature
+    if not segment_col:
+        for feat, frange in feature_ranges.items():
+            if "known_categories" in frange:
+                segment_col = feat
+                break
+
+    if not segment_col:
+        return {
+            "deployment_id": deployment_id,
+            "segment_column": None,
+            "n_segments": 0,
+            "n_samples": len(all_inputs),
+            "segments": [],
+            "max_drift_segment": None,
+            "avg_drift_score": 0.0,
+            "high_count": 0,
+            "moderate_count": 0,
+            "low_count": 0,
+            "minimal_count": 0,
+            "verdict": "no_data",
+            "summary": (
+                "No categorical features found for segment analysis. "
+                "Specify a segment_col parameter or ensure the model has categorical features."
+            ),
+        }
+
+    result = compute_segment_drift(all_inputs, segment_col, feature_ranges)
+    result["deployment_id"] = deployment_id
+    return result

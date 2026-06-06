@@ -347,3 +347,60 @@ describe("attachOverfittingAnalysisToLastMessage", () => {
     expect(msgs[0].overfitting_analysis).toBeUndefined()
   })
 })
+
+// ---------------------------------------------------------------------------
+// attachSegmentDriftToLastMessage
+// ---------------------------------------------------------------------------
+
+import type { SegmentDriftResult } from "../lib/types"
+
+const makeSegmentDrift = (): SegmentDriftResult => ({
+  deployment_id: "dep-sd",
+  segment_column: "region",
+  n_segments: 2,
+  n_samples: 30,
+  segments: [
+    {
+      name: "West",
+      sample_count: 15,
+      drift_score: 45.0,
+      status: "high",
+      top_drifting_features: [{ name: "units", drift_pct: 45.0, feature_type: "numeric" }],
+    },
+  ],
+  max_drift_segment: "West",
+  avg_drift_score: 25.0,
+  high_count: 1,
+  moderate_count: 0,
+  low_count: 0,
+  minimal_count: 1,
+  verdict: "concentrated",
+  summary: "Drift is concentrated in West.",
+})
+
+describe("attachSegmentDriftToLastMessage", () => {
+  it("attaches segment drift to the last assistant message", () => {
+    act(() => useAppStore.getState().addMessage(makeMessage("assistant", "Here is the drift:")))
+    act(() => useAppStore.getState().attachSegmentDriftToLastMessage(makeSegmentDrift()))
+    expect(useAppStore.getState().messages[0].segment_drift).toBeDefined()
+    expect(useAppStore.getState().messages[0].segment_drift?.verdict).toBe("concentrated")
+  })
+
+  it("does not attach to a user message", () => {
+    act(() => useAppStore.getState().addMessage(makeMessage("user", "show segment drift")))
+    act(() => useAppStore.getState().attachSegmentDriftToLastMessage(makeSegmentDrift()))
+    expect(useAppStore.getState().messages[0].segment_drift).toBeUndefined()
+  })
+
+  it("attaches to the last message only", () => {
+    act(() => {
+      useAppStore.getState().addMessage(makeMessage("assistant", "first"))
+      useAppStore.getState().addMessage(makeMessage("user", "question"))
+      useAppStore.getState().addMessage(makeMessage("assistant", "second"))
+    })
+    act(() => useAppStore.getState().attachSegmentDriftToLastMessage(makeSegmentDrift()))
+    const msgs = useAppStore.getState().messages
+    expect(msgs[2].segment_drift).toBeDefined()
+    expect(msgs[0].segment_drift).toBeUndefined()
+  })
+})

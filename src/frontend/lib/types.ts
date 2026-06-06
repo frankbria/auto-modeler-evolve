@@ -565,6 +565,7 @@ export interface ChatMessage {
   throughput_assessment?: DeploymentThroughputResult
   drift_importance_ranking?: DriftImportanceRankingResult
   feature_drift_alert_config?: FeatureDriftAlertConfig
+  segment_drift?: SegmentDriftResult
 }
 
 export interface RollbackVersionEntry {
@@ -1124,6 +1125,39 @@ export interface FeatureDriftAlertConfig {
   feature_drift_alert_enabled: boolean
   feature_drift_alert_last_fired_at: string | null
   cooldown_hours: number
+  summary: string
+}
+
+export type SegmentDriftStatus = 'high' | 'moderate' | 'low' | 'minimal'
+export type SegmentDriftVerdict = 'concentrated' | 'widespread' | 'minimal' | 'no_data'
+
+export interface SegmentDriftFeature {
+  name: string
+  drift_pct: number
+  feature_type: 'numeric' | 'categorical' | 'unknown'
+}
+
+export interface SegmentDriftEntry {
+  name: string
+  sample_count: number
+  drift_score: number
+  status: SegmentDriftStatus
+  top_drifting_features: SegmentDriftFeature[]
+}
+
+export interface SegmentDriftResult {
+  deployment_id: string
+  segment_column: string
+  n_segments: number
+  n_samples: number
+  segments: SegmentDriftEntry[]
+  max_drift_segment: string | null
+  avg_drift_score: number
+  high_count: number
+  moderate_count: number
+  low_count: number
+  minimal_count: number
+  verdict: SegmentDriftVerdict
   summary: string
 }
 

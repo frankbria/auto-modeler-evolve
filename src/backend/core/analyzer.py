@@ -7102,3 +7102,217 @@ def compute_drift_importance_ranking(
         "verdict": verdict,
         "summary": summary,
     }
+
+
+def compute_segment_drift(
+    all_inputs: list[dict],
+    segment_column: str,
+    feature_ranges: dict[str, dict],
+    *,
+    max_segments: int = 15,
+) -> dict:
+    """Detect whether production drift is concentrated in specific data segments.
+
+    Groups PredictionLog inputs by a categorical segment column and computes
+    per-segment drift scores — revealing which customer groups, regions, or
+    categories are drifting most from the training distribution.
+
+    Args:
+        all_inputs: Parsed input_features dicts from PredictionLog records.
+        segment_column: Categorical column name to segment by.
+        feature_ranges: {feature: {"min", "max"} or {"known_categories": [...]}}
+                        from PredictionPipeline.
+        max_segments: Maximum number of segments to analyse (cap on cardinality).
+
+    Returns:
+        Dict with segments (sorted by drift_score desc), verdict, counts, and summary.
+    """
+    if not all_inputs:
+        return {
+            "segment_column": segment_column,
+            "n_segments": 0,
+            "n_samples": 0,
+            "segments": [],
+            "max_drift_segment": None,
+            "avg_drift_score": 0.0,
+            "high_count": 0,
+            "moderate_count": 0,
+            "low_count": 0,
+            "minimal_count": 0,
+            "verdict": "no_data",
+            "summary": "No prediction logs available to analyse segment drift.",
+        }
+
+    # Collect inputs that have the segment column
+    grouped: dict[str, list[dict]] = {}
+    for inp in all_inputs:
+        seg_val = inp.get(segment_column)
+        if seg_val is None:
+            continue
+        seg_key = str(seg_val).strip()
+        if seg_key:
+            grouped.setdefault(seg_key, []).append(inp)
+
+    if not grouped:
+        return {
+            "segment_column": segment_column,
+            "n_segments": 0,
+            "n_samples": len(all_inputs),
+            "segments": [],
+            "max_drift_segment": None,
+            "avg_drift_score": 0.0,
+            "high_count": 0,
+            "moderate_count": 0,
+            "low_count": 0,
+            "minimal_count": 0,
+            "verdict": "no_data",
+            "summary": (
+                f"Column '{segment_column}' was not found in production inputs. "
+                "Check that the feature name is correct."
+            ),
+        }
+
+    # Sort by sample count desc, cap at max_segments
+    sorted_segs = sorted(grouped.items(), key=lambda x: len(x[1]), reverse=True)
+    sorted_segs = sorted_segs[:max_segments]
+
+    feature_names = [
+        f for f in feature_ranges if f != segment_column
+    ]
+
+    def _drift_for_inputs(inputs: list[dict]) -> tuple[float, list[dict]]:
+        """Compute mean drift % across features for a set of inputs."""
+        feature_drifts: list[dict] = []
+        for feat in feature_names:
+            frange = feature_ranges.get(feat)
+            if frange is None:
+                continue
+            values = [inp[feat] for inp in inputs if feat in inp and inp[feat] is not None]
+            if not values:
+                continue
+
+            if "known_categories" in frange:
+                known = set(str(c) for c in frange["known_categories"])
+                n_unseen = sum(1 for v in values if str(v) not in known)
+                drift_pct = round(n_unseen / len(values) * 100, 2)
+                ftype = "categorical"
+            else:
+                lo = frange.get("min")
+                hi = frange.get("max")
+                if lo is None or hi is None:
+                    continue
+                try:
+                    numeric = [float(v) for v in values]
+                except (TypeError, ValueError):
+                    continue
+                n_oor = sum(1 for v in numeric if v < lo or v > hi)
+                drift_pct = round(n_oor / len(numeric) * 100, 2)
+                ftype = "numeric"
+
+            feature_drifts.append(
+                {"name": feat, "drift_pct": drift_pct, "feature_type": ftype}
+            )
+
+        if not feature_drifts:
+            return 0.0, []
+
+        overall = round(sum(f["drift_pct"] for f in feature_drifts) / len(feature_drifts), 2)
+        top3 = sorted(feature_drifts, key=lambda f: f["drift_pct"], reverse=True)[:3]
+        return overall, top3
+
+    segments: list[dict] = []
+    for seg_name, inputs in sorted_segs:
+        drift_score, top_features = _drift_for_inputs(inputs)
+        if drift_score >= 20.0:
+            status = "high"
+        elif drift_score >= 10.0:
+            status = "moderate"
+        elif drift_score >= 2.0:
+            status = "low"
+        else:
+            status = "minimal"
+
+        segments.append(
+            {
+                "name": seg_name,
+                "sample_count": len(inputs),
+                "drift_score": drift_score,
+                "status": status,
+                "top_drifting_features": top_features,
+            }
+        )
+
+    # Sort by drift_score descending
+    segments.sort(key=lambda s: s["drift_score"], reverse=True)
+
+    high_count = sum(1 for s in segments if s["status"] == "high")
+    moderate_count = sum(1 for s in segments if s["status"] == "moderate")
+    low_count = sum(1 for s in segments if s["status"] == "low")
+    minimal_count = sum(1 for s in segments if s["status"] == "minimal")
+    total_samples = sum(s["sample_count"] for s in segments)
+    avg_drift = round(
+        sum(s["drift_score"] for s in segments) / len(segments), 2
+    ) if segments else 0.0
+
+    max_drift_segment = segments[0]["name"] if segments else None
+
+    # Verdict: concentrated if top segment drifts much more than average
+    if not segments or max(s["drift_score"] for s in segments) < 2.0:
+        verdict = "minimal"
+    elif high_count == 0 and moderate_count == 0:
+        verdict = "minimal"
+    elif len(segments) >= 2:
+        top_score = segments[0]["drift_score"]
+        second_score = segments[1]["drift_score"] if len(segments) > 1 else 0.0
+        if top_score > 0 and top_score >= second_score * 1.5 and high_count <= 2:
+            verdict = "concentrated"
+        else:
+            verdict = "widespread"
+    else:
+        verdict = "concentrated" if high_count > 0 else "minimal"
+
+    # Summary
+    if verdict == "no_data":
+        summary = "No prediction logs available."
+    elif verdict == "minimal":
+        summary = (
+            f"Drift is minimal across all {len(segments)} "
+            f"'{segment_column}' segment{'s' if len(segments) != 1 else ''}. "
+            "Production inputs are consistent with training data."
+        )
+    elif verdict == "concentrated":
+        top = segments[0]
+        summary = (
+            f"Drift is concentrated in the '{top['name']}' segment "
+            f"({top['drift_score']:.0f}% drift, {top['sample_count']} predictions). "
+            f"Other segments show lower drift ({avg_drift:.0f}% average). "
+            "Consider whether training data adequately represents this segment."
+        )
+    else:  # widespread
+        if high_count > 0:
+            summary = (
+                f"Drift is widespread across {high_count + moderate_count} of "
+                f"{len(segments)} '{segment_column}' segments. "
+                f"Average drift: {avg_drift:.0f}%. "
+                "Retraining with more representative data is recommended."
+            )
+        else:
+            summary = (
+                f"Moderate drift detected across {len(segments)} '{segment_column}' segments "
+                f"(average {avg_drift:.0f}%). Monitor for further increase."
+            )
+
+    return {
+        "segment_column": segment_column,
+        "n_segments": len(segments),
+        "n_samples": total_samples,
+        "segments": segments,
+        "max_drift_segment": max_drift_segment,
+        "avg_drift_score": avg_drift,
+        "high_count": high_count,
+        "moderate_count": moderate_count,
+        "low_count": low_count,
+        "minimal_count": minimal_count,
+        "verdict": verdict,
+        "summary": summary,
+    }

@@ -128,6 +128,7 @@ import { DeploymentScorecardCard } from "@/components/deploy/deployment-scorecar
 import { DeploymentThroughputCard } from "@/components/deploy/deployment-throughput-card"
 import { DriftImportanceCard } from "@/components/deploy/drift-importance-card"
 import { FeatureDriftAlertCard } from "@/components/deploy/feature-drift-alert-card"
+import { SegmentDriftCard } from "@/components/deploy/segment-drift-card"
 import { EnsembleRecommendationCard } from "@/components/models/ensemble-recommendation-card"
 import { TuningChatCard } from "@/components/models/tuning-chat-card"
 import { CvScoreDistributionCard } from "@/components/models/cv-score-distribution-card"
@@ -427,6 +428,7 @@ export default function ProjectWorkspace() {
     attachThroughputAssessmentToLastMessage,
     attachDriftImportanceRankingToLastMessage,
     attachFeatureDriftAlertConfigToLastMessage,
+    attachSegmentDriftToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -853,6 +855,8 @@ export default function ProjectWorkspace() {
                 attachDriftImportanceRankingToLastMessage(json.drift_importance_ranking as import("@/lib/types").DriftImportanceRankingResult)
               } else if (json.type === "feature_drift_alert_config" && json.feature_drift_alert_config) {
                 attachFeatureDriftAlertConfigToLastMessage(json.feature_drift_alert_config as import("@/lib/types").FeatureDriftAlertConfig)
+              } else if (json.type === "segment_drift" && json.segment_drift) {
+                attachSegmentDriftToLastMessage(json.segment_drift as import("@/lib/types").SegmentDriftResult)
               } else if (json.type === "onboarding_guide" && json.onboarding_guide) {
                 attachOnboardingGuideToLastMessage(json.onboarding_guide as import("@/lib/types").OnboardingGuideResult)
               } else if (json.type === "version_history" && json.version_history) {
@@ -1065,6 +1069,8 @@ export default function ProjectWorkspace() {
                 attachDriftImportanceRankingToLastMessage(json.drift_importance_ranking as import("@/lib/types").DriftImportanceRankingResult)
               } else if (json.type === "feature_drift_alert_config" && json.feature_drift_alert_config) {
                 attachFeatureDriftAlertConfigToLastMessage(json.feature_drift_alert_config as import("@/lib/types").FeatureDriftAlertConfig)
+              } else if (json.type === "segment_drift" && json.segment_drift) {
+                attachSegmentDriftToLastMessage(json.segment_drift as import("@/lib/types").SegmentDriftResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -1242,6 +1248,7 @@ export default function ProjectWorkspace() {
     attachThroughputAssessmentToLastMessage,
     attachDriftImportanceRankingToLastMessage,
     attachFeatureDriftAlertConfigToLastMessage,
+    attachSegmentDriftToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -1996,6 +2003,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.feature_drift_alert_config && (
                       <FeatureDriftAlertCard config={msg.feature_drift_alert_config} />
+                    )}
+                    {msg.segment_drift && (
+                      <SegmentDriftCard result={msg.segment_drift} />
                     )}
                   </div>
                 </div>

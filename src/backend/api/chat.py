@@ -3719,6 +3719,35 @@ _STATUS_FEATURE_DRIFT_ALERT_RE = re.compile(
     re.IGNORECASE,
 )
 
+_SEGMENT_DRIFT_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"(?:is\s+(?:my\s+)?(?:model|drift)\s+(?:drifting|worse)\s+(?:more\s+)?(?:in|for)\s+\w+)\b|"
+    r"segment\s+drift\s+(?:analysis|breakdown|report|check)?\b|"
+    r"(?:which|what)\s+(?:segment|region|group|category|customer\s+type)\s+(?:has|shows?|has\s+the\s+most)\s+(?:the\s+most\s+)?drift\b|"
+    r"drift\s+(?:by|per|across)\s+(?:segment|region|group|category)\b|"
+    r"drift\s+breakdown\s+by\s+(?:segment|region|group|category|column)\b|"
+    r"geographic\s+drift\s+(?:analysis|report|check)?\b|"
+    r"(?:is|are)\s+(?:the\s+)?drift\s+(?:concentrated|worse|higher)(?:\s+in\s+(?:a\s+(?:specific\s+)?)?)?(?:group|segment|region)?\b|"
+    r"(?:where\s+is|how\s+is)\s+(?:the\s+)?drift\s+(?:concentrated|distributed)\b"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def _detect_segment_col(message: str, feature_ranges: dict) -> str | None:
+    """Extract a segment column name from the message or auto-detect the first categorical feature."""
+    msg_lower = message.lower()
+    # Try to match any known categorical feature name mentioned in the message
+    for feat, frange in feature_ranges.items():
+        if "known_categories" in frange and feat.lower() in msg_lower:
+            return feat
+    # Fallback: first categorical feature
+    for feat, frange in feature_ranges.items():
+        if "known_categories" in frange:
+            return feat
+    return None
+
+
 _QUOTA_RUNWAY_PATTERNS = re.compile(
     r"(?i)(?:"
     r"(?:will|can)\s+(?:my\s+)?quota\s+(?:last|cover|handle)\s+(?:the\s+)?month\b|"
@@ -17114,6 +17143,70 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Feature drift alert config is nice-to-have; never crash chat
 
+    # Segment drift detection — "is drift concentrated in a specific region/group?"
+    # Distinct from: _DRIFT_IMPORTANCE_PATTERNS (ranks features by importance × drift),
+    # _COVARIATE_DRIFT_PATTERNS (binary per-feature OOR alert), _DRIFT_PATTERNS (output drift).
+    segment_drift_event: dict | None = None
+    if _SEGMENT_DRIFT_PATTERNS.search(body.message) and ctx["deployment"]:
+        try:
+            import json as _json_seg
+
+            from core.analyzer import compute_segment_drift as _csd
+
+            _seg_dep = ctx["deployment"]
+            _seg_dep_id = _seg_dep.id if hasattr(_seg_dep, "id") else str(_seg_dep)
+            _seg_dep_obj = session.get(Deployment, _seg_dep_id)
+
+            _seg_logs = session.exec(
+                select(PredictionLog)
+                .where(PredictionLog.deployment_id == _seg_dep_id)
+                .order_by(PredictionLog.created_at.desc())
+                .limit(300)
+            ).all()
+
+            _seg_all_inputs: list[dict] = []
+            for _seg_log in _seg_logs:
+                try:
+                    _seg_parsed = _json_seg.loads(_seg_log.input_features)
+                    if isinstance(_seg_parsed, dict):
+                        _seg_all_inputs.append(_seg_parsed)
+                except Exception:  # noqa: BLE001
+                    pass
+
+            _seg_feature_ranges: dict = {}
+            if _seg_dep_obj and getattr(_seg_dep_obj, "pipeline_path", None):
+                try:
+                    from core.deployer import load_pipeline as _load_pipeline_seg
+
+                    _seg_pipeline = _load_pipeline_seg(_seg_dep_obj.pipeline_path)
+                    _seg_feature_ranges = getattr(_seg_pipeline, "feature_ranges", {})
+                except Exception:  # noqa: BLE001
+                    pass
+
+            _seg_col = _detect_segment_col(body.message, _seg_feature_ranges)
+
+            if _seg_col:
+                _seg_result = _csd(_seg_all_inputs, _seg_col, _seg_feature_ranges)
+                _seg_result["deployment_id"] = _seg_dep_id
+                segment_drift_event = _seg_result
+
+                _seg_verdict = _seg_result.get("verdict", "no_data")
+                _seg_summary = _seg_result.get("summary", "")
+                _seg_n = _seg_result.get("n_segments", 0)
+                _seg_high = _seg_result.get("high_count", 0)
+                system_prompt += (
+                    f"\n\n## Segment Drift Analysis (by '{_seg_col}')\n"
+                    f"Verdict: {_seg_verdict}. {_seg_summary} "
+                    f"Segments analysed: {_seg_n}. High-drift segments: {_seg_high}. "
+                    "Explain which segments show the most drift from training data and what "
+                    "that means for prediction quality. If drift is concentrated, suggest "
+                    "whether those segments need more training data. If widespread, recommend "
+                    "retraining with more diverse data."
+                )
+
+        except Exception:  # noqa: BLE001
+            pass  # Segment drift is nice-to-have; never crash chat
+
     # Quota runway / capacity planning (forward-looking projection)
     quota_runway_event: dict | None = None
     if _QUOTA_RUNWAY_PATTERNS.search(body.message) and ctx["deployment"]:
@@ -20029,6 +20122,9 @@ def send_message(
 
         if feature_drift_alert_event:
             yield f"data: {json.dumps({'type': 'feature_drift_alert_config', 'feature_drift_alert_config': feature_drift_alert_event})}\n\n"
+
+        if segment_drift_event:
+            yield f"data: {json.dumps({'type': 'segment_drift', 'segment_drift': segment_drift_event})}\n\n"
 
         # Emit quota runway / capacity planning card
         if quota_runway_event:
