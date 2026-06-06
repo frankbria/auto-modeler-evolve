@@ -1,7 +1,5 @@
 """Tests for compute_segment_drift pure function, regex patterns, and REST endpoint."""
 
-import re
-
 import pytest
 
 from core.analyzer import compute_segment_drift
