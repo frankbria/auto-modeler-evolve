@@ -431,6 +431,6 @@ def test_cluster_patterns_match(message):
     ],
 )
 def test_cluster_patterns_no_match(message):
-    assert not _CLUSTER_PATTERNS.search(
-        message
-    ), f"Pattern should NOT match: {message!r}"
+    assert not _CLUSTER_PATTERNS.search(message), (
+        f"Pattern should NOT match: {message!r}"
+    )
