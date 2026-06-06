@@ -53,6 +53,28 @@ the time is better spent on real features.
 
 ---
 
+## Day 87 (04:00) — Done
+
+**Track D: Deployment Segment Drift Detection** — complete.
+
+Closes the "is my model drifting more for one region/segment than another?" analyst gap — distinct from `DriftImportanceCard` (ranks features, not segments) and `CovariateDriftAlertCard` (binary per-feature threshold). Analysts say "segment drift analysis", "drift by region", "which segment has the most drift", "geographic drift analysis", "drift breakdown by category", "is drift concentrated in a group" (8 NL variants in `_SEGMENT_DRIFT_PATTERNS`) and receive a `SegmentDriftCard` showing each segment's drift score.
+
+**What was built:**
+- `compute_segment_drift(all_inputs, segment_column, feature_ranges, max_segments=15)` pure function in `core/analyzer.py`
+- `_detect_segment_col(message, feature_ranges)` helper: finds feature name in message or falls back to first categorical
+- `GET /api/deploy/{id}/segment-drift?segment_col=region` REST endpoint; auto-detects segment column
+- `_SEGMENT_DRIFT_PATTERNS` (8 NL variants) + chat handler guarded by `ctx["deployment"]`; emits `{type:"segment_drift"}` SSE event
+- `SegmentDriftCard` (🗺️ icon): verdict badge (concentrated/widespread/minimal/no_data), segment rows with drift bars + status badges + top drifting features, avg drift footer
+
+**Tests:** 35 backend (15 pure-function + 12 regex + 3 REST + 5 helper) + 18 frontend (15 card + 3 store) = **53 new tests**. Backend lint: clean. Frontend build + TypeScript + lint: clean.
+
+**What's next:**
+- Track C: Cost-Sensitive Training via Misclassification Cost Matrix — "false positives cost $1000, false negatives cost $10"
+- Track D: Deployment Prediction Value Trend by Segment — "is my average predicted revenue trending up or down for West region?"
+- Track B: Comparative Model Improvement Plan — "create a ranked improvement roadmap for all my models"
+
+---
+
 ## Day 86 (20:00) — Done
 
 **Track D: Deployment Feature Drift Alert Webhook** — complete.

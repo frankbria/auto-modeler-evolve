@@ -1,5 +1,26 @@
 # Journal
 
+## Day 87 — 04:00 — Deployment Segment Drift Detection
+
+**Feature shipped:** Deployment Segment Drift Detection (Track D perpetual). Analysts can now ask "segment drift analysis", "drift by region", "which segment has the most drift", "geographic drift analysis", "drift breakdown by category", or "is drift concentrated in a group" (8 NL variants in `_SEGMENT_DRIFT_PATTERNS`) and receive a `SegmentDriftCard` that shows which customer segments, regions, or categories are drifting most from the training distribution. Closes the "is my model drifting more for one group than another?" analyst gap — distinct from the drift importance ranking (which ranks features, not segments) and covariate drift alert (which gives a binary alert per feature).
+
+**Why it matters:** When a deployed model starts degrading, the root cause is often concentrated in a specific segment — West region customers, a new product category, a customer tier added after training. The existing drift tools tell you *which features* are drifting globally; this new tool tells you *which groups* are experiencing the most drift, so analysts can make targeted decisions (add more West region training data, retrain for the new product category) rather than a blunt full retrain.
+
+**What was built:**
+
+- `compute_segment_drift(all_inputs, segment_column, feature_ranges, max_segments=15)` pure function in `core/analyzer.py`: groups PredictionLog inputs by a categorical segment column; for each segment computes per-feature drift (OOR% for numeric, unseen% for categorical, excluding the segment column itself); averages across features for an `overall_drift_score`; classifies status (`high`≥20%, `moderate`≥10%, `low`≥2%, `minimal`<2%); returns `verdict` (`concentrated` when top segment drifts ≥1.5× the second, `widespread`, `minimal`, `no_data`); plain-English `summary`.
+- `_detect_segment_col(message, feature_ranges)` helper in `api/chat.py`: prefers feature names mentioned in the message (tries all known categorical features), falls back to first categorical feature — so "drift by region" works even without specifying a column name.
+- `GET /api/deploy/{id}/segment-drift?segment_col=region` REST endpoint in `api/deploy.py`: loads 300 PredictionLogs, auto-detects segment column when not specified, returns full segment analysis.
+- `_SEGMENT_DRIFT_PATTERNS` (8 NL variants) + chat handler guarded by `ctx["deployment"]`; loads 300 logs and pipeline; calls `compute_segment_drift()`; injects verdict + segment count + high-drift count into system_prompt so Claude narrates the findings naturally; emits `{type:"segment_drift"}` SSE event.
+- `SegmentDriftCard` at `components/deploy/segment-drift-card.tsx` (rose border=widespread / amber=concentrated / emerald=minimal / default=no_data, 🗺️ icon): segment column badge, n-segments badge, verdict badge (concentrated/widespread/minimal/no_data), summary paragraph, status counts (high/moderate/low/minimal when any are non-zero), per-segment rows with drift score bar (rose/amber/sky/emerald by status), status badge, top drifting feature names, avg drift + total samples footer; sr-only figcaption.
+- Full TypeScript wiring: `SegmentDriftFeature`, `SegmentDriftEntry`, `SegmentDriftResult`, `SegmentDriftStatus`, `SegmentDriftVerdict` types in `lib/types.ts`; `segment_drift?` on `ChatMessage`; `attachSegmentDriftToLastMessage` Zustand action; SSE handlers in both EventSource branches + card render in `project/[id]/page.tsx`.
+
+**One design decision:** The segment column itself is excluded from the per-segment drift computation (computing drift on the grouping key is circular). Only the other features contribute to each segment's drift score. This ensures the score reflects how much that segment's other features have changed, not how common that segment value is.
+
+**Tests:** 35 backend (15 pure-function + 12 regex/helper + 3 REST + 5 helper tests) + 18 frontend (15 card component + 3 store action) = **53 new tests**. Baseline: 5886 backend / 3336 frontend → **5921 backend / 3354 frontend** (+35 / +18). Backend lint: clean. Frontend build + TypeScript + lint: clean.
+
+---
+
 ## Day 86 — 20:00 — Deployment Feature Drift Alert Webhook
 
 **Feature shipped:** Deployment Feature Drift Alert Webhook (Track D perpetual). Analysts can now say "enable feature drift alerts", "turn on drift webhook", "alert me when features drift", "notify me on critical feature drift", "feature drift alert", "webhook on feature drift", "proactive drift alerts", "automatic drift notification", "disable drift alert", or "status of feature drift alert" (8 NL variants in `_FEATURE_DRIFT_ALERT_PATTERNS`) and receive a `FeatureDriftAlertCard` that confirms the current alert configuration. When enabled, a webhook fires automatically (max once per 24 hours) whenever the drift importance ranking detects `action_required` or `attention` priority features. Closes the "I want to be automatically notified when my important features drift — without polling the dashboard" analyst gap; natural follow-on to the Day 86 (12:00) drift importance ranking feature.
