@@ -7669,8 +7669,7 @@ def compute_segment_confidence_trend(
 
     # Keep top max_segments by sample count
     seg_counts = {
-        seg: sum(len(v) for v in days.values())
-        for seg, days in segment_day_raw.items()
+        seg: sum(len(v) for v in days.values()) for seg, days in segment_day_raw.items()
     }
     top_segs = sorted(seg_counts, key=lambda s: seg_counts[s], reverse=True)[
         :max_segments
@@ -7719,9 +7718,7 @@ def compute_segment_confidence_trend(
             first_mean = daily_stats[0]["mean"]
             last_mean = daily_stats[-1]["mean"]
             if abs(first_mean) > 1e-9:
-                change_pct = round(
-                    (last_mean - first_mean) / abs(first_mean) * 100, 2
-                )
+                change_pct = round((last_mean - first_mean) / abs(first_mean) * 100, 2)
             else:
                 change_pct = 0.0
             slope_pct = change_pct / max(len(daily_stats) - 1, 1)

@@ -8035,7 +8035,9 @@ def get_segment_confidence_trend(
             "deployment_id": deployment_id,
             "segment_column": None,
             "problem_type": dep.problem_type or "regression",
-            "metric": "confidence" if (dep.problem_type or "") == "classification" else "prediction_spread",
+            "metric": "confidence"
+            if (dep.problem_type or "") == "classification"
+            else "prediction_spread",
             "n_segments": 0,
             "n_samples": 0,
             "segments": [],

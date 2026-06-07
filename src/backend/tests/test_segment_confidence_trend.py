@@ -76,8 +76,18 @@ def test_single_log_returns_no_data():
 
 def test_classification_no_confidence_field_returns_no_confidence_data():
     logs = [
-        {"prediction_numeric": None, "confidence": None, "created_at": _now(), "input_features_dict": {"category": "A"}},
-        {"prediction_numeric": None, "confidence": None, "created_at": _now(), "input_features_dict": {"category": "B"}},
+        {
+            "prediction_numeric": None,
+            "confidence": None,
+            "created_at": _now(),
+            "input_features_dict": {"category": "A"},
+        },
+        {
+            "prediction_numeric": None,
+            "confidence": None,
+            "created_at": _now(),
+            "input_features_dict": {"category": "B"},
+        },
     ]
     result = compute_segment_confidence_trend(logs, "category", "classification")
     assert result["verdict"] == "no_confidence_data"
@@ -183,7 +193,13 @@ def test_calibration_gap_detected():
     ]
     result = compute_segment_confidence_trend(logs, "category", "classification")
     assert result["calibration_gap"] is True
-    assert result["verdict"] in ("calibration_gap", "stable", "mixed", "uniform_decline", "uniform_improving")
+    assert result["verdict"] in (
+        "calibration_gap",
+        "stable",
+        "mixed",
+        "uniform_decline",
+        "uniform_improving",
+    )
 
 
 def test_no_calibration_gap_when_segments_close():
@@ -212,7 +228,10 @@ def test_most_and_least_confident_segment_identified():
 
 def test_regression_computes_spread():
     # For regression, metric = prediction_spread (CV%)
-    logs = [_reg_log("East", float(v), days_ago=d) for v, d in [(100, 5), (110, 5), (90, 5), (100, 0), (105, 0), (95, 0)]]
+    logs = [
+        _reg_log("East", float(v), days_ago=d)
+        for v, d in [(100, 5), (110, 5), (90, 5), (100, 0), (105, 0), (95, 0)]
+    ]
     result = compute_segment_confidence_trend(logs, "region", "regression")
     # Should return segments with mean = CV%
     assert result["metric"] == "prediction_spread"
@@ -224,7 +243,9 @@ def test_max_segments_cap():
     for i in range(12):
         for day in (5, 0):
             logs.append(_cls_log(f"Seg{i}", 0.7 + i * 0.02, days_ago=day))
-    result = compute_segment_confidence_trend(logs, "category", "classification", max_segments=8)
+    result = compute_segment_confidence_trend(
+        logs, "category", "classification", max_segments=8
+    )
     assert result["n_segments"] <= 8
 
 
@@ -236,7 +257,9 @@ def test_n_days_filter_excludes_old_logs():
         "input_features_dict": {"category": "Old"},
     }
     recent = _cls_log("Recent", 0.75, days_ago=5)
-    result = compute_segment_confidence_trend([old, recent], "category", "classification", n_days=30)
+    result = compute_segment_confidence_trend(
+        [old, recent], "category", "classification", n_days=30
+    )
     # Old log excluded — only 1 log total, so no_data
     assert result["n_samples"] <= 1
 
