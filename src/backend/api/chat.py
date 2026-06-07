@@ -4903,11 +4903,19 @@ def _extract_fp_fn_costs(message: str) -> tuple[float, float] | None:
     if len(numeric_vals) >= 2:
         # If message mentions "FN" or "false negative" before "FP"/"false positive", swap
         fn_pos = min(
-            (msg_lower.find(t) for t in ("false negative", "fn ", "missed") if t in msg_lower),
+            (
+                msg_lower.find(t)
+                for t in ("false negative", "fn ", "missed")
+                if t in msg_lower
+            ),
             default=9999,
         )
         fp_pos = min(
-            (msg_lower.find(t) for t in ("false positive", "fp ", "false alarm") if t in msg_lower),
+            (
+                msg_lower.find(t)
+                for t in ("false positive", "fp ", "false alarm")
+                if t in msg_lower
+            ),
             default=9999,
         )
         if fn_pos < fp_pos:
@@ -17560,7 +17568,9 @@ def send_message(
                 _cst_done = [
                     r
                     for r in ctx["model_runs"]
-                    if r.status == "done" and r.model_path and Path(r.model_path).exists()
+                    if r.status == "done"
+                    and r.model_path
+                    and Path(r.model_path).exists()
                 ]
                 _cst_cls_runs = []
                 _cst_fsets: dict[str, object] = {}
@@ -17583,23 +17593,31 @@ def send_message(
                     if _cst_ds and Path(_cst_ds.file_path).exists():
                         import pandas as _pd_cst
 
-                        from core.feature_engine import apply_transformations as _apply_cst
+                        from core.feature_engine import (
+                            apply_transformations as _apply_cst,
+                        )
                         from core.trainer import prepare_features as _pf_cst
 
                         _cst_df = _pd_cst.read_csv(Path(_cst_ds.file_path))
-                        _cst_tfms = __import__("json").loads(_cst_fset.transformations or "[]")
+                        _cst_tfms = __import__("json").loads(
+                            _cst_fset.transformations or "[]"
+                        )
                         if _cst_tfms:
                             _cst_df, _ = _apply_cst(_cst_df, _cst_tfms)
 
                         _cst_target = _cst_fset.target_column
-                        _cst_feat_cols = [c for c in _cst_df.columns if c != _cst_target]
+                        _cst_feat_cols = [
+                            c for c in _cst_df.columns if c != _cst_target
+                        ]
                         _cst_X, _cst_y, _ = _pf_cst(
                             _cst_df, _cst_feat_cols, _cst_target, "classification"
                         )
                         _cst_model = _jl_cst.load(_cst_sel.model_path)
 
                         if hasattr(_cst_model, "predict_proba"):
-                            _cst_classes = [str(c) for c in _cst_model.classes_.tolist()]
+                            _cst_classes = [
+                                str(c) for c in _cst_model.classes_.tolist()
+                            ]
 
                             # Only support binary classification
                             if len(_cst_classes) == 2:

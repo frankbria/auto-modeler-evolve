@@ -61,7 +61,18 @@ class TestCostSensitiveRequiredKeys:
         result = compute_cost_sensitive_threshold(y, p, fp_cost=10.0, fn_cost=100.0)
         for metrics_key in ("default_metrics", "optimal_metrics"):
             entry = result[metrics_key]
-            for key in ["threshold", "tp", "fp", "tn", "fn", "expected_cost", "precision", "recall", "f1", "accuracy"]:
+            for key in [
+                "threshold",
+                "tp",
+                "fp",
+                "tn",
+                "fn",
+                "expected_cost",
+                "precision",
+                "recall",
+                "f1",
+                "accuracy",
+            ]:
                 assert key in entry, f"Missing key '{key}' in {metrics_key}"
 
 
@@ -113,7 +124,9 @@ class TestCostComputation:
         """Expected cost = FP_count * fp_cost + FN_count * fn_cost."""
         y, p = _binary_data()
         fp_cost, fn_cost = 10.0, 100.0
-        result = compute_cost_sensitive_threshold(y, p, fp_cost=fp_cost, fn_cost=fn_cost)
+        result = compute_cost_sensitive_threshold(
+            y, p, fp_cost=fp_cost, fn_cost=fn_cost
+        )
         dm = result["default_metrics"]
         expected = dm["fp"] * fp_cost + dm["fn"] * fn_cost
         assert abs(dm["expected_cost"] - expected) < 0.01
@@ -122,7 +135,9 @@ class TestCostComputation:
         """Expected cost at optimal threshold = FP_count * fp_cost + FN_count * fn_cost."""
         y, p = _binary_data()
         fp_cost, fn_cost = 10.0, 100.0
-        result = compute_cost_sensitive_threshold(y, p, fp_cost=fp_cost, fn_cost=fn_cost)
+        result = compute_cost_sensitive_threshold(
+            y, p, fp_cost=fp_cost, fn_cost=fn_cost
+        )
         om = result["optimal_metrics"]
         expected = om["fp"] * fp_cost + om["fn"] * fn_cost
         assert abs(om["expected_cost"] - expected) < 0.01
@@ -130,12 +145,18 @@ class TestCostComputation:
     def test_default_cost_matches_default_metrics(self):
         y, p = _binary_data()
         result = compute_cost_sensitive_threshold(y, p, fp_cost=10.0, fn_cost=100.0)
-        assert abs(result["default_cost"] - result["default_metrics"]["expected_cost"]) < 0.01
+        assert (
+            abs(result["default_cost"] - result["default_metrics"]["expected_cost"])
+            < 0.01
+        )
 
     def test_optimal_cost_matches_optimal_metrics(self):
         y, p = _binary_data()
         result = compute_cost_sensitive_threshold(y, p, fp_cost=10.0, fn_cost=100.0)
-        assert abs(result["optimal_cost"] - result["optimal_metrics"]["expected_cost"]) < 0.01
+        assert (
+            abs(result["optimal_cost"] - result["optimal_metrics"]["expected_cost"])
+            < 0.01
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -171,7 +192,10 @@ class TestVerdictLogic:
     def test_verdict_type(self):
         y, p = _binary_data()
         result = compute_cost_sensitive_threshold(y, p, fp_cost=10.0, fn_cost=100.0)
-        assert result["verdict"] in {"threshold_change_recommended", "default_near_optimal"}
+        assert result["verdict"] in {
+            "threshold_change_recommended",
+            "default_near_optimal",
+        }
 
     def test_equal_costs_likely_near_optimal(self):
         """Balanced costs should result in near-optimal verdict."""
@@ -217,11 +241,16 @@ class TestValidationErrors:
         y, p = _binary_data(n=100, positive_ratio=0.3)
         result = compute_cost_sensitive_threshold(y, p, fp_cost=10.0, fn_cost=100.0)
         assert 0.0 < result["prevalence"] <= 1.0
-        assert abs(result["n_positive"] / result["n_samples"] - result["prevalence"]) < 0.01
+        assert (
+            abs(result["n_positive"] / result["n_samples"] - result["prevalence"])
+            < 0.01
+        )
 
     def test_positive_label_propagated(self):
         y, p = _binary_data()
-        result = compute_cost_sensitive_threshold(y, p, fp_cost=10.0, fn_cost=100.0, positive_label="fraud")
+        result = compute_cost_sensitive_threshold(
+            y, p, fp_cost=10.0, fn_cost=100.0, positive_label="fraud"
+        )
         assert result["positive_label"] == "fraud"
 
     def test_threshold_clamped_between_1pct_and_99pct(self):
@@ -240,6 +269,7 @@ class TestCostSensitivePatterns:
     @pytest.fixture
     def pattern(self):
         from api.chat import _COST_SENSITIVE_PATTERNS
+
         return _COST_SENSITIVE_PATTERNS
 
     def test_fp_cost_dollar_match(self, pattern):
@@ -282,6 +312,7 @@ class TestExtractFpFnCosts:
     @pytest.fixture
     def extractor(self):
         from api.chat import _extract_fp_fn_costs
+
         return _extract_fp_fn_costs
 
     def test_dollar_values_labelled(self, extractor):

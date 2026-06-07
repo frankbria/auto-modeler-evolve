@@ -2351,9 +2351,7 @@ def compute_cost_sensitive_threshold(
 
     if cost_savings_pct > 5.0:
         verdict = "threshold_change_recommended"
-        direction = (
-            "lower" if optimal_threshold < 0.50 else "raise"
-        )
+        direction = "lower" if optimal_threshold < 0.50 else "raise"
         verb = "Lowering" if optimal_threshold < 0.50 else "Raising"
         thr_pct = int(optimal_threshold * 100)
         summary = (
