@@ -568,6 +568,7 @@ export interface ChatMessage {
   segment_drift?: SegmentDriftResult
   segment_pred_trend?: SegmentPredTrendResult
   segment_conf_trend?: SegmentConfTrendResult
+  uptime_summary?: ApiUptimeSummaryResult
 }
 
 export interface RollbackVersionEntry {
@@ -4729,4 +4730,32 @@ export interface SegmentConfTrendResult {
   verdict: SegmentConfTrendVerdict
   summary: string
   n_days: number
+}
+
+export type ApiUptimeDayStatus = 'active' | 'degraded' | 'silent'
+export type ApiUptimeVerdict = 'healthy' | 'degraded' | 'mostly_idle' | 'idle' | 'no_data'
+
+export interface ApiUptimeDayStat {
+  date: string
+  n_predictions: number
+  avg_latency_ms: number | null
+  p95_latency_ms: number | null
+  status: ApiUptimeDayStatus
+}
+
+export interface ApiUptimeSummaryResult {
+  deployment_id: string
+  n_days: number
+  total_predictions: number
+  n_active_days: number
+  n_silent_days: number
+  daily_stats: ApiUptimeDayStat[]
+  overall_avg_latency_ms: number | null
+  overall_p95_latency_ms: number | null
+  peak_latency_ms: number | null
+  peak_latency_date: string | null
+  degraded_days: number
+  verdict: ApiUptimeVerdict
+  note: string
+  summary: string
 }

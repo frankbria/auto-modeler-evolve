@@ -3770,6 +3770,20 @@ _SEGMENT_PRED_TREND_PATTERNS = re.compile(
 # specific groups over time? Distinct from:
 # - _SEGMENT_PRED_TREND_PATTERNS: tracks prediction *values*, not certainty
 # - _SEGMENT_DRIFT_PATTERNS: input distribution drift, not output confidence
+_UPTIME_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"(?:prediction\s+)?api\s+uptime\b|"
+    r"(?:any\s+)?downtime\s+(?:this\s+week|this\s+month|recently|for\s+my\s+(?:api|endpoint|deployment))\b|"
+    r"how\s+(?:reliable|available|healthy)\s+(?:has|is)\s+my\s+(?:api|endpoint|model|deployment)\b|"
+    r"(?:api|endpoint|deployment)\s+(?:availability|reliability)(?:\s+report|\s+history|\s+summary)?\b|"
+    r"uptime\s+stats?\s+(?:for\s+)?(?:my\s+)?deployment\b|"
+    r"was\s+(?:my\s+)?(?:api|endpoint|model|deployment)\s+down\b|"
+    r"(?:api|endpoint|deployment)\s+health\s+(?:history|summary|report)\b|"
+    r"show\s+(?:my\s+)?(?:deployment|api|endpoint)\s+uptime\b"
+    r")",
+    re.IGNORECASE,
+)
+
 _SEGMENT_CONF_TREND_PATTERNS = re.compile(
     r"(?i)(?:"
     r"confidence\s+(?:by|per|across|for)\s+(?:each\s+)?(?:segments?|region|group|category)\b|"
@@ -17323,6 +17337,51 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Segment prediction trend is nice-to-have; never crash chat
 
+    # API Uptime Summary — "has my endpoint had any downtime?", "show deployment uptime"
+    # Distinct from throughput (capacity/latency) and quota_runway (monthly quota burn).
+    uptime_event: dict | None = None
+    if _UPTIME_PATTERNS.search(body.message) and ctx["deployment"]:
+        try:
+            from core.analyzer import compute_api_uptime_summary as _caus
+
+            _ut_dep = ctx["deployment"]
+            _ut_dep_id = _ut_dep.id if hasattr(_ut_dep, "id") else str(_ut_dep)
+            _ut_logs = list(
+                session.exec(
+                    select(PredictionLog)
+                    .where(PredictionLog.deployment_id == _ut_dep_id)
+                    .order_by(PredictionLog.created_at.desc())  # type: ignore[union-attr]
+                    .limit(500)
+                ).all()
+            )
+            _ut_log_dicts = [
+                {"created_at": lg.created_at, "response_ms": lg.response_ms}
+                for lg in _ut_logs
+            ]
+            uptime_event = _caus(_ut_log_dicts, n_days=7)
+            uptime_event["deployment_id"] = _ut_dep_id
+
+            _ut_verdict = uptime_event.get("verdict", "no_data")
+            _ut_total = uptime_event.get("total_predictions", 0)
+            _ut_active = uptime_event.get("n_active_days", 0)
+            _ut_silent = uptime_event.get("n_silent_days", 0)
+            _ut_degraded = uptime_event.get("degraded_days", 0)
+            _ut_p95 = uptime_event.get("overall_p95_latency_ms")
+
+            system_prompt += (
+                f"\n\n## API Uptime Summary (last 7 days)\n"
+                f"Verdict: {_ut_verdict}. "
+                f"Active days: {_ut_active}/7. Silent days: {_ut_silent}/7. "
+                f"Degraded days (p95 > 2s): {_ut_degraded}. "
+                f"Total predictions: {_ut_total}. "
+                + (f"Overall p95 latency: {_ut_p95:.0f} ms. " if _ut_p95 else "")
+                + (uptime_event.get("summary", ""))
+                + "\n\nNote: only successful predictions are logged — "
+                "silent days may indicate low traffic, not necessarily downtime."
+            )
+        except Exception:  # noqa: BLE001
+            pass
+
     # "is my model less confident for West region?", "confidence trend by segment"
     # Distinct from SegmentPredTrend (prediction values) and SegmentDrift (input dist).
     segment_conf_trend_event: dict | None = None
@@ -20332,6 +20391,9 @@ def send_message(
 
         if segment_conf_trend_event:
             yield f"data: {json.dumps({'type': 'segment_conf_trend', 'segment_conf_trend': segment_conf_trend_event})}\n\n"
+
+        if uptime_event:
+            yield f"data: {json.dumps({'type': 'uptime_summary', 'uptime_summary': uptime_event})}\n\n"
 
         # Emit quota runway / capacity planning card
         if quota_runway_event:

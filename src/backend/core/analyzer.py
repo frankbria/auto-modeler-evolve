@@ -7852,3 +7852,201 @@ def compute_segment_confidence_trend(
         "summary": summary,
         "n_days": n_days,
     }
+
+
+# ---------------------------------------------------------------------------
+# API Uptime Summary
+# ---------------------------------------------------------------------------
+
+
+def compute_api_uptime_summary(
+    log_dicts: list[dict],
+    *,
+    n_days: int = 7,
+) -> dict:
+    """Summarise prediction API health over a rolling time window.
+
+    Pure function — no database or filesystem access.
+
+    Analyses PredictionLog records (each dict needs ``created_at`` and
+    optionally ``response_ms``) to produce a day-by-day health picture.
+    Since only successful predictions are logged, days with zero predictions
+    could indicate either low traffic or downtime — the summary is honest
+    about this ambiguity.
+
+    A day is classified as "degraded" when its p95 latency exceeds 2000 ms.
+
+    Args:
+        log_dicts: List of dicts with ``created_at`` (datetime or ISO str)
+                   and optional ``response_ms`` (float ms).
+        n_days: Rolling window in days (default 7).
+
+    Returns:
+        Dict with ``daily_stats``, aggregate latency stats, ``verdict``,
+        ``summary``, and ``note`` about logging limitations.
+        ``verdict`` is one of:
+        ``"healthy"`` | ``"degraded"`` | ``"mostly_idle"`` | ``"idle"`` |
+        ``"no_data"``.
+    """
+    from collections import defaultdict as _dd
+    from datetime import timedelta as _td
+
+    now = datetime.utcnow()
+    cutoff = now - _td(days=n_days)
+
+    def _parse_ts(ts: object) -> datetime | None:
+        if isinstance(ts, datetime):
+            return ts.replace(tzinfo=None) if ts.tzinfo else ts
+        if isinstance(ts, str):
+            try:
+                dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+                return dt.replace(tzinfo=None)
+            except ValueError:
+                return None
+        return None
+
+    # Build per-day buckets: {date_str: [response_ms, ...]}
+    day_ms: dict[str, list[float]] = _dd(list)
+    day_count: dict[str, int] = _dd(int)
+
+    for row in log_dicts:
+        ts = _parse_ts(row.get("created_at"))
+        if ts is None or ts < cutoff:
+            continue
+        day_key = ts.strftime("%Y-%m-%d")
+        day_count[day_key] += 1
+        ms = row.get("response_ms")
+        if ms is not None:
+            try:
+                day_ms[day_key].append(float(ms))
+            except (TypeError, ValueError):
+                pass
+
+    # Build the list of all days in the window (most-recent last)
+    all_days = [
+        (now - _td(days=i)).strftime("%Y-%m-%d") for i in range(n_days - 1, -1, -1)
+    ]
+
+    daily_stats: list[dict] = []
+    all_ms_flat: list[float] = []
+    degraded_days = 0
+
+    for day in all_days:
+        n_preds = day_count.get(day, 0)
+        ms_list = sorted(day_ms.get(day, []))
+        avg_ms: float | None = None
+        p95_ms: float | None = None
+        if ms_list:
+            avg_ms = round(sum(ms_list) / len(ms_list), 1)
+            p95_ms = round(ms_list[min(int(len(ms_list) * 0.95), len(ms_list) - 1)], 1)
+            all_ms_flat.extend(ms_list)
+
+        # Classify day status
+        if n_preds == 0:
+            day_status = "silent"
+        elif p95_ms is not None and p95_ms > 2000:
+            day_status = "degraded"
+            degraded_days += 1
+        else:
+            day_status = "active"
+
+        daily_stats.append(
+            {
+                "date": day,
+                "n_predictions": n_preds,
+                "avg_latency_ms": avg_ms,
+                "p95_latency_ms": p95_ms,
+                "status": day_status,
+            }
+        )
+
+    total_predictions = sum(s["n_predictions"] for s in daily_stats)
+    n_active_days = sum(1 for s in daily_stats if s["status"] in ("active", "degraded"))
+    n_silent_days = n_days - n_active_days
+
+    # Aggregate latency across all valid samples
+    overall_avg_ms: float | None = None
+    overall_p95_ms: float | None = None
+    peak_ms: float | None = None
+    peak_date: str | None = None
+
+    if all_ms_flat:
+        all_ms_sorted = sorted(all_ms_flat)
+        overall_avg_ms = round(sum(all_ms_sorted) / len(all_ms_sorted), 1)
+        overall_p95_ms = round(
+            all_ms_sorted[min(int(len(all_ms_sorted) * 0.95), len(all_ms_sorted) - 1)],
+            1,
+        )
+        peak_ms = round(max(all_ms_sorted), 1)
+        # Find the date with the max latency
+        for s in daily_stats:
+            if s["p95_latency_ms"] is not None and s["p95_latency_ms"] == peak_ms:
+                peak_date = s["date"]
+                break
+
+    # Verdict
+    # Distinguish zero predictions (idle/no_data) from insufficient predictions (no_data)
+    if total_predictions == 0:
+        verdict = "idle"
+    elif total_predictions < 3:
+        verdict = "no_data"
+    elif degraded_days >= 1:
+        verdict = "degraded"
+    elif n_active_days < n_days // 2:
+        verdict = "mostly_idle"
+    else:
+        verdict = "healthy"
+
+    # Plain-English summary
+    note = (
+        "Only successful predictions are logged — silent days may indicate "
+        "low traffic, not necessarily downtime."
+    )
+
+    if verdict == "no_data":
+        summary = (
+            f"Not enough prediction data for a reliability assessment "
+            f"(only {total_predictions} prediction{'s' if total_predictions != 1 else ''} "
+            f"in the last {n_days} days). Make more predictions to track API health."
+        )
+    elif verdict == "idle":
+        summary = (
+            f"No predictions recorded in the last {n_days} days. "
+            "Your endpoint is deployed but has received no traffic."
+        )
+    elif verdict == "mostly_idle":
+        summary = (
+            f"Your API was active on {n_active_days} of the last {n_days} days "
+            f"({total_predictions} total predictions). "
+            "Low-traffic periods look like silent days — no latency issues detected."
+        )
+    elif verdict == "degraded":
+        summary = (
+            f"Latency issues detected: {degraded_days} day{'s' if degraded_days != 1 else ''} "
+            f"had p95 latency above 2 seconds. "
+            f"Overall p95: {overall_p95_ms:.0f} ms across {total_predictions} predictions "
+            f"over {n_days} days."
+        )
+    else:
+        summary = (
+            f"Your API looks healthy: active on {n_active_days} of the last {n_days} days "
+            f"with {total_predictions} total predictions. "
+        )
+        if overall_p95_ms is not None:
+            summary += f"Overall p95 latency: {overall_p95_ms:.0f} ms."
+
+    return {
+        "n_days": n_days,
+        "total_predictions": total_predictions,
+        "n_active_days": n_active_days,
+        "n_silent_days": n_silent_days,
+        "daily_stats": daily_stats,
+        "overall_avg_latency_ms": overall_avg_ms,
+        "overall_p95_latency_ms": overall_p95_ms,
+        "peak_latency_ms": peak_ms,
+        "peak_latency_date": peak_date,
+        "degraded_days": degraded_days,
+        "verdict": verdict,
+        "note": note,
+        "summary": summary,
+    }

@@ -8079,3 +8079,41 @@ def get_segment_confidence_trend(
     )
     result["deployment_id"] = deployment_id
     return result
+
+
+# ---------------------------------------------------------------------------
+# API Uptime Summary
+# ---------------------------------------------------------------------------
+
+
+@router.get("/api/deploy/{deployment_id}/uptime-summary")
+def get_uptime_summary(
+    deployment_id: str,
+    n_days: int = Query(default=7, ge=3, le=30),
+    session: Session = Depends(get_session),
+) -> dict:
+    """Return a day-by-day API health summary for a deployment.
+
+    Analyses PredictionLog records to show daily prediction counts, latency,
+    and overall health verdict over the last ``n_days`` days.
+    Silent days (no predictions) may indicate low traffic or downtime.
+    """
+    from core.analyzer import compute_api_uptime_summary
+
+    dep = session.get(Deployment, deployment_id)
+    if not dep:
+        raise HTTPException(status_code=404, detail="Deployment not found")
+
+    logs = session.exec(
+        select(PredictionLog)
+        .where(PredictionLog.deployment_id == deployment_id)
+        .order_by(PredictionLog.created_at.desc())  # type: ignore[union-attr]
+        .limit(500)
+    ).all()
+
+    log_dicts = [
+        {"created_at": log.created_at, "response_ms": log.response_ms} for log in logs
+    ]
+    result = compute_api_uptime_summary(log_dicts, n_days=n_days)
+    result["deployment_id"] = deployment_id
+    return result
