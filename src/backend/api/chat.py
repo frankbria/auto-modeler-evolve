@@ -3766,6 +3766,24 @@ _SEGMENT_PRED_TREND_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# Per-segment model confidence trend: is the model becoming less certain about
+# specific groups over time? Distinct from:
+# - _SEGMENT_PRED_TREND_PATTERNS: tracks prediction *values*, not certainty
+# - _SEGMENT_DRIFT_PATTERNS: input distribution drift, not output confidence
+_SEGMENT_CONF_TREND_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"confidence\s+(?:by|per|across|for)\s+(?:each\s+)?(?:segments?|region|group|category)\b|"
+    r"(?:model|prediction)\s+confidence\s+(?:per|by|for|across)\s+\w+|"
+    r"(?:is|is\s+(?:my|the)\s+)?model\s+(?:less|more)\s+confident\s+(?:for|in|about)\s+\w+|"
+    r"confidence\s+trend\s+(?:by|per|for|across)\s+(?:each\s+)?(?:segments?|region|group|category)\b|"
+    r"which\s+(?:segments?|region|group|category)\s+has\s+(?:the\s+)?(?:lowest|highest|worst|best)\s+confidence\b|"
+    r"model\s+uncertainty\s+(?:by|per|across|for)\s+(?:each\s+)?(?:segments?|region|group|category)\b|"
+    r"(?:prediction\s+)?confidence\s+breakdown\s+(?:by|per)\s+(?:each\s+)?(?:segments?|region|group|category)\b|"
+    r"(?:low|poor|dropping|declining)\s+confidence\s+(?:for|by|per)\s+(?:each\s+)?(?:segments?|region|group|category)\b"
+    r")",
+    re.IGNORECASE,
+)
+
 _QUOTA_RUNWAY_PATTERNS = re.compile(
     r"(?i)(?:"
     r"(?:will|can)\s+(?:my\s+)?quota\s+(?:last|cover|handle)\s+(?:the\s+)?month\b|"
@@ -17305,6 +17323,91 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Segment prediction trend is nice-to-have; never crash chat
 
+    # "is my model less confident for West region?", "confidence trend by segment"
+    # Distinct from SegmentPredTrend (prediction values) and SegmentDrift (input dist).
+    segment_conf_trend_event: dict | None = None
+    if _SEGMENT_CONF_TREND_PATTERNS.search(body.message) and ctx["deployment"]:
+        try:
+            import json as _sct_json
+
+            from core.analyzer import compute_segment_confidence_trend as _csct
+
+            _sct_dep = ctx["deployment"]
+            _sct_dep_id = _sct_dep.id if hasattr(_sct_dep, "id") else str(_sct_dep)
+            _sct_dep_obj = session.get(Deployment, _sct_dep_id)
+            _sct_problem = getattr(_sct_dep_obj, "problem_type", None) or "regression"
+
+            _sct_logs = session.exec(
+                select(PredictionLog)
+                .where(PredictionLog.deployment_id == _sct_dep_id)
+                .order_by(PredictionLog.created_at.desc())
+                .limit(200)
+            ).all()
+
+            _sct_feature_ranges: dict = {}
+            if _sct_dep_obj and getattr(_sct_dep_obj, "pipeline_path", None):
+                try:
+                    from core.deployer import load_pipeline as _load_pipeline_sct
+
+                    _sct_pipeline = _load_pipeline_sct(_sct_dep_obj.pipeline_path)
+                    _sct_feature_ranges = getattr(_sct_pipeline, "feature_ranges", {})
+                except Exception:  # noqa: BLE001
+                    pass
+
+            _sct_col = _detect_segment_col(body.message, _sct_feature_ranges)
+
+            if _sct_col:
+                _sct_logs_data: list[dict] = []
+                for _sct_lg in _sct_logs:
+                    _sct_ifd: dict = {}
+                    try:
+                        _sct_parsed = _sct_json.loads(_sct_lg.input_features)
+                        if isinstance(_sct_parsed, dict):
+                            _sct_ifd = _sct_parsed
+                    except Exception:  # noqa: BLE001
+                        pass
+                    _sct_logs_data.append(
+                        {
+                            "prediction_numeric": _sct_lg.prediction_numeric,
+                            "confidence": _sct_lg.confidence,
+                            "created_at": _sct_lg.created_at,
+                            "input_features_dict": _sct_ifd,
+                        }
+                    )
+
+                _sct_result = _csct(_sct_logs_data, _sct_col, _sct_problem)
+                _sct_result["deployment_id"] = _sct_dep_id
+                segment_conf_trend_event = _sct_result
+
+                _sct_verdict = _sct_result.get("verdict", "no_data")
+                _sct_summary = _sct_result.get("summary", "")
+                _sct_n = _sct_result.get("n_segments", 0)
+                _sct_most_conf = _sct_result.get("most_confident_segment")
+                _sct_least_conf = _sct_result.get("least_confident_segment")
+                _sct_gap = _sct_result.get("calibration_gap", False)
+                system_prompt += (
+                    f"\n\n## Segment Confidence Trend (by '{_sct_col}')\n"
+                    f"Verdict: {_sct_verdict}. {_sct_summary} "
+                    f"Segments analysed: {_sct_n}. "
+                    + (
+                        f"Most confident segment: '{_sct_most_conf}'. "
+                        if _sct_most_conf
+                        else ""
+                    )
+                    + (
+                        f"Least confident segment: '{_sct_least_conf}'. "
+                        if _sct_least_conf
+                        else ""
+                    )
+                    + ("Calibration gap detected. " if _sct_gap else "")
+                    + "A SegmentConfidenceTrendCard is shown with per-segment confidence trend lines. "
+                    "Narrate which segments are losing or gaining model confidence, what this means "
+                    "for prediction reliability, and whether segment-specific review is warranted."
+                )
+
+        except Exception:  # noqa: BLE001
+            pass  # Confidence calibration trend is nice-to-have; never crash chat
+
     # Quota runway / capacity planning (forward-looking projection)
     quota_runway_event: dict | None = None
     if _QUOTA_RUNWAY_PATTERNS.search(body.message) and ctx["deployment"]:
@@ -20226,6 +20329,9 @@ def send_message(
 
         if segment_pred_trend_event:
             yield f"data: {json.dumps({'type': 'segment_pred_trend', 'segment_pred_trend': segment_pred_trend_event})}\n\n"
+
+        if segment_conf_trend_event:
+            yield f"data: {json.dumps({'type': 'segment_conf_trend', 'segment_conf_trend': segment_conf_trend_event})}\n\n"
 
         # Emit quota runway / capacity planning card
         if quota_runway_event:

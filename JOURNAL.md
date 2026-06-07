@@ -1,5 +1,26 @@
 # Journal
 
+## Day 87 — 20:00 — Deployment Segment Confidence Trend
+
+**Feature shipped:** Deployment Segment Confidence Trend (Track D perpetual). Analysts can now ask "confidence by segment", "model confidence per region", "is my model less confident for West", "confidence trend by segment", "which segment has the lowest confidence", "model uncertainty by region", "confidence breakdown by segment", or "low confidence for each category" (8 NL variants in `_SEGMENT_CONF_TREND_PATTERNS`) and receive a `SegmentConfidenceTrendCard` showing whether the model's certainty is improving, deteriorating, or stable for each segment — and whether a calibration gap exists between segments.
+
+**Why it matters:** This closes the final piece of the segment monitoring trilogy: Day 87 (04:00) showed input drift by segment, Day 87 (12:00) showed prediction value trends by segment, and now Day 87 (20:00) shows prediction *confidence* by segment. An analyst can now ask "why are my West region predictions different?" and get three distinct lenses: is the input data drifting there? are the predicted values changing? is the model less certain about those predictions? Together they give a complete picture of segment-level model health.
+
+**What was built:**
+- `compute_segment_confidence_trend(logs_data, segment_column, problem_type, n_days=30, max_segments=8)` pure function in `core/analyzer.py`: for classification tracks average `confidence` field per segment per day; for regression tracks CV% (`std/|mean| × 100%`) as consistency proxy; direction: ±2%/period threshold for `deteriorating`/`improving`/`stable`; `calibration_gap` flag when max−min confidence across segments exceeds 0.15; verdicts: `calibration_gap` / `uniform_decline` / `uniform_improving` / `mixed` / `stable` / `no_confidence_data` / `no_data`
+- `GET /api/deploy/{id}/segment-confidence-trend?segment_col=category&n=200&n_days=30` REST endpoint with auto-detect first categorical feature
+- `_SEGMENT_CONF_TREND_PATTERNS` (8 NL variants) + handler in `chat.py` guarded by `ctx["deployment"]`; reuses `_detect_segment_col()` for auto-detection; emits `{type:"segment_conf_trend"}` SSE event
+- `SegmentConfidenceTrendCard` (amber=calibration_gap / rose=uniform_decline / emerald=uniform_improving / sky=mixed / muted=stable, 🎯 icon): verdict badge, metric badge (Confidence/Spread CV%), calibration gap warning block (amber, ⚠), most/least confident callouts, per-segment rows with direction badge + change% + first/latest/samples grid + Recharts sparkline, empty state, sr-only figcaption
+- Full TypeScript wiring: `SegmentConfTrendResult` and child interfaces; `attachSegmentConfTrendToLastMessage` Zustand action; SSE handlers + card render in both EventSource branches of `page.tsx`
+
+**One wrinkle:** The stability threshold for classification confidence initially used ±1%/period (vs ±2% for all other directional features in this codebase). Fixed to ±2% after the first test run to maintain consistency with the existing convention.
+
+**Tests:** 47 backend (22 pure-function + 21 regex + 4 REST endpoint) + 20 frontend (20 card component) = **67 new tests**. All passing. Backend lint: clean. Frontend build + TypeScript + lint: clean.
+
+**Baseline:** 5963 backend / 3373 frontend → **6010 backend / 3394 frontend** (+47 / +21).
+
+---
+
 ## Day 87 — 12:00 — Deployment Prediction Value Trend by Segment
 
 **Feature shipped:** Deployment Prediction Value Trend by Segment (Track D perpetual). Analysts can now ask "prediction trend by segment", "prediction trends per region", "which segment is improving?", "which category is declining?", "segment-level prediction trend", "how are my predictions changing for each region?", or 2 other NL variants (8 total in `_SEGMENT_PRED_TREND_PATTERNS`) and receive a `SegmentPredictionTrendCard` showing whether predictions are trending up, down, or stable for each categorical segment independently. Closes the "is my average predicted revenue going up or down for the West region?" analyst gap — distinct from `PredictionValueTrendCard` (overall trend, no segments) and `SegmentDriftCard` (input distribution drift, not output values).

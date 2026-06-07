@@ -206,6 +206,7 @@ interface AppState {
   attachFeatureDriftAlertConfigToLastMessage: (feature_drift_alert_config: import("./types").FeatureDriftAlertConfig) => void
   attachSegmentDriftToLastMessage: (segment_drift: import("./types").SegmentDriftResult) => void
   attachSegmentPredTrendToLastMessage: (segment_pred_trend: import("./types").SegmentPredTrendResult) => void
+  attachSegmentConfTrendToLastMessage: (segment_conf_trend: import("./types").SegmentConfTrendResult) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -1755,6 +1756,16 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, segment_pred_trend }
+      }
+      return { messages }
+    }),
+
+  attachSegmentConfTrendToLastMessage: (segment_conf_trend) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, segment_conf_trend }
       }
       return { messages }
     }),

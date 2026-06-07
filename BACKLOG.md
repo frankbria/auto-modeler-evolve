@@ -53,6 +53,28 @@ the time is better spent on real features.
 
 ---
 
+## Day 87 (20:00) — Done
+
+**Track D: Deployment Segment Confidence Trend** — complete.
+
+Closes the "is my model less confident about West region predictions over time?" analyst gap — distinct from `SegmentPredictionTrendCard` (tracks prediction *values*) and `SegmentDriftCard` (input distribution drift). Completes the Day 87 segment monitoring trilogy: input drift (04:00), output value trend (12:00), model certainty (20:00). Analysts ask "confidence by segment", "model confidence per region", "is my model less confident for West", "confidence trend by segment", "which segment has lowest confidence", "model uncertainty by region", "confidence breakdown by segment", or "low confidence for each category" (8 NL variants in `_SEGMENT_CONF_TREND_PATTERNS`) and receive a `SegmentConfidenceTrendCard` with per-segment confidence sparklines, calibration gap detection, and most/least confident segment callouts.
+
+**What was built:**
+- `compute_segment_confidence_trend(logs_data, segment_column, problem_type, n_days=30, max_segments=8)` pure function in `core/analyzer.py`: classification = avg confidence score; regression = CV% (std/|mean| × 100%) as consistency proxy; ±2%/period threshold; `calibration_gap` flag (max−min > 0.15); verdicts: calibration_gap/uniform_decline/uniform_improving/mixed/stable/no_confidence_data/no_data
+- `GET /api/deploy/{id}/segment-confidence-trend?segment_col=category&n=200&n_days=30` REST endpoint
+- `_SEGMENT_CONF_TREND_PATTERNS` (8 NL variants) + handler in `chat.py`; emits `{type:"segment_conf_trend"}` SSE event
+- `SegmentConfidenceTrendCard` (amber=calibration_gap / rose=uniform_decline / emerald=uniform_improving / sky=mixed / muted=stable, 🎯 icon): calibration gap warning, most/least confident callouts, per-segment sparklines
+- Full TypeScript wiring: `SegmentConfTrendResult` interfaces; `attachSegmentConfTrendToLastMessage` Zustand action; SSE handlers + card render in `page.tsx`
+
+**Tests:** 47 backend + 20 frontend = **67 new tests**. All passing. Baseline: 5963/3373 → **6010/3394**.
+
+**What's next:**
+- Track C: Cost-Sensitive Training via Misclassification Cost Matrix — "false positives cost $1000, false negatives cost $10"
+- Track D: Prediction API Uptime Summary — "has my prediction endpoint had any downtime this week?"
+- Track B: Comparative Model Improvement Plan — "create a ranked improvement roadmap for all my models"
+
+---
+
 ## Day 87 (12:00) — Done
 
 **Track D: Deployment Prediction Value Trend by Segment** — complete.

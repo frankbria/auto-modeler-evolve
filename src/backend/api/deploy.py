@@ -47,6 +47,7 @@ from core.analyzer import (
     compute_prediction_output_anomalies,
     compute_prediction_value_trend,
     compute_retraining_readiness,
+    compute_segment_confidence_trend,
     compute_segment_drift,
     compute_segment_prediction_trend,
     compute_usage_pattern,
@@ -7979,6 +7980,96 @@ def get_segment_prediction_trend(
 
     problem_type = dep.problem_type or "regression"
     result = compute_segment_prediction_trend(
+        logs_data,
+        segment_col,
+        problem_type,
+        n_days=n_days,
+    )
+    result["deployment_id"] = deployment_id
+    return result
+
+
+@router.get("/api/deploy/{deployment_id}/segment-confidence-trend")
+def get_segment_confidence_trend(
+    deployment_id: str,
+    segment_col: str | None = None,
+    n: int = Query(default=200, ge=10, le=1000),
+    n_days: int = Query(default=30, ge=7, le=90),
+    session: Session = Depends(get_session),
+) -> dict:
+    """Return per-segment model confidence trends over time.
+
+    For classification: tracks average confidence score per segment per day.
+    For regression: tracks coefficient of variation (prediction spread) per
+    segment per day as a consistency proxy.
+    """
+    dep = session.get(Deployment, deployment_id)
+    if not dep:
+        raise HTTPException(status_code=404, detail="Deployment not found")
+
+    logs = session.exec(
+        select(PredictionLog)
+        .where(PredictionLog.deployment_id == deployment_id)
+        .order_by(PredictionLog.created_at.desc())  # type: ignore[union-attr]
+        .limit(n)
+    ).all()
+
+    feature_ranges: dict = {}
+    if dep.pipeline_path:
+        try:
+            from core.deployer import load_pipeline as _lp_sct
+
+            _pipeline_sct = _lp_sct(dep.pipeline_path)
+            feature_ranges = getattr(_pipeline_sct, "feature_ranges", {})
+        except Exception:  # noqa: BLE001
+            pass
+
+    if not segment_col:
+        for feat, frange in feature_ranges.items():
+            if "known_categories" in frange:
+                segment_col = feat
+                break
+
+    if not segment_col:
+        return {
+            "deployment_id": deployment_id,
+            "segment_column": None,
+            "problem_type": dep.problem_type or "regression",
+            "metric": "confidence" if (dep.problem_type or "") == "classification" else "prediction_spread",
+            "n_segments": 0,
+            "n_samples": 0,
+            "segments": [],
+            "most_confident_segment": None,
+            "least_confident_segment": None,
+            "calibration_gap": False,
+            "verdict": "no_data",
+            "summary": (
+                "No categorical features found for segment confidence analysis. "
+                "Specify a segment_col parameter or ensure the model has categorical features."
+            ),
+            "n_days": n_days,
+        }
+
+    logs_data: list[dict] = []
+    for log in logs:
+        input_features_dict: dict = {}
+        try:
+            parsed = json.loads(log.input_features)
+            if isinstance(parsed, dict):
+                input_features_dict = parsed
+        except Exception:  # noqa: BLE001
+            pass
+        logs_data.append(
+            {
+                "prediction_numeric": log.prediction_numeric,
+                "confidence": log.confidence,
+                "created_at": log.created_at,
+                "input_features_dict": input_features_dict,
+            }
+        )
+
+    problem_type = dep.problem_type or "regression"
+    result = compute_segment_confidence_trend(
         logs_data,
         segment_col,
         problem_type,

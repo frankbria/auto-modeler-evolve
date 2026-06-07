@@ -567,6 +567,7 @@ export interface ChatMessage {
   feature_drift_alert_config?: FeatureDriftAlertConfig
   segment_drift?: SegmentDriftResult
   segment_pred_trend?: SegmentPredTrendResult
+  segment_conf_trend?: SegmentConfTrendResult
 }
 
 export interface RollbackVersionEntry {
@@ -4678,6 +4679,54 @@ export interface SegmentPredTrendResult {
   most_improved_segment: string | null
   most_declining_segment: string | null
   verdict: SegmentPredTrendVerdict
+  summary: string
+  n_days: number
+}
+
+// ---------------------------------------------------------------------------
+// Segment Confidence Trend
+// ---------------------------------------------------------------------------
+
+export type SegmentConfTrendDirection = 'deteriorating' | 'stable' | 'improving'
+export type SegmentConfTrendVerdict =
+  | 'calibration_gap'
+  | 'uniform_decline'
+  | 'uniform_improving'
+  | 'mixed'
+  | 'stable'
+  | 'no_confidence_data'
+  | 'no_data'
+
+export interface SegmentConfTrendDayStat {
+  date: string
+  mean: number
+  count: number
+}
+
+export interface SegmentConfTrendEntry {
+  name: string
+  n_samples: number
+  n_days_with_data: number
+  direction: SegmentConfTrendDirection
+  direction_label: string
+  change_pct: number
+  first_mean: number
+  last_mean: number
+  daily_stats: SegmentConfTrendDayStat[]
+}
+
+export interface SegmentConfTrendResult {
+  deployment_id: string
+  segment_column: string
+  problem_type: string
+  metric: 'confidence' | 'prediction_spread'
+  n_segments: number
+  n_samples: number
+  segments: SegmentConfTrendEntry[]
+  most_confident_segment: string | null
+  least_confident_segment: string | null
+  calibration_gap: boolean
+  verdict: SegmentConfTrendVerdict
   summary: string
   n_days: number
 }

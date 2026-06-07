@@ -7532,3 +7532,326 @@ def compute_segment_prediction_trend(
         "summary": summary,
         "n_days": n_days,
     }
+
+
+def compute_segment_confidence_trend(
+    logs_data: list[dict],
+    segment_column: str,
+    problem_type: str = "regression",
+    *,
+    n_days: int = 30,
+    max_segments: int = 8,
+) -> dict:
+    """Track per-segment model confidence over time.
+
+    For classification: tracks average confidence score (predicted probability)
+    per segment per day — reveals if the model is becoming less certain about
+    specific groups.
+
+    For regression: tracks coefficient of variation (std/mean × 100%) of
+    predictions per segment per day as a consistency proxy — higher = more
+    variable/uncertain.
+
+    Each log dict must have:
+        - ``confidence`` (float|None) — probability score (classification)
+        - ``prediction_numeric`` (float|None) — prediction value (regression)
+        - ``created_at`` (datetime|str) — timestamp
+        - ``input_features_dict`` (dict) — parsed input features
+
+    Args:
+        logs_data: List of enriched prediction log dicts.
+        segment_column: Categorical feature name to group by.
+        problem_type: ``"regression"`` or ``"classification"``.
+        n_days: How many days of history to analyse.
+        max_segments: Cap on number of segments to return.
+
+    Returns:
+        Dict with ``segments`` (sorted by |change_pct| desc), ``verdict``,
+        ``summary``, ``calibration_gap``, and metadata.
+
+    Raises:
+        ValueError: If fewer than 2 logs have valid data.
+    """
+    from collections import defaultdict as _dd
+    from datetime import timedelta as _td
+
+    cutoff = datetime.utcnow() - _td(days=n_days)
+    is_classification = problem_type == "classification"
+    metric = "confidence" if is_classification else "prediction_spread"
+
+    def _parse_ts(ts: object) -> datetime | None:
+        if isinstance(ts, datetime):
+            return ts.replace(tzinfo=None) if ts.tzinfo else ts
+        if isinstance(ts, str):
+            try:
+                dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+                return dt.replace(tzinfo=None)
+            except ValueError:
+                return None
+        return None
+
+    # Accumulate raw values per (segment, date)
+    segment_day_raw: dict[str, dict[str, list[float]]] = _dd(lambda: _dd(list))
+    total = 0
+    has_any_confidence = False
+
+    for row in logs_data:
+        ts = _parse_ts(row.get("created_at"))
+        if ts is None or ts < cutoff:
+            continue
+        seg_val = None
+        ifd = row.get("input_features_dict")
+        if isinstance(ifd, dict):
+            seg_val = ifd.get(segment_column)
+        if seg_val is None:
+            continue
+        seg_key = str(seg_val).strip()
+        if not seg_key:
+            continue
+
+        if is_classification:
+            val = row.get("confidence")
+            if val is None:
+                continue
+            has_any_confidence = True
+        else:
+            val = row.get("prediction_numeric")
+            if val is None:
+                continue
+
+        try:
+            val = float(val)
+        except (TypeError, ValueError):
+            continue
+
+        day_key = ts.strftime("%Y-%m-%d")
+        segment_day_raw[seg_key][day_key].append(val)
+        total += 1
+
+    if is_classification and not has_any_confidence:
+        return {
+            "segment_column": segment_column,
+            "problem_type": problem_type,
+            "metric": metric,
+            "n_segments": 0,
+            "n_samples": 0,
+            "segments": [],
+            "most_confident_segment": None,
+            "least_confident_segment": None,
+            "calibration_gap": False,
+            "verdict": "no_confidence_data",
+            "summary": (
+                "No confidence scores found in prediction logs. "
+                "Confidence scores are available for classification models "
+                "trained with probability support."
+            ),
+            "n_days": n_days,
+        }
+
+    if total < 2:
+        return {
+            "segment_column": segment_column,
+            "problem_type": problem_type,
+            "metric": metric,
+            "n_segments": 0,
+            "n_samples": total,
+            "segments": [],
+            "most_confident_segment": None,
+            "least_confident_segment": None,
+            "calibration_gap": False,
+            "verdict": "no_data",
+            "summary": (
+                f"Not enough prediction data to compute segment confidence trends "
+                f"(need ≥2 predictions, found {total})."
+            ),
+            "n_days": n_days,
+        }
+
+    # Keep top max_segments by sample count
+    seg_counts = {
+        seg: sum(len(v) for v in days.values())
+        for seg, days in segment_day_raw.items()
+    }
+    top_segs = sorted(seg_counts, key=lambda s: seg_counts[s], reverse=True)[
+        :max_segments
+    ]
+
+    segments_out: list[dict] = []
+    for seg in top_segs:
+        days_map = segment_day_raw[seg]
+        if not days_map:
+            continue
+        sorted_days = sorted(days_map.keys())
+
+        if is_classification:
+            daily_stats = [
+                {
+                    "date": d,
+                    "mean": round(float(np.mean(days_map[d])), 4),
+                    "count": len(days_map[d]),
+                }
+                for d in sorted_days
+            ]
+        else:
+            # Coefficient of variation (std/|mean| × 100%) per day per segment.
+            # Days with < 2 predictions get CV = 0 (no spread measurable).
+            daily_stats = []
+            for d in sorted_days:
+                vals = days_map[d]
+                day_mean = float(np.mean(vals))
+                day_std = float(np.std(vals)) if len(vals) >= 2 else 0.0
+                cv = round(
+                    (day_std / abs(day_mean) * 100) if abs(day_mean) > 1e-9 else 0.0,
+                    4,
+                )
+                daily_stats.append({"date": d, "mean": cv, "count": len(vals)})
+
+        if not daily_stats:
+            continue
+
+        n_samples = sum(s["count"] for s in daily_stats)
+
+        if len(daily_stats) < 2:
+            direction = "stable"
+            direction_label = "Stable"
+            change_pct = 0.0
+        else:
+            first_mean = daily_stats[0]["mean"]
+            last_mean = daily_stats[-1]["mean"]
+            if abs(first_mean) > 1e-9:
+                change_pct = round(
+                    (last_mean - first_mean) / abs(first_mean) * 100, 2
+                )
+            else:
+                change_pct = 0.0
+            slope_pct = change_pct / max(len(daily_stats) - 1, 1)
+
+            if is_classification:
+                # Declining confidence = deteriorating (≥2%/period change to avoid noise)
+                if slope_pct < -2.0:
+                    direction = "deteriorating"
+                    direction_label = "Deteriorating"
+                elif slope_pct > 2.0:
+                    direction = "improving"
+                    direction_label = "Improving"
+                else:
+                    direction = "stable"
+                    direction_label = "Stable"
+            else:
+                # Increasing CV = more variable = deteriorating
+                if slope_pct > 2.0:
+                    direction = "deteriorating"
+                    direction_label = "Deteriorating"
+                elif slope_pct < -2.0:
+                    direction = "improving"
+                    direction_label = "Improving"
+                else:
+                    direction = "stable"
+                    direction_label = "Stable"
+
+        segments_out.append(
+            {
+                "name": seg,
+                "n_samples": n_samples,
+                "n_days_with_data": len(daily_stats),
+                "direction": direction,
+                "direction_label": direction_label,
+                "change_pct": change_pct,
+                "first_mean": daily_stats[0]["mean"],
+                "last_mean": daily_stats[-1]["mean"],
+                "daily_stats": daily_stats,
+            }
+        )
+
+    segments_out.sort(key=lambda s: abs(s["change_pct"]), reverse=True)
+
+    det_segs = [s for s in segments_out if s["direction"] == "deteriorating"]
+    imp_segs = [s for s in segments_out if s["direction"] == "improving"]
+    stable_segs = [s for s in segments_out if s["direction"] == "stable"]
+
+    if segments_out:
+        if is_classification:
+            sorted_by_conf = sorted(segments_out, key=lambda s: s["last_mean"])
+            most_confident = sorted_by_conf[-1]["name"]
+            least_confident = sorted_by_conf[0]["name"]
+            last_means = [s["last_mean"] for s in segments_out]
+            calibration_gap = (
+                (max(last_means) - min(last_means)) > 0.15
+                if len(last_means) >= 2
+                else False
+            )
+        else:
+            sorted_by_cv = sorted(segments_out, key=lambda s: s["last_mean"])
+            most_confident = sorted_by_cv[0]["name"]  # lowest CV = most consistent
+            least_confident = sorted_by_cv[-1]["name"]
+            calibration_gap = False
+    else:
+        most_confident = None
+        least_confident = None
+        calibration_gap = False
+
+    if not segments_out:
+        verdict = "no_data"
+        summary = f"No '{segment_column}' segments found in recent prediction logs."
+    elif len(det_segs) > 0 and len(imp_segs) > 0:
+        verdict = "mixed"
+        summary = (
+            f"Mixed confidence trends across '{segment_column}' segments: "
+            f"{len(det_segs)} deteriorating, {len(imp_segs)} improving, "
+            f"{len(stable_segs)} stable."
+        )
+    elif len(det_segs) == len(segments_out):
+        verdict = "uniform_decline"
+        summary = (
+            f"Model confidence is declining across all {len(segments_out)} "
+            f"'{segment_column}' segments. "
+            + (
+                f"'{det_segs[0]['name']}' is declining fastest "
+                f"({det_segs[0]['change_pct']:.1f}% change)."
+                if det_segs
+                else ""
+            )
+        )
+    elif len(imp_segs) == len(segments_out):
+        verdict = "uniform_improving"
+        summary = (
+            f"Model confidence is improving across all {len(segments_out)} "
+            f"'{segment_column}' segments. "
+            + (
+                f"'{imp_segs[0]['name']}' is improving fastest "
+                f"(+{imp_segs[0]['change_pct']:.1f}% change)."
+                if imp_segs
+                else ""
+            )
+        )
+    elif calibration_gap:
+        last_means_all = [s["last_mean"] for s in segments_out]
+        verdict = "calibration_gap"
+        summary = (
+            f"Significant confidence gap across '{segment_column}' segments: "
+            f"'{most_confident}' averages "
+            f"{max(last_means_all):.2f} confidence while "
+            f"'{least_confident}' averages {min(last_means_all):.2f}. "
+            "The model may be less reliable for certain segments."
+        )
+    else:
+        verdict = "stable"
+        summary = (
+            f"Model confidence is stable across all {len(segments_out)} "
+            f"'{segment_column}' segments with minimal change."
+        )
+
+    return {
+        "segment_column": segment_column,
+        "problem_type": problem_type,
+        "metric": metric,
+        "n_segments": len(segments_out),
+        "n_samples": sum(s["n_samples"] for s in segments_out),
+        "segments": segments_out,
+        "most_confident_segment": most_confident,
+        "least_confident_segment": least_confident,
+        "calibration_gap": calibration_gap,
+        "verdict": verdict,
+        "summary": summary,
+        "n_days": n_days,
+    }
