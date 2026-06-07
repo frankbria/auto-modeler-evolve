@@ -2249,3 +2249,149 @@ def compute_production_threshold_optimizer(
         "verdict_label": verdict_label,
         "summary": summary,
     }
+
+
+def compute_cost_sensitive_threshold(
+    y_true: list,
+    y_proba_positive: list,
+    fp_cost: float,
+    fn_cost: float,
+    positive_label: str = "1",
+) -> dict:
+    """Compute the cost-optimal decision threshold for a binary classifier.
+
+    Derives the mathematically optimal threshold from asymmetric misclassification
+    costs:  threshold* = C(FP) / (C(FP) + C(FN))
+
+    A model predicting fraud where FP (false alarm) costs $10 and FN (missed
+    fraud) costs $500 should classify a transaction as fraud whenever the
+    predicted probability exceeds 10/(10+500) ≈ 2%, not 50%.
+
+    Args:
+        y_true: Binary integer labels (0 or 1), length n.
+        y_proba_positive: Predicted probabilities for the positive class, length n.
+        fp_cost: Business cost incurred per false positive prediction.
+        fn_cost: Business cost incurred per false negative prediction.
+        positive_label: Human-readable name for the positive class (display only).
+
+    Returns a dict with keys:
+        optimal_threshold, optimal_cost, default_cost, cost_savings_pct,
+        default_metrics, optimal_metrics, cost_ratio, verdict, summary,
+        suggested_class_weight, n_samples, positive_label.
+    """
+    if len(y_true) < 10:
+        raise ValueError(
+            "Need at least 10 samples for cost-sensitive threshold analysis."
+        )
+    if fp_cost <= 0 or fn_cost <= 0:
+        raise ValueError("Both fp_cost and fn_cost must be positive values.")
+
+    arr_true = [int(v) for v in y_true]
+    arr_proba = [float(v) for v in y_proba_positive]
+    n = len(arr_true)
+
+    unique_labels = sorted(set(arr_true))
+    if len(unique_labels) != 2 or unique_labels != [0, 1]:
+        raise ValueError(
+            "Cost-sensitive threshold analysis requires binary labels encoded as 0/1."
+        )
+
+    optimal_threshold = fp_cost / (fp_cost + fn_cost)
+    optimal_threshold = round(max(0.01, min(0.99, optimal_threshold)), 4)
+
+    def _eval_at_threshold(thr: float) -> dict:
+        tp = fp = tn = fn = 0
+        for true, prob in zip(arr_true, arr_proba):
+            pred = 1 if prob >= thr else 0
+            if pred == 1 and true == 1:
+                tp += 1
+            elif pred == 1 and true == 0:
+                fp += 1
+            elif pred == 0 and true == 1:
+                fn += 1
+            else:
+                tn += 1
+        total_cost = fp * fp_cost + fn * fn_cost
+        precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+        recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+        f1 = (
+            2 * precision * recall / (precision + recall)
+            if (precision + recall) > 0
+            else 0.0
+        )
+        accuracy = (tp + tn) / n if n > 0 else 0.0
+        return {
+            "threshold": round(thr, 4),
+            "tp": tp,
+            "fp": fp,
+            "tn": tn,
+            "fn": fn,
+            "expected_cost": round(total_cost, 2),
+            "precision": round(precision, 4),
+            "recall": round(recall, 4),
+            "f1": round(f1, 4),
+            "accuracy": round(accuracy, 4),
+        }
+
+    default_metrics = _eval_at_threshold(0.50)
+    optimal_metrics = _eval_at_threshold(optimal_threshold)
+
+    default_cost = default_metrics["expected_cost"]
+    optimal_cost = optimal_metrics["expected_cost"]
+
+    if default_cost > 0:
+        cost_savings_pct = round((default_cost - optimal_cost) / default_cost * 100, 1)
+    else:
+        cost_savings_pct = 0.0
+
+    cost_ratio = round(fn_cost / fp_cost, 2)
+
+    # Suggest a class weight for retraining (proportional to cost ratio)
+    suggested_class_weight = round(fn_cost / fp_cost, 2)
+
+    if cost_savings_pct > 5.0:
+        verdict = "threshold_change_recommended"
+        direction = (
+            "lower" if optimal_threshold < 0.50 else "raise"
+        )
+        verb = "Lowering" if optimal_threshold < 0.50 else "Raising"
+        thr_pct = int(optimal_threshold * 100)
+        summary = (
+            f"{verb} the decision threshold from 50% to {thr_pct}% "
+            f"reduces expected cost per {n} predictions from "
+            f"${default_cost:,.0f} to ${optimal_cost:,.0f} "
+            f"(saving {cost_savings_pct:.1f}%). "
+            f"Since each missed {positive_label} costs {fn_cost / fp_cost:.1f}× more than a false alarm, "
+            f"the model should call '{positive_label}' when confidence exceeds {thr_pct}%, not 50%."
+        )
+        _ = direction  # consumed in summary
+    else:
+        verdict = "default_near_optimal"
+        summary = (
+            f"The default 50% threshold is already near cost-optimal for these costs "
+            f"(FP=${fp_cost:,.0f}, FN=${fn_cost:,.0f}). "
+            f"Switching to threshold {int(optimal_threshold * 100)}% would change expected cost by only "
+            f"{abs(cost_savings_pct):.1f}%."
+        )
+
+    n_positive = sum(arr_true)
+    prevalence = round(n_positive / n, 4)
+
+    return {
+        "optimal_threshold": optimal_threshold,
+        "fp_cost": fp_cost,
+        "fn_cost": fn_cost,
+        "cost_ratio": cost_ratio,
+        "default_metrics": default_metrics,
+        "optimal_metrics": optimal_metrics,
+        "default_cost": default_cost,
+        "optimal_cost": optimal_cost,
+        "cost_savings_pct": cost_savings_pct,
+        "suggested_class_weight": suggested_class_weight,
+        "verdict": verdict,
+        "summary": summary,
+        "n_samples": n,
+        "n_positive": n_positive,
+        "prevalence": prevalence,
+        "positive_label": positive_label,
+    }

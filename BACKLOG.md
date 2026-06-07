@@ -53,6 +53,27 @@ the time is better spent on real features.
 
 ---
 
+## Day 88 (12:00) — Done
+
+**Track C: Cost-Sensitive Threshold Analysis** — complete.
+
+Closes the "false positives cost $10, false negatives cost $500 — what threshold should I use?" analyst gap. This is the first feature that speaks in *dollars* rather than F1/precision/recall. Distinct from `ThresholdAnalysisCard` (sweeps thresholds, no dollar costs), `PerClassThresholdCard` (optimizes per class by F1), and `custom_class_weights` (raw weight specification). The feature derives the mathematically optimal decision threshold (`threshold* = C(FP) / (C(FP) + C(FN))`) and computes expected cost at default (50%) vs optimal threshold.
+
+**What was built:**
+- `compute_cost_sensitive_threshold(y_true, y_proba_positive, fp_cost, fn_cost, positive_label)` pure function in `core/validator.py`: optimal threshold formula, binary evaluation at 0.5 and optimal threshold, cost savings %, suggested class weight (FN/FP ratio), verdict `threshold_change_recommended` / `default_near_optimal`
+- `_COST_SENSITIVE_PATTERNS` (8 NL variants) + `_extract_fp_fn_costs()` helper (labelled extraction + numeric fallback) + binary-only guard + handler in `chat.py`; emits `{type:"cost_sensitive_threshold"}` SSE event
+- `CostSensitiveThresholdCard`: FP/FN cost badges, optimal threshold tile with formula, side-by-side Default vs Cost-Optimal metrics rows, green savings banner, sky retrain hint with suggested class weight
+- Full TypeScript wiring: `CostSensitiveThresholdResult` + `CostSensitiveMetrics` types; `attachCostSensitiveThresholdToLastMessage` Zustand action; SSE handlers + card render in `page.tsx`
+
+**Tests:** 38 backend + 10 frontend = **48 new tests**. All passing. Baseline: 6010/3394 → **6048/3428**.
+
+**What's next:**
+- Track D: Prediction API Uptime Summary — ALREADY BUILT (check analyzer.py:7862, deploy.py:8089, chat.py:3773) — need fresh Track D idea
+- Track C: Comparative Model Improvement Plan — "create a ranked improvement roadmap for all my models" (Track B priority)
+- Track C: Automated Feature Engineering Suggestions via Chat — "what new features could I create from my date column?"
+
+---
+
 ## Day 87 (20:00) — Done
 
 **Track D: Deployment Segment Confidence Trend** — complete.

@@ -4840,6 +4840,83 @@ def _extract_throughput_n(message: str) -> int:
         return 1000
 
 
+_COST_SENSITIVE_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"(?:false\s+positive[s]?|fp[s]?)\s+cost[s]?\s+\$?\d|"
+    r"(?:false\s+negative[s]?|fn[s]?)\s+cost[s]?\s+\$?\d|"
+    r"misclassification\s+cost[s]?\s+(?:matrix|analysis|optimization)?\b|"
+    r"cost[- ]sensitive\s+(?:training|model|classifier|learning)\b|"
+    r"optimize\s+(?:the\s+)?(?:model|threshold|training)\s+(?:for|by)\s+cost\b|"
+    r"(?:false\s+alarms?\s+cost[s]?|missed\s+detections?\s+cost[s]?)\s+\$?\d|"
+    r"train\s+(?:the\s+)?model\s+with\s+(?:cost[s]?|misclassification\s+penalties?)\b|"
+    r"(?:FP|false\s+positive)\s+(?:penalty|weight|cost)\s+(?:is|=|:)?\s*\$?\d"
+    r")",
+    re.IGNORECASE,
+)
+
+_COST_VALUE_RE = re.compile(
+    r"\$\s*(\d[\d,]*(?:\.\d+)?)[km]?|\b(\d[\d,]*(?:\.\d+)?)\s*(?:dollars?|USD|bucks?)\b",
+    re.IGNORECASE,
+)
+
+
+def _extract_fp_fn_costs(message: str) -> tuple[float, float] | None:
+    """Extract (fp_cost, fn_cost) from natural language.
+
+    Handles patterns like:
+    - "false positives cost $10, false negatives cost $500"
+    - "FP=$100 FN=$5"
+    - "each false alarm costs $10, each missed detection costs $200"
+    Returns None if fewer than 2 cost values can be found.
+    """
+    msg_lower = message.lower()
+
+    # Try labelled extraction first: fp/fn or false positive/negative
+    fp_match = re.search(
+        r"(?:false\s+positive[s]?|fp[s]?|false\s+alarm[s]?)\s+(?:costs?\s+)?\$?\s*(\d[\d,]*(?:\.\d+)?)",
+        message,
+        re.IGNORECASE,
+    )
+    fn_match = re.search(
+        r"(?:false\s+negative[s]?|fn[s]?|missed?\s+detection[s]?)\s+(?:costs?\s+)?\$?\s*(\d[\d,]*(?:\.\d+)?)",
+        message,
+        re.IGNORECASE,
+    )
+    if fp_match and fn_match:
+        try:
+            return (
+                float(fp_match.group(1).replace(",", "")),
+                float(fn_match.group(1).replace(",", "")),
+            )
+        except ValueError:
+            pass
+
+    # Fallback: extract any two dollar/numeric values in order (first=FP, second=FN)
+    all_values = _COST_VALUE_RE.findall(message)
+    numeric_vals = []
+    for v1, v2 in all_values:
+        raw = v1 or v2
+        try:
+            numeric_vals.append(float(raw.replace(",", "")))
+        except ValueError:
+            continue
+    if len(numeric_vals) >= 2:
+        # If message mentions "FN" or "false negative" before "FP"/"false positive", swap
+        fn_pos = min(
+            (msg_lower.find(t) for t in ("false negative", "fn ", "missed") if t in msg_lower),
+            default=9999,
+        )
+        fp_pos = min(
+            (msg_lower.find(t) for t in ("false positive", "fp ", "false alarm") if t in msg_lower),
+            default=9999,
+        )
+        if fn_pos < fp_pos:
+            return (numeric_vals[1], numeric_vals[0])
+        return (numeric_vals[0], numeric_vals[1])
+
+    return None
+
+
 # Matches "Key = Value", "Key: Value", "Key is Value" patterns in a message
 _KV_PAIR_RE = re.compile(
     r"\b([A-Za-z_][\w\s]{0,30}?)\s*(?:=|:|\s+is\s+|\s+equals?\s+|\s+of\s+)\s*"
@@ -17467,6 +17544,111 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Confidence calibration trend is nice-to-have; never crash chat
 
+    # Cost-sensitive threshold analysis (FP/FN misclassification costs)
+    cost_sensitive_event: dict | None = None
+    if _COST_SENSITIVE_PATTERNS.search(body.message) and ctx["model_runs"]:
+        try:
+            import joblib as _jl_cst
+            import numpy as _np_cst
+
+            from core.validator import compute_cost_sensitive_threshold as _ccst
+
+            _cst_costs = _extract_fp_fn_costs(body.message)
+            if _cst_costs:
+                _cst_fp_cost, _cst_fn_cost = _cst_costs
+
+                _cst_done = [
+                    r
+                    for r in ctx["model_runs"]
+                    if r.status == "done" and r.model_path and Path(r.model_path).exists()
+                ]
+                _cst_cls_runs = []
+                _cst_fsets: dict[str, object] = {}
+                for _r_cst in _cst_done:
+                    _fset_cst = session.get(FeatureSet, _r_cst.feature_set_id)
+                    if (
+                        _fset_cst
+                        and (_fset_cst.problem_type or "regression") == "classification"
+                    ):
+                        _cst_cls_runs.append(_r_cst)
+                        _cst_fsets[_r_cst.id] = _fset_cst
+
+                if _cst_cls_runs:
+                    _cst_sel = (
+                        next((r for r in _cst_cls_runs if r.is_selected), None)
+                        or _cst_cls_runs[0]
+                    )
+                    _cst_fset = _cst_fsets[_cst_sel.id]
+                    _cst_ds = ctx["dataset"]
+                    if _cst_ds and Path(_cst_ds.file_path).exists():
+                        import pandas as _pd_cst
+
+                        from core.feature_engine import apply_transformations as _apply_cst
+                        from core.trainer import prepare_features as _pf_cst
+
+                        _cst_df = _pd_cst.read_csv(Path(_cst_ds.file_path))
+                        _cst_tfms = __import__("json").loads(_cst_fset.transformations or "[]")
+                        if _cst_tfms:
+                            _cst_df, _ = _apply_cst(_cst_df, _cst_tfms)
+
+                        _cst_target = _cst_fset.target_column
+                        _cst_feat_cols = [c for c in _cst_df.columns if c != _cst_target]
+                        _cst_X, _cst_y, _ = _pf_cst(
+                            _cst_df, _cst_feat_cols, _cst_target, "classification"
+                        )
+                        _cst_model = _jl_cst.load(_cst_sel.model_path)
+
+                        if hasattr(_cst_model, "predict_proba"):
+                            _cst_classes = [str(c) for c in _cst_model.classes_.tolist()]
+
+                            # Only support binary classification
+                            if len(_cst_classes) == 2:
+                                _cst_proba = _cst_model.predict_proba(_cst_X)
+                                # Positive class is index 1
+                                _cst_pos_proba = _cst_proba[:, 1].tolist()
+                                _cst_pos_label = _cst_classes[1]
+
+                                _cst_result = _ccst(
+                                    y_true=_np_cst.array(_cst_y).tolist(),
+                                    y_proba_positive=_cst_pos_proba,
+                                    fp_cost=_cst_fp_cost,
+                                    fn_cost=_cst_fn_cost,
+                                    positive_label=_cst_pos_label,
+                                )
+
+                                cost_sensitive_event = {
+                                    "model_run_id": _cst_sel.id,
+                                    "algorithm": _cst_sel.algorithm,
+                                    "target_col": _cst_target,
+                                    **_cst_result,
+                                }
+
+                                _cst_verdict = _cst_result["verdict"]
+                                _cst_savings = _cst_result["cost_savings_pct"]
+                                _cst_thr = int(_cst_result["optimal_threshold"] * 100)
+                                system_prompt += (
+                                    f"\n\n## Cost-Sensitive Threshold Analysis\n"
+                                    f"FP cost: ${_cst_fp_cost:,.0f} | FN cost: ${_cst_fn_cost:,.0f} | "
+                                    f"Cost ratio (FN/FP): {_cst_result['cost_ratio']:.1f}×. "
+                                    f"Optimal threshold: {_cst_thr}% "
+                                    f"(formula: FP_cost/(FP_cost+FN_cost)). "
+                                    f"Verdict: {_cst_verdict}. "
+                                    f"{_cst_result['summary']} "
+                                    + (
+                                        f"Expected cost savings: {_cst_savings:.1f}%. "
+                                        if _cst_savings > 0
+                                        else ""
+                                    )
+                                    + f"A CostSensitiveThresholdCard is shown. "
+                                    f"Explain what the optimal threshold means in plain English, "
+                                    f"why the cost ratio drives this recommendation, and what the "
+                                    f"analyst should do next (adjust threshold or retrain with "
+                                    f"class weight {_cst_result['suggested_class_weight']:.1f}×)."
+                                )
+
+        except Exception:  # noqa: BLE001
+            pass  # Cost-sensitive analysis is nice-to-have; never crash chat
+
     # Quota runway / capacity planning (forward-looking projection)
     quota_runway_event: dict | None = None
     if _QUOTA_RUNWAY_PATTERNS.search(body.message) and ctx["deployment"]:
@@ -20391,6 +20573,9 @@ def send_message(
 
         if segment_conf_trend_event:
             yield f"data: {json.dumps({'type': 'segment_conf_trend', 'segment_conf_trend': segment_conf_trend_event})}\n\n"
+
+        if cost_sensitive_event:
+            yield f"data: {json.dumps({'type': 'cost_sensitive_threshold', 'cost_sensitive_threshold': cost_sensitive_event})}\n\n"
 
         if uptime_event:
             yield f"data: {json.dumps({'type': 'uptime_summary', 'uptime_summary': uptime_event})}\n\n"

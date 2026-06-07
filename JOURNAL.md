@@ -1,5 +1,23 @@
 # Journal
 
+## Day 88 — 12:00 — Cost-Sensitive Threshold Analysis (Track C)
+
+**Feature shipped:** Cost-Sensitive Threshold Analysis — the first feature that speaks the analyst's language of *dollars*, not just metrics. Analysts can say "false positives cost $10, false negatives cost $500" and immediately receive a mathematically grounded recommendation: the optimal decision threshold, a comparison of expected costs at default vs optimal threshold, and a retrain hint showing what class weight to use.
+
+**Why it matters:** Every other threshold feature (ThresholdAnalysisCard, PerClassThresholdCard, ProductionThresholdOptimizerCard) optimizes for F1, precision, or recall — all unitless. But business analysts don't think in F1 scores; they think in dollar outcomes. Missed fraud costs more than false alarms. Missed churn costs more than over-surveying customers. This feature bridges that gap: given asymmetric costs, the optimal threshold is simply `threshold* = C(FP) / (C(FP) + C(FN))` — a formula that translates directly from domain expertise to model behavior.
+
+**What was built:**
+
+- `compute_cost_sensitive_threshold(y_true, y_proba_positive, fp_cost, fn_cost, positive_label)` pure function in `core/validator.py`: computes optimal threshold via the cost formula, evaluates binary classifier at both 0.5 and optimal threshold, reports TP/FP/TN/FN/cost for each, derives cost savings %, suggested class weight (fn_cost/fn_cost ratio), and verdict (`threshold_change_recommended` / `default_near_optimal`); validates binary 0/1 encoding, clamps threshold to [0.01, 0.99], requires ≥10 samples
+- `_COST_SENSITIVE_PATTERNS` (8 NL variants: "false positives cost $X", "FP costs $X FN costs $Y", "misclassification cost analysis", "cost-sensitive training", "optimize the model for cost", "false alarms cost $X", "train with misclassification penalties", "FP penalty is $X") + `_extract_fp_fn_costs()` helper that parses dollar values with labelled extraction (FP/FN sides resolved explicitly) and numeric fallback; handler in `chat.py` guarded by binary classification check (`len(_cst_classes) == 2`); emits `{type:"cost_sensitive_threshold"}` SSE event
+- `CostSensitiveThresholdCard` at `components/models/cost-sensitive-threshold-card.tsx`: FP/FN cost badges (amber/rose), optimal threshold tile with formula (`= $FP ÷ $(FP+FN)`), side-by-side MetricsRow components for Default(50%) vs Cost-Optimal, green savings banner when savings > 0%, sky retrain hint block showing suggested class weight and positive label
+- Full TypeScript wiring: `CostSensitiveThresholdResult` + `CostSensitiveMetrics` + `CostSensitiveVerdict` types; `attachCostSensitiveThresholdToLastMessage` Zustand action; both SSE streaming branches + card render in `page.tsx`
+- 38 backend unit tests (pure function formula, cost math, confusion matrix, verdict logic, validation errors, chat regex, extractor) — 38/38 pass; 10 frontend tests — 10/10 pass; frontend build clean; ruff clean
+
+**Test counts:** 6048 backend / 3428+1 frontend
+
+---
+
 ## Day 88 — 04:00 — Code Maintenance & Baseline Update
 
 Auto-formatted backend code (ruff + black) and updated performance baseline. No new features shipped this session; this was a maintenance pass. The codebase remains clean and ready for the next feature. Tests remain stable at ~9025 total (5758 backend + 3267 frontend).

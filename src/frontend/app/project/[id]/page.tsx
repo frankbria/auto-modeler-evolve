@@ -132,6 +132,7 @@ import { SegmentDriftCard } from "@/components/deploy/segment-drift-card"
 import { SegmentPredictionTrendCard } from "@/components/deploy/segment-prediction-trend-card"
 import { SegmentConfidenceTrendCard } from "@/components/deploy/segment-confidence-trend-card"
 import { ApiUptimeSummaryCard } from "@/components/deploy/api-uptime-summary-card"
+import { CostSensitiveThresholdCard } from "@/components/models/cost-sensitive-threshold-card"
 import { EnsembleRecommendationCard } from "@/components/models/ensemble-recommendation-card"
 import { TuningChatCard } from "@/components/models/tuning-chat-card"
 import { CvScoreDistributionCard } from "@/components/models/cv-score-distribution-card"
@@ -435,6 +436,7 @@ export default function ProjectWorkspace() {
     attachSegmentPredTrendToLastMessage,
     attachSegmentConfTrendToLastMessage,
     attachUptimeSummaryToLastMessage,
+    attachCostSensitiveThresholdToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -869,6 +871,8 @@ export default function ProjectWorkspace() {
                 attachSegmentConfTrendToLastMessage(json.segment_conf_trend as import("@/lib/types").SegmentConfTrendResult)
               } else if (json.type === "uptime_summary" && json.uptime_summary) {
                 attachUptimeSummaryToLastMessage(json.uptime_summary as import("@/lib/types").ApiUptimeSummaryResult)
+              } else if (json.type === "cost_sensitive_threshold" && json.cost_sensitive_threshold) {
+                attachCostSensitiveThresholdToLastMessage(json.cost_sensitive_threshold as import("@/lib/types").CostSensitiveThresholdResult)
               } else if (json.type === "onboarding_guide" && json.onboarding_guide) {
                 attachOnboardingGuideToLastMessage(json.onboarding_guide as import("@/lib/types").OnboardingGuideResult)
               } else if (json.type === "version_history" && json.version_history) {
@@ -1089,6 +1093,8 @@ export default function ProjectWorkspace() {
                 attachSegmentConfTrendToLastMessage(json.segment_conf_trend as import("@/lib/types").SegmentConfTrendResult)
               } else if (json.type === "uptime_summary" && json.uptime_summary) {
                 attachUptimeSummaryToLastMessage(json.uptime_summary as import("@/lib/types").ApiUptimeSummaryResult)
+              } else if (json.type === "cost_sensitive_threshold" && json.cost_sensitive_threshold) {
+                attachCostSensitiveThresholdToLastMessage(json.cost_sensitive_threshold as import("@/lib/types").CostSensitiveThresholdResult)
               } else if (json.type === "done") {
                 setStreaming(false)
               }
@@ -1270,6 +1276,7 @@ export default function ProjectWorkspace() {
     attachSegmentPredTrendToLastMessage,
     attachSegmentConfTrendToLastMessage,
     attachUptimeSummaryToLastMessage,
+    attachCostSensitiveThresholdToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -2036,6 +2043,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.uptime_summary && (
                       <ApiUptimeSummaryCard result={msg.uptime_summary} />
+                    )}
+                    {msg.cost_sensitive_threshold && (
+                      <CostSensitiveThresholdCard result={msg.cost_sensitive_threshold} />
                     )}
                   </div>
                 </div>

@@ -569,6 +569,7 @@ export interface ChatMessage {
   segment_pred_trend?: SegmentPredTrendResult
   segment_conf_trend?: SegmentConfTrendResult
   uptime_summary?: ApiUptimeSummaryResult
+  cost_sensitive_threshold?: CostSensitiveThresholdResult
 }
 
 export interface RollbackVersionEntry {
@@ -4758,4 +4759,47 @@ export interface ApiUptimeSummaryResult {
   verdict: ApiUptimeVerdict
   note: string
   summary: string
+}
+
+// ---------------------------------------------------------------------------
+// Cost-Sensitive Threshold
+// ---------------------------------------------------------------------------
+
+export type CostSensitiveVerdict =
+  | 'threshold_change_recommended'
+  | 'default_near_optimal'
+
+export interface CostSensitiveMetrics {
+  threshold: number
+  tp: number
+  fp: number
+  tn: number
+  fn: number
+  expected_cost: number
+  precision: number
+  recall: number
+  f1: number
+  accuracy: number
+}
+
+export interface CostSensitiveThresholdResult {
+  model_run_id: string
+  algorithm: string
+  target_col: string
+  optimal_threshold: number
+  fp_cost: number
+  fn_cost: number
+  cost_ratio: number
+  default_metrics: CostSensitiveMetrics
+  optimal_metrics: CostSensitiveMetrics
+  default_cost: number
+  optimal_cost: number
+  cost_savings_pct: number
+  suggested_class_weight: number
+  verdict: CostSensitiveVerdict
+  summary: string
+  n_samples: number
+  n_positive: number
+  prevalence: number
+  positive_label: string
 }
