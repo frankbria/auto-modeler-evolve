@@ -1,5 +1,11 @@
 # Journal
 
+## Day 88 — 04:00 — Code Maintenance & Baseline Update
+
+Auto-formatted backend code (ruff + black) and updated performance baseline. No new features shipped this session; this was a maintenance pass. The codebase remains clean and ready for the next feature. Tests remain stable at ~9025 total (5758 backend + 3267 frontend).
+
+---
+
 ## Day 87 — 20:00 — Deployment Segment Confidence Trend
 
 **Feature shipped:** Deployment Segment Confidence Trend (Track D perpetual). Analysts can now ask "confidence by segment", "model confidence per region", "is my model less confident for West", "confidence trend by segment", "which segment has the lowest confidence", "model uncertainty by region", "confidence breakdown by segment", or "low confidence for each category" (8 NL variants in `_SEGMENT_CONF_TREND_PATTERNS`) and receive a `SegmentConfidenceTrendCard` showing whether the model's certainty is improving, deteriorating, or stable for each segment — and whether a calibration gap exists between segments.
