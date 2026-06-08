@@ -1,5 +1,28 @@
 # Journal
 
+## Day 88 — 20:00 — Prediction Low-Activity Alert via Chat (Track D)
+
+**Feature shipped:** Prediction Low-Activity Alert — a proactive ops sentinel that catches the invisible failure mode no other monitoring feature addresses: a completely silent endpoint. When an upstream CRM, dashboard, or pipeline stops calling the model, AutoModeler now knows and tells someone.
+
+**Why it matters:** Every existing alert in AutoModeler fires when something *bad happens*: accuracy drops, latency spikes, drift emerges, quota is hit. But the most common production failure in practice is that *nothing* happens at all — the integration that was calling the model breaks silently, requests stop arriving, and nobody knows until a user asks "why isn't the model updating?" A low-activity alert fills exactly that gap. It fires when the daily prediction count falls *below* a configured floor, giving analysts a fast notification that their integration may be broken rather than discovering it weeks later from a business report.
+
+**What was built:**
+
+- `EVENT_LOW_ACTIVITY = "low_activity"` constant added to `core/webhook.py` `ALL_EVENTS` — the tenth webhook event type in AutoModeler
+- `Deployment.low_activity_threshold_per_day: Optional[int]` + `low_activity_alert_last_fired_at: Optional[datetime]` fields on the model
+- `_check_and_fire_low_activity_alert(deployment_id)` in `api/deploy.py`: counts today's PredictionLog entries (midnight UTC cutoff), skips when count ≥ threshold or within 24-hour cooldown, stamps `low_activity_alert_last_fired_at`, dispatches `low_activity` webhook with payload `{deployment_id, daily_prediction_count, threshold_per_day, message}`
+- Wired into `_scheduler_loop()` in `core/scheduler.py` (runs every 60s alongside batch jobs + weekly digests): queries all active deployments with `low_activity_threshold_per_day IS NOT NULL` and calls the check function for each
+- `PUT /api/deploy/{id}/low-activity-alert` (enable with threshold ≥ 1, null to disable) + `GET /api/deploy/{id}/low-activity-alert-status` REST endpoints
+- `_LOW_ACTIVITY_ALERT_PATTERNS` (8 NL variants) + `_DISABLE_LOW_ACTIVITY_ALERT_RE` / `_STATUS_LOW_ACTIVITY_ALERT_RE` / `_LOW_ACTIVITY_THRESHOLD_RE` in `chat.py`; chat handler enables/disables/shows status; emits `{type:"low_activity_alert_config"}` SSE event
+- `LowActivityAlertCard` at `components/deploy/low-activity-alert-card.tsx`: sky border, 🔕 icon, Enabled/Disabled badge, threshold description with 📉 icon, cooldown note, last-fired timestamp, "No alerts fired yet" placeholder, footer help text
+- Full TypeScript wiring: `LowActivityAlertConfig` interface; `low_activity_alert_config?` on `ChatMessage`; `attachLowActivityAlertConfigToLastMessage` Zustand action; SSE handlers + card render in `project/[id]/page.tsx`
+
+**Tests:** 20 backend (3 constants + 3 model field assertions + 6 check-function unit tests + 4 REST integration + 4 regex/NL) + 16 frontend (13 card component + 3 store action) = **36 new tests**. All passing. Backend lint: clean. Frontend build + TypeScript: clean.
+
+**Baseline:** 6048 backend / 3428 frontend → **6068 backend / 3444 frontend** (+20 / +16).
+
+---
+
 ## Day 88 — 12:00 — Cost-Sensitive Threshold Analysis (Track C)
 
 **Feature shipped:** Cost-Sensitive Threshold Analysis — the first feature that speaks the analyst's language of *dollars*, not just metrics. Analysts can say "false positives cost $10, false negatives cost $500" and immediately receive a mathematically grounded recommendation: the optimal decision threshold, a comparison of expected costs at default vs optimal threshold, and a retrain hint showing what class weight to use.
