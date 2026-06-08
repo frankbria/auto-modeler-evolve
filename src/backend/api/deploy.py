@@ -2726,9 +2726,7 @@ def set_accuracy_alert(
             + (
                 f"drops below {thr:.0%}."
                 if problem_type == "classification" and thr is not None
-                else f"exceeds {thr:.1f}%."
-                if thr is not None
-                else ""
+                else f"exceeds {thr:.1f}%." if thr is not None else ""
             )
             if threshold_set
             else "Accuracy alert disabled."
@@ -6501,9 +6499,7 @@ def get_model_status_report(
                 else (
                     "good"
                     if feedback_accuracy >= 0.8
-                    else "moderate"
-                    if feedback_accuracy >= 0.6
-                    else "needs attention"
+                    else "moderate" if feedback_accuracy >= 0.6 else "needs attention"
                 )
             )
     except Exception:  # noqa: BLE001
@@ -8173,7 +8169,9 @@ def _check_and_fire_latency_alert(deployment_id: str) -> None:
                 .limit(_LATENCY_ALERT_SAMPLE_SIZE)
             ).all()
 
-            latencies = sorted([log.response_ms for log in _logs if log.response_ms is not None])
+            latencies = sorted(
+                [log.response_ms for log in _logs if log.response_ms is not None]
+            )
             if not latencies:
                 return
 
@@ -8230,9 +8228,7 @@ def set_latency_alert(
         raise HTTPException(status_code=404, detail="Deployment not found")
 
     if body.threshold_ms is not None and body.threshold_ms < 1:
-        raise HTTPException(
-            status_code=400, detail="threshold_ms must be at least 1"
-        )
+        raise HTTPException(status_code=400, detail="threshold_ms must be at least 1")
 
     deployment.latency_alert_threshold_ms = body.threshold_ms
     if body.threshold_ms is None:
@@ -8247,9 +8243,7 @@ def set_latency_alert(
         "deployment_id": deployment_id,
         "latency_alert_enabled": threshold is not None,
         "threshold_ms": threshold,
-        "latency_alert_last_fired_at": (
-            last_fired.isoformat() if last_fired else None
-        ),
+        "latency_alert_last_fired_at": (last_fired.isoformat() if last_fired else None),
         "cooldown_hours": _LATENCY_ALERT_COOLDOWN_HOURS,
         "summary": (
             f"Latency alert enabled: webhook fires when p95 latency exceeds {threshold} ms."
@@ -8275,9 +8269,7 @@ def get_latency_alert_status(
         "deployment_id": deployment_id,
         "latency_alert_enabled": threshold is not None,
         "threshold_ms": threshold,
-        "latency_alert_last_fired_at": (
-            last_fired.isoformat() if last_fired else None
-        ),
+        "latency_alert_last_fired_at": (last_fired.isoformat() if last_fired else None),
         "cooldown_hours": _LATENCY_ALERT_COOLDOWN_HOURS,
         "summary": (
             f"Latency alerting is enabled. Webhook fires when p95 exceeds {threshold} ms."
@@ -8500,9 +8492,11 @@ def get_segment_confidence_trend(
             "deployment_id": deployment_id,
             "segment_column": None,
             "problem_type": dep.problem_type or "regression",
-            "metric": "confidence"
-            if (dep.problem_type or "") == "classification"
-            else "prediction_spread",
+            "metric": (
+                "confidence"
+                if (dep.problem_type or "") == "classification"
+                else "prediction_spread"
+            ),
             "n_segments": 0,
             "n_samples": 0,
             "segments": [],

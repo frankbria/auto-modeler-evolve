@@ -18,7 +18,6 @@ from main import app
 from models.deployment import Deployment
 from models.project import Project
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

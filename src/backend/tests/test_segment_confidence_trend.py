@@ -8,7 +8,6 @@ import pytest
 
 from core.analyzer import compute_segment_confidence_trend
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -319,7 +318,6 @@ def test_sorted_by_abs_change_desc():
 # ---------------------------------------------------------------------------
 
 from api.chat import _SEGMENT_CONF_TREND_PATTERNS as _PAT  # noqa: E402
-
 
 POSITIVE_CASES = [
     "confidence by segment",

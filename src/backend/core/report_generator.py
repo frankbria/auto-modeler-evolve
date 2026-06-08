@@ -364,8 +364,7 @@ def generate_model_card_html(
             imp = f.get("importance", 0)
             pct = round(imp * 100, 1)
             bar_pct = round((imp / max_imp) * 100)
-            rows.append(
-                f"""<tr>
+            rows.append(f"""<tr>
                   <td style="padding:6px 8px;font-size:0.875rem">{f.get("feature", "")}</td>
                   <td style="padding:6px 8px;font-size:0.875rem">
                     <div style="background:#e0e7ff;border-radius:3px;height:12px;width:100%">
@@ -373,8 +372,7 @@ def generate_model_card_html(
                     </div>
                   </td>
                   <td style="padding:6px 8px;font-size:0.875rem;text-align:right">{pct}%</td>
-                </tr>"""
-            )
+                </tr>""")
         feat_rows_html = "".join(rows)
     feat_section = (
         f"""<h2 style="font-size:1rem;font-weight:600;color:#1e40af;margin:1.5rem 0 0.5rem">
@@ -405,9 +403,7 @@ def generate_model_card_html(
         score_color = (
             "#059669"
             if brier_score < 0.1
-            else "#d97706"
-            if brier_score < 0.2
-            else "#dc2626"
+            else "#d97706" if brier_score < 0.2 else "#dc2626"
         )
         cal_html = f"""<h2 style="font-size:1rem;font-weight:600;color:#1e40af;margin:1.5rem 0 0.5rem">
             Calibration
@@ -653,8 +649,7 @@ def generate_model_status_report_html(
             severity = a.get("severity", "warning")
             badge_color = "#dc2626" if severity == "critical" else "#d97706"
             badge_bg = "#fee2e2" if severity == "critical" else "#fef3c7"
-            rows.append(
-                f"""<tr>
+            rows.append(f"""<tr>
               <td style="padding:8px 12px;font-size:0.875rem">
                 <span style="background:{badge_bg};color:{badge_color};padding:2px 8px;border-radius:12px;font-size:0.75rem;font-weight:600">
                   {html_escape(severity.capitalize())}
@@ -662,8 +657,7 @@ def generate_model_status_report_html(
               </td>
               <td style="padding:8px 12px;font-size:0.875rem;color:#374151">{html_escape(a.get("message", ""))}</td>
               <td style="padding:8px 12px;font-size:0.875rem;color:#6b7280">{html_escape(a.get("recommendation", ""))}</td>
-            </tr>"""
-            )
+            </tr>""")
         alert_rows_html = "".join(rows)
         alerts_section = f"""<h2 style="font-size:1rem;font-weight:600;color:#92400e;margin:1.5rem 0 0.5rem">&#9888; Active Alerts</h2>
         <table style="width:100%;border-collapse:collapse;border:1px solid #fef3c7;border-radius:6px">

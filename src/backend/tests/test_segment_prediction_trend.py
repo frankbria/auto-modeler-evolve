@@ -8,7 +8,6 @@ import pytest
 
 from core.analyzer import compute_segment_prediction_trend
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -275,7 +274,6 @@ def test_sorted_by_abs_change():
 # ---------------------------------------------------------------------------
 
 from api.chat import _SEGMENT_PRED_TREND_PATTERNS as _PAT  # noqa: E402
-
 
 POSITIVE_CASES = [
     "prediction trend by segment",

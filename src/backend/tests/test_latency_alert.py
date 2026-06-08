@@ -346,7 +346,13 @@ def test_check_latency_alert_payload_contains_required_keys(db_session):
 
     assert len(payloads) == 1
     payload = payloads[0]
-    for key in ("deployment_id", "p95_latency_ms", "threshold_ms", "sample_size", "message"):
+    for key in (
+        "deployment_id",
+        "p95_latency_ms",
+        "threshold_ms",
+        "sample_size",
+        "message",
+    ):
         assert key in payload, f"Missing key: {key}"
 
 
@@ -484,9 +490,7 @@ def test_latency_alert_patterns_no_false_positives():
         "set up a low activity alert",
     ]
     for msg in non_matches:
-        assert not _LATENCY_ALERT_PATTERNS.search(msg), (
-            f"Should NOT match: {msg!r}"
-        )
+        assert not _LATENCY_ALERT_PATTERNS.search(msg), f"Should NOT match: {msg!r}"
 
 
 def test_disable_latency_alert_re():

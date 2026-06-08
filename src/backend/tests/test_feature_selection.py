@@ -457,6 +457,6 @@ class TestFeatureSelectionChatPattern:
             "what is the accuracy",
         ]
         for phrase in non_matches:
-            assert not _FEATURE_SEL_PATTERNS.search(phrase), (
-                f"Should NOT match: {phrase!r}"
-            )
+            assert not _FEATURE_SEL_PATTERNS.search(
+                phrase
+            ), f"Should NOT match: {phrase!r}"
