@@ -149,7 +149,7 @@ def test_uptime_degraded_single_day():
 
 def test_uptime_degraded_day_status():
     # Today's predictions all have high latency
-    logs = _make_log_dicts([0.1, 0.2, 0.3], [3000.0, 3000.0, 3000.0])
+    logs = _make_log_dicts([0.01, 0.02, 0.03], [3000.0, 3000.0, 3000.0])
     result = compute_api_uptime_summary(logs, n_days=7)
     today = datetime.utcnow().strftime("%Y-%m-%d")
     today_stat = next((s for s in result["daily_stats"] if s["date"] == today), None)

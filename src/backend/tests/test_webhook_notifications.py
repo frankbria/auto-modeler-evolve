@@ -391,7 +391,9 @@ def test_all_events_constant_has_expected_entries():
         EVENT_ACCURACY_ALERT,
         EVENT_BATCH_COMPLETE,
         EVENT_DRIFT_DETECTED,
+        EVENT_FEATURE_DRIFT,
         EVENT_HEALTH_DEGRADED,
+        EVENT_LOW_ACTIVITY,
         EVENT_PREDICTION_ALERT,
         EVENT_QUOTA_ALERT,
         EVENT_SLA_EXCEEDED,
@@ -401,9 +403,11 @@ def test_all_events_constant_has_expected_entries():
     assert EVENT_ACCURACY_ALERT in ALL_EVENTS
     assert EVENT_BATCH_COMPLETE in ALL_EVENTS
     assert EVENT_DRIFT_DETECTED in ALL_EVENTS
+    assert EVENT_FEATURE_DRIFT in ALL_EVENTS
     assert EVENT_HEALTH_DEGRADED in ALL_EVENTS
+    assert EVENT_LOW_ACTIVITY in ALL_EVENTS
     assert EVENT_QUOTA_ALERT in ALL_EVENTS
     assert EVENT_PREDICTION_ALERT in ALL_EVENTS
     assert EVENT_SLA_EXCEEDED in ALL_EVENTS
     assert EVENT_WEEKLY_DIGEST in ALL_EVENTS
-    assert len(ALL_EVENTS) == 9
+    assert len(ALL_EVENTS) == 10
