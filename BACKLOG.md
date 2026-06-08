@@ -53,6 +53,14 @@ the time is better spent on real features.
 
 ---
 
+## Day 88 (20:00) — Done
+
+**Track D: Prediction Low-Activity Alert via Chat** — complete.
+
+Closes the silent integration failure gap: when an upstream CRM, pipeline, or dashboard stops calling the model endpoint, no other alert fires because nothing bad actively *happens*. The low-activity webhook fires when daily predictions drop below a configured floor, giving analysts a fast notification that their integration may be broken. Features: `EVENT_LOW_ACTIVITY` webhook constant, `Deployment.low_activity_threshold_per_day` + `low_activity_alert_last_fired_at` fields, `_check_and_fire_low_activity_alert()` with midnight-UTC cutoff and 24h cooldown, scheduler loop wiring (60s), REST endpoints (PUT enable/disable, GET status), chat handler with 8 NL variants, `LowActivityAlertCard` frontend component. 36 new tests (20 backend + 16 frontend).
+
+---
+
 ## Day 88 (12:00) — Done
 
 **Track C: Cost-Sensitive Threshold Analysis** — complete.
