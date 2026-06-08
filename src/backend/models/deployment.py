@@ -61,3 +61,6 @@ class Deployment(SQLModel, table=True):
     # Low-activity alert: fire webhook when daily predictions drop below threshold
     low_activity_threshold_per_day: Optional[int] = None  # None = disabled
     low_activity_alert_last_fired_at: Optional[datetime] = None
+    # High-activity burst alert: fire webhook when hourly predictions exceed threshold
+    high_activity_threshold_per_hour: Optional[int] = None  # None = disabled
+    high_activity_burst_last_fired_at: Optional[datetime] = None

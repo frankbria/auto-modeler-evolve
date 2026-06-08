@@ -129,6 +129,7 @@ import { DeploymentThroughputCard } from "@/components/deploy/deployment-through
 import { DriftImportanceCard } from "@/components/deploy/drift-importance-card"
 import { FeatureDriftAlertCard } from "@/components/deploy/feature-drift-alert-card"
 import { LowActivityAlertCard } from "@/components/deploy/low-activity-alert-card"
+import { HighActivityBurstCard } from "@/components/deploy/high-activity-burst-card"
 import { SegmentDriftCard } from "@/components/deploy/segment-drift-card"
 import { SegmentPredictionTrendCard } from "@/components/deploy/segment-prediction-trend-card"
 import { SegmentConfidenceTrendCard } from "@/components/deploy/segment-confidence-trend-card"
@@ -434,6 +435,7 @@ export default function ProjectWorkspace() {
     attachDriftImportanceRankingToLastMessage,
     attachFeatureDriftAlertConfigToLastMessage,
     attachLowActivityAlertConfigToLastMessage,
+    attachHighActivityBurstConfigToLastMessage,
     attachSegmentDriftToLastMessage,
     attachSegmentPredTrendToLastMessage,
     attachSegmentConfTrendToLastMessage,
@@ -867,6 +869,8 @@ export default function ProjectWorkspace() {
                 attachFeatureDriftAlertConfigToLastMessage(json.feature_drift_alert_config as import("@/lib/types").FeatureDriftAlertConfig)
               } else if (json.type === "low_activity_alert_config" && json.low_activity_alert_config) {
                 attachLowActivityAlertConfigToLastMessage(json.low_activity_alert_config as import("@/lib/types").LowActivityAlertConfig)
+              } else if (json.type === "high_activity_burst_config" && json.high_activity_burst_config) {
+                attachHighActivityBurstConfigToLastMessage(json.high_activity_burst_config as import("@/lib/types").HighActivityBurstConfig)
               } else if (json.type === "segment_drift" && json.segment_drift) {
                 attachSegmentDriftToLastMessage(json.segment_drift as import("@/lib/types").SegmentDriftResult)
               } else if (json.type === "segment_pred_trend" && json.segment_pred_trend) {
@@ -1091,6 +1095,8 @@ export default function ProjectWorkspace() {
                 attachFeatureDriftAlertConfigToLastMessage(json.feature_drift_alert_config as import("@/lib/types").FeatureDriftAlertConfig)
               } else if (json.type === "low_activity_alert_config" && json.low_activity_alert_config) {
                 attachLowActivityAlertConfigToLastMessage(json.low_activity_alert_config as import("@/lib/types").LowActivityAlertConfig)
+              } else if (json.type === "high_activity_burst_config" && json.high_activity_burst_config) {
+                attachHighActivityBurstConfigToLastMessage(json.high_activity_burst_config as import("@/lib/types").HighActivityBurstConfig)
               } else if (json.type === "segment_drift" && json.segment_drift) {
                 attachSegmentDriftToLastMessage(json.segment_drift as import("@/lib/types").SegmentDriftResult)
               } else if (json.type === "segment_pred_trend" && json.segment_pred_trend) {
@@ -1279,6 +1285,7 @@ export default function ProjectWorkspace() {
     attachDriftImportanceRankingToLastMessage,
     attachFeatureDriftAlertConfigToLastMessage,
     attachLowActivityAlertConfigToLastMessage,
+    attachHighActivityBurstConfigToLastMessage,
     attachSegmentDriftToLastMessage,
     attachSegmentPredTrendToLastMessage,
     attachSegmentConfTrendToLastMessage,
@@ -2041,6 +2048,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.low_activity_alert_config && (
                       <LowActivityAlertCard config={msg.low_activity_alert_config} />
+                    )}
+                    {msg.high_activity_burst_config && (
+                      <HighActivityBurstCard config={msg.high_activity_burst_config} />
                     )}
                     {msg.segment_drift && (
                       <SegmentDriftCard result={msg.segment_drift} />

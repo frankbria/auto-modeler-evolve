@@ -42,6 +42,10 @@ def _apply_migrations():
         ("project", "last_low_accuracy_guidance_run_count", "INTEGER"),
         ("deployment", "feature_drift_alert_enabled", "INTEGER NOT NULL DEFAULT 0"),
         ("deployment", "feature_drift_alert_last_fired_at", "TEXT"),
+        ("deployment", "low_activity_threshold_per_day", "INTEGER"),
+        ("deployment", "low_activity_alert_last_fired_at", "TEXT"),
+        ("deployment", "high_activity_threshold_per_hour", "INTEGER"),
+        ("deployment", "high_activity_burst_last_fired_at", "TEXT"),
     ]
     with engine.connect() as conn:
         for table, col, definition in migrations:

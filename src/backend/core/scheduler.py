@@ -416,6 +416,15 @@ def _scheduler_loop() -> None:
                 ).all()
                 low_activity_dep_ids = [d.id for d in active_deps]
 
+                # Collect deployments with high-activity burst alerts configured
+                burst_deps = session.exec(
+                    select(Deployment).where(
+                        Deployment.is_active == True,  # noqa: E712
+                        Deployment.high_activity_threshold_per_hour != None,  # noqa: E711
+                    )
+                ).all()
+                high_activity_dep_ids = [d.id for d in burst_deps]
+
             for sid in due_ids:
                 try:
                     _run_job(sid)
@@ -441,6 +450,16 @@ def _scheduler_loop() -> None:
                 except Exception as exc:
                     logger.error(
                         "Scheduler: low-activity check %s raised: %s", dep_id, exc
+                    )
+
+            for dep_id in high_activity_dep_ids:
+                try:
+                    from api.deploy import _check_and_fire_high_activity_burst
+
+                    _check_and_fire_high_activity_burst(dep_id)
+                except Exception as exc:
+                    logger.error(
+                        "Scheduler: high-activity burst check %s raised: %s", dep_id, exc
                     )
 
         except Exception as exc:

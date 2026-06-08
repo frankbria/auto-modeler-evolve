@@ -3748,6 +3748,38 @@ _LOW_ACTIVITY_THRESHOLD_RE = re.compile(
     re.IGNORECASE,
 )
 
+# High-activity burst alert: notify when hourly prediction count EXCEEDS a ceiling.
+# Symmetric counterpart to _LOW_ACTIVITY_ALERT_PATTERNS (which fires when daily count DROPS).
+# Distinct from rate limiting (which blocks requests); this is a passive notification only.
+_HIGH_ACTIVITY_BURST_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"alert\s+(?:me\s+)?(?:if|when)\s+(?:my\s+)?(?:(?:model|deployment|endpoint)\s+)?(?:gets?|receives?)\s+(?:more\s+than|over|above)\b|"
+    r"(?:set(?:\s+up)?|configure|add|enable|turn\s+on)\s+(?:a\s+)?(?:high[\s-]?activity|traffic\s+burst|prediction\s+spike|burst)\s+alert\b|"
+    r"notify\s+(?:me\s+)?(?:if|when)\s+(?:my\s+)?(?:endpoint|deployment|model)\s+(?:gets?\s+)?(?:too\s+many|a\s+burst\s+of|a\s+spike\s+in)\s+(?:calls?|requests?|predictions?)\b|"
+    r"alert\s+(?:me\s+)?(?:if|when)\s+(?:hourly\s+)?predictions?\s+(?:exceed|go\s+above|spike\s+above|surpass)\b|"
+    r"(?:maximum|max)\s+prediction\s+(?:count\s+)?(?:alert|threshold|notification)\b|"
+    r"(?:disable|remove|turn\s+off|clear)\s+(?:the\s+)?(?:high[\s-]?activity|burst)\s+alert\b|"
+    r"(?:show|check|get|status\s+of)\s+(?:my\s+)?(?:high[\s-]?activity|burst)\s+(?:alert|threshold|setting)\b|"
+    r"(?:alert|warn|notify)\s+(?:me\s+)?when\s+(?:my\s+)?(?:model|endpoint)\s+(?:gets?\s+)?(?:flooded|overwhelmed|too\s+many\s+(?:calls?|requests?)|a\s+traffic\s+burst)\b"
+    r")",
+    re.IGNORECASE,
+)
+
+_DISABLE_HIGH_ACTIVITY_BURST_RE = re.compile(
+    r"\b(?:disable|remove|turn\s+off|clear)\s+(?:the\s+)?(?:high[\s-]?activity|burst)\s+alert",
+    re.IGNORECASE,
+)
+
+_STATUS_HIGH_ACTIVITY_BURST_RE = re.compile(
+    r"\b(?:show|check|get|status\s+of)\s+(?:my\s+)?(?:high[\s-]?activity|burst)\s+(?:alert|threshold|setting)",
+    re.IGNORECASE,
+)
+
+_HIGH_ACTIVITY_THRESHOLD_RE = re.compile(
+    r"\b(\d+)\s*(?:predictions?|calls?|requests?)?\s*(?:per\s+hour|(?:an?|each)\s+hour|hourly)\b",
+    re.IGNORECASE,
+)
+
 _SEGMENT_DRIFT_PATTERNS = re.compile(
     r"(?i)(?:"
     r"(?:is\s+(?:my\s+)?(?:model|drift)\s+(?:drifting|worse)\s+(?:more\s+)?(?:in|for)\s+\w+)\b|"
@@ -17375,6 +17407,74 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Low-activity alert config is nice-to-have; never crash chat
 
+    # High-activity burst alert — "alert me if my model gets more than N predictions per hour"
+    # Symmetric counterpart to low_activity_alert: fires when count EXCEEDS a ceiling.
+    # Distinct from rate limiting (which blocks requests); this only notifies.
+    high_activity_burst_event: dict | None = None
+    if _HIGH_ACTIVITY_BURST_PATTERNS.search(body.message) and ctx["deployment"]:
+        try:
+            _ha_dep = ctx["deployment"]
+            _ha_dep_id = _ha_dep.id if hasattr(_ha_dep, "id") else str(_ha_dep)
+            _ha_dep_obj = session.get(Deployment, _ha_dep_id)
+
+            if _ha_dep_obj:
+                _disable_ha = bool(_DISABLE_HIGH_ACTIVITY_BURST_RE.search(body.message))
+                _status_ha = bool(_STATUS_HIGH_ACTIVITY_BURST_RE.search(body.message))
+                _ha_thr_m = _HIGH_ACTIVITY_THRESHOLD_RE.search(body.message)
+                _ha_new_threshold: int | None = int(_ha_thr_m.group(1)) if _ha_thr_m else None
+
+                if _disable_ha:
+                    _ha_dep_obj.high_activity_threshold_per_hour = None
+                    _ha_dep_obj.high_activity_burst_last_fired_at = None
+                    session.add(_ha_dep_obj)
+                    session.commit()
+                    session.refresh(_ha_dep_obj)
+                elif (
+                    not _status_ha
+                    and _ha_new_threshold is not None
+                    and _ha_new_threshold >= 1
+                ):
+                    _ha_dep_obj.high_activity_threshold_per_hour = _ha_new_threshold
+                    session.add(_ha_dep_obj)
+                    session.commit()
+                    session.refresh(_ha_dep_obj)
+                elif not _status_ha and _ha_new_threshold is None:
+                    # Enable intent without explicit threshold — prompt user to specify
+                    pass
+
+                _ha_threshold = getattr(
+                    _ha_dep_obj, "high_activity_threshold_per_hour", None
+                )
+                _ha_last = getattr(
+                    _ha_dep_obj, "high_activity_burst_last_fired_at", None
+                )
+                high_activity_burst_event = {
+                    "deployment_id": _ha_dep_id,
+                    "high_activity_burst_enabled": _ha_threshold is not None,
+                    "threshold_per_hour": _ha_threshold,
+                    "high_activity_burst_last_fired_at": (
+                        _ha_last.isoformat() if _ha_last else None
+                    ),
+                    "cooldown_hours": 1,
+                    "summary": (
+                        f"High-activity burst alert enabled: webhook fires when hourly predictions exceed {_ha_threshold}."
+                        if _ha_threshold is not None
+                        else "High-activity burst alert is not configured. Specify a maximum hourly prediction count to enable it."
+                    ),
+                }
+                system_prompt += (
+                    f"\n\n## High-Activity Burst Alert Configuration\n"
+                    f"{high_activity_burst_event['summary']} "
+                    "Tell the analyst the current setting in plain English. "
+                    "If enabled, explain that a high_activity_burst webhook fires (max once per hour) "
+                    "when the hourly prediction count exceeds their configured ceiling. "
+                    "This helps detect runaway loops, API key abuse, or unexpected traffic spikes. "
+                    "If not yet configured, ask them what maximum hourly prediction count they expect. "
+                    "Remind them that webhooks must be registered to receive notifications."
+                )
+        except Exception:  # noqa: BLE001
+            pass  # High-activity burst alert config is nice-to-have; never crash chat
+
     # Segment drift detection — "is drift concentrated in a specific region/group?"
     # Distinct from: _DRIFT_IMPORTANCE_PATTERNS (ranks features by importance × drift),
     # _COVARIATE_DRIFT_PATTERNS (binary per-feature OOR alert), _DRIFT_PATTERNS (output drift).
@@ -20682,6 +20782,9 @@ def send_message(
 
         if low_activity_alert_event:
             yield f"data: {json.dumps({'type': 'low_activity_alert_config', 'low_activity_alert_config': low_activity_alert_event})}\n\n"
+
+        if high_activity_burst_event:
+            yield f"data: {json.dumps({'type': 'high_activity_burst_config', 'high_activity_burst_config': high_activity_burst_event})}\n\n"
 
         if segment_drift_event:
             yield f"data: {json.dumps({'type': 'segment_drift', 'segment_drift': segment_drift_event})}\n\n"

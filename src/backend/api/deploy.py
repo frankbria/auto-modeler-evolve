@@ -7975,6 +7975,158 @@ def get_low_activity_alert_status(
 
 
 # ---------------------------------------------------------------------------
+# High-activity burst alert
+# ---------------------------------------------------------------------------
+
+_HIGH_ACTIVITY_BURST_COOLDOWN_HOURS = 1  # Re-alerts at most once per hour
+
+
+def _check_and_fire_high_activity_burst(deployment_id: str) -> None:
+    """Fire high_activity_burst webhook when hourly prediction count exceeds threshold.
+
+    Called from the scheduler loop every 60 seconds. Uses a 1-hour cooldown
+    gate to prevent repeated alerts for the same burst window.
+    Runs synchronously in the scheduler thread — best-effort only.
+    """
+    try:
+        from core.webhook import EVENT_HIGH_ACTIVITY_BURST, dispatch_webhooks
+
+        from db import engine as _ha_engine
+        from models.prediction_log import PredictionLog
+        from sqlmodel import Session as _HA_Session
+
+        with _HA_Session(_ha_engine) as _s:
+            _dep = _s.get(Deployment, deployment_id)
+            if _dep is None:
+                return
+            _threshold = getattr(_dep, "high_activity_threshold_per_hour", None)
+            if _threshold is None:
+                return
+
+            _now = datetime.now(UTC).replace(tzinfo=None)
+            _last = getattr(_dep, "high_activity_burst_last_fired_at", None)
+            if _last is not None:
+                _elapsed_h = (_now - _last).total_seconds() / 3600
+                if _elapsed_h < _HIGH_ACTIVITY_BURST_COOLDOWN_HOURS:
+                    return
+
+            _cutoff = _now - timedelta(hours=1)
+            _logs = _s.exec(
+                select(PredictionLog).where(
+                    PredictionLog.deployment_id == deployment_id,
+                    PredictionLog.created_at >= _cutoff,
+                )
+            ).all()
+            _hourly_count = len(_logs)
+
+            if _hourly_count <= _threshold:
+                return  # within normal range; no alert needed
+
+            _dep.high_activity_burst_last_fired_at = _now
+            _s.add(_dep)
+            _s.commit()
+
+        dispatch_webhooks(
+            deployment_id,
+            EVENT_HIGH_ACTIVITY_BURST,
+            {
+                "deployment_id": deployment_id,
+                "hourly_prediction_count": _hourly_count,
+                "threshold_per_hour": _threshold,
+                "message": (
+                    f"High-activity burst alert: your deployment received {_hourly_count} "
+                    f"prediction{'s' if _hourly_count != 1 else ''} in the last hour, "
+                    f"which exceeds your configured maximum of {_threshold} per hour. "
+                    "This may indicate a runaway loop, API key abuse, or an unexpected "
+                    "demand spike. Check your upstream system to investigate."
+                ),
+            },
+        )
+    except Exception:
+        pass  # Best-effort; never crash the scheduler
+
+
+class HighActivityBurstRequest(BaseModel):
+    threshold_per_hour: int | None = None  # None = disable the alert
+
+
+@router.put("/api/deploy/{deployment_id}/high-activity-burst-alert")
+def set_high_activity_burst_alert(
+    deployment_id: str,
+    body: HighActivityBurstRequest,
+    session: Session = Depends(get_session),
+):
+    """Configure a high-activity burst alert for a deployed model.
+
+    Set ``threshold_per_hour`` to the maximum number of predictions expected per
+    hour. A ``high_activity_burst`` webhook fires (max once per hour) when the
+    rolling 60-minute count exceeds the threshold.
+
+    Pass ``threshold_per_hour=null`` or omit to disable the alert.
+    """
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment:
+        raise HTTPException(status_code=404, detail="Deployment not found")
+
+    if body.threshold_per_hour is not None and body.threshold_per_hour < 1:
+        raise HTTPException(
+            status_code=400, detail="threshold_per_hour must be at least 1"
+        )
+
+    deployment.high_activity_threshold_per_hour = body.threshold_per_hour
+    if body.threshold_per_hour is None:
+        deployment.high_activity_burst_last_fired_at = None
+    session.add(deployment)
+    session.commit()
+    session.refresh(deployment)
+
+    threshold = deployment.high_activity_threshold_per_hour
+    last_fired = getattr(deployment, "high_activity_burst_last_fired_at", None)
+    return {
+        "deployment_id": deployment_id,
+        "high_activity_burst_enabled": threshold is not None,
+        "threshold_per_hour": threshold,
+        "high_activity_burst_last_fired_at": (
+            last_fired.isoformat() if last_fired else None
+        ),
+        "cooldown_hours": _HIGH_ACTIVITY_BURST_COOLDOWN_HOURS,
+        "summary": (
+            f"High-activity burst alert enabled: webhook fires when hourly predictions exceed {threshold}."
+            if threshold is not None
+            else "High-activity burst alert disabled."
+        ),
+    }
+
+
+@router.get("/api/deploy/{deployment_id}/high-activity-burst-alert-status")
+def get_high_activity_burst_alert_status(
+    deployment_id: str,
+    session: Session = Depends(get_session),
+):
+    """Return the current high-activity burst alert configuration for a deployment."""
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment:
+        raise HTTPException(status_code=404, detail="Deployment not found")
+
+    threshold = getattr(deployment, "high_activity_threshold_per_hour", None)
+    last_fired = getattr(deployment, "high_activity_burst_last_fired_at", None)
+    return {
+        "deployment_id": deployment_id,
+        "high_activity_burst_enabled": threshold is not None,
+        "threshold_per_hour": threshold,
+        "high_activity_burst_last_fired_at": (
+            last_fired.isoformat() if last_fired else None
+        ),
+        "cooldown_hours": _HIGH_ACTIVITY_BURST_COOLDOWN_HOURS,
+        "summary": (
+            f"High-activity burst alerting is enabled. Webhook fires when hourly count exceeds {threshold}."
+            if threshold is not None
+            else "High-activity burst alerting is disabled."
+        ),
+    }
+
+
+# ---------------------------------------------------------------------------
 # Segment drift detection endpoint
 # ---------------------------------------------------------------------------
 
