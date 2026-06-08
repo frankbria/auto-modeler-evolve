@@ -53,6 +53,20 @@ the time is better spent on real features.
 
 ---
 
+## Day 89 (04:00) — Done
+
+**Track D: Prediction High-Activity Burst Alert** — complete.
+
+The symmetric counterpart to the Day 88 low-activity sentinel. Low-activity catches silent failures (nobody calling your endpoint). High-activity burst catches the opposite: runaway loops, API abuse, or unexpected demand spikes. When hourly prediction count exceeds a configurable ceiling, the registered webhook fires with a 1-hour cooldown. Uses a rolling 60-minute window (recency matters for burst detection, unlike low-activity's daily aggregation). Features: `EVENT_HIGH_ACTIVITY_BURST` webhook constant, `Deployment.high_activity_threshold_per_hour` + `high_activity_burst_last_fired_at` fields, `_check_and_fire_high_activity_burst()` with 1h rolling window and 1h cooldown, scheduler loop wiring, REST endpoints (PUT enable/disable, GET status), chat handler with 8 NL variants (4 patterns: enable, disable, status, plus threshold extraction), `HighActivityBurstCard` frontend component (amber border, 📈 icon). Also applied missing Day 88 migrations for low-activity fields. 37 new tests (21 backend + 16 frontend). Baseline: 6104/3444 → **6125/3460**.
+
+**What's next (Track D fresh ideas):**
+- Prediction latency P95/P99 monitoring — slow predictions degrade UX before counts drop; chat: "alert me if predictions take more than 500ms"; uses PredictionLog.latency_ms if tracked, or adds it
+- Webhook delivery health dashboard — show last N webhook dispatches (success/failure, response codes, retry count); surface via `GET /api/deploy/{id}/webhook-delivery-history`
+- Deployment rollback trigger based on accuracy drift — if rolling accuracy drops below baseline by X%, auto-disable deployment and notify; builds on existing DriftDetectionCard infrastructure
+- A/B champion-challenger testing — route N% of traffic to a challenger model; compare live accuracy side-by-side before promoting
+
+---
+
 ## Day 88 (20:00) — Done
 
 **Track D: Prediction Low-Activity Alert via Chat** — complete.
