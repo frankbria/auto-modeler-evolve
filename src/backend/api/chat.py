@@ -17421,7 +17421,9 @@ def send_message(
                 _disable_ha = bool(_DISABLE_HIGH_ACTIVITY_BURST_RE.search(body.message))
                 _status_ha = bool(_STATUS_HIGH_ACTIVITY_BURST_RE.search(body.message))
                 _ha_thr_m = _HIGH_ACTIVITY_THRESHOLD_RE.search(body.message)
-                _ha_new_threshold: int | None = int(_ha_thr_m.group(1)) if _ha_thr_m else None
+                _ha_new_threshold: int | None = (
+                    int(_ha_thr_m.group(1)) if _ha_thr_m else None
+                )
 
                 if _disable_ha:
                     _ha_dep_obj.high_activity_threshold_per_hour = None

@@ -459,7 +459,9 @@ def _scheduler_loop() -> None:
                     _check_and_fire_high_activity_burst(dep_id)
                 except Exception as exc:
                     logger.error(
-                        "Scheduler: high-activity burst check %s raised: %s", dep_id, exc
+                        "Scheduler: high-activity burst check %s raised: %s",
+                        dep_id,
+                        exc,
                     )
 
         except Exception as exc:
