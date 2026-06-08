@@ -58,3 +58,6 @@ class Deployment(SQLModel, table=True):
     # Feature drift alert: fire webhook when critical-priority features detected
     feature_drift_alert_enabled: bool = Field(default=False)
     feature_drift_alert_last_fired_at: Optional[datetime] = None
+    # Low-activity alert: fire webhook when daily predictions drop below threshold
+    low_activity_threshold_per_day: Optional[int] = None  # None = disabled
+    low_activity_alert_last_fired_at: Optional[datetime] = None

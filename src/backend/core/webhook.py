@@ -36,6 +36,7 @@ EVENT_ACCURACY_ALERT = "accuracy_alert"
 EVENT_SLA_EXCEEDED = "sla_exceeded"
 EVENT_WEEKLY_DIGEST = "weekly_digest"
 EVENT_FEATURE_DRIFT = "feature_drift"
+EVENT_LOW_ACTIVITY = "low_activity"
 
 ALL_EVENTS = {
     EVENT_BATCH_COMPLETE,
@@ -47,6 +48,7 @@ ALL_EVENTS = {
     EVENT_SLA_EXCEEDED,
     EVENT_WEEKLY_DIGEST,
     EVENT_FEATURE_DRIFT,
+    EVENT_LOW_ACTIVITY,
 }
 
 

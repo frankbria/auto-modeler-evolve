@@ -204,6 +204,7 @@ interface AppState {
   attachThroughputAssessmentToLastMessage: (throughput_assessment: import("./types").DeploymentThroughputResult) => void
   attachDriftImportanceRankingToLastMessage: (drift_importance_ranking: import("./types").DriftImportanceRankingResult) => void
   attachFeatureDriftAlertConfigToLastMessage: (feature_drift_alert_config: import("./types").FeatureDriftAlertConfig) => void
+  attachLowActivityAlertConfigToLastMessage: (low_activity_alert_config: import("./types").LowActivityAlertConfig) => void
   attachSegmentDriftToLastMessage: (segment_drift: import("./types").SegmentDriftResult) => void
   attachSegmentPredTrendToLastMessage: (segment_pred_trend: import("./types").SegmentPredTrendResult) => void
   attachSegmentConfTrendToLastMessage: (segment_conf_trend: import("./types").SegmentConfTrendResult) => void
@@ -1738,6 +1739,16 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, feature_drift_alert_config }
+      }
+      return { messages }
+    }),
+
+  attachLowActivityAlertConfigToLastMessage: (low_activity_alert_config) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, low_activity_alert_config }
       }
       return { messages }
     }),

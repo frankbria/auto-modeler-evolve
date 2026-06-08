@@ -374,9 +374,10 @@ def _run_weekly_digest(config_id: str) -> None:
 
 
 def _scheduler_loop() -> None:
-    """Check every 60 seconds for due batch jobs and weekly digests."""
+    """Check every 60 seconds for due batch jobs, weekly digests, and low-activity alerts."""
     from db import engine
     from models.batch_schedule import BatchSchedule
+    from models.deployment import Deployment
     from models.weekly_digest_config import WeeklyDigestConfig
     from sqlmodel import Session, select
 
@@ -406,6 +407,15 @@ def _scheduler_loop() -> None:
                     )
                 ]
 
+                # Collect deployments with low-activity alerts configured
+                active_deps = session.exec(
+                    select(Deployment).where(
+                        Deployment.is_active == True,  # noqa: E712
+                        Deployment.low_activity_threshold_per_day != None,  # noqa: E711
+                    )
+                ).all()
+                low_activity_dep_ids = [d.id for d in active_deps]
+
             for sid in due_ids:
                 try:
                     _run_job(sid)
@@ -422,6 +432,16 @@ def _scheduler_loop() -> None:
                     t.start()
                 except Exception as exc:
                     logger.error("Scheduler: weekly digest %s raised: %s", did, exc)
+
+            for dep_id in low_activity_dep_ids:
+                try:
+                    from api.deploy import _check_and_fire_low_activity_alert
+
+                    _check_and_fire_low_activity_alert(dep_id)
+                except Exception as exc:
+                    logger.error(
+                        "Scheduler: low-activity check %s raised: %s", dep_id, exc
+                    )
 
         except Exception as exc:
             logger.error("Scheduler loop error: %s", exc)

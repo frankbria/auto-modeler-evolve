@@ -7823,6 +7823,158 @@ def get_feature_drift_alert_status(
 
 
 # ---------------------------------------------------------------------------
+# Low-activity alert
+# ---------------------------------------------------------------------------
+
+_LOW_ACTIVITY_ALERT_COOLDOWN_HOURS = 24
+
+
+def _check_and_fire_low_activity_alert(deployment_id: str) -> None:
+    """Fire low_activity webhook when 24-hour prediction count drops below threshold.
+
+    Called from the scheduler loop every 60 seconds. Uses a 24-hour cooldown
+    gate to prevent repeated alerts for the same silent period.
+    Runs synchronously in the scheduler thread — best-effort only.
+    """
+    try:
+        from core.webhook import EVENT_LOW_ACTIVITY, dispatch_webhooks
+
+        from db import engine as _la_engine
+        from models.prediction_log import PredictionLog
+        from sqlmodel import Session as _LA_Session
+
+        with _LA_Session(_la_engine) as _s:
+            _dep = _s.get(Deployment, deployment_id)
+            if _dep is None:
+                return
+            _threshold = getattr(_dep, "low_activity_threshold_per_day", None)
+            if _threshold is None:
+                return
+
+            _now = datetime.now(UTC).replace(tzinfo=None)
+            _last = getattr(_dep, "low_activity_alert_last_fired_at", None)
+            if _last is not None:
+                _elapsed_h = (_now - _last).total_seconds() / 3600
+                if _elapsed_h < _LOW_ACTIVITY_ALERT_COOLDOWN_HOURS:
+                    return
+
+            _cutoff = _now.replace(hour=0, minute=0, second=0, microsecond=0)
+            _count = _s.exec(
+                select(PredictionLog).where(
+                    PredictionLog.deployment_id == deployment_id,
+                    PredictionLog.created_at >= _cutoff,
+                )
+            ).all()
+            _daily_count = len(_count)
+
+            if _daily_count >= _threshold:
+                return  # within normal range; no alert needed
+
+            _dep.low_activity_alert_last_fired_at = _now
+            _s.add(_dep)
+            _s.commit()
+
+        dispatch_webhooks(
+            deployment_id,
+            EVENT_LOW_ACTIVITY,
+            {
+                "deployment_id": deployment_id,
+                "daily_prediction_count": _daily_count,
+                "threshold_per_day": _threshold,
+                "message": (
+                    f"Low-activity alert: your deployment received only {_daily_count} "
+                    f"prediction{'s' if _daily_count != 1 else ''} today, which is below "
+                    f"your configured minimum of {_threshold} per day. "
+                    "This may indicate a broken integration or an unexpected drop in traffic. "
+                    "Check your upstream system to verify it is still sending requests."
+                ),
+            },
+        )
+    except Exception:
+        pass  # Best-effort; never crash the scheduler
+
+
+class LowActivityAlertRequest(BaseModel):
+    threshold_per_day: int | None = None  # None = disable the alert
+
+
+@router.put("/api/deploy/{deployment_id}/low-activity-alert")
+def set_low_activity_alert(
+    deployment_id: str,
+    body: LowActivityAlertRequest,
+    session: Session = Depends(get_session),
+):
+    """Configure a low-activity alert for a deployed model.
+
+    Set ``threshold_per_day`` to the minimum number of predictions expected per
+    day. A ``low_activity`` webhook fires (max once per 24 hours) when the
+    rolling daily count falls below the threshold.
+
+    Pass ``threshold_per_day=null`` or omit to disable the alert.
+    """
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment:
+        raise HTTPException(status_code=404, detail="Deployment not found")
+
+    if body.threshold_per_day is not None and body.threshold_per_day < 1:
+        raise HTTPException(
+            status_code=400, detail="threshold_per_day must be at least 1"
+        )
+
+    deployment.low_activity_threshold_per_day = body.threshold_per_day
+    if body.threshold_per_day is None:
+        deployment.low_activity_alert_last_fired_at = None
+    session.add(deployment)
+    session.commit()
+    session.refresh(deployment)
+
+    threshold = deployment.low_activity_threshold_per_day
+    last_fired = getattr(deployment, "low_activity_alert_last_fired_at", None)
+    return {
+        "deployment_id": deployment_id,
+        "low_activity_alert_enabled": threshold is not None,
+        "threshold_per_day": threshold,
+        "low_activity_alert_last_fired_at": (
+            last_fired.isoformat() if last_fired else None
+        ),
+        "cooldown_hours": _LOW_ACTIVITY_ALERT_COOLDOWN_HOURS,
+        "summary": (
+            f"Low-activity alert enabled: webhook fires when daily predictions drop below {threshold}."
+            if threshold is not None
+            else "Low-activity alert disabled."
+        ),
+    }
+
+
+@router.get("/api/deploy/{deployment_id}/low-activity-alert-status")
+def get_low_activity_alert_status(
+    deployment_id: str,
+    session: Session = Depends(get_session),
+):
+    """Return the current low-activity alert configuration for a deployment."""
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment:
+        raise HTTPException(status_code=404, detail="Deployment not found")
+
+    threshold = getattr(deployment, "low_activity_threshold_per_day", None)
+    last_fired = getattr(deployment, "low_activity_alert_last_fired_at", None)
+    return {
+        "deployment_id": deployment_id,
+        "low_activity_alert_enabled": threshold is not None,
+        "threshold_per_day": threshold,
+        "low_activity_alert_last_fired_at": (
+            last_fired.isoformat() if last_fired else None
+        ),
+        "cooldown_hours": _LOW_ACTIVITY_ALERT_COOLDOWN_HOURS,
+        "summary": (
+            f"Low-activity alerting is enabled. Webhook fires when daily count drops below {threshold}."
+            if threshold is not None
+            else "Low-activity alerting is disabled."
+        ),
+    }
+
+
+# ---------------------------------------------------------------------------
 # Segment drift detection endpoint
 # ---------------------------------------------------------------------------
 

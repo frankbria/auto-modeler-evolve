@@ -3719,6 +3719,35 @@ _STATUS_FEATURE_DRIFT_ALERT_RE = re.compile(
     re.IGNORECASE,
 )
 
+_LOW_ACTIVITY_ALERT_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"alert\s+(?:me\s+)?(?:if|when)\s+(?:my\s+)?(?:(?:model|deployment|endpoint)\s+)?(?:gets?\s+)?(?:fewer|less)\s+than\b|"
+    r"(?:set(?:\s+up)?|configure|add|enable|turn\s+on)\s+(?:a\s+)?(?:low[\s-]?activity|minimum\s+prediction\s+count|quiet\s+endpoint)\s+alert\b|"
+    r"notify\s+(?:me\s+)?(?:if|when)\s+(?:my\s+)?(?:endpoint|deployment|model)\s+(?:goes?\s+quiet|is\s+quiet|has\s+(?:no|low)\s+traffic)\b|"
+    r"alert\s+(?:me\s+)?(?:if|when)\s+(?:daily\s+)?predictions?\s+(?:drop|fall|go)\s+below\b|"
+    r"(?:minimum|min)\s+prediction\s+(?:count\s+)?(?:alert|threshold|notification)\b|"
+    r"(?:disable|remove|turn\s+off|clear)\s+(?:the\s+)?low[\s-]?activity\s+alert\b|"
+    r"(?:show|check|get|status\s+of)\s+(?:my\s+)?low[\s-]?activity\s+(?:alert|threshold|setting)\b|"
+    r"(?:alert|warn|notify)\s+(?:me\s+)?when\s+(?:my\s+)?(?:model|endpoint)\s+(?:stops?\s+receiving|isn't\s+getting)\s+(?:enough\s+)?(?:calls?|requests?|predictions?)\b"
+    r")",
+    re.IGNORECASE,
+)
+
+_DISABLE_LOW_ACTIVITY_ALERT_RE = re.compile(
+    r"\b(?:disable|remove|turn\s+off|clear)\s+(?:the\s+)?low[\s-]?activity\s+alert",
+    re.IGNORECASE,
+)
+
+_STATUS_LOW_ACTIVITY_ALERT_RE = re.compile(
+    r"\b(?:show|check|get|status\s+of)\s+(?:my\s+)?low[\s-]?activity\s+(?:alert|threshold|setting)",
+    re.IGNORECASE,
+)
+
+_LOW_ACTIVITY_THRESHOLD_RE = re.compile(
+    r"\b(\d+)\s*(?:predictions?|calls?|requests?)?\s*(?:per\s+day|(?:a|each)\s+day|daily)?\b",
+    re.IGNORECASE,
+)
+
 _SEGMENT_DRIFT_PATTERNS = re.compile(
     r"(?i)(?:"
     r"(?:is\s+(?:my\s+)?(?:model|drift)\s+(?:drifting|worse)\s+(?:more\s+)?(?:in|for)\s+\w+)\b|"
@@ -17278,6 +17307,74 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Feature drift alert config is nice-to-have; never crash chat
 
+    # Low-activity alert configuration — "alert me if fewer than 10 predictions per day"
+    # Distinct from: quota_alert (fires when approaching max quota), sla_alert (latency).
+    # This fires when usage drops BELOW a floor — detecting broken integrations.
+    low_activity_alert_event: dict | None = None
+    if _LOW_ACTIVITY_ALERT_PATTERNS.search(body.message) and ctx["deployment"]:
+        try:
+            _la_dep = ctx["deployment"]
+            _la_dep_id = _la_dep.id if hasattr(_la_dep, "id") else str(_la_dep)
+            _la_dep_obj = session.get(Deployment, _la_dep_id)
+
+            if _la_dep_obj:
+                _disable_la = bool(_DISABLE_LOW_ACTIVITY_ALERT_RE.search(body.message))
+                _status_la = bool(_STATUS_LOW_ACTIVITY_ALERT_RE.search(body.message))
+                _thr_m = _LOW_ACTIVITY_THRESHOLD_RE.search(body.message)
+                _new_threshold: int | None = int(_thr_m.group(1)) if _thr_m else None
+
+                if _disable_la:
+                    _la_dep_obj.low_activity_threshold_per_day = None
+                    _la_dep_obj.low_activity_alert_last_fired_at = None
+                    session.add(_la_dep_obj)
+                    session.commit()
+                    session.refresh(_la_dep_obj)
+                elif (
+                    not _status_la
+                    and _new_threshold is not None
+                    and _new_threshold >= 1
+                ):
+                    _la_dep_obj.low_activity_threshold_per_day = _new_threshold
+                    session.add(_la_dep_obj)
+                    session.commit()
+                    session.refresh(_la_dep_obj)
+                elif not _status_la and _new_threshold is None:
+                    # Enable intent without explicit threshold — prompt user to specify
+                    pass
+
+                _la_threshold = getattr(
+                    _la_dep_obj, "low_activity_threshold_per_day", None
+                )
+                _la_last = getattr(
+                    _la_dep_obj, "low_activity_alert_last_fired_at", None
+                )
+                low_activity_alert_event = {
+                    "deployment_id": _la_dep_id,
+                    "low_activity_alert_enabled": _la_threshold is not None,
+                    "threshold_per_day": _la_threshold,
+                    "low_activity_alert_last_fired_at": (
+                        _la_last.isoformat() if _la_last else None
+                    ),
+                    "cooldown_hours": 24,
+                    "summary": (
+                        f"Low-activity alert enabled: webhook fires when daily predictions drop below {_la_threshold}."
+                        if _la_threshold is not None
+                        else "Low-activity alert is not configured. Specify a minimum daily prediction count to enable it."
+                    ),
+                }
+                system_prompt += (
+                    f"\n\n## Low-Activity Alert Configuration\n"
+                    f"{low_activity_alert_event['summary']} "
+                    "Tell the analyst the current setting in plain English. "
+                    "If enabled, explain that a low_activity webhook fires (max once per 24 hours) "
+                    "when the daily prediction count falls below their configured threshold. "
+                    "This helps detect broken integrations — when the upstream system stops calling the model silently. "
+                    "If not yet configured, ask them what minimum daily prediction count they expect. "
+                    "Remind them that webhooks must be registered to receive notifications."
+                )
+        except Exception:  # noqa: BLE001
+            pass  # Low-activity alert config is nice-to-have; never crash chat
+
     # Segment drift detection — "is drift concentrated in a specific region/group?"
     # Distinct from: _DRIFT_IMPORTANCE_PATTERNS (ranks features by importance × drift),
     # _COVARIATE_DRIFT_PATTERNS (binary per-feature OOR alert), _DRIFT_PATTERNS (output drift).
@@ -20582,6 +20679,9 @@ def send_message(
 
         if feature_drift_alert_event:
             yield f"data: {json.dumps({'type': 'feature_drift_alert_config', 'feature_drift_alert_config': feature_drift_alert_event})}\n\n"
+
+        if low_activity_alert_event:
+            yield f"data: {json.dumps({'type': 'low_activity_alert_config', 'low_activity_alert_config': low_activity_alert_event})}\n\n"
 
         if segment_drift_event:
             yield f"data: {json.dumps({'type': 'segment_drift', 'segment_drift': segment_drift_event})}\n\n"
