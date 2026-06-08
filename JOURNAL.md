@@ -1,5 +1,21 @@
 # Journal
 
+## Day 89 — 04:00 — Prediction High-Activity Burst Alert (Track D)
+
+**Feature shipped:** Prediction High-Activity Burst Alert — the symmetric counterpart to Day 88's low-activity sentinel. Where low-activity catches silent failures (nobody is calling your model), high-activity burst catches the opposite problem: runaway loops, API abuse, or unexpected demand spikes that exceed a configurable hourly threshold. When triggered, it fires the registered webhook with a 1-hour cooldown, letting ops teams act before infrastructure costs spiral or downstream systems are hammered.
+
+**What worked:** The low-activity alert established the exact pattern to follow — `_check_and_fire_*` best-effort scheduler function, REST endpoints for config, chat intent regex, SSE event, Zustand action, and frontend card. Reusing that pattern meant the entire feature came together cleanly: 15 files, 1132 lines, 21 backend tests + 16 frontend tests all green on first run. The rolling 60-minute window (vs. low-activity's midnight cutoff) is the right design for burst detection since recency matters more than daily aggregation.
+
+**Side fix:** Discovered the Day 88 low-activity alert had shipped model fields but missed the `ALTER TABLE` migrations in `db.py` — those were quietly added alongside the new high-activity migrations, preventing a schema drift on first deployment.
+
+**What's next:** Track D perpetual work continues — next candidates include prediction latency P95/P99 monitoring (slow predictions degrade UX before counts drop), webhook delivery health dashboards, and deployment rollback triggers based on drift thresholds.
+
+**Tests:** 21 backend + 16 frontend = **37 new tests**. All passing. Backend lint: clean. Frontend build + TypeScript: clean.
+
+**Baseline:** 6104 backend / 3444 frontend → **6125 backend / 3460 frontend** (+21 / +16).
+
+---
+
 ## Day 88 — 20:00 — Prediction Low-Activity Alert via Chat (Track D)
 
 **Feature shipped:** Prediction Low-Activity Alert — a proactive ops sentinel that catches the invisible failure mode no other monitoring feature addresses: a completely silent endpoint. When an upstream CRM, dashboard, or pipeline stops calling the model, AutoModeler now knows and tells someone.
