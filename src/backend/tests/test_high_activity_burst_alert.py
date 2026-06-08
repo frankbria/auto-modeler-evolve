@@ -484,9 +484,9 @@ def test_high_activity_burst_patterns_no_false_positives():
         "what is my accuracy",
     ]
     for msg in non_matches:
-        assert not _HIGH_ACTIVITY_BURST_PATTERNS.search(
-            msg
-        ), f"Should NOT match: {msg!r}"
+        assert not _HIGH_ACTIVITY_BURST_PATTERNS.search(msg), (
+            f"Should NOT match: {msg!r}"
+        )
 
 
 def test_disable_high_activity_burst_re():

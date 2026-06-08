@@ -420,8 +420,7 @@ def _scheduler_loop() -> None:
                 burst_deps = session.exec(
                     select(Deployment).where(
                         Deployment.is_active == True,  # noqa: E712
-                        Deployment.high_activity_threshold_per_hour
-                        != None,  # noqa: E711
+                        Deployment.high_activity_threshold_per_hour != None,  # noqa: E711
                     )
                 ).all()
                 high_activity_dep_ids = [d.id for d in burst_deps]
