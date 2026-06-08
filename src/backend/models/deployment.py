@@ -64,3 +64,6 @@ class Deployment(SQLModel, table=True):
     # High-activity burst alert: fire webhook when hourly predictions exceed threshold
     high_activity_threshold_per_hour: Optional[int] = None  # None = disabled
     high_activity_burst_last_fired_at: Optional[datetime] = None
+    # Latency alert: fire webhook when p95 response_ms over last 100 logs exceeds threshold
+    latency_alert_threshold_ms: Optional[int] = None  # None = disabled
+    latency_alert_last_fired_at: Optional[datetime] = None

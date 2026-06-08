@@ -567,6 +567,7 @@ export interface ChatMessage {
   feature_drift_alert_config?: FeatureDriftAlertConfig
   low_activity_alert_config?: LowActivityAlertConfig
   high_activity_burst_config?: HighActivityBurstConfig
+  latency_alert_config?: LatencyAlertConfig
   segment_drift?: SegmentDriftResult
   segment_pred_trend?: SegmentPredTrendResult
   segment_conf_trend?: SegmentConfTrendResult
@@ -1148,6 +1149,15 @@ export interface HighActivityBurstConfig {
   high_activity_burst_enabled: boolean
   threshold_per_hour: number | null
   high_activity_burst_last_fired_at: string | null
+  cooldown_hours: number
+  summary: string
+}
+
+export interface LatencyAlertConfig {
+  deployment_id: string
+  latency_alert_enabled: boolean
+  threshold_ms: number | null
+  latency_alert_last_fired_at: string | null
   cooldown_hours: number
   summary: string
 }

@@ -53,6 +53,19 @@ the time is better spent on real features.
 
 ---
 
+## Day 89 (12:00) — Done
+
+**Track D: Prediction Latency Alert** — complete.
+
+P95 latency webhook alert. When the rolling p95 response time over the last 100 predictions exceeds a configurable millisecond threshold, a `latency_alert` webhook fires (1-hour cooldown). Catches model slowdowns before users notice — fills the gap between SLA stats (display only) and a real push notification. Uses `PredictionLog.response_ms` (already tracked). Features: `EVENT_LATENCY_ALERT` constant, `Deployment.latency_alert_threshold_ms` + `latency_alert_last_fired_at` fields, `_check_and_fire_latency_alert()` with 100-sample p95 and 1h cooldown, scheduler loop wiring, REST endpoints (PUT enable/disable, GET status), chat handler with 8 NL variants, `LatencyAlertCard` (orange border, ⏱ icon). 37 new tests (21 backend + 16 frontend). Baseline: 6125/3460 → **6146/3476**.
+
+**What's next:**
+- Webhook delivery health dashboard — show last N webhook dispatches (success/failure, response codes, retry count); surface via `GET /api/deploy/{id}/webhook-delivery-history`
+- Deployment rollback trigger based on accuracy drift — chat: "roll back if accuracy drops below 80%"; combines the rollback mechanism (already built) with accuracy alert monitoring
+- Canary deployment support — route a configurable % of predictions to a new model version, compare accuracy/latency live
+
+---
+
 ## Day 89 (04:00) — Done
 
 **Track D: Prediction High-Activity Burst Alert** — complete.

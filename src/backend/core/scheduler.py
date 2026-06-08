@@ -425,6 +425,15 @@ def _scheduler_loop() -> None:
                 ).all()
                 high_activity_dep_ids = [d.id for d in burst_deps]
 
+                # Collect deployments with latency alerts configured
+                latency_deps = session.exec(
+                    select(Deployment).where(
+                        Deployment.is_active == True,  # noqa: E712
+                        Deployment.latency_alert_threshold_ms != None,  # noqa: E711
+                    )
+                ).all()
+                latency_dep_ids = [d.id for d in latency_deps]
+
             for sid in due_ids:
                 try:
                     _run_job(sid)
@@ -460,6 +469,18 @@ def _scheduler_loop() -> None:
                 except Exception as exc:
                     logger.error(
                         "Scheduler: high-activity burst check %s raised: %s",
+                        dep_id,
+                        exc,
+                    )
+
+            for dep_id in latency_dep_ids:
+                try:
+                    from api.deploy import _check_and_fire_latency_alert
+
+                    _check_and_fire_latency_alert(dep_id)
+                except Exception as exc:
+                    logger.error(
+                        "Scheduler: latency alert check %s raised: %s",
                         dep_id,
                         exc,
                     )

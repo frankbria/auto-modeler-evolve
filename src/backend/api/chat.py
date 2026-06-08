@@ -3780,6 +3780,36 @@ _HIGH_ACTIVITY_THRESHOLD_RE = re.compile(
     re.IGNORECASE,
 )
 
+_LATENCY_ALERT_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"alert\s+(?:me\s+)?(?:if|when)\s+(?:my\s+)?predictions?\s+(?:take|are|get)\s+(?:more\s+than|over|above|longer\s+than|too\s+slow)\b|"
+    r"(?:set(?:\s+up)?|configure|add|enable|turn\s+on)\s+(?:a\s+)?(?:latency|slow(?:ness)?|response\s+time)(?:\s+(?:prediction|model|endpoint))?\s+alert\b|"
+    r"notify\s+(?:me\s+)?(?:if|when)\s+(?:my\s+)?(?:model|endpoint|deployment)\s+(?:is|gets?|becomes?)\s+(?:slow|too\s+slow|high\s+latency|sluggish)\b|"
+    r"alert\s+(?:me\s+)?(?:if|when)\s+(?:p95|p99)\s+(?:latency\s+)?(?:exceeds?|goes?\s+(?:above|over))\b|"
+    r"alert\s+(?:me\s+)?(?:if|when)\s+(?:latency|response\s+time)\s+(?:exceeds?|goes?\s+(?:above|over))\b|"
+    r"(?:disable|remove|turn\s+off|clear)\s+(?:the\s+)?latency\s+alert\b|"
+    r"(?:show|check|get|status\s+of)\s+(?:my\s+)?latency\s+(?:alert|threshold|setting)\b|"
+    r"(?:prediction|model|endpoint)\s+(?:is\s+)?(?:too\s+slow|slow\s+alert|latency\s+alert)\b|"
+    r"(?:warn|notify)\s+(?:me\s+)?(?:if|when)\s+(?:p95|p99|latency|response\s+time)\s+(?:exceeds?|goes?\s+(?:above|over))\b"
+    r")",
+    re.IGNORECASE,
+)
+
+_DISABLE_LATENCY_ALERT_RE = re.compile(
+    r"\b(?:disable|remove|turn\s+off|clear)\s+(?:the\s+)?latency\s+alert",
+    re.IGNORECASE,
+)
+
+_STATUS_LATENCY_ALERT_RE = re.compile(
+    r"\b(?:show|check|get|status\s+of)\s+(?:my\s+)?latency\s+(?:alert|threshold|setting)",
+    re.IGNORECASE,
+)
+
+_LATENCY_THRESHOLD_MS_RE = re.compile(
+    r"\b(\d+)\s*ms\b",
+    re.IGNORECASE,
+)
+
 _SEGMENT_DRIFT_PATTERNS = re.compile(
     r"(?i)(?:"
     r"(?:is\s+(?:my\s+)?(?:model|drift)\s+(?:drifting|worse)\s+(?:more\s+)?(?:in|for)\s+\w+)\b|"
@@ -17477,6 +17507,76 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # High-activity burst alert config is nice-to-have; never crash chat
 
+    # Latency alert — "alert me if predictions take more than 500ms"
+    # Proactive p95 webhook when rolling latency exceeds a configurable threshold.
+    # Distinct from SLA card (stats-only) — this is a push notification.
+    latency_alert_event: dict | None = None
+    if _LATENCY_ALERT_PATTERNS.search(body.message) and ctx["deployment"]:
+        try:
+            _lat_dep = ctx["deployment"]
+            _lat_dep_id = _lat_dep.id if hasattr(_lat_dep, "id") else str(_lat_dep)
+            _lat_dep_obj = session.get(Deployment, _lat_dep_id)
+
+            if _lat_dep_obj:
+                _disable_lat = bool(_DISABLE_LATENCY_ALERT_RE.search(body.message))
+                _status_lat = bool(_STATUS_LATENCY_ALERT_RE.search(body.message))
+                _lat_thr_m = _LATENCY_THRESHOLD_MS_RE.search(body.message)
+                _lat_new_threshold: int | None = (
+                    int(_lat_thr_m.group(1)) if _lat_thr_m else None
+                )
+
+                if _disable_lat:
+                    _lat_dep_obj.latency_alert_threshold_ms = None
+                    _lat_dep_obj.latency_alert_last_fired_at = None
+                    session.add(_lat_dep_obj)
+                    session.commit()
+                    session.refresh(_lat_dep_obj)
+                elif (
+                    not _status_lat
+                    and _lat_new_threshold is not None
+                    and _lat_new_threshold >= 1
+                ):
+                    _lat_dep_obj.latency_alert_threshold_ms = _lat_new_threshold
+                    session.add(_lat_dep_obj)
+                    session.commit()
+                    session.refresh(_lat_dep_obj)
+                elif not _status_lat and _lat_new_threshold is None:
+                    # Enable intent without explicit threshold — prompt user to specify
+                    pass
+
+                _lat_threshold = getattr(
+                    _lat_dep_obj, "latency_alert_threshold_ms", None
+                )
+                _lat_last = getattr(
+                    _lat_dep_obj, "latency_alert_last_fired_at", None
+                )
+                latency_alert_event = {
+                    "deployment_id": _lat_dep_id,
+                    "latency_alert_enabled": _lat_threshold is not None,
+                    "threshold_ms": _lat_threshold,
+                    "latency_alert_last_fired_at": (
+                        _lat_last.isoformat() if _lat_last else None
+                    ),
+                    "cooldown_hours": 1,
+                    "summary": (
+                        f"Latency alert enabled: webhook fires when p95 latency exceeds {_lat_threshold} ms."
+                        if _lat_threshold is not None
+                        else "Latency alert is not configured. Specify a maximum acceptable p95 response time in milliseconds to enable it."
+                    ),
+                }
+                system_prompt += (
+                    f"\n\n## Latency Alert Configuration\n"
+                    f"{latency_alert_event['summary']} "
+                    "Tell the analyst the current setting in plain English. "
+                    "If enabled, explain that a latency_alert webhook fires (max once per hour) "
+                    "when the p95 latency over the last 100 predictions exceeds their configured threshold. "
+                    "Slow predictions degrade user experience and may indicate resource contention or large inputs. "
+                    "If not yet configured, ask them what maximum p95 response time (in ms) they consider acceptable (e.g. 500 ms is a common baseline). "
+                    "Remind them that webhooks must be registered to receive notifications."
+                )
+        except Exception:  # noqa: BLE001
+            pass  # Latency alert config is nice-to-have; never crash chat
+
     # Segment drift detection — "is drift concentrated in a specific region/group?"
     # Distinct from: _DRIFT_IMPORTANCE_PATTERNS (ranks features by importance × drift),
     # _COVARIATE_DRIFT_PATTERNS (binary per-feature OOR alert), _DRIFT_PATTERNS (output drift).
@@ -20787,6 +20887,9 @@ def send_message(
 
         if high_activity_burst_event:
             yield f"data: {json.dumps({'type': 'high_activity_burst_config', 'high_activity_burst_config': high_activity_burst_event})}\n\n"
+
+        if latency_alert_event:
+            yield f"data: {json.dumps({'type': 'latency_alert_config', 'latency_alert_config': latency_alert_event})}\n\n"
 
         if segment_drift_event:
             yield f"data: {json.dumps({'type': 'segment_drift', 'segment_drift': segment_drift_event})}\n\n"

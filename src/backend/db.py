@@ -46,6 +46,8 @@ def _apply_migrations():
         ("deployment", "low_activity_alert_last_fired_at", "TEXT"),
         ("deployment", "high_activity_threshold_per_hour", "INTEGER"),
         ("deployment", "high_activity_burst_last_fired_at", "TEXT"),
+        ("deployment", "latency_alert_threshold_ms", "INTEGER"),
+        ("deployment", "latency_alert_last_fired_at", "TEXT"),
     ]
     with engine.connect() as conn:
         for table, col, definition in migrations:

@@ -8127,6 +8127,167 @@ def get_high_activity_burst_alert_status(
 
 
 # ---------------------------------------------------------------------------
+# Prediction latency alert
+# ---------------------------------------------------------------------------
+
+_LATENCY_ALERT_COOLDOWN_HOURS = 1  # Re-alerts at most once per hour
+_LATENCY_ALERT_SAMPLE_SIZE = 100  # Last N logs used to compute p95
+
+
+def _check_and_fire_latency_alert(deployment_id: str) -> None:
+    """Fire latency_alert webhook when p95 response_ms exceeds threshold.
+
+    Called from the scheduler loop every 60 seconds. Uses a 1-hour cooldown
+    gate to prevent alert storms. Samples the last 100 PredictionLog entries
+    with non-null response_ms. Best-effort only — never crashes the scheduler.
+    """
+    try:
+        from core.webhook import EVENT_LATENCY_ALERT, dispatch_webhooks
+
+        from db import engine as _lat_engine
+        from models.prediction_log import PredictionLog
+        from sqlmodel import Session as _LatSession
+
+        with _LatSession(_lat_engine) as _s:
+            _dep = _s.get(Deployment, deployment_id)
+            if _dep is None:
+                return
+            _threshold_ms = getattr(_dep, "latency_alert_threshold_ms", None)
+            if _threshold_ms is None:
+                return
+
+            _now = datetime.now(UTC).replace(tzinfo=None)
+            _last = getattr(_dep, "latency_alert_last_fired_at", None)
+            if _last is not None:
+                _elapsed_h = (_now - _last).total_seconds() / 3600
+                if _elapsed_h < _LATENCY_ALERT_COOLDOWN_HOURS:
+                    return
+
+            _logs = _s.exec(
+                select(PredictionLog)
+                .where(
+                    PredictionLog.deployment_id == deployment_id,
+                    PredictionLog.response_ms.isnot(None),  # type: ignore[union-attr]
+                )
+                .order_by(PredictionLog.created_at.desc())  # type: ignore[union-attr]
+                .limit(_LATENCY_ALERT_SAMPLE_SIZE)
+            ).all()
+
+            latencies = sorted([log.response_ms for log in _logs if log.response_ms is not None])
+            if not latencies:
+                return
+
+            _p95_ms = round(_percentile(latencies, 95), 1)
+            if _p95_ms <= _threshold_ms:
+                return
+
+            _dep.latency_alert_last_fired_at = _now
+            _s.add(_dep)
+            _s.commit()
+
+        dispatch_webhooks(
+            deployment_id,
+            EVENT_LATENCY_ALERT,
+            {
+                "deployment_id": deployment_id,
+                "p95_latency_ms": _p95_ms,
+                "threshold_ms": _threshold_ms,
+                "sample_size": len(latencies),
+                "message": (
+                    f"Latency alert: p95 prediction latency is {_p95_ms} ms, "
+                    f"which exceeds your configured threshold of {_threshold_ms} ms "
+                    f"(computed over the last {len(latencies)} predictions). "
+                    "Slow predictions degrade user experience. Investigate recent "
+                    "input sizes, feature scaling, or resource contention."
+                ),
+            },
+        )
+    except Exception:
+        pass  # Best-effort; never crash the scheduler
+
+
+class LatencyAlertRequest(BaseModel):
+    threshold_ms: int | None = None  # None = disable the alert
+
+
+@router.put("/api/deploy/{deployment_id}/latency-alert")
+def set_latency_alert(
+    deployment_id: str,
+    body: LatencyAlertRequest,
+    session: Session = Depends(get_session),
+):
+    """Configure a prediction latency alert for a deployed model.
+
+    Set ``threshold_ms`` to the maximum acceptable p95 response latency in
+    milliseconds (e.g. 500). A ``latency_alert`` webhook fires (max once per
+    hour) when the rolling p95 over the last 100 predictions exceeds the
+    threshold.
+
+    Pass ``threshold_ms=null`` or omit to disable the alert.
+    """
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment:
+        raise HTTPException(status_code=404, detail="Deployment not found")
+
+    if body.threshold_ms is not None and body.threshold_ms < 1:
+        raise HTTPException(
+            status_code=400, detail="threshold_ms must be at least 1"
+        )
+
+    deployment.latency_alert_threshold_ms = body.threshold_ms
+    if body.threshold_ms is None:
+        deployment.latency_alert_last_fired_at = None
+    session.add(deployment)
+    session.commit()
+    session.refresh(deployment)
+
+    threshold = deployment.latency_alert_threshold_ms
+    last_fired = getattr(deployment, "latency_alert_last_fired_at", None)
+    return {
+        "deployment_id": deployment_id,
+        "latency_alert_enabled": threshold is not None,
+        "threshold_ms": threshold,
+        "latency_alert_last_fired_at": (
+            last_fired.isoformat() if last_fired else None
+        ),
+        "cooldown_hours": _LATENCY_ALERT_COOLDOWN_HOURS,
+        "summary": (
+            f"Latency alert enabled: webhook fires when p95 latency exceeds {threshold} ms."
+            if threshold is not None
+            else "Latency alert disabled."
+        ),
+    }
+
+
+@router.get("/api/deploy/{deployment_id}/latency-alert-status")
+def get_latency_alert_status(
+    deployment_id: str,
+    session: Session = Depends(get_session),
+):
+    """Return the current latency alert configuration for a deployment."""
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment:
+        raise HTTPException(status_code=404, detail="Deployment not found")
+
+    threshold = getattr(deployment, "latency_alert_threshold_ms", None)
+    last_fired = getattr(deployment, "latency_alert_last_fired_at", None)
+    return {
+        "deployment_id": deployment_id,
+        "latency_alert_enabled": threshold is not None,
+        "threshold_ms": threshold,
+        "latency_alert_last_fired_at": (
+            last_fired.isoformat() if last_fired else None
+        ),
+        "cooldown_hours": _LATENCY_ALERT_COOLDOWN_HOURS,
+        "summary": (
+            f"Latency alerting is enabled. Webhook fires when p95 exceeds {threshold} ms."
+            if threshold is not None
+            else "Latency alerting is disabled."
+        ),
+    }
+
+
+# ---------------------------------------------------------------------------
 # Segment drift detection endpoint
 # ---------------------------------------------------------------------------
 

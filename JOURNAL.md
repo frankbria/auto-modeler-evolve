@@ -1,5 +1,30 @@
 # Journal
 
+## Day 89 — 12:00 — Prediction Latency Alert (Track D)
+
+**Feature shipped:** Prediction Latency Alert — a proactive p95 webhook that fires when rolling prediction response time exceeds a configurable millisecond threshold. Slow predictions degrade analyst UX and upstream integrations before error rates or accuracy metrics show any change; this alert fills that gap. The canonical example: "alert me if predictions take more than 500ms".
+
+**What was built:**
+
+- `EVENT_LATENCY_ALERT = "latency_alert"` constant added to `core/webhook.py` `ALL_EVENTS` — the twelfth webhook event type
+- `Deployment.latency_alert_threshold_ms: Optional[int]` + `latency_alert_last_fired_at: Optional[datetime]` model fields; inline migrations added to `db.py`
+- `_check_and_fire_latency_alert(deployment_id)` in `api/deploy.py`: reads the last 100 `PredictionLog` entries with non-null `response_ms`, computes p95 via the existing `_percentile()` helper, fires if p95 > threshold (1-hour cooldown), stamps `latency_alert_last_fired_at`, dispatches with payload `{deployment_id, p95_latency_ms, threshold_ms, sample_size, message}`. Skips gracefully when no latency data is available.
+- Wired into `_scheduler_loop()` in `core/scheduler.py`: queries all active deployments with `latency_alert_threshold_ms IS NOT NULL` and calls the check function alongside the existing low/high-activity checks
+- `PUT /api/deploy/{id}/latency-alert` (enable with threshold_ms ≥ 1, null to disable) + `GET /api/deploy/{id}/latency-alert-status` REST endpoints
+- `_LATENCY_ALERT_PATTERNS` (8 NL variants, handles "alert me when p95 latency exceeds", "enable slow prediction alert", etc.) + `_DISABLE_LATENCY_ALERT_RE` / `_STATUS_LATENCY_ALERT_RE` / `_LATENCY_THRESHOLD_MS_RE` in `chat.py`; chat handler enables/disables/shows status; emits `{type:"latency_alert_config"}` SSE event
+- `LatencyAlertCard` at `components/deploy/latency-alert-card.tsx`: orange border, ⏱ icon, Enabled/Disabled badge, threshold description with 🔔 icon explaining p95 over last 100 requests, cooldown note, last-fired timestamp, "No alerts fired yet" placeholder, footer help text
+- Full TypeScript wiring: `LatencyAlertConfig` interface; `latency_alert_config?` on `ChatMessage`; `attachLatencyAlertConfigToLastMessage` Zustand action; SSE handlers + card render in `project/[id]/page.tsx`
+
+**Design choices:** Uses `PredictionLog.response_ms` (already exists — populated since the latency tracking feature). P95 over the last 100 logs gives a recent, outlier-resistant signal that's responsive at the scheduler's 60-second granularity. Kept sample_size=100 as the constant to match the existing `_LATENCY_ALERT_SAMPLE_SIZE` value. Threshold unit is milliseconds (natural for analysts: "500ms" is immediately meaningful). Distinct from `EVENT_SLA_EXCEEDED` (the existing fixed-threshold SLA alert); this one is analyst-configurable per deployment.
+
+**What's next:** Track D perpetual work continues — next candidates include webhook delivery health dashboard (show last N dispatches, success/fail, response codes), deployment rollback trigger based on accuracy drift, and canary deployment support.
+
+**Tests:** 21 backend (2 constants + 1 model field + 7 check-function unit tests + 6 REST integration + 5 regex/NL) + 16 frontend (13 card component + 3 store action) = **37 new tests**. All passing. Backend lint: clean. Frontend build + TypeScript: clean.
+
+**Baseline:** 6125 backend / 3460 frontend → **6146 backend / 3476 frontend** (+21 / +16).
+
+---
+
 ## Day 89 — 04:00 — Prediction High-Activity Burst Alert (Track D)
 
 **Feature shipped:** Prediction High-Activity Burst Alert — the symmetric counterpart to Day 88's low-activity sentinel. Where low-activity catches silent failures (nobody is calling your model), high-activity burst catches the opposite problem: runaway loops, API abuse, or unexpected demand spikes that exceed a configurable hourly threshold. When triggered, it fires the registered webhook with a 1-hour cooldown, letting ops teams act before infrastructure costs spiral or downstream systems are hammered.

@@ -206,6 +206,7 @@ interface AppState {
   attachFeatureDriftAlertConfigToLastMessage: (feature_drift_alert_config: import("./types").FeatureDriftAlertConfig) => void
   attachLowActivityAlertConfigToLastMessage: (low_activity_alert_config: import("./types").LowActivityAlertConfig) => void
   attachHighActivityBurstConfigToLastMessage: (high_activity_burst_config: import("./types").HighActivityBurstConfig) => void
+  attachLatencyAlertConfigToLastMessage: (latency_alert_config: import("./types").LatencyAlertConfig) => void
   attachSegmentDriftToLastMessage: (segment_drift: import("./types").SegmentDriftResult) => void
   attachSegmentPredTrendToLastMessage: (segment_pred_trend: import("./types").SegmentPredTrendResult) => void
   attachSegmentConfTrendToLastMessage: (segment_conf_trend: import("./types").SegmentConfTrendResult) => void
@@ -1760,6 +1761,16 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, high_activity_burst_config }
+      }
+      return { messages }
+    }),
+
+  attachLatencyAlertConfigToLastMessage: (latency_alert_config) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, latency_alert_config }
       }
       return { messages }
     }),
