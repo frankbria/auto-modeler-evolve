@@ -3810,6 +3810,33 @@ _LATENCY_THRESHOLD_MS_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Accuracy-triggered auto-rollback configuration
+_AUTO_ROLLBACK_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"auto.?rollback\b|"
+    r"automatic(?:ally)?\s+(?:roll\s*back|revert)\b|"
+    r"roll\s*back\s+(?:if|when|on)\s+(?:accuracy|performance)\s+(?:drops?|falls?|degrades?)\b|"
+    r"(?:enable|set\s+up|configure|activate)\s+(?:accuracy.?(?:based\s+)?)?(?:auto.?)?rollback\b|"
+    r"rollback\s+(?:on|when|if)\s+(?:accuracy|performance)\s+(?:drops?|falls?|degrades?)\b|"
+    r"(?:disable|turn\s+off|deactivate|remove)\s+(?:auto.?)?rollback\b|"
+    r"(?:accuracy|performance)\s+(?:threshold|floor)\s+(?:for|to)\s+rollback\b|"
+    r"status\s+of\s+(?:auto.?)?rollback\b"
+    r")",
+    re.IGNORECASE,
+)
+
+_DISABLE_AUTO_ROLLBACK_RE = re.compile(
+    r"(?i)(?:disable|turn\s+off|deactivate|remove|stop|cancel)\s+(?:auto.?)?rollback\b"
+)
+
+_STATUS_AUTO_ROLLBACK_RE = re.compile(
+    r"(?i)(?:status\s+of\s+|(?:check|show|view|get|is)\s+(?:(?:my|the)\s+)?)(?:auto.?)?rollback\b"
+)
+
+_AUTO_ROLLBACK_THRESHOLD_RE = re.compile(
+    r"(?i)(?:below|under|less\s+than|drops?\s+(?:below|under|to)|falls?\s+(?:below|under|to))?\s*(\d+(?:\.\d+)?)\s*%?"
+)
+
 _SEGMENT_DRIFT_PATTERNS = re.compile(
     r"(?i)(?:"
     r"(?:is\s+(?:my\s+)?(?:model|drift)\s+(?:drifting|worse)\s+(?:more\s+)?(?:in|for)\s+\w+)\b|"
@@ -17575,6 +17602,77 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Latency alert config is nice-to-have; never crash chat
 
+    # Accuracy-triggered auto-rollback configuration
+    # Distinct from: manual rollback (_ROLLBACK_PATTERNS), accuracy_alert (notify only, no action),
+    # latency_alert (tracks latency, not accuracy).
+    auto_rollback_event: dict | None = None
+    if _AUTO_ROLLBACK_PATTERNS.search(body.message) and ctx["deployment"]:
+        try:
+            _arb_dep = ctx["deployment"]
+            _arb_dep_id = _arb_dep.id if hasattr(_arb_dep, "id") else str(_arb_dep)
+            _arb_dep_obj = session.get(Deployment, _arb_dep_id)
+
+            if _arb_dep_obj:
+                _disable_arb = bool(_DISABLE_AUTO_ROLLBACK_RE.search(body.message))
+                _status_arb = bool(_STATUS_AUTO_ROLLBACK_RE.search(body.message))
+                _arb_thr_m = _AUTO_ROLLBACK_THRESHOLD_RE.search(body.message)
+                _arb_new_threshold_pct: float | None = (
+                    float(_arb_thr_m.group(1)) if _arb_thr_m else None
+                )
+
+                if _disable_arb:
+                    _arb_dep_obj.auto_rollback_enabled = False
+                    _arb_dep_obj.auto_rollback_accuracy_threshold = None
+                    _arb_dep_obj.auto_rollback_triggered_at = None
+                    session.add(_arb_dep_obj)
+                    session.commit()
+                    session.refresh(_arb_dep_obj)
+                elif (
+                    not _status_arb
+                    and _arb_new_threshold_pct is not None
+                    and 0.0 <= _arb_new_threshold_pct <= 100.0
+                ):
+                    _arb_dep_obj.auto_rollback_enabled = True
+                    _arb_dep_obj.auto_rollback_accuracy_threshold = _arb_new_threshold_pct / 100.0
+                    session.add(_arb_dep_obj)
+                    session.commit()
+                    session.refresh(_arb_dep_obj)
+
+                _arb_enabled = getattr(_arb_dep_obj, "auto_rollback_enabled", False)
+                _arb_threshold = getattr(_arb_dep_obj, "auto_rollback_accuracy_threshold", None)
+                _arb_last = getattr(_arb_dep_obj, "auto_rollback_triggered_at", None)
+                _arb_thr_pct = round(_arb_threshold * 100, 1) if _arb_threshold is not None else None
+                auto_rollback_event = {
+                    "deployment_id": _arb_dep_id,
+                    "auto_rollback_enabled": _arb_enabled,
+                    "accuracy_threshold_pct": _arb_thr_pct,
+                    "auto_rollback_triggered_at": (
+                        _arb_last.isoformat() if _arb_last else None
+                    ),
+                    "cooldown_hours": 24,
+                    "min_feedback_required": 10,
+                    "summary": (
+                        f"Auto-rollback enabled at {_arb_thr_pct}% accuracy threshold. "
+                        "The deployment rolls back automatically when feedback accuracy drops below this level."
+                        if _arb_enabled and _arb_thr_pct is not None
+                        else "Auto-rollback is not configured. Specify an accuracy threshold percentage to enable it."
+                    ),
+                }
+                system_prompt += (
+                    f"\n\n## Auto-Rollback Configuration\n"
+                    f"{auto_rollback_event['summary']} "
+                    "Tell the analyst the current setting in plain English. "
+                    "If enabled, explain that the scheduler checks feedback accuracy every minute and "
+                    "automatically rolls back to the previous deployment version when accuracy drops below "
+                    "the threshold (requires 10+ labeled feedback points, 24-hour cooldown between rollbacks). "
+                    "A 'rollback_triggered' webhook fires on auto-rollback. The endpoint URL is never changed. "
+                    "If not yet configured, ask what minimum accuracy percentage they consider acceptable "
+                    "(e.g. 80% for classification is a common baseline). "
+                    "Distinct from manual rollback (which they initiate) and the accuracy alert (which only notifies)."
+                )
+        except Exception:  # noqa: BLE001
+            pass  # Auto-rollback config is nice-to-have; never crash chat
+
     # Segment drift detection — "is drift concentrated in a specific region/group?"
     # Distinct from: _DRIFT_IMPORTANCE_PATTERNS (ranks features by importance × drift),
     # _COVARIATE_DRIFT_PATTERNS (binary per-feature OOR alert), _DRIFT_PATTERNS (output drift).
@@ -20888,6 +20986,9 @@ def send_message(
 
         if latency_alert_event:
             yield f"data: {json.dumps({'type': 'latency_alert_config', 'latency_alert_config': latency_alert_event})}\n\n"
+
+        if auto_rollback_event:
+            yield f"data: {json.dumps({'type': 'auto_rollback_config', 'auto_rollback_config': auto_rollback_event})}\n\n"
 
         if segment_drift_event:
             yield f"data: {json.dumps({'type': 'segment_drift', 'segment_drift': segment_drift_event})}\n\n"

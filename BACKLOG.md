@@ -60,9 +60,22 @@ the time is better spent on real features.
 P95 latency webhook alert. When the rolling p95 response time over the last 100 predictions exceeds a configurable millisecond threshold, a `latency_alert` webhook fires (1-hour cooldown). Catches model slowdowns before users notice — fills the gap between SLA stats (display only) and a real push notification. Uses `PredictionLog.response_ms` (already tracked). Features: `EVENT_LATENCY_ALERT` constant, `Deployment.latency_alert_threshold_ms` + `latency_alert_last_fired_at` fields, `_check_and_fire_latency_alert()` with 100-sample p95 and 1h cooldown, scheduler loop wiring, REST endpoints (PUT enable/disable, GET status), chat handler with 8 NL variants, `LatencyAlertCard` (orange border, ⏱ icon). 37 new tests (21 backend + 16 frontend). Baseline: 6125/3460 → **6146/3476**.
 
 **What's next:**
-- Webhook delivery health dashboard — show last N webhook dispatches (success/failure, response codes, retry count); surface via `GET /api/deploy/{id}/webhook-delivery-history`
-- Deployment rollback trigger based on accuracy drift — chat: "roll back if accuracy drops below 80%"; combines the rollback mechanism (already built) with accuracy alert monitoring
-- Canary deployment support — route a configurable % of predictions to a new model version, compare accuracy/latency live
+- Canary deployment support — route a configurable % of predictions to a new model version, compare accuracy/latency live before full promotion
+- Prediction value trend alert — webhook when the rolling mean prediction shifts significantly (e.g., "alert me if average revenue prediction drops more than 15%")
+- Deployment A/B test result summary via chat — compare two live deployments side by side with accuracy, latency, and prediction distribution
+
+---
+
+## Day 89 (20:00) — Done
+
+**Track D: Deployment Accuracy-Triggered Auto-Rollback** — complete.
+
+When feedback accuracy (computed from the last 50 `FeedbackRecord.is_correct` values) drops below a configurable threshold, the deployment automatically reverts to the previous `DeploymentVersion` and fires a `rollback_triggered` webhook. Closes the "my model accuracy degraded in production and I didn't catch it in time" ops gap — distinct from manual rollback (user-initiated) and accuracy alerts (notify-only). Features: `EVENT_ROLLBACK_TRIGGERED` webhook constant; 3 new `Deployment` fields (`auto_rollback_enabled`, `auto_rollback_accuracy_threshold`, `auto_rollback_triggered_at`); `_check_and_fire_accuracy_rollback()` with 24h cooldown, ≥10 feedback minimum, ≥2 version requirement; scheduler loop wiring; REST endpoints (PUT enable/disable, GET status); chat handler with 8 NL variants (enable, disable, status, threshold extraction); `AutoRollbackCard` (emerald/amber/slate border). 40 new tests (22 backend + 18 frontend). Baseline: 6146/3476 → **6168/3494**.
+
+**What's next:**
+- Canary deployment support — route a configurable % of predictions to a new model version, compare accuracy/latency live before full promotion
+- Prediction value trend alert — webhook when rolling mean prediction shifts significantly
+- Deployment A/B test result summary via chat — compare two live deployments side by side
 
 ---
 

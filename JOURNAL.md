@@ -1,5 +1,30 @@
 # Journal
 
+## Day 89 — 20:00 — Deployment Accuracy-Triggered Auto-Rollback (Track D)
+
+**Feature shipped:** Accuracy-Triggered Auto-Rollback — a fully automatic deployment safety net that monitors live feedback accuracy and rolls back to the previous model version when quality drops below a configurable threshold. The canonical example: "roll back if accuracy drops below 80%".
+
+**What was built:**
+
+- `EVENT_ROLLBACK_TRIGGERED = "rollback_triggered"` constant added to `core/webhook.py` `ALL_EVENTS` — the thirteenth webhook event type
+- `Deployment` model gets 3 new fields: `auto_rollback_enabled: bool = False`, `auto_rollback_accuracy_threshold: Optional[float]` (stored 0.0–1.0), `auto_rollback_triggered_at: Optional[datetime]`; inline migrations in `db.py`
+- `_check_and_fire_accuracy_rollback(deployment_id)` in `api/deploy.py`: checks enabled + threshold, enforces 24-hour cooldown via `auto_rollback_triggered_at`, requires ≥2 `DeploymentVersion` entries and ≥10 `FeedbackRecord` entries with `is_correct`; computes accuracy from last 50 feedback records; if accuracy < threshold, executes same rollback logic as `rollback_deployment()`, stamps `auto_rollback_triggered_at`, dispatches `rollback_triggered` webhook with payload `{accuracy_pct, threshold_pct, n_feedback, rolled_back_to_version, new_version_number, message}`; entirely best-effort (`except Exception: pass`)
+- Wired into `_scheduler_loop()` in `core/scheduler.py`: queries all active deployments with `auto_rollback_enabled=True` and `auto_rollback_accuracy_threshold IS NOT NULL`, calls the check function alongside existing activity and latency checks
+- `PUT /api/deploy/{id}/auto-rollback` (validates 0–100 range, stores as 0.0–1.0 fraction) + `GET /api/deploy/{id}/auto-rollback-status` REST endpoints
+- `_AUTO_ROLLBACK_PATTERNS` (8 NL variants) + `_DISABLE_AUTO_ROLLBACK_RE` / `_STATUS_AUTO_ROLLBACK_RE` (fixed to also match "status of auto-rollback") / `_AUTO_ROLLBACK_THRESHOLD_RE` in `chat.py`; chat handler enables/disables/reads config; emits `{type:"auto_rollback_config"}` SSE event
+- `AutoRollbackCard` at `components/deploy/auto-rollback-card.tsx`: emerald border (enabled, never triggered) / amber border (triggered) / slate border (disabled), 🔄 icon, Enabled/Disabled badge, threshold tile showing accuracy floor, how-it-works info block, last-triggered timestamp or "No auto-rollbacks triggered yet", footer note distinguishing from manual rollback and accuracy-only alerts
+- Full TypeScript wiring: `AutoRollbackConfig` interface; `auto_rollback_config?` on `ChatMessage`; `attachAutoRollbackConfigToLastMessage` Zustand action; SSE handlers + card render in both EventSource branches of `project/[id]/page.tsx`
+
+**Design choices:** Uses `FeedbackRecord.is_correct` (already populated since the feedback loop feature) for accuracy computation. Last 50 records gives a recent, statistically meaningful signal while remaining responsive at the scheduler's 60-second granularity. The 10-record minimum prevents hair-trigger rollbacks on sparse feedback. The 24-hour cooldown prevents oscillation when a model is consistently underperforming. Threshold input is in percentage (0–100) for analyst UX; stored internally as 0.0–1.0 fraction. Requires ≥2 `DeploymentVersion` entries to ensure there is a prior version to roll back to. The feature is entirely additive — all checks are best-effort, and the scheduler loop never crashes on failure.
+
+**What's next:** Track D perpetual work continues — next candidates include canary deployment support (traffic splitting between model versions), deployment A/B test result summary via chat, and prediction value trend alert (webhook when rolling mean prediction shifts significantly).
+
+**Tests:** 22 backend (2 constants + 3 model fields + 8 check-function unit tests + 4 REST integration + 4 regex/NL) + 18 frontend (15 card component + 3 store action) = **40 new tests**. All passing. Backend lint: clean. Frontend build + TypeScript: clean.
+
+**Baseline:** 6146 backend / 3476 frontend → **6168 backend / 3494 frontend** (+22 / +18).
+
+---
+
 ## Day 89 — 12:00 — Prediction Latency Alert (Track D)
 
 **Feature shipped:** Prediction Latency Alert — a proactive p95 webhook that fires when rolling prediction response time exceeds a configurable millisecond threshold. Slow predictions degrade analyst UX and upstream integrations before error rates or accuracy metrics show any change; this alert fills that gap. The canonical example: "alert me if predictions take more than 500ms".

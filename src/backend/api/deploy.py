@@ -8208,6 +8208,249 @@ def _check_and_fire_latency_alert(deployment_id: str) -> None:
         pass  # Best-effort; never crash the scheduler
 
 
+# ---------------------------------------------------------------------------
+# Accuracy-triggered auto-rollback
+# ---------------------------------------------------------------------------
+
+_AUTO_ROLLBACK_COOLDOWN_HOURS = 24
+_AUTO_ROLLBACK_MIN_FEEDBACK = 10  # Minimum labeled feedback points required
+
+
+def _check_and_fire_accuracy_rollback(deployment_id: str) -> None:
+    """Auto-rollback when feedback accuracy drops below configured threshold.
+
+    Called from the scheduler loop every 60 seconds. Uses a 24-hour cooldown
+    to prevent rollback loops. Requires at least 10 labeled feedback points.
+    Best-effort only — never crashes the scheduler.
+    """
+    try:
+        from core.webhook import EVENT_ROLLBACK_TRIGGERED, dispatch_webhooks
+
+        from db import engine as _arb_engine
+        from models.deployment_version import DeploymentVersion as _DV
+        from models.feedback_record import FeedbackRecord as _FR
+        from sqlmodel import Session as _ARBSession
+
+        with _ARBSession(_arb_engine) as _s:
+            _dep = _s.get(Deployment, deployment_id)
+            if _dep is None:
+                return
+
+            _enabled = getattr(_dep, "auto_rollback_enabled", False)
+            _threshold = getattr(_dep, "auto_rollback_accuracy_threshold", None)
+            if not _enabled or _threshold is None:
+                return
+
+            _now = datetime.now(UTC).replace(tzinfo=None)
+            _last = getattr(_dep, "auto_rollback_triggered_at", None)
+            if _last is not None:
+                _elapsed_h = (_now - _last).total_seconds() / 3600
+                if _elapsed_h < _AUTO_ROLLBACK_COOLDOWN_HOURS:
+                    return
+
+            # Need at least 2 versions to roll back
+            _versions = _s.exec(
+                select(_DV)
+                .where(_DV.deployment_id == deployment_id)
+                .order_by(_DV.version_number.desc())
+            ).all()
+            if len(_versions) < 2:
+                return
+
+            # Compute feedback accuracy from last 50 labeled FeedbackRecords
+            _feedbacks = _s.exec(
+                select(_FR)
+                .where(
+                    _FR.deployment_id == deployment_id,
+                    _FR.is_correct.isnot(None),  # type: ignore[union-attr]
+                )
+                .order_by(_FR.created_at.desc())
+                .limit(50)
+            ).all()
+
+            if len(_feedbacks) < _AUTO_ROLLBACK_MIN_FEEDBACK:
+                return
+
+            _n_correct = sum(1 for f in _feedbacks if f.is_correct)
+            _accuracy = _n_correct / len(_feedbacks)
+
+            if _accuracy >= _threshold:
+                return  # Above threshold — no rollback needed
+
+            # Find the most recent non-current version
+            _current_ver = getattr(_dep, "current_version_number", 1)
+            _prev_versions = [v for v in _versions if v.version_number != _current_ver]
+            if not _prev_versions:
+                return
+            _prev = _prev_versions[0]
+
+            if not _prev.pipeline_path or not Path(_prev.pipeline_path).exists():
+                return  # Pipeline file missing — skip safely
+
+            # Archive current versions
+            _current_vers = _s.exec(
+                select(_DV).where(
+                    _DV.deployment_id == deployment_id,
+                    _DV.is_current == True,  # noqa: E712
+                )
+            ).all()
+            for _v in _current_vers:
+                _v.is_current = False
+                _s.add(_v)
+
+            _new_ver_num = _current_ver + 1
+            _dep.model_run_id = _prev.model_run_id
+            _dep.pipeline_path = _prev.pipeline_path
+            _dep.algorithm = _prev.algorithm
+            _dep.problem_type = _prev.problem_type
+            _dep.target_column = _prev.target_column
+            _dep.metrics = _prev.metrics
+            _dep.current_version_number = _new_ver_num
+            _dep.auto_rollback_triggered_at = _now
+            _s.add(_dep)
+
+            _rollback_ver = _DV(
+                deployment_id=deployment_id,
+                version_number=_new_ver_num,
+                model_run_id=_prev.model_run_id,
+                algorithm=_prev.algorithm,
+                problem_type=_prev.problem_type,
+                target_column=_prev.target_column,
+                metrics=_prev.metrics,
+                pipeline_path=_prev.pipeline_path,
+                is_current=True,
+            )
+            _s.add(_rollback_ver)
+            _s.commit()
+
+            _rolled_back_to = _prev.version_number
+            _acc_pct = round(_accuracy * 100, 1)
+            _thr_pct = round(_threshold * 100, 1)
+
+        dispatch_webhooks(
+            deployment_id,
+            EVENT_ROLLBACK_TRIGGERED,
+            {
+                "deployment_id": deployment_id,
+                "accuracy_pct": _acc_pct,
+                "threshold_pct": _thr_pct,
+                "n_feedback": len(_feedbacks),
+                "rolled_back_to_version": _rolled_back_to,
+                "new_version_number": _new_ver_num,
+                "message": (
+                    f"Auto-rollback triggered: feedback accuracy dropped to {_acc_pct}% "
+                    f"(threshold: {_thr_pct}%). "
+                    f"Deployment rolled back from v{_current_ver} to v{_rolled_back_to} "
+                    f"(recorded as v{_new_ver_num}). "
+                    "The endpoint URL is unchanged."
+                ),
+            },
+        )
+    except Exception:
+        pass  # Best-effort; never crash the scheduler
+
+
+class AutoRollbackRequest(BaseModel):
+    enabled: bool = False
+    accuracy_threshold_pct: float | None = None  # percentage 0-100; None = disable
+
+
+@router.put("/api/deploy/{deployment_id}/auto-rollback")
+def set_auto_rollback(
+    deployment_id: str,
+    body: AutoRollbackRequest,
+    session: Session = Depends(get_session),
+):
+    """Configure accuracy-triggered auto-rollback for a deployed model.
+
+    When ``enabled=true`` and ``accuracy_threshold_pct`` is set (0-100),
+    the scheduler checks feedback accuracy every 60 seconds. If the rolling
+    accuracy over the last 50 labeled feedback points drops below the
+    threshold, the deployment is automatically rolled back to the previous
+    version and a ``rollback_triggered`` webhook fires (24-hour cooldown).
+
+    Requires at least 10 labeled feedback records before any rollback is
+    considered. Pass ``enabled=false`` to disable.
+    """
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment:
+        raise HTTPException(status_code=404, detail="Deployment not found")
+
+    if body.enabled and body.accuracy_threshold_pct is not None:
+        if not (0.0 <= body.accuracy_threshold_pct <= 100.0):
+            raise HTTPException(
+                status_code=400,
+                detail="accuracy_threshold_pct must be between 0 and 100",
+            )
+        threshold = body.accuracy_threshold_pct / 100.0
+        deployment.auto_rollback_enabled = True
+        deployment.auto_rollback_accuracy_threshold = threshold
+    elif not body.enabled:
+        deployment.auto_rollback_enabled = False
+        deployment.auto_rollback_accuracy_threshold = None
+        deployment.auto_rollback_triggered_at = None
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail="accuracy_threshold_pct is required when enabled=true",
+        )
+
+    session.add(deployment)
+    session.commit()
+    session.refresh(deployment)
+
+    _threshold = getattr(deployment, "auto_rollback_accuracy_threshold", None)
+    _enabled = getattr(deployment, "auto_rollback_enabled", False)
+    _last = getattr(deployment, "auto_rollback_triggered_at", None)
+    _thr_pct = round(_threshold * 100, 1) if _threshold is not None else None
+    return {
+        "deployment_id": deployment_id,
+        "auto_rollback_enabled": _enabled,
+        "accuracy_threshold_pct": _thr_pct,
+        "auto_rollback_triggered_at": (_last.isoformat() if _last else None),
+        "cooldown_hours": _AUTO_ROLLBACK_COOLDOWN_HOURS,
+        "min_feedback_required": _AUTO_ROLLBACK_MIN_FEEDBACK,
+        "summary": (
+            f"Auto-rollback enabled: deployment rolls back automatically when feedback accuracy "
+            f"drops below {_thr_pct}%."
+            if _enabled and _thr_pct is not None
+            else "Auto-rollback is disabled."
+        ),
+    }
+
+
+@router.get("/api/deploy/{deployment_id}/auto-rollback-status")
+def get_auto_rollback_status(
+    deployment_id: str,
+    session: Session = Depends(get_session),
+):
+    """Return the current auto-rollback configuration for a deployment."""
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment:
+        raise HTTPException(status_code=404, detail="Deployment not found")
+
+    _threshold = getattr(deployment, "auto_rollback_accuracy_threshold", None)
+    _enabled = getattr(deployment, "auto_rollback_enabled", False)
+    _last = getattr(deployment, "auto_rollback_triggered_at", None)
+    _thr_pct = round(_threshold * 100, 1) if _threshold is not None else None
+    return {
+        "deployment_id": deployment_id,
+        "auto_rollback_enabled": _enabled,
+        "accuracy_threshold_pct": _thr_pct,
+        "auto_rollback_triggered_at": (_last.isoformat() if _last else None),
+        "cooldown_hours": _AUTO_ROLLBACK_COOLDOWN_HOURS,
+        "min_feedback_required": _AUTO_ROLLBACK_MIN_FEEDBACK,
+        "summary": (
+            f"Auto-rollback is enabled at {_thr_pct}% accuracy threshold. "
+            "The deployment rolls back automatically when feedback accuracy "
+            f"drops below {_thr_pct}% (requires {_AUTO_ROLLBACK_MIN_FEEDBACK}+ labeled feedback points, "
+            f"{_AUTO_ROLLBACK_COOLDOWN_HOURS}-hour cooldown)."
+            if _enabled and _thr_pct is not None
+            else "Auto-rollback is disabled."
+        ),
+    }
+
+
 class LatencyAlertRequest(BaseModel):
     threshold_ms: int | None = None  # None = disable the alert
 

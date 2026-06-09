@@ -48,6 +48,9 @@ def _apply_migrations():
         ("deployment", "high_activity_burst_last_fired_at", "TEXT"),
         ("deployment", "latency_alert_threshold_ms", "INTEGER"),
         ("deployment", "latency_alert_last_fired_at", "TEXT"),
+        ("deployment", "auto_rollback_enabled", "INTEGER NOT NULL DEFAULT 0"),
+        ("deployment", "auto_rollback_accuracy_threshold", "REAL"),
+        ("deployment", "auto_rollback_triggered_at", "TEXT"),
     ]
     with engine.connect() as conn:
         for table, col, definition in migrations:

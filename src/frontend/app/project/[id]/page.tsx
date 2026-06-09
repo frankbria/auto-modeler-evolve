@@ -131,6 +131,7 @@ import { FeatureDriftAlertCard } from "@/components/deploy/feature-drift-alert-c
 import { LowActivityAlertCard } from "@/components/deploy/low-activity-alert-card"
 import { HighActivityBurstCard } from "@/components/deploy/high-activity-burst-card"
 import { LatencyAlertCard } from "@/components/deploy/latency-alert-card"
+import { AutoRollbackCard } from "@/components/deploy/auto-rollback-card"
 import { SegmentDriftCard } from "@/components/deploy/segment-drift-card"
 import { SegmentPredictionTrendCard } from "@/components/deploy/segment-prediction-trend-card"
 import { SegmentConfidenceTrendCard } from "@/components/deploy/segment-confidence-trend-card"
@@ -438,6 +439,7 @@ export default function ProjectWorkspace() {
     attachLowActivityAlertConfigToLastMessage,
     attachHighActivityBurstConfigToLastMessage,
     attachLatencyAlertConfigToLastMessage,
+    attachAutoRollbackConfigToLastMessage,
     attachSegmentDriftToLastMessage,
     attachSegmentPredTrendToLastMessage,
     attachSegmentConfTrendToLastMessage,
@@ -875,6 +877,8 @@ export default function ProjectWorkspace() {
                 attachHighActivityBurstConfigToLastMessage(json.high_activity_burst_config as import("@/lib/types").HighActivityBurstConfig)
               } else if (json.type === "latency_alert_config" && json.latency_alert_config) {
                 attachLatencyAlertConfigToLastMessage(json.latency_alert_config as import("@/lib/types").LatencyAlertConfig)
+              } else if (json.type === "auto_rollback_config" && json.auto_rollback_config) {
+                attachAutoRollbackConfigToLastMessage(json.auto_rollback_config as import("@/lib/types").AutoRollbackConfig)
               } else if (json.type === "segment_drift" && json.segment_drift) {
                 attachSegmentDriftToLastMessage(json.segment_drift as import("@/lib/types").SegmentDriftResult)
               } else if (json.type === "segment_pred_trend" && json.segment_pred_trend) {
@@ -1103,6 +1107,8 @@ export default function ProjectWorkspace() {
                 attachHighActivityBurstConfigToLastMessage(json.high_activity_burst_config as import("@/lib/types").HighActivityBurstConfig)
               } else if (json.type === "latency_alert_config" && json.latency_alert_config) {
                 attachLatencyAlertConfigToLastMessage(json.latency_alert_config as import("@/lib/types").LatencyAlertConfig)
+              } else if (json.type === "auto_rollback_config" && json.auto_rollback_config) {
+                attachAutoRollbackConfigToLastMessage(json.auto_rollback_config as import("@/lib/types").AutoRollbackConfig)
               } else if (json.type === "segment_drift" && json.segment_drift) {
                 attachSegmentDriftToLastMessage(json.segment_drift as import("@/lib/types").SegmentDriftResult)
               } else if (json.type === "segment_pred_trend" && json.segment_pred_trend) {
@@ -1293,6 +1299,7 @@ export default function ProjectWorkspace() {
     attachLowActivityAlertConfigToLastMessage,
     attachHighActivityBurstConfigToLastMessage,
     attachLatencyAlertConfigToLastMessage,
+    attachAutoRollbackConfigToLastMessage,
     attachSegmentDriftToLastMessage,
     attachSegmentPredTrendToLastMessage,
     attachSegmentConfTrendToLastMessage,
@@ -2061,6 +2068,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.latency_alert_config && (
                       <LatencyAlertCard config={msg.latency_alert_config} />
+                    )}
+                    {msg.auto_rollback_config && (
+                      <AutoRollbackCard data={msg.auto_rollback_config} />
                     )}
                     {msg.segment_drift && (
                       <SegmentDriftCard result={msg.segment_drift} />

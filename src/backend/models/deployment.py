@@ -67,3 +67,7 @@ class Deployment(SQLModel, table=True):
     # Latency alert: fire webhook when p95 response_ms over last 100 logs exceeds threshold
     latency_alert_threshold_ms: Optional[int] = None  # None = disabled
     latency_alert_last_fired_at: Optional[datetime] = None
+    # Accuracy-triggered auto-rollback: rolls back when feedback accuracy drops below threshold
+    auto_rollback_enabled: bool = Field(default=False)
+    auto_rollback_accuracy_threshold: Optional[float] = None  # 0.0-1.0; None = disabled
+    auto_rollback_triggered_at: Optional[datetime] = None

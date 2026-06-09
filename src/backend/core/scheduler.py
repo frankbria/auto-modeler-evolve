@@ -434,6 +434,16 @@ def _scheduler_loop() -> None:
                 ).all()
                 latency_dep_ids = [d.id for d in latency_deps]
 
+                # Collect deployments with accuracy-triggered auto-rollback enabled
+                rollback_deps = session.exec(
+                    select(Deployment).where(
+                        Deployment.is_active == True,  # noqa: E712
+                        Deployment.auto_rollback_enabled == True,  # noqa: E712
+                        Deployment.auto_rollback_accuracy_threshold != None,  # noqa: E711
+                    )
+                ).all()
+                rollback_dep_ids = [d.id for d in rollback_deps]
+
             for sid in due_ids:
                 try:
                     _run_job(sid)
@@ -481,6 +491,18 @@ def _scheduler_loop() -> None:
                 except Exception as exc:
                     logger.error(
                         "Scheduler: latency alert check %s raised: %s",
+                        dep_id,
+                        exc,
+                    )
+
+            for dep_id in rollback_dep_ids:
+                try:
+                    from api.deploy import _check_and_fire_accuracy_rollback
+
+                    _check_and_fire_accuracy_rollback(dep_id)
+                except Exception as exc:
+                    logger.error(
+                        "Scheduler: accuracy rollback check %s raised: %s",
                         dep_id,
                         exc,
                     )
