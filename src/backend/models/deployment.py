@@ -71,3 +71,7 @@ class Deployment(SQLModel, table=True):
     auto_rollback_enabled: bool = Field(default=False)
     auto_rollback_accuracy_threshold: Optional[float] = None  # 0.0-1.0; None = disabled
     auto_rollback_triggered_at: Optional[datetime] = None
+    # Prediction value trend alert: fire webhook when rolling mean output shifts > threshold %
+    pred_value_alert_enabled: bool = Field(default=False)
+    pred_value_alert_pct: Optional[float] = None  # e.g. 15.0 = alert if mean shifts >15%; None = disabled
+    pred_value_alert_last_fired_at: Optional[datetime] = None

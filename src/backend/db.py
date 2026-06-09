@@ -51,6 +51,9 @@ def _apply_migrations():
         ("deployment", "auto_rollback_enabled", "INTEGER NOT NULL DEFAULT 0"),
         ("deployment", "auto_rollback_accuracy_threshold", "REAL"),
         ("deployment", "auto_rollback_triggered_at", "TEXT"),
+        ("deployment", "pred_value_alert_enabled", "INTEGER NOT NULL DEFAULT 0"),
+        ("deployment", "pred_value_alert_pct", "REAL"),
+        ("deployment", "pred_value_alert_last_fired_at", "TEXT"),
     ]
     with engine.connect() as conn:
         for table, col, definition in migrations:

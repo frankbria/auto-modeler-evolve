@@ -1,5 +1,30 @@
 # Journal
 
+## Day 90 — 04:00 — Prediction Value Trend Alert (Track D)
+
+**Feature shipped:** Prediction Value Trend Alert — a proactive push notification that fires when the rolling mean prediction output shifts significantly from its recent baseline. The canonical example: "alert me if average revenue prediction drops more than 15%". Closes the "my model predictions silently drifted and I didn't notice until users complained" ops gap — without requiring labeled feedback (unlike `accuracy_alert` or `auto_rollback`) and without the limitations of on-demand historical snapshots (unlike `PredictionValueTrendCard`).
+
+**What was built:**
+
+- `EVENT_PRED_VALUE_TREND_ALERT = "pred_value_trend_alert"` constant added to `core/webhook.py` `ALL_EVENTS` — the fourteenth webhook event type
+- `Deployment` model gets 3 new fields: `pred_value_alert_enabled: bool = False`, `pred_value_alert_pct: Optional[float]`, `pred_value_alert_last_fired_at: Optional[datetime]`; inline migrations in `db.py`
+- `_check_and_fire_pred_value_trend_alert(deployment_id)` in `api/deploy.py`: loads last 100 `PredictionLog` entries, splits chronologically into early (older 50) and recent (newer 50) halves, computes mean of each half using `prediction_numeric` (regression) falling back to `confidence` (classification), fires if `abs(change_pct) > pred_value_alert_pct`; requires ≥20 samples; enforces 24-hour cooldown; payload `{early_mean, recent_mean, change_pct, threshold_pct, sample_size, message}`; entirely best-effort (`except Exception: pass`)
+- Wired into `_scheduler_loop()` in `core/scheduler.py`: queries all active deployments with `pred_value_alert_enabled=True` and `pred_value_alert_pct IS NOT NULL`, calls the check function alongside existing activity/latency/rollback checks
+- `PUT /api/deploy/{id}/pred-value-alert` (validates 0 < alert_pct ≤ 100, disable with `enabled=false`) + `GET /api/deploy/{id}/pred-value-alert-status` REST endpoints
+- `_PRED_VALUE_ALERT_PATTERNS` (8 NL variants) + `_DISABLE_PRED_VALUE_ALERT_RE` / `_STATUS_PRED_VALUE_ALERT_RE` / `_PRED_VALUE_ALERT_PCT_RE` in `chat.py`; handler enables/disables/reads config; emits `{type:"pred_value_alert_config"}` SSE event
+- `PredValueAlertCard` at `components/deploy/pred-value-alert-card.tsx`: emerald border (enabled, never fired) / amber border (fired) / slate border (disabled), 📈 icon, Enabled/Disabled badge, shift threshold tile with orange badge, how-it-works info block, last-fired timestamp or "No alerts fired yet", footer note distinguishing from accuracy alerts and output drift cards
+- Full TypeScript wiring: `PredValueAlertConfig` interface; `pred_value_alert_config?` on `ChatMessage`; `attachPredValueAlertConfigToLastMessage` Zustand action; SSE handlers + card render in both EventSource branches of `project/[id]/page.tsx`
+
+**Design choices:** Early/recent split over the last 100 logs gives a responsive, statistically meaningful signal without needing labeled feedback — it works in production from day one. Dual mode (regression → `prediction_numeric`, classification → `confidence` fallback) makes it universal. The 20-sample minimum prevents noise on newly deployed models. The 24-hour cooldown prevents alert storms when a sustained drift is detected. The `abs(change_pct)` comparison catches both drops and unexpected increases, useful for anomaly scenarios like revenue suddenly predicting 10× higher.
+
+**What's next:** Track D perpetual work continues — next candidates include canary deployment support (traffic splitting between model versions) and deployment A/B test result summary card via chat.
+
+**Tests:** 23 backend (2 constants + 3 model fields + 8 check-function unit tests + 6 REST integration + 4 regex/NL) + 18 frontend (15 card component + 3 store action) = **41 new tests**. All passing. Backend lint: clean. Frontend build + TypeScript: clean.
+
+**Baseline:** 6168 backend / 3494 frontend → **6191 backend / 3512 frontend** (+23 / +18).
+
+---
+
 ## Day 89 — 20:00 — Deployment Accuracy-Triggered Auto-Rollback (Track D)
 
 **Feature shipped:** Accuracy-Triggered Auto-Rollback — a fully automatic deployment safety net that monitors live feedback accuracy and rolls back to the previous model version when quality drops below a configurable threshold. The canonical example: "roll back if accuracy drops below 80%".

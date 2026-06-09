@@ -569,6 +569,7 @@ export interface ChatMessage {
   high_activity_burst_config?: HighActivityBurstConfig
   latency_alert_config?: LatencyAlertConfig
   auto_rollback_config?: AutoRollbackConfig
+  pred_value_alert_config?: PredValueAlertConfig
   segment_drift?: SegmentDriftResult
   segment_pred_trend?: SegmentPredTrendResult
   segment_conf_trend?: SegmentConfTrendResult
@@ -1170,6 +1171,15 @@ export interface AutoRollbackConfig {
   auto_rollback_triggered_at: string | null
   cooldown_hours: number
   min_feedback_required: number
+  summary: string
+}
+
+export interface PredValueAlertConfig {
+  deployment_id: string
+  pred_value_alert_enabled: boolean
+  alert_pct: number | null
+  pred_value_alert_last_fired_at: string | null
+  cooldown_hours: number
   summary: string
 }
 

@@ -208,6 +208,7 @@ interface AppState {
   attachHighActivityBurstConfigToLastMessage: (high_activity_burst_config: import("./types").HighActivityBurstConfig) => void
   attachLatencyAlertConfigToLastMessage: (latency_alert_config: import("./types").LatencyAlertConfig) => void
   attachAutoRollbackConfigToLastMessage: (auto_rollback_config: import("./types").AutoRollbackConfig) => void
+  attachPredValueAlertConfigToLastMessage: (pred_value_alert_config: import("./types").PredValueAlertConfig) => void
   attachSegmentDriftToLastMessage: (segment_drift: import("./types").SegmentDriftResult) => void
   attachSegmentPredTrendToLastMessage: (segment_pred_trend: import("./types").SegmentPredTrendResult) => void
   attachSegmentConfTrendToLastMessage: (segment_conf_trend: import("./types").SegmentConfTrendResult) => void
@@ -1782,6 +1783,16 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, auto_rollback_config }
+      }
+      return { messages }
+    }),
+
+  attachPredValueAlertConfigToLastMessage: (pred_value_alert_config) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, pred_value_alert_config }
       }
       return { messages }
     }),

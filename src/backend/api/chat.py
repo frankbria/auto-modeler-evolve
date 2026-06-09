@@ -3810,6 +3810,36 @@ _LATENCY_THRESHOLD_MS_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Prediction value trend alert configuration
+_PRED_VALUE_ALERT_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"alert\s+(?:me\s+)?(?:if|when)\s+(?:my\s+)?(?:average|mean|rolling\s+mean)?\s*predictions?\s+(?:value\s+)?(?:changes?|shifts?|drops?|rises?|drifts?|increases?|decreases?)\s+(?:by\s+)?(?:more\s+than|over|above|significantly)\b|"
+    r"(?:set(?:\s+up)?|configure|add|enable|turn\s+on)\s+(?:a\s+)?(?:prediction\s+value|value\s+trend|output\s+trend|output\s+drift)\s+alert\b|"
+    r"notify\s+(?:me\s+)?(?:if|when)\s+(?:my\s+)?(?:average|mean)?\s*(?:prediction|output|score)\s+(?:value\s+)?(?:changes?|shifts?|drifts?|drops?|rises?)\b|"
+    r"alert\s+(?:me\s+)?(?:if|when)\s+(?:revenue|price|score|output|prediction)\s+(?:prediction\s+)?(?:drops?|falls?|shifts?|changes?)\s+(?:by\s+)?(?:more\s+than|over|above)\b|"
+    r"(?:disable|remove|turn\s+off|clear)\s+(?:the\s+)?(?:prediction\s+value|value\s+trend|output\s+trend)\s+alert\b|"
+    r"(?:show|check|get|status\s+of)\s+(?:my\s+)?(?:prediction\s+value|value\s+trend|output\s+trend)\s+(?:alert|setting)\b|"
+    r"prediction\s+(?:value|output)\s+trend\s+alert\b|"
+    r"(?:warn|notify)\s+(?:me\s+)?(?:if|when)\s+(?:average|mean)?\s*(?:prediction|output)\s+(?:value\s+)?(?:shifts?|drifts?|changes?)\s+(?:by\s+)?(?:more\s+than|over|above)\b"
+    r")",
+    re.IGNORECASE,
+)
+
+_DISABLE_PRED_VALUE_ALERT_RE = re.compile(
+    r"\b(?:disable|remove|turn\s+off|clear)\s+(?:the\s+)?(?:prediction\s+value|value\s+trend|output\s+trend)\s+alert",
+    re.IGNORECASE,
+)
+
+_STATUS_PRED_VALUE_ALERT_RE = re.compile(
+    r"\b(?:show|check|get|status\s+of)\s+(?:my\s+)?(?:prediction\s+value|value\s+trend|output\s+trend)\s+(?:alert|setting)(?:\s+\w+)*",
+    re.IGNORECASE,
+)
+
+_PRED_VALUE_ALERT_PCT_RE = re.compile(
+    r"\b(\d+(?:\.\d+)?)\s*%",
+    re.IGNORECASE,
+)
+
 # Accuracy-triggered auto-rollback configuration
 _AUTO_ROLLBACK_PATTERNS = re.compile(
     r"(?i)(?:"
@@ -17681,6 +17711,78 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Auto-rollback config is nice-to-have; never crash chat
 
+    # Prediction value trend alert configuration
+    # Distinct from: output drift cards (historical snapshot), accuracy_alert (requires labels),
+    # latency_alert (tracks speed, not output values).
+    pred_value_alert_event: dict | None = None
+    if _PRED_VALUE_ALERT_PATTERNS.search(body.message) and ctx["deployment"]:
+        try:
+            _pva_dep = ctx["deployment"]
+            _pva_dep_id = _pva_dep.id if hasattr(_pva_dep, "id") else str(_pva_dep)
+            _pva_dep_obj = session.get(Deployment, _pva_dep_id)
+
+            if _pva_dep_obj:
+                _disable_pva = bool(_DISABLE_PRED_VALUE_ALERT_RE.search(body.message))
+                _status_pva = bool(_STATUS_PRED_VALUE_ALERT_RE.search(body.message))
+                _pva_pct_m = _PRED_VALUE_ALERT_PCT_RE.search(body.message)
+                _pva_new_pct: float | None = (
+                    float(_pva_pct_m.group(1)) if _pva_pct_m else None
+                )
+
+                if _disable_pva:
+                    _pva_dep_obj.pred_value_alert_enabled = False
+                    _pva_dep_obj.pred_value_alert_pct = None
+                    _pva_dep_obj.pred_value_alert_last_fired_at = None
+                    session.add(_pva_dep_obj)
+                    session.commit()
+                    session.refresh(_pva_dep_obj)
+                elif (
+                    not _status_pva
+                    and _pva_new_pct is not None
+                    and 0 < _pva_new_pct <= 100
+                ):
+                    _pva_dep_obj.pred_value_alert_enabled = True
+                    _pva_dep_obj.pred_value_alert_pct = _pva_new_pct
+                    session.add(_pva_dep_obj)
+                    session.commit()
+                    session.refresh(_pva_dep_obj)
+
+                _pva_enabled = getattr(_pva_dep_obj, "pred_value_alert_enabled", False)
+                _pva_pct = getattr(_pva_dep_obj, "pred_value_alert_pct", None)
+                _pva_last = getattr(
+                    _pva_dep_obj, "pred_value_alert_last_fired_at", None
+                )
+                pred_value_alert_event = {
+                    "deployment_id": _pva_dep_id,
+                    "pred_value_alert_enabled": _pva_enabled,
+                    "alert_pct": _pva_pct,
+                    "pred_value_alert_last_fired_at": (
+                        _pva_last.isoformat() if _pva_last else None
+                    ),
+                    "cooldown_hours": 24,
+                    "summary": (
+                        f"Prediction value trend alert enabled: webhook fires when rolling mean "
+                        f"output shifts more than {_pva_pct}%."
+                        if _pva_enabled and _pva_pct is not None
+                        else "Prediction value trend alert is not configured. Specify a percentage shift threshold to enable it."
+                    ),
+                }
+                system_prompt += (
+                    f"\n\n## Prediction Value Trend Alert Configuration\n"
+                    f"{pred_value_alert_event['summary']} "
+                    "Tell the analyst the current setting in plain English. "
+                    "If enabled, explain that the scheduler checks every minute and compares the mean "
+                    "prediction output from the early half vs. recent half of the last 100 predictions. "
+                    "A 'pred_value_trend_alert' webhook fires (24-hour cooldown, min 20 samples) when the "
+                    "rolling mean shifts by more than the configured percentage. "
+                    "Works for regression (uses prediction_numeric) and classification (uses confidence). "
+                    "If not yet configured, ask what percentage shift they consider significant "
+                    "(e.g. 15% is a reasonable starting point for revenue predictions). "
+                    "Distinct from accuracy_alert (requires labels) and output drift (historical snapshot)."
+                )
+        except Exception:  # noqa: BLE001
+            pass  # Pred value alert config is nice-to-have; never crash chat
+
     # Segment drift detection — "is drift concentrated in a specific region/group?"
     # Distinct from: _DRIFT_IMPORTANCE_PATTERNS (ranks features by importance × drift),
     # _COVARIATE_DRIFT_PATTERNS (binary per-feature OOR alert), _DRIFT_PATTERNS (output drift).
@@ -20997,6 +21099,9 @@ def send_message(
 
         if auto_rollback_event:
             yield f"data: {json.dumps({'type': 'auto_rollback_config', 'auto_rollback_config': auto_rollback_event})}\n\n"
+
+        if pred_value_alert_event:
+            yield f"data: {json.dumps({'type': 'pred_value_alert_config', 'pred_value_alert_config': pred_value_alert_event})}\n\n"
 
         if segment_drift_event:
             yield f"data: {json.dumps({'type': 'segment_drift', 'segment_drift': segment_drift_event})}\n\n"

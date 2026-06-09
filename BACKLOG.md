@@ -53,6 +53,19 @@ the time is better spent on real features.
 
 ---
 
+## Day 90 (04:00) — Done
+
+**Track D: Prediction Value Trend Alert** — complete.
+
+Proactive push notification when the rolling mean prediction output shifts significantly from its recent baseline — without requiring labeled feedback. Compares early (older 50) vs. recent (newer 50) halves of the last 100 `PredictionLog` entries; fires `pred_value_trend_alert` webhook when `abs(change_pct) > pred_value_alert_pct`. Works universally for regression (`prediction_numeric`) and classification (`confidence` fallback). 24-hour cooldown, ≥20 sample minimum. Features: `EVENT_PRED_VALUE_TREND_ALERT` constant; 3 new `Deployment` fields (`pred_value_alert_enabled`, `pred_value_alert_pct`, `pred_value_alert_last_fired_at`); `_check_and_fire_pred_value_trend_alert()` in `api/deploy.py`; scheduler loop wiring; REST endpoints (PUT enable/disable, GET status); chat handler with 8 NL variants + `_PRED_VALUE_ALERT_PCT_RE`; `PredValueAlertCard` (emerald/amber/slate border, 📈 icon). 41 new tests (23 backend + 18 frontend). Baseline: 6168/3494 → **6191/3512**.
+
+**What's next:**
+- Canary deployment support — route a configurable % of predictions to a new model version, compare accuracy/latency live before full promotion
+- Deployment A/B test result summary via chat — compare two live deployments side by side with accuracy, latency, and prediction distribution
+- Prediction confidence heatmap by feature value — "which input combinations make my model least confident?" (Track D)
+
+---
+
 ## Day 89 (12:00) — Done
 
 **Track D: Prediction Latency Alert** — complete.

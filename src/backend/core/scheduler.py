@@ -444,6 +444,16 @@ def _scheduler_loop() -> None:
                 ).all()
                 rollback_dep_ids = [d.id for d in rollback_deps]
 
+                # Collect deployments with prediction value trend alert enabled
+                pred_value_deps = session.exec(
+                    select(Deployment).where(
+                        Deployment.is_active == True,  # noqa: E712
+                        Deployment.pred_value_alert_enabled == True,  # noqa: E712
+                        Deployment.pred_value_alert_pct != None,  # noqa: E711
+                    )
+                ).all()
+                pred_value_dep_ids = [d.id for d in pred_value_deps]
+
             for sid in due_ids:
                 try:
                     _run_job(sid)
@@ -503,6 +513,18 @@ def _scheduler_loop() -> None:
                 except Exception as exc:
                     logger.error(
                         "Scheduler: accuracy rollback check %s raised: %s",
+                        dep_id,
+                        exc,
+                    )
+
+            for dep_id in pred_value_dep_ids:
+                try:
+                    from api.deploy import _check_and_fire_pred_value_trend_alert
+
+                    _check_and_fire_pred_value_trend_alert(dep_id)
+                except Exception as exc:
+                    logger.error(
+                        "Scheduler: pred value trend alert check %s raised: %s",
                         dep_id,
                         exc,
                     )

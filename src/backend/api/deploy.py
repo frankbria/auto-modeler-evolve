@@ -8527,6 +8527,207 @@ def get_latency_alert_status(
 
 
 # ---------------------------------------------------------------------------
+# Prediction value trend alert
+# ---------------------------------------------------------------------------
+
+_PRED_VALUE_ALERT_COOLDOWN_HOURS = 24
+_PRED_VALUE_ALERT_SAMPLE_HALF = 50  # split last 100 logs into early/recent halves
+_PRED_VALUE_ALERT_MIN_SAMPLES = 20  # minimum logs required before any alert fires
+
+
+def _check_and_fire_pred_value_trend_alert(deployment_id: str) -> None:
+    """Fire pred_value_trend_alert webhook when rolling mean output shifts > threshold.
+
+    Loads the last 100 PredictionLogs, splits them into early (older 50) and recent
+    (newer 50), computes the percentage change in mean value, and fires if
+    abs(change_pct) > pred_value_alert_pct. Uses 24-hour cooldown. Minimum 20 samples
+    required. Works for regression (prediction_numeric) and classification (confidence).
+    Best-effort only — never crashes the scheduler.
+    """
+    try:
+        from core.webhook import EVENT_PRED_VALUE_TREND_ALERT, dispatch_webhooks
+
+        from db import engine as _pvt_engine
+        from models.prediction_log import PredictionLog
+        from sqlmodel import Session as _PVTSession
+
+        with _PVTSession(_pvt_engine) as _s:
+            _dep = _s.get(Deployment, deployment_id)
+            if _dep is None:
+                return
+            _enabled = getattr(_dep, "pred_value_alert_enabled", False)
+            _alert_pct = getattr(_dep, "pred_value_alert_pct", None)
+            if not _enabled or _alert_pct is None:
+                return
+
+            _now = datetime.now(UTC).replace(tzinfo=None)
+            _last = getattr(_dep, "pred_value_alert_last_fired_at", None)
+            if _last is not None:
+                _elapsed_h = (_now - _last).total_seconds() / 3600
+                if _elapsed_h < _PRED_VALUE_ALERT_COOLDOWN_HOURS:
+                    return
+
+            _total = _PRED_VALUE_ALERT_SAMPLE_HALF * 2
+            _logs = _s.exec(
+                select(PredictionLog)
+                .where(PredictionLog.deployment_id == deployment_id)
+                .order_by(PredictionLog.created_at.desc())  # type: ignore[union-attr]
+                .limit(_total)
+            ).all()
+
+            # Use prediction_numeric for regression; fall back to confidence for classification
+            _values = [
+                log.prediction_numeric
+                for log in _logs
+                if log.prediction_numeric is not None
+            ]
+            if len(_values) < _PRED_VALUE_ALERT_MIN_SAMPLES:
+                _values = [
+                    log.confidence
+                    for log in _logs
+                    if log.confidence is not None
+                ]
+            if len(_values) < _PRED_VALUE_ALERT_MIN_SAMPLES:
+                return
+
+            # Split: logs are newest-first, so reverse for chronological order
+            _values_chrono = list(reversed(_values))
+            _mid = len(_values_chrono) // 2
+            _early = _values_chrono[:_mid]
+            _recent = _values_chrono[_mid:]
+
+            _early_mean = sum(_early) / len(_early)
+            _recent_mean = sum(_recent) / len(_recent)
+            if _early_mean == 0:
+                return
+
+            _change_pct = ((_recent_mean - _early_mean) / abs(_early_mean)) * 100.0
+            if abs(_change_pct) <= _alert_pct:
+                return
+
+            _dep.pred_value_alert_last_fired_at = _now
+            _s.add(_dep)
+            _s.commit()
+
+        _direction = "increased" if _change_pct > 0 else "decreased"
+        dispatch_webhooks(
+            deployment_id,
+            EVENT_PRED_VALUE_TREND_ALERT,
+            {
+                "deployment_id": deployment_id,
+                "early_mean": round(_early_mean, 4),
+                "recent_mean": round(_recent_mean, 4),
+                "change_pct": round(_change_pct, 2),
+                "threshold_pct": _alert_pct,
+                "sample_size": len(_values),
+                "message": (
+                    f"Prediction value trend alert: the rolling mean prediction "
+                    f"has {_direction} by {abs(_change_pct):.1f}% "
+                    f"(from {_early_mean:.4f} to {_recent_mean:.4f}), "
+                    f"exceeding your configured threshold of {_alert_pct:.1f}%. "
+                    "This may indicate data drift, a model issue, or a genuine "
+                    "change in your business environment."
+                ),
+            },
+        )
+    except Exception:
+        pass  # Best-effort; never crash the scheduler
+
+
+class PredValueAlertRequest(BaseModel):
+    enabled: bool = False
+    alert_pct: float | None = None  # e.g. 15.0 means alert if mean shifts >15%; None = disable
+
+
+@router.put("/api/deploy/{deployment_id}/pred-value-alert")
+def set_pred_value_alert(
+    deployment_id: str,
+    body: PredValueAlertRequest,
+    session: Session = Depends(get_session),
+):
+    """Configure a prediction value trend alert for a deployed model.
+
+    When ``enabled=true`` and ``alert_pct`` is set (e.g. 15.0), a webhook fires
+    (max once per 24 hours) when the rolling mean prediction output shifts by more
+    than ``alert_pct`` percent from the baseline (early vs. recent split over the
+    last 100 logs). Works for both regression (uses ``prediction_numeric``) and
+    classification (falls back to ``confidence``). Requires at least 20 logs.
+
+    Pass ``enabled=false`` to disable.
+    """
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment:
+        raise HTTPException(status_code=404, detail="Deployment not found")
+
+    if body.enabled and body.alert_pct is not None:
+        if body.alert_pct <= 0 or body.alert_pct > 100:
+            raise HTTPException(
+                status_code=400,
+                detail="alert_pct must be between 0 (exclusive) and 100",
+            )
+        deployment.pred_value_alert_enabled = True
+        deployment.pred_value_alert_pct = body.alert_pct
+    elif not body.enabled:
+        deployment.pred_value_alert_enabled = False
+        deployment.pred_value_alert_pct = None
+        deployment.pred_value_alert_last_fired_at = None
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail="alert_pct is required when enabled=true",
+        )
+
+    session.add(deployment)
+    session.commit()
+    session.refresh(deployment)
+
+    _enabled = getattr(deployment, "pred_value_alert_enabled", False)
+    _pct = getattr(deployment, "pred_value_alert_pct", None)
+    _last = getattr(deployment, "pred_value_alert_last_fired_at", None)
+    return {
+        "deployment_id": deployment_id,
+        "pred_value_alert_enabled": _enabled,
+        "alert_pct": _pct,
+        "pred_value_alert_last_fired_at": (_last.isoformat() if _last else None),
+        "cooldown_hours": _PRED_VALUE_ALERT_COOLDOWN_HOURS,
+        "summary": (
+            f"Prediction value trend alert enabled: webhook fires when rolling mean "
+            f"shifts more than {_pct}%."
+            if _enabled and _pct is not None
+            else "Prediction value trend alert is disabled."
+        ),
+    }
+
+
+@router.get("/api/deploy/{deployment_id}/pred-value-alert-status")
+def get_pred_value_alert_status(
+    deployment_id: str,
+    session: Session = Depends(get_session),
+):
+    """Return the current prediction value trend alert configuration."""
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment:
+        raise HTTPException(status_code=404, detail="Deployment not found")
+
+    _enabled = getattr(deployment, "pred_value_alert_enabled", False)
+    _pct = getattr(deployment, "pred_value_alert_pct", None)
+    _last = getattr(deployment, "pred_value_alert_last_fired_at", None)
+    return {
+        "deployment_id": deployment_id,
+        "pred_value_alert_enabled": _enabled,
+        "alert_pct": _pct,
+        "pred_value_alert_last_fired_at": (_last.isoformat() if _last else None),
+        "cooldown_hours": _PRED_VALUE_ALERT_COOLDOWN_HOURS,
+        "summary": (
+            f"Prediction value trend alerting is enabled. Webhook fires when rolling "
+            f"mean shifts more than {_pct}%."
+            if _enabled and _pct is not None
+            else "Prediction value trend alerting is disabled."
+        ),
+    }
+
+
+# ---------------------------------------------------------------------------
 # Segment drift detection endpoint
 # ---------------------------------------------------------------------------
 
