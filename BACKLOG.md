@@ -53,6 +53,30 @@ the time is better spent on real features.
 
 ---
 
+## Day 90 (12:00) — Done
+
+**Track D: Prediction Confidence Heatmap by Feature Value** — complete.
+
+Closes the "which input combinations make my model least confident?" analyst gap — distinct from `SegmentConfidenceTrendCard` (per-segment time series) and `ConfidenceDistributionCard` (overall histogram, training-time). Analysts ask "confidence heatmap", "which input combinations make my model least confident?", "feature confidence grid", "show low confidence zones", "confidence by age and income", "model uncertainty heatmap", "which combinations confuse my model?", or "where is my model uncertain for age and region?" (8 NL variants in `_CONF_HEATMAP_PATTERNS`) and receive a `ConfidenceHeatmapCard` showing a 2D grid of average model confidence across two feature dimensions — revealing exactly which input value combinations produce unreliable predictions.
+
+**What was built:**
+- `compute_confidence_heatmap(logs_data, feature_x, feature_y, n_bins=5, *, problem_type, min_samples_per_cell=3)` pure function in `core/analyzer.py`: for numeric features creates n_bins equal-width bins (clamped 2–6); for categorical features uses sorted unique values (up to 8); computes avg confidence per (x_bin, y_bin) cell; for regression uses inverse CV% as consistency proxy; marks cells with avg < 65% as `is_low_confidence`; sorts `low_confidence_zones` ascending by confidence; verdicts: `gaps_found` / `uniform_high` / `uniform_moderate` / `insufficient_data` / `no_data`; requires ≥5 valid logs, ≥3 samples per cell; plain-English summary with worst zone details
+- `GET /api/deploy/{id}/confidence-heatmap?feature_x=age&feature_y=region&n=200&n_bins=5` REST endpoint in `api/deploy.py`: auto-detects feature pair when not specified (prefers categorical + numeric for interpretability); loads up to n prediction logs; returns full heatmap result with `deployment_id`
+- `_CONF_HEATMAP_PATTERNS` (8 NL variants) + `_detect_heatmap_features()` helper (extracts up to 2 feature names from message, falls back to auto-detect from feature_ranges) + handler in `chat.py`; guarded by `ctx["deployment"]`; emits `{type:"conf_heatmap"}` SSE event
+- `ConfidenceHeatmapCard` at `components/deploy/confidence-heatmap-card.tsx`: rose border (gaps_found) / emerald (uniform_high) / amber (uniform_moderate); 🗺️ icon; feature pair + n-samples + cells-populated badges; stats row (min/mean/max confidence %); CSS grid heatmap with color-coded cells (rose <55%, amber 55–70%, lime 70–85%, emerald ≥85%); cell tooltip with exact confidence and sample count; color legend; rose `role="alert"` callout listing low-confidence zones with feature values, avg confidence, and sample counts
+- Full TypeScript wiring: `ConfidenceHeatmapVerdict`, `ConfidenceHeatmapCell`, `ConfidenceHeatmapZone`, `ConfidenceHeatmapResult` interfaces; `conf_heatmap?` on `ChatMessage`; `attachConfHeatmapToLastMessage` Zustand action; SSE handlers (both EventSource branches) + card render in `project/[id]/page.tsx`
+
+**Tests:** 35 backend (18 pure-function + 8 regex + 5 REST endpoint + 4 negatives) + 18 frontend (15 card component + 3 store action) = **53 new tests**. All passing. Backend lint: clean. Frontend build + TypeScript: clean.
+
+**Baseline:** 6191 backend / 3512 frontend → **6226 backend / 3530 frontend** (+35 / +18).
+
+**What's next:**
+- Canary deployment support — route a configurable % of predictions to a new model version, compare accuracy/latency live before full promotion
+- Deployment A/B test result summary via chat — compare two live deployments side by side with accuracy, latency, and prediction distribution
+- Model-level feature sensitivity sweep — "which feature value range produces the most extreme predictions?"
+
+---
+
 ## Day 90 (04:00) — Done
 
 **Track D: Prediction Value Trend Alert** — complete.

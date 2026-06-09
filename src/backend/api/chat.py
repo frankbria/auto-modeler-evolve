@@ -18150,7 +18150,9 @@ def send_message(
                         }
                     )
 
-                _ch_result = _cch(_ch_logs_data, _ch_fx, _ch_fy, problem_type=_ch_problem)
+                _ch_result = _cch(
+                    _ch_logs_data, _ch_fx, _ch_fy, problem_type=_ch_problem
+                )
                 _ch_result["deployment_id"] = _ch_dep_id
                 conf_heatmap_event = _ch_result
 

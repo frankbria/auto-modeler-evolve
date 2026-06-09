@@ -12,7 +12,9 @@ from core.analyzer import compute_confidence_heatmap
 # ---------------------------------------------------------------------------
 
 
-def _cls_log(vx, vy, confidence: float, feat_x: str = "age", feat_y: str = "region") -> dict:
+def _cls_log(
+    vx, vy, confidence: float, feat_x: str = "age", feat_y: str = "region"
+) -> dict:
     return {
         "prediction_numeric": None,
         "confidence": confidence,
@@ -60,10 +62,20 @@ def test_required_keys_present():
     logs = _make_cls_logs(30)
     result = compute_confidence_heatmap(logs, "age", "region")
     for key in (
-        "feature_x", "feature_y", "x_labels", "y_labels",
-        "cells", "low_confidence_zones", "overall_min", "overall_max",
-        "overall_mean", "n_samples", "n_cells_total", "n_cells_populated",
-        "verdict", "summary",
+        "feature_x",
+        "feature_y",
+        "x_labels",
+        "y_labels",
+        "cells",
+        "low_confidence_zones",
+        "overall_min",
+        "overall_max",
+        "overall_mean",
+        "n_samples",
+        "n_cells_total",
+        "n_cells_populated",
+        "verdict",
+        "summary",
     ):
         assert key in result, f"Missing key: {key}"
 
@@ -183,7 +195,9 @@ def test_regression_uses_cv_metric():
         logs.append(_reg_log("B", "Y", 10.0))
     for _ in range(10):
         logs.append(_reg_log("B", "Y", 10000.0))
-    result = compute_confidence_heatmap(logs, "age", "region", problem_type="regression")
+    result = compute_confidence_heatmap(
+        logs, "age", "region", problem_type="regression"
+    )
     consistent_cells = [c for c in result["cells"] if c["x_label"] == "A"]
     spread_cells = [c for c in result["cells"] if c["x_label"] == "B"]
     if consistent_cells and spread_cells:
@@ -208,7 +222,13 @@ def test_feature_x_y_in_result():
 def test_n_samples_counts_valid_rows():
     logs = _make_cls_logs(30)
     # Add a row with missing feature_y — should be excluded
-    logs.append({"confidence": 0.8, "prediction_numeric": None, "input_features_dict": {"age": 1}})
+    logs.append(
+        {
+            "confidence": 0.8,
+            "prediction_numeric": None,
+            "input_features_dict": {"age": 1},
+        }
+    )
     result = compute_confidence_heatmap(logs, "age", "region")
     assert result["n_samples"] == 30
 
@@ -328,12 +348,18 @@ def test_endpoint_returns_no_data_without_logs(client):
     from db import engine
 
     dep_id = _create_deployment(engine)
-    resp = client.get(f"/api/deploy/{dep_id}/confidence-heatmap?feature_x=age&feature_y=region")
+    resp = client.get(
+        f"/api/deploy/{dep_id}/confidence-heatmap?feature_x=age&feature_y=region"
+    )
     assert resp.status_code == 200
     data = resp.json()
     assert "verdict" in data
     assert data["verdict"] in (
-        "insufficient_data", "no_data", "gaps_found", "uniform_high", "uniform_moderate"
+        "insufficient_data",
+        "no_data",
+        "gaps_found",
+        "uniform_high",
+        "uniform_moderate",
     )
 
 
@@ -341,7 +367,9 @@ def test_endpoint_returns_deployment_id(client):
     from db import engine
 
     dep_id = _create_deployment(engine)
-    resp = client.get(f"/api/deploy/{dep_id}/confidence-heatmap?feature_x=age&feature_y=region")
+    resp = client.get(
+        f"/api/deploy/{dep_id}/confidence-heatmap?feature_x=age&feature_y=region"
+    )
     assert resp.status_code == 200
     data = resp.json()
     assert data.get("deployment_id") == dep_id
@@ -361,11 +389,21 @@ def test_endpoint_required_fields_in_response(client):
     from db import engine
 
     dep_id = _create_deployment(engine)
-    resp = client.get(f"/api/deploy/{dep_id}/confidence-heatmap?feature_x=age&feature_y=region")
+    resp = client.get(
+        f"/api/deploy/{dep_id}/confidence-heatmap?feature_x=age&feature_y=region"
+    )
     assert resp.status_code == 200
     data = resp.json()
     for key in (
-        "deployment_id", "feature_x", "feature_y", "x_labels", "y_labels",
-        "cells", "low_confidence_zones", "n_samples", "verdict", "summary",
+        "deployment_id",
+        "feature_x",
+        "feature_y",
+        "x_labels",
+        "y_labels",
+        "cells",
+        "low_confidence_zones",
+        "n_samples",
+        "verdict",
+        "summary",
     ):
         assert key in data, f"Missing key: {key}"

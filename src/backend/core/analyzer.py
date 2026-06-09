@@ -8208,18 +8208,22 @@ def compute_confidence_heatmap(
             if abs(mean_v) < 1e-9:
                 avg = 0.5  # undefined spread
             else:
-                cv = (sum((v - mean_v) ** 2 for v in vals) / len(vals)) ** 0.5 / abs(mean_v)
+                cv = (sum((v - mean_v) ** 2 for v in vals) / len(vals)) ** 0.5 / abs(
+                    mean_v
+                )
                 avg = max(0.0, 1.0 - min(cv, 1.0))  # invert: 1=stable, 0=chaotic
 
-        cells.append({
-            "x_idx": xi,
-            "y_idx": yi,
-            "x_label": x_labels[xi],
-            "y_label": y_labels[yi],
-            "avg_confidence": round(avg, 4),
-            "n_samples": len(vals),
-            "is_low_confidence": avg < LOW_THRESHOLD,
-        })
+        cells.append(
+            {
+                "x_idx": xi,
+                "y_idx": yi,
+                "x_label": x_labels[xi],
+                "y_label": y_labels[yi],
+                "avg_confidence": round(avg, 4),
+                "n_samples": len(vals),
+                "is_low_confidence": avg < LOW_THRESHOLD,
+            }
+        )
         all_cell_means.append(avg)
 
     low_confidence_zones = sorted(
@@ -8229,7 +8233,9 @@ def compute_confidence_heatmap(
 
     overall_min = round(min(all_cell_means), 4) if all_cell_means else None
     overall_max = round(max(all_cell_means), 4) if all_cell_means else None
-    overall_mean = round(sum(all_cell_means) / len(all_cell_means), 4) if all_cell_means else None
+    overall_mean = (
+        round(sum(all_cell_means) / len(all_cell_means), 4) if all_cell_means else None
+    )
 
     n_low = len(low_confidence_zones)
     if not cells:
