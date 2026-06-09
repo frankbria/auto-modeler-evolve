@@ -1,5 +1,25 @@
 # Journal
 
+## Day 90 — 12:00 — Prediction Confidence Heatmap by Feature Value (Track D)
+
+**Feature shipped:** Prediction Confidence Heatmap — a 2D grid visualization showing average model confidence across combinations of two input feature values. Analysts ask "confidence heatmap", "which combinations make my model least confident?", or "where is my model uncertain?" and receive a `ConfidenceHeatmapCard` revealing exactly which input value pairs produce unreliable predictions. The canonical example: "when age is 18–35 AND region is West, my model is only 52% confident — I should gather more training data from that segment." Closes the "I know my model has weak spots but I don't know which inputs trigger them" gap — distinct from `SegmentConfidenceTrendCard` (time-series per segment) and `ConfidenceDistributionCard` (overall histogram, training-time).
+
+**What was built:**
+- `compute_confidence_heatmap()` pure function in `core/analyzer.py`: bins numeric features into 2–6 equal-width ranges; keeps categorical features as-is (up to 8 values); computes avg confidence per (x_bin, y_bin) cell; for regression uses inverse CV% as consistency proxy; marks cells with avg < 65% as low-confidence zones; verdicts: `gaps_found` / `uniform_high` / `uniform_moderate` / `insufficient_data` / `no_data`; requires ≥5 valid logs and ≥3 samples per cell
+- `GET /api/deploy/{id}/confidence-heatmap` REST endpoint: auto-detects feature pair when not specified (prefers categorical + numeric)
+- `_CONF_HEATMAP_PATTERNS` (8 NL variants) + `_detect_heatmap_features()` helper + handler in `chat.py`; emits `{type:"conf_heatmap"}` SSE event
+- `ConfidenceHeatmapCard`: CSS grid heatmap with 4-color scheme (rose/amber/lime/emerald), cell tooltips, color legend, rose alert callout for low-confidence zones with exact feature values + sample counts
+
+**What worked:** The bin-then-aggregate approach produces a compact, interpretable visualization without requiring chart libraries — pure CSS grid. The `is_low_confidence` flag on cells and the sorted `low_confidence_zones` list made the frontend callout section trivial to build. Auto-detection of feature pair (categorical + numeric preferred) means the feature works out of the box for most deployments.
+
+**What's next:** Track D perpetual work continues — canary deployment support (traffic splitting between model versions) and model-level feature sensitivity sweep ("which feature value range produces the most extreme predictions?") are the strongest next candidates.
+
+**Tests:** 35 backend (18 pure-function + 8 regex + 5 REST endpoint + 4 false-positive guards) + 18 frontend (15 card component + 3 store action) = **53 new tests**. All passing. Backend lint: clean. Frontend build + TypeScript: clean.
+
+**Baseline:** 6191 backend / 3512 frontend → **6226 backend / 3530 frontend** (+35 / +18).
+
+---
+
 ## Day 90 — 04:00 — Prediction Value Trend Alert (Track D)
 
 **Feature shipped:** Prediction Value Trend Alert — a proactive push notification that fires when the rolling mean prediction output shifts significantly from its recent baseline. The canonical example: "alert me if average revenue prediction drops more than 15%". Closes the "my model predictions silently drifted and I didn't notice until users complained" ops gap — without requiring labeled feedback (unlike `accuracy_alert` or `auto_rollback`) and without the limitations of on-demand historical snapshots (unlike `PredictionValueTrendCard`).
