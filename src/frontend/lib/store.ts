@@ -212,6 +212,7 @@ interface AppState {
   attachSegmentDriftToLastMessage: (segment_drift: import("./types").SegmentDriftResult) => void
   attachSegmentPredTrendToLastMessage: (segment_pred_trend: import("./types").SegmentPredTrendResult) => void
   attachSegmentConfTrendToLastMessage: (segment_conf_trend: import("./types").SegmentConfTrendResult) => void
+  attachConfHeatmapToLastMessage: (conf_heatmap: import("./types").ConfidenceHeatmapResult) => void
   attachUptimeSummaryToLastMessage: (uptime_summary: import("./types").ApiUptimeSummaryResult) => void
   attachCostSensitiveThresholdToLastMessage: (cost_sensitive_threshold: import("./types").CostSensitiveThresholdResult) => void
 }
@@ -1823,6 +1824,16 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, segment_conf_trend }
+      }
+      return { messages }
+    }),
+
+  attachConfHeatmapToLastMessage: (conf_heatmap) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, conf_heatmap }
       }
       return { messages }
     }),

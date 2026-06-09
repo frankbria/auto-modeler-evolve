@@ -35,6 +35,7 @@ from sqlmodel import Session, select
 from core.analyzer import (
     compute_batch_job_results,
     compute_covariate_drift_alert,
+    compute_confidence_heatmap,
     compute_confidence_trend,
     compute_deployment_health_item,
     compute_deployment_monitoring_digest,
@@ -8983,6 +8984,114 @@ def get_segment_confidence_trend(
         segment_col,
         problem_type,
         n_days=n_days,
+    )
+    result["deployment_id"] = deployment_id
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Confidence Heatmap
+# ---------------------------------------------------------------------------
+
+
+@router.get("/api/deploy/{deployment_id}/confidence-heatmap")
+def get_confidence_heatmap(
+    deployment_id: str,
+    feature_x: str | None = None,
+    feature_y: str | None = None,
+    n: int = Query(default=200, ge=10, le=1000),
+    n_bins: int = Query(default=5, ge=2, le=6),
+    session: Session = Depends(get_session),
+) -> dict:
+    """Return a 2D confidence heatmap across two feature dimensions.
+
+    For classification: shows average model confidence per (feature_x, feature_y)
+    bin combination, revealing which input combinations yield low-confidence
+    predictions.
+
+    For regression: shows prediction consistency (inverse CV%) per cell.
+
+    Auto-detects feature pair when not specified: prefers one categorical + one
+    numeric feature for interpretability.
+    """
+    dep = session.get(Deployment, deployment_id)
+    if not dep:
+        raise HTTPException(status_code=404, detail="Deployment not found")
+
+    logs = session.exec(
+        select(PredictionLog)
+        .where(PredictionLog.deployment_id == deployment_id)
+        .order_by(PredictionLog.created_at.desc())  # type: ignore[union-attr]
+        .limit(n)
+    ).all()
+
+    feature_ranges: dict = {}
+    if dep.pipeline_path:
+        try:
+            from core.deployer import load_pipeline as _lp_ch
+
+            _pipeline_ch = _lp_ch(dep.pipeline_path)
+            feature_ranges = getattr(_pipeline_ch, "feature_ranges", {})
+        except Exception:  # noqa: BLE001
+            pass
+
+    # Auto-detect feature_x / feature_y when not provided
+    if not feature_x or not feature_y:
+        cat_feats = [f for f, r in feature_ranges.items() if "known_categories" in r]
+        num_feats = [f for f, r in feature_ranges.items() if "min" in r]
+        candidates = cat_feats + num_feats
+        if not feature_x:
+            feature_x = candidates[0] if candidates else None
+        if not feature_y:
+            remaining = [f for f in candidates if f != feature_x]
+            feature_y = remaining[0] if remaining else None
+
+    if not feature_x or not feature_y:
+        return {
+            "deployment_id": deployment_id,
+            "feature_x": feature_x,
+            "feature_y": feature_y,
+            "x_labels": [],
+            "y_labels": [],
+            "cells": [],
+            "low_confidence_zones": [],
+            "overall_min": None,
+            "overall_max": None,
+            "overall_mean": None,
+            "n_samples": 0,
+            "n_cells_total": 0,
+            "n_cells_populated": 0,
+            "verdict": "no_data",
+            "summary": (
+                "Could not auto-detect two features for the heatmap. "
+                "Specify feature_x and feature_y parameters."
+            ),
+        }
+
+    logs_data: list[dict] = []
+    for log in logs:
+        input_features_dict: dict = {}
+        try:
+            parsed = json.loads(log.input_features)
+            if isinstance(parsed, dict):
+                input_features_dict = parsed
+        except Exception:  # noqa: BLE001
+            pass
+        logs_data.append(
+            {
+                "prediction_numeric": log.prediction_numeric,
+                "confidence": log.confidence,
+                "input_features_dict": input_features_dict,
+            }
+        )
+
+    problem_type = dep.problem_type or "regression"
+    result = compute_confidence_heatmap(
+        logs_data,
+        feature_x,
+        feature_y,
+        n_bins=n_bins,
+        problem_type=problem_type,
     )
     result["deployment_id"] = deployment_id
     return result

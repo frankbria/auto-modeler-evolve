@@ -136,6 +136,7 @@ import { PredValueAlertCard } from "@/components/deploy/pred-value-alert-card"
 import { SegmentDriftCard } from "@/components/deploy/segment-drift-card"
 import { SegmentPredictionTrendCard } from "@/components/deploy/segment-prediction-trend-card"
 import { SegmentConfidenceTrendCard } from "@/components/deploy/segment-confidence-trend-card"
+import { ConfidenceHeatmapCard } from "@/components/deploy/confidence-heatmap-card"
 import { ApiUptimeSummaryCard } from "@/components/deploy/api-uptime-summary-card"
 import { CostSensitiveThresholdCard } from "@/components/models/cost-sensitive-threshold-card"
 import { EnsembleRecommendationCard } from "@/components/models/ensemble-recommendation-card"
@@ -445,6 +446,7 @@ export default function ProjectWorkspace() {
     attachSegmentDriftToLastMessage,
     attachSegmentPredTrendToLastMessage,
     attachSegmentConfTrendToLastMessage,
+    attachConfHeatmapToLastMessage,
     attachUptimeSummaryToLastMessage,
     attachCostSensitiveThresholdToLastMessage,
   } = useAppStore()
@@ -889,6 +891,8 @@ export default function ProjectWorkspace() {
                 attachSegmentPredTrendToLastMessage(json.segment_pred_trend as import("@/lib/types").SegmentPredTrendResult)
               } else if (json.type === "segment_conf_trend" && json.segment_conf_trend) {
                 attachSegmentConfTrendToLastMessage(json.segment_conf_trend as import("@/lib/types").SegmentConfTrendResult)
+              } else if (json.type === "conf_heatmap" && json.conf_heatmap) {
+                attachConfHeatmapToLastMessage(json.conf_heatmap as import("@/lib/types").ConfidenceHeatmapResult)
               } else if (json.type === "uptime_summary" && json.uptime_summary) {
                 attachUptimeSummaryToLastMessage(json.uptime_summary as import("@/lib/types").ApiUptimeSummaryResult)
               } else if (json.type === "cost_sensitive_threshold" && json.cost_sensitive_threshold) {
@@ -1121,6 +1125,8 @@ export default function ProjectWorkspace() {
                 attachSegmentPredTrendToLastMessage(json.segment_pred_trend as import("@/lib/types").SegmentPredTrendResult)
               } else if (json.type === "segment_conf_trend" && json.segment_conf_trend) {
                 attachSegmentConfTrendToLastMessage(json.segment_conf_trend as import("@/lib/types").SegmentConfTrendResult)
+              } else if (json.type === "conf_heatmap" && json.conf_heatmap) {
+                attachConfHeatmapToLastMessage(json.conf_heatmap as import("@/lib/types").ConfidenceHeatmapResult)
               } else if (json.type === "uptime_summary" && json.uptime_summary) {
                 attachUptimeSummaryToLastMessage(json.uptime_summary as import("@/lib/types").ApiUptimeSummaryResult)
               } else if (json.type === "cost_sensitive_threshold" && json.cost_sensitive_threshold) {
@@ -2090,6 +2096,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.segment_conf_trend && (
                       <SegmentConfidenceTrendCard result={msg.segment_conf_trend} />
+                    )}
+                    {msg.conf_heatmap && (
+                      <ConfidenceHeatmapCard result={msg.conf_heatmap} />
                     )}
                     {msg.uptime_summary && (
                       <ApiUptimeSummaryCard result={msg.uptime_summary} />

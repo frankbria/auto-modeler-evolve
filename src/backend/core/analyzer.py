@@ -8050,3 +8050,242 @@ def compute_api_uptime_summary(
         "note": note,
         "summary": summary,
     }
+
+
+def compute_confidence_heatmap(
+    logs_data: list[dict],
+    feature_x: str,
+    feature_y: str,
+    n_bins: int = 5,
+    *,
+    problem_type: str = "classification",
+    min_samples_per_cell: int = 3,
+) -> dict:
+    """Compute a 2D confidence heatmap across two feature dimensions.
+
+    Bins feature values and computes average model confidence for each
+    (x_bin, y_bin) combination — reveals which input combinations make
+    the model least confident. For regression, uses prediction CV% as
+    an uncertainty proxy instead of confidence.
+
+    Each log dict must have:
+        - ``confidence`` (float|None) — probability score (classification)
+        - ``prediction_numeric`` (float|None) — numeric prediction (regression)
+        - ``input_features_dict`` (dict) — parsed input features
+
+    Args:
+        logs_data: List of prediction log dicts.
+        feature_x: Feature name for the X axis.
+        feature_y: Feature name for the Y axis.
+        n_bins: Number of bins for numeric features (clamped to 2–6).
+        problem_type: ``"classification"`` or ``"regression"``.
+        min_samples_per_cell: Minimum samples per cell to include.
+
+    Returns:
+        Dict with ``cells``, ``x_labels``, ``y_labels``,
+        ``low_confidence_zones``, ``overall_min``, ``overall_max``,
+        ``overall_mean``, ``verdict``, ``summary``, and metadata.
+
+    Raises:
+        ValueError: If fewer than 5 logs have valid data.
+    """
+    from collections import defaultdict as _dd
+
+    n_bins = max(2, min(6, n_bins))
+    is_classification = problem_type == "classification"
+    LOW_THRESHOLD = 0.65  # below this = low confidence
+
+    def _get_metric(row: dict) -> float | None:
+        if is_classification:
+            v = row.get("confidence")
+            return float(v) if v is not None else None
+        v = row.get("prediction_numeric")
+        return float(v) if v is not None else None
+
+    # Collect valid rows that have both features and a metric
+    valid: list[tuple[object, object, float]] = []
+    for row in logs_data:
+        ifd = row.get("input_features_dict")
+        if not isinstance(ifd, dict):
+            continue
+        vx = ifd.get(feature_x)
+        vy = ifd.get(feature_y)
+        if vx is None or vy is None:
+            continue
+        metric = _get_metric(row)
+        if metric is None:
+            continue
+        valid.append((vx, vy, metric))
+
+    if len(valid) < 5:
+        return {
+            "feature_x": feature_x,
+            "feature_y": feature_y,
+            "x_labels": [],
+            "y_labels": [],
+            "cells": [],
+            "low_confidence_zones": [],
+            "overall_min": None,
+            "overall_max": None,
+            "overall_mean": None,
+            "n_samples": len(valid),
+            "n_cells_total": 0,
+            "n_cells_populated": 0,
+            "verdict": "insufficient_data",
+            "summary": (
+                f"Not enough prediction data for a confidence heatmap "
+                f"(only {len(valid)} predictions with both '{feature_x}' and "
+                f"'{feature_y}' values). Make more predictions to enable heatmap analysis."
+            ),
+        }
+
+    xs, ys, metrics = zip(*valid)
+
+    def _is_numeric(vals: tuple) -> bool:
+        for v in vals:
+            try:
+                float(str(v))
+            except (ValueError, TypeError):
+                return False
+        return True
+
+    def _make_bins(vals: tuple, is_num: bool) -> tuple[list[str], list[int]]:
+        if is_num:
+            floats = [float(str(v)) for v in vals]
+            lo, hi = min(floats), max(floats)
+            if lo == hi:
+                labels = [str(lo)]
+                return labels, [0] * len(vals)
+            step = (hi - lo) / n_bins
+            edges = [lo + i * step for i in range(n_bins + 1)]
+            edges[-1] += 1e-9  # ensure max value falls in last bin
+            labels = []
+            for i in range(n_bins):
+                l_val = edges[i]
+                r_val = edges[i + 1]
+                if abs(l_val) < 1000 and abs(r_val) < 1000:
+                    labels.append(f"{l_val:.1f}–{r_val:.1f}")
+                else:
+                    labels.append(f"{l_val:.0f}–{r_val:.0f}")
+            idx = []
+            for v in floats:
+                b = min(int((v - lo) / step), n_bins - 1)
+                idx.append(b)
+            return labels, idx
+        # categorical
+        unique_cats = sorted({str(v) for v in vals})[:8]
+        cat_map = {c: i for i, c in enumerate(unique_cats)}
+        idx = [cat_map.get(str(v), -1) for v in vals]
+        return unique_cats, idx
+
+    x_numeric = _is_numeric(xs)
+    y_numeric = _is_numeric(ys)
+    x_labels, x_idx = _make_bins(xs, x_numeric)
+    y_labels, y_idx = _make_bins(ys, y_numeric)
+
+    # Accumulate metrics per cell
+    cell_vals: dict[tuple[int, int], list[float]] = _dd(list)
+    for xi, yi, m in zip(x_idx, y_idx, metrics):
+        if xi < 0 or yi < 0:
+            continue
+        cell_vals[(xi, yi)].append(m)
+
+    # For regression use CV% as uncertainty; remap so 0=uncertain, 1=certain
+    # For classification avg confidence is already [0,1] where low = uncertain
+    cells = []
+    all_cell_means: list[float] = []
+
+    for (xi, yi), vals in cell_vals.items():
+        if len(vals) < min_samples_per_cell:
+            continue
+        if xi >= len(x_labels) or yi >= len(y_labels):
+            continue
+        if is_classification:
+            avg = sum(vals) / len(vals)
+        else:
+            # CV% as uncertainty: higher spread = less consistent = worse
+            mean_v = sum(vals) / len(vals)
+            if abs(mean_v) < 1e-9:
+                avg = 0.5  # undefined spread
+            else:
+                cv = (sum((v - mean_v) ** 2 for v in vals) / len(vals)) ** 0.5 / abs(mean_v)
+                avg = max(0.0, 1.0 - min(cv, 1.0))  # invert: 1=stable, 0=chaotic
+
+        cells.append({
+            "x_idx": xi,
+            "y_idx": yi,
+            "x_label": x_labels[xi],
+            "y_label": y_labels[yi],
+            "avg_confidence": round(avg, 4),
+            "n_samples": len(vals),
+            "is_low_confidence": avg < LOW_THRESHOLD,
+        })
+        all_cell_means.append(avg)
+
+    low_confidence_zones = sorted(
+        [c for c in cells if c["is_low_confidence"]],
+        key=lambda c: c["avg_confidence"],
+    )
+
+    overall_min = round(min(all_cell_means), 4) if all_cell_means else None
+    overall_max = round(max(all_cell_means), 4) if all_cell_means else None
+    overall_mean = round(sum(all_cell_means) / len(all_cell_means), 4) if all_cell_means else None
+
+    n_low = len(low_confidence_zones)
+    if not cells:
+        verdict = "no_data"
+    elif all(c["avg_confidence"] >= 0.80 for c in cells):
+        verdict = "uniform_high"
+    elif n_low == 0:
+        verdict = "uniform_moderate"
+    else:
+        verdict = "gaps_found"
+
+    metric_label = "confidence" if is_classification else "prediction consistency"
+
+    if verdict == "no_data":
+        summary = (
+            f"No cells had enough samples (≥{min_samples_per_cell}) to analyse "
+            f"{metric_label} across '{feature_x}' × '{feature_y}'."
+        )
+    elif verdict == "insufficient_data":
+        summary = "Not enough data."
+    elif verdict == "uniform_high":
+        summary = (
+            f"Model {metric_label} is uniformly high across all "
+            f"'{feature_x}' × '{feature_y}' combinations "
+            f"(min {overall_min:.0%}). No weak spots detected."
+        )
+    elif verdict == "uniform_moderate":
+        summary = (
+            f"Model {metric_label} is moderate across "
+            f"'{feature_x}' × '{feature_y}' combinations "
+            f"(mean {overall_mean:.0%}). No strongly low-confidence zones."
+        )
+    else:
+        worst_zone = low_confidence_zones[0]
+        summary = (
+            f"{n_low} input combination{'s' if n_low > 1 else ''} show"
+            f"{'s' if n_low == 1 else ''} low {metric_label} (<{LOW_THRESHOLD:.0%}), "
+            f"worst for {feature_x}='{worst_zone['x_label']}' + "
+            f"{feature_y}='{worst_zone['y_label']}' "
+            f"({worst_zone['avg_confidence']:.0%} avg, "
+            f"{worst_zone['n_samples']} predictions)."
+        )
+
+    return {
+        "feature_x": feature_x,
+        "feature_y": feature_y,
+        "x_labels": x_labels,
+        "y_labels": y_labels,
+        "cells": cells,
+        "low_confidence_zones": low_confidence_zones,
+        "overall_min": overall_min,
+        "overall_max": overall_max,
+        "overall_mean": overall_mean,
+        "n_samples": len(valid),
+        "n_cells_total": len(x_labels) * len(y_labels),
+        "n_cells_populated": len(cells),
+        "verdict": verdict,
+        "summary": summary,
+    }

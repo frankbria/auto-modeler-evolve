@@ -3946,6 +3946,47 @@ _SEGMENT_CONF_TREND_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# Confidence heatmap across two feature dimensions.
+# Distinct from _SEGMENT_CONF_TREND_PATTERNS (per-segment time series) and
+# _CONF_DIST_PATTERNS (overall confidence histogram, training-time).
+_CONF_HEATMAP_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"confidence\s+heatmap\b|"
+    r"(?:which|what)\s+(?:input\s+)?(?:combinations?|values?)\s+(?:make|give|produce|result\s+in)\s+(?:(?:the\s+)?(?:lowest|worst|poor|low)\s+confidence|(?:my\s+)?model\s+least\s+confident)\b|"
+    r"(?:feature|input)\s+confidence\s+(?:grid|map|heatmap|matrix)\b|"
+    r"(?:where|when)\s+is\s+(?:my\s+)?model\s+(?:uncertain|least\s+confident|struggling)\s+(?:with|for|on|across)?\s*\w*\s*(?:and|plus|×|x)\s*\w*\b|"
+    r"(?:low|poor)\s+confidence\s+(?:zones?|areas?|regions?|spots?)\b|"
+    r"confidence\s+(?:by|across|for)\s+(?:\w+\s+(?:and|x|×|plus)\s+\w+|two\s+features?)\b|"
+    r"(?:model|prediction)\s+uncertainty\s+(?:map|heatmap|grid|by\s+(?:two|2)\s+features?)\b|"
+    r"(?:which|what)\s+(?:combinations?|pairs?)\s+of\s+(?:input\s+)?(?:values?|features?)\s+(?:confuse|confound|hurt|reduce)\s+(?:my\s+)?(?:model|confidence)\b"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def _detect_heatmap_features(
+    message: str, feature_ranges: dict
+) -> tuple[str | None, str | None]:
+    """Extract up to two feature names from message or auto-detect from feature_ranges."""
+    msg_lower = message.lower()
+    mentioned: list[str] = []
+    for feat in feature_ranges:
+        if feat.lower() in msg_lower:
+            mentioned.append(feat)
+        if len(mentioned) == 2:
+            break
+    if len(mentioned) == 2:
+        return mentioned[0], mentioned[1]
+    # Auto-detect: prefer categorical + numeric for interpretability
+    cat_feats = [f for f, r in feature_ranges.items() if "known_categories" in r]
+    num_feats = [f for f, r in feature_ranges.items() if "min" in r]
+    candidates = cat_feats + num_feats
+    fx = mentioned[0] if mentioned else (candidates[0] if candidates else None)
+    remaining = [f for f in candidates if f != fx]
+    fy = remaining[0] if remaining else None
+    return fx, fy
+
+
 _QUOTA_RUNWAY_PATTERNS = re.compile(
     r"(?i)(?:"
     r"(?:will|can)\s+(?:my\s+)?quota\s+(?:last|cover|handle)\s+(?:the\s+)?month\b|"
@@ -18057,6 +18098,84 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Confidence calibration trend is nice-to-have; never crash chat
 
+    # Confidence heatmap: which (feature_x, feature_y) combinations yield low confidence?
+    # Distinct from _SEGMENT_CONF_TREND_PATTERNS (time-series per segment) and
+    # _CONF_DIST_PATTERNS (training-time confidence histogram, no input breakdown).
+    conf_heatmap_event: dict | None = None
+    if _CONF_HEATMAP_PATTERNS.search(body.message) and ctx["deployment"]:
+        try:
+            import json as _ch_json
+
+            from core.analyzer import compute_confidence_heatmap as _cch
+
+            _ch_dep = ctx["deployment"]
+            _ch_dep_id = _ch_dep.id if hasattr(_ch_dep, "id") else str(_ch_dep)
+            _ch_dep_obj = session.get(Deployment, _ch_dep_id)
+            _ch_problem = getattr(_ch_dep_obj, "problem_type", None) or "regression"
+
+            _ch_logs = session.exec(
+                select(PredictionLog)
+                .where(PredictionLog.deployment_id == _ch_dep_id)
+                .order_by(PredictionLog.created_at.desc())
+                .limit(200)
+            ).all()
+
+            _ch_feature_ranges: dict = {}
+            if _ch_dep_obj and getattr(_ch_dep_obj, "pipeline_path", None):
+                try:
+                    from core.deployer import load_pipeline as _load_pipeline_ch
+
+                    _ch_pipeline = _load_pipeline_ch(_ch_dep_obj.pipeline_path)
+                    _ch_feature_ranges = getattr(_ch_pipeline, "feature_ranges", {})
+                except Exception:  # noqa: BLE001
+                    pass
+
+            _ch_fx, _ch_fy = _detect_heatmap_features(body.message, _ch_feature_ranges)
+
+            if _ch_fx and _ch_fy:
+                _ch_logs_data: list[dict] = []
+                for _ch_lg in _ch_logs:
+                    _ch_ifd: dict = {}
+                    try:
+                        _ch_parsed = _ch_json.loads(_ch_lg.input_features)
+                        if isinstance(_ch_parsed, dict):
+                            _ch_ifd = _ch_parsed
+                    except Exception:  # noqa: BLE001
+                        pass
+                    _ch_logs_data.append(
+                        {
+                            "prediction_numeric": _ch_lg.prediction_numeric,
+                            "confidence": _ch_lg.confidence,
+                            "input_features_dict": _ch_ifd,
+                        }
+                    )
+
+                _ch_result = _cch(_ch_logs_data, _ch_fx, _ch_fy, problem_type=_ch_problem)
+                _ch_result["deployment_id"] = _ch_dep_id
+                conf_heatmap_event = _ch_result
+
+                _ch_verdict = _ch_result.get("verdict", "no_data")
+                _ch_summary = _ch_result.get("summary", "")
+                _ch_low_zones = _ch_result.get("low_confidence_zones", [])
+                _ch_n = _ch_result.get("n_samples", 0)
+                system_prompt += (
+                    f"\n\n## Confidence Heatmap ('{_ch_fx}' × '{_ch_fy}')\n"
+                    f"Verdict: {_ch_verdict}. {_ch_summary} "
+                    f"Total predictions analysed: {_ch_n}. "
+                    + (
+                        f"Low-confidence zones: {len(_ch_low_zones)} cell(s) below 65%. "
+                        if _ch_low_zones
+                        else "No low-confidence zones detected. "
+                    )
+                    + "A ConfidenceHeatmapCard is shown. "
+                    "Narrate which feature value combinations produce the lowest model confidence, "
+                    "what this means for prediction reliability for those inputs, and whether "
+                    "additional training data or feature engineering might help."
+                )
+
+        except Exception:  # noqa: BLE001
+            pass  # Heatmap is nice-to-have; never crash chat
+
     # Cost-sensitive threshold analysis (FP/FN misclassification costs)
     cost_sensitive_event: dict | None = None
     if _COST_SENSITIVE_PATTERNS.search(body.message) and ctx["model_runs"]:
@@ -21111,6 +21230,9 @@ def send_message(
 
         if segment_conf_trend_event:
             yield f"data: {json.dumps({'type': 'segment_conf_trend', 'segment_conf_trend': segment_conf_trend_event})}\n\n"
+
+        if conf_heatmap_event:
+            yield f"data: {json.dumps({'type': 'conf_heatmap', 'conf_heatmap': conf_heatmap_event})}\n\n"
 
         if cost_sensitive_event:
             yield f"data: {json.dumps({'type': 'cost_sensitive_threshold', 'cost_sensitive_threshold': cost_sensitive_event})}\n\n"

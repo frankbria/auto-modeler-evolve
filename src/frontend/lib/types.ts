@@ -574,6 +574,7 @@ export interface ChatMessage {
   segment_drift?: SegmentDriftResult
   segment_pred_trend?: SegmentPredTrendResult
   segment_conf_trend?: SegmentConfTrendResult
+  conf_heatmap?: ConfidenceHeatmapResult
   uptime_summary?: ApiUptimeSummaryResult
   cost_sensitive_threshold?: CostSensitiveThresholdResult
 }
@@ -4854,4 +4855,50 @@ export interface CostSensitiveThresholdResult {
   n_positive: number
   prevalence: number
   positive_label: string
+}
+
+// ---------------------------------------------------------------------------
+// Confidence Heatmap
+// ---------------------------------------------------------------------------
+
+export type ConfidenceHeatmapVerdict =
+  | 'gaps_found'
+  | 'uniform_high'
+  | 'uniform_moderate'
+  | 'insufficient_data'
+  | 'no_data'
+
+export interface ConfidenceHeatmapCell {
+  x_idx: number
+  y_idx: number
+  x_label: string
+  y_label: string
+  avg_confidence: number
+  n_samples: number
+  is_low_confidence: boolean
+}
+
+export interface ConfidenceHeatmapZone {
+  x_label: string
+  y_label: string
+  avg_confidence: number
+  n_samples: number
+}
+
+export interface ConfidenceHeatmapResult {
+  deployment_id?: string
+  feature_x: string
+  feature_y: string
+  x_labels: string[]
+  y_labels: string[]
+  cells: ConfidenceHeatmapCell[]
+  low_confidence_zones: ConfidenceHeatmapZone[]
+  overall_min: number | null
+  overall_max: number | null
+  overall_mean: number | null
+  n_samples: number
+  n_cells_total: number
+  n_cells_populated: number
+  verdict: ConfidenceHeatmapVerdict
+  summary: string
 }
