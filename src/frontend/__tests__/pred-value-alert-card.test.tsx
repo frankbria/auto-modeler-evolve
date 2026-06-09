@@ -25,7 +25,7 @@
 import React from "react"
 import { render, screen } from "@testing-library/react"
 import { PredValueAlertCard } from "@/components/deploy/pred-value-alert-card"
-import type { PredValueAlertConfig } from "@/lib/types"
+import type { PredValueAlertConfig, ChatMessage } from "@/lib/types"
 import { useAppStore } from "@/lib/store"
 
 function makeConfig(
@@ -159,22 +159,22 @@ test("applies amber border when last fired is set", () => {
 test("attachPredValueAlertConfigToLastMessage attaches to last assistant message", () => {
   const store = useAppStore.getState()
   store.setMessages([
-    { id: "1", role: "user", content: "hello" },
-    { id: "2", role: "assistant", content: "hi" },
+    { id: "1", role: "user", content: "hello", timestamp: "" },
+    { id: "2", role: "assistant", content: "hi", timestamp: "" },
   ])
   store.attachPredValueAlertConfigToLastMessage(makeConfig())
   const msgs = useAppStore.getState().messages
-  expect((msgs[1] as any).pred_value_alert_config).toBeDefined()
-  expect((msgs[1] as any).pred_value_alert_config.alert_pct).toBe(15.0)
+  expect((msgs[1] as ChatMessage).pred_value_alert_config).toBeDefined()
+  expect((msgs[1] as ChatMessage).pred_value_alert_config!.alert_pct).toBe(15.0)
 })
 
 // ---- 17. Store: does not attach to user message -----------------------------
 test("attachPredValueAlertConfigToLastMessage does not attach to user message", () => {
   const store = useAppStore.getState()
-  store.setMessages([{ id: "1", role: "user", content: "hello" }])
+  store.setMessages([{ id: "1", role: "user", content: "hello", timestamp: "" }])
   store.attachPredValueAlertConfigToLastMessage(makeConfig())
   const msgs = useAppStore.getState().messages
-  expect((msgs[0] as any).pred_value_alert_config).toBeUndefined()
+  expect((msgs[0] as ChatMessage).pred_value_alert_config).toBeUndefined()
 })
 
 // ---- 18. Store: does not crash with empty messages -------------------------
