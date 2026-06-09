@@ -184,7 +184,7 @@ describe("store: attachAutoRollbackConfigToLastMessage", () => {
     })
     useAppStore.getState().attachAutoRollbackConfigToLastMessage(config)
     const msgs = useAppStore.getState().messages
-    expect((msgs[1] as any).auto_rollback_config).toEqual(config)
+    expect((msgs[1] as Record<string, unknown>).auto_rollback_config).toEqual(config)
   })
 
   test("does not attach when last message is from user", () => {
@@ -193,7 +193,7 @@ describe("store: attachAutoRollbackConfigToLastMessage", () => {
     })
     useAppStore.getState().attachAutoRollbackConfigToLastMessage(config)
     const msgs = useAppStore.getState().messages
-    expect((msgs[0] as any).auto_rollback_config).toBeUndefined()
+    expect((msgs[0] as Record<string, unknown>).auto_rollback_config).toBeUndefined()
   })
 
   test("does not crash with empty messages array", () => {

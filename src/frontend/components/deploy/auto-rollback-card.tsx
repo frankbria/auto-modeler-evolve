@@ -104,7 +104,7 @@ export function AutoRollbackCard({ data }: AutoRollbackCardProps) {
 
       {!isEnabled && (
         <p className="text-xs text-slate-400 italic mt-1">
-          Say <em>"roll back if accuracy drops below 80%"</em> to enable
+          Say <em>&quot;roll back if accuracy drops below 80%&quot;</em> to enable
           automatic rollback protection.
         </p>
       )}
