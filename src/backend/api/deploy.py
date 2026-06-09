@@ -8583,9 +8583,7 @@ def _check_and_fire_pred_value_trend_alert(deployment_id: str) -> None:
             ]
             if len(_values) < _PRED_VALUE_ALERT_MIN_SAMPLES:
                 _values = [
-                    log.confidence
-                    for log in _logs
-                    if log.confidence is not None
+                    log.confidence for log in _logs if log.confidence is not None
                 ]
             if len(_values) < _PRED_VALUE_ALERT_MIN_SAMPLES:
                 return
@@ -8636,7 +8634,9 @@ def _check_and_fire_pred_value_trend_alert(deployment_id: str) -> None:
 
 class PredValueAlertRequest(BaseModel):
     enabled: bool = False
-    alert_pct: float | None = None  # e.g. 15.0 means alert if mean shifts >15%; None = disable
+    alert_pct: float | None = (
+        None  # e.g. 15.0 means alert if mean shifts >15%; None = disable
+    )
 
 
 @router.put("/api/deploy/{deployment_id}/pred-value-alert")

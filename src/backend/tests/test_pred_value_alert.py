@@ -256,7 +256,9 @@ def test_check_pred_value_alert_no_alert_when_shift_within_threshold(db_session)
     # Early half: mean 100, recent half: mean 105 → 5% shift, below 20% threshold
     early = [100.0] * 50
     recent = [105.0] * 50
-    _add_logs(db_session, dep.id, recent + early, offset_minutes=0)  # recent first (newest)
+    _add_logs(
+        db_session, dep.id, recent + early, offset_minutes=0
+    )  # recent first (newest)
     with patch("core.webhook.dispatch_webhooks") as mock_dispatch:
         from api.deploy import _check_and_fire_pred_value_trend_alert
 
@@ -285,7 +287,9 @@ def test_check_pred_value_alert_cooldown_prevents_repeat(db_session):
     recent = [130.0] * 50
     _add_logs(db_session, dep.id, recent + early)
     # Set last_fired_at to 1 hour ago — still within 24h cooldown
-    dep.pred_value_alert_last_fired_at = datetime.now(UTC).replace(tzinfo=None) - timedelta(hours=1)
+    dep.pred_value_alert_last_fired_at = datetime.now(UTC).replace(
+        tzinfo=None
+    ) - timedelta(hours=1)
     db_session.add(dep)
     db_session.commit()
 
@@ -302,7 +306,9 @@ def test_check_pred_value_alert_fires_after_cooldown_expires(db_session):
     recent = [130.0] * 50
     _add_logs(db_session, dep.id, recent + early)
     # Set last_fired_at to 25 hours ago — cooldown has expired
-    dep.pred_value_alert_last_fired_at = datetime.now(UTC).replace(tzinfo=None) - timedelta(hours=25)
+    dep.pred_value_alert_last_fired_at = datetime.now(UTC).replace(
+        tzinfo=None
+    ) - timedelta(hours=25)
     db_session.add(dep)
     db_session.commit()
 
@@ -480,7 +486,9 @@ def test_pred_value_alert_patterns_no_false_positives():
         "what is the latency threshold",
     ]
     for phrase in false_positives:
-        assert not _PRED_VALUE_ALERT_PATTERNS.search(phrase), f"False positive: {phrase!r}"
+        assert not _PRED_VALUE_ALERT_PATTERNS.search(phrase), (
+            f"False positive: {phrase!r}"
+        )
 
 
 def test_disable_pred_value_alert_re_matches():
@@ -510,6 +518,11 @@ def test_status_pred_value_alert_re_matches():
 def test_pred_value_alert_pct_re_extracts_percentage():
     from api.chat import _PRED_VALUE_ALERT_PCT_RE
 
-    assert _PRED_VALUE_ALERT_PCT_RE.search("alert me if predictions drop more than 15%").group(1) == "15"
+    assert (
+        _PRED_VALUE_ALERT_PCT_RE.search(
+            "alert me if predictions drop more than 15%"
+        ).group(1)
+        == "15"
+    )
     assert _PRED_VALUE_ALERT_PCT_RE.search("set threshold to 7.5%").group(1) == "7.5"
     assert _PRED_VALUE_ALERT_PCT_RE.search("no percentage here") is None
