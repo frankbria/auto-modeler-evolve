@@ -255,6 +255,7 @@ def test_rollback_skips_when_disabled(mem_session, tmp_path):
 
     with patch("core.webhook.dispatch_webhooks") as mock_dispatch:
         from api.deploy import _check_and_fire_accuracy_rollback
+
         _check_and_fire_accuracy_rollback(dep.id)
         mock_dispatch.assert_not_called()
 
@@ -270,6 +271,7 @@ def test_rollback_skips_when_threshold_none(mem_session, tmp_path):
 
     with patch("core.webhook.dispatch_webhooks") as mock_dispatch:
         from api.deploy import _check_and_fire_accuracy_rollback
+
         _check_and_fire_accuracy_rollback(dep.id)
         mock_dispatch.assert_not_called()
 
@@ -284,6 +286,7 @@ def test_rollback_skips_insufficient_feedback(mem_session, tmp_path):
 
     with patch("core.webhook.dispatch_webhooks") as mock_dispatch:
         from api.deploy import _check_and_fire_accuracy_rollback
+
         _check_and_fire_accuracy_rollback(dep.id)
         mock_dispatch.assert_not_called()
 
@@ -295,10 +298,13 @@ def test_rollback_skips_when_accuracy_above_threshold(mem_session, tmp_path):
     _make_deployment_version(mem_session, dep.id, 1, True, pl)
     _make_deployment_version(mem_session, dep.id, 2, False, pl)
     # 90% accuracy — above 80% threshold
-    _make_feedback(mem_session, dep.id, [True] * 9 + [False] * 1 + [True] * 5 + [True] * 5)
+    _make_feedback(
+        mem_session, dep.id, [True] * 9 + [False] * 1 + [True] * 5 + [True] * 5
+    )
 
     with patch("core.webhook.dispatch_webhooks") as mock_dispatch:
         from api.deploy import _check_and_fire_accuracy_rollback
+
         _check_and_fire_accuracy_rollback(dep.id)
         mock_dispatch.assert_not_called()
 
@@ -313,6 +319,7 @@ def test_rollback_skips_when_only_one_version(mem_session, tmp_path):
 
     with patch("core.webhook.dispatch_webhooks") as mock_dispatch:
         from api.deploy import _check_and_fire_accuracy_rollback
+
         _check_and_fire_accuracy_rollback(dep.id)
         mock_dispatch.assert_not_called()
 
@@ -333,6 +340,7 @@ def test_rollback_fires_when_accuracy_below_threshold(mem_session, tmp_path):
 
     with patch("core.webhook.dispatch_webhooks") as mock_dispatch:
         from api.deploy import _check_and_fire_accuracy_rollback
+
         _check_and_fire_accuracy_rollback(dep.id)
         mock_dispatch.assert_called_once()
 
@@ -353,6 +361,7 @@ def test_rollback_cooldown_prevents_repeat(mem_session, tmp_path):
 
     with patch("core.webhook.dispatch_webhooks") as mock_dispatch:
         from api.deploy import _check_and_fire_accuracy_rollback
+
         _check_and_fire_accuracy_rollback(dep.id)
         mock_dispatch.assert_not_called()
 
@@ -376,6 +385,7 @@ def test_rollback_payload_keys(mem_session, tmp_path):
 
     with patch("core.webhook.dispatch_webhooks", side_effect=capture):
         from api.deploy import _check_and_fire_accuracy_rollback
+
         _check_and_fire_accuracy_rollback(dep.id)
 
     assert dispatched.get("event_type") == EVENT_ROLLBACK_TRIGGERED

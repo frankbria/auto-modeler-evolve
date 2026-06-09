@@ -17633,15 +17633,23 @@ def send_message(
                     and 0.0 <= _arb_new_threshold_pct <= 100.0
                 ):
                     _arb_dep_obj.auto_rollback_enabled = True
-                    _arb_dep_obj.auto_rollback_accuracy_threshold = _arb_new_threshold_pct / 100.0
+                    _arb_dep_obj.auto_rollback_accuracy_threshold = (
+                        _arb_new_threshold_pct / 100.0
+                    )
                     session.add(_arb_dep_obj)
                     session.commit()
                     session.refresh(_arb_dep_obj)
 
                 _arb_enabled = getattr(_arb_dep_obj, "auto_rollback_enabled", False)
-                _arb_threshold = getattr(_arb_dep_obj, "auto_rollback_accuracy_threshold", None)
+                _arb_threshold = getattr(
+                    _arb_dep_obj, "auto_rollback_accuracy_threshold", None
+                )
                 _arb_last = getattr(_arb_dep_obj, "auto_rollback_triggered_at", None)
-                _arb_thr_pct = round(_arb_threshold * 100, 1) if _arb_threshold is not None else None
+                _arb_thr_pct = (
+                    round(_arb_threshold * 100, 1)
+                    if _arb_threshold is not None
+                    else None
+                )
                 auto_rollback_event = {
                     "deployment_id": _arb_dep_id,
                     "auto_rollback_enabled": _arb_enabled,
