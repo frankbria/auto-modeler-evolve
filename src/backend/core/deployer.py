@@ -943,11 +943,15 @@ def compute_scenario_comparison(
             s for s in scenarios_data if s.get("prediction_numeric") is not None
         ]
         if numeric_scenarios:
-            sorted_asc = sorted(numeric_scenarios, key=lambda s: s["prediction_numeric"])
+            sorted_asc = sorted(
+                numeric_scenarios, key=lambda s: s["prediction_numeric"]
+            )
             worst_scenario = sorted_asc[0]
             best_scenario = sorted_asc[-1]
             spread = round(
-                best_scenario["prediction_numeric"] - worst_scenario["prediction_numeric"], 4
+                best_scenario["prediction_numeric"]
+                - worst_scenario["prediction_numeric"],
+                4,
             )
         if n == 1:
             summary = (
@@ -974,9 +978,7 @@ def compute_scenario_comparison(
         mode_class, mode_count = class_counts.most_common(1)[0]
         n_classes = len(class_counts)
         if n_classes == 1:
-            summary = (
-                f"{n} saved scenarios all predict '{mode_class}'."
-            )
+            summary = f"{n} saved scenarios all predict '{mode_class}'."
         else:
             distribution = ", ".join(
                 f"'{c}': {cnt}" for c, cnt in class_counts.most_common()

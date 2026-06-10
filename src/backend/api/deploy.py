@@ -9258,17 +9258,15 @@ def save_scenario(
     if not name:
         raise HTTPException(status_code=400, detail="Scenario name cannot be empty")
     if len(name) > 80:
-        raise HTTPException(status_code=400, detail="Scenario name too long (max 80 chars)")
+        raise HTTPException(
+            status_code=400, detail="Scenario name too long (max 80 chars)"
+        )
 
     prediction_value = body.prediction_value
     prediction_numeric = body.prediction_numeric
     confidence = body.confidence
 
-    if (
-        body.inputs
-        and dep.pipeline_path
-        and Path(dep.pipeline_path).exists()
-    ):
+    if body.inputs and dep.pipeline_path and Path(dep.pipeline_path).exists():
         try:
             run = session.get(ModelRun, dep.model_run_id)
             if run and run.model_path and Path(run.model_path).exists():
@@ -9277,8 +9275,7 @@ def save_scenario(
 
                 _pl = _lp_sv(dep.pipeline_path)
                 inputs_full = {
-                    f: _pl.feature_means.get(f, 0.0)
-                    for f in _pl.feature_names
+                    f: _pl.feature_means.get(f, 0.0) for f in _pl.feature_names
                 }
                 inputs_full.update(body.inputs)
                 result_pred = _ps_sv(dep.pipeline_path, run.model_path, inputs_full)

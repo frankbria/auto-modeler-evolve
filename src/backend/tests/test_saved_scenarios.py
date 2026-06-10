@@ -43,7 +43,9 @@ def test_save_pattern_bookmark():
 def test_save_pattern_with_overrides():
     from api.chat import _SAVE_SCENARIO_PATTERNS
 
-    assert _SAVE_SCENARIO_PATTERNS.search("save discount=0.1 quantity=100 as Q2 Optimistic")
+    assert _SAVE_SCENARIO_PATTERNS.search(
+        "save discount=0.1 quantity=100 as Q2 Optimistic"
+    )
 
 
 def test_save_pattern_no_match_plain_save():
@@ -191,9 +193,30 @@ def test_comparison_regression_best_worst():
     from core.deployer import compute_scenario_comparison
 
     scenarios = [
-        {"id": "1", "name": "Low", "inputs": {}, "prediction_value": "50", "prediction_numeric": 50.0, "confidence": None},
-        {"id": "2", "name": "High", "inputs": {}, "prediction_value": "200", "prediction_numeric": 200.0, "confidence": None},
-        {"id": "3", "name": "Mid", "inputs": {}, "prediction_value": "120", "prediction_numeric": 120.0, "confidence": None},
+        {
+            "id": "1",
+            "name": "Low",
+            "inputs": {},
+            "prediction_value": "50",
+            "prediction_numeric": 50.0,
+            "confidence": None,
+        },
+        {
+            "id": "2",
+            "name": "High",
+            "inputs": {},
+            "prediction_value": "200",
+            "prediction_numeric": 200.0,
+            "confidence": None,
+        },
+        {
+            "id": "3",
+            "name": "Mid",
+            "inputs": {},
+            "prediction_value": "120",
+            "prediction_numeric": 120.0,
+            "confidence": None,
+        },
     ]
     result = compute_scenario_comparison(scenarios, "regression")
     assert result["best_scenario"]["name"] == "High"
@@ -205,20 +228,50 @@ def test_comparison_classification_single_class():
     from core.deployer import compute_scenario_comparison
 
     scenarios = [
-        {"id": "1", "name": "A", "inputs": {}, "prediction_value": "churn", "prediction_numeric": None, "confidence": 0.8},
-        {"id": "2", "name": "B", "inputs": {}, "prediction_value": "churn", "prediction_numeric": None, "confidence": 0.7},
+        {
+            "id": "1",
+            "name": "A",
+            "inputs": {},
+            "prediction_value": "churn",
+            "prediction_numeric": None,
+            "confidence": 0.8,
+        },
+        {
+            "id": "2",
+            "name": "B",
+            "inputs": {},
+            "prediction_value": "churn",
+            "prediction_numeric": None,
+            "confidence": 0.7,
+        },
     ]
     result = compute_scenario_comparison(scenarios, "classification")
     assert "churn" in result["summary"]
-    assert result["best_scenario"] is None  # no regression best/worst for classification
+    assert (
+        result["best_scenario"] is None
+    )  # no regression best/worst for classification
 
 
 def test_comparison_classification_multi_class():
     from core.deployer import compute_scenario_comparison
 
     scenarios = [
-        {"id": "1", "name": "A", "inputs": {}, "prediction_value": "churn", "prediction_numeric": None, "confidence": 0.8},
-        {"id": "2", "name": "B", "inputs": {}, "prediction_value": "no_churn", "prediction_numeric": None, "confidence": 0.9},
+        {
+            "id": "1",
+            "name": "A",
+            "inputs": {},
+            "prediction_value": "churn",
+            "prediction_numeric": None,
+            "confidence": 0.8,
+        },
+        {
+            "id": "2",
+            "name": "B",
+            "inputs": {},
+            "prediction_value": "no_churn",
+            "prediction_numeric": None,
+            "confidence": 0.9,
+        },
     ]
     result = compute_scenario_comparison(scenarios, "classification")
     assert "2 classes" in result["summary"]
@@ -235,7 +288,9 @@ def client_with_dep(tmp_path, monkeypatch):
     import db as db_module
     from main import app
     import models  # noqa: F401
-    from models.saved_scenario import SavedScenario as _SavedScenario  # ensure table registered  # noqa: F401
+    from models.saved_scenario import (
+        SavedScenario as _SavedScenario,
+    )  # ensure table registered  # noqa: F401
 
     test_engine = create_engine(f"sqlite:///{tmp_path / 'sc_test.db'}")
     monkeypatch.setattr(db_module, "engine", test_engine)
@@ -309,7 +364,12 @@ def test_delete_scenario(client_with_dep):
     client, dep_id = client_with_dep
     save_resp = client.post(
         f"/api/deploy/{dep_id}/scenarios",
-        json={"name": "Temp", "inputs": {}, "prediction_value": "50", "prediction_numeric": 50.0},
+        json={
+            "name": "Temp",
+            "inputs": {},
+            "prediction_value": "50",
+            "prediction_numeric": 50.0,
+        },
     )
     scenario_id = save_resp.json()["id"]
 
@@ -326,7 +386,12 @@ def test_clear_all_scenarios(client_with_dep):
     for i in range(3):
         client.post(
             f"/api/deploy/{dep_id}/scenarios",
-            json={"name": f"S{i}", "inputs": {}, "prediction_value": str(i * 10), "prediction_numeric": float(i * 10)},
+            json={
+                "name": f"S{i}",
+                "inputs": {},
+                "prediction_value": str(i * 10),
+                "prediction_numeric": float(i * 10),
+            },
         )
 
     clear_resp = client.delete(f"/api/deploy/{dep_id}/scenarios")
