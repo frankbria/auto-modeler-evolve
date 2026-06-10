@@ -28,7 +28,8 @@ import React from "react"
 import { render, screen } from "@testing-library/react"
 import "@testing-library/jest-dom"
 import { SavedScenariosCard } from "@/components/deploy/saved-scenarios-card"
-import { SavedScenariosResult, SavedScenarioEntry } from "@/lib/types"
+import { SavedScenariosResult, SavedScenarioEntry, ChatMessage } from "@/lib/types"
+import { useAppStore } from "@/lib/store"
 
 const makeEntry = (overrides: Partial<SavedScenarioEntry> = {}): SavedScenarioEntry => ({
   id: "id-1",
@@ -197,17 +198,15 @@ test("has sr-only figcaption", () => {
 
 describe("attachSavedScenariosToLastMessage", () => {
   beforeEach(() => {
-    const { useAppStore } = require("@/lib/store")
     useAppStore.setState({ messages: [] })
   })
 
   // 19. Attaches to last assistant message
   test("attaches saved_scenarios to last assistant message", () => {
-    const { useAppStore } = require("@/lib/store")
     useAppStore.setState({
       messages: [
-        { role: "user", content: "compare scenarios", id: "u1" },
-        { role: "assistant", content: "Here are your scenarios.", id: "a1" },
+        { role: "user", content: "compare scenarios", id: "u1" } as ChatMessage,
+        { role: "assistant", content: "Here are your scenarios.", id: "a1" } as ChatMessage,
       ],
     })
     const { attachSavedScenariosToLastMessage } = useAppStore.getState()
@@ -219,16 +218,15 @@ describe("attachSavedScenariosToLastMessage", () => {
 
   // 20. Does not attach to user message
   test("does not attach to user message", () => {
-    const { useAppStore } = require("@/lib/store")
     useAppStore.setState({
       messages: [
-        { role: "user", content: "compare scenarios", id: "u1" },
+        { role: "user", content: "compare scenarios", id: "u1" } as ChatMessage,
       ],
     })
     const { attachSavedScenariosToLastMessage } = useAppStore.getState()
     attachSavedScenariosToLastMessage(baseResult)
 
     const msgs = useAppStore.getState().messages
-    expect((msgs[msgs.length - 1] as any).saved_scenarios).toBeUndefined()
+    expect((msgs[msgs.length - 1] as ChatMessage).saved_scenarios).toBeUndefined()
   })
 })

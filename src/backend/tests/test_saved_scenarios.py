@@ -288,9 +288,7 @@ def client_with_dep(tmp_path, monkeypatch):
     import db as db_module
     from main import app
     import models  # noqa: F401
-    from models.saved_scenario import (
-        SavedScenario as _SavedScenario,
-    )  # ensure table registered  # noqa: F401
+    import models.saved_scenario  # noqa: F401  # ensure table registered
 
     test_engine = create_engine(f"sqlite:///{tmp_path / 'sc_test.db'}")
     monkeypatch.setattr(db_module, "engine", test_engine)
