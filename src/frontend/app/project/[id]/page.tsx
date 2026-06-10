@@ -139,6 +139,7 @@ import { SegmentConfidenceTrendCard } from "@/components/deploy/segment-confiden
 import { ConfidenceHeatmapCard } from "@/components/deploy/confidence-heatmap-card"
 import { ApiUptimeSummaryCard } from "@/components/deploy/api-uptime-summary-card"
 import { CostSensitiveThresholdCard } from "@/components/models/cost-sensitive-threshold-card"
+import { FeatureSweepCard } from "@/components/deploy/feature-sweep-card"
 import { EnsembleRecommendationCard } from "@/components/models/ensemble-recommendation-card"
 import { TuningChatCard } from "@/components/models/tuning-chat-card"
 import { CvScoreDistributionCard } from "@/components/models/cv-score-distribution-card"
@@ -449,6 +450,7 @@ export default function ProjectWorkspace() {
     attachConfHeatmapToLastMessage,
     attachUptimeSummaryToLastMessage,
     attachCostSensitiveThresholdToLastMessage,
+    attachFeatureSweepToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -893,6 +895,8 @@ export default function ProjectWorkspace() {
                 attachSegmentConfTrendToLastMessage(json.segment_conf_trend as import("@/lib/types").SegmentConfTrendResult)
               } else if (json.type === "conf_heatmap" && json.conf_heatmap) {
                 attachConfHeatmapToLastMessage(json.conf_heatmap as import("@/lib/types").ConfidenceHeatmapResult)
+              } else if (json.type === "feature_sweep" && json.feature_sweep) {
+                attachFeatureSweepToLastMessage(json.feature_sweep as import("@/lib/types").FeatureSweepResult)
               } else if (json.type === "uptime_summary" && json.uptime_summary) {
                 attachUptimeSummaryToLastMessage(json.uptime_summary as import("@/lib/types").ApiUptimeSummaryResult)
               } else if (json.type === "cost_sensitive_threshold" && json.cost_sensitive_threshold) {
@@ -1127,6 +1131,8 @@ export default function ProjectWorkspace() {
                 attachSegmentConfTrendToLastMessage(json.segment_conf_trend as import("@/lib/types").SegmentConfTrendResult)
               } else if (json.type === "conf_heatmap" && json.conf_heatmap) {
                 attachConfHeatmapToLastMessage(json.conf_heatmap as import("@/lib/types").ConfidenceHeatmapResult)
+              } else if (json.type === "feature_sweep" && json.feature_sweep) {
+                attachFeatureSweepToLastMessage(json.feature_sweep as import("@/lib/types").FeatureSweepResult)
               } else if (json.type === "uptime_summary" && json.uptime_summary) {
                 attachUptimeSummaryToLastMessage(json.uptime_summary as import("@/lib/types").ApiUptimeSummaryResult)
               } else if (json.type === "cost_sensitive_threshold" && json.cost_sensitive_threshold) {
@@ -2099,6 +2105,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.conf_heatmap && (
                       <ConfidenceHeatmapCard result={msg.conf_heatmap} />
+                    )}
+                    {msg.feature_sweep && (
+                      <FeatureSweepCard result={msg.feature_sweep} />
                     )}
                     {msg.uptime_summary && (
                       <ApiUptimeSummaryCard result={msg.uptime_summary} />

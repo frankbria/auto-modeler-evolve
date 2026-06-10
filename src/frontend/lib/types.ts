@@ -577,6 +577,7 @@ export interface ChatMessage {
   conf_heatmap?: ConfidenceHeatmapResult
   uptime_summary?: ApiUptimeSummaryResult
   cost_sensitive_threshold?: CostSensitiveThresholdResult
+  feature_sweep?: FeatureSweepResult
 }
 
 export interface RollbackVersionEntry {
@@ -4900,5 +4901,32 @@ export interface ConfidenceHeatmapResult {
   n_cells_total: number
   n_cells_populated: number
   verdict: ConfidenceHeatmapVerdict
+  summary: string
+}
+
+// ---------------------------------------------------------------------------
+// Feature Impact Sweep
+// ---------------------------------------------------------------------------
+
+export interface FeatureSweepEntry {
+  feature_name: string
+  feature_type: 'numeric' | 'categorical'
+  best_value: number | string
+  worst_value: number | string
+  best_prediction: number | string
+  worst_prediction: number | string
+  delta: number
+  rank: number
+}
+
+export interface FeatureSweepResult {
+  deployment_id?: string
+  direction: 'maximize' | 'minimize'
+  target_column: string
+  problem_type: string
+  n_features: number
+  features: FeatureSweepEntry[]
+  optimal_config: Record<string, number | string>
+  optimal_prediction: number | string
   summary: string
 }

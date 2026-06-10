@@ -1,5 +1,26 @@
 # Journal
 
+## Day 90 — 20:00 — Feature Impact Sweep (Track D)
+
+**Feature shipped:** Feature Impact Sweep — a ranked analysis of every model feature showing which value ranges produce the most extreme predictions, culminating in an optimal configuration that maximizes (or minimizes) the predicted outcome. The canonical example: an analyst asks "which feature values produce the most extreme predictions?" and receives a ranked table: "units is the #1 lever — setting it to 18.9 moves revenue from $5 to $93; price is constant with near-zero impact." A single question answers both "what matters most?" and "what should I actually set my inputs to?".
+
+**What was built:**
+- `run_feature_sweep(pipeline_path, model_path, direction, n_steps)` pure function in `core/deployer.py`: loads `PredictionPipeline` and serialized model; builds a base input dict (numeric features at training mean, categorical at `le.classes_[0]`); sweeps each numeric feature across mean±2σ in `n_steps` linspace steps; sweeps each categorical across all known classes; records `best_value`, `worst_value`, `best_prediction`, `worst_prediction`, `delta` per feature; sorts by delta descending; assigns `rank` starting at 1; computes `optimal_config` (every feature set to its independent best value) and `optimal_prediction`; for classification uses `proba.max()` (confidence of the winning class)
+- `GET /api/deploy/{id}/feature-sweep` REST endpoint in `api/deploy.py`: `direction` query param (maximize/minimize, validated by pattern), `n_steps` (5–20, default 10); adds `deployment_id` to result
+- `_FEATURE_SWEEP_PATTERNS` (9 NL variants) + `_FEATURE_SWEEP_MINIMIZE_RE` (minimize/lowest/worst-case detector) in `chat.py`; handler detects deployment context, auto-detects direction from message, calls `run_feature_sweep()`; injects top feature name + optimal prediction into system prompt; emits `{type:"feature_sweep"}` SSE event; wrapped in `except Exception: pass` (nice-to-have card, never crashes chat)
+- `FeatureSweepCard` at `components/deploy/feature-sweep-card.tsx`: teal border, 🔭 icon; Maximize/Minimize badge; n-features badge; target-column badge; Optimal Configuration section with large bold prediction value + feature=value badges (up to 8, +N more overflow); Feature Impact Ranking: top 10 features with rank badge, feature name, type badge, emerald=best / rose=worst values+predictions, proportional delta bar (width relative to top-ranked delta); footer disclaimer about independent sweeps
+- Full TypeScript wiring: `FeatureSweepEntry` + `FeatureSweepResult` interfaces in `lib/types.ts`; `featureSweep()` API method in `lib/api.ts`; `feature_sweep?` on `ChatMessage`; `attachFeatureSweepToLastMessage` Zustand action; SSE handlers in both EventSource branches of `project/[id]/page.tsx`; card render
+
+**Design choices:** Sweeping each feature independently (not a joint grid search) keeps the computation O(F×N) rather than O(N^F) — instant response for models with 10+ features. The `optimal_config` uses each feature's independent best value as an upper bound on achievable prediction; real-world performance may differ due to feature interactions, which the footer disclaimer explains. Direction detection from message text (`_FEATURE_SWEEP_MINIMIZE_RE`) means analysts can ask "what combination gives the lowest churn prediction?" without special syntax. For classification, `proba.max()` (confidence of the predicted class) is the optimization target — natural for "what makes my model most confident?" use cases.
+
+**What's next:** Track D perpetual work continues — next candidates include a feature interaction heatmap (two features swept jointly to reveal interaction effects), a what-if scenario comparison card (save and compare multiple input configurations), and a production input distribution drift alert (notify when live prediction inputs diverge from training distribution).
+
+**Tests:** 28 backend (10 regex/direction + 12 pure-function + 6 REST endpoint) + 19 frontend (16 card component + 3 store action) = **47 new tests**. All passing. Backend lint: clean. Frontend build + TypeScript: clean.
+
+**Baseline:** 6226 backend / 3530 frontend → **6254 backend / 3549 frontend** (+28 / +19).
+
+---
+
 ## Day 90 — 12:00 — Prediction Confidence Heatmap by Feature Value (Track D)
 
 **Feature shipped:** Prediction Confidence Heatmap — a 2D grid visualization showing average model confidence across combinations of two input feature values. Analysts ask "confidence heatmap", "which combinations make my model least confident?", or "where is my model uncertain?" and receive a `ConfidenceHeatmapCard` revealing exactly which input value pairs produce unreliable predictions. The canonical example: "when age is 18–35 AND region is West, my model is only 52% confident — I should gather more training data from that segment." Closes the "I know my model has weak spots but I don't know which inputs trigger them" gap — distinct from `SegmentConfidenceTrendCard` (time-series per segment) and `ConfidenceDistributionCard` (overall histogram, training-time).

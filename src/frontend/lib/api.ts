@@ -1386,6 +1386,15 @@ export const api = {
     getOutputAnomalies: (deploymentId: string, n = 50): Promise<import("@/lib/types").PredictionOutputAnomalyResult> =>
       fetch(`${API_URL}/api/deploy/${deploymentId}/output-anomalies?n=${n}`).then((r) => r.json()),
 
+    featureSweep: (
+      deploymentId: string,
+      direction: 'maximize' | 'minimize' = 'maximize',
+      nSteps = 10
+    ): Promise<import("@/lib/types").FeatureSweepResult> =>
+      fetch(
+        `${API_URL}/api/deploy/${deploymentId}/feature-sweep?direction=${direction}&n_steps=${nSteps}`
+      ).then((r) => r.json()),
+
     getShareLink: (
       deploymentId: string,
       featureValues?: Record<string, string>

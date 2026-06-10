@@ -215,6 +215,7 @@ interface AppState {
   attachConfHeatmapToLastMessage: (conf_heatmap: import("./types").ConfidenceHeatmapResult) => void
   attachUptimeSummaryToLastMessage: (uptime_summary: import("./types").ApiUptimeSummaryResult) => void
   attachCostSensitiveThresholdToLastMessage: (cost_sensitive_threshold: import("./types").CostSensitiveThresholdResult) => void
+  attachFeatureSweepToLastMessage: (feature_sweep: import("./types").FeatureSweepResult) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -1853,6 +1854,16 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, cost_sensitive_threshold }
+      }
+      return { messages }
+    }),
+
+  attachFeatureSweepToLastMessage: (feature_sweep) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, feature_sweep }
       }
       return { messages }
     }),

@@ -9133,3 +9133,50 @@ def get_uptime_summary(
     result = compute_api_uptime_summary(log_dicts, n_days=n_days)
     result["deployment_id"] = deployment_id
     return result
+
+
+# ---------------------------------------------------------------------------
+# Feature Impact Sweep
+# ---------------------------------------------------------------------------
+
+
+@router.get("/api/deploy/{deployment_id}/feature-sweep")
+def get_feature_sweep(
+    deployment_id: str,
+    direction: str = Query(default="maximize", pattern="^(maximize|minimize)$"),
+    n_steps: int = Query(default=10, ge=5, le=20),
+    session: Session = Depends(get_session),
+) -> dict:
+    """Sweep every model feature independently and rank by prediction impact.
+
+    For each feature, holds all others at their training-data defaults and sweeps
+    across the feature's range (numeric: mean ± 2σ; categorical: all known classes).
+    Returns features ranked by prediction delta (largest impact first), plus the
+    optimal configuration that together maximizes (or minimizes) the output.
+
+    Args:
+        direction: "maximize" (default) to find values that raise the prediction,
+                   or "minimize" to find values that lower it.
+        n_steps: Number of sweep points for numeric features (5–20, default 10).
+    """
+    dep = session.get(Deployment, deployment_id)
+    if not dep or not dep.is_active:
+        raise HTTPException(status_code=404, detail="Deployment not found or inactive")
+
+    if not dep.pipeline_path or not Path(dep.pipeline_path).exists():
+        raise HTTPException(status_code=500, detail="Prediction pipeline not found on disk")
+
+    run = session.get(ModelRun, dep.model_run_id)
+    if not run or not run.model_path or not Path(run.model_path).exists():
+        raise HTTPException(status_code=500, detail="Model file not found on disk")
+
+    from core.deployer import run_feature_sweep as _run_feature_sweep
+
+    result = _run_feature_sweep(
+        dep.pipeline_path,
+        run.model_path,
+        direction=direction,
+        n_steps=n_steps,
+    )
+    result["deployment_id"] = deployment_id
+    return result

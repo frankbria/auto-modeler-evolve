@@ -905,6 +905,202 @@ def run_feature_interaction(
 
 
 # ---------------------------------------------------------------------------
+# Feature impact sweep — rank all features by prediction delta
+# ---------------------------------------------------------------------------
+
+
+def run_feature_sweep(
+    pipeline_path: str,
+    model_path: str,
+    direction: str = "maximize",
+    n_steps: int = 10,
+) -> dict:
+    """Sweep every feature independently and rank by prediction impact.
+
+    For each feature in the model:
+    - Numeric: sweeps n_steps values across [mean - 2*std, mean + 2*std]
+    - Categorical: tries each known class from the label encoder
+
+    All other features are held at training-data means (or first category for
+    categorical features).
+
+    Returns a ranked list of features sorted by delta (largest prediction range
+    first), plus the optimal configuration that together maximizes (or minimizes)
+    the output.
+
+    Args:
+        pipeline_path: Path to the serialized PredictionPipeline.
+        model_path: Path to the serialized sklearn model.
+        direction: "maximize" to find feature values that raise the prediction;
+                   "minimize" to find values that lower it.
+        n_steps: Number of sweep points for numeric features (5–20).
+
+    Returns:
+        {
+          direction, target_column, problem_type, n_features,
+          features: [{feature_name, feature_type, best_value, worst_value,
+                      best_prediction, worst_prediction, delta, rank}],
+          optimal_config: {feature: value},
+          optimal_prediction: float | str,
+          summary: str,
+        }
+    """
+    import joblib as _jl
+
+    pipeline = load_pipeline(pipeline_path)
+    model = _jl.load(model_path)
+
+    # Build base dict — hold these while sweeping each feature
+    base: dict = {}
+    for feat in pipeline.feature_names:
+        ftype = pipeline.column_types.get(feat, "numeric")
+        if ftype == "numeric":
+            base[feat] = pipeline.feature_means.get(feat, 0.0)
+        else:
+            le = pipeline.label_encoders.get(feat)
+            if le is not None and hasattr(le, "classes_") and len(le.classes_) > 0:
+                base[feat] = str(le.classes_[0])
+            else:
+                base[feat] = ""
+
+    def _predict_scalar(inputs: dict) -> float:
+        x = pipeline.transform(inputs)
+        if pipeline.problem_type == "classification" and hasattr(model, "predict_proba"):
+            proba = model.predict_proba(x)[0]
+            return float(proba.max())
+        raw = model.predict(x)[0]
+        try:
+            return float(raw)
+        except (TypeError, ValueError):
+            return 0.0
+
+    want_max = direction == "maximize"
+
+    feature_results: list[dict] = []
+    optimal_config: dict = dict(base)
+
+    for feat in pipeline.feature_names:
+        ftype = pipeline.column_types.get(feat, "numeric")
+        if ftype == "numeric":
+            mean = pipeline.feature_means.get(feat, 0.0)
+            std = pipeline.feature_stds.get(feat, 1.0)
+            if std == 0.0:
+                std = 1.0
+            lo = mean - 2.0 * std
+            hi = mean + 2.0 * std
+            if lo == hi:
+                hi = lo + 1.0
+            n = max(n_steps, 2)
+            candidates: list = [lo + (hi - lo) * i / (n - 1) for i in range(n)]
+        else:
+            le = pipeline.label_encoders.get(feat)
+            if le is None or not hasattr(le, "classes_"):
+                continue
+            cats = [str(c) for c in le.classes_ if str(c) != "MISSING"]
+            if not cats:
+                continue
+            candidates = cats[:8]  # cap at 8 categories
+
+        preds: list[float] = []
+        for cval in candidates:
+            try:
+                row = {**base, feat: cval}
+                preds.append(_predict_scalar(row))
+            except Exception:  # noqa: BLE001
+                preds.append(base.get(feat, 0.0) if isinstance(base.get(feat), float) else 0.0)
+
+        if not preds:
+            continue
+
+        max_p = max(preds)
+        min_p = min(preds)
+        delta = round(abs(max_p - min_p), 6)
+
+        if want_max:
+            best_idx = preds.index(max_p)
+            worst_idx = preds.index(min_p)
+        else:
+            best_idx = preds.index(min_p)
+            worst_idx = preds.index(max_p)
+
+        best_val = candidates[best_idx]
+        worst_val = candidates[worst_idx]
+
+        def _fmt(v):  # noqa: ANN001
+            return round(float(v), 4) if isinstance(v, float) else v
+
+        feature_results.append(
+            {
+                "feature_name": feat,
+                "feature_type": ftype,
+                "best_value": _fmt(best_val),
+                "worst_value": _fmt(worst_val),
+                "best_prediction": round(preds[best_idx], 4),
+                "worst_prediction": round(preds[worst_idx], 4),
+                "delta": delta,
+            }
+        )
+        optimal_config[feat] = best_val
+
+    feature_results.sort(key=lambda x: x["delta"], reverse=True)
+    for i, fr in enumerate(feature_results):
+        fr["rank"] = i + 1
+
+    # Optimal prediction: set each feature to its best value simultaneously
+    try:
+        opt_pred_scalar = _predict_scalar(optimal_config)
+        if pipeline.problem_type == "regression":
+            optimal_prediction: float | str = round(opt_pred_scalar, 4)
+        else:
+            x_opt = pipeline.transform(optimal_config)
+            raw_opt = model.predict(x_opt)[0]
+            optimal_prediction = pipeline.decode_prediction(raw_opt)
+    except Exception:  # noqa: BLE001
+        optimal_prediction = 0.0
+
+    # Plain-English summary
+    target_display = (pipeline.target_column or "prediction").replace("_", " ")
+    n_f = len(feature_results)
+    if feature_results:
+        top = feature_results[0]
+        top_name = top["feature_name"].replace("_", " ")
+        top_delta = top["delta"]
+        if pipeline.problem_type == "regression":
+            opt_val_str = f"{optimal_prediction:,.4g}" if isinstance(optimal_prediction, float) else str(optimal_prediction)
+            summary = (
+                f"Feature sweep across {n_f} feature{'s' if n_f != 1 else ''}. "
+                f"'{top_name}' has the largest prediction impact "
+                f"(range: {top_delta:,.4g} units of {target_display}). "
+                f"Setting all features to their optimal values yields "
+                f"a {target_display} of {opt_val_str}."
+            )
+        else:
+            summary = (
+                f"Feature sweep across {n_f} feature{'s' if n_f != 1 else ''}. "
+                f"'{top_name}' has the largest confidence impact "
+                f"(delta: {top_delta:.2%}). "
+                f"Optimal configuration achieves confidence of "
+                f"{opt_pred_scalar:.1%}."
+            )
+    else:
+        summary = "Feature sweep could not be computed — no sweepable features found."
+
+    return {
+        "direction": direction,
+        "target_column": pipeline.target_column,
+        "problem_type": pipeline.problem_type,
+        "n_features": n_f,
+        "features": feature_results,
+        "optimal_config": {
+            k: (round(float(v), 4) if isinstance(v, float) else v)
+            for k, v in optimal_config.items()
+        },
+        "optimal_prediction": optimal_prediction,
+        "summary": summary,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Dataset ranking — apply model to all rows, return top N ranked
 # ---------------------------------------------------------------------------
 

@@ -3964,6 +3964,33 @@ _CONF_HEATMAP_PATTERNS = re.compile(
 )
 
 
+# Feature impact sweep — "which feature values produce the most extreme predictions?"
+# Distinct from _SENSITIVITY_PATTERNS (single feature, analyst-specified) and
+# _INTERACTION_PATTERNS (two features jointly) — this sweeps ALL features at once
+# and returns a ranked impact table with an optimal configuration.
+_FEATURE_SWEEP_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"which\s+feature\s+(?:values?|settings?|ranges?)\s+(?:produce|give|yield|create)\s+(?:the\s+)?(?:most\s+)?extreme\s+predictions?\b|"
+    r"what\s+inputs?\s+(?:maximize|minimizes?|max(?:imise)?|min(?:imise)?)\s+(?:the\s+)?prediction\b|"
+    r"feature\s+(?:impact\s+)?sweep\b|"
+    r"sweep\s+all\s+features?\b|"
+    r"what\s+(?:combination|config(?:uration)?)\s+(?:gives?|produces?|yields?)\s+(?:the\s+)?(?:highest|lowest|best|worst)\s+prediction\b|"
+    r"which\s+inputs?\s+have\s+(?:the\s+)?(?:biggest|most|largest|greatest)\s+(?:prediction\s+)?impact\b|"
+    r"most\s+impactful\s+feature\s+values?\b|"
+    r"extreme\s+prediction\s+(?:analysis|sweep|search)\b|"
+    r"which\s+feature\s+(?:moves?|changes?|shifts?)\s+(?:the\s+)?prediction\s+(?:the\s+)?most\b"
+    r")",
+    re.IGNORECASE,
+)
+
+_FEATURE_SWEEP_MINIMIZE_RE = re.compile(
+    r"\b(minimize|minimise|lowest\s+prediction|minimum\s+prediction|min(?:imize|imise)?\s+(?:the\s+)?prediction|"
+    r"worst\s+(?:case|outcome|prediction)|lowest\s+possible\s+prediction|"
+    r"what\s+gives?\s+(?:the\s+)?lowest|what\s+produces?\s+(?:the\s+)?lowest)\b",
+    re.IGNORECASE,
+)
+
+
 def _detect_heatmap_features(
     message: str, feature_ranges: dict
 ) -> tuple[str | None, str | None]:
@@ -18178,6 +18205,55 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Heatmap is nice-to-have; never crash chat
 
+    # Feature impact sweep — rank all features by how much their value range moves predictions
+    feature_sweep_event: dict | None = None
+    if _FEATURE_SWEEP_PATTERNS.search(body.message) and ctx["deployment"]:
+        try:
+            _fs_dep = ctx["deployment"]
+            if (
+                _fs_dep.pipeline_path
+                and Path(_fs_dep.pipeline_path).exists()
+            ):
+                _fs_run = next(
+                    (mr for mr in ctx["model_runs"] if mr.id == _fs_dep.model_run_id),
+                    None,
+                )
+                if (
+                    _fs_run
+                    and _fs_run.model_path
+                    and Path(_fs_run.model_path).exists()
+                ):
+                    from core.deployer import run_feature_sweep as _run_feature_sweep
+
+                    _fs_direction = (
+                        "minimize"
+                        if _FEATURE_SWEEP_MINIMIZE_RE.search(body.message)
+                        else "maximize"
+                    )
+                    _fs_result = _run_feature_sweep(
+                        _fs_dep.pipeline_path,
+                        _fs_run.model_path,
+                        direction=_fs_direction,
+                    )
+                    _fs_result["deployment_id"] = _fs_dep.id
+                    feature_sweep_event = _fs_result
+
+                    _fs_top = _fs_result.get("features", [])
+                    _fs_top_name = _fs_top[0]["feature_name"] if _fs_top else "N/A"
+                    _fs_opt_pred = _fs_result.get("optimal_prediction", "N/A")
+                    system_prompt += (
+                        f"\n\n## Feature Impact Sweep ({_fs_direction})\n"
+                        f"{_fs_result.get('summary', '')}\n"
+                        f"Top feature by impact: '{_fs_top_name}'. "
+                        f"Optimal prediction when all features set to their best values: {_fs_opt_pred}. "
+                        "A FeatureSweepCard is shown in the chat. "
+                        "Narrate which feature has the biggest lever on the model output, "
+                        "what the optimal configuration looks like for this business context, "
+                        "and what action the analyst should take based on these findings."
+                    )
+        except Exception:  # noqa: BLE001
+            pass  # Feature sweep is nice-to-have; never crash chat
+
     # Cost-sensitive threshold analysis (FP/FN misclassification costs)
     cost_sensitive_event: dict | None = None
     if _COST_SENSITIVE_PATTERNS.search(body.message) and ctx["model_runs"]:
@@ -21235,6 +21311,9 @@ def send_message(
 
         if conf_heatmap_event:
             yield f"data: {json.dumps({'type': 'conf_heatmap', 'conf_heatmap': conf_heatmap_event})}\n\n"
+
+        if feature_sweep_event:
+            yield f"data: {json.dumps({'type': 'feature_sweep', 'feature_sweep': feature_sweep_event})}\n\n"
 
         if cost_sensitive_event:
             yield f"data: {json.dumps({'type': 'cost_sensitive_threshold', 'cost_sensitive_threshold': cost_sensitive_event})}\n\n"

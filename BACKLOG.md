@@ -53,6 +53,19 @@ the time is better spent on real features.
 
 ---
 
+## Day 90 (20:00) — Done
+
+**Track D: Feature Impact Sweep** — complete.
+
+Ranked analysis of every model feature showing which value ranges produce the most extreme predictions, culminating in an optimal configuration. Analysts ask "which feature values produce the most extreme predictions?", "feature impact sweep", or "what combination gives the highest prediction?" and receive a `FeatureSweepCard` with ranked features + delta bars + optimal config. Direction auto-detected from message (maximize vs minimize). Sweeps each feature independently (O(F×N), not grid search). Features: `run_feature_sweep(pipeline_path, model_path, direction, n_steps)` in `core/deployer.py`; REST `GET /api/deploy/{id}/feature-sweep`; `_FEATURE_SWEEP_PATTERNS` (9 NL variants) + `_FEATURE_SWEEP_MINIMIZE_RE` in `chat.py`; `FeatureSweepCard` (teal border, 🔭 icon, optimal config section + ranked delta bars). 47 new tests (28 backend + 19 frontend). Baseline: 6226/3530 → **6254/3549**.
+
+**What's next:**
+- Feature interaction heatmap — sweep two features jointly to reveal interaction effects (e.g., "how do units and discount interact for revenue?")
+- What-if scenario comparison card — save and compare multiple input configurations side-by-side
+- Production input distribution drift alert — notify when live prediction inputs diverge from training distribution
+
+---
+
 ## Day 90 (12:00) — Done
 
 **Track D: Prediction Confidence Heatmap by Feature Value** — complete.
