@@ -18210,19 +18210,12 @@ def send_message(
     if _FEATURE_SWEEP_PATTERNS.search(body.message) and ctx["deployment"]:
         try:
             _fs_dep = ctx["deployment"]
-            if (
-                _fs_dep.pipeline_path
-                and Path(_fs_dep.pipeline_path).exists()
-            ):
+            if _fs_dep.pipeline_path and Path(_fs_dep.pipeline_path).exists():
                 _fs_run = next(
                     (mr for mr in ctx["model_runs"] if mr.id == _fs_dep.model_run_id),
                     None,
                 )
-                if (
-                    _fs_run
-                    and _fs_run.model_path
-                    and Path(_fs_run.model_path).exists()
-                ):
+                if _fs_run and _fs_run.model_path and Path(_fs_run.model_path).exists():
                     from core.deployer import run_feature_sweep as _run_feature_sweep
 
                     _fs_direction = (

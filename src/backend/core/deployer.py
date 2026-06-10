@@ -965,7 +965,9 @@ def run_feature_sweep(
 
     def _predict_scalar(inputs: dict) -> float:
         x = pipeline.transform(inputs)
-        if pipeline.problem_type == "classification" and hasattr(model, "predict_proba"):
+        if pipeline.problem_type == "classification" and hasattr(
+            model, "predict_proba"
+        ):
             proba = model.predict_proba(x)[0]
             return float(proba.max())
         raw = model.predict(x)[0]
@@ -1007,7 +1009,9 @@ def run_feature_sweep(
                 row = {**base, feat: cval}
                 preds.append(_predict_scalar(row))
             except Exception:  # noqa: BLE001
-                preds.append(base.get(feat, 0.0) if isinstance(base.get(feat), float) else 0.0)
+                preds.append(
+                    base.get(feat, 0.0) if isinstance(base.get(feat), float) else 0.0
+                )
 
         if not preds:
             continue
@@ -1066,7 +1070,11 @@ def run_feature_sweep(
         top_name = top["feature_name"].replace("_", " ")
         top_delta = top["delta"]
         if pipeline.problem_type == "regression":
-            opt_val_str = f"{optimal_prediction:,.4g}" if isinstance(optimal_prediction, float) else str(optimal_prediction)
+            opt_val_str = (
+                f"{optimal_prediction:,.4g}"
+                if isinstance(optimal_prediction, float)
+                else str(optimal_prediction)
+            )
             summary = (
                 f"Feature sweep across {n_f} feature{'s' if n_f != 1 else ''}. "
                 f"'{top_name}' has the largest prediction impact "

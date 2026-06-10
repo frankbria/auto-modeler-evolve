@@ -31,7 +31,9 @@ def _make_regression_deployment(tmp_path):
             "revenue": np.arange(1, 21, dtype=float) * 5.0,
         }
     )
-    pipeline = build_prediction_pipeline(df, ["units", "price"], "revenue", "regression")
+    pipeline = build_prediction_pipeline(
+        df, ["units", "price"], "revenue", "regression"
+    )
     pipeline_path = str(tmp_path / "pipeline.joblib")
     save_pipeline(pipeline, pipeline_path)
     model = LinearRegression().fit(df[["units", "price"]].values, df["revenue"].values)
@@ -55,7 +57,9 @@ def _make_classification_deployment(tmp_path):
             "churn": ["no"] * 10 + ["yes"] * 10,
         }
     )
-    pipeline = build_prediction_pipeline(df, ["score", "region"], "churn", "classification")
+    pipeline = build_prediction_pipeline(
+        df, ["score", "region"], "churn", "classification"
+    )
     pipeline_path = str(tmp_path / "pipeline_cls.joblib")
     save_pipeline(pipeline, pipeline_path)
     X = pipeline.transform_df(df[["score", "region"]])
@@ -106,7 +110,9 @@ def test_pattern_what_combination_highest():
 def test_pattern_which_inputs_biggest_impact():
     from api.chat import _FEATURE_SWEEP_PATTERNS
 
-    assert _FEATURE_SWEEP_PATTERNS.search("which inputs have the biggest prediction impact?")
+    assert _FEATURE_SWEEP_PATTERNS.search(
+        "which inputs have the biggest prediction impact?"
+    )
 
 
 def test_pattern_most_impactful_feature_values():
@@ -124,7 +130,9 @@ def test_pattern_extreme_prediction_analysis():
 def test_pattern_which_feature_moves_most():
     from api.chat import _FEATURE_SWEEP_PATTERNS
 
-    assert _FEATURE_SWEEP_PATTERNS.search("which feature moves the prediction the most?")
+    assert _FEATURE_SWEEP_PATTERNS.search(
+        "which feature moves the prediction the most?"
+    )
 
 
 def test_pattern_false_positive_unrelated():
@@ -176,7 +184,9 @@ def test_regression_minimize_direction(tmp_path):
     assert result_max["direction"] == "maximize"
     assert result_min["direction"] == "minimize"
     # Minimize optimal prediction should be ≤ maximize optimal prediction
-    assert float(result_min["optimal_prediction"]) <= float(result_max["optimal_prediction"])
+    assert float(result_min["optimal_prediction"]) <= float(
+        result_max["optimal_prediction"]
+    )
 
 
 def test_features_sorted_by_delta_descending(tmp_path):
@@ -328,7 +338,9 @@ def _create_real_deployment(tmp_path):
             "revenue": np.arange(1, 21, dtype=float) * 5.0,
         }
     )
-    pipeline = build_prediction_pipeline(df, ["units", "price"], "revenue", "regression")
+    pipeline = build_prediction_pipeline(
+        df, ["units", "price"], "revenue", "regression"
+    )
     pipeline_path = str(tmp_path / "sw_pipeline.joblib")
     save_pipeline(pipeline, pipeline_path)
     model = LinearRegression().fit(df[["units", "price"]].values, df["revenue"].values)

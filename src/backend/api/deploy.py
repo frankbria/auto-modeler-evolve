@@ -9164,7 +9164,9 @@ def get_feature_sweep(
         raise HTTPException(status_code=404, detail="Deployment not found or inactive")
 
     if not dep.pipeline_path or not Path(dep.pipeline_path).exists():
-        raise HTTPException(status_code=500, detail="Prediction pipeline not found on disk")
+        raise HTTPException(
+            status_code=500, detail="Prediction pipeline not found on disk"
+        )
 
     run = session.get(ModelRun, dep.model_run_id)
     if not run or not run.model_path or not Path(run.model_path).exists():
