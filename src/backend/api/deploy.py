@@ -88,6 +88,7 @@ from models.deployment_changelog import (
     CHANGE_API_KEY_REMOVED,
 )
 from models.weekly_digest_config import WeeklyDigestConfig
+from models.saved_scenario import SavedScenario
 
 router = APIRouter(tags=["deployment"])
 
@@ -9182,3 +9183,153 @@ def get_feature_sweep(
     )
     result["deployment_id"] = deployment_id
     return result
+
+
+# ---------------------------------------------------------------------------
+# Saved scenario comparison
+# ---------------------------------------------------------------------------
+
+
+class SavedScenarioCreate(BaseModel):
+    name: str
+    inputs: dict  # feature overrides dict
+    prediction_value: str = ""
+    prediction_numeric: float | None = None
+    confidence: float | None = None
+
+
+@router.get("/api/deploy/{deployment_id}/scenarios")
+def list_saved_scenarios(
+    deployment_id: str,
+    session: Session = Depends(get_session),
+) -> dict:
+    """Return all saved scenarios for a deployment with a comparison summary."""
+    dep = session.get(Deployment, deployment_id)
+    if not dep:
+        raise HTTPException(status_code=404, detail="Deployment not found")
+
+    rows = session.exec(
+        select(SavedScenario)
+        .where(SavedScenario.deployment_id == deployment_id)
+        .order_by(SavedScenario.created_at)
+    ).all()
+
+    scenarios_data = [
+        {
+            "id": r.id,
+            "name": r.name,
+            "inputs": json.loads(r.inputs) if r.inputs else {},
+            "prediction_value": r.prediction_value,
+            "prediction_numeric": r.prediction_numeric,
+            "confidence": r.confidence,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+        }
+        for r in rows
+    ]
+
+    from core.deployer import compute_scenario_comparison as _csc
+
+    pipeline = None
+    problem_type = "regression"
+    if dep.pipeline_path and Path(dep.pipeline_path).exists():
+        from core.deployer import load_pipeline as _lp_sc
+
+        pipeline = _lp_sc(dep.pipeline_path)
+        problem_type = pipeline.problem_type
+
+    result = _csc(scenarios_data, problem_type)
+    result["deployment_id"] = deployment_id
+    result["target_column"] = pipeline.target_column if pipeline else None
+    return result
+
+
+@router.post("/api/deploy/{deployment_id}/scenarios")
+def save_scenario(
+    deployment_id: str,
+    body: SavedScenarioCreate,
+    session: Session = Depends(get_session),
+) -> dict:
+    """Persist a named prediction scenario for this deployment."""
+    dep = session.get(Deployment, deployment_id)
+    if not dep:
+        raise HTTPException(status_code=404, detail="Deployment not found")
+
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Scenario name cannot be empty")
+    if len(name) > 80:
+        raise HTTPException(status_code=400, detail="Scenario name too long (max 80 chars)")
+
+    prediction_value = body.prediction_value
+    prediction_numeric = body.prediction_numeric
+    confidence = body.confidence
+
+    if (
+        body.inputs
+        and dep.pipeline_path
+        and Path(dep.pipeline_path).exists()
+    ):
+        try:
+            run = session.get(ModelRun, dep.model_run_id)
+            if run and run.model_path and Path(run.model_path).exists():
+                from core.deployer import load_pipeline as _lp_sv
+                from core.deployer import predict_single as _ps_sv
+
+                _pl = _lp_sv(dep.pipeline_path)
+                inputs_full = {
+                    f: _pl.feature_means.get(f, 0.0)
+                    for f in _pl.feature_names
+                }
+                inputs_full.update(body.inputs)
+                result_pred = _ps_sv(dep.pipeline_path, run.model_path, inputs_full)
+                prediction_value = str(result_pred.get("prediction", prediction_value))
+                prediction_numeric = result_pred.get("prediction_numeric")
+                confidence = result_pred.get("confidence")
+        except Exception:
+            pass  # Use caller-provided values on error
+
+    scenario = SavedScenario(
+        deployment_id=deployment_id,
+        name=name,
+        inputs=json.dumps(body.inputs),
+        prediction_value=prediction_value,
+        prediction_numeric=prediction_numeric,
+        confidence=confidence,
+    )
+    session.add(scenario)
+    session.commit()
+    session.refresh(scenario)
+    return {"id": scenario.id, "name": scenario.name, "created": True}
+
+
+@router.delete("/api/deploy/{deployment_id}/scenarios/{scenario_id}")
+def delete_scenario(
+    deployment_id: str,
+    scenario_id: str,
+    session: Session = Depends(get_session),
+) -> dict:
+    """Delete a saved scenario by ID."""
+    scenario = session.get(SavedScenario, scenario_id)
+    if not scenario or scenario.deployment_id != deployment_id:
+        raise HTTPException(status_code=404, detail="Scenario not found")
+    session.delete(scenario)
+    session.commit()
+    return {"deleted": True, "id": scenario_id}
+
+
+@router.delete("/api/deploy/{deployment_id}/scenarios")
+def clear_all_scenarios(
+    deployment_id: str,
+    session: Session = Depends(get_session),
+) -> dict:
+    """Delete all saved scenarios for a deployment."""
+    dep = session.get(Deployment, deployment_id)
+    if not dep:
+        raise HTTPException(status_code=404, detail="Deployment not found")
+    rows = session.exec(
+        select(SavedScenario).where(SavedScenario.deployment_id == deployment_id)
+    ).all()
+    for row in rows:
+        session.delete(row)
+    session.commit()
+    return {"deleted": len(rows)}

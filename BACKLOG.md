@@ -53,6 +53,19 @@ the time is better spent on real features.
 
 ---
 
+## Day 91 (12:00) — Done
+
+**Track D: Saved Scenario Comparison** — complete.
+
+Analysts save named what-if configurations and compare predictions side by side. Say "save discount=0.1 quantity=100 as Q2 Optimistic", then "compare my scenarios" to see a `SavedScenariosCard` with per-scenario prediction bars, Best/Worst badges, and spread range. Scenarios persist across sessions. Features: `SavedScenario` SQLModel table; 4 REST endpoints (list/save/delete-one/clear-all); `compute_scenario_comparison()` pure function in `core/deployer.py`; three chat intents (SAVE/VIEW/DELETE) with `_parse_save_scenario_request()` helper; `SavedScenariosCard` (sky border, 📋, regression bars + classification confidence%). 49 new tests (30 backend + 19 frontend). Baseline: 6254/3549 → **6284/3568**.
+
+**What's next:**
+- Feature interaction heatmap — sweep two features jointly to reveal interaction effects (e.g., "how do units and discount interact for revenue?")
+- Deployment health scorecard — consolidated "is my deployment healthy?" card with latency, drift, confidence, and quota signals in one place
+- Production input distribution drift alert — notify when live prediction inputs diverge from training distribution
+
+---
+
 ## Day 90 (20:00) — Done
 
 **Track D: Feature Impact Sweep** — complete.

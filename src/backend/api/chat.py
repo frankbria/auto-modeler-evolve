@@ -3991,6 +3991,75 @@ _FEATURE_SWEEP_MINIMIZE_RE = re.compile(
 )
 
 
+# Saved scenario comparison — save/view/compare/delete named what-if configs
+_SAVE_SCENARIO_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"save\s+(?:(?:this|the)\s+)?(?:(?:scenario|prediction|configuration|config|inputs?)\s+)?as\s+\S|"
+    r"(?:remember|bookmark|store|name)\s+(?:this\s+)?(?:scenario|prediction|configuration|config|inputs?)?\s*as\s+\S|"
+    r"add\s+(?:this\s+)?(?:to\s+)?(?:saved\s+scenarios?|my\s+scenarios?)\s+as\s+\S|"
+    r"save\s+(?:[a-zA-Z0-9_]+=[^\s]+\s*)+as\s+\S"
+    r")",
+    re.IGNORECASE,
+)
+
+_VIEW_SCENARIOS_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"(?:show|list|display|view)\s+(?:my\s+)?saved\s+scenarios?\b|"
+    r"(?:compare|show)\s+(?:my\s+)?scenarios?\b|"
+    r"scenario\s+comparison\b|"
+    r"(?:what|which)\s+scenarios?\s+(?:have\s+I\s+saved|did\s+I\s+save|are\s+saved)\b|"
+    r"(?:show|display)\s+(?:all\s+)?(?:my\s+)?(?:saved\s+)?scenarios?\b|"
+    r"compare\s+saved\s+(?:scenarios?|predictions?|configurations?)\b|"
+    r"my\s+saved\s+(?:scenarios?|what.if\s+scenarios?)\b|"
+    r"scenario\s+library\b"
+    r")",
+    re.IGNORECASE,
+)
+
+_DELETE_SCENARIO_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"(?:delete|remove)\s+(?:saved\s+)?scenario(?:\s+\S+)?\b|"
+    r"(?:delete|remove)\s+(?:all\s+)?scenarios?\b|"
+    r"clear\s+(?:all\s+)?(?:saved\s+)?scenarios?\b"
+    r")",
+    re.IGNORECASE,
+)
+
+# Regex to extract "as <name>" from save messages
+_SCENARIO_NAME_RE = re.compile(r"\bas\s+(['\"]?)(.+?)\1\s*$", re.IGNORECASE)
+
+# Regex to extract feature=value overrides from save messages: e.g. "discount=0.1 qty=100"
+_SCENARIO_OVERRIDE_RE = re.compile(r"([a-zA-Z_][a-zA-Z0-9_]*)=([^\s,;]+)")
+
+# Regex to extract scenario name to delete: "delete scenario <name>"
+_DELETE_SCENARIO_NAME_RE = re.compile(
+    r"(?:delete|remove)\s+(?:scenario\s+)?(['\"]?)(.+?)\1\s*$", re.IGNORECASE
+)
+
+
+def _parse_save_scenario_request(message: str) -> tuple[str | None, dict]:
+    """Return (scenario_name, overrides_dict) from a save-scenario message.
+
+    Extracts the name from the trailing "as <name>" clause and any
+    feature=value override pairs from the rest of the message.
+    """
+    name_match = _SCENARIO_NAME_RE.search(message)
+    if not name_match:
+        return None, {}
+    name = name_match.group(2).strip()
+    # Extract overrides from the portion before "as <name>"
+    prefix = message[: name_match.start()]
+    overrides: dict[str, str] = {}
+    for m in _SCENARIO_OVERRIDE_RE.finditer(prefix):
+        key, val = m.group(1), m.group(2)
+        # Try numeric coercion
+        try:
+            overrides[key] = float(val) if "." in val else int(val)  # type: ignore[assignment]
+        except ValueError:
+            overrides[key] = val
+    return name, overrides
+
+
 def _detect_heatmap_features(
     message: str, feature_ranges: dict
 ) -> tuple[str | None, str | None]:
@@ -18247,6 +18316,145 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Feature sweep is nice-to-have; never crash chat
 
+    # Saved scenario comparison — save, view, compare, or delete named what-if scenarios
+    saved_scenarios_event: dict | None = None
+    _sc_deployment = ctx["deployment"]
+    if _sc_deployment and (
+        _SAVE_SCENARIO_PATTERNS.search(body.message)
+        or _VIEW_SCENARIOS_PATTERNS.search(body.message)
+        or _DELETE_SCENARIO_PATTERNS.search(body.message)
+    ):
+        try:
+            from models.saved_scenario import SavedScenario as _SavedScenario
+            from core.deployer import compute_scenario_comparison as _csc_fn
+            from core.deployer import load_pipeline as _lp_sc
+
+            _sc_dep_id = _sc_deployment.id
+            _sc_pipeline = None
+            _sc_problem = "regression"
+            _sc_target = None
+            if (
+                _sc_deployment.pipeline_path
+                and Path(_sc_deployment.pipeline_path).exists()
+            ):
+                _sc_pipeline = _lp_sc(_sc_deployment.pipeline_path)
+                _sc_problem = _sc_pipeline.problem_type
+                _sc_target = _sc_pipeline.target_column
+
+            # --- SAVE ---
+            if _SAVE_SCENARIO_PATTERNS.search(body.message):
+                _sc_name, _sc_overrides = _parse_save_scenario_request(body.message)
+                if _sc_name:
+                    _sc_pred_val = ""
+                    _sc_pred_num: float | None = None
+                    _sc_conf: float | None = None
+                    # Compute prediction from overrides + baseline
+                    if _sc_pipeline:
+                        try:
+                            _sc_run = next(
+                                (
+                                    mr
+                                    for mr in ctx["model_runs"]
+                                    if mr.id == _sc_deployment.model_run_id
+                                ),
+                                None,
+                            )
+                            if (
+                                _sc_run
+                                and _sc_run.model_path
+                                and Path(_sc_run.model_path).exists()
+                            ):
+                                _sc_inputs = dict(_sc_pipeline.feature_means)
+                                _sc_inputs.update(_sc_overrides)
+                                from core.deployer import predict_single as _ps_sc
+
+                                _sc_pred_result = _ps_sc(
+                                    _sc_deployment.pipeline_path,
+                                    _sc_run.model_path,
+                                    _sc_inputs,
+                                )
+                                _sc_pred_val = str(
+                                    _sc_pred_result.get("prediction", "")
+                                )
+                                _sc_pred_num = _sc_pred_result.get("prediction_numeric")
+                                _sc_conf = _sc_pred_result.get("confidence")
+                        except Exception:
+                            pass
+
+                    _sc_new = _SavedScenario(
+                        deployment_id=_sc_dep_id,
+                        name=_sc_name,
+                        inputs=json.dumps(_sc_overrides),
+                        prediction_value=_sc_pred_val,
+                        prediction_numeric=_sc_pred_num,
+                        confidence=_sc_conf,
+                    )
+                    session.add(_sc_new)
+                    session.commit()
+
+            # --- DELETE ---
+            elif _DELETE_SCENARIO_PATTERNS.search(body.message):
+                _sc_del_all = bool(
+                    re.search(r"\b(clear|all)\b", body.message, re.IGNORECASE)
+                )
+                if _sc_del_all:
+                    _sc_del_rows = session.exec(
+                        select(_SavedScenario).where(
+                            _SavedScenario.deployment_id == _sc_dep_id
+                        )
+                    ).all()
+                    for _r in _sc_del_rows:
+                        session.delete(_r)
+                    session.commit()
+                else:
+                    _sc_del_match = _DELETE_SCENARIO_NAME_RE.search(body.message)
+                    if _sc_del_match:
+                        _sc_del_name = _sc_del_match.group(2).strip()
+                        _sc_del_row = session.exec(
+                            select(_SavedScenario).where(
+                                _SavedScenario.deployment_id == _sc_dep_id,
+                                _SavedScenario.name == _sc_del_name,
+                            )
+                        ).first()
+                        if _sc_del_row:
+                            session.delete(_sc_del_row)
+                            session.commit()
+
+            # Always re-load and emit the current scenario list
+            _sc_rows = session.exec(
+                select(_SavedScenario)
+                .where(_SavedScenario.deployment_id == _sc_dep_id)
+                .order_by(_SavedScenario.created_at)
+            ).all()
+            _sc_data = [
+                {
+                    "id": r.id,
+                    "name": r.name,
+                    "inputs": json.loads(r.inputs) if r.inputs else {},
+                    "prediction_value": r.prediction_value,
+                    "prediction_numeric": r.prediction_numeric,
+                    "confidence": r.confidence,
+                    "created_at": r.created_at.isoformat() if r.created_at else None,
+                }
+                for r in _sc_rows
+            ]
+            _sc_result = _csc_fn(_sc_data, _sc_problem)
+            _sc_result["deployment_id"] = _sc_dep_id
+            _sc_result["target_column"] = _sc_target
+            saved_scenarios_event = _sc_result
+
+            system_prompt += (
+                f"\n\n## Saved Scenario Comparison\n"
+                f"{_sc_result.get('summary', '')}\n"
+                f"A SavedScenariosCard is shown in the chat with "
+                f"{_sc_result.get('n_scenarios', 0)} saved scenario(s). "
+                "Narrate what the saved scenarios reveal about how different inputs "
+                "affect the prediction — which scenario gives the best outcome and why "
+                "the analyst might want to try different configurations."
+            )
+        except Exception:  # noqa: BLE001
+            pass  # Scenario comparison is nice-to-have; never crash chat
+
     # Cost-sensitive threshold analysis (FP/FN misclassification costs)
     cost_sensitive_event: dict | None = None
     if _COST_SENSITIVE_PATTERNS.search(body.message) and ctx["model_runs"]:
@@ -21307,6 +21515,9 @@ def send_message(
 
         if feature_sweep_event:
             yield f"data: {json.dumps({'type': 'feature_sweep', 'feature_sweep': feature_sweep_event})}\n\n"
+
+        if saved_scenarios_event:
+            yield f"data: {json.dumps({'type': 'saved_scenarios', 'saved_scenarios': saved_scenarios_event})}\n\n"
 
         if cost_sensitive_event:
             yield f"data: {json.dumps({'type': 'cost_sensitive_threshold', 'cost_sensitive_threshold': cost_sensitive_event})}\n\n"

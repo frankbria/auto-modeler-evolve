@@ -578,6 +578,7 @@ export interface ChatMessage {
   uptime_summary?: ApiUptimeSummaryResult
   cost_sensitive_threshold?: CostSensitiveThresholdResult
   feature_sweep?: FeatureSweepResult
+  saved_scenarios?: SavedScenariosResult
 }
 
 export interface RollbackVersionEntry {
@@ -4928,5 +4929,31 @@ export interface FeatureSweepResult {
   features: FeatureSweepEntry[]
   optimal_config: Record<string, number | string>
   optimal_prediction: number | string
+  summary: string
+}
+
+// ---------------------------------------------------------------------------
+// Saved scenario comparison (Track D perpetual)
+// ---------------------------------------------------------------------------
+
+export interface SavedScenarioEntry {
+  id: string
+  name: string
+  inputs: Record<string, number | string>
+  prediction_value: string
+  prediction_numeric: number | null
+  confidence: number | null
+  created_at: string | null
+}
+
+export interface SavedScenariosResult {
+  deployment_id?: string
+  scenarios: SavedScenarioEntry[]
+  n_scenarios: number
+  problem_type: string
+  target_column: string | null
+  best_scenario: SavedScenarioEntry | null
+  worst_scenario: SavedScenarioEntry | null
+  spread: number | null
   summary: string
 }

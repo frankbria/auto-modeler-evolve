@@ -216,6 +216,7 @@ interface AppState {
   attachUptimeSummaryToLastMessage: (uptime_summary: import("./types").ApiUptimeSummaryResult) => void
   attachCostSensitiveThresholdToLastMessage: (cost_sensitive_threshold: import("./types").CostSensitiveThresholdResult) => void
   attachFeatureSweepToLastMessage: (feature_sweep: import("./types").FeatureSweepResult) => void
+  attachSavedScenariosToLastMessage: (saved_scenarios: import("./types").SavedScenariosResult) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -1864,6 +1865,16 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, feature_sweep }
+      }
+      return { messages }
+    }),
+
+  attachSavedScenariosToLastMessage: (saved_scenarios) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, saved_scenarios }
       }
       return { messages }
     }),

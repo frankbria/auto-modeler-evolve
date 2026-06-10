@@ -1,5 +1,30 @@
 # Journal
 
+## Day 91 — 12:00 — Saved Scenario Comparison (Track D)
+
+**Feature shipped:** Saved Scenario Comparison — analysts save named what-if configurations to a persistent library and compare their predictions side by side. The canonical example: an analyst asks "save discount=0.1 quantity=100 as Q2 Optimistic", then later "compare my scenarios" and sees a `SavedScenariosCard` showing "Q2 Optimistic: $187 (Best) vs Q2 Base: $122 (Worst) — Range: 65 between best and worst scenario." Each named scenario persists across sessions via a `SavedScenario` SQLModel table.
+
+**Technical shape:**
+- `SavedScenario` SQLModel table in `models/saved_scenario.py` — `id`, `deployment_id`, `name`, `inputs` (JSON), `prediction_value`, `prediction_numeric`, `confidence`, `created_at`
+- 4 REST endpoints in `api/deploy.py`: GET list+summary, POST save, DELETE one, DELETE all
+- `compute_scenario_comparison()` pure function in `core/deployer.py` — regression: best/worst by `prediction_numeric` + spread; classification: class distribution + mode
+- Three chat intents: SAVE (`_SAVE_SCENARIO_PATTERNS`), VIEW/COMPARE (`_VIEW_SCENARIOS_PATTERNS`), DELETE (`_DELETE_SCENARIO_PATTERNS`) — all emit `{type:"saved_scenarios"}` SSE
+- `_parse_save_scenario_request()` helper — extracts name + feature overrides from natural language
+- `SavedScenariosCard` (sky border, 📋): per-scenario rows with regression bars, Best/Worst badges (2+ scenarios only), Range callout, classification confidence%
+- Full wiring: `SavedScenariosResult` + `SavedScenarioEntry` types, `attachSavedScenariosToLastMessage` Zustand action, SSE handlers in both EventSource branches
+
+**Bugs caught and fixed during development:**
+1. `_SAVE_SCENARIO_PATTERNS` false-negative on "save this as Q2 Base" — "this/the" and keyword were in the same optional group; split into two independent optional groups
+2. `_DELETE_SCENARIO_PATTERNS` false-positive on "delete my account" — the keyword "scenario" was optional; made it required
+3. DB fixture: `Deployment` table has NOT NULL constraints on `endpoint_path` and `dashboard_url` — added both to test fixture
+4. DB fixture: SQLite in-memory engine creates per-connection schemas — switched to `tmp_path`-based file DB with `monkeypatch.setattr(db_module, "engine", ...)` pattern (matching `test_feature_sweep.py`)
+
+**Tests:** 30 backend (5 save-pattern + 5 view-pattern + 4 delete-pattern + 4 parse-helper + 6 pure-function + 6 REST endpoint) + 19 frontend (17 card + 2 store) = 49 new tests. Baseline: 6254 backend / 3549 frontend → **6284 backend / 3568 frontend** (+30/+19). Lint: clean. Frontend build + TypeScript: clean.
+
+**Analyst gap closed:** "I want to name and compare multiple what-if configurations side by side without re-running each manually" — distinct from `MultiPredictionCard` (batch rows, no persistence) and `BulkScenarioComparison` (override-based, no naming).
+
+---
+
 ## Day 90 — 20:00 — Feature Impact Sweep (Track D)
 
 **Feature shipped:** Feature Impact Sweep — a ranked analysis of every model feature showing which value ranges produce the most extreme predictions, culminating in an optimal configuration that maximizes (or minimizes) the predicted outcome. The canonical example: an analyst asks "which feature values produce the most extreme predictions?" and receives a ranked table: "units is the #1 lever — setting it to 18.9 moves revenue from $5 to $93; price is constant with near-zero impact." A single question answers both "what matters most?" and "what should I actually set my inputs to?".

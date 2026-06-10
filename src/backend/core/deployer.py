@@ -905,6 +905,98 @@ def run_feature_interaction(
 
 
 # ---------------------------------------------------------------------------
+# Saved scenario comparison — aggregate named what-if results
+# ---------------------------------------------------------------------------
+
+
+def compute_scenario_comparison(
+    scenarios_data: list[dict],
+    problem_type: str,
+) -> dict:
+    """Summarise a list of saved scenario dicts for side-by-side comparison.
+
+    Each scenario dict must contain at least:
+        id, name, prediction_value, prediction_numeric (None OK), confidence (None OK)
+
+    Returns a summary dict with best/worst callouts for regression and
+    class-distribution breakdown for classification.
+    """
+    if not scenarios_data:
+        return {
+            "scenarios": [],
+            "n_scenarios": 0,
+            "problem_type": problem_type,
+            "best_scenario": None,
+            "worst_scenario": None,
+            "spread": None,
+            "summary": "No saved scenarios yet.",
+        }
+
+    n = len(scenarios_data)
+
+    best_scenario: dict | None = None
+    worst_scenario: dict | None = None
+    spread: float | None = None
+
+    if problem_type == "regression":
+        numeric_scenarios = [
+            s for s in scenarios_data if s.get("prediction_numeric") is not None
+        ]
+        if numeric_scenarios:
+            sorted_asc = sorted(numeric_scenarios, key=lambda s: s["prediction_numeric"])
+            worst_scenario = sorted_asc[0]
+            best_scenario = sorted_asc[-1]
+            spread = round(
+                best_scenario["prediction_numeric"] - worst_scenario["prediction_numeric"], 4
+            )
+        if n == 1:
+            summary = (
+                f"1 saved scenario: '{scenarios_data[0]['name']}' → "
+                f"{scenarios_data[0]['prediction_value']}."
+            )
+        elif best_scenario and worst_scenario and spread is not None:
+            summary = (
+                f"{n} saved scenarios. "
+                f"Highest prediction: '{best_scenario['name']}' ({best_scenario['prediction_value']}). "
+                f"Lowest: '{worst_scenario['name']}' ({worst_scenario['prediction_value']}). "
+                f"Spread: {spread:g}."
+            )
+        else:
+            summary = f"{n} saved scenarios — no numeric predictions to compare."
+    else:
+        # Classification: count class distribution
+        from collections import Counter
+
+        class_counts: Counter = Counter()
+        for s in scenarios_data:
+            val = s.get("prediction_value", "unknown")
+            class_counts[val] += 1
+        mode_class, mode_count = class_counts.most_common(1)[0]
+        n_classes = len(class_counts)
+        if n_classes == 1:
+            summary = (
+                f"{n} saved scenarios all predict '{mode_class}'."
+            )
+        else:
+            distribution = ", ".join(
+                f"'{c}': {cnt}" for c, cnt in class_counts.most_common()
+            )
+            summary = (
+                f"{n} saved scenarios predict {n_classes} classes: {distribution}."
+            )
+
+    return {
+        "scenarios": scenarios_data,
+        "n_scenarios": n,
+        "problem_type": problem_type,
+        "best_scenario": best_scenario,
+        "worst_scenario": worst_scenario,
+        "spread": spread,
+        "summary": summary,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Feature impact sweep — rank all features by prediction delta
 # ---------------------------------------------------------------------------
 
