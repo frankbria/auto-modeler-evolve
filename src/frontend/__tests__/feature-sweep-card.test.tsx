@@ -1,6 +1,7 @@
 import React from "react"
 import { render, screen } from "@testing-library/react"
 import { FeatureSweepCard } from "@/components/deploy/feature-sweep-card"
+import { useAppStore } from "@/lib/store"
 import type { FeatureSweepResult } from "@/lib/types"
 
 const baseResult: FeatureSweepResult = {
@@ -169,7 +170,6 @@ describe("FeatureSweepCard", () => {
 
 describe("attachFeatureSweepToLastMessage store action", () => {
   it("attaches feature_sweep to last assistant message", () => {
-    const { useAppStore } = require("@/lib/store")
     const store = useAppStore.getState()
     store.messages = [
       { role: "user", content: "sweep features" },
@@ -181,7 +181,6 @@ describe("attachFeatureSweepToLastMessage store action", () => {
   })
 
   it("does not attach to a user message", () => {
-    const { useAppStore } = require("@/lib/store")
     const store = useAppStore.getState()
     store.messages = [
       { role: "user", content: "sweep features" },
@@ -192,7 +191,6 @@ describe("attachFeatureSweepToLastMessage store action", () => {
   })
 
   it("does nothing when messages list is empty", () => {
-    const { useAppStore } = require("@/lib/store")
     const store = useAppStore.getState()
     store.messages = []
     expect(() => store.attachFeatureSweepToLastMessage(baseResult)).not.toThrow()

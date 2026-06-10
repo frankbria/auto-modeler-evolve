@@ -1322,8 +1322,10 @@ export default function ProjectWorkspace() {
     attachSegmentDriftToLastMessage,
     attachSegmentPredTrendToLastMessage,
     attachSegmentConfTrendToLastMessage,
+    attachConfHeatmapToLastMessage,
     attachUptimeSummaryToLastMessage,
     attachCostSensitiveThresholdToLastMessage,
+    attachFeatureSweepToLastMessage,
   ])
 
   const onDrop = useCallback(
