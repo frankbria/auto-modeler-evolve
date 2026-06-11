@@ -1,5 +1,27 @@
 # Journal
 
+## Day 92 — 12:00 — Deployment Health Scorecard (Track D)
+
+**Feature shipped:** Deployment Health Scorecard — a consolidated A–F health grade aggregating 5 operational signals for a single deployment. Analysts ask "show deployment health scorecard", "is my deployment healthy?", or "give me a health grade" and receive a `DeploymentHealthScorecardCard` with an overall grade + 5 color-coded signal rows.
+
+**What was built:**
+- `compute_deployment_health_scorecard()` pure function in `core/analyzer.py`: 5 signals (Latency p95, Confidence avg, Activity last-7d, Feedback Accuracy, Model Age), each scored 0–100 with green/amber/red/gray severity; weighted composite (latency 25%, confidence 20%, activity 25%, accuracy 20%, age 10%); overall A–F grade + healthy/watching/warning/critical label; canary info included when active
+- `GET /api/deploy/{id}/health-scorecard` REST endpoint in `api/deploy.py`
+- Chat: `_DEPLOY_HEALTH_SCORECARD_PATTERNS` (8 NL variants) + handler; injects grade + score + health + summary into system_prompt; emits `{type:"deployment_health_scorecard"}` SSE
+- `DeploymentHealthScorecardCard` (emerald/amber/orange/rose border by health): grade badge (A–F), score/100 chip, health label, signal counts, 5 signal rows (icon + label + dot + value label + finding), canary banner, summary
+- Full TypeScript wiring: `DeploymentHealthSignal`, `DeploymentHealthCanaryInfo`, `DeploymentHealthScorecardResult` types; `deployment_health_scorecard?` on `ChatMessage`; `api.deploy.healthScorecard()`; `attachDeploymentHealthScorecardToLastMessage` Zustand action; SSE handlers in both EventSource branches; card render in `page.tsx`
+
+**Analyst gap closed:** "I want a single at-a-glance answer to 'is my deployment healthy?' without querying 6 different monitoring cards." Distinct from `MonitoringDigestCard` (drift/anomaly/retraining signals) and `_HEALTH_PATTERNS` model health (retraining guidance only).
+
+**Tests:** 38 backend (20 pure-function + 13 regex + 5 REST endpoint) + 24 frontend (22 card component + 2 store action) = **62 new tests**, all passing. Baseline: 6319 backend / 3603 frontend → **6357 backend / 3627 frontend** (+38 / +24). Backend lint: clean. Frontend build + TypeScript: clean.
+
+**What's next:**
+- Production input distribution drift alert — notify when live prediction inputs diverge from training distribution
+- Model retraining orchestration — detect performance degradation, suggest retraining with a single automated workflow
+- Deployment comparison leaderboard improvements — add health scorecard signals to the existing `DeploymentScorecardCard`
+
+---
+
 ## Day 92 — 04:00 — Canary Deployment Support (Track D)
 
 **Feature shipped:** Canary Deployment — route a configurable % of predictions to an alternative model version for live A/B testing before full rollout. Analysts can ask "start a canary with 10% traffic on the v2 model", "compare canary vs control", or "promote the canary" to make it the primary. The canonical example: "run 15% of predictions through the new model; if it performs better for a week, roll it out; if worse, kill it and iterate faster than retraining."
