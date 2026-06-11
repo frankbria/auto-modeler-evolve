@@ -2,6 +2,7 @@ import React from "react"
 import { render, screen, within } from "@testing-library/react"
 import { DeploymentHealthScorecardCard } from "../components/deploy/deployment-health-scorecard-card"
 import type { DeploymentHealthScorecardResult, DeploymentHealthSignal } from "../lib/types"
+import { useAppStore } from "../lib/store"
 
 function makeSignal(
   key: string,
@@ -211,7 +212,6 @@ describe("DeploymentHealthScorecardCard", () => {
 
 describe("DeploymentHealthScorecardCard store action", () => {
   it("attachDeploymentHealthScorecardToLastMessage sets scorecard on last assistant message", () => {
-    const { useAppStore } = require("../lib/store")
     const store = useAppStore.getState()
 
     store.setMessages([
