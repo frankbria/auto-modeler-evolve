@@ -2805,3 +2805,144 @@ def compute_similar_records(
         "neighbors": neighbors_out,
         "summary": summary,
     }
+
+
+# ---------------------------------------------------------------------------
+# Canary deployment comparison
+# ---------------------------------------------------------------------------
+
+
+def compute_canary_comparison(
+    logs_data: list[dict],
+    canary_run_id: str,
+    current_run_id: str,
+    traffic_pct: int,
+    problem_type: str = "regression",
+) -> dict:
+    """Compare canary vs control predictions from PredictionLog entries.
+
+    Splits logs by served_by_canary, computes per-group stats, and returns a
+    structured comparison suitable for the CanaryCard frontend component.
+
+    Args:
+        logs_data: list of dicts with keys: served_by_canary (bool),
+            prediction_numeric (float|None), confidence (float|None).
+        canary_run_id: ModelRun.id for the canary version.
+        current_run_id: ModelRun.id for the current (control) version.
+        traffic_pct: configured canary traffic percentage (0-100).
+        problem_type: "regression" or "classification".
+
+    Returns:
+        dict with keys: control_count, canary_count, traffic_pct,
+        control_avg, canary_avg, delta, delta_pct, direction, verdict,
+        metric_label, summary.
+    """
+    control = [l for l in logs_data if not l.get("served_by_canary")]
+    canary = [l for l in logs_data if l.get("served_by_canary")]
+
+    def _avg(entries: list[dict], key: str) -> float | None:
+        vals = [e[key] for e in entries if e.get(key) is not None]
+        return round(sum(vals) / len(vals), 4) if vals else None
+
+    if problem_type == "regression":
+        control_avg = _avg(control, "prediction_numeric")
+        canary_avg = _avg(canary, "prediction_numeric")
+        metric_label = "Avg prediction"
+    else:
+        control_avg = _avg(control, "confidence")
+        canary_avg = _avg(canary, "confidence")
+        metric_label = "Avg confidence"
+
+    MIN_SAMPLES = 10
+    has_enough = len(control) >= MIN_SAMPLES and len(canary) >= MIN_SAMPLES
+
+    delta: float | None = None
+    delta_pct: float | None = None
+    direction = "no_data"
+    verdict = "insufficient_data"
+
+    if has_enough and control_avg is not None and canary_avg is not None:
+        delta = round(canary_avg - control_avg, 4)
+        if control_avg != 0:
+            delta_pct = round((delta / abs(control_avg)) * 100, 2)
+        else:
+            delta_pct = 0.0
+
+        THRESHOLD = 0.02  # 2% relative change to call it meaningful
+        rel_change = abs(delta_pct or 0) / 100 if delta_pct is not None else 0
+
+        if rel_change < THRESHOLD:
+            direction = "similar"
+            verdict = "no_significant_difference"
+        elif delta > 0:
+            direction = "canary_higher"
+            verdict = (
+                "canary_better"
+                if problem_type != "regression"
+                else "canary_different"
+            )
+        else:
+            direction = "canary_lower"
+            verdict = (
+                "canary_worse"
+                if problem_type != "regression"
+                else "canary_different"
+            )
+
+    # Build plain-English summary
+    if not has_enough:
+        need = MIN_SAMPLES - min(len(control), len(canary))
+        summary = (
+            f"Not enough data yet to compare canary vs control. "
+            f"Need at least {MIN_SAMPLES} predictions in each group "
+            f"({len(control)} control, {len(canary)} canary so far). "
+            f"About {need} more predictions needed."
+        )
+    elif verdict == "no_significant_difference":
+        summary = (
+            f"Canary and control models perform similarly "
+            f"({metric_label}: control {_fmt(control_avg)}, "
+            f"canary {_fmt(canary_avg)} — less than 2% difference). "
+            "You can safely promote or cancel the canary."
+        )
+    elif direction == "canary_higher":
+        summary = (
+            f"Canary model shows higher {metric_label.lower()}: "
+            f"{_fmt(canary_avg)} vs control {_fmt(control_avg)} "
+            f"(+{delta_pct:.1f}%). Consider promoting the canary."
+        )
+    else:
+        summary = (
+            f"Canary model shows lower {metric_label.lower()}: "
+            f"{_fmt(canary_avg)} vs control {_fmt(control_avg)} "
+            f"({delta_pct:.1f}%). Consider canceling the canary."
+        )
+
+    return {
+        "canary_run_id": canary_run_id,
+        "current_run_id": current_run_id,
+        "traffic_pct": traffic_pct,
+        "control_count": len(control),
+        "canary_count": len(canary),
+        "metric_label": metric_label,
+        "control_avg": control_avg,
+        "canary_avg": canary_avg,
+        "delta": delta,
+        "delta_pct": delta_pct,
+        "direction": direction,
+        "verdict": verdict,
+        "min_samples": MIN_SAMPLES,
+        "has_enough_data": has_enough,
+        "summary": summary,
+    }
+
+
+def _fmt(v: float | None) -> str:
+    """Format a float for display, or 'N/A' if None."""
+    if v is None:
+        return "N/A"
+    if abs(v) >= 1000:
+        return f"{v:,.0f}"
+    if abs(v) >= 10:
+        return f"{v:.1f}"
+    return f"{v:.3f}"

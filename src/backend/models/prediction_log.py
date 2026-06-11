@@ -22,4 +22,5 @@ class PredictionLog(SQLModel, table=True):
     ab_variant: Optional[str] = (
         None  # "champion" | "challenger" when serving an A/B test
     )
+    served_by_canary: bool = Field(default=False)
     created_at: datetime = Field(default_factory=_utcnow)

@@ -579,6 +579,7 @@ export interface ChatMessage {
   cost_sensitive_threshold?: CostSensitiveThresholdResult
   feature_sweep?: FeatureSweepResult
   saved_scenarios?: SavedScenariosResult
+  canary_status?: CanaryStatusResult
 }
 
 export interface RollbackVersionEntry {
@@ -4958,3 +4959,52 @@ export interface SavedScenariosResult {
   summary: string
 }
 
+
+// ---------------------------------------------------------------------------
+// Canary deployment (Track D perpetual)
+// ---------------------------------------------------------------------------
+
+export interface CanaryVersionInfo {
+  version_number: number
+  algorithm: string | null
+  is_current: boolean
+  deployed_at?: string | null
+}
+
+export interface CanaryComparison {
+  canary_run_id: string
+  current_run_id: string
+  traffic_pct: number
+  control_count: number
+  canary_count: number
+  metric_label: string
+  control_avg: number | null
+  canary_avg: number | null
+  delta: number | null
+  delta_pct: number | null
+  direction: "canary_higher" | "canary_lower" | "similar" | "no_data"
+  verdict:
+    | "canary_better"
+    | "canary_worse"
+    | "canary_different"
+    | "no_significant_difference"
+    | "insufficient_data"
+  min_samples: number
+  has_enough_data: boolean
+  summary: string
+}
+
+export interface CanaryStatusResult {
+  deployment_id: string
+  canary_is_active: boolean
+  canary_run_id: string | null
+  canary_traffic_pct: number
+  canary_version_number: number | null
+  canary_algorithm: string | null
+  canary_started_at: string | null
+  current_version_number: number
+  current_algorithm: string | null
+  available_versions: CanaryVersionInfo[]
+  comparison: CanaryComparison | null
+  summary: string
+}

@@ -1073,6 +1073,7 @@ def make_prediction(
 
     # A/B test routing: check if this deployment has an active champion-challenger test
     ab_variant: str | None = None
+    served_by_canary: bool = False
     serving_pipeline = deployment.pipeline_path
     serving_model = run.model_path
 
@@ -1097,6 +1098,28 @@ def make_prediction(
                     serving_pipeline = challenger.pipeline_path
                     serving_model = challenger_run.model_path
                     ab_variant = "challenger"
+
+    # Canary routing: only applies when no A/B test is active
+    if not ab_variant and getattr(deployment, "canary_is_active", False):
+        _canary_pct = getattr(deployment, "canary_traffic_pct", None) or 0
+        _canary_run_id = getattr(deployment, "canary_run_id", None)
+        _canary_pipeline = getattr(deployment, "canary_pipeline_path", None)
+        if (
+            _canary_pct > 0
+            and _canary_run_id
+            and _canary_pipeline
+            and Path(_canary_pipeline).exists()
+        ):
+            _canary_run = session.get(ModelRun, _canary_run_id)
+            if (
+                _canary_run
+                and _canary_run.model_path
+                and Path(_canary_run.model_path).exists()
+                and random.random() < _canary_pct / 100
+            ):
+                serving_pipeline = _canary_pipeline
+                serving_model = _canary_run.model_path
+                served_by_canary = True
 
     _t0 = time.monotonic()
     result = predict_single(
@@ -1139,6 +1162,7 @@ def make_prediction(
         confidence=result.get("confidence"),
         response_ms=response_ms,
         ab_variant=ab_variant,
+        served_by_canary=served_by_canary,
     )
     session.add(log_entry)
     session.commit()
@@ -9395,3 +9419,269 @@ def clear_all_scenarios(
         session.delete(row)
     session.commit()
     return {"deleted": len(rows)}
+
+
+# ---------------------------------------------------------------------------
+# Canary deployment endpoints
+# ---------------------------------------------------------------------------
+
+
+@router.post("/api/deploy/{deployment_id}/canary/start")
+def start_canary(
+    deployment_id: str,
+    payload: dict,
+    session: Session = Depends(get_session),
+) -> dict:
+    """Start a canary deployment.
+
+    Body: {"version_number": int, "traffic_pct": int (1-50)}
+    Activates canary routing: `traffic_pct` % of predictions go to the
+    specified historical deployment version, the rest to the current model.
+    """
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment or not deployment.is_active:
+        raise HTTPException(status_code=404, detail="Deployment not found or inactive")
+
+    version_number = payload.get("version_number")
+    traffic_pct = payload.get("traffic_pct")
+
+    if version_number is None or traffic_pct is None:
+        raise HTTPException(
+            status_code=400, detail="version_number and traffic_pct are required"
+        )
+    if not isinstance(traffic_pct, int) or not (1 <= traffic_pct <= 50):
+        raise HTTPException(
+            status_code=400, detail="traffic_pct must be an integer between 1 and 50"
+        )
+
+    target_version = session.exec(
+        select(DeploymentVersion).where(
+            DeploymentVersion.deployment_id == deployment_id,
+            DeploymentVersion.version_number == version_number,
+        )
+    ).first()
+    if not target_version:
+        raise HTTPException(
+            status_code=404, detail=f"Version {version_number} not found"
+        )
+    if not target_version.pipeline_path or not Path(target_version.pipeline_path).exists():
+        raise HTTPException(
+            status_code=422, detail="Version pipeline file not found on disk"
+        )
+    canary_run = session.get(ModelRun, target_version.model_run_id)
+    if not canary_run or not canary_run.model_path or not Path(canary_run.model_path).exists():
+        raise HTTPException(
+            status_code=422, detail="Version model file not found on disk"
+        )
+
+    deployment.canary_run_id = target_version.model_run_id
+    deployment.canary_pipeline_path = target_version.pipeline_path
+    deployment.canary_traffic_pct = traffic_pct
+    deployment.canary_is_active = True
+    deployment.canary_started_at = datetime.now(UTC).replace(tzinfo=None)
+    session.add(deployment)
+    session.commit()
+    session.refresh(deployment)
+
+    return {
+        "deployment_id": deployment_id,
+        "canary_is_active": True,
+        "canary_run_id": deployment.canary_run_id,
+        "canary_traffic_pct": traffic_pct,
+        "canary_version_number": version_number,
+        "canary_algorithm": target_version.algorithm,
+        "canary_started_at": (
+            deployment.canary_started_at.isoformat()
+            if deployment.canary_started_at
+            else None
+        ),
+    }
+
+
+@router.post("/api/deploy/{deployment_id}/canary/cancel")
+def cancel_canary(
+    deployment_id: str,
+    session: Session = Depends(get_session),
+) -> dict:
+    """Cancel the active canary — all traffic returns to the current model."""
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment or not deployment.is_active:
+        raise HTTPException(status_code=404, detail="Deployment not found or inactive")
+
+    deployment.canary_is_active = False
+    deployment.canary_run_id = None
+    deployment.canary_pipeline_path = None
+    deployment.canary_traffic_pct = None
+    deployment.canary_started_at = None
+    session.add(deployment)
+    session.commit()
+
+    return {"deployment_id": deployment_id, "canary_is_active": False, "message": "Canary canceled. All traffic is now routed to the current model."}
+
+
+@router.post("/api/deploy/{deployment_id}/canary/promote")
+def promote_canary(
+    deployment_id: str,
+    session: Session = Depends(get_session),
+) -> dict:
+    """Promote the canary to production — swap current model with canary model."""
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment or not deployment.is_active:
+        raise HTTPException(status_code=404, detail="Deployment not found or inactive")
+    if not getattr(deployment, "canary_is_active", False):
+        raise HTTPException(status_code=422, detail="No active canary to promote")
+
+    canary_run_id = deployment.canary_run_id
+    canary_pipeline = deployment.canary_pipeline_path
+    if not canary_run_id or not canary_pipeline:
+        raise HTTPException(status_code=422, detail="Canary configuration incomplete")
+
+    canary_run = session.get(ModelRun, canary_run_id)
+    if not canary_run:
+        raise HTTPException(status_code=404, detail="Canary model run not found")
+
+    # Swap: canary becomes the current model
+    new_version = deployment.current_version_number + 1
+
+    deployment.model_run_id = canary_run_id
+    deployment.pipeline_path = canary_pipeline
+    deployment.algorithm = canary_run.algorithm
+    metrics_str = canary_run.metrics
+    if metrics_str:
+        deployment.metrics = metrics_str
+    deployment.current_version_number = new_version
+
+    # Record new DeploymentVersion
+    _metrics_dict: dict = {}
+    try:
+        _metrics_dict = json.loads(metrics_str or "{}")
+    except Exception:
+        pass
+    new_dv = DeploymentVersion(
+        deployment_id=deployment_id,
+        version_number=new_version,
+        model_run_id=canary_run_id,
+        algorithm=canary_run.algorithm,
+        problem_type=deployment.problem_type,
+        target_column=deployment.target_column,
+        metrics=metrics_str,
+        pipeline_path=canary_pipeline,
+        is_current=True,
+    )
+    # Mark previous versions as not current
+    prev_versions = session.exec(
+        select(DeploymentVersion).where(
+            DeploymentVersion.deployment_id == deployment_id,
+            DeploymentVersion.is_current == True,  # noqa: E712
+        )
+    ).all()
+    for pv in prev_versions:
+        pv.is_current = False
+        session.add(pv)
+    session.add(new_dv)
+
+    # Clear canary config
+    deployment.canary_is_active = False
+    deployment.canary_run_id = None
+    deployment.canary_pipeline_path = None
+    deployment.canary_traffic_pct = None
+    deployment.canary_started_at = None
+    session.add(deployment)
+    session.commit()
+
+    return {
+        "deployment_id": deployment_id,
+        "promoted": True,
+        "new_version_number": new_version,
+        "algorithm": canary_run.algorithm,
+        "message": f"Canary promoted to production (v{new_version}). All traffic now uses the canary model.",
+    }
+
+
+@router.get("/api/deploy/{deployment_id}/canary/status")
+def canary_status(
+    deployment_id: str,
+    n: int = 200,
+    session: Session = Depends(get_session),
+) -> dict:
+    """Get canary configuration and live comparison stats."""
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment or not deployment.is_active:
+        raise HTTPException(status_code=404, detail="Deployment not found or inactive")
+
+    is_active = bool(getattr(deployment, "canary_is_active", False))
+    canary_run_id = getattr(deployment, "canary_run_id", None)
+    traffic_pct = getattr(deployment, "canary_traffic_pct", None) or 0
+    canary_started_at = getattr(deployment, "canary_started_at", None)
+
+    # Resolve canary version number
+    canary_version_number: int | None = None
+    canary_algorithm: str | None = None
+    if canary_run_id:
+        _cv = session.exec(
+            select(DeploymentVersion).where(
+                DeploymentVersion.deployment_id == deployment_id,
+                DeploymentVersion.model_run_id == canary_run_id,
+            )
+        ).first()
+        if _cv:
+            canary_version_number = _cv.version_number
+            canary_algorithm = _cv.algorithm
+
+    # Available versions for starting a canary (all non-current versions)
+    all_versions = session.exec(
+        select(DeploymentVersion).where(
+            DeploymentVersion.deployment_id == deployment_id,
+        ).order_by(DeploymentVersion.version_number.desc())  # type: ignore[attr-defined]
+    ).all()
+    available_versions = [
+        {
+            "version_number": v.version_number,
+            "algorithm": v.algorithm,
+            "deployed_at": v.deployed_at.isoformat() if v.deployed_at else None,
+            "is_current": v.is_current,
+        }
+        for v in all_versions
+    ]
+
+    # Comparison stats from recent prediction logs
+    comparison: dict | None = None
+    if is_active and canary_run_id:
+        from core.deployer import compute_canary_comparison as _ccc
+
+        logs = session.exec(
+            select(PredictionLog)
+            .where(PredictionLog.deployment_id == deployment_id)
+            .order_by(PredictionLog.created_at.desc())  # type: ignore[attr-defined]
+            .limit(n)
+        ).all()
+        logs_data = [
+            {
+                "served_by_canary": bool(getattr(l, "served_by_canary", False)),
+                "prediction_numeric": l.prediction_numeric,
+                "confidence": l.confidence,
+            }
+            for l in logs
+        ]
+        comparison = _ccc(
+            logs_data,
+            canary_run_id=canary_run_id,
+            current_run_id=deployment.model_run_id,
+            traffic_pct=traffic_pct,
+            problem_type=deployment.problem_type or "regression",
+        )
+
+    return {
+        "deployment_id": deployment_id,
+        "canary_is_active": is_active,
+        "canary_run_id": canary_run_id,
+        "canary_traffic_pct": traffic_pct,
+        "canary_version_number": canary_version_number,
+        "canary_algorithm": canary_algorithm,
+        "canary_started_at": canary_started_at.isoformat() if canary_started_at else None,
+        "current_run_id": deployment.model_run_id,
+        "current_algorithm": deployment.algorithm,
+        "current_version_number": deployment.current_version_number,
+        "available_versions": available_versions,
+        "comparison": comparison,
+    }

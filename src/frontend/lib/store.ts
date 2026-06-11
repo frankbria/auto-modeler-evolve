@@ -217,6 +217,7 @@ interface AppState {
   attachCostSensitiveThresholdToLastMessage: (cost_sensitive_threshold: import("./types").CostSensitiveThresholdResult) => void
   attachFeatureSweepToLastMessage: (feature_sweep: import("./types").FeatureSweepResult) => void
   attachSavedScenariosToLastMessage: (saved_scenarios: import("./types").SavedScenariosResult) => void
+  attachCanaryStatusToLastMessage: (canary_status: import("./types").CanaryStatusResult) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -1875,6 +1876,16 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, saved_scenarios }
+      }
+      return { messages }
+    }),
+
+  attachCanaryStatusToLastMessage: (canary_status) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, canary_status }
       }
       return { messages }
     }),

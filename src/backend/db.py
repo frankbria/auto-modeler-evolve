@@ -54,6 +54,12 @@ def _apply_migrations():
         ("deployment", "pred_value_alert_enabled", "INTEGER NOT NULL DEFAULT 0"),
         ("deployment", "pred_value_alert_pct", "REAL"),
         ("deployment", "pred_value_alert_last_fired_at", "TEXT"),
+        ("deployment", "canary_run_id", "TEXT"),
+        ("deployment", "canary_pipeline_path", "TEXT"),
+        ("deployment", "canary_traffic_pct", "INTEGER"),
+        ("deployment", "canary_is_active", "INTEGER NOT NULL DEFAULT 0"),
+        ("deployment", "canary_started_at", "TEXT"),
+        ("predictionlog", "served_by_canary", "INTEGER NOT NULL DEFAULT 0"),
     ]
     with engine.connect() as conn:
         for table, col, definition in migrations:

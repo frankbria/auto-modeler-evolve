@@ -77,3 +77,9 @@ class Deployment(SQLModel, table=True):
         None  # e.g. 15.0 = alert if mean shifts >15%; None = disabled
     )
     pred_value_alert_last_fired_at: Optional[datetime] = None
+    # Canary deployment: route a configurable % of predictions to a new model version
+    canary_run_id: Optional[str] = None  # ModelRun.id for canary version
+    canary_pipeline_path: Optional[str] = None  # cached pipeline path for canary
+    canary_traffic_pct: Optional[int] = None  # 0-100; % of traffic to route to canary
+    canary_is_active: bool = Field(default=False)
+    canary_started_at: Optional[datetime] = None

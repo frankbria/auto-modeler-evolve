@@ -5088,6 +5088,36 @@ _DEPLOY_SCORECARD_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+_CANARY_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"canary\s+(?:deployment|test|release|rollout|status|comparison)?\b|"
+    r"(?:start|enable|begin|launch|set\s+up|configure)\s+(?:a\s+)?canary\b|"
+    r"(?:test|route|send)\s+(?:\d+\s*%\s+(?:of\s+)?)?(?:traffic|predictions?)\s+to\s+(?:new|another|different)\s+(?:model|version)\b|"
+    r"(?:promote|push)\s+(?:the\s+)?canary\s+(?:to\s+production)?\b|"
+    r"(?:cancel|stop|disable|end)\s+(?:the\s+)?canary\b|"
+    r"(?:how\s+is|check|view|show|get)\s+(?:my\s+)?canary\s+(?:doing|performing|status|comparison|results?)?\b|"
+    r"canary\s+vs\s+(?:production|current|control|main)\b|"
+    r"traffic\s+split(?:ting)?\s+(?:for\s+(?:new|testing|canary))?\b"
+    r")",
+    re.IGNORECASE,
+)
+
+_CANARY_PROMOTE_RE = re.compile(
+    r"(?i)(?:promote|push|make\s+(?:it|the\s+canary)\s+(?:the\s+)?(?:new\s+)?(?:default|production|current|main|primary))\s+(?:the\s+)?canary"
+)
+
+_CANARY_CANCEL_RE = re.compile(
+    r"(?i)(?:cancel|stop|disable|end|revert|abort)\s+(?:the\s+)?canary"
+)
+
+_CANARY_TRAFFIC_RE = re.compile(
+    r"(?i)(?:with\s+)?(\d+)\s*%"
+)
+
+_CANARY_VERSION_RE = re.compile(
+    r"(?i)v(?:ersion\s+)?(\d+)\b"
+)
+
 _THROUGHPUT_PATTERNS = re.compile(
     r"(?i)(?:"
     r"how\s+long\s+(?:to|would\s+it\s+take\s+to)\s+(?:process|batch|run|score)\s+\d|"
@@ -17919,6 +17949,190 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Pred value alert config is nice-to-have; never crash chat
 
+    # Canary deployment — route a % of traffic to a different model version for live A/B testing.
+    # Distinct from: _AB_TEST_PATTERNS (champion/challenger across two full deployments),
+    # _AUTO_ROLLBACK_PATTERNS (automatic rollback on accuracy drop).
+    canary_event: dict | None = None
+    if _CANARY_PATTERNS.search(body.message) and ctx["deployment"]:
+        try:
+            from datetime import UTC as _UTC_canary
+            from models.deployment_version import DeploymentVersion as _DV_canary
+
+            _cn_dep = ctx["deployment"]
+            _cn_dep_id = _cn_dep.id if hasattr(_cn_dep, "id") else str(_cn_dep)
+            _cn_dep_obj = session.get(Deployment, _cn_dep_id)
+
+            if _cn_dep_obj:
+                _promote_cn = bool(_CANARY_PROMOTE_RE.search(body.message))
+                _cancel_cn = bool(_CANARY_CANCEL_RE.search(body.message))
+
+                if _promote_cn and getattr(_cn_dep_obj, "canary_is_active", False):
+                    # Promote canary: swap current model with canary model
+                    _cn_canary_run_id = getattr(_cn_dep_obj, "canary_run_id", None)
+                    _cn_canary_pipeline = getattr(_cn_dep_obj, "canary_pipeline_path", None)
+                    _cn_run = session.get(ModelRun, _cn_canary_run_id) if _cn_canary_run_id else None
+                    if _cn_run and _cn_canary_pipeline:
+                        _cn_new_v = _cn_dep_obj.current_version_number + 1
+                        _cn_dep_obj.model_run_id = _cn_canary_run_id
+                        _cn_dep_obj.pipeline_path = _cn_canary_pipeline
+                        _cn_dep_obj.algorithm = _cn_run.algorithm
+                        _cn_dep_obj.current_version_number = _cn_new_v
+                        _cn_dep_obj.canary_is_active = False
+                        _cn_dep_obj.canary_run_id = None
+                        _cn_dep_obj.canary_pipeline_path = None
+                        _cn_dep_obj.canary_traffic_pct = None
+                        _cn_dep_obj.canary_started_at = None
+                        session.add(_cn_dep_obj)
+                        _cn_dv = _DV_canary(
+                            deployment_id=_cn_dep_id,
+                            version_number=_cn_new_v,
+                            model_run_id=_cn_canary_run_id,
+                            algorithm=_cn_run.algorithm,
+                            problem_type=_cn_dep_obj.problem_type,
+                            target_column=_cn_dep_obj.target_column,
+                            metrics=_cn_run.metrics,
+                            pipeline_path=_cn_canary_pipeline,
+                            is_current=True,
+                        )
+                        _cn_prev = session.exec(
+                            select(_DV_canary).where(
+                                _DV_canary.deployment_id == _cn_dep_id,
+                                _DV_canary.is_current == True,  # noqa: E712
+                            )
+                        ).all()
+                        for _pv in _cn_prev:
+                            _pv.is_current = False
+                            session.add(_pv)
+                        session.add(_cn_dv)
+                        session.commit()
+                        session.refresh(_cn_dep_obj)
+                elif _cancel_cn:
+                    _cn_dep_obj.canary_is_active = False
+                    _cn_dep_obj.canary_run_id = None
+                    _cn_dep_obj.canary_pipeline_path = None
+                    _cn_dep_obj.canary_traffic_pct = None
+                    _cn_dep_obj.canary_started_at = None
+                    session.add(_cn_dep_obj)
+                    session.commit()
+                    session.refresh(_cn_dep_obj)
+                else:
+                    # Start canary: look for version number + traffic %
+                    _cn_v_m = _CANARY_VERSION_RE.search(body.message)
+                    _cn_t_m = _CANARY_TRAFFIC_RE.search(body.message)
+                    if _cn_v_m and _cn_t_m:
+                        _cn_v_num = int(_cn_v_m.group(1))
+                        _cn_t_pct = int(_cn_t_m.group(1))
+                        if 1 <= _cn_t_pct <= 50:
+                            _cn_target_v = session.exec(
+                                select(_DV_canary).where(
+                                    _DV_canary.deployment_id == _cn_dep_id,
+                                    _DV_canary.version_number == _cn_v_num,
+                                )
+                            ).first()
+                            if _cn_target_v and _cn_target_v.pipeline_path:
+                                from pathlib import Path as _Path_cn
+
+                                _cn_r = session.get(ModelRun, _cn_target_v.model_run_id)
+                                if (
+                                    _cn_r
+                                    and _cn_r.model_path
+                                    and _Path_cn(_cn_target_v.pipeline_path).exists()
+                                    and _Path_cn(_cn_r.model_path).exists()
+                                ):
+                                    _cn_dep_obj.canary_run_id = _cn_target_v.model_run_id
+                                    _cn_dep_obj.canary_pipeline_path = _cn_target_v.pipeline_path
+                                    _cn_dep_obj.canary_traffic_pct = _cn_t_pct
+                                    _cn_dep_obj.canary_is_active = True
+                                    _cn_dep_obj.canary_started_at = (
+                                        __import__("datetime").datetime.now(_UTC_canary).replace(tzinfo=None)
+                                    )
+                                    session.add(_cn_dep_obj)
+                                    session.commit()
+                                    session.refresh(_cn_dep_obj)
+
+                # Build canary event from current state
+                _cn_is_active = bool(getattr(_cn_dep_obj, "canary_is_active", False))
+                _cn_run_id = getattr(_cn_dep_obj, "canary_run_id", None)
+                _cn_t_pct_cur = getattr(_cn_dep_obj, "canary_traffic_pct", None) or 0
+                _cn_started = getattr(_cn_dep_obj, "canary_started_at", None)
+
+                _cn_v_num_cur: int | None = None
+                _cn_algo_cur: str | None = None
+                if _cn_run_id:
+                    _cn_v_row = session.exec(
+                        select(_DV_canary).where(
+                            _DV_canary.deployment_id == _cn_dep_id,
+                            _DV_canary.model_run_id == _cn_run_id,
+                        )
+                    ).first()
+                    if _cn_v_row:
+                        _cn_v_num_cur = _cn_v_row.version_number
+                        _cn_algo_cur = _cn_v_row.algorithm
+
+                # Available versions for picker
+                _cn_all_v = session.exec(
+                    select(_DV_canary).where(
+                        _DV_canary.deployment_id == _cn_dep_id,
+                    ).order_by(_DV_canary.version_number.desc())  # type: ignore[attr-defined]
+                ).all()
+
+                canary_event = {
+                    "deployment_id": _cn_dep_id,
+                    "canary_is_active": _cn_is_active,
+                    "canary_run_id": _cn_run_id,
+                    "canary_traffic_pct": _cn_t_pct_cur,
+                    "canary_version_number": _cn_v_num_cur,
+                    "canary_algorithm": _cn_algo_cur,
+                    "canary_started_at": _cn_started.isoformat() if _cn_started else None,
+                    "current_version_number": _cn_dep_obj.current_version_number,
+                    "current_algorithm": _cn_dep_obj.algorithm,
+                    "available_versions": [
+                        {
+                            "version_number": v.version_number,
+                            "algorithm": v.algorithm,
+                            "is_current": v.is_current,
+                        }
+                        for v in _cn_all_v
+                    ],
+                }
+
+                if _promote_cn and not canary_event.get("canary_is_active"):
+                    _summary_cn = (
+                        f"Canary promoted to production (v{_cn_dep_obj.current_version_number}). "
+                        "All traffic now routes to the former canary model."
+                    )
+                elif _cancel_cn:
+                    _summary_cn = "Canary canceled. All traffic returns to the current model."
+                elif _cn_is_active:
+                    _summary_cn = (
+                        f"Canary active: {_cn_t_pct_cur}% of traffic routes to "
+                        f"v{_cn_v_num_cur} ({_cn_algo_cur or 'previous version'}). "
+                        f"Current model handles the remaining {100 - _cn_t_pct_cur}%."
+                    )
+                else:
+                    _all_v_count = len(_cn_all_v)
+                    _summary_cn = (
+                        f"No active canary. Deployment has {_all_v_count} version(s). "
+                        "To start a canary, specify a version number and traffic percentage "
+                        "(e.g. 'start a canary with v1 at 10% traffic')."
+                    )
+
+                canary_event["summary"] = _summary_cn
+                system_prompt += (
+                    f"\n\n## Canary Deployment Status\n{_summary_cn} "
+                    "Explain canary deployments in plain English: a canary routes a small "
+                    "percentage of live predictions to an older (or experimental) model version "
+                    "so you can compare performance before committing. "
+                    "If active, tell the analyst how many predictions have gone to each version "
+                    "and whether the canary appears better or worse. "
+                    "Key commands: 'start a canary with v1 at 10% traffic', "
+                    "'promote the canary', 'cancel the canary', 'canary status'. "
+                    "Traffic % must be 1–50 (canary is never majority). "
+                    "Distinct from A/B tests (two full deployments) and manual rollback (no comparison)."
+                )
+        except Exception:  # noqa: BLE001
+            pass  # Canary config is nice-to-have; never crash chat
+
     # Segment drift detection — "is drift concentrated in a specific region/group?"
     # Distinct from: _DRIFT_IMPORTANCE_PATTERNS (ranks features by importance × drift),
     # _COVARIATE_DRIFT_PATTERNS (binary per-feature OOR alert), _DRIFT_PATTERNS (output drift).
@@ -21499,6 +21713,9 @@ def send_message(
 
         if pred_value_alert_event:
             yield f"data: {json.dumps({'type': 'pred_value_alert_config', 'pred_value_alert_config': pred_value_alert_event})}\n\n"
+
+        if canary_event:
+            yield f"data: {json.dumps({'type': 'canary_status', 'canary_status': canary_event})}\n\n"
 
         if segment_drift_event:
             yield f"data: {json.dumps({'type': 'segment_drift', 'segment_drift': segment_drift_event})}\n\n"

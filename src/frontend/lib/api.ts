@@ -1408,5 +1408,34 @@ export const api = {
         `${API_URL}/api/deploy/${deploymentId}/share-link${qs ? `?${qs}` : ""}`
       ).then((r) => r.json())
     },
+
+    canaryStatus: (
+      deploymentId: string,
+      n = 200
+    ): Promise<import("@/lib/types").CanaryStatusResult> =>
+      fetch(`${API_URL}/api/deploy/${deploymentId}/canary/status?n=${n}`).then((r) =>
+        r.json()
+      ),
+
+    canaryStart: (
+      deploymentId: string,
+      versionNumber: number,
+      trafficPct: number
+    ): Promise<import("@/lib/types").CanaryStatusResult> =>
+      fetch(`${API_URL}/api/deploy/${deploymentId}/canary/start`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ version_number: versionNumber, traffic_pct: trafficPct }),
+      }).then((r) => r.json()),
+
+    canaryCancel: (deploymentId: string): Promise<{ canary_is_active: boolean; message: string }> =>
+      fetch(`${API_URL}/api/deploy/${deploymentId}/canary/cancel`, {
+        method: "POST",
+      }).then((r) => r.json()),
+
+    canaryPromote: (deploymentId: string): Promise<{ promoted: boolean; new_version_number: number; message: string }> =>
+      fetch(`${API_URL}/api/deploy/${deploymentId}/canary/promote`, {
+        method: "POST",
+      }).then((r) => r.json()),
   },
 }
