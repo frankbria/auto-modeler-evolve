@@ -53,6 +53,27 @@ the time is better spent on real features.
 
 ---
 
+## Day 92 (12:00) — Done
+
+**Track D: Deployment Health Scorecard** — complete.
+
+Consolidated A–F health grade aggregating 5 operational signals: latency p95, avg confidence, activity last-7d, feedback accuracy, and model age. Analysts ask "show deployment health scorecard" or "is my deployment healthy?" and receive a `DeploymentHealthScorecardCard` with an overall grade, score, health label, and 5 color-coded signal rows. `compute_deployment_health_scorecard()` pure function in `core/analyzer.py`; `GET /api/deploy/{id}/health-scorecard` REST endpoint; `_DEPLOY_HEALTH_SCORECARD_PATTERNS` (8 NL variants) chat handler; SSE event; full TypeScript wiring. 62 new tests (+38 backend / +24 frontend). Baseline: 6319/3603 → **6357/3627**.
+
+**What's next:**
+- Production input distribution drift alert — notify when live prediction inputs diverge from training distribution
+- Model retraining orchestration — detect performance degradation and suggest retraining
+- Deployment comparison leaderboard improvements
+
+---
+
+## Day 92 (04:00) — Done
+
+**Track D: Canary Deployment Support** — complete.
+
+Route a configurable % of production predictions to a new model version for live A/B testing before full rollout. Analysts ask "start a canary with 10% traffic", "compare canary vs control", or "promote the canary". `compute_canary_comparison()` pure function; 4 REST endpoints (start/cancel/promote/status); `_CANARY_PATTERNS` (10 NL variants); `CanaryCard` frontend component. 65 new tests (+30 backend / +35 frontend). Baseline: 6289/3568 → **6319/3603**.
+
+---
+
 ## Day 91 (20:00) — Done
 
 **Track D: Feature Interaction Heatmap REST Endpoint** — complete.
