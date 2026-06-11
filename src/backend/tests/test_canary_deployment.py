@@ -9,14 +9,9 @@ Covers:
 """
 
 import json
-import re
 
 import numpy as np
-import pytest
-from fastapi.testclient import TestClient
 from sqlmodel import SQLModel, Session, create_engine
-
-import db as db_module
 
 # ---------------------------------------------------------------------------
 # Pattern detection

@@ -5110,13 +5110,9 @@ _CANARY_CANCEL_RE = re.compile(
     r"(?i)(?:cancel|stop|disable|end|revert|abort)\s+(?:the\s+)?canary"
 )
 
-_CANARY_TRAFFIC_RE = re.compile(
-    r"(?i)(?:with\s+)?(\d+)\s*%"
-)
+_CANARY_TRAFFIC_RE = re.compile(r"(?i)(?:with\s+)?(\d+)\s*%")
 
-_CANARY_VERSION_RE = re.compile(
-    r"(?i)v(?:ersion\s+)?(\d+)\b"
-)
+_CANARY_VERSION_RE = re.compile(r"(?i)v(?:ersion\s+)?(\d+)\b")
 
 _THROUGHPUT_PATTERNS = re.compile(
     r"(?i)(?:"
@@ -17969,8 +17965,14 @@ def send_message(
                 if _promote_cn and getattr(_cn_dep_obj, "canary_is_active", False):
                     # Promote canary: swap current model with canary model
                     _cn_canary_run_id = getattr(_cn_dep_obj, "canary_run_id", None)
-                    _cn_canary_pipeline = getattr(_cn_dep_obj, "canary_pipeline_path", None)
-                    _cn_run = session.get(ModelRun, _cn_canary_run_id) if _cn_canary_run_id else None
+                    _cn_canary_pipeline = getattr(
+                        _cn_dep_obj, "canary_pipeline_path", None
+                    )
+                    _cn_run = (
+                        session.get(ModelRun, _cn_canary_run_id)
+                        if _cn_canary_run_id
+                        else None
+                    )
                     if _cn_run and _cn_canary_pipeline:
                         _cn_new_v = _cn_dep_obj.current_version_number + 1
                         _cn_dep_obj.model_run_id = _cn_canary_run_id
@@ -18039,12 +18041,18 @@ def send_message(
                                     and _Path_cn(_cn_target_v.pipeline_path).exists()
                                     and _Path_cn(_cn_r.model_path).exists()
                                 ):
-                                    _cn_dep_obj.canary_run_id = _cn_target_v.model_run_id
-                                    _cn_dep_obj.canary_pipeline_path = _cn_target_v.pipeline_path
+                                    _cn_dep_obj.canary_run_id = (
+                                        _cn_target_v.model_run_id
+                                    )
+                                    _cn_dep_obj.canary_pipeline_path = (
+                                        _cn_target_v.pipeline_path
+                                    )
                                     _cn_dep_obj.canary_traffic_pct = _cn_t_pct
                                     _cn_dep_obj.canary_is_active = True
                                     _cn_dep_obj.canary_started_at = (
-                                        __import__("datetime").datetime.now(_UTC_canary).replace(tzinfo=None)
+                                        __import__("datetime")
+                                        .datetime.now(_UTC_canary)
+                                        .replace(tzinfo=None)
                                     )
                                     session.add(_cn_dep_obj)
                                     session.commit()
@@ -18071,9 +18079,11 @@ def send_message(
 
                 # Available versions for picker
                 _cn_all_v = session.exec(
-                    select(_DV_canary).where(
+                    select(_DV_canary)
+                    .where(
                         _DV_canary.deployment_id == _cn_dep_id,
-                    ).order_by(_DV_canary.version_number.desc())  # type: ignore[attr-defined]
+                    )
+                    .order_by(_DV_canary.version_number.desc())  # type: ignore[attr-defined]
                 ).all()
 
                 canary_event = {
@@ -18083,7 +18093,9 @@ def send_message(
                     "canary_traffic_pct": _cn_t_pct_cur,
                     "canary_version_number": _cn_v_num_cur,
                     "canary_algorithm": _cn_algo_cur,
-                    "canary_started_at": _cn_started.isoformat() if _cn_started else None,
+                    "canary_started_at": _cn_started.isoformat()
+                    if _cn_started
+                    else None,
                     "current_version_number": _cn_dep_obj.current_version_number,
                     "current_algorithm": _cn_dep_obj.algorithm,
                     "available_versions": [
@@ -18102,7 +18114,9 @@ def send_message(
                         "All traffic now routes to the former canary model."
                     )
                 elif _cancel_cn:
-                    _summary_cn = "Canary canceled. All traffic returns to the current model."
+                    _summary_cn = (
+                        "Canary canceled. All traffic returns to the current model."
+                    )
                 elif _cn_is_active:
                     _summary_cn = (
                         f"Canary active: {_cn_t_pct_cur}% of traffic routes to "

@@ -2877,16 +2877,12 @@ def compute_canary_comparison(
         elif delta > 0:
             direction = "canary_higher"
             verdict = (
-                "canary_better"
-                if problem_type != "regression"
-                else "canary_different"
+                "canary_better" if problem_type != "regression" else "canary_different"
             )
         else:
             direction = "canary_lower"
             verdict = (
-                "canary_worse"
-                if problem_type != "regression"
-                else "canary_different"
+                "canary_worse" if problem_type != "regression" else "canary_different"
             )
 
     # Build plain-English summary

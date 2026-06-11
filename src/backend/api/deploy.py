@@ -9464,12 +9464,19 @@ def start_canary(
         raise HTTPException(
             status_code=404, detail=f"Version {version_number} not found"
         )
-    if not target_version.pipeline_path or not Path(target_version.pipeline_path).exists():
+    if (
+        not target_version.pipeline_path
+        or not Path(target_version.pipeline_path).exists()
+    ):
         raise HTTPException(
             status_code=422, detail="Version pipeline file not found on disk"
         )
     canary_run = session.get(ModelRun, target_version.model_run_id)
-    if not canary_run or not canary_run.model_path or not Path(canary_run.model_path).exists():
+    if (
+        not canary_run
+        or not canary_run.model_path
+        or not Path(canary_run.model_path).exists()
+    ):
         raise HTTPException(
             status_code=422, detail="Version model file not found on disk"
         )
@@ -9516,7 +9523,11 @@ def cancel_canary(
     session.add(deployment)
     session.commit()
 
-    return {"deployment_id": deployment_id, "canary_is_active": False, "message": "Canary canceled. All traffic is now routed to the current model."}
+    return {
+        "deployment_id": deployment_id,
+        "canary_is_active": False,
+        "message": "Canary canceled. All traffic is now routed to the current model.",
+    }
 
 
 @router.post("/api/deploy/{deployment_id}/canary/promote")
@@ -9630,9 +9641,11 @@ def canary_status(
 
     # Available versions for starting a canary (all non-current versions)
     all_versions = session.exec(
-        select(DeploymentVersion).where(
+        select(DeploymentVersion)
+        .where(
             DeploymentVersion.deployment_id == deployment_id,
-        ).order_by(DeploymentVersion.version_number.desc())  # type: ignore[attr-defined]
+        )
+        .order_by(DeploymentVersion.version_number.desc())  # type: ignore[attr-defined]
     ).all()
     available_versions = [
         {
@@ -9678,7 +9691,9 @@ def canary_status(
         "canary_traffic_pct": traffic_pct,
         "canary_version_number": canary_version_number,
         "canary_algorithm": canary_algorithm,
-        "canary_started_at": canary_started_at.isoformat() if canary_started_at else None,
+        "canary_started_at": canary_started_at.isoformat()
+        if canary_started_at
+        else None,
         "current_run_id": deployment.model_run_id,
         "current_algorithm": deployment.algorithm,
         "current_version_number": deployment.current_version_number,
