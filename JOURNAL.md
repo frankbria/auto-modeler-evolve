@@ -1,5 +1,28 @@
 # Journal
 
+## Day 92 — 04:00 — Canary Deployment Support (Track D)
+
+**Feature shipped:** Canary Deployment — route a configurable % of predictions to an alternative model version for live A/B testing before full rollout. Analysts can ask "start a canary with 10% traffic on the v2 model", "compare canary vs control", or "promote the canary" to make it the primary. The canonical example: "run 15% of predictions through the new model; if it performs better for a week, roll it out; if worse, kill it and iterate faster than retraining."
+
+**What was built:**
+- `Deployment` schema: 5 new canary fields (`canary_run_id`, `canary_pipeline_path`, `canary_traffic_pct`, `canary_is_active`, `canary_started_at`); `PredictionLog.served_by_canary` bool flag; 6 inline migrations in `db.py`
+- `compute_canary_comparison()` pure function in `core/deployer.py`: splits logs by `served_by_canary`, computes per-group stats (count, avg prediction, avg confidence); verdicts: `canary_better` / `canary_worse` / `similar` / `insufficient_data`
+- 4 REST endpoints in `api/deploy.py`: `POST /api/deploy/{id}/canary/start` (run_id + pipeline_path + traffic_pct), `POST /canary/cancel`, `POST /canary/promote`, `GET /canary/status`; canary routing logic integrated into `make_prediction()` alongside existing A/B path
+- Chat: `_CANARY_PATTERNS` (10 NL variants) + sub-patterns for promote/cancel/traffic/version extraction; handler enables/disables/reads config + performs start/promote/cancel from chat; emits `{type:"canary_status"}` SSE
+- `CanaryCard` (amber border when active, slate when inactive): side-by-side control vs canary grid; live comparison stats (delta %, per-group counts/averages); available versions picker; control/cancel/promote commands in footer
+- Full TypeScript wiring: `CanaryVersionInfo`, `CanaryComparison`, `CanaryStatusResult` interfaces; `canary_status?` on `ChatMessage`; API methods (`canaryStatus`, `canaryStart`, `canaryCancel`, `canaryPromote`); `attachCanaryStatusToLastMessage` action; SSE handlers in both EventSource branches
+
+**Tests:** 30 backend (7 pattern + 5 sub-pattern extraction + 10 pure-function + 8 REST endpoint) + 35 frontend (29 card component + 6 store) = **65 new tests**, all passing. Baseline: 6289 backend / 3568 frontend → **6319 backend / 3603 frontend** (+30 / +35).
+
+**Analyst gap closed:** "I want to test a new model version on real traffic at low risk before committing to full deployment" — distinct from bulk A/B testing (`BulkScenarioComparison`, offline) and feature impact (`FeatureSweepCard`, what-if).
+
+**What's next:**
+- Deployment health scorecard — consolidated card aggregating latency, drift, confidence, quota signals
+- Production input distribution drift alert — notify when live prediction inputs diverge from training distribution
+- Model retraining orchestration — detect performance degradation and suggest retraining
+
+---
+
 ## Day 91 — 20:00 — Feature Interaction Heatmap REST Endpoint + Cleanup
 
 **What happened:** Targeted the Feature Interaction Heatmap as the next Track D feature. Discovered it was already fully implemented from a prior session: `run_feature_interaction()` pure function in `core/deployer.py`, `_INTERACTION_PATTERNS` + `_detect_interaction_request()` + SSE handler in `chat.py`, and `InteractionCard` component wired to both EventSource branches in `page.tsx`. The chat path was already shipping.
