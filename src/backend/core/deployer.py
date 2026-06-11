@@ -2837,8 +2837,8 @@ def compute_canary_comparison(
         control_avg, canary_avg, delta, delta_pct, direction, verdict,
         metric_label, summary.
     """
-    control = [l for l in logs_data if not l.get("served_by_canary")]
-    canary = [l for l in logs_data if l.get("served_by_canary")]
+    control = [entry for entry in logs_data if not entry.get("served_by_canary")]
+    canary = [entry for entry in logs_data if entry.get("served_by_canary")]
 
     def _avg(entries: list[dict], key: str) -> float | None:
         vals = [e[key] for e in entries if e.get(key) is not None]

@@ -9670,11 +9670,11 @@ def canary_status(
         ).all()
         logs_data = [
             {
-                "served_by_canary": bool(getattr(l, "served_by_canary", False)),
-                "prediction_numeric": l.prediction_numeric,
-                "confidence": l.confidence,
+                "served_by_canary": bool(getattr(log_entry, "served_by_canary", False)),
+                "prediction_numeric": log_entry.prediction_numeric,
+                "confidence": log_entry.confidence,
             }
-            for l in logs
+            for log_entry in logs
         ]
         comparison = _ccc(
             logs_data,
