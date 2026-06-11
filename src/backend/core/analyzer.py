@@ -8363,11 +8363,7 @@ def compute_deployment_health_scorecard(
     # ------------------------------------------------------------------
     # Signal 1: Latency — p95 response_ms from last 100 logs
     # ------------------------------------------------------------------
-    _lat_vals = [
-        lg["response_ms"]
-        for lg in logs
-        if lg.get("response_ms") is not None
-    ]
+    _lat_vals = [lg["response_ms"] for lg in logs if lg.get("response_ms") is not None]
     if len(_lat_vals) >= 5:
         import numpy as _np_lat
 
@@ -8380,40 +8376,44 @@ def compute_deployment_health_scorecard(
             _lat_finding = f"Response time is healthy — p95 is {_p95:.0f} ms."
         elif _p95 < 1000:
             _lat_sev, _lat_score, _lat_label = "amber", 60, f"p95 {_p95:.0f} ms"
-            _lat_finding = f"p95 latency is {_p95:.0f} ms — acceptable but worth watching."
+            _lat_finding = (
+                f"p95 latency is {_p95:.0f} ms — acceptable but worth watching."
+            )
         elif _p95 < 2000:
             _lat_sev, _lat_score, _lat_label = "amber", 40, f"p95 {_p95:.0f} ms"
-            _lat_finding = f"p95 latency is {_p95:.0f} ms — slower than ideal; check server load."
+            _lat_finding = (
+                f"p95 latency is {_p95:.0f} ms — slower than ideal; check server load."
+            )
         else:
             _lat_sev, _lat_score, _lat_label = "red", 15, f"p95 {_p95:.0f} ms"
-            _lat_finding = f"p95 latency is {_p95:.0f} ms — very slow; predictions may time out."
+            _lat_finding = (
+                f"p95 latency is {_p95:.0f} ms — very slow; predictions may time out."
+            )
         _lat_value = round(_p95, 1)
     else:
         _lat_sev, _lat_score, _lat_label = "gray", 50, "No data"
         _lat_finding = "Not enough logged response times to assess latency."
         _lat_value = None
 
-    signals.append({
-        "signal_key": "latency",
-        "signal_label": "Response Latency",
-        "icon": "⚡",
-        "severity": _lat_sev,
-        "score": _lat_score,
-        "value": _lat_value,
-        "value_label": _lat_label,
-        "finding": _lat_finding,
-        "is_available": _lat_sev != "gray",
-        "unit": "ms",
-    })
+    signals.append(
+        {
+            "signal_key": "latency",
+            "signal_label": "Response Latency",
+            "icon": "⚡",
+            "severity": _lat_sev,
+            "score": _lat_score,
+            "value": _lat_value,
+            "value_label": _lat_label,
+            "finding": _lat_finding,
+            "is_available": _lat_sev != "gray",
+            "unit": "ms",
+        }
+    )
 
     # ------------------------------------------------------------------
     # Signal 2: Confidence — avg confidence from recent logs
     # ------------------------------------------------------------------
-    _conf_vals = [
-        lg["confidence"]
-        for lg in logs
-        if lg.get("confidence") is not None
-    ]
+    _conf_vals = [lg["confidence"] for lg in logs if lg.get("confidence") is not None]
     if len(_conf_vals) >= 5:
         _avg_conf = float(sum(_conf_vals) / len(_conf_vals))
         if _avg_conf >= 0.80:
@@ -8427,9 +8427,7 @@ def compute_deployment_health_scorecard(
             _conf_finding = f"Model confidence is moderate (avg {_avg_conf:.0%}) — worth monitoring."
         else:
             _conf_sev, _conf_score = "red", 20
-            _conf_finding = (
-                f"Model confidence is low (avg {_avg_conf:.0%}) — predictions may be unreliable."
-            )
+            _conf_finding = f"Model confidence is low (avg {_avg_conf:.0%}) — predictions may be unreliable."
         _conf_label = f"{_avg_conf:.0%} avg"
         _conf_value = round(_avg_conf * 100, 1)
     else:
@@ -8442,18 +8440,20 @@ def compute_deployment_health_scorecard(
         _conf_label = "N/A"
         _conf_value = None
 
-    signals.append({
-        "signal_key": "confidence",
-        "signal_label": "Prediction Confidence",
-        "icon": "🎯",
-        "severity": _conf_sev,
-        "score": _conf_score,
-        "value": _conf_value,
-        "value_label": _conf_label,
-        "finding": _conf_finding,
-        "is_available": _conf_sev != "gray",
-        "unit": "%",
-    })
+    signals.append(
+        {
+            "signal_key": "confidence",
+            "signal_label": "Prediction Confidence",
+            "icon": "🎯",
+            "severity": _conf_sev,
+            "score": _conf_score,
+            "value": _conf_value,
+            "value_label": _conf_label,
+            "finding": _conf_finding,
+            "is_available": _conf_sev != "gray",
+            "unit": "%",
+        }
+    )
 
     # ------------------------------------------------------------------
     # Signal 3: Activity — predictions in last 7 days
@@ -8465,7 +8465,9 @@ def compute_deployment_health_scorecard(
             return ts.replace(tzinfo=None)
         if isinstance(ts, str):
             try:
-                return datetime.fromisoformat(ts.replace("Z", "+00:00")).replace(tzinfo=None)
+                return datetime.fromisoformat(ts.replace("Z", "+00:00")).replace(
+                    tzinfo=None
+                )
             except ValueError:
                 return None
         return None
@@ -8473,9 +8475,14 @@ def compute_deployment_health_scorecard(
     _recent_count = sum(
         1
         for lg in logs
-        if (_ts := _parse_ts(lg.get("created_at"))) is not None and _ts >= _seven_days_ago
+        if (_ts := _parse_ts(lg.get("created_at"))) is not None
+        and _ts >= _seven_days_ago
     )
-    _deploy_age_days = (now - created_at.replace(tzinfo=None)).days if hasattr(created_at, "replace") else 0
+    _deploy_age_days = (
+        (now - created_at.replace(tzinfo=None)).days
+        if hasattr(created_at, "replace")
+        else 0
+    )
 
     if _deploy_age_days < 1:
         _act_sev, _act_score = "gray", 50
@@ -8484,12 +8491,16 @@ def compute_deployment_health_scorecard(
         _act_value = 0
     elif _recent_count >= 50:
         _act_sev, _act_score = "green", 100
-        _act_finding = f"High activity — {_recent_count} predictions in the last 7 days."
+        _act_finding = (
+            f"High activity — {_recent_count} predictions in the last 7 days."
+        )
         _act_label = f"{_recent_count} predictions / 7d"
         _act_value = _recent_count
     elif _recent_count >= 10:
         _act_sev, _act_score = "green", 75
-        _act_finding = f"Steady activity — {_recent_count} predictions in the last 7 days."
+        _act_finding = (
+            f"Steady activity — {_recent_count} predictions in the last 7 days."
+        )
         _act_label = f"{_recent_count} predictions / 7d"
         _act_value = _recent_count
     elif _recent_count >= 1:
@@ -8503,18 +8514,20 @@ def compute_deployment_health_scorecard(
         _act_label = "0 predictions / 7d"
         _act_value = 0
 
-    signals.append({
-        "signal_key": "activity",
-        "signal_label": "Usage Activity",
-        "icon": "📊",
-        "severity": _act_sev,
-        "score": _act_score,
-        "value": _act_value,
-        "value_label": _act_label,
-        "finding": _act_finding,
-        "is_available": _act_sev != "gray",
-        "unit": "predictions",
-    })
+    signals.append(
+        {
+            "signal_key": "activity",
+            "signal_label": "Usage Activity",
+            "icon": "📊",
+            "severity": _act_sev,
+            "score": _act_score,
+            "value": _act_value,
+            "value_label": _act_label,
+            "finding": _act_finding,
+            "is_available": _act_sev != "gray",
+            "unit": "predictions",
+        }
+    )
 
     # ------------------------------------------------------------------
     # Signal 4: Accuracy — feedback accuracy from FeedbackRecords
@@ -8531,10 +8544,14 @@ def compute_deployment_health_scorecard(
             _acc_finding = f"Good feedback accuracy — {_fb_acc:.0%} of labeled predictions were correct."
         elif _fb_acc >= 0.55:
             _acc_sev, _acc_score = "amber", 45
-            _acc_finding = f"Moderate accuracy — {_fb_acc:.0%} correct; consider retraining soon."
+            _acc_finding = (
+                f"Moderate accuracy — {_fb_acc:.0%} correct; consider retraining soon."
+            )
         else:
             _acc_sev, _acc_score = "red", 10
-            _acc_finding = f"Low accuracy — only {_fb_acc:.0%} correct; retraining recommended."
+            _acc_finding = (
+                f"Low accuracy — only {_fb_acc:.0%} correct; retraining recommended."
+            )
         _acc_label = f"{_fb_acc:.0%} ({_fb_total} labeled)"
         _acc_value = round(_fb_acc * 100, 1)
     else:
@@ -8543,25 +8560,29 @@ def compute_deployment_health_scorecard(
         _acc_label = f"{_fb_total} labeled"
         _acc_value = None
 
-    signals.append({
-        "signal_key": "accuracy",
-        "signal_label": "Feedback Accuracy",
-        "icon": "✅",
-        "severity": _acc_sev,
-        "score": _acc_score,
-        "value": _acc_value,
-        "value_label": _acc_label,
-        "finding": _acc_finding,
-        "is_available": _acc_sev != "gray",
-        "unit": "%",
-    })
+    signals.append(
+        {
+            "signal_key": "accuracy",
+            "signal_label": "Feedback Accuracy",
+            "icon": "✅",
+            "severity": _acc_sev,
+            "score": _acc_score,
+            "value": _acc_value,
+            "value_label": _acc_label,
+            "finding": _acc_finding,
+            "is_available": _acc_sev != "gray",
+            "unit": "%",
+        }
+    )
 
     # ------------------------------------------------------------------
     # Signal 5: Model age — days since deployment created_at
     # ------------------------------------------------------------------
     if _deploy_age_days < 14:
         _age_sev, _age_score = "green", 100
-        _age_finding = f"Model is fresh ({_deploy_age_days} days old) — patterns are current."
+        _age_finding = (
+            f"Model is fresh ({_deploy_age_days} days old) — patterns are current."
+        )
     elif _deploy_age_days < 30:
         _age_sev, _age_score = "green", 85
         _age_finding = f"Model is {_deploy_age_days} days old — still reasonably fresh."
@@ -8575,18 +8596,20 @@ def compute_deployment_health_scorecard(
         _age_sev, _age_score = "red", 10
         _age_finding = f"Model is {_deploy_age_days} days old — data patterns may have changed significantly."
 
-    signals.append({
-        "signal_key": "model_age",
-        "signal_label": "Model Freshness",
-        "icon": "📅",
-        "severity": _age_sev,
-        "score": _age_score,
-        "value": _deploy_age_days,
-        "value_label": f"{_deploy_age_days}d old",
-        "finding": _age_finding,
-        "is_available": True,
-        "unit": "days",
-    })
+    signals.append(
+        {
+            "signal_key": "model_age",
+            "signal_label": "Model Freshness",
+            "icon": "📅",
+            "severity": _age_sev,
+            "score": _age_score,
+            "value": _deploy_age_days,
+            "value_label": f"{_deploy_age_days}d old",
+            "finding": _age_finding,
+            "is_available": True,
+            "unit": "days",
+        }
+    )
 
     # ------------------------------------------------------------------
     # Weighted composite score
@@ -8633,13 +8656,17 @@ def compute_deployment_health_scorecard(
             f"{n_healthy} of 5 signals are green."
         )
     elif overall_health == "watching":
-        issues = [s["signal_label"] for s in signals if s["severity"] in ("amber", "red")]
+        issues = [
+            s["signal_label"] for s in signals if s["severity"] in ("amber", "red")
+        ]
         summary = (
             f"Deployment is in good shape (grade {overall_grade}, score {overall_score}/100) "
             f"but {', '.join(issues)} need attention."
         )
     elif overall_health == "warning":
-        issues = [s["signal_label"] for s in signals if s["severity"] in ("amber", "red")]
+        issues = [
+            s["signal_label"] for s in signals if s["severity"] in ("amber", "red")
+        ]
         summary = (
             f"Deployment has issues (grade {overall_grade}, score {overall_score}/100): "
             f"{', '.join(issues)} show warning or critical status."

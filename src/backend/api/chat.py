@@ -18200,7 +18200,9 @@ def send_message(
                     feedback_records=_hs_fb_dicts,
                     created_at=_hs_dep_obj.created_at,
                     problem_type=_hs_dep_obj.problem_type or "regression",
-                    canary_is_active=bool(getattr(_hs_dep_obj, "canary_is_active", False)),
+                    canary_is_active=bool(
+                        getattr(_hs_dep_obj, "canary_is_active", False)
+                    ),
                     canary_traffic_pct=getattr(_hs_dep_obj, "canary_traffic_pct", None),
                 )
                 health_scorecard_event["deployment_id"] = _hs_dep_id

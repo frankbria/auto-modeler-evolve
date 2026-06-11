@@ -317,7 +317,11 @@ def test_signal_count_totals_five():
     )
 
     gray_count = sum(1 for s in result["signals"] if s["severity"] == "gray")
-    non_gray = result["n_signals_healthy"] + result["n_signals_warning"] + result["n_signals_critical"]
+    non_gray = (
+        result["n_signals_healthy"]
+        + result["n_signals_warning"]
+        + result["n_signals_critical"]
+    )
     assert non_gray + gray_count == 5
 
 
@@ -403,7 +407,9 @@ def test_scorecard_patterns_match(message: str):
 def test_scorecard_patterns_no_false_positives(message: str):
     from api.chat import _DEPLOY_HEALTH_SCORECARD_PATTERNS
 
-    assert not _DEPLOY_HEALTH_SCORECARD_PATTERNS.search(message), f"Should not match: {message!r}"
+    assert not _DEPLOY_HEALTH_SCORECARD_PATTERNS.search(message), (
+        f"Should not match: {message!r}"
+    )
 
 
 # ---------------------------------------------------------------------------
