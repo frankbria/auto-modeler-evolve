@@ -452,3 +452,69 @@ def test_interaction_not_emitted_without_deployment(client):
     events = _chat_events(client, project_id, "interaction between units and price")
     ia_events = [e for e in events if e.get("type") == "interaction"]
     assert len(ia_events) == 0
+
+
+# ---------------------------------------------------------------------------
+# REST endpoint: GET /api/deploy/{deployment_id}/feature-interaction-heatmap
+# ---------------------------------------------------------------------------
+
+
+def test_heatmap_endpoint_returns_200(client, deployed_project):
+    dep_resp = client.get("/api/deployments").json()
+    deployments = dep_resp["deployments"] if isinstance(dep_resp, dict) else dep_resp
+    dep_id = deployments[0]["id"]
+
+    resp = client.get(
+        f"/api/deploy/{dep_id}/feature-interaction-heatmap",
+        params={"feature_x": "units", "feature_y": "price", "n_steps": 4},
+    )
+    assert resp.status_code == 200
+
+
+def test_heatmap_endpoint_required_fields(client, deployed_project):
+    dep_resp = client.get("/api/deployments").json()
+    deployments = dep_resp["deployments"] if isinstance(dep_resp, dict) else dep_resp
+    dep_id = deployments[0]["id"]
+
+    resp = client.get(
+        f"/api/deploy/{dep_id}/feature-interaction-heatmap",
+        params={"feature_x": "units", "feature_y": "price"},
+    )
+    data = resp.json()
+    for field in ("feature1", "feature2", "target_column", "row_labels", "col_labels", "values", "summary", "deployment_id"):
+        assert field in data, f"Missing field: {field}"
+
+
+def test_heatmap_endpoint_grid_dimensions(client, deployed_project):
+    dep_resp = client.get("/api/deployments").json()
+    deployments = dep_resp["deployments"] if isinstance(dep_resp, dict) else dep_resp
+    dep_id = deployments[0]["id"]
+
+    resp = client.get(
+        f"/api/deploy/{dep_id}/feature-interaction-heatmap",
+        params={"feature_x": "units", "feature_y": "price", "n_steps": 3},
+    )
+    data = resp.json()
+    assert len(data["row_labels"]) == 3
+    assert len(data["col_labels"]) == 3
+    assert all(len(row) == 3 for row in data["values"])
+
+
+def test_heatmap_endpoint_deployment_id_in_response(client, deployed_project):
+    dep_resp = client.get("/api/deployments").json()
+    deployments = dep_resp["deployments"] if isinstance(dep_resp, dict) else dep_resp
+    dep_id = deployments[0]["id"]
+
+    resp = client.get(
+        f"/api/deploy/{dep_id}/feature-interaction-heatmap",
+        params={"feature_x": "units", "feature_y": "price"},
+    )
+    assert resp.json()["deployment_id"] == dep_id
+
+
+def test_heatmap_endpoint_invalid_deployment(client):
+    resp = client.get(
+        "/api/deploy/nonexistent-id/feature-interaction-heatmap",
+        params={"feature_x": "units", "feature_y": "price"},
+    )
+    assert resp.status_code == 404

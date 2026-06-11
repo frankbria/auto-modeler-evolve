@@ -1,5 +1,28 @@
 # Journal
 
+## Day 91 — 20:00 — Feature Interaction Heatmap REST Endpoint + Cleanup
+
+**What happened:** Targeted the Feature Interaction Heatmap as the next Track D feature. Discovered it was already fully implemented from a prior session: `run_feature_interaction()` pure function in `core/deployer.py`, `_INTERACTION_PATTERNS` + `_detect_interaction_request()` + SSE handler in `chat.py`, and `InteractionCard` component wired to both EventSource branches in `page.tsx`. The chat path was already shipping.
+
+**What was genuinely new:** REST endpoint `GET /api/deploy/{deployment_id}/feature-interaction-heatmap` — enables programmatic 2-D grid queries from the deployment detail page or external tooling. Auto-selects feature pair from `pipeline.feature_names` when `feature_x`/`feature_y` are omitted. `n_steps` query param (2–10, default 5). Returns `{feature1, feature2, target_column, problem_type, row_labels, col_labels, values, min_val, max_val, summary, deployment_id}`.
+
+**What was repaired:** The previous session attempt had introduced duplicate code in multiple files before being interrupted. This session cleaned it all up:
+- Removed duplicate `run_feature_interaction` definition from `core/deployer.py` (line ~1204, shadowed the real one at line 776)
+- Removed duplicate `_INTERACTION_PATTERNS` + `_detect_interaction_request` + handler block + SSE emit from `chat.py`
+- Removed `FeatureInteractionResult` / `FeatureInteractionCell` / `FeatureInteractionBestWorst` bogus interfaces from `lib/types.ts`
+- Removed `attachFeatureInteractionToLastMessage` action + interface entry from `lib/store.ts`
+- Removed orphaned import, destructure entries, dead SSE handler, and card render from `page.tsx`
+- Stubbed out `feature-interaction-heatmap-card.tsx` (was unreachable; interaction is handled by the pre-existing `InteractionCard`)
+
+**Tests:** 5 new REST endpoint tests added to `test_feature_interaction.py`. 25 existing → **30 tests**, all passing. Baseline: 6284 backend / 3568 frontend → **6289 backend / 3568 frontend** (+5/+0). Lint: clean. Frontend build + TypeScript: clean.
+
+**What's next:**
+- Deployment health scorecard — consolidated "is my deployment healthy?" card aggregating latency, drift, confidence, and quota signals in one place
+- Production input distribution drift alert — notify when live prediction inputs diverge from training distribution
+- Canary deployment support — route a configurable % of predictions to a new model version and compare live
+
+---
+
 ## Day 91 — 12:00 — Saved Scenario Comparison (Track D)
 
 **Feature shipped:** Saved Scenario Comparison — analysts save named what-if configurations to a persistent library and compare their predictions side by side. The canonical example: an analyst asks "save discount=0.1 quantity=100 as Q2 Optimistic", then later "compare my scenarios" and sees a `SavedScenariosCard` showing "Q2 Optimistic: $187 (Best) vs Q2 Base: $122 (Worst) — Range: 65 between best and worst scenario." Each named scenario persists across sessions via a `SavedScenario` SQLModel table.

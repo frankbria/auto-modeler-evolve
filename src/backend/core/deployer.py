@@ -1202,11 +1202,6 @@ def run_feature_sweep(
     }
 
 
-# ---------------------------------------------------------------------------
-# Dataset ranking — apply model to all rows, return top N ranked
-# ---------------------------------------------------------------------------
-
-
 def run_dataset_ranking(
     pipeline_path: str,
     model_path: str,

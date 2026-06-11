@@ -1137,6 +1137,8 @@ export default function ProjectWorkspace() {
                 attachConfHeatmapToLastMessage(json.conf_heatmap as import("@/lib/types").ConfidenceHeatmapResult)
               } else if (json.type === "feature_sweep" && json.feature_sweep) {
                 attachFeatureSweepToLastMessage(json.feature_sweep as import("@/lib/types").FeatureSweepResult)
+              } else if (json.type === "interaction" && json.interaction) {
+                attachInteractionToLastMessage(json.interaction as import("@/lib/types").InteractionResult)
               } else if (json.type === "saved_scenarios" && json.saved_scenarios) {
                 attachSavedScenariosToLastMessage(json.saved_scenarios as import("@/lib/types").SavedScenariosResult)
               } else if (json.type === "uptime_summary" && json.uptime_summary) {

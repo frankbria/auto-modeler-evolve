@@ -3990,7 +3990,6 @@ _FEATURE_SWEEP_MINIMIZE_RE = re.compile(
     re.IGNORECASE,
 )
 
-
 # Saved scenario comparison — save/view/compare/delete named what-if configs
 _SAVE_SCENARIO_PATTERNS = re.compile(
     r"(?i)(?:"

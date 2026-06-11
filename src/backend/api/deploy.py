@@ -9185,6 +9185,70 @@ def get_feature_sweep(
     return result
 
 
+@router.get("/api/deploy/{deployment_id}/feature-interaction-heatmap")
+def get_feature_interaction_heatmap(
+    deployment_id: str,
+    feature_x: str | None = Query(default=None),
+    feature_y: str | None = Query(default=None),
+    n_steps: int = Query(default=5, ge=2, le=10),
+    session: Session = Depends(get_session),
+) -> dict:
+    """Sweep two features jointly and return a 2-D prediction grid.
+
+    Reveals interaction effects between feature_x and feature_y — i.e., whether
+    setting both to their "best" values together produces more (or less) than the
+    sum of their individual effects.  Auto-selects features when not provided.
+
+    Args:
+        feature_x: Column to sweep on the X axis (auto-selected if omitted).
+        feature_y: Column to sweep on the Y axis (auto-selected if omitted).
+        n_steps:   Grid resolution for numeric features (2–10, default 5).
+    """
+    dep = session.get(Deployment, deployment_id)
+    if not dep or not dep.is_active:
+        raise HTTPException(status_code=404, detail="Deployment not found or inactive")
+
+    if not dep.pipeline_path or not Path(dep.pipeline_path).exists():
+        raise HTTPException(
+            status_code=500, detail="Prediction pipeline not found on disk"
+        )
+
+    run = session.get(ModelRun, dep.model_run_id)
+    if not run or not run.model_path or not Path(run.model_path).exists():
+        raise HTTPException(status_code=500, detail="Model file not found on disk")
+
+    from core.deployer import load_pipeline as _lp_fih
+    from core.deployer import run_feature_interaction as _run_fi
+
+    _fih_pipeline = _lp_fih(dep.pipeline_path)
+    _fih_names = list(getattr(_fih_pipeline, "feature_names", []))
+    _fih_means = dict(getattr(_fih_pipeline, "feature_means", {}))
+
+    # Auto-select features when not specified
+    if feature_x is None and _fih_names:
+        feature_x = _fih_names[0]
+    if feature_y is None and len(_fih_names) > 1:
+        feature_y = _fih_names[1]
+    elif feature_y is None and _fih_names:
+        feature_y = _fih_names[0]
+
+    if not feature_x or not feature_y:
+        raise HTTPException(
+            status_code=400, detail="Could not auto-detect features — specify feature_x and feature_y"
+        )
+
+    result = _run_fi(
+        dep.pipeline_path,
+        run.model_path,
+        feature_x,
+        feature_y,
+        _fih_means,
+        n_steps=n_steps,
+    )
+    result["deployment_id"] = deployment_id
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Saved scenario comparison
 # ---------------------------------------------------------------------------

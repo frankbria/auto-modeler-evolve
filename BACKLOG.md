@@ -53,6 +53,19 @@ the time is better spent on real features.
 
 ---
 
+## Day 91 (20:00) — Done
+
+**Track D: Feature Interaction Heatmap REST Endpoint** — complete.
+
+Discovered the chat feature was pre-existing (full implementation: `run_feature_interaction()`, `_INTERACTION_PATTERNS`, `InteractionCard`). Added `GET /api/deploy/{id}/feature-interaction-heatmap` REST endpoint for programmatic access. Auto-selects feature pair; `n_steps` param (2–10). Cleaned up duplicate code accidentally introduced in prior session attempts (duplicate pure function, chat patterns/handler/SSE emit, frontend types/store/card). +5 REST tests. Baseline: 6284/3568 → **6289/3568**.
+
+**What's next:**
+- Deployment health scorecard — consolidated "is my deployment healthy?" aggregating latency, drift, confidence, and quota signals
+- Production input distribution drift alert — notify when live prediction inputs diverge from training distribution
+- Canary deployment support — route a configurable % of predictions to new model version, compare live
+
+---
+
 ## Day 91 (12:00) — Done
 
 **Track D: Saved Scenario Comparison** — complete.
