@@ -218,6 +218,7 @@ interface AppState {
   attachFeatureSweepToLastMessage: (feature_sweep: import("./types").FeatureSweepResult) => void
   attachSavedScenariosToLastMessage: (saved_scenarios: import("./types").SavedScenariosResult) => void
   attachCanaryStatusToLastMessage: (canary_status: import("./types").CanaryStatusResult) => void
+  attachDeploymentHealthScorecardToLastMessage: (deployment_health_scorecard: import("./types").DeploymentHealthScorecardResult) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -1886,6 +1887,16 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, canary_status }
+      }
+      return { messages }
+    }),
+
+  attachDeploymentHealthScorecardToLastMessage: (deployment_health_scorecard) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, deployment_health_scorecard }
       }
       return { messages }
     }),

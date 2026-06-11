@@ -5114,6 +5114,20 @@ _CANARY_TRAFFIC_RE = re.compile(r"(?i)(?:with\s+)?(\d+)\s*%")
 
 _CANARY_VERSION_RE = re.compile(r"(?i)v(?:ersion\s+)?(\d+)\b")
 
+_DEPLOY_HEALTH_SCORECARD_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"(?:show|give|get)\s+(?:me\s+)?(?:a\s+)?(?:the\s+)?deployment\s+health\s+(?:scorecard|overview|dashboard|check)\b|"
+    r"deployment\s+health\s+scorecard\b|"
+    r"(?:is|how\s+is)\s+(?:my\s+)?deployment\s+(?:healthy|doing|performing|looking)\b|"
+    r"(?:health|operational)\s+scorecard\b|"
+    r"(?:show|get)\s+(?:me\s+)?(?:the\s+)?health\s+(?:scorecard|overview|dashboard)\b|"
+    r"(?:how|what)\s+is\s+(?:the\s+)?(?:overall\s+)?(?:deployment\s+)?health\b|"
+    r"(?:give\s+me\s+(?:a\s+)?(?:deployment\s+)?health\s+(?:check|report|summary|grade))\b|"
+    r"(?:deployment\s+health\s+grade|health\s+grade\s+(?:for\s+)?(?:my\s+)?deployment)\b"
+    r")",
+    re.IGNORECASE,
+)
+
 _THROUGHPUT_PATTERNS = re.compile(
     r"(?i)(?:"
     r"how\s+long\s+(?:to|would\s+it\s+take\s+to)\s+(?:process|batch|run|score)\s+\d|"
@@ -18147,6 +18161,68 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Canary config is nice-to-have; never crash chat
 
+    # Deployment health scorecard — consolidated A-F grade across latency, confidence,
+    # activity, accuracy, and model age signals.
+    # Distinct from: _MONITORING_DIGEST_PATTERNS (output anomalies/drift/retraining),
+    # _HEALTH_PATTERNS (model health/retraining guidance), _HEALTH_SUMMARY_PATTERNS (project-level).
+    health_scorecard_event: dict | None = None
+    if _DEPLOY_HEALTH_SCORECARD_PATTERNS.search(body.message) and ctx["deployment"]:
+        try:
+            from core.analyzer import compute_deployment_health_scorecard as _cdhs
+            from models.feedback_record import FeedbackRecord as _FBR_hs
+
+            _hs_dep = ctx["deployment"]
+            _hs_dep_id = _hs_dep.id if hasattr(_hs_dep, "id") else str(_hs_dep)
+            _hs_dep_obj = session.get(Deployment, _hs_dep_id)
+            if _hs_dep_obj:
+                _hs_logs = session.exec(
+                    select(PredictionLog)
+                    .where(PredictionLog.deployment_id == _hs_dep_id)
+                    .order_by(PredictionLog.created_at.desc())  # type: ignore[attr-defined]
+                    .limit(100)
+                ).all()
+                _hs_fb = session.exec(
+                    select(_FBR_hs).where(_FBR_hs.deployment_id == _hs_dep_id)
+                ).all()
+                _hs_log_dicts = [
+                    {
+                        "response_ms": lg.response_ms,
+                        "confidence": lg.confidence,
+                        "created_at": lg.created_at,
+                        "prediction_numeric": lg.prediction_numeric,
+                        "prediction_value": lg.prediction,
+                    }
+                    for lg in _hs_logs
+                ]
+                _hs_fb_dicts = [{"is_correct": r.is_correct} for r in _hs_fb]
+                health_scorecard_event = _cdhs(
+                    logs=_hs_log_dicts,
+                    feedback_records=_hs_fb_dicts,
+                    created_at=_hs_dep_obj.created_at,
+                    problem_type=_hs_dep_obj.problem_type or "regression",
+                    canary_is_active=bool(getattr(_hs_dep_obj, "canary_is_active", False)),
+                    canary_traffic_pct=getattr(_hs_dep_obj, "canary_traffic_pct", None),
+                )
+                health_scorecard_event["deployment_id"] = _hs_dep_id
+                _hs_grade = health_scorecard_event["overall_grade"]
+                _hs_health = health_scorecard_event["overall_health"]
+                _hs_score = health_scorecard_event["overall_score"]
+                system_prompt += (
+                    f"\n\n## Deployment Health Scorecard (just computed)\n"
+                    f"Overall grade: {_hs_grade} | Score: {_hs_score}/100 | "
+                    f"Health: {_hs_health.upper()}\n"
+                    f"{health_scorecard_event['summary']}\n"
+                    "Reference this scorecard in your response. Explain what the grade means "
+                    "in plain English and highlight the most important signals needing attention. "
+                    "Grade A (≥85) = excellent, B (70-84) = good, C (55-69) = fair, "
+                    "D (40-54) = poor, F (<40) = critical. "
+                    "Distinct from monitoring digest (tracks drift/anomalies) and "
+                    "model health check (focuses on retraining). "
+                    "A DeploymentHealthScorecardCard is shown with all 5 signal rows."
+                )
+        except Exception:  # noqa: BLE001
+            pass  # Health scorecard is nice-to-have; never crash chat
+
     # Segment drift detection — "is drift concentrated in a specific region/group?"
     # Distinct from: _DRIFT_IMPORTANCE_PATTERNS (ranks features by importance × drift),
     # _COVARIATE_DRIFT_PATTERNS (binary per-feature OOR alert), _DRIFT_PATTERNS (output drift).
@@ -21730,6 +21806,9 @@ def send_message(
 
         if canary_event:
             yield f"data: {json.dumps({'type': 'canary_status', 'canary_status': canary_event})}\n\n"
+
+        if health_scorecard_event:
+            yield f"data: {json.dumps({'type': 'deployment_health_scorecard', 'deployment_health_scorecard': health_scorecard_event})}\n\n"
 
         if segment_drift_event:
             yield f"data: {json.dumps({'type': 'segment_drift', 'segment_drift': segment_drift_event})}\n\n"

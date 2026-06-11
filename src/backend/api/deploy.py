@@ -9700,3 +9700,54 @@ def canary_status(
         "available_versions": available_versions,
         "comparison": comparison,
     }
+
+
+@router.get("/api/deploy/{deployment_id}/health-scorecard")
+def deployment_health_scorecard(
+    deployment_id: str,
+    n: int = 100,
+    session: Session = Depends(get_session),
+) -> dict:
+    """Return a consolidated health scorecard for the deployment."""
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment or not deployment.is_active:
+        raise HTTPException(status_code=404, detail="Deployment not found or inactive")
+
+    from core.analyzer import compute_deployment_health_scorecard as _chsc
+    from models.feedback_record import FeedbackRecord
+
+    logs = session.exec(
+        select(PredictionLog)
+        .where(PredictionLog.deployment_id == deployment_id)
+        .order_by(PredictionLog.created_at.desc())  # type: ignore[attr-defined]
+        .limit(n)
+    ).all()
+
+    feedback = session.exec(
+        select(FeedbackRecord).where(FeedbackRecord.deployment_id == deployment_id)
+    ).all()
+
+    log_dicts = [
+        {
+            "response_ms": lg.response_ms,
+            "confidence": lg.confidence,
+            "created_at": lg.created_at,
+            "prediction_numeric": lg.prediction_numeric,
+            "prediction_value": lg.prediction,
+        }
+        for lg in logs
+    ]
+    fb_dicts = [{"is_correct": r.is_correct} for r in feedback]
+
+    result = _chsc(
+        logs=log_dicts,
+        feedback_records=fb_dicts,
+        created_at=deployment.created_at,
+        problem_type=deployment.problem_type or "regression",
+        canary_is_active=bool(getattr(deployment, "canary_is_active", False)),
+        canary_traffic_pct=getattr(deployment, "canary_traffic_pct", None),
+    )
+    result["deployment_id"] = deployment_id
+    result["algorithm"] = deployment.algorithm
+    result["target_column"] = deployment.target_column
+    return result

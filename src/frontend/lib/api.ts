@@ -1437,5 +1437,8 @@ export const api = {
       fetch(`${API_URL}/api/deploy/${deploymentId}/canary/promote`, {
         method: "POST",
       }).then((r) => r.json()),
+
+    healthScorecard: (deploymentId: string, n?: number): Promise<import("./types").DeploymentHealthScorecardResult> =>
+      fetch(`${API_URL}/api/deploy/${deploymentId}/health-scorecard${n ? `?n=${n}` : ""}`).then((r) => r.json()),
   },
 }

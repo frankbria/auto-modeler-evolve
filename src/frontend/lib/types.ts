@@ -580,6 +580,7 @@ export interface ChatMessage {
   feature_sweep?: FeatureSweepResult
   saved_scenarios?: SavedScenariosResult
   canary_status?: CanaryStatusResult
+  deployment_health_scorecard?: DeploymentHealthScorecardResult
 }
 
 export interface RollbackVersionEntry {
@@ -5006,5 +5007,39 @@ export interface CanaryStatusResult {
   current_algorithm: string | null
   available_versions: CanaryVersionInfo[]
   comparison: CanaryComparison | null
+  summary: string
+}
+
+export interface DeploymentHealthSignal {
+  signal_key: string
+  signal_label: string
+  icon: string
+  severity: "green" | "amber" | "red" | "gray"
+  score: number
+  value: number | null
+  value_label: string
+  finding: string
+  is_available: boolean
+  unit: string
+}
+
+export interface DeploymentHealthCanaryInfo {
+  is_active: boolean
+  traffic_pct: number
+  finding: string
+}
+
+export interface DeploymentHealthScorecardResult {
+  deployment_id: string
+  algorithm: string | null
+  target_column: string | null
+  signals: DeploymentHealthSignal[]
+  overall_score: number
+  overall_grade: "A" | "B" | "C" | "D" | "F"
+  overall_health: "healthy" | "watching" | "warning" | "critical"
+  n_signals_healthy: number
+  n_signals_warning: number
+  n_signals_critical: number
+  canary_info: DeploymentHealthCanaryInfo | null
   summary: string
 }

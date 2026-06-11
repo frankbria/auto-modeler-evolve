@@ -142,6 +142,7 @@ import { CostSensitiveThresholdCard } from "@/components/models/cost-sensitive-t
 import { FeatureSweepCard } from "@/components/deploy/feature-sweep-card"
 import { SavedScenariosCard } from "@/components/deploy/saved-scenarios-card"
 import { CanaryCard } from "@/components/deploy/canary-card"
+import { DeploymentHealthScorecardCard } from "@/components/deploy/deployment-health-scorecard-card"
 import { EnsembleRecommendationCard } from "@/components/models/ensemble-recommendation-card"
 import { TuningChatCard } from "@/components/models/tuning-chat-card"
 import { CvScoreDistributionCard } from "@/components/models/cv-score-distribution-card"
@@ -455,6 +456,7 @@ export default function ProjectWorkspace() {
     attachFeatureSweepToLastMessage,
     attachSavedScenariosToLastMessage,
     attachCanaryStatusToLastMessage,
+    attachDeploymentHealthScorecardToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -905,6 +907,8 @@ export default function ProjectWorkspace() {
                 attachSavedScenariosToLastMessage(json.saved_scenarios as import("@/lib/types").SavedScenariosResult)
               } else if (json.type === "canary_status" && json.canary_status) {
                 attachCanaryStatusToLastMessage(json.canary_status as import("@/lib/types").CanaryStatusResult)
+              } else if (json.type === "deployment_health_scorecard" && json.deployment_health_scorecard) {
+                attachDeploymentHealthScorecardToLastMessage(json.deployment_health_scorecard as import("@/lib/types").DeploymentHealthScorecardResult)
               } else if (json.type === "uptime_summary" && json.uptime_summary) {
                 attachUptimeSummaryToLastMessage(json.uptime_summary as import("@/lib/types").ApiUptimeSummaryResult)
               } else if (json.type === "cost_sensitive_threshold" && json.cost_sensitive_threshold) {
@@ -1147,6 +1151,8 @@ export default function ProjectWorkspace() {
                 attachSavedScenariosToLastMessage(json.saved_scenarios as import("@/lib/types").SavedScenariosResult)
               } else if (json.type === "canary_status" && json.canary_status) {
                 attachCanaryStatusToLastMessage(json.canary_status as import("@/lib/types").CanaryStatusResult)
+              } else if (json.type === "deployment_health_scorecard" && json.deployment_health_scorecard) {
+                attachDeploymentHealthScorecardToLastMessage(json.deployment_health_scorecard as import("@/lib/types").DeploymentHealthScorecardResult)
               } else if (json.type === "uptime_summary" && json.uptime_summary) {
                 attachUptimeSummaryToLastMessage(json.uptime_summary as import("@/lib/types").ApiUptimeSummaryResult)
               } else if (json.type === "cost_sensitive_threshold" && json.cost_sensitive_threshold) {
@@ -1342,6 +1348,7 @@ export default function ProjectWorkspace() {
     attachFeatureSweepToLastMessage,
     attachSavedScenariosToLastMessage,
     attachCanaryStatusToLastMessage,
+    attachDeploymentHealthScorecardToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -2132,6 +2139,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.canary_status && (
                       <CanaryCard result={msg.canary_status} />
+                    )}
+                    {msg.deployment_health_scorecard && (
+                      <DeploymentHealthScorecardCard result={msg.deployment_health_scorecard} />
                     )}
                     {msg.uptime_summary && (
                       <ApiUptimeSummaryCard result={msg.uptime_summary} />
