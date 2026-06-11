@@ -9234,7 +9234,8 @@ def get_feature_interaction_heatmap(
 
     if not feature_x or not feature_y:
         raise HTTPException(
-            status_code=400, detail="Could not auto-detect features — specify feature_x and feature_y"
+            status_code=400,
+            detail="Could not auto-detect features — specify feature_x and feature_y",
         )
 
     result = _run_fi(

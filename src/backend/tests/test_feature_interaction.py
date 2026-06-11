@@ -481,7 +481,16 @@ def test_heatmap_endpoint_required_fields(client, deployed_project):
         params={"feature_x": "units", "feature_y": "price"},
     )
     data = resp.json()
-    for field in ("feature1", "feature2", "target_column", "row_labels", "col_labels", "values", "summary", "deployment_id"):
+    for field in (
+        "feature1",
+        "feature2",
+        "target_column",
+        "row_labels",
+        "col_labels",
+        "values",
+        "summary",
+        "deployment_id",
+    ):
         assert field in data, f"Missing field: {field}"
 
 
