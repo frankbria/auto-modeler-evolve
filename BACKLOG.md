@@ -51,10 +51,13 @@ the time is better spent on real features.
 
 *(none — next session should pick from the list below)*
 
+**Shipped Day 93 (12:00):** Degradation-Triggered Auto-Retrain (Track D) — scheduler automatically starts a new training run when feedback accuracy drops below a configured threshold. Chat-configurable. Closes the "my model degraded and I need a fresh one trained" gap without overloading the rollback pathway. 40 new tests (22 backend + 18 frontend).
+
 **What's next (priority order):**
-- Model retraining orchestration — detect performance degradation and trigger retraining workflow
-- Deployment comparison leaderboard improvements — rank deployments by accuracy, latency, activity
-- Prediction outcome calibration chart — predicted vs actual bucket distributions
+- Deployment comparison leaderboard — side-by-side accuracy/latency/activity ranking for multiple deployments via chat
+- Prediction outcome calibration chart — predicted vs actual bucket distributions (regression: error histogram; classification: reliability diagram)
+- Model retraining completion notification — webhook/SSE notification when auto-retrain finishes (natural follow-on to degradation auto-retrain)
+- Scheduled batch prediction jobs (Track D) — run predictions on a schedule against a CSV/table, not just REST requests
 
 ---
 
