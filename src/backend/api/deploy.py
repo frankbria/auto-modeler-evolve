@@ -8776,14 +8776,21 @@ def _check_and_fire_input_dist_drift_alert(deployment_id: str) -> None:
 
         with _IDD_Session(_idd_engine) as _s:
             _dep = _s.get(Deployment, deployment_id)
-            if _dep is None or not getattr(_dep, "input_dist_drift_alert_enabled", False):
+            if _dep is None or not getattr(
+                _dep, "input_dist_drift_alert_enabled", False
+            ):
                 return
 
-            _threshold = getattr(_dep, "input_dist_drift_severity_threshold", "medium") or "medium"
+            _threshold = (
+                getattr(_dep, "input_dist_drift_severity_threshold", "medium")
+                or "medium"
+            )
             _now = datetime.now(UTC).replace(tzinfo=None)
             _last = getattr(_dep, "input_dist_drift_alert_last_fired_at", None)
             if _last is not None:
-                if (_now - _last).total_seconds() / 3600 < _INPUT_DIST_DRIFT_ALERT_COOLDOWN_HOURS:
+                if (
+                    _now - _last
+                ).total_seconds() / 3600 < _INPUT_DIST_DRIFT_ALERT_COOLDOWN_HOURS:
                     return  # cooldown active
 
             _dep_id = _dep.id
@@ -8889,7 +8896,11 @@ def set_input_dist_drift_alert(
     if not deployment:
         raise HTTPException(status_code=404, detail="Deployment not found")
 
-    _threshold = body.severity_threshold if body.severity_threshold in ("medium", "high") else "medium"
+    _threshold = (
+        body.severity_threshold
+        if body.severity_threshold in ("medium", "high")
+        else "medium"
+    )
     deployment.input_dist_drift_alert_enabled = body.enabled
     deployment.input_dist_drift_severity_threshold = _threshold
     if not body.enabled:
@@ -8927,7 +8938,9 @@ def get_input_dist_drift_alert_status(
         raise HTTPException(status_code=404, detail="Deployment not found")
 
     _enabled = bool(getattr(deployment, "input_dist_drift_alert_enabled", False))
-    _threshold = getattr(deployment, "input_dist_drift_severity_threshold", "medium") or "medium"
+    _threshold = (
+        getattr(deployment, "input_dist_drift_severity_threshold", "medium") or "medium"
+    )
     _last = getattr(deployment, "input_dist_drift_alert_last_fired_at", None)
     return {
         "deployment_id": deployment_id,

@@ -253,7 +253,10 @@ def test_check_input_dist_drift_skips_when_too_few_samples(db_session, tmp_path)
 
     _add_logs_with_inputs(db_session, dep.id, [{"units": 10.0}] * 5)
 
-    with patch("api.deploy._lp_idd" if False else "core.deployer.load_pipeline", return_value=mock_pl):
+    with patch(
+        "api.deploy._lp_idd" if False else "core.deployer.load_pipeline",
+        return_value=mock_pl,
+    ):
         with patch("core.webhook.dispatch_webhooks") as mock_dispatch:
             from api.deploy import _check_and_fire_input_dist_drift_alert
 
@@ -263,7 +266,9 @@ def test_check_input_dist_drift_skips_when_too_few_samples(db_session, tmp_path)
 
 def test_check_input_dist_drift_no_alert_when_severity_none(db_session, tmp_path):
     pipeline_path = str(tmp_path / "fake.pkl")
-    dep = _make_dep_obj(db_session, enabled=True, threshold="medium", pipeline_path=pipeline_path)
+    dep = _make_dep_obj(
+        db_session, enabled=True, threshold="medium", pipeline_path=pipeline_path
+    )
 
     feature_ranges = {"units": (5.0, 35.0)}
     mock_pl = MagicMock()
@@ -283,7 +288,9 @@ def test_check_input_dist_drift_no_alert_when_severity_none(db_session, tmp_path
     }
 
     with patch("core.deployer.load_pipeline", return_value=mock_pl):
-        with patch("core.analyzer.compute_covariate_drift_alert", return_value=mock_result):
+        with patch(
+            "core.analyzer.compute_covariate_drift_alert", return_value=mock_result
+        ):
             with patch("core.webhook.dispatch_webhooks") as mock_dispatch:
                 from api.deploy import _check_and_fire_input_dist_drift_alert
 
@@ -293,7 +300,9 @@ def test_check_input_dist_drift_no_alert_when_severity_none(db_session, tmp_path
 
 def test_check_input_dist_drift_fires_on_medium_severity(db_session, tmp_path):
     pipeline_path = str(tmp_path / "fake.pkl")
-    dep = _make_dep_obj(db_session, enabled=True, threshold="medium", pipeline_path=pipeline_path)
+    dep = _make_dep_obj(
+        db_session, enabled=True, threshold="medium", pipeline_path=pipeline_path
+    )
 
     feature_ranges = {"units": (5.0, 35.0)}
     mock_pl = MagicMock()
@@ -311,7 +320,9 @@ def test_check_input_dist_drift_fires_on_medium_severity(db_session, tmp_path):
     }
 
     with patch("core.deployer.load_pipeline", return_value=mock_pl):
-        with patch("core.analyzer.compute_covariate_drift_alert", return_value=mock_result):
+        with patch(
+            "core.analyzer.compute_covariate_drift_alert", return_value=mock_result
+        ):
             with patch("core.webhook.dispatch_webhooks") as mock_dispatch:
                 from api.deploy import _check_and_fire_input_dist_drift_alert
 
@@ -325,7 +336,9 @@ def test_check_input_dist_drift_skips_when_high_threshold_but_medium_severity(
     db_session, tmp_path
 ):
     pipeline_path = str(tmp_path / "fake.pkl")
-    dep = _make_dep_obj(db_session, enabled=True, threshold="high", pipeline_path=pipeline_path)
+    dep = _make_dep_obj(
+        db_session, enabled=True, threshold="high", pipeline_path=pipeline_path
+    )
 
     feature_ranges = {"units": (5.0, 35.0)}
     mock_pl = MagicMock()
@@ -343,7 +356,9 @@ def test_check_input_dist_drift_skips_when_high_threshold_but_medium_severity(
     }
 
     with patch("core.deployer.load_pipeline", return_value=mock_pl):
-        with patch("core.analyzer.compute_covariate_drift_alert", return_value=mock_result):
+        with patch(
+            "core.analyzer.compute_covariate_drift_alert", return_value=mock_result
+        ):
             with patch("core.webhook.dispatch_webhooks") as mock_dispatch:
                 from api.deploy import _check_and_fire_input_dist_drift_alert
 
@@ -354,7 +369,9 @@ def test_check_input_dist_drift_skips_when_high_threshold_but_medium_severity(
 def test_check_input_dist_drift_cooldown_prevents_repeat(db_session, tmp_path):
     pipeline_path = str(tmp_path / "fake.pkl")
     dep = _make_dep_obj(db_session, enabled=True, pipeline_path=pipeline_path)
-    dep.input_dist_drift_alert_last_fired_at = datetime.now(UTC).replace(tzinfo=None) - timedelta(hours=1)
+    dep.input_dist_drift_alert_last_fired_at = datetime.now(UTC).replace(
+        tzinfo=None
+    ) - timedelta(hours=1)
     db_session.add(dep)
     db_session.commit()
 
@@ -362,10 +379,17 @@ def test_check_input_dist_drift_cooldown_prevents_repeat(db_session, tmp_path):
     mock_pl.feature_ranges = {"units": (5.0, 35.0)}
     _add_logs_with_inputs(db_session, dep.id, [{"units": 10.0}] * 30)
 
-    mock_result = {"severity": "medium", "alert_count": 1, "alerts": [], "sample_count": 30}
+    mock_result = {
+        "severity": "medium",
+        "alert_count": 1,
+        "alerts": [],
+        "sample_count": 30,
+    }
 
     with patch("core.deployer.load_pipeline", return_value=mock_pl):
-        with patch("core.analyzer.compute_covariate_drift_alert", return_value=mock_result):
+        with patch(
+            "core.analyzer.compute_covariate_drift_alert", return_value=mock_result
+        ):
             with patch("core.webhook.dispatch_webhooks") as mock_dispatch:
                 from api.deploy import _check_and_fire_input_dist_drift_alert
 
@@ -376,7 +400,9 @@ def test_check_input_dist_drift_cooldown_prevents_repeat(db_session, tmp_path):
 def test_check_input_dist_drift_fires_after_cooldown_expires(db_session, tmp_path):
     pipeline_path = str(tmp_path / "fake.pkl")
     dep = _make_dep_obj(db_session, enabled=True, pipeline_path=pipeline_path)
-    dep.input_dist_drift_alert_last_fired_at = datetime.now(UTC).replace(tzinfo=None) - timedelta(hours=25)
+    dep.input_dist_drift_alert_last_fired_at = datetime.now(UTC).replace(
+        tzinfo=None
+    ) - timedelta(hours=25)
     db_session.add(dep)
     db_session.commit()
 
@@ -394,7 +420,9 @@ def test_check_input_dist_drift_fires_after_cooldown_expires(db_session, tmp_pat
     }
 
     with patch("core.deployer.load_pipeline", return_value=mock_pl):
-        with patch("core.analyzer.compute_covariate_drift_alert", return_value=mock_result):
+        with patch(
+            "core.analyzer.compute_covariate_drift_alert", return_value=mock_result
+        ):
             with patch("core.webhook.dispatch_webhooks") as mock_dispatch:
                 from api.deploy import _check_and_fire_input_dist_drift_alert
 
@@ -415,7 +443,10 @@ def test_check_input_dist_drift_payload_keys(db_session, tmp_path):
         "severity_label": "High",
         "alert_count": 3,
         "sample_count": 30,
-        "alerts": [{"feature": "units", "oor_rate": 0.35}, {"feature": "region", "oor_rate": 0.40}],
+        "alerts": [
+            {"feature": "units", "oor_rate": 0.35},
+            {"feature": "region", "oor_rate": 0.40},
+        ],
         "has_alerts": True,
     }
 
@@ -425,7 +456,9 @@ def test_check_input_dist_drift_payload_keys(db_session, tmp_path):
         captured.update(payload)
 
     with patch("core.deployer.load_pipeline", return_value=mock_pl):
-        with patch("core.analyzer.compute_covariate_drift_alert", return_value=mock_result):
+        with patch(
+            "core.analyzer.compute_covariate_drift_alert", return_value=mock_result
+        ):
             with patch("core.webhook.dispatch_webhooks", side_effect=capture):
                 from api.deploy import _check_and_fire_input_dist_drift_alert
 
@@ -576,7 +609,9 @@ def test_disable_input_dist_drift_alert_re_matches():
         "deactivate input drift alarm",
     ]
     for phrase in phrases:
-        assert _DISABLE_INPUT_DIST_DRIFT_ALERT_RE.search(phrase), f"No match: {phrase!r}"
+        assert _DISABLE_INPUT_DIST_DRIFT_ALERT_RE.search(phrase), (
+            f"No match: {phrase!r}"
+        )
 
 
 def test_status_input_dist_drift_alert_re_matches():

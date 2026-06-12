@@ -17644,7 +17644,9 @@ def send_message(
                 _disable_idd = bool(
                     _DISABLE_INPUT_DIST_DRIFT_ALERT_RE.search(body.message)
                 )
-                _status_idd = bool(_STATUS_INPUT_DIST_DRIFT_ALERT_RE.search(body.message))
+                _status_idd = bool(
+                    _STATUS_INPUT_DIST_DRIFT_ALERT_RE.search(body.message)
+                )
 
                 if _disable_idd:
                     _idd_dep_obj.input_dist_drift_alert_enabled = False
@@ -17669,7 +17671,10 @@ def send_message(
                     getattr(_idd_dep_obj, "input_dist_drift_alert_enabled", False)
                 )
                 _idd_threshold_out = (
-                    getattr(_idd_dep_obj, "input_dist_drift_severity_threshold", "medium") or "medium"
+                    getattr(
+                        _idd_dep_obj, "input_dist_drift_severity_threshold", "medium"
+                    )
+                    or "medium"
                 )
                 _idd_last = getattr(
                     _idd_dep_obj, "input_dist_drift_alert_last_fired_at", None

@@ -79,7 +79,9 @@ class Deployment(SQLModel, table=True):
     pred_value_alert_last_fired_at: Optional[datetime] = None
     # Input distribution drift alert: fire webhook when covariate drift severity meets threshold
     input_dist_drift_alert_enabled: bool = Field(default=False)
-    input_dist_drift_severity_threshold: str = Field(default="medium")  # "medium" or "high"
+    input_dist_drift_severity_threshold: str = Field(
+        default="medium"
+    )  # "medium" or "high"
     input_dist_drift_alert_last_fired_at: Optional[datetime] = None
     # Canary deployment: route a configurable % of predictions to a new model version
     canary_run_id: Optional[str] = None  # ModelRun.id for canary version
