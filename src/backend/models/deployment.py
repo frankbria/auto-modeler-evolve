@@ -91,5 +91,7 @@ class Deployment(SQLModel, table=True):
     canary_started_at: Optional[datetime] = None
     # Degradation-triggered auto-retrain: triggers retraining when accuracy drops below threshold
     degradation_retrain_enabled: bool = Field(default=False)
-    degradation_retrain_accuracy_threshold: Optional[float] = None  # 0.0-1.0; None = disabled
+    degradation_retrain_accuracy_threshold: Optional[float] = (
+        None  # 0.0-1.0; None = disabled
+    )
     degradation_retrain_last_triggered_at: Optional[datetime] = None

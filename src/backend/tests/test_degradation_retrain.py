@@ -193,9 +193,7 @@ def mem_session(tmp_path):
         yield s
 
 
-def _make_dep_with_dr(
-    session, enabled=True, threshold=0.75, last_triggered=None
-):
+def _make_dep_with_dr(session, enabled=True, threshold=0.75, last_triggered=None):
     from models.deployment import Deployment
 
     dep = Deployment(
@@ -493,9 +491,9 @@ def test_degradation_retrain_patterns_no_false_positives():
         "train a new model",
     ]
     for phrase in phrases:
-        assert not _DEGRADATION_RETRAIN_PATTERNS.search(
-            phrase
-        ), f"Should not match: {phrase!r}"
+        assert not _DEGRADATION_RETRAIN_PATTERNS.search(phrase), (
+            f"Should not match: {phrase!r}"
+        )
 
 
 def test_disable_degradation_retrain_re_matches():
@@ -508,7 +506,9 @@ def test_disable_degradation_retrain_re_matches():
         "stop auto retraining",
     ]
     for phrase in phrases:
-        assert _DISABLE_DEGRADATION_RETRAIN_RE.search(phrase), f"Should match: {phrase!r}"
+        assert _DISABLE_DEGRADATION_RETRAIN_RE.search(phrase), (
+            f"Should match: {phrase!r}"
+        )
 
 
 def test_status_degradation_retrain_re_matches():
@@ -520,7 +520,9 @@ def test_status_degradation_retrain_re_matches():
         "show degradation retraining config",
     ]
     for phrase in phrases:
-        assert _STATUS_DEGRADATION_RETRAIN_RE.search(phrase), f"Should match: {phrase!r}"
+        assert _STATUS_DEGRADATION_RETRAIN_RE.search(phrase), (
+            f"Should match: {phrase!r}"
+        )
 
 
 def test_degradation_retrain_threshold_re_extracts():
