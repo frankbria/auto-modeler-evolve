@@ -8754,6 +8754,197 @@ def get_pred_value_alert_status(
 
 
 # ---------------------------------------------------------------------------
+# Input distribution drift alert
+# ---------------------------------------------------------------------------
+
+_INPUT_DIST_DRIFT_ALERT_COOLDOWN_HOURS = 24.0
+_INPUT_DIST_DRIFT_ALERT_MIN_SAMPLES = 20
+
+
+def _check_and_fire_input_dist_drift_alert(deployment_id: str) -> None:
+    """Fire input_dist_drift webhook when covariate drift severity meets or exceeds threshold.
+
+    Loads recent PredictionLog inputs, computes covariate drift vs training feature
+    ranges, and fires if severity >= configured threshold ("medium" or "high").
+    Uses 24-hour cooldown per deployment. Best-effort — never crashes the scheduler.
+    """
+    try:
+        from core.webhook import EVENT_INPUT_DIST_DRIFT, dispatch_webhooks
+
+        from db import engine as _idd_engine
+        from sqlmodel import Session as _IDD_Session
+
+        with _IDD_Session(_idd_engine) as _s:
+            _dep = _s.get(Deployment, deployment_id)
+            if _dep is None or not getattr(_dep, "input_dist_drift_alert_enabled", False):
+                return
+
+            _threshold = getattr(_dep, "input_dist_drift_severity_threshold", "medium") or "medium"
+            _now = datetime.now(UTC).replace(tzinfo=None)
+            _last = getattr(_dep, "input_dist_drift_alert_last_fired_at", None)
+            if _last is not None:
+                if (_now - _last).total_seconds() / 3600 < _INPUT_DIST_DRIFT_ALERT_COOLDOWN_HOURS:
+                    return  # cooldown active
+
+            _dep_id = _dep.id
+            _pipeline_path = _dep.pipeline_path
+
+        if not _pipeline_path:
+            return
+
+        from core.deployer import load_pipeline as _lp_idd
+
+        try:
+            _pl = _lp_idd(_pipeline_path)
+            _feature_ranges = getattr(_pl, "feature_ranges", None) or {}
+        except Exception:
+            return
+
+        if not _feature_ranges:
+            return
+
+        with _IDD_Session(_idd_engine) as _s2:
+            _logs = _s2.exec(
+                select(PredictionLog)
+                .where(PredictionLog.deployment_id == _dep_id)
+                .order_by(PredictionLog.created_at.desc())  # type: ignore[union-attr]
+                .limit(200)
+            ).all()
+
+        if len(_logs) < _INPUT_DIST_DRIFT_ALERT_MIN_SAMPLES:
+            return
+
+        _all_inputs: list[dict] = []
+        for _log in _logs:
+            try:
+                _inp = json.loads(_log.input_features) if _log.input_features else {}
+                if isinstance(_inp, dict):
+                    _all_inputs.append(_inp)
+            except Exception:
+                pass
+
+        if len(_all_inputs) < _INPUT_DIST_DRIFT_ALERT_MIN_SAMPLES:
+            return
+
+        from core.analyzer import compute_covariate_drift_alert
+
+        _result = compute_covariate_drift_alert(_all_inputs, _feature_ranges)
+        _severity = _result.get("severity", "none")
+
+        _severity_rank = {"none": 0, "medium": 1, "high": 2}
+        if _severity_rank.get(_severity, 0) < _severity_rank.get(_threshold, 1):
+            return  # below configured threshold
+
+        # Stamp cooldown and fire
+        with _IDD_Session(_idd_engine) as _s3:
+            _dep2 = _s3.get(Deployment, _dep_id)
+            if _dep2 is None:
+                return
+            _dep2.input_dist_drift_alert_last_fired_at = _now
+            _s3.add(_dep2)
+            _s3.commit()
+
+        _alerts = _result.get("alerts", [])
+        _top_features = [a.get("feature") for a in _alerts[:5] if a.get("feature")]
+        dispatch_webhooks(
+            _dep_id,
+            EVENT_INPUT_DIST_DRIFT,
+            {
+                "severity": _severity,
+                "severity_label": _result.get("severity_label", _severity.capitalize()),
+                "alert_count": _result.get("alert_count", len(_alerts)),
+                "sample_count": _result.get("sample_count", len(_all_inputs)),
+                "top_drifted_features": _top_features,
+                "message": (
+                    f"Input distribution drift alert ({_severity.upper()}): "
+                    f"{_result.get('alert_count', len(_alerts))} feature(s) have out-of-range inputs — "
+                    f"{', '.join(_top_features[:3])}. "
+                    "Live prediction inputs are diverging from the training distribution. "
+                    "Consider retraining with recent data."
+                ),
+            },
+        )
+    except Exception:
+        pass  # Best-effort; never crash the scheduler
+
+
+class InputDistDriftAlertRequest(BaseModel):
+    enabled: bool
+    severity_threshold: str = "medium"  # "medium" or "high"
+
+
+@router.put("/api/deploy/{deployment_id}/input-dist-drift-alert")
+def set_input_dist_drift_alert(
+    deployment_id: str,
+    body: InputDistDriftAlertRequest,
+    session: Session = Depends(get_session),
+):
+    """Enable or disable the input distribution drift alert for a deployment.
+
+    When enabled, an ``input_dist_drift`` webhook fires (max once per 24 hours)
+    whenever the scheduler detects that live input severity meets or exceeds the
+    configured threshold ("medium" = ≥15% OOR rate, "high" = ≥30%).
+    """
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment:
+        raise HTTPException(status_code=404, detail="Deployment not found")
+
+    _threshold = body.severity_threshold if body.severity_threshold in ("medium", "high") else "medium"
+    deployment.input_dist_drift_alert_enabled = body.enabled
+    deployment.input_dist_drift_severity_threshold = _threshold
+    if not body.enabled:
+        deployment.input_dist_drift_alert_last_fired_at = None
+    session.add(deployment)
+    session.commit()
+    session.refresh(deployment)
+
+    _last = getattr(deployment, "input_dist_drift_alert_last_fired_at", None)
+    return {
+        "deployment_id": deployment_id,
+        "input_dist_drift_alert_enabled": body.enabled,
+        "input_dist_drift_severity_threshold": _threshold,
+        "input_dist_drift_alert_last_fired_at": _last.isoformat() if _last else None,
+        "cooldown_hours": _INPUT_DIST_DRIFT_ALERT_COOLDOWN_HOURS,
+        "summary": (
+            f"Input distribution drift alerting enabled at '{_threshold}' severity. "
+            "A webhook fires (max once per 24 hours) when live prediction inputs "
+            "diverge from the training distribution at or above the configured severity. "
+            "Webhooks must be registered to receive notifications."
+            if body.enabled
+            else "Input distribution drift alerting disabled."
+        ),
+    }
+
+
+@router.get("/api/deploy/{deployment_id}/input-dist-drift-alert-status")
+def get_input_dist_drift_alert_status(
+    deployment_id: str,
+    session: Session = Depends(get_session),
+):
+    """Return the current input distribution drift alert configuration for a deployment."""
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment:
+        raise HTTPException(status_code=404, detail="Deployment not found")
+
+    _enabled = bool(getattr(deployment, "input_dist_drift_alert_enabled", False))
+    _threshold = getattr(deployment, "input_dist_drift_severity_threshold", "medium") or "medium"
+    _last = getattr(deployment, "input_dist_drift_alert_last_fired_at", None)
+    return {
+        "deployment_id": deployment_id,
+        "input_dist_drift_alert_enabled": _enabled,
+        "input_dist_drift_severity_threshold": _threshold,
+        "input_dist_drift_alert_last_fired_at": _last.isoformat() if _last else None,
+        "cooldown_hours": _INPUT_DIST_DRIFT_ALERT_COOLDOWN_HOURS,
+        "summary": (
+            f"Input distribution drift alerting is enabled at '{_threshold}' severity. "
+            "Webhook fires when live inputs diverge from training distribution."
+            if _enabled
+            else "Input distribution drift alerting is disabled."
+        ),
+    }
+
+
+# ---------------------------------------------------------------------------
 # Segment drift detection endpoint
 # ---------------------------------------------------------------------------
 

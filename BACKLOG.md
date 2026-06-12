@@ -53,6 +53,19 @@ the time is better spent on real features.
 
 ---
 
+## Day 92 (20:00) — Done
+
+**Track D: Production Input Distribution Drift Alert** — complete.
+
+Proactive webhook that fires when live prediction inputs diverge from the training distribution at or above a configured severity threshold. `EVENT_INPUT_DIST_DRIFT` webhook constant; 3 new `Deployment` fields (`input_dist_drift_alert_enabled`, `input_dist_drift_severity_threshold`, `input_dist_drift_alert_last_fired_at`); `_check_and_fire_input_dist_drift_alert()` checker wired into scheduler loop; `PUT /api/deploy/{id}/input-dist-drift-alert` + `GET /api/deploy/{id}/input-dist-drift-alert-status` REST endpoints; `_INPUT_DIST_DRIFT_ALERT_PATTERNS` (8 NL variants) + 3 sub-patterns in chat handler; `InputDistDriftAlertCard` frontend component (cyan border, 🌊 icon, threshold label). Reuses existing `compute_covariate_drift_alert()` pure function. 42 new tests (+24 backend / +18 frontend). Baseline: 6357/3612 → **6381/3630**.
+
+**What's next:**
+- Model retraining orchestration — detect performance degradation and suggest retraining with recent data
+- Deployment comparison leaderboard improvements — rank deployments by accuracy, latency, activity
+- Prediction confidence band chart — show prediction uncertainty ranges over recent predictions
+
+---
+
 ## Day 92 (12:00) — Done
 
 **Track D: Deployment Health Scorecard** — complete.

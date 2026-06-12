@@ -128,6 +128,7 @@ import { DeploymentScorecardCard } from "@/components/deploy/deployment-scorecar
 import { DeploymentThroughputCard } from "@/components/deploy/deployment-throughput-card"
 import { DriftImportanceCard } from "@/components/deploy/drift-importance-card"
 import { FeatureDriftAlertCard } from "@/components/deploy/feature-drift-alert-card"
+import { InputDistDriftAlertCard } from "@/components/deploy/input-dist-drift-alert-card"
 import { LowActivityAlertCard } from "@/components/deploy/low-activity-alert-card"
 import { HighActivityBurstCard } from "@/components/deploy/high-activity-burst-card"
 import { LatencyAlertCard } from "@/components/deploy/latency-alert-card"
@@ -442,6 +443,7 @@ export default function ProjectWorkspace() {
     attachThroughputAssessmentToLastMessage,
     attachDriftImportanceRankingToLastMessage,
     attachFeatureDriftAlertConfigToLastMessage,
+    attachInputDistDriftAlertConfigToLastMessage,
     attachLowActivityAlertConfigToLastMessage,
     attachHighActivityBurstConfigToLastMessage,
     attachLatencyAlertConfigToLastMessage,
@@ -883,6 +885,8 @@ export default function ProjectWorkspace() {
                 attachDriftImportanceRankingToLastMessage(json.drift_importance_ranking as import("@/lib/types").DriftImportanceRankingResult)
               } else if (json.type === "feature_drift_alert_config" && json.feature_drift_alert_config) {
                 attachFeatureDriftAlertConfigToLastMessage(json.feature_drift_alert_config as import("@/lib/types").FeatureDriftAlertConfig)
+              } else if (json.type === "input_dist_drift_alert_config" && json.input_dist_drift_alert_config) {
+                attachInputDistDriftAlertConfigToLastMessage(json.input_dist_drift_alert_config as import("@/lib/types").InputDistDriftAlertConfig)
               } else if (json.type === "low_activity_alert_config" && json.low_activity_alert_config) {
                 attachLowActivityAlertConfigToLastMessage(json.low_activity_alert_config as import("@/lib/types").LowActivityAlertConfig)
               } else if (json.type === "high_activity_burst_config" && json.high_activity_burst_config) {
@@ -1125,6 +1129,8 @@ export default function ProjectWorkspace() {
                 attachDriftImportanceRankingToLastMessage(json.drift_importance_ranking as import("@/lib/types").DriftImportanceRankingResult)
               } else if (json.type === "feature_drift_alert_config" && json.feature_drift_alert_config) {
                 attachFeatureDriftAlertConfigToLastMessage(json.feature_drift_alert_config as import("@/lib/types").FeatureDriftAlertConfig)
+              } else if (json.type === "input_dist_drift_alert_config" && json.input_dist_drift_alert_config) {
+                attachInputDistDriftAlertConfigToLastMessage(json.input_dist_drift_alert_config as import("@/lib/types").InputDistDriftAlertConfig)
               } else if (json.type === "low_activity_alert_config" && json.low_activity_alert_config) {
                 attachLowActivityAlertConfigToLastMessage(json.low_activity_alert_config as import("@/lib/types").LowActivityAlertConfig)
               } else if (json.type === "high_activity_burst_config" && json.high_activity_burst_config) {
@@ -1334,6 +1340,7 @@ export default function ProjectWorkspace() {
     attachThroughputAssessmentToLastMessage,
     attachDriftImportanceRankingToLastMessage,
     attachFeatureDriftAlertConfigToLastMessage,
+    attachInputDistDriftAlertConfigToLastMessage,
     attachLowActivityAlertConfigToLastMessage,
     attachHighActivityBurstConfigToLastMessage,
     attachLatencyAlertConfigToLastMessage,
@@ -2103,6 +2110,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.feature_drift_alert_config && (
                       <FeatureDriftAlertCard config={msg.feature_drift_alert_config} />
+                    )}
+                    {msg.input_dist_drift_alert_config && (
+                      <InputDistDriftAlertCard config={msg.input_dist_drift_alert_config} />
                     )}
                     {msg.low_activity_alert_config && (
                       <LowActivityAlertCard config={msg.low_activity_alert_config} />

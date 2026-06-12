@@ -1,5 +1,34 @@
 # Journal
 
+## Day 92 — 20:00 — Production Input Distribution Drift Alert (Track D)
+
+**Feature shipped:** Production Input Distribution Drift Alert — a proactive webhook that fires when live prediction inputs diverge from the training distribution at or above a configured severity threshold. Distinct from the on-demand `CovariateDriftAlertCard` (per-request display) and `FeatureDriftAlertCard` (fires on feature importance × drift ranking). This alert watches live inputs passively on every scheduler tick and notifies the analyst without requiring any action.
+
+**What was built:**
+- `EVENT_INPUT_DIST_DRIFT = "input_dist_drift"` added to `core/webhook.py` `ALL_EVENTS`
+- 3 new `Deployment` fields: `input_dist_drift_alert_enabled` (bool, default False), `input_dist_drift_severity_threshold` (str "medium"|"high", default "medium"), `input_dist_drift_alert_last_fired_at` (datetime); 3 inline migrations in `db.py`
+- `_check_and_fire_input_dist_drift_alert(deployment_id)` in `api/deploy.py`: loads last 200 `PredictionLog.input_features` JSON entries, calls existing `compute_covariate_drift_alert()` pure function in `core/analyzer.py`, compares severity rank against configured threshold, fires webhook with 24-hour cooldown, payload: `severity`, `severity_label`, `alert_count`, `sample_count`, `top_drifted_features`, `message`; minimum 20 samples required
+- `PUT /api/deploy/{id}/input-dist-drift-alert` + `GET /api/deploy/{id}/input-dist-drift-alert-status` REST endpoints; invalid thresholds default to "medium"
+- Wired into `_scheduler_loop()` in `core/scheduler.py` — collected alongside other alert deployments every 60s
+- Chat: `_INPUT_DIST_DRIFT_ALERT_PATTERNS` (8 NL variants), `_DISABLE_INPUT_DIST_DRIFT_ALERT_RE`, `_STATUS_INPUT_DIST_DRIFT_ALERT_RE`, `_HIGH_THRESHOLD_INPUT_DIST_RE` (detects "high severity" phrasing); handler enables/disables/reads config; injects current setting into system_prompt; emits `{type:"input_dist_drift_alert_config"}` SSE
+- `InputDistDriftAlertConfig` TypeScript interface; `input_dist_drift_alert_config?` on `ChatMessage`; `attachInputDistDriftAlertConfigToLastMessage` Zustand action; SSE handlers in both EventSource branches; card render in `page.tsx`
+- `InputDistDriftAlertCard` (cyan border, 🌊 icon): enabled/disabled badge, threshold label ("Medium (≥15% OOR)" or "High (≥30% OOR)"), cooldown info when enabled, last-fired timestamp, "no alerts fired yet" message, footer help text
+
+**Design choices:**
+- Reuses the existing `compute_covariate_drift_alert()` pure function — no new analytics logic needed
+- Severity threshold makes the alert configurable for production vs staging sensitivity differences
+- "medium" threshold fires at ≥15% OOR rate (enough inputs out of training range to be a concern); "high" fires at ≥30% (severe drift, data pipeline problem likely)
+- 24-hour cooldown prevents alert storms during known data shifts
+
+**Tests:** 24 backend (3 constant/model + 10 unit + 7 REST endpoint + 4 regex) + 18 frontend (15 card component + 3 store) = **42 new tests**, all passing. Baseline: 6357 backend / 3612 frontend → **6381 backend / 3630 frontend** (+24 / +18). Backend lint: clean. Frontend build + TypeScript: clean.
+
+**What's next:**
+- Model retraining orchestration — detect performance degradation and suggest retraining with recent data
+- Deployment comparison leaderboard improvements
+- Prediction confidence band chart — show prediction uncertainty ranges over recent logs
+
+---
+
 ## Day 92 — 12:00 — Deployment Health Scorecard (Track D)
 
 **Feature shipped:** Deployment Health Scorecard — a consolidated A–F health grade aggregating 5 operational signals for a single deployment. Analysts ask "show deployment health scorecard", "is my deployment healthy?", or "give me a health grade" and receive a `DeploymentHealthScorecardCard` with an overall grade + 5 color-coded signal rows.

@@ -3719,6 +3719,36 @@ _STATUS_FEATURE_DRIFT_ALERT_RE = re.compile(
     re.IGNORECASE,
 )
 
+_INPUT_DIST_DRIFT_ALERT_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"(?:enable|turn\s+on|activate|set\s+up)\s+(?:input\s+)?(?:distribution\s+)?drift\s+(?:alerts?|webhooks?|notifications?|alarms?)\b|"
+    r"(?:disable|turn\s+off|deactivate|remove)\s+(?:input\s+)?(?:distribution\s+)?drift\s+(?:alerts?|webhooks?|notifications?|alarms?)\b|"
+    r"(?:alert|notify|warn|ping)\s+(?:me\s+)?when\s+(?:input|live|prediction)\s+(?:data\s+)?(?:distribution\s+)?drifts?\b|"
+    r"(?:alert|notify|warn|ping)\s+(?:me\s+)?when\s+(?:prediction|model)\s+inputs?\s+(?:drift|diverge|shift)\b|"
+    r"(?:alert|notify|warn)\s+(?:me\s+)?(?:on|when)\s+(?:input|covariate)\s+distribution\s+drift\b|"
+    r"input\s+distribution\s+drift\s+(?:alerts?|webhooks?|notifications?|alarms?)\b|"
+    r"(?:proactive|automatic)\s+(?:input\s+)?distribution\s+drift\s+(?:alerts?|notifications?)\b|"
+    r"(?:status|check)\s+(?:of\s+)?(?:input\s+)?distribution\s+drift\s+(?:alerts?|webhooks?|notifications?)\b|"
+    r"(?:alert|notify)\s+(?:me\s+)?when\s+live\s+inputs?\s+(?:diverge|shift|change)\s+from\s+training\b"
+    r")",
+    re.IGNORECASE,
+)
+
+_DISABLE_INPUT_DIST_DRIFT_ALERT_RE = re.compile(
+    r"\b(?:disable|turn\s+off|deactivate|remove)\s+(?:the\s+)?(?:input\s+)?(?:distribution\s+)?drift\s+(?:alert|webhook|notification|alarm)",
+    re.IGNORECASE,
+)
+
+_STATUS_INPUT_DIST_DRIFT_ALERT_RE = re.compile(
+    r"\b(?:status|check)\s+(?:(?:of|my)\s+)?(?:the\s+)?(?:input\s+)?distribution\s+drift\s+(?:alert|webhook|notification)",
+    re.IGNORECASE,
+)
+
+_HIGH_THRESHOLD_INPUT_DIST_RE = re.compile(
+    r"\b(?:high|severe|critical|extreme)\s+(?:severity|threshold|drift)\b",
+    re.IGNORECASE,
+)
+
 _LOW_ACTIVITY_ALERT_PATTERNS = re.compile(
     r"(?i)(?:"
     r"alert\s+(?:me\s+)?(?:if|when)\s+(?:my\s+)?(?:(?:model|deployment|endpoint)\s+)?(?:gets?\s+)?(?:fewer|less)\s+than\b|"
@@ -17602,6 +17632,78 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Feature drift alert config is nice-to-have; never crash chat
 
+    # Input distribution drift alert configuration via chat
+    input_dist_drift_alert_event: dict | None = None
+    if _INPUT_DIST_DRIFT_ALERT_PATTERNS.search(body.message) and ctx["deployment"]:
+        try:
+            _idd_dep = ctx["deployment"]
+            _idd_dep_id = _idd_dep.id if hasattr(_idd_dep, "id") else str(_idd_dep)
+            _idd_dep_obj = session.get(Deployment, _idd_dep_id)
+
+            if _idd_dep_obj:
+                _disable_idd = bool(
+                    _DISABLE_INPUT_DIST_DRIFT_ALERT_RE.search(body.message)
+                )
+                _status_idd = bool(_STATUS_INPUT_DIST_DRIFT_ALERT_RE.search(body.message))
+
+                if _disable_idd:
+                    _idd_dep_obj.input_dist_drift_alert_enabled = False
+                    _idd_dep_obj.input_dist_drift_alert_last_fired_at = None
+                    session.add(_idd_dep_obj)
+                    session.commit()
+                    session.refresh(_idd_dep_obj)
+                elif not _status_idd:
+                    # Enable intent — check if high severity requested
+                    _idd_threshold = (
+                        "high"
+                        if _HIGH_THRESHOLD_INPUT_DIST_RE.search(body.message)
+                        else "medium"
+                    )
+                    _idd_dep_obj.input_dist_drift_alert_enabled = True
+                    _idd_dep_obj.input_dist_drift_severity_threshold = _idd_threshold
+                    session.add(_idd_dep_obj)
+                    session.commit()
+                    session.refresh(_idd_dep_obj)
+
+                _idd_enabled = bool(
+                    getattr(_idd_dep_obj, "input_dist_drift_alert_enabled", False)
+                )
+                _idd_threshold_out = (
+                    getattr(_idd_dep_obj, "input_dist_drift_severity_threshold", "medium") or "medium"
+                )
+                _idd_last = getattr(
+                    _idd_dep_obj, "input_dist_drift_alert_last_fired_at", None
+                )
+                input_dist_drift_alert_event = {
+                    "deployment_id": _idd_dep_id,
+                    "input_dist_drift_alert_enabled": _idd_enabled,
+                    "input_dist_drift_severity_threshold": _idd_threshold_out,
+                    "input_dist_drift_alert_last_fired_at": (
+                        _idd_last.isoformat() if _idd_last else None
+                    ),
+                    "cooldown_hours": 24,
+                    "summary": (
+                        f"Input distribution drift alerting is enabled at '{_idd_threshold_out}' severity. "
+                        "A webhook fires (max once per 24 hours) when live prediction inputs "
+                        "diverge from the training distribution. "
+                        "Webhooks must be registered to receive notifications."
+                        if _idd_enabled
+                        else "Input distribution drift alerting is disabled."
+                    ),
+                }
+                system_prompt += (
+                    f"\n\n## Input Distribution Drift Alert Configuration\n"
+                    f"{'Enabled' if _idd_enabled else 'Disabled'}. "
+                    f"{input_dist_drift_alert_event['summary']} "
+                    "Tell the analyst the current input drift alert setting in plain English. "
+                    f"If enabled, explain that a webhook fires when {_idd_threshold_out}-severity "
+                    "covariate drift is detected (live inputs out of training range) — max once per 24 hours. "
+                    "If disabled, confirm and suggest they can enable it at any time. "
+                    "Remind them that webhooks must be registered first."
+                )
+        except Exception:  # noqa: BLE001
+            pass  # Input dist drift alert config is nice-to-have; never crash chat
+
     # Low-activity alert configuration — "alert me if fewer than 10 predictions per day"
     # Distinct from: quota_alert (fires when approaching max quota), sla_alert (latency).
     # This fires when usage drops BELOW a floor — detecting broken integrations.
@@ -21790,6 +21892,9 @@ def send_message(
 
         if feature_drift_alert_event:
             yield f"data: {json.dumps({'type': 'feature_drift_alert_config', 'feature_drift_alert_config': feature_drift_alert_event})}\n\n"
+
+        if input_dist_drift_alert_event:
+            yield f"data: {json.dumps({'type': 'input_dist_drift_alert_config', 'input_dist_drift_alert_config': input_dist_drift_alert_event})}\n\n"
 
         if low_activity_alert_event:
             yield f"data: {json.dumps({'type': 'low_activity_alert_config', 'low_activity_alert_config': low_activity_alert_event})}\n\n"

@@ -454,6 +454,15 @@ def _scheduler_loop() -> None:
                 ).all()
                 pred_value_dep_ids = [d.id for d in pred_value_deps]
 
+                # Collect deployments with input distribution drift alert enabled
+                input_dist_deps = session.exec(
+                    select(Deployment).where(
+                        Deployment.is_active == True,  # noqa: E712
+                        Deployment.input_dist_drift_alert_enabled == True,  # noqa: E712
+                    )
+                ).all()
+                input_dist_dep_ids = [d.id for d in input_dist_deps]
+
             for sid in due_ids:
                 try:
                     _run_job(sid)
@@ -525,6 +534,18 @@ def _scheduler_loop() -> None:
                 except Exception as exc:
                     logger.error(
                         "Scheduler: pred value trend alert check %s raised: %s",
+                        dep_id,
+                        exc,
+                    )
+
+            for dep_id in input_dist_dep_ids:
+                try:
+                    from api.deploy import _check_and_fire_input_dist_drift_alert
+
+                    _check_and_fire_input_dist_drift_alert(dep_id)
+                except Exception as exc:
+                    logger.error(
+                        "Scheduler: input dist drift alert check %s raised: %s",
                         dep_id,
                         exc,
                     )

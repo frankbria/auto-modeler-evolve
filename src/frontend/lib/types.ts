@@ -566,6 +566,7 @@ export interface ChatMessage {
   throughput_assessment?: DeploymentThroughputResult
   drift_importance_ranking?: DriftImportanceRankingResult
   feature_drift_alert_config?: FeatureDriftAlertConfig
+  input_dist_drift_alert_config?: InputDistDriftAlertConfig
   low_activity_alert_config?: LowActivityAlertConfig
   high_activity_burst_config?: HighActivityBurstConfig
   latency_alert_config?: LatencyAlertConfig
@@ -1139,6 +1140,15 @@ export interface FeatureDriftAlertConfig {
   deployment_id: string
   feature_drift_alert_enabled: boolean
   feature_drift_alert_last_fired_at: string | null
+  cooldown_hours: number
+  summary: string
+}
+
+export interface InputDistDriftAlertConfig {
+  deployment_id: string
+  input_dist_drift_alert_enabled: boolean
+  input_dist_drift_severity_threshold: string
+  input_dist_drift_alert_last_fired_at: string | null
   cooldown_hours: number
   summary: string
 }
