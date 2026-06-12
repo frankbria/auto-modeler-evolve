@@ -1,5 +1,37 @@
 # Journal
 
+## Day 93 — 12:00 — Degradation-Triggered Auto-Retrain (Track D)
+
+**Feature shipped:** Degradation-Triggered Auto-Retrain — the scheduler now automatically starts a fresh training run when production feedback accuracy drops below a configured threshold. Analysts configure it conversationally: "retrain automatically when accuracy drops below 80%", "enable auto-retraining when performance degrades", or "retrain on degradation". Distinct from `AutoRollback` (reverts to a previous version, no new training), `AutoRetrainOnUpload` (triggers on data upload), and `RetrainingReadinessCard` (recommends but doesn't trigger).
+
+**What was built:**
+- `EVENT_DEGRADATION_RETRAIN = "degradation_retrain"` added to `core/webhook.py` `ALL_EVENTS`
+- 3 new `Deployment` fields: `degradation_retrain_enabled` (bool, default False), `degradation_retrain_accuracy_threshold` (Optional[float] 0.0–1.0), `degradation_retrain_last_triggered_at` (Optional[datetime]); 3 inline migrations in `db.py`
+- `_check_and_trigger_degradation_retrain(deployment_id)` in `api/deploy.py`: requires ≥10 feedback records, computes live accuracy from `FeedbackRecord` table, skips if accuracy ≥ threshold or within 24-hour cooldown, loads ModelRun context (project_id, algorithm, feature_set, dataset path), creates a new `ModelRun`, launches `_train_in_background()` in a daemon thread, dispatches webhook with payload (accuracy_pct, threshold_pct, n_feedback, new_run_id, algorithm, message). Constants: `_DEGRADATION_RETRAIN_COOLDOWN_HOURS = 24`, `_DEGRADATION_RETRAIN_MIN_FEEDBACK = 10`
+- `PUT /api/deploy/{id}/degradation-retrain` (enable/disable + threshold, validates 0–100%) + `GET /api/deploy/{id}/degradation-retrain-status` REST endpoints
+- Wired into `_scheduler_loop()` in `core/scheduler.py` — collects enabled deployments and calls check function every 60s
+- Chat: `_DEGRADATION_RETRAIN_PATTERNS` (8 NL variants), `_DISABLE_DEGRADATION_RETRAIN_RE`, `_STATUS_DEGRADATION_RETRAIN_RE`, `_DEGRADATION_RETRAIN_THRESHOLD_RE` (extracts numeric pct); handler handles disable/status/enable sub-intents, persists threshold to DB via REST; emits `{type:"degradation_retrain_config"}` SSE
+- `DegradationRetrainConfig` TypeScript interface; `degradation_retrain_config?` on `ChatMessage`; `attachDegradationRetrainConfigToLastMessage` Zustand action; `api.deploy.setDegradationRetrain()` + `api.deploy.getDegradationRetrainStatus()` client methods; SSE handlers in both EventSource branches; card render in `page.tsx`
+- `DegradationRetrainCard` (violet border=enabled+never triggered / amber=triggered / slate=disabled, 🔁 icon): enabled/disabled badge, summary text, threshold tile with accuracy floor badge, how-it-works info block with cooldown/min-feedback/webhook details, last-triggered timestamp or "No auto-retraining triggered yet", footer note distinguishing from auto-rollback
+
+**Design choices:**
+- "Triggered" = new model trained, NOT rollback to old version — that's the key distinction that closes the "my model degraded and I need a fresh one" gap without overloading the rollback pathway
+- Amber border (vs violet) when triggered gives analysts instant visual confirmation the system has already acted, not just that it's configured
+- 24-hour cooldown prevents training storms when a deployment is in a persistent low-accuracy state (e.g., bad data batch)
+
+**Bug fixed:** Mock target for `_train_in_background` — function is imported locally inside the check function via `from api.models import _train_in_background`, so patches must target `api.models._train_in_background`, not `api.deploy._train_in_background`. Same for `_training_queues` and `_training_counters`.
+
+**Regex fix:** Three pattern edge cases: "automatic retraining on degradation" needed `(?:automatic(?:ally)?\s+)?` added to the "retrain on degradation" branch; "disable degradation retraining" and "status of degradation retraining" needed `(?:degradation\s+)?` prefix before `(?:auto.?)?retrain` to handle "degradation retraining" without the "triggered" keyword.
+
+**Tests:** 22 backend (2 constants/model + 8 check-function unit + 6 REST integration + 4 regex/NL + 2 mock fix) + 18 frontend (15 card component + 3 store action) = **40 new tests**, all passing. Baseline: 6417 backend / 3630 frontend → **6439 backend / 3648 frontend** (+22 / +18). Backend lint: clean. Frontend build + TypeScript: clean.
+
+**What's next:**
+- Deployment comparison leaderboard improvements — side-by-side multi-model accuracy/metrics comparison via chat
+- Prediction outcome calibration chart — predicted vs actual bucket distributions
+- Model retraining completion notification — notify analyst via webhook/chat when auto-retrain finishes
+
+---
+
 ## Day 93 — 04:00 — Prediction Confidence Band Chart (Track D)
 
 **Feature shipped:** Prediction Confidence Band Chart — analysts can ask "show me the confidence band", "prediction uncertainty over time", "how stable are my predictions", and similar phrases to get a shaded band chart showing daily mean ± 1 standard deviation of prediction values (regression) or confidence scores (classification) over the last 30 days. Closes the "how stable and certain are my model's outputs over time?" gap — distinct from `ConfidenceTrendCard` (direction of confidence), `PredictionValueTrendCard` (overall trend, no spread), and drift-based cards (input data, not output stability).
