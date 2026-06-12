@@ -220,6 +220,7 @@ interface AppState {
   attachSavedScenariosToLastMessage: (saved_scenarios: import("./types").SavedScenariosResult) => void
   attachCanaryStatusToLastMessage: (canary_status: import("./types").CanaryStatusResult) => void
   attachDeploymentHealthScorecardToLastMessage: (deployment_health_scorecard: import("./types").DeploymentHealthScorecardResult) => void
+  attachConfidenceBandToLastMessage: (confidence_band: import("./types").ConfidenceBandResult) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -1908,6 +1909,16 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, deployment_health_scorecard }
+      }
+      return { messages }
+    }),
+
+  attachConfidenceBandToLastMessage: (confidence_band) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, confidence_band }
       }
       return { messages }
     }),

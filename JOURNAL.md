@@ -1,5 +1,30 @@
 # Journal
 
+## Day 93 — 04:00 — Prediction Confidence Band Chart (Track D)
+
+**Feature shipped:** Prediction Confidence Band Chart — analysts can ask "show me the confidence band", "prediction uncertainty over time", "how stable are my predictions", and similar phrases to get a shaded band chart showing daily mean ± 1 standard deviation of prediction values (regression) or confidence scores (classification) over the last 30 days. Closes the "how stable and certain are my model's outputs over time?" gap — distinct from `ConfidenceTrendCard` (direction of confidence), `PredictionValueTrendCard` (overall trend, no spread), and drift-based cards (input data, not output stability).
+
+**What was built:**
+- `compute_confidence_band(logs_data, problem_type, n_days)` pure function in `core/analyzer.py`: groups PredictionLog dicts by day (ISO string `str(ts)[:10]`), computes per-day mean/std/lower/upper, uses CoV (std/|mean|) for verdict classification — `stable` (<5%), `moderate_spread` (5–20%), `high_spread` (>20%), `no_data` (<5 samples). Returns 15 fields including `days[]`, `means[]`, `lowers[]`, `uppers[]`, overall stats, `value_label`, and plain-English `summary`. For classification uses `confidence` field (skips out-of-range [0,1] values); for regression uses `prediction_numeric`.
+- `GET /api/deploy/{id}/confidence-band?n_days=30&n=200` REST endpoint in `api/deploy.py`: loads last 200 PredictionLogs ascending by `created_at`, calls pure function, returns result + `deployment_id`, `algorithm`, `target_column`.
+- `_CONFIDENCE_BAND_PATTERNS` (8 NL variants) + chat handler in `api/chat.py` guarded by `ctx["deployment"]`; injects verdict + summary into system_prompt; emits `{type:"confidence_band"}` SSE event. Two pattern bugs fixed: `show(?:\s+me)?` to catch "show me the confidence band"; `predictions?(?:\s+over\s+time)?` to avoid requiring trailing whitespace after "predictions".
+- `ConfidenceBandResult` TypeScript interface in `lib/types.ts`; `confidence_band?` on `ChatMessage`; `attachConfidenceBandToLastMessage` Zustand action; `api.deploy.confidenceBand()` REST helper; SSE handlers + card render in both EventSource branches of `app/project/[id]/page.tsx`.
+- `ConfidenceBandCard` at `components/deploy/confidence-band-card.tsx` (sky border=stable, amber=moderate_spread, rose=high_spread, muted=no_data, 📊 icon): verdict badge, n-predictions badge, n-days badge, summary paragraph, stats grid (Average / Std Dev / Typical Range), Recharts `ComposedChart` with two `Area` (upper sky-blue fill + lower white mask to create the band effect) + `Line` (sky mean), sr-only figcaption, contextual footer text per verdict.
+
+**Design choices:**
+- CoV (coefficient of variation) is robust across different scales — a stable model predicting $50K vs $500K both get CoV-based stability correctly
+- Two-Area "mask" technique in Recharts: upper area fills the whole band, lower area filled white masks the bottom, leaving only the band between them — cleaner than stacking
+- Tooltip formatter uses `String(name ?? "")` pattern to satisfy Recharts v2 strict TS types
+
+**Tests:** 36 backend (14 pure-function unit + 13 regex pattern + 3 REST endpoint + async fixture chain) + 0 new frontend = **36 new tests**, all passing. Baseline: 6381 backend / 3630 frontend → **6417 backend / 3630 frontend** (+36 / +0). Backend lint: clean. Frontend build + TypeScript: clean.
+
+**What's next:**
+- Model retraining orchestration — detect performance degradation and trigger retraining workflow
+- Deployment comparison leaderboard improvements
+- Prediction outcome calibration chart — predicted vs actual bucket distributions
+
+---
+
 ## Day 92 — 20:00 — Production Input Distribution Drift Alert (Track D)
 
 **Feature shipped:** Production Input Distribution Drift Alert — a proactive webhook that fires when live prediction inputs diverge from the training distribution at or above a configured severity threshold. Distinct from the on-demand `CovariateDriftAlertCard` (per-request display) and `FeatureDriftAlertCard` (fires on feature importance × drift ranking). This alert watches live inputs passively on every scheduler tick and notifies the analyst without requiring any action.

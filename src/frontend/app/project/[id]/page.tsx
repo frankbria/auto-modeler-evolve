@@ -144,6 +144,7 @@ import { FeatureSweepCard } from "@/components/deploy/feature-sweep-card"
 import { SavedScenariosCard } from "@/components/deploy/saved-scenarios-card"
 import { CanaryCard } from "@/components/deploy/canary-card"
 import { DeploymentHealthScorecardCard } from "@/components/deploy/deployment-health-scorecard-card"
+import { ConfidenceBandCard } from "@/components/deploy/confidence-band-card"
 import { EnsembleRecommendationCard } from "@/components/models/ensemble-recommendation-card"
 import { TuningChatCard } from "@/components/models/tuning-chat-card"
 import { CvScoreDistributionCard } from "@/components/models/cv-score-distribution-card"
@@ -459,6 +460,7 @@ export default function ProjectWorkspace() {
     attachSavedScenariosToLastMessage,
     attachCanaryStatusToLastMessage,
     attachDeploymentHealthScorecardToLastMessage,
+    attachConfidenceBandToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -913,6 +915,8 @@ export default function ProjectWorkspace() {
                 attachCanaryStatusToLastMessage(json.canary_status as import("@/lib/types").CanaryStatusResult)
               } else if (json.type === "deployment_health_scorecard" && json.deployment_health_scorecard) {
                 attachDeploymentHealthScorecardToLastMessage(json.deployment_health_scorecard as import("@/lib/types").DeploymentHealthScorecardResult)
+              } else if (json.type === "confidence_band" && json.confidence_band) {
+                attachConfidenceBandToLastMessage(json.confidence_band as import("@/lib/types").ConfidenceBandResult)
               } else if (json.type === "uptime_summary" && json.uptime_summary) {
                 attachUptimeSummaryToLastMessage(json.uptime_summary as import("@/lib/types").ApiUptimeSummaryResult)
               } else if (json.type === "cost_sensitive_threshold" && json.cost_sensitive_threshold) {
@@ -1159,6 +1163,8 @@ export default function ProjectWorkspace() {
                 attachCanaryStatusToLastMessage(json.canary_status as import("@/lib/types").CanaryStatusResult)
               } else if (json.type === "deployment_health_scorecard" && json.deployment_health_scorecard) {
                 attachDeploymentHealthScorecardToLastMessage(json.deployment_health_scorecard as import("@/lib/types").DeploymentHealthScorecardResult)
+              } else if (json.type === "confidence_band" && json.confidence_band) {
+                attachConfidenceBandToLastMessage(json.confidence_band as import("@/lib/types").ConfidenceBandResult)
               } else if (json.type === "uptime_summary" && json.uptime_summary) {
                 attachUptimeSummaryToLastMessage(json.uptime_summary as import("@/lib/types").ApiUptimeSummaryResult)
               } else if (json.type === "cost_sensitive_threshold" && json.cost_sensitive_threshold) {
@@ -1356,6 +1362,7 @@ export default function ProjectWorkspace() {
     attachSavedScenariosToLastMessage,
     attachCanaryStatusToLastMessage,
     attachDeploymentHealthScorecardToLastMessage,
+    attachConfidenceBandToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -2152,6 +2159,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.deployment_health_scorecard && (
                       <DeploymentHealthScorecardCard result={msg.deployment_health_scorecard} />
+                    )}
+                    {msg.confidence_band && (
+                      <ConfidenceBandCard data={msg.confidence_band} />
                     )}
                     {msg.uptime_summary && (
                       <ApiUptimeSummaryCard result={msg.uptime_summary} />

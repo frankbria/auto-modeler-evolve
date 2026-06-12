@@ -8689,3 +8689,124 @@ def compute_deployment_health_scorecard(
         "canary_info": canary_info,
         "summary": summary,
     }
+
+
+def compute_confidence_band(
+    logs_data: list[dict],
+    problem_type: str = "regression",
+    n_days: int = 30,
+) -> dict:
+    """Compute daily prediction confidence band (mean ± std) from PredictionLogs.
+
+    For regression: bands the prediction_numeric values per day.
+    For classification: bands the confidence scores per day.
+
+    Returns daily stats with mean/lower/upper and overall summary.
+    """
+    import statistics
+    from collections import defaultdict
+
+    # Select the signal field based on problem type
+    value_field = "prediction_numeric" if problem_type == "regression" else "confidence"
+    label = "Predicted Value" if problem_type == "regression" else "Confidence"
+
+    # Group values by date string (YYYY-MM-DD)
+    day_values: dict[str, list[float]] = defaultdict(list)
+    for log in logs_data:
+        val = log.get(value_field)
+        ts = log.get("created_at")
+        if val is None or ts is None:
+            continue
+        try:
+            v = float(val)
+            if problem_type == "classification" and not (0.0 <= v <= 1.0):
+                continue
+            day_str = str(ts)[:10]  # "YYYY-MM-DD"
+            day_values[day_str].append(v)
+        except (TypeError, ValueError):
+            continue
+
+    if not day_values:
+        return {
+            "days": [],
+            "means": [],
+            "lowers": [],
+            "uppers": [],
+            "overall_mean": None,
+            "overall_std": None,
+            "overall_lower": None,
+            "overall_upper": None,
+            "n_samples": 0,
+            "n_days": 0,
+            "verdict": "no_data",
+            "problem_type": problem_type,
+            "value_label": label,
+            "summary": "No prediction data available yet.",
+        }
+
+    sorted_days = sorted(day_values.keys())[-n_days:]
+    days = []
+    means = []
+    lowers = []
+    uppers = []
+
+    for d in sorted_days:
+        vals = day_values[d]
+        mean = statistics.mean(vals)
+        std = statistics.stdev(vals) if len(vals) > 1 else 0.0
+        days.append(d)
+        means.append(round(mean, 4))
+        lowers.append(round(mean - std, 4))
+        uppers.append(round(mean + std, 4))
+
+    all_vals = [v for d in sorted_days for v in day_values[d]]
+    n_samples = len(all_vals)
+    overall_mean = statistics.mean(all_vals)
+    overall_std = statistics.stdev(all_vals) if len(all_vals) > 1 else 0.0
+    overall_lower = overall_mean - overall_std
+    overall_upper = overall_mean + overall_std
+
+    # Determine verdict: stability of predictions
+    if overall_mean != 0:
+        cv = abs(overall_std / overall_mean)
+    else:
+        cv = overall_std
+    if cv < 0.05:
+        verdict = "stable"
+        verdict_label = "Stable"
+    elif cv < 0.20:
+        verdict = "moderate_spread"
+        verdict_label = "Moderate Spread"
+    else:
+        verdict = "high_spread"
+        verdict_label = "High Spread"
+
+    if problem_type == "regression":
+        summary = (
+            f"Over {len(sorted_days)} day(s) ({n_samples} predictions), "
+            f"average predicted value was {overall_mean:.2f} ± {overall_std:.2f} — {verdict_label.lower()}."
+        )
+    else:
+        pct_mean = round(overall_mean * 100, 1)
+        pct_std = round(overall_std * 100, 1)
+        summary = (
+            f"Over {len(sorted_days)} day(s) ({n_samples} predictions), "
+            f"average model confidence was {pct_mean}% ± {pct_std}% — {verdict_label.lower()}."
+        )
+
+    return {
+        "days": days,
+        "means": means,
+        "lowers": lowers,
+        "uppers": uppers,
+        "overall_mean": round(overall_mean, 4),
+        "overall_std": round(overall_std, 4),
+        "overall_lower": round(overall_lower, 4),
+        "overall_upper": round(overall_upper, 4),
+        "n_samples": n_samples,
+        "n_days": len(sorted_days),
+        "verdict": verdict,
+        "problem_type": problem_type,
+        "value_label": label,
+        "summary": summary,
+    }

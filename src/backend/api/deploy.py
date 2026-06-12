@@ -9955,3 +9955,44 @@ def deployment_health_scorecard(
     result["algorithm"] = deployment.algorithm
     result["target_column"] = deployment.target_column
     return result
+
+
+@router.get("/api/deploy/{deployment_id}/confidence-band")
+def get_confidence_band(
+    deployment_id: str,
+    n_days: int = 30,
+    n: int = 200,
+    session: Session = Depends(get_session),
+) -> dict:
+    """Return daily mean ± std prediction confidence band from PredictionLogs."""
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment or not deployment.is_active:
+        raise HTTPException(status_code=404, detail="Deployment not found or inactive")
+
+    from core.analyzer import compute_confidence_band
+
+    logs = session.exec(
+        select(PredictionLog)
+        .where(PredictionLog.deployment_id == deployment_id)
+        .order_by(PredictionLog.created_at.asc())  # type: ignore[attr-defined]
+        .limit(n)
+    ).all()
+
+    logs_data = [
+        {
+            "prediction_numeric": lg.prediction_numeric,
+            "confidence": lg.confidence,
+            "created_at": lg.created_at,
+        }
+        for lg in logs
+    ]
+
+    result = compute_confidence_band(
+        logs_data=logs_data,
+        problem_type=deployment.problem_type or "regression",
+        n_days=n_days,
+    )
+    result["deployment_id"] = deployment_id
+    result["algorithm"] = deployment.algorithm
+    result["target_column"] = deployment.target_column
+    return result

@@ -1440,5 +1440,8 @@ export const api = {
 
     healthScorecard: (deploymentId: string, n?: number): Promise<import("./types").DeploymentHealthScorecardResult> =>
       fetch(`${API_URL}/api/deploy/${deploymentId}/health-scorecard${n ? `?n=${n}` : ""}`).then((r) => r.json()),
+
+    confidenceBand: (deploymentId: string, nDays?: number): Promise<import("./types").ConfidenceBandResult> =>
+      fetch(`${API_URL}/api/deploy/${deploymentId}/confidence-band${nDays ? `?n_days=${nDays}` : ""}`).then((r) => r.json()),
   },
 }

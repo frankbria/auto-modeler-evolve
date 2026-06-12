@@ -49,7 +49,20 @@ the time is better spent on real features.
 
 ## Currently Working On
 
-*(nothing)*
+*(none — next session should pick from the list below)*
+
+**What's next (priority order):**
+- Model retraining orchestration — detect performance degradation and trigger retraining workflow
+- Deployment comparison leaderboard improvements — rank deployments by accuracy, latency, activity
+- Prediction outcome calibration chart — predicted vs actual bucket distributions
+
+---
+
+## Day 93 (04:00) — Done
+
+**Track D: Prediction Confidence Band Chart** — complete.
+
+`compute_confidence_band()` pure function groups PredictionLog dicts by day, computes per-day mean ± std; CoV-based stability verdict (stable/moderate_spread/high_spread/no_data). `GET /api/deploy/{id}/confidence-band` REST endpoint. `_CONFIDENCE_BAND_PATTERNS` (8 NL variants) chat handler; SSE event `confidence_band`. `ConfidenceBandCard` (sky/amber/rose border, Recharts ComposedChart shaded band + mean Line). 36 new backend tests (+36 / +0). Baseline: 6381/3630 → **6417/3630**. Two pattern bugs fixed: `show(?:\s+me)?` for "show me the confidence band"; `predictions?(?:\s+over\s+time)?` for bare "predictions" end-of-string.
 
 ---
 

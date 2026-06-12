@@ -5194,6 +5194,20 @@ def _extract_throughput_n(message: str) -> int:
         return 1000
 
 
+_CONFIDENCE_BAND_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"(?:show(?:\s+me)?|display|get|give\s+me)\s+(?:the\s+)?(?:prediction\s+)?confidence\s+band\b|"
+    r"prediction\s+(?:uncertainty|spread|variability)\s+(?:over\s+time|trend|chart|plot|graph)\b|"
+    r"how\s+(?:confident|certain|sure)\s+(?:has\s+(?:my\s+)?(?:model|deployment)\s+been|is\s+(?:my\s+)?(?:model|deployment))\b|"
+    r"(?:confidence|prediction)\s+(?:band|interval)\s+(?:chart|plot|graph|over\s+time|trend)\b|"
+    r"(?:prediction|model)\s+(?:stability|consistency)\s+(?:over\s+time|trend|chart|analysis)\b|"
+    r"how\s+stable\s+(?:are\s+)?(?:my\s+)?predictions?(?:\s+over\s+time)?\b|"
+    r"(?:show|plot|chart)\s+(?:prediction|confidence)\s+(?:range|variability|uncertainty)\b|"
+    r"prediction\s+(?:value|score)\s+(?:trend|band|spread|over\s+time)\b"
+    r")",
+    re.IGNORECASE,
+)
+
 _COST_SENSITIVE_PATTERNS = re.compile(
     r"(?i)(?:"
     r"(?:false\s+positive[s]?|fp[s]?)\s+cost[s]?\s+\$?\d|"
@@ -18332,6 +18346,56 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Health scorecard is nice-to-have; never crash chat
 
+    # Prediction confidence band — daily mean ± std band over recent PredictionLogs.
+    # Shows prediction stability/spread for regression or confidence trend for classification.
+    # Distinct from: _SLA_PATTERNS (latency), _DRIFT_PATTERNS (output value drift),
+    # _COVARIATE_DRIFT_PATTERNS (input distribution drift).
+    confidence_band_event: dict | None = None
+    if _CONFIDENCE_BAND_PATTERNS.search(body.message) and ctx["deployment"]:
+        try:
+            from core.analyzer import compute_confidence_band as _ccb
+
+            _cb_dep = ctx["deployment"]
+            _cb_dep_id = _cb_dep.id if hasattr(_cb_dep, "id") else str(_cb_dep)
+            _cb_dep_obj = session.get(Deployment, _cb_dep_id)
+            if _cb_dep_obj:
+                _cb_logs = session.exec(
+                    select(PredictionLog)
+                    .where(PredictionLog.deployment_id == _cb_dep_id)
+                    .order_by(PredictionLog.created_at.asc())  # type: ignore[attr-defined]
+                    .limit(200)
+                ).all()
+                _cb_logs_data = [
+                    {
+                        "prediction_numeric": lg.prediction_numeric,
+                        "confidence": lg.confidence,
+                        "created_at": lg.created_at,
+                    }
+                    for lg in _cb_logs
+                ]
+                confidence_band_event = _ccb(
+                    logs_data=_cb_logs_data,
+                    problem_type=_cb_dep_obj.problem_type or "regression",
+                    n_days=30,
+                )
+                confidence_band_event["deployment_id"] = _cb_dep_id
+                confidence_band_event["algorithm"] = _cb_dep_obj.algorithm
+                confidence_band_event["target_column"] = _cb_dep_obj.target_column
+                _cb_verdict = confidence_band_event["verdict"]
+                _cb_summary = confidence_band_event["summary"]
+                system_prompt += (
+                    f"\n\n## Prediction Confidence Band (just computed)\n"
+                    f"{_cb_summary}\n"
+                    f"Verdict: {_cb_verdict}.\n"
+                    "Reference this band in your response. Explain what prediction "
+                    "stability means for the analyst: stable means reliable, consistent "
+                    "outputs; high spread may indicate the model encounters diverse inputs "
+                    "or that retraining with more data could help. "
+                    "A ConfidenceBandCard is shown with the trend chart."
+                )
+        except Exception:  # noqa: BLE001
+            pass  # Confidence band is nice-to-have; never crash chat
+
     # Segment drift detection — "is drift concentrated in a specific region/group?"
     # Distinct from: _DRIFT_IMPORTANCE_PATTERNS (ranks features by importance × drift),
     # _COVARIATE_DRIFT_PATTERNS (binary per-feature OOR alert), _DRIFT_PATTERNS (output drift).
@@ -22090,6 +22154,9 @@ def send_message(
 
         if calibration_event:
             yield f"data: {json.dumps({'type': 'calibration_check', 'calibration_check': calibration_event})}\n\n"
+
+        if confidence_band_event:
+            yield f"data: {json.dumps({'type': 'confidence_band', 'confidence_band': confidence_band_event})}\n\n"
 
         # After text stream, opportunistically generate a chart if the
         # message is about data and we have a dataset loaded

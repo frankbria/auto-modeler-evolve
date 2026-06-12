@@ -582,6 +582,7 @@ export interface ChatMessage {
   saved_scenarios?: SavedScenariosResult
   canary_status?: CanaryStatusResult
   deployment_health_scorecard?: DeploymentHealthScorecardResult
+  confidence_band?: ConfidenceBandResult
 }
 
 export interface RollbackVersionEntry {
@@ -5051,5 +5052,25 @@ export interface DeploymentHealthScorecardResult {
   n_signals_warning: number
   n_signals_critical: number
   canary_info: DeploymentHealthCanaryInfo | null
+  summary: string
+}
+
+export interface ConfidenceBandResult {
+  deployment_id: string
+  algorithm: string | null
+  target_column: string | null
+  days: string[]
+  means: number[]
+  lowers: number[]
+  uppers: number[]
+  overall_mean: number | null
+  overall_std: number | null
+  overall_lower: number | null
+  overall_upper: number | null
+  n_samples: number
+  n_days: number
+  verdict: "stable" | "moderate_spread" | "high_spread" | "no_data"
+  problem_type: string
+  value_label: string
   summary: string
 }
