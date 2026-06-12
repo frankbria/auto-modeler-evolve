@@ -92,7 +92,9 @@ class TestComputeConfidenceBand:
 
     def test_stable_verdict_low_cv(self):
         logs = [
-            _make_log(prediction_numeric=100.0 + i * 0.1, created_at=datetime(2024, 1, 1))
+            _make_log(
+                prediction_numeric=100.0 + i * 0.1, created_at=datetime(2024, 1, 1)
+            )
             for i in range(10)
         ]
         result = compute_confidence_band(logs, problem_type="regression")
