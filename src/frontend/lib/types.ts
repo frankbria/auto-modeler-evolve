@@ -572,6 +572,7 @@ export interface ChatMessage {
   latency_alert_config?: LatencyAlertConfig
   auto_rollback_config?: AutoRollbackConfig
   pred_value_alert_config?: PredValueAlertConfig
+  degradation_retrain_config?: DegradationRetrainConfig
   segment_drift?: SegmentDriftResult
   segment_pred_trend?: SegmentPredTrendResult
   segment_conf_trend?: SegmentConfTrendResult
@@ -1197,6 +1198,16 @@ export interface PredValueAlertConfig {
   alert_pct: number | null
   pred_value_alert_last_fired_at: string | null
   cooldown_hours: number
+  summary: string
+}
+
+export interface DegradationRetrainConfig {
+  deployment_id: string
+  degradation_retrain_enabled: boolean
+  accuracy_threshold_pct: number | null
+  degradation_retrain_last_triggered_at: string | null
+  cooldown_hours: number
+  min_feedback_required: number
   summary: string
 }
 

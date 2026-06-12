@@ -9996,3 +9996,275 @@ def get_confidence_band(
     result["algorithm"] = deployment.algorithm
     result["target_column"] = deployment.target_column
     return result
+
+
+# ---------------------------------------------------------------------------
+# Degradation-triggered auto-retrain
+# ---------------------------------------------------------------------------
+
+_DEGRADATION_RETRAIN_COOLDOWN_HOURS = 24
+_DEGRADATION_RETRAIN_MIN_FEEDBACK = 10
+
+
+def _check_and_trigger_degradation_retrain(deployment_id: str) -> None:
+    """Trigger a new training run when feedback accuracy drops below threshold.
+
+    Called from the scheduler loop every 60 seconds. Uses a 24-hour cooldown.
+    Requires at least 10 labeled feedback points. Unlike auto-rollback, this
+    trains a NEW model using the current dataset rather than reverting to a
+    previous version. Best-effort — never crashes the scheduler.
+    """
+    try:
+        from core.webhook import EVENT_DEGRADATION_RETRAIN, dispatch_webhooks
+
+        from db import engine as _dr_engine
+        from models.dataset import Dataset as _DS
+        from models.feature_set import FeatureSet as _FS
+        from models.feedback_record import FeedbackRecord as _FR
+        from models.model_run import ModelRun as _MR
+        from sqlmodel import Session as _DRSession
+
+        with _DRSession(_dr_engine) as _s:
+            _dep = _s.get(Deployment, deployment_id)
+            if _dep is None:
+                return
+
+            _enabled = getattr(_dep, "degradation_retrain_enabled", False)
+            _threshold = getattr(_dep, "degradation_retrain_accuracy_threshold", None)
+            if not _enabled or _threshold is None:
+                return
+
+            _now = datetime.now(UTC).replace(tzinfo=None)
+            _last = getattr(_dep, "degradation_retrain_last_triggered_at", None)
+            if _last is not None:
+                _elapsed_h = (_now - _last).total_seconds() / 3600
+                if _elapsed_h < _DEGRADATION_RETRAIN_COOLDOWN_HOURS:
+                    return
+
+            # Compute feedback accuracy from last 50 labeled FeedbackRecords
+            _feedbacks = _s.exec(
+                select(_FR)
+                .where(
+                    _FR.deployment_id == deployment_id,
+                    _FR.is_correct.isnot(None),  # type: ignore[union-attr]
+                )
+                .order_by(_FR.created_at.desc())
+                .limit(50)
+            ).all()
+
+            if len(_feedbacks) < _DEGRADATION_RETRAIN_MIN_FEEDBACK:
+                return
+
+            _n_correct = sum(1 for f in _feedbacks if f.is_correct)
+            _accuracy = _n_correct / len(_feedbacks)
+
+            if _accuracy >= _threshold:
+                return  # Above threshold — no retraining needed
+
+            # Load the model run to get project context
+            _run = _s.get(_MR, _dep.model_run_id)
+            if _run is None:
+                return
+
+            _project_id = _run.project_id
+            _algorithm = _dep.algorithm or _run.algorithm
+            _feature_set_id = _run.feature_set_id
+            _feature_set = _s.get(_FS, _feature_set_id)
+            if _feature_set is None or not _feature_set.target_column:
+                return
+
+            _target_col = _feature_set.target_column
+            _problem_type = _feature_set.problem_type or "regression"
+            _transformations = _feature_set.transformations
+
+            _dataset = _s.get(_DS, _feature_set.dataset_id)
+            if _dataset is None or not _dataset.file_path:
+                return
+            _file_path = Path(_dataset.file_path)
+            if not _file_path.exists():
+                return
+
+            # Create a new model run for the retrain
+            _new_run = _MR(
+                project_id=_project_id,
+                feature_set_id=_feature_set_id,
+                algorithm=_algorithm,
+                hyperparameters="{}",
+                status="pending",
+            )
+            _s.add(_new_run)
+            _dep.degradation_retrain_last_triggered_at = _now
+            _s.add(_dep)
+            _s.commit()
+            _s.refresh(_new_run)
+            _new_run_id = _new_run.id
+
+        # Load dataframe and launch background training
+        import json as _json
+        import queue
+        import threading as _threading
+
+        import pandas as _pd
+
+        from api.models import _training_counters, _training_queues
+        from core.feature_engine import apply_transformations
+
+        _df = _pd.read_csv(_file_path)
+        _transforms = _json.loads(_transformations or "[]")
+        if _transforms:
+            _df, _ = apply_transformations(_df, _transforms)
+
+        _feature_cols = [c for c in _df.columns if c != _target_col]
+        if not _feature_cols:
+            return
+
+        from pathlib import Path as _Path
+
+        _model_dir = _Path(__file__).parent.parent / "models" / "trained" / _project_id
+
+        _training_queues[_project_id] = queue.Queue()
+        _training_counters[_project_id] = 1
+
+        from api.models import _train_in_background
+
+        _t = _threading.Thread(
+            target=_train_in_background,
+            args=(
+                _new_run_id,
+                _project_id,
+                _df,
+                _feature_cols,
+                _target_col,
+                _algorithm,
+                _problem_type,
+                _model_dir,
+            ),
+            daemon=True,
+            name=f"DegradationRetrain-{deployment_id}",
+        )
+        _t.start()
+
+        _acc_pct = round(_accuracy * 100, 1)
+        _thr_pct = round(_threshold * 100, 1)
+
+        dispatch_webhooks(
+            deployment_id,
+            EVENT_DEGRADATION_RETRAIN,
+            {
+                "deployment_id": deployment_id,
+                "accuracy_pct": _acc_pct,
+                "threshold_pct": _thr_pct,
+                "n_feedback": len(_feedbacks),
+                "new_run_id": _new_run_id,
+                "algorithm": _algorithm,
+                "message": (
+                    f"Degradation-triggered retraining started: feedback accuracy dropped to "
+                    f"{_acc_pct}% (threshold: {_thr_pct}%). "
+                    f"New training run {_new_run_id} started using {_algorithm} on the current dataset."
+                ),
+            },
+        )
+    except Exception:
+        pass  # Best-effort; never crash the scheduler
+
+
+class DegradationRetrainRequest(BaseModel):
+    enabled: bool = False
+    accuracy_threshold_pct: float | None = None  # percentage 0-100; None = disable
+
+
+@router.put("/api/deploy/{deployment_id}/degradation-retrain")
+def set_degradation_retrain(
+    deployment_id: str,
+    body: DegradationRetrainRequest,
+    session: Session = Depends(get_session),
+):
+    """Configure degradation-triggered auto-retraining for a deployed model.
+
+    When ``enabled=true`` and ``accuracy_threshold_pct`` is set (0-100),
+    the scheduler checks feedback accuracy every 60 seconds. If the rolling
+    accuracy over the last 50 labeled feedback points drops below the
+    threshold, a NEW training run is started using the current dataset and
+    a ``degradation_retrain`` webhook fires (24-hour cooldown).
+
+    Unlike auto-rollback, this trains a fresh model rather than reverting
+    to a previous version. Requires at least 10 labeled feedback records.
+    Pass ``enabled=false`` to disable.
+    """
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment:
+        raise HTTPException(status_code=404, detail="Deployment not found")
+
+    if body.enabled and body.accuracy_threshold_pct is not None:
+        if not (0.0 <= body.accuracy_threshold_pct <= 100.0):
+            raise HTTPException(
+                status_code=400,
+                detail="accuracy_threshold_pct must be between 0 and 100",
+            )
+        threshold = body.accuracy_threshold_pct / 100.0
+        deployment.degradation_retrain_enabled = True
+        deployment.degradation_retrain_accuracy_threshold = threshold
+    elif not body.enabled:
+        deployment.degradation_retrain_enabled = False
+        deployment.degradation_retrain_accuracy_threshold = None
+        deployment.degradation_retrain_last_triggered_at = None
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail="accuracy_threshold_pct is required when enabled=true",
+        )
+
+    session.add(deployment)
+    session.commit()
+    session.refresh(deployment)
+
+    _threshold = getattr(deployment, "degradation_retrain_accuracy_threshold", None)
+    _enabled = getattr(deployment, "degradation_retrain_enabled", False)
+    _last = getattr(deployment, "degradation_retrain_last_triggered_at", None)
+    _thr_pct = round(_threshold * 100, 1) if _threshold is not None else None
+    return {
+        "deployment_id": deployment_id,
+        "degradation_retrain_enabled": _enabled,
+        "accuracy_threshold_pct": _thr_pct,
+        "degradation_retrain_last_triggered_at": (_last.isoformat() if _last else None),
+        "cooldown_hours": _DEGRADATION_RETRAIN_COOLDOWN_HOURS,
+        "min_feedback_required": _DEGRADATION_RETRAIN_MIN_FEEDBACK,
+        "summary": (
+            f"Degradation retraining enabled: a new model trains automatically when feedback "
+            f"accuracy drops below {_thr_pct}%."
+            if _enabled and _thr_pct is not None
+            else "Degradation retraining is disabled."
+        ),
+    }
+
+
+@router.get("/api/deploy/{deployment_id}/degradation-retrain-status")
+def get_degradation_retrain_status(
+    deployment_id: str,
+    session: Session = Depends(get_session),
+):
+    """Return the current degradation-retrain configuration for a deployment."""
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment:
+        raise HTTPException(status_code=404, detail="Deployment not found")
+
+    _threshold = getattr(deployment, "degradation_retrain_accuracy_threshold", None)
+    _enabled = getattr(deployment, "degradation_retrain_enabled", False)
+    _last = getattr(deployment, "degradation_retrain_last_triggered_at", None)
+    _thr_pct = round(_threshold * 100, 1) if _threshold is not None else None
+    return {
+        "deployment_id": deployment_id,
+        "degradation_retrain_enabled": _enabled,
+        "accuracy_threshold_pct": _thr_pct,
+        "degradation_retrain_last_triggered_at": (_last.isoformat() if _last else None),
+        "cooldown_hours": _DEGRADATION_RETRAIN_COOLDOWN_HOURS,
+        "min_feedback_required": _DEGRADATION_RETRAIN_MIN_FEEDBACK,
+        "summary": (
+            f"Degradation retraining is enabled at {_thr_pct}% accuracy threshold. "
+            f"A new training run starts automatically when feedback accuracy drops below {_thr_pct}% "
+            f"(requires {_DEGRADATION_RETRAIN_MIN_FEEDBACK}+ labeled feedback points, "
+            f"{_DEGRADATION_RETRAIN_COOLDOWN_HOURS}-hour cooldown)."
+            if _enabled and _thr_pct is not None
+            else "Degradation retraining is disabled."
+        ),
+    }

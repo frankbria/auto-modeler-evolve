@@ -134,6 +134,7 @@ import { HighActivityBurstCard } from "@/components/deploy/high-activity-burst-c
 import { LatencyAlertCard } from "@/components/deploy/latency-alert-card"
 import { AutoRollbackCard } from "@/components/deploy/auto-rollback-card"
 import { PredValueAlertCard } from "@/components/deploy/pred-value-alert-card"
+import { DegradationRetrainCard } from "@/components/deploy/degradation-retrain-card"
 import { SegmentDriftCard } from "@/components/deploy/segment-drift-card"
 import { SegmentPredictionTrendCard } from "@/components/deploy/segment-prediction-trend-card"
 import { SegmentConfidenceTrendCard } from "@/components/deploy/segment-confidence-trend-card"
@@ -450,6 +451,7 @@ export default function ProjectWorkspace() {
     attachLatencyAlertConfigToLastMessage,
     attachAutoRollbackConfigToLastMessage,
     attachPredValueAlertConfigToLastMessage,
+    attachDegradationRetrainConfigToLastMessage,
     attachSegmentDriftToLastMessage,
     attachSegmentPredTrendToLastMessage,
     attachSegmentConfTrendToLastMessage,
@@ -899,6 +901,8 @@ export default function ProjectWorkspace() {
                 attachAutoRollbackConfigToLastMessage(json.auto_rollback_config as import("@/lib/types").AutoRollbackConfig)
               } else if (json.type === "pred_value_alert_config" && json.pred_value_alert_config) {
                 attachPredValueAlertConfigToLastMessage(json.pred_value_alert_config as import("@/lib/types").PredValueAlertConfig)
+              } else if (json.type === "degradation_retrain_config" && json.degradation_retrain_config) {
+                attachDegradationRetrainConfigToLastMessage(json.degradation_retrain_config as import("@/lib/types").DegradationRetrainConfig)
               } else if (json.type === "segment_drift" && json.segment_drift) {
                 attachSegmentDriftToLastMessage(json.segment_drift as import("@/lib/types").SegmentDriftResult)
               } else if (json.type === "segment_pred_trend" && json.segment_pred_trend) {
@@ -1145,6 +1149,8 @@ export default function ProjectWorkspace() {
                 attachAutoRollbackConfigToLastMessage(json.auto_rollback_config as import("@/lib/types").AutoRollbackConfig)
               } else if (json.type === "pred_value_alert_config" && json.pred_value_alert_config) {
                 attachPredValueAlertConfigToLastMessage(json.pred_value_alert_config as import("@/lib/types").PredValueAlertConfig)
+              } else if (json.type === "degradation_retrain_config" && json.degradation_retrain_config) {
+                attachDegradationRetrainConfigToLastMessage(json.degradation_retrain_config as import("@/lib/types").DegradationRetrainConfig)
               } else if (json.type === "segment_drift" && json.segment_drift) {
                 attachSegmentDriftToLastMessage(json.segment_drift as import("@/lib/types").SegmentDriftResult)
               } else if (json.type === "segment_pred_trend" && json.segment_pred_trend) {
@@ -1352,6 +1358,7 @@ export default function ProjectWorkspace() {
     attachLatencyAlertConfigToLastMessage,
     attachAutoRollbackConfigToLastMessage,
     attachPredValueAlertConfigToLastMessage,
+    attachDegradationRetrainConfigToLastMessage,
     attachSegmentDriftToLastMessage,
     attachSegmentPredTrendToLastMessage,
     attachSegmentConfTrendToLastMessage,
@@ -2135,6 +2142,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.pred_value_alert_config && (
                       <PredValueAlertCard data={msg.pred_value_alert_config} />
+                    )}
+                    {msg.degradation_retrain_config && (
+                      <DegradationRetrainCard data={msg.degradation_retrain_config} />
                     )}
                     {msg.segment_drift && (
                       <SegmentDriftCard result={msg.segment_drift} />

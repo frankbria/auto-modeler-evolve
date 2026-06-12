@@ -1443,5 +1443,15 @@ export const api = {
 
     confidenceBand: (deploymentId: string, nDays?: number): Promise<import("./types").ConfidenceBandResult> =>
       fetch(`${API_URL}/api/deploy/${deploymentId}/confidence-band${nDays ? `?n_days=${nDays}` : ""}`).then((r) => r.json()),
+
+    getDegradationRetrainStatus: (deploymentId: string): Promise<import("./types").DegradationRetrainConfig> =>
+      fetch(`${API_URL}/api/deploy/${deploymentId}/degradation-retrain-status`).then((r) => r.json()),
+
+    setDegradationRetrain: (deploymentId: string, enabled: boolean, accuracyThresholdPct?: number): Promise<import("./types").DegradationRetrainConfig> =>
+      fetch(`${API_URL}/api/deploy/${deploymentId}/degradation-retrain`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled, accuracy_threshold_pct: accuracyThresholdPct ?? null }),
+      }).then((r) => r.json()),
   },
 }

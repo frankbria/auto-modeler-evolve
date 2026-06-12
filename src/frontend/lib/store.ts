@@ -210,6 +210,7 @@ interface AppState {
   attachLatencyAlertConfigToLastMessage: (latency_alert_config: import("./types").LatencyAlertConfig) => void
   attachAutoRollbackConfigToLastMessage: (auto_rollback_config: import("./types").AutoRollbackConfig) => void
   attachPredValueAlertConfigToLastMessage: (pred_value_alert_config: import("./types").PredValueAlertConfig) => void
+  attachDegradationRetrainConfigToLastMessage: (degradation_retrain_config: import("./types").DegradationRetrainConfig) => void
   attachSegmentDriftToLastMessage: (segment_drift: import("./types").SegmentDriftResult) => void
   attachSegmentPredTrendToLastMessage: (segment_pred_trend: import("./types").SegmentPredTrendResult) => void
   attachSegmentConfTrendToLastMessage: (segment_conf_trend: import("./types").SegmentConfTrendResult) => void
@@ -1810,6 +1811,16 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, pred_value_alert_config }
+      }
+      return { messages }
+    }),
+
+  attachDegradationRetrainConfigToLastMessage: (degradation_retrain_config) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, degradation_retrain_config }
       }
       return { messages }
     }),

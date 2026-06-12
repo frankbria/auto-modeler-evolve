@@ -67,6 +67,9 @@ def _apply_migrations():
         ("deployment", "canary_is_active", "INTEGER NOT NULL DEFAULT 0"),
         ("deployment", "canary_started_at", "TEXT"),
         ("predictionlog", "served_by_canary", "INTEGER NOT NULL DEFAULT 0"),
+        ("deployment", "degradation_retrain_enabled", "INTEGER NOT NULL DEFAULT 0"),
+        ("deployment", "degradation_retrain_accuracy_threshold", "REAL"),
+        ("deployment", "degradation_retrain_last_triggered_at", "TEXT"),
     ]
     with engine.connect() as conn:
         for table, col, definition in migrations:

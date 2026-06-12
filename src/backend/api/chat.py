@@ -3897,6 +3897,36 @@ _AUTO_ROLLBACK_THRESHOLD_RE = re.compile(
     r"(?i)(?:below|under|less\s+than|drops?\s+(?:below|under|to)|falls?\s+(?:below|under|to))?\s*(\d+(?:\.\d+)?)\s*%?"
 )
 
+# Degradation-triggered auto-retrain: starts a new training run when accuracy drops.
+# Distinct from: AutoRollbackCard (reverts to previous version, no new training),
+# RetrainingReadinessCard (recommends retraining but doesn't trigger it),
+# AutoRetrain (triggers on data upload, not on performance degradation).
+_DEGRADATION_RETRAIN_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"(?:enable|configure|set\s+up|activate|turn\s+on)\s+(?:degradation.?triggered\s+)?(?:auto.?)?retrain(?:ing)?\s+(?:on|when|if)?\s+(?:accuracy|performance)\s+(?:drops?|falls?|degrades?)\b|"
+    r"(?:retrain|re.?train)\s+automatically\s+when\s+(?:performance|accuracy|model)\s+(?:degrades?|drops?|falls?|gets?\s+worse)\b|"
+    r"degradation.?triggered\s+(?:auto.?)?retrain(?:ing)?\b|"
+    r"(?:automatic(?:ally)?\s+)?(?:auto.?)?retrain(?:ing)?\s+on\s+(?:performance\s+)?degradation\b|"
+    r"(?:trigger|start|schedule)\s+retraining?\s+(?:if|when|on)\s+(?:accuracy|performance)\s+(?:drops?|falls?|degrades?)\b|"
+    r"(?:automatic(?:ally)?\s+)?retrain(?:ing)?\s+when\s+(?:my\s+)?model\s+(?:accuracy|performance)\s+(?:drops?|falls?|degrades?)\b|"
+    r"(?:disable|turn\s+off|deactivate|remove|stop|cancel)\s+(?:degradation\s+)?(?:degradation.?triggered\s+)?(?:auto.?)?retrain(?:ing)?\b|"
+    r"(?:status\s+of\s+|(?:check|show|view|get|is)\s+(?:(?:my|the)\s+)?)(?:degradation\s+)?(?:degradation.?triggered\s+)?(?:auto.?)?retrain(?:ing)?\s*(?:config(?:uration)?|setting)?\b"
+    r")",
+    re.IGNORECASE,
+)
+
+_DISABLE_DEGRADATION_RETRAIN_RE = re.compile(
+    r"(?i)(?:disable|turn\s+off|deactivate|remove|stop|cancel)\s+(?:degradation\s+)?(?:degradation.?triggered\s+)?(?:auto.?)?retrain(?:ing)?\b"
+)
+
+_STATUS_DEGRADATION_RETRAIN_RE = re.compile(
+    r"(?i)(?:status\s+of\s+|(?:check|show|view|get|is)\s+(?:(?:my|the)\s+)?)(?:degradation\s+)?(?:degradation.?triggered\s+)?(?:auto.?)?retrain(?:ing)?\b"
+)
+
+_DEGRADATION_RETRAIN_THRESHOLD_RE = re.compile(
+    r"(?i)(?:below|under|less\s+than|drops?\s+(?:below|under|to)|falls?\s+(?:below|under|to))?\s*(\d+(?:\.\d+)?)\s*%?"
+)
+
 _SEGMENT_DRIFT_PATTERNS = re.compile(
     r"(?i)(?:"
     r"(?:is\s+(?:my\s+)?(?:model|drift)\s+(?:drifting|worse)\s+(?:more\s+)?(?:in|for)\s+\w+)\b|"
@@ -18080,6 +18110,88 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Pred value alert config is nice-to-have; never crash chat
 
+    # Degradation-triggered auto-retrain: starts a new training run when accuracy drops.
+    # Distinct from: _AUTO_ROLLBACK_PATTERNS (reverts to previous version, no new training),
+    # _RETRAIN_READINESS_PATTERNS (recommends retraining, doesn't trigger it),
+    # _AUTO_RETRAIN_PATTERNS (triggers on data upload, not on performance degradation).
+    degradation_retrain_event: dict | None = None
+    if _DEGRADATION_RETRAIN_PATTERNS.search(body.message) and ctx["deployment"]:
+        try:
+            _dr_dep = ctx["deployment"]
+            _dr_dep_id = _dr_dep.id if hasattr(_dr_dep, "id") else str(_dr_dep)
+            _dr_dep_obj = session.get(Deployment, _dr_dep_id)
+
+            if _dr_dep_obj:
+                _disable_dr = bool(_DISABLE_DEGRADATION_RETRAIN_RE.search(body.message))
+                _status_dr = bool(_STATUS_DEGRADATION_RETRAIN_RE.search(body.message))
+                _dr_thr_m = _DEGRADATION_RETRAIN_THRESHOLD_RE.search(body.message)
+                _dr_new_threshold_pct: float | None = (
+                    float(_dr_thr_m.group(1)) if _dr_thr_m else None
+                )
+
+                if _disable_dr:
+                    _dr_dep_obj.degradation_retrain_enabled = False
+                    _dr_dep_obj.degradation_retrain_accuracy_threshold = None
+                    _dr_dep_obj.degradation_retrain_last_triggered_at = None
+                    session.add(_dr_dep_obj)
+                    session.commit()
+                    session.refresh(_dr_dep_obj)
+                elif (
+                    not _status_dr
+                    and _dr_new_threshold_pct is not None
+                    and 0.0 <= _dr_new_threshold_pct <= 100.0
+                ):
+                    _dr_dep_obj.degradation_retrain_enabled = True
+                    _dr_dep_obj.degradation_retrain_accuracy_threshold = (
+                        _dr_new_threshold_pct / 100.0
+                    )
+                    session.add(_dr_dep_obj)
+                    session.commit()
+                    session.refresh(_dr_dep_obj)
+
+                _dr_enabled = getattr(_dr_dep_obj, "degradation_retrain_enabled", False)
+                _dr_threshold = getattr(
+                    _dr_dep_obj, "degradation_retrain_accuracy_threshold", None
+                )
+                _dr_last = getattr(
+                    _dr_dep_obj, "degradation_retrain_last_triggered_at", None
+                )
+                _dr_thr_pct = (
+                    round(_dr_threshold * 100, 1) if _dr_threshold is not None else None
+                )
+                degradation_retrain_event = {
+                    "deployment_id": _dr_dep_id,
+                    "degradation_retrain_enabled": _dr_enabled,
+                    "accuracy_threshold_pct": _dr_thr_pct,
+                    "degradation_retrain_last_triggered_at": (
+                        _dr_last.isoformat() if _dr_last else None
+                    ),
+                    "cooldown_hours": 24,
+                    "min_feedback_required": 10,
+                    "summary": (
+                        f"Degradation retraining enabled at {_dr_thr_pct}% accuracy threshold. "
+                        "The scheduler automatically starts a new training run when feedback accuracy drops below this level."
+                        if _dr_enabled and _dr_thr_pct is not None
+                        else "Degradation retraining is not configured. Specify an accuracy threshold percentage to enable it."
+                    ),
+                }
+                system_prompt += (
+                    f"\n\n## Degradation-Triggered Auto-Retrain Configuration\n"
+                    f"{degradation_retrain_event['summary']} "
+                    "Tell the analyst the current setting in plain English. "
+                    "If enabled, explain that the scheduler checks feedback accuracy every minute and "
+                    "automatically TRAINS A NEW MODEL when accuracy drops below the threshold "
+                    "(requires 10+ labeled feedback points, 24-hour cooldown). "
+                    "Unlike auto-rollback (which reverts to a previous version), this trains a fresh model "
+                    "using the current dataset and algorithm — closing the 'my model degraded and I need a new one' gap. "
+                    "A 'degradation_retrain' webhook fires when retraining is triggered. "
+                    "If not yet configured, ask what minimum accuracy percentage they consider acceptable "
+                    "(e.g. 75% for classification is a common baseline for triggering retraining). "
+                    "Distinct from manual retraining (which they initiate) and auto-rollback (which reverts, not retrains)."
+                )
+        except Exception:  # noqa: BLE001
+            pass  # Degradation retrain config is nice-to-have; never crash chat
+
     # Canary deployment — route a % of traffic to a different model version for live A/B testing.
     # Distinct from: _AB_TEST_PATTERNS (champion/challenger across two full deployments),
     # _AUTO_ROLLBACK_PATTERNS (automatic rollback on accuracy drop).
@@ -21979,6 +22091,9 @@ def send_message(
 
         if pred_value_alert_event:
             yield f"data: {json.dumps({'type': 'pred_value_alert_config', 'pred_value_alert_config': pred_value_alert_event})}\n\n"
+
+        if degradation_retrain_event:
+            yield f"data: {json.dumps({'type': 'degradation_retrain_config', 'degradation_retrain_config': degradation_retrain_event})}\n\n"
 
         if canary_event:
             yield f"data: {json.dumps({'type': 'canary_status', 'canary_status': canary_event})}\n\n"

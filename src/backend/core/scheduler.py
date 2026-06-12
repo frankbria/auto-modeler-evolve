@@ -463,6 +463,16 @@ def _scheduler_loop() -> None:
                 ).all()
                 input_dist_dep_ids = [d.id for d in input_dist_deps]
 
+                # Collect deployments with degradation-triggered auto-retrain enabled
+                degradation_retrain_deps = session.exec(
+                    select(Deployment).where(
+                        Deployment.is_active == True,  # noqa: E712
+                        Deployment.degradation_retrain_enabled == True,  # noqa: E712
+                        Deployment.degradation_retrain_accuracy_threshold != None,  # noqa: E711
+                    )
+                ).all()
+                degradation_retrain_dep_ids = [d.id for d in degradation_retrain_deps]
+
             for sid in due_ids:
                 try:
                     _run_job(sid)
@@ -546,6 +556,18 @@ def _scheduler_loop() -> None:
                 except Exception as exc:
                     logger.error(
                         "Scheduler: input dist drift alert check %s raised: %s",
+                        dep_id,
+                        exc,
+                    )
+
+            for dep_id in degradation_retrain_dep_ids:
+                try:
+                    from api.deploy import _check_and_trigger_degradation_retrain
+
+                    _check_and_trigger_degradation_retrain(dep_id)
+                except Exception as exc:
+                    logger.error(
+                        "Scheduler: degradation retrain check %s raised: %s",
                         dep_id,
                         exc,
                     )
