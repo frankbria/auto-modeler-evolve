@@ -212,7 +212,7 @@ describe("attachInputDistDriftAlertConfigToLastMessage store action", () => {
     const config = makeConfig()
     useAppStore.getState().attachInputDistDriftAlertConfigToLastMessage(config)
     const msgs = useAppStore.getState().messages
-    expect((msgs[msgs.length - 1] as any).input_dist_drift_alert_config).toBeUndefined()
+    expect(msgs[msgs.length - 1]?.input_dist_drift_alert_config).toBeUndefined()
   })
 
   test("does not crash with empty messages", () => {
