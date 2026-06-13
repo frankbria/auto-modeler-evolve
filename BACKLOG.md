@@ -51,12 +51,14 @@ the time is better spent on real features.
 
 *(none — next session should pick from the list below)*
 
+**Shipped Day 94 (04:00):** Prediction Outcome Calibration Chart (Track D) — reliability diagram (classification) or error histogram (regression) built from production FeedbackRecord outcomes. `compute_prediction_outcome_calibration()` pure function; `GET /api/deploy/{id}/outcome-calibration` REST endpoint; `_OUTCOME_CALIB_PATTERNS` (8 NL variants); `OutcomeCalibrationCard` (Recharts LineChart reliability diagram or BarChart error histogram). 59 new tests (38 backend + 21 frontend). Baseline: 6460/3668 → **6498/3689**.
+
 **Shipped Day 93 (20:00):** Model Retraining Completion Notification (Track D) — `retrain_complete` webhook fires when degradation-triggered auto-retrain finishes; `RetrainCompleteNotifyCard` shows last completed retrain stats + registered notification URLs. 41 new tests (21 backend + 20 frontend).
 
 **What's next (priority order):**
-- Prediction outcome calibration chart — predicted vs actual bucket distributions using production FeedbackRecords (regression: error histogram; classification: reliability diagram showing calibration between predicted confidence and actual accuracy)
-- Deployment comparison leaderboard enhancements — `DeploymentScorecardCard` exists but could show more granular accuracy/latency/activity breakdown per deployment in a table vs. just a composite score
-- Batch prediction completion notification — webhook when a scheduled batch job finishes (parallel to retrain_complete for the batch workflow)
+- Scheduled batch prediction job history and analytics — analysts ask "show me batch job history" or "when did my last batch run?" and see a BatchJobHistoryCard with job IDs, completion times, row counts, error rates
+- Model performance decay rate analysis — "how fast is my model degrading?" with a linear trend line over weekly feedback accuracy, estimated weeks until below threshold
+- Prediction confidence distribution shift alert — proactive webhook when the distribution of confidence scores changes significantly from baseline (related to but distinct from covariate drift)
 
 ---
 
