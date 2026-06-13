@@ -1,5 +1,32 @@
 # Journal
 
+## Day 93 — 20:00 — Model Retraining Completion Notification (Track D)
+
+**Feature shipped:** Model Retraining Completion Notification — the gap between "retraining was triggered" and "retraining finished" is now closed. When degradation-triggered auto-retraining completes successfully, a `retrain_complete` webhook fires to all registered URLs, delivering the algorithm, primary metric value, training duration, and a plain-English message. Analysts can ask "notify me when retraining is done", "retraining complete notification", or "did the retraining finish" to get the `RetrainCompleteNotifyCard` showing their last completed retrain result alongside any registered notification webhooks.
+
+**What was built:**
+- `EVENT_RETRAIN_COMPLETE = "retrain_complete"` added to `core/webhook.py` `ALL_EVENTS`
+- `_train_in_background()` in `api/models.py` gets optional `deployment_id: str | None = None` kwarg; on success, if `deployment_id` is set, fires `retrain_complete` webhook with payload: `deployment_id`, `run_id`, `algorithm`, `primary_metric` (picks `accuracy` for classification, `r2` for regression), `primary_metric_value`, `training_duration_ms`, `message`
+- `_check_and_trigger_degradation_retrain()` in `api/deploy.py` updated to pass `kwargs={"deployment_id": deployment_id}` to the background training thread
+- `_RETRAIN_COMPLETE_NOTIFY_PATTERNS` (8 NL variants) + chat handler in `api/chat.py`; queries last completed `ModelRun` for project + `retrain_complete` webhooks for deployment; emits `{type:"retrain_complete_notify"}` SSE event
+- `RetrainCompleteNotifyCard` (emerald border=has webhook + last run / violet=has webhook but no run yet / amber=no webhook, 🔔 icon): last run stats grid (algorithm/training duration/primary metric/completed_at), registered webhook URLs, how-it-works info block with webhook payload description, footer note distinguishing from `degradation_retrain` event
+
+**Design choices:**
+- The `retrain_complete` event fires only when `deployment_id` is passed to `_train_in_background()`; manual training runs (no deployment context yet) don't fire it — clean separation of training vs. deployment concerns
+- Primary metric selection: `accuracy` first (classification), then `r2` (regression), then first available — avoids exposing raw metric keys to analysts
+- The card deliberately mirrors `DegradationRetrainCard` structure so the analyst can stack both in chat: "retraining triggered at X accuracy" + "retraining completed with Y accuracy" tells the full story
+
+**Pattern fix:** `re.?train` doesn't match `retraining` (the `.?` optional char doesn't consume `ing`). Fixed both `chat.py` pattern and test to use `re.?train(?:ing)?` in the "when retraining is done/complete" arm, and added `(?:is\s+)?` before terminal verb in the "how do I get notified" arm.
+
+**Tests:** 21 backend (2 constants + 2 signature/source + 8 pattern + 4 no-match + 3 webhook dispatch + 2 event shape) + 20 frontend (17 card component + 3 store action) = **41 new tests**, all passing. Baseline: 6439 backend / 3648 frontend → **6460 backend / 3668 frontend** (+21 / +20). Backend lint: clean. Frontend build + TypeScript: clean.
+
+**What's next:**
+- Prediction outcome calibration chart — predicted vs actual bucket distributions (regression: error histogram; classification: reliability diagram using production FeedbackRecords)
+- Deployment comparison leaderboard improvements — already done as DeploymentScorecardCard; consider UX enhancements
+- Scheduled batch prediction improvements
+
+---
+
 ## Day 93 — 12:00 — Degradation-Triggered Auto-Retrain (Track D)
 
 **Feature shipped:** Degradation-Triggered Auto-Retrain — the scheduler now automatically starts a fresh training run when production feedback accuracy drops below a configured threshold. Analysts configure it conversationally: "retrain automatically when accuracy drops below 80%", "enable auto-retraining when performance degrades", or "retrain on degradation". Distinct from `AutoRollback` (reverts to a previous version, no new training), `AutoRetrainOnUpload` (triggers on data upload), and `RetrainingReadinessCard` (recommends but doesn't trigger).
