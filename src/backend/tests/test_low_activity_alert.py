@@ -434,9 +434,9 @@ def test_low_activity_alert_patterns_no_false_positives():
         "what is my accuracy",
     ]
     for msg in non_matches:
-        assert not _LOW_ACTIVITY_ALERT_PATTERNS.search(
-            msg
-        ), f"Should NOT match: {msg!r}"
+        assert not _LOW_ACTIVITY_ALERT_PATTERNS.search(msg), (
+            f"Should NOT match: {msg!r}"
+        )
 
 
 def test_disable_low_activity_alert_re():

@@ -420,8 +420,7 @@ def _scheduler_loop() -> None:
                 burst_deps = session.exec(
                     select(Deployment).where(
                         Deployment.is_active == True,  # noqa: E712
-                        Deployment.high_activity_threshold_per_hour
-                        != None,  # noqa: E711
+                        Deployment.high_activity_threshold_per_hour != None,  # noqa: E711
                     )
                 ).all()
                 high_activity_dep_ids = [d.id for d in burst_deps]
@@ -440,8 +439,7 @@ def _scheduler_loop() -> None:
                     select(Deployment).where(
                         Deployment.is_active == True,  # noqa: E712
                         Deployment.auto_rollback_enabled == True,  # noqa: E712
-                        Deployment.auto_rollback_accuracy_threshold
-                        != None,  # noqa: E711
+                        Deployment.auto_rollback_accuracy_threshold != None,  # noqa: E711
                     )
                 ).all()
                 rollback_dep_ids = [d.id for d in rollback_deps]
@@ -470,8 +468,7 @@ def _scheduler_loop() -> None:
                     select(Deployment).where(
                         Deployment.is_active == True,  # noqa: E712
                         Deployment.degradation_retrain_enabled == True,  # noqa: E712
-                        Deployment.degradation_retrain_accuracy_threshold
-                        != None,  # noqa: E711
+                        Deployment.degradation_retrain_accuracy_threshold != None,  # noqa: E711
                     )
                 ).all()
                 degradation_retrain_dep_ids = [d.id for d in degradation_retrain_deps]

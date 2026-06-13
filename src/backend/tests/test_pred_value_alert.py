@@ -486,9 +486,9 @@ def test_pred_value_alert_patterns_no_false_positives():
         "what is the latency threshold",
     ]
     for phrase in false_positives:
-        assert not _PRED_VALUE_ALERT_PATTERNS.search(
-            phrase
-        ), f"False positive: {phrase!r}"
+        assert not _PRED_VALUE_ALERT_PATTERNS.search(phrase), (
+            f"False positive: {phrase!r}"
+        )
 
 
 def test_disable_pred_value_alert_re_matches():
