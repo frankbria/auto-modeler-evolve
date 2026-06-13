@@ -1,5 +1,31 @@
 # Journal
 
+## Day 94 — 04:00 — Prediction Outcome Calibration Chart (Track D)
+
+**Feature shipped:** Prediction Outcome Calibration Chart — closes the critical analyst gap between "my model looks calibrated on training data" and "is it actually calibrated on production inputs I've verified?" Built from `FeedbackRecord` outcomes (not validation data), the card shows either a reliability diagram (classification: confidence bucket → actual accuracy with perfect-calibration diagonal) or an error histogram (regression: actual − predicted distribution revealing bias and spread).
+
+**What was built:**
+- `compute_prediction_outcome_calibration(feedback_pairs, problem_type, n_buckets=10)` pure function in `core/analyzer.py`: routes to `_classification_calibration()` (10 equal-width confidence buckets, ECE computation, verdicts: `well_calibrated`/`slightly_overconfident`/`slightly_underconfident`/`overconfident`/`underconfident`) or `_regression_calibration()` (error histogram with MAE/RMSE/bias/std, verdicts: `unbiased`/`positive_bias`/`negative_bias`/`low_data`); `no_data` when < 5 samples
+- `GET /api/deploy/{id}/outcome-calibration` REST endpoint in `api/deploy.py`: for classification loads `FeedbackRecord` entries linked to `PredictionLog.confidence`, resolves `is_correct` from stored flag or predicted vs actual label comparison; for regression uses `FeedbackRecord.actual_value` + `PredictionLog.prediction_numeric`
+- `_OUTCOME_CALIB_PATTERNS` (8 NL variants) + chat handler in `api/chat.py` guarded by `ctx["deployment"]`; injects verdict/ECE/MAE/summary into system_prompt; emits `{type:"outcome_calibration"}` SSE event
+- `OutcomeCalibrationCard` at `components/deploy/outcome-calibration-card.tsx` (emerald=well_calibrated/unbiased, amber=slightly_off/low_data, rose=overconfident/biased, muted=no_data, 📐 icon): classification: ECE% + overall accuracy stats + Recharts LineChart reliability diagram (green accuracy vs indigo confidence vs dashed perfect diagonal); regression: MAE/RMSE/bias/std stats + Recharts BarChart error histogram with red dashed mean-error line; sr-only figcaptions for accessibility
+- Full TypeScript wiring: `OutcomeCalibrationBucket`, `OutcomeCalibrationBin`, `OutcomeCalibrationVerdict`, `OutcomeCalibrationResult` interfaces; `outcome_calibration?` on `ChatMessage`; `attachOutcomeCalibrationToLastMessage` Zustand action; `api.deploy.outcomeCalibration()` client method; SSE handlers + card render in both EventSource branches of `page.tsx`
+
+**Design choices:**
+- ECE (Expected Calibration Error) = weighted mean |confidence − accuracy| across buckets — a single number that captures overall miscalibration; lower is better
+- The reliability diagram's dashed diagonal is perfect calibration — visual gap between the green accuracy line and the dashed line tells the analyst immediately whether confidence scores are trustworthy
+- Positive bias in regression = model under-predicts (actual > predicted); the sign convention matches the error = actual − predicted definition, which is standard
+- Chat handler calls the REST endpoint via `requests.get(localhost:8000/...)` rather than calling the pure function directly — reuses all the DB query logic without duplication
+
+**Tests:** 38 backend (2 constants + 4 no_data/not_applicable guards + 12 classification pure-function + 13 regression pure-function + 3 REST endpoint + 4 regex match + 2 no-match guards) + 21 frontend (18 card component + 3 store action) = **59 new tests**, all passing. Baseline: 6460 backend / 3668 frontend → **6498 backend / 3689 frontend** (+38 / +21). Backend lint: clean. Frontend build + TypeScript: clean.
+
+**What's next:**
+- Scheduled batch prediction job history and analytics — analysts can track batch job outcomes over time
+- Model performance decay rate analysis — how fast is accuracy declining week over week?
+- Prediction confidence distribution shift — alert when the confidence distribution changes significantly from baseline
+
+---
+
 ## Day 93 — 20:00 — Model Retraining Completion Notification (Track D)
 
 **Feature shipped:** Model Retraining Completion Notification — the gap between "retraining was triggered" and "retraining finished" is now closed. When degradation-triggered auto-retraining completes successfully, a `retrain_complete` webhook fires to all registered URLs, delivering the algorithm, primary metric value, training duration, and a plain-English message. Analysts can ask "notify me when retraining is done", "retraining complete notification", or "did the retraining finish" to get the `RetrainCompleteNotifyCard` showing their last completed retrain result alongside any registered notification webhooks.
