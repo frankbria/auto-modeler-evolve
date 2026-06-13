@@ -595,9 +595,9 @@ def test_input_dist_drift_alert_patterns_no_false_positives():
         "configure a latency alert",
     ]
     for phrase in false_positives:
-        assert not _INPUT_DIST_DRIFT_ALERT_PATTERNS.search(phrase), (
-            f"False positive: {phrase!r}"
-        )
+        assert not _INPUT_DIST_DRIFT_ALERT_PATTERNS.search(
+            phrase
+        ), f"False positive: {phrase!r}"
 
 
 def test_disable_input_dist_drift_alert_re_matches():
@@ -609,9 +609,9 @@ def test_disable_input_dist_drift_alert_re_matches():
         "deactivate input drift alarm",
     ]
     for phrase in phrases:
-        assert _DISABLE_INPUT_DIST_DRIFT_ALERT_RE.search(phrase), (
-            f"No match: {phrase!r}"
-        )
+        assert _DISABLE_INPUT_DIST_DRIFT_ALERT_RE.search(
+            phrase
+        ), f"No match: {phrase!r}"
 
 
 def test_status_input_dist_drift_alert_re_matches():

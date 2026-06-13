@@ -15930,9 +15930,7 @@ def send_message(
             _wu_trend = (
                 "up"
                 if (_wu_change_pct or 0) > 5
-                else "down"
-                if (_wu_change_pct or 0) < -5
-                else "flat"
+                else "down" if (_wu_change_pct or 0) < -5 else "flat"
             )
 
             # Per-day breakdown for the current week (7 entries)
@@ -15951,7 +15949,9 @@ def send_message(
             _wu_feature_tally: dict[str, dict[str, int]] = {}
             _wu_recent_logs = [
                 lg for lg in _wu_logs if lg.created_at >= _wu_week_start
-            ][:100]  # cap to last 100 for performance
+            ][
+                :100
+            ]  # cap to last 100 for performance
             for _wl in _wu_recent_logs:
                 try:
                     _feat_dict: dict = json.loads(_wl.input_features or "{}")
@@ -18239,7 +18239,9 @@ def send_message(
                     )
                 ).all()
                 _rcn_notify_webhooks = [
-                    w for w in _rcn_webhooks if "retrain_complete" in (w.event_types or [])
+                    w
+                    for w in _rcn_webhooks
+                    if "retrain_complete" in (w.event_types or [])
                 ]
 
                 _rcn_last_run: dict | None = None
@@ -18254,7 +18256,11 @@ def send_message(
                     _rcn_primary_key = (
                         "accuracy"
                         if "accuracy" in _rcn_metrics
-                        else ("r2" if "r2" in _rcn_metrics else next(iter(_rcn_metrics), ""))
+                        else (
+                            "r2"
+                            if "r2" in _rcn_metrics
+                            else next(iter(_rcn_metrics), "")
+                        )
                     )
                     _rcn_last_run = {
                         "run_id": _rcn_run.id,
@@ -18264,7 +18270,9 @@ def send_message(
                         "primary_metric_value": _rcn_metrics.get(_rcn_primary_key),
                         "training_duration_ms": _rcn_run.training_duration_ms,
                         "completed_at": (
-                            _rcn_run.created_at.isoformat() if _rcn_run.created_at else None
+                            _rcn_run.created_at.isoformat()
+                            if _rcn_run.created_at
+                            else None
                         ),
                     }
 
@@ -18280,9 +18288,11 @@ def send_message(
                         f"Last completed run: {_rcn_last_run['algorithm']} "
                         f"({_rcn_last_run['primary_metric']}={_rcn_last_run['primary_metric_value']})."
                         if _rcn_has_notification and _rcn_last_run
-                        else "No retrain_complete webhooks registered. Register a webhook with event type 'retrain_complete' to be notified when auto-retraining finishes."
-                        if not _rcn_has_notification
-                        else "Retrain complete webhooks registered. No completed model runs yet for this deployment."
+                        else (
+                            "No retrain_complete webhooks registered. Register a webhook with event type 'retrain_complete' to be notified when auto-retraining finishes."
+                            if not _rcn_has_notification
+                            else "Retrain complete webhooks registered. No completed model runs yet for this deployment."
+                        )
                     ),
                 }
                 system_prompt += (
@@ -18446,9 +18456,9 @@ def send_message(
                     "canary_traffic_pct": _cn_t_pct_cur,
                     "canary_version_number": _cn_v_num_cur,
                     "canary_algorithm": _cn_algo_cur,
-                    "canary_started_at": _cn_started.isoformat()
-                    if _cn_started
-                    else None,
+                    "canary_started_at": (
+                        _cn_started.isoformat() if _cn_started else None
+                    ),
                     "current_version_number": _cn_dep_obj.current_version_number,
                     "current_algorithm": _cn_dep_obj.algorithm,
                     "available_versions": [
@@ -20865,9 +20875,7 @@ def send_message(
                         else (
                             "healthy"
                             if _n_failed == 0
-                            else "warning"
-                            if _n_failed / _n_total < 0.1
-                            else "critical"
+                            else "warning" if _n_failed / _n_total < 0.1 else "critical"
                         )
                     )
                     _wh_total_events += _n_total
@@ -20926,9 +20934,7 @@ def send_message(
                     else (
                         "warning"
                         if any(d["status"] == "warning" for d in _wh_dep_summaries)
-                        else "no_events"
-                        if _wh_total_events == 0
-                        else "healthy"
+                        else "no_events" if _wh_total_events == 0 else "healthy"
                     )
                 )
             )

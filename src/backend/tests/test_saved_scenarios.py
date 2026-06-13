@@ -16,7 +16,6 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import SQLModel, create_engine, Session
 
-
 # ---------------------------------------------------------------------------
 # Pattern detection: _SAVE_SCENARIO_PATTERNS
 # ---------------------------------------------------------------------------

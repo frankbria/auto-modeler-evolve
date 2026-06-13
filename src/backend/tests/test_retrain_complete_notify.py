@@ -18,7 +18,6 @@ import pytest
 
 from core.webhook import ALL_EVENTS, EVENT_RETRAIN_COMPLETE
 
-
 # ---------------------------------------------------------------------------
 # 1. Webhook constant tests
 # ---------------------------------------------------------------------------
@@ -76,7 +75,9 @@ def test_train_in_background_dispatches_webhook_when_deployment_id_set():
         patch("api.models.Session", return_value=mock_session_instance),
         patch("api.models.train_single_model", return_value=mock_result),
         patch("api.models.prepare_features", return_value=(df, df["y"], None)),
-        patch("api.models.sample_large_dataset", return_value=(df, {"was_sampled": False})),
+        patch(
+            "api.models.sample_large_dataset", return_value=(df, {"was_sampled": False})
+        ),
         patch("api.models._push_event"),
         patch("api.models._finish_training_thread"),
         patch("core.webhook.dispatch_webhooks", side_effect=fake_dispatch),
@@ -90,16 +91,25 @@ def test_train_in_background_dispatches_webhook_when_deployment_id_set():
 
         t = threading.Thread(
             target=_train_in_background,
-            args=("run-abc", "proj-1", df, ["x"], "y", "linear_regression", "regression", Path("/tmp")),
+            args=(
+                "run-abc",
+                "proj-1",
+                df,
+                ["x"],
+                "y",
+                "linear_regression",
+                "regression",
+                Path("/tmp"),
+            ),
             kwargs={"deployment_id": "dep-123"},
             daemon=True,
         )
         t.start()
         t.join(timeout=10)
 
-    assert any(ev == "retrain_complete" for _, ev, _ in dispatched), (
-        f"retrain_complete not dispatched; dispatched={dispatched}"
-    )
+    assert any(
+        ev == "retrain_complete" for _, ev, _ in dispatched
+    ), f"retrain_complete not dispatched; dispatched={dispatched}"
     dep_id, event_type, payload = next(
         (d for d in dispatched if d[1] == "retrain_complete"), (None, None, None)
     )
@@ -150,7 +160,9 @@ def test_train_in_background_no_webhook_when_no_deployment_id():
         patch("api.models.Session", return_value=mock_session_instance),
         patch("api.models.train_single_model", return_value=mock_result),
         patch("api.models.prepare_features", return_value=(df, df["y"], None)),
-        patch("api.models.sample_large_dataset", return_value=(df, {"was_sampled": False})),
+        patch(
+            "api.models.sample_large_dataset", return_value=(df, {"was_sampled": False})
+        ),
         patch("api.models._push_event"),
         patch("api.models._finish_training_thread"),
         patch("core.webhook.dispatch_webhooks", side_effect=fake_dispatch),
@@ -161,7 +173,16 @@ def test_train_in_background_no_webhook_when_no_deployment_id():
 
         t = threading.Thread(
             target=_train_in_background,
-            args=("run-xyz", "proj-2", df, ["x"], "y", "linear_regression", "regression", Path("/tmp")),
+            args=(
+                "run-xyz",
+                "proj-2",
+                df,
+                ["x"],
+                "y",
+                "linear_regression",
+                "regression",
+                Path("/tmp"),
+            ),
             daemon=True,
         )
         t.start()
@@ -182,9 +203,9 @@ def test_degradation_retrain_passes_deployment_id_kwarg():
     import api.deploy
 
     src = inspect.getsource(api.deploy._check_and_trigger_degradation_retrain)
-    assert 'kwargs={"deployment_id": deployment_id}' in src, (
-        "Thread constructor must include kwargs={'deployment_id': deployment_id}"
-    )
+    assert (
+        'kwargs={"deployment_id": deployment_id}' in src
+    ), "Thread constructor must include kwargs={'deployment_id': deployment_id}"
 
 
 def test_train_in_background_accepts_deployment_id_kwarg():
@@ -193,9 +214,9 @@ def test_train_in_background_accepts_deployment_id_kwarg():
     from api.models import _train_in_background
 
     sig = inspect.signature(_train_in_background)
-    assert "deployment_id" in sig.parameters, (
-        "_train_in_background must have a deployment_id parameter"
-    )
+    assert (
+        "deployment_id" in sig.parameters
+    ), "_train_in_background must have a deployment_id parameter"
     param = sig.parameters["deployment_id"]
     assert param.default is None, "deployment_id should default to None"
 
@@ -240,16 +261,16 @@ NO_MATCH_PHRASES = [
 
 @pytest.mark.parametrize("phrase", MATCH_PHRASES)
 def test_retrain_complete_notify_pattern_matches(phrase: str):
-    assert _RETRAIN_COMPLETE_NOTIFY_PATTERNS.search(phrase), (
-        f"Pattern should match: {phrase!r}"
-    )
+    assert _RETRAIN_COMPLETE_NOTIFY_PATTERNS.search(
+        phrase
+    ), f"Pattern should match: {phrase!r}"
 
 
 @pytest.mark.parametrize("phrase", NO_MATCH_PHRASES)
 def test_retrain_complete_notify_pattern_no_match(phrase: str):
-    assert not _RETRAIN_COMPLETE_NOTIFY_PATTERNS.search(phrase), (
-        f"Pattern should NOT match: {phrase!r}"
-    )
+    assert not _RETRAIN_COMPLETE_NOTIFY_PATTERNS.search(
+        phrase
+    ), f"Pattern should NOT match: {phrase!r}"
 
 
 # ---------------------------------------------------------------------------
@@ -266,7 +287,13 @@ def test_retrain_complete_notify_event_shape():
         "last_completed_retrain": None,
         "summary": "No retrain_complete webhooks registered.",
     }
-    required = {"deployment_id", "has_notification", "retrain_complete_webhooks", "last_completed_retrain", "summary"}
+    required = {
+        "deployment_id",
+        "has_notification",
+        "retrain_complete_webhooks",
+        "last_completed_retrain",
+        "summary",
+    }
     assert required <= set(event.keys())
     assert isinstance(event["has_notification"], bool)
     assert isinstance(event["retrain_complete_webhooks"], list)
@@ -290,7 +317,15 @@ def test_retrain_complete_notify_event_shape_with_run():
         "last_completed_retrain": run,
         "summary": "Retrain complete webhook registered.",
     }
-    run_keys = {"run_id", "algorithm", "status", "primary_metric", "primary_metric_value", "training_duration_ms", "completed_at"}
+    run_keys = {
+        "run_id",
+        "algorithm",
+        "status",
+        "primary_metric",
+        "primary_metric_value",
+        "training_duration_ms",
+        "completed_at",
+    }
     assert run_keys <= set(event["last_completed_retrain"].keys())
     assert event["has_notification"] is True
     assert len(event["retrain_complete_webhooks"]) == 1
@@ -335,7 +370,9 @@ def test_retrain_complete_webhook_payload_keys():
         patch("api.models.Session", return_value=mock_session),
         patch("api.models.train_single_model", return_value=mock_result),
         patch("api.models.prepare_features", return_value=(df, df["b"], None)),
-        patch("api.models.sample_large_dataset", return_value=(df, {"was_sampled": False})),
+        patch(
+            "api.models.sample_large_dataset", return_value=(df, {"was_sampled": False})
+        ),
         patch("api.models._push_event"),
         patch("api.models._finish_training_thread"),
         patch("core.webhook.dispatch_webhooks", side_effect=fake_dispatch),
@@ -346,7 +383,16 @@ def test_retrain_complete_webhook_payload_keys():
 
         t = threading.Thread(
             target=_train_in_background,
-            args=("run-payload-test", "proj-payload", df, ["a"], "b", "random_forest", "classification", Path("/tmp")),
+            args=(
+                "run-payload-test",
+                "proj-payload",
+                df,
+                ["a"],
+                "b",
+                "random_forest",
+                "classification",
+                Path("/tmp"),
+            ),
             kwargs={"deployment_id": "dep-payload-test"},
             daemon=True,
         )
@@ -357,10 +403,17 @@ def test_retrain_complete_webhook_payload_keys():
     assert len(retrain_events) >= 1
     payload = retrain_events[0][2]
     required_keys = {
-        "deployment_id", "run_id", "algorithm", "primary_metric",
-        "primary_metric_value", "training_duration_ms", "message",
+        "deployment_id",
+        "run_id",
+        "algorithm",
+        "primary_metric",
+        "primary_metric_value",
+        "training_duration_ms",
+        "message",
     }
     missing = required_keys - set(payload.keys())
     assert not missing, f"Missing payload keys: {missing}"
-    assert payload["primary_metric"] == "accuracy"  # classification picks accuracy first
+    assert (
+        payload["primary_metric"] == "accuracy"
+    )  # classification picks accuracy first
     assert payload["training_duration_ms"] == 300

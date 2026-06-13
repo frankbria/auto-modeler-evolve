@@ -100,9 +100,9 @@ async def test_upload_xlsx_stored_as_csv(ac, project_id, tmp_path):
     assert resp.status_code == 201
     data = resp.json()
     # stored filename should be the .csv version
-    assert data["filename"].endswith(".csv"), (
-        f"Expected .csv filename, got {data['filename']}"
-    )
+    assert data["filename"].endswith(
+        ".csv"
+    ), f"Expected .csv filename, got {data['filename']}"
 
 
 async def test_upload_xlsx_columns_preserved(ac, project_id):

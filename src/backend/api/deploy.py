@@ -2752,9 +2752,7 @@ def set_accuracy_alert(
             + (
                 f"drops below {thr:.0%}."
                 if problem_type == "classification" and thr is not None
-                else f"exceeds {thr:.1f}%."
-                if thr is not None
-                else ""
+                else f"exceeds {thr:.1f}%." if thr is not None else ""
             )
             if threshold_set
             else "Accuracy alert disabled."
@@ -6527,9 +6525,7 @@ def get_model_status_report(
                 else (
                     "good"
                     if feedback_accuracy >= 0.8
-                    else "moderate"
-                    if feedback_accuracy >= 0.6
-                    else "needs attention"
+                    else "moderate" if feedback_accuracy >= 0.6 else "needs attention"
                 )
             )
     except Exception:  # noqa: BLE001
@@ -9895,9 +9891,9 @@ def canary_status(
         "canary_traffic_pct": traffic_pct,
         "canary_version_number": canary_version_number,
         "canary_algorithm": canary_algorithm,
-        "canary_started_at": canary_started_at.isoformat()
-        if canary_started_at
-        else None,
+        "canary_started_at": (
+            canary_started_at.isoformat() if canary_started_at else None
+        ),
         "current_run_id": deployment.model_run_id,
         "current_algorithm": deployment.algorithm,
         "current_version_number": deployment.current_version_number,
