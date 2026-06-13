@@ -107,9 +107,9 @@ def test_train_in_background_dispatches_webhook_when_deployment_id_set():
         t.start()
         t.join(timeout=10)
 
-    assert any(ev == "retrain_complete" for _, ev, _ in dispatched), (
-        f"retrain_complete not dispatched; dispatched={dispatched}"
-    )
+    assert any(
+        ev == "retrain_complete" for _, ev, _ in dispatched
+    ), f"retrain_complete not dispatched; dispatched={dispatched}"
     dep_id, event_type, payload = next(
         (d for d in dispatched if d[1] == "retrain_complete"), (None, None, None)
     )
@@ -203,9 +203,9 @@ def test_degradation_retrain_passes_deployment_id_kwarg():
     import api.deploy
 
     src = inspect.getsource(api.deploy._check_and_trigger_degradation_retrain)
-    assert 'kwargs={"deployment_id": deployment_id}' in src, (
-        "Thread constructor must include kwargs={'deployment_id': deployment_id}"
-    )
+    assert (
+        'kwargs={"deployment_id": deployment_id}' in src
+    ), "Thread constructor must include kwargs={'deployment_id': deployment_id}"
 
 
 def test_train_in_background_accepts_deployment_id_kwarg():
@@ -214,9 +214,9 @@ def test_train_in_background_accepts_deployment_id_kwarg():
     from api.models import _train_in_background
 
     sig = inspect.signature(_train_in_background)
-    assert "deployment_id" in sig.parameters, (
-        "_train_in_background must have a deployment_id parameter"
-    )
+    assert (
+        "deployment_id" in sig.parameters
+    ), "_train_in_background must have a deployment_id parameter"
     param = sig.parameters["deployment_id"]
     assert param.default is None, "deployment_id should default to None"
 
@@ -261,16 +261,16 @@ NO_MATCH_PHRASES = [
 
 @pytest.mark.parametrize("phrase", MATCH_PHRASES)
 def test_retrain_complete_notify_pattern_matches(phrase: str):
-    assert _RETRAIN_COMPLETE_NOTIFY_PATTERNS.search(phrase), (
-        f"Pattern should match: {phrase!r}"
-    )
+    assert _RETRAIN_COMPLETE_NOTIFY_PATTERNS.search(
+        phrase
+    ), f"Pattern should match: {phrase!r}"
 
 
 @pytest.mark.parametrize("phrase", NO_MATCH_PHRASES)
 def test_retrain_complete_notify_pattern_no_match(phrase: str):
-    assert not _RETRAIN_COMPLETE_NOTIFY_PATTERNS.search(phrase), (
-        f"Pattern should NOT match: {phrase!r}"
-    )
+    assert not _RETRAIN_COMPLETE_NOTIFY_PATTERNS.search(
+        phrase
+    ), f"Pattern should NOT match: {phrase!r}"
 
 
 # ---------------------------------------------------------------------------

@@ -38,6 +38,7 @@ def test_batch_job_history_verdicts_are_constants():
 # Pure-function helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_run(
     status: str = "success",
     started_at: str = "2024-01-15T09:00:00",
@@ -60,9 +61,11 @@ def _make_run(
 # Pure function: compute_batch_job_history
 # ---------------------------------------------------------------------------
 
+
 class TestComputeBatchJobHistoryNoData:
     def setup_method(self):
         from core.analyzer import compute_batch_job_history
+
         self.fn = compute_batch_job_history
 
     def test_empty_list_returns_no_data(self):
@@ -78,17 +81,27 @@ class TestComputeBatchJobHistoryNoData:
 
     def test_empty_list_summary_mentions_schedule(self):
         result = self.fn([])
-        assert "schedule" in result["summary"].lower() or "no batch" in result["summary"].lower()
+        assert (
+            "schedule" in result["summary"].lower()
+            or "no batch" in result["summary"].lower()
+        )
 
 
 class TestComputeBatchJobHistoryHealthy:
     def setup_method(self):
         from core.analyzer import compute_batch_job_history
+
         self.fn = compute_batch_job_history
 
     def _healthy_runs(self):
         return [
-            _make_run("success", "2024-01-15T09:00:00", "2024-01-15T09:01:30", 500, run_id=f"r{i}")
+            _make_run(
+                "success",
+                "2024-01-15T09:00:00",
+                "2024-01-15T09:01:30",
+                500,
+                run_id=f"r{i}",
+            )
             for i in range(5)
         ]
 
@@ -142,7 +155,10 @@ class TestComputeBatchJobHistoryHealthy:
 
     def test_summary_mentions_success(self):
         result = self.fn(self._healthy_runs())
-        assert "success" in result["summary"].lower() or "reliable" in result["summary"].lower()
+        assert (
+            "success" in result["summary"].lower()
+            or "reliable" in result["summary"].lower()
+        )
 
     def test_ninety_pct_success_is_healthy(self):
         # 9 success + 1 failed = 90% → healthy
@@ -155,11 +171,15 @@ class TestComputeBatchJobHistoryHealthy:
 class TestComputeBatchJobHistorySomeFailures:
     def setup_method(self):
         from core.analyzer import compute_batch_job_history
+
         self.fn = compute_batch_job_history
 
     def _mixed_runs(self):
         success = [_make_run("success", run_id=f"s{i}") for i in range(6)]
-        failed = [_make_run("failed", error="connection refused", run_id=f"f{i}") for i in range(4)]
+        failed = [
+            _make_run("failed", error="connection refused", run_id=f"f{i}")
+            for i in range(4)
+        ]
         return success + failed  # 60% success
 
     def test_mixed_is_some_failures(self):
@@ -182,10 +202,14 @@ class TestComputeBatchJobHistorySomeFailures:
 class TestComputeBatchJobHistoryAllFailed:
     def setup_method(self):
         from core.analyzer import compute_batch_job_history
+
         self.fn = compute_batch_job_history
 
     def _failed_runs(self):
-        return [_make_run("failed", error="deployment offline", run_id=f"f{i}") for i in range(5)]
+        return [
+            _make_run("failed", error="deployment offline", run_id=f"f{i}")
+            for i in range(5)
+        ]
 
     def test_all_failed_is_all_failed_verdict(self):
         result = self.fn(self._failed_runs())
@@ -210,6 +234,7 @@ class TestComputeBatchJobHistoryAllFailed:
 class TestComputeBatchJobHistoryTimeline:
     def setup_method(self):
         from core.analyzer import compute_batch_job_history
+
         self.fn = compute_batch_job_history
 
     def test_n_cap_applied(self):
@@ -248,9 +273,11 @@ class TestComputeBatchJobHistoryTimeline:
 # Regex: _BATCH_JOB_HISTORY_PATTERNS
 # ---------------------------------------------------------------------------
 
+
 class TestBatchJobHistoryPatterns:
     def setup_method(self):
         from api.chat import _BATCH_JOB_HISTORY_PATTERNS
+
         self.pat = _BATCH_JOB_HISTORY_PATTERNS
 
     # Positive matches
@@ -296,6 +323,7 @@ class TestBatchJobHistoryPatterns:
 # REST endpoint: GET /api/deploy/{id}/batch-job-history
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture()
 def client_with_db(tmp_path):
     import models.ab_test  # noqa
@@ -320,6 +348,7 @@ def client_with_db(tmp_path):
     SQLModel.metadata.create_all(db_module.engine)
 
     from main import app
+
     client = TestClient(app, raise_server_exceptions=False)
     yield client, db_module.engine
 
@@ -336,15 +365,39 @@ def _create_deployment(engine, dep_id: str = "dep-bjh-1", is_active: bool = True
         s.add(proj)
         s.flush()
 
-        ds = Dataset(id="ds-bjh", project_id="proj-bjh", filename="test.csv", file_path="/tmp/test.csv", row_count=10, column_count=3, size_bytes=100)
+        ds = Dataset(
+            id="ds-bjh",
+            project_id="proj-bjh",
+            filename="test.csv",
+            file_path="/tmp/test.csv",
+            row_count=10,
+            column_count=3,
+            size_bytes=100,
+        )
         s.add(ds)
         s.flush()
 
-        fs = FeatureSet(id="fs-bjh", dataset_id="ds-bjh", target_column="price", transformations="[]", column_mapping="{}", is_active=True)
+        fs = FeatureSet(
+            id="fs-bjh",
+            dataset_id="ds-bjh",
+            target_column="price",
+            transformations="[]",
+            column_mapping="{}",
+            is_active=True,
+        )
         s.add(fs)
         s.flush()
 
-        mr = ModelRun(id="mr-bjh-1", project_id="proj-bjh", feature_set_id="fs-bjh", algorithm="LinearRegression", hyperparameters="{}", metrics="{}", training_duration_ms=100, model_path="/tmp/model.joblib")
+        mr = ModelRun(
+            id="mr-bjh-1",
+            project_id="proj-bjh",
+            feature_set_id="fs-bjh",
+            algorithm="LinearRegression",
+            hyperparameters="{}",
+            metrics="{}",
+            training_duration_ms=100,
+            model_path="/tmp/model.joblib",
+        )
         s.add(mr)
         s.flush()
 
@@ -383,6 +436,7 @@ class TestBatchJobHistoryEndpoint:
     def test_returns_history_with_runs(self, client_with_db):
         from models.batch_schedule import BatchJobRun, BatchSchedule
         from datetime import datetime
+
         client, engine = client_with_db
         _create_deployment(engine, "dep-bjh-runs")
         with Session(engine) as s:

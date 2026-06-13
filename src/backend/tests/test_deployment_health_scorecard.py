@@ -406,9 +406,9 @@ def test_scorecard_patterns_match(message: str):
 def test_scorecard_patterns_no_false_positives(message: str):
     from api.chat import _DEPLOY_HEALTH_SCORECARD_PATTERNS
 
-    assert not _DEPLOY_HEALTH_SCORECARD_PATTERNS.search(message), (
-        f"Should not match: {message!r}"
-    )
+    assert not _DEPLOY_HEALTH_SCORECARD_PATTERNS.search(
+        message
+    ), f"Should not match: {message!r}"
 
 
 # ---------------------------------------------------------------------------

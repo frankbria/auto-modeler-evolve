@@ -175,9 +175,9 @@ class TestAutoSuggestFires:
         # Import the threshold
         from api.chat import _ENSEMBLE_AUTO_THRESHOLD, _ENSEMBLE_PATTERNS
 
-        assert not _ENSEMBLE_PATTERNS.search(message), (
-            "Test message must not match explicit ensemble patterns"
-        )
+        assert not _ENSEMBLE_PATTERNS.search(
+            message
+        ), "Test message must not match explicit ensemble patterns"
 
         fset = ctx["feature_set"]
         prob = fset.problem_type

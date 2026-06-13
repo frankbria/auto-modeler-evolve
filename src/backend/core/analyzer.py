@@ -9142,15 +9142,23 @@ def compute_batch_job_history(run_dicts: list[dict], n: int = 20) -> dict:
     running_count = sum(1 for r in run_dicts if r.get("status") == "running")
     success_rate = success_count / total if total > 0 else 0.0
 
-    row_counts = [r["row_count"] for r in run_dicts if r.get("row_count") is not None and r.get("row_count", 0) > 0]
+    row_counts = [
+        r["row_count"]
+        for r in run_dicts
+        if r.get("row_count") is not None and r.get("row_count", 0) > 0
+    ]
     avg_row_count = round(sum(row_counts) / len(row_counts), 1) if row_counts else None
 
     durations: list[float] = []
     for r in run_dicts:
         if r.get("started_at") and r.get("completed_at"):
             try:
-                start = datetime.fromisoformat(str(r["started_at"]).replace("Z", "+00:00"))
-                end = datetime.fromisoformat(str(r["completed_at"]).replace("Z", "+00:00"))
+                start = datetime.fromisoformat(
+                    str(r["started_at"]).replace("Z", "+00:00")
+                )
+                end = datetime.fromisoformat(
+                    str(r["completed_at"]).replace("Z", "+00:00")
+                )
                 secs = (end - start).total_seconds()
                 if secs >= 0:
                     durations.append(secs)
@@ -9178,7 +9186,11 @@ def compute_batch_job_history(run_dicts: list[dict], n: int = 20) -> dict:
         summary = (
             f"Your batch schedule is running reliably: {success_count} of {total} "
             f"jobs succeeded ({success_rate * 100:.0f}% success rate)"
-            + (f", averaging {avg_row_count:,.0f} rows per run" if avg_row_count else "")
+            + (
+                f", averaging {avg_row_count:,.0f} rows per run"
+                if avg_row_count
+                else ""
+            )
             + "."
         )
     elif verdict == "some_failures":
@@ -9200,22 +9212,30 @@ def compute_batch_job_history(run_dicts: list[dict], n: int = 20) -> dict:
         dur_sec: float | None = None
         if r.get("started_at") and r.get("completed_at"):
             try:
-                start = datetime.fromisoformat(str(r["started_at"]).replace("Z", "+00:00"))
-                end = datetime.fromisoformat(str(r["completed_at"]).replace("Z", "+00:00"))
+                start = datetime.fromisoformat(
+                    str(r["started_at"]).replace("Z", "+00:00")
+                )
+                end = datetime.fromisoformat(
+                    str(r["completed_at"]).replace("Z", "+00:00")
+                )
                 secs = (end - start).total_seconds()
                 if secs >= 0:
                     dur_sec = round(secs, 1)
             except (ValueError, TypeError):
                 pass
-        timeline.append({
-            "id": r.get("id", ""),
-            "status": r.get("status", "unknown"),
-            "started_at": str(r["started_at"]) if r.get("started_at") else None,
-            "completed_at": str(r["completed_at"]) if r.get("completed_at") else None,
-            "row_count": r.get("row_count"),
-            "duration_sec": dur_sec,
-            "error": r.get("error"),
-        })
+        timeline.append(
+            {
+                "id": r.get("id", ""),
+                "status": r.get("status", "unknown"),
+                "started_at": str(r["started_at"]) if r.get("started_at") else None,
+                "completed_at": (
+                    str(r["completed_at"]) if r.get("completed_at") else None
+                ),
+                "row_count": r.get("row_count"),
+                "duration_sec": dur_sec,
+                "error": r.get("error"),
+            }
+        )
 
     return {
         "runs": timeline,
