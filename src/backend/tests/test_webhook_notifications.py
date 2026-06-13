@@ -401,6 +401,7 @@ def test_all_events_constant_has_expected_entries():
         EVENT_PREDICTION_ALERT,
         EVENT_PRED_VALUE_TREND_ALERT,
         EVENT_QUOTA_ALERT,
+        EVENT_RETRAIN_COMPLETE,
         EVENT_ROLLBACK_TRIGGERED,
         EVENT_SLA_EXCEEDED,
         EVENT_WEEKLY_DIGEST,
@@ -419,7 +420,8 @@ def test_all_events_constant_has_expected_entries():
     assert EVENT_PREDICTION_ALERT in ALL_EVENTS
     assert EVENT_PRED_VALUE_TREND_ALERT in ALL_EVENTS
     assert EVENT_QUOTA_ALERT in ALL_EVENTS
+    assert EVENT_RETRAIN_COMPLETE in ALL_EVENTS
     assert EVENT_ROLLBACK_TRIGGERED in ALL_EVENTS
     assert EVENT_SLA_EXCEEDED in ALL_EVENTS
     assert EVENT_WEEKLY_DIGEST in ALL_EVENTS
-    assert len(ALL_EVENTS) == 16
+    assert len(ALL_EVENTS) == 17
