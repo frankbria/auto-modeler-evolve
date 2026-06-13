@@ -4413,6 +4413,23 @@ _BATCH_RESULTS_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# Distinct from _BATCH_RESULTS_PATTERNS (last-run distribution analytics).
+# This shows the multi-run timeline: job IDs, completion times, row counts,
+# statuses, error rates across all scheduled batch runs.
+_BATCH_JOB_HISTORY_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"batch\s+(?:job\s+)?history\b|"
+    r"batch\s+(?:run\s+)?(?:history|timeline|log|list|record)\b|"
+    r"(?:show|view|display|get|list)\s+(?:me\s+)?(?:all\s+)?batch\s+(?:job\s+)?(?:runs?|history|log|records?)\b|"
+    r"(?:when|how\s+many\s+times?|how\s+often)\s+(?:did|has?|have)\s+(?:my\s+|the\s+)?batch\s+(?:job\s+)?run\b|"
+    r"batch\s+(?:job\s+)?(?:success|failure|error)\s+(?:rate|history|stats?|summary)\b|"
+    r"how\s+(?:often|frequently)\s+(?:does|is|has?)\s+(?:my\s+|the\s+)?batch\s+(?:job\s+)?(?:run|running|ran|executed?)\b|"
+    r"(?:last|recent|previous)\s+batch\s+(?:job\s+)?(?:runs?|executions?|history)\b|"
+    r"batch\s+(?:job\s+)?run\s+(?:history|log|count|stats?|summary|performance)\b"
+    r")",
+    re.IGNORECASE,
+)
+
 _PROD_EXPLAIN_PATTERNS = re.compile(
     r"(?i)(?:"
     r"explain\s+(?:the\s+)?(?:last|latest|most\s+recent)\s+(?:production\s+|live\s+|real\s+)?(?:prediction|api\s+(?:call|result)|request)\b|"
@@ -20602,6 +20619,36 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Batch results are nice-to-have; never crash chat
 
+    # Batch job history via chat
+    batch_job_history_event: dict | None = None
+    if _BATCH_JOB_HISTORY_PATTERNS.search(body.message) and ctx["deployment"]:
+        try:
+            import requests as _bjh_requests
+
+            _bjh_dep = ctx["deployment"]
+            _bjh_dep_id = _bjh_dep.id if hasattr(_bjh_dep, "id") else str(_bjh_dep)
+            _bjh_resp = _bjh_requests.get(
+                f"http://localhost:8000/api/deploy/{_bjh_dep_id}/batch-job-history?n=20",
+                timeout=10,
+            )
+            if _bjh_resp.status_code == 200:
+                _bjh_result = _bjh_resp.json()
+                batch_job_history_event = _bjh_result
+                _bjh_verdict = _bjh_result.get("verdict", "no_data")
+                _bjh_total = _bjh_result.get("total_runs", 0)
+                _bjh_rate = _bjh_result.get("success_rate", 0.0)
+                system_prompt += (
+                    f"\n\n## Batch Job History\n{_bjh_result.get('summary', '')}\n"
+                    f"Total runs: {_bjh_total}, success rate: {_bjh_rate * 100:.0f}%.\n"
+                    "Summarise the batch run history for the analyst in plain English. "
+                    "If verdict is 'healthy' celebrate the reliability. "
+                    "If 'some_failures' or 'all_failed', note the failure count and suggest "
+                    "checking error messages. Mention how many rows are processed on average "
+                    "if avg_row_count is available."
+                )
+        except Exception:  # noqa: BLE001
+            pass  # Batch job history is nice-to-have; never crash chat
+
     # Production prediction explanation via chat
     prod_explanation_event: dict | None = None
     if _PROD_EXPLAIN_PATTERNS.search(body.message) and ctx["deployment"]:
@@ -22358,6 +22405,9 @@ def send_message(
 
         if batch_results_event:
             yield f"data: {json.dumps({'type': 'batch_job_results', 'batch_job_results': batch_results_event})}\n\n"
+
+        if batch_job_history_event:
+            yield f"data: {json.dumps({'type': 'batch_job_history', 'batch_job_history': batch_job_history_event})}\n\n"
 
         if prod_explanation_event:
             yield f"data: {json.dumps({'type': 'prod_prediction_explanation', 'prod_prediction_explanation': prod_explanation_event})}\n\n"

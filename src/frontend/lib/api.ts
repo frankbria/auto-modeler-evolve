@@ -1456,5 +1456,8 @@ export const api = {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ enabled, accuracy_threshold_pct: accuracyThresholdPct ?? null }),
       }).then((r) => r.json()),
+
+    batchJobHistory: (deploymentId: string, n?: number): Promise<import("./types").BatchJobHistoryResult> =>
+      fetch(`${API_URL}/api/deploy/${deploymentId}/batch-job-history${n ? `?n=${n}` : ""}`).then((r) => r.json()),
   },
 }

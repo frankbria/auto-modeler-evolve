@@ -224,6 +224,7 @@ interface AppState {
   attachConfidenceBandToLastMessage: (confidence_band: import("./types").ConfidenceBandResult) => void
   attachRetrainCompleteNotifyToLastMessage: (retrain_complete_notify: import("./types").RetrainCompleteNotifyResult) => void
   attachOutcomeCalibrationToLastMessage: (outcome_calibration: import("./types").OutcomeCalibrationResult) => void
+  attachBatchJobHistoryToLastMessage: (batch_job_history: import("./types").BatchJobHistoryResult) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -1950,6 +1951,15 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, outcome_calibration }
+      }
+      return { messages }
+    }),
+  attachBatchJobHistoryToLastMessage: (batch_job_history) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, batch_job_history }
       }
       return { messages }
     }),

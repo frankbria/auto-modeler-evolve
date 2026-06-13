@@ -586,6 +586,7 @@ export interface ChatMessage {
   confidence_band?: ConfidenceBandResult
   retrain_complete_notify?: RetrainCompleteNotifyResult
   outcome_calibration?: OutcomeCalibrationResult
+  batch_job_history?: BatchJobHistoryResult
 }
 
 export interface RollbackVersionEntry {
@@ -5156,4 +5157,31 @@ export interface OutcomeCalibrationResult {
   error_min?: number
   error_max?: number
   bins?: OutcomeCalibrationBin[]
+}
+
+export type BatchJobHistoryVerdict = "healthy" | "some_failures" | "all_failed" | "no_data"
+
+export interface BatchJobHistoryRun {
+  id: string
+  status: "success" | "failed" | "running" | "unknown"
+  started_at: string | null
+  completed_at: string | null
+  row_count: number | null
+  duration_sec: number | null
+  error: string | null
+}
+
+export interface BatchJobHistoryResult {
+  deployment_id: string
+  runs: BatchJobHistoryRun[]
+  total_runs: number
+  success_count: number
+  failed_count: number
+  running_count: number
+  success_rate: number
+  avg_row_count: number | null
+  avg_duration_sec: number | null
+  last_run_at: string | null
+  verdict: BatchJobHistoryVerdict
+  summary: string
 }

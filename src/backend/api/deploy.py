@@ -5270,6 +5270,49 @@ def get_batch_results(
     return result
 
 
+@router.get("/api/deploy/{deployment_id}/batch-job-history")
+def get_batch_job_history(
+    deployment_id: str,
+    n: int = 20,
+    session: Session = Depends(get_session),
+):
+    """Return history of batch job runs for a deployment.
+
+    Returns aggregate stats (total runs, success rate, avg row count, avg
+    duration) plus a timeline of individual run records (most-recent first,
+    up to n entries).
+    """
+    from core.analyzer import compute_batch_job_history
+    from models.batch_schedule import BatchJobRun
+
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment or not deployment.is_active:
+        raise HTTPException(status_code=404, detail="Deployment not found or inactive")
+
+    n = max(1, min(n, 100))
+    job_runs = session.exec(
+        select(BatchJobRun)
+        .where(BatchJobRun.deployment_id == deployment_id)
+        .order_by(BatchJobRun.started_at.desc())
+        .limit(n)
+    ).all()
+
+    run_dicts = [
+        {
+            "id": r.id,
+            "status": r.status,
+            "started_at": r.started_at.isoformat() if r.started_at else None,
+            "completed_at": r.completed_at.isoformat() if r.completed_at else None,
+            "row_count": r.row_count,
+            "error": r.error,
+        }
+        for r in job_runs
+    ]
+    result = compute_batch_job_history(run_dicts, n=n)
+    result["deployment_id"] = deployment_id
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Prediction alert rule endpoints
 # ---------------------------------------------------------------------------

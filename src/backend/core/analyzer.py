@@ -9092,3 +9092,141 @@ def _regression_calibration(pairs: list[dict], n_buckets: int) -> dict:
         "error_max": round(e_max, 4),
         "bins": bins,
     }
+
+
+def compute_batch_job_history(run_dicts: list[dict], n: int = 20) -> dict:
+    """Summarise historical batch job runs for a deployment.
+
+    Accepts plain dicts (from BatchJobRun records) so this is fully testable
+    without a DB session.  Returns aggregate stats and a per-run timeline.
+
+    Args:
+        run_dicts: Most-recent-first list of BatchJobRun dicts with keys:
+            id, status, started_at (ISO str), completed_at (ISO str | None),
+            row_count (int | None), error (str | None).
+        n: Maximum number of individual run entries to include in the timeline.
+
+    Returns dict with keys:
+        runs           — list[dict] individual run summaries (up to n)
+        total_runs     — int
+        success_count  — int
+        failed_count   — int
+        running_count  — int
+        success_rate   — float  (0–1)
+        avg_row_count  — float | None
+        avg_duration_sec — float | None
+        last_run_at    — str | None  (ISO)
+        verdict        — "healthy" | "some_failures" | "all_failed" | "no_data"
+        summary        — plain-English string
+    """
+    from datetime import datetime
+
+    if not run_dicts:
+        return {
+            "runs": [],
+            "total_runs": 0,
+            "success_count": 0,
+            "failed_count": 0,
+            "running_count": 0,
+            "success_rate": 0.0,
+            "avg_row_count": None,
+            "avg_duration_sec": None,
+            "last_run_at": None,
+            "verdict": "no_data",
+            "summary": "No batch jobs have run yet for this deployment. Schedule a batch prediction to get started.",
+        }
+
+    total = len(run_dicts)
+    success_count = sum(1 for r in run_dicts if r.get("status") == "success")
+    failed_count = sum(1 for r in run_dicts if r.get("status") == "failed")
+    running_count = sum(1 for r in run_dicts if r.get("status") == "running")
+    success_rate = success_count / total if total > 0 else 0.0
+
+    row_counts = [r["row_count"] for r in run_dicts if r.get("row_count") is not None and r.get("row_count", 0) > 0]
+    avg_row_count = round(sum(row_counts) / len(row_counts), 1) if row_counts else None
+
+    durations: list[float] = []
+    for r in run_dicts:
+        if r.get("started_at") and r.get("completed_at"):
+            try:
+                start = datetime.fromisoformat(str(r["started_at"]).replace("Z", "+00:00"))
+                end = datetime.fromisoformat(str(r["completed_at"]).replace("Z", "+00:00"))
+                secs = (end - start).total_seconds()
+                if secs >= 0:
+                    durations.append(secs)
+            except (ValueError, TypeError):
+                pass
+    avg_duration_sec = round(sum(durations) / len(durations), 1) if durations else None
+
+    last_run_at: str | None = None
+    for r in run_dicts:
+        if r.get("completed_at"):
+            last_run_at = str(r["completed_at"])
+            break
+        if r.get("started_at"):
+            last_run_at = str(r["started_at"])
+            break
+
+    if success_rate >= 0.9:
+        verdict = "healthy"
+    elif success_rate >= 0.5:
+        verdict = "some_failures"
+    else:
+        verdict = "all_failed"
+
+    if verdict == "healthy":
+        summary = (
+            f"Your batch schedule is running reliably: {success_count} of {total} "
+            f"jobs succeeded ({success_rate * 100:.0f}% success rate)"
+            + (f", averaging {avg_row_count:,.0f} rows per run" if avg_row_count else "")
+            + "."
+        )
+    elif verdict == "some_failures":
+        summary = (
+            f"Your batch schedule has had some issues: {success_count} succeeded "
+            f"and {failed_count} failed out of {total} total runs "
+            f"({success_rate * 100:.0f}% success rate). "
+            "Check the failed runs below for error details."
+        )
+    else:
+        summary = (
+            f"Most batch runs have failed: only {success_count} of {total} succeeded "
+            f"({success_rate * 100:.0f}% success rate). "
+            "Review error messages in the run history and verify your deployment is healthy."
+        )
+
+    timeline: list[dict] = []
+    for r in run_dicts[:n]:
+        dur_sec: float | None = None
+        if r.get("started_at") and r.get("completed_at"):
+            try:
+                start = datetime.fromisoformat(str(r["started_at"]).replace("Z", "+00:00"))
+                end = datetime.fromisoformat(str(r["completed_at"]).replace("Z", "+00:00"))
+                secs = (end - start).total_seconds()
+                if secs >= 0:
+                    dur_sec = round(secs, 1)
+            except (ValueError, TypeError):
+                pass
+        timeline.append({
+            "id": r.get("id", ""),
+            "status": r.get("status", "unknown"),
+            "started_at": str(r["started_at"]) if r.get("started_at") else None,
+            "completed_at": str(r["completed_at"]) if r.get("completed_at") else None,
+            "row_count": r.get("row_count"),
+            "duration_sec": dur_sec,
+            "error": r.get("error"),
+        })
+
+    return {
+        "runs": timeline,
+        "total_runs": total,
+        "success_count": success_count,
+        "failed_count": failed_count,
+        "running_count": running_count,
+        "success_rate": round(success_rate, 4),
+        "avg_row_count": avg_row_count,
+        "avg_duration_sec": avg_duration_sec,
+        "last_run_at": last_run_at,
+        "verdict": verdict,
+        "summary": summary,
+    }
