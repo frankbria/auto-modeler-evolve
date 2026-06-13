@@ -1671,6 +1671,28 @@ guides them forward through the natural flow.
       Zustand action; SSE handler + render wired in `project/[id]/page.tsx`.
       *Day 42 (20:00): 45 backend + 26 frontend tests. Backend lint: clean. Frontend build: clean.*
 
+- [x] **Batch Job History Analytics via Chat** — Track D perpetual. Analysts can ask "batch job
+      history", "show me batch run history", "batch history", "when did my batch job run", "batch
+      success rate", "batch failure history", or 3 other NL variants (8 total in
+      `_BATCH_JOB_HISTORY_PATTERNS`). Distinct from `_BATCH_RESULTS_PATTERNS` (last-run distribution
+      analytics) — this surfaces the multi-run timeline. Pure function
+      `compute_batch_job_history(run_dicts, n=20)` in `core/analyzer.py`: aggregates
+      BatchJobRun dicts into total/success/failed/running counts, success_rate, avg_row_count,
+      avg_duration_sec, and a most-recent-N timeline; verdicts: healthy (≥90%), some_failures
+      (50–90%), all_failed (<50%), no_data (0 runs). `GET /api/deploy/{id}/batch-job-history?n=20`
+      REST endpoint in `api/deploy.py`: queries last N `BatchJobRun` records for deployment ordered
+      by started_at desc, maps to dicts, calls pure function. Chat handler in `api/chat.py` guards
+      on `ctx["deployment"]`, calls REST endpoint, injects verdict/summary into system_prompt, emits
+      `{type:"batch_job_history"}` SSE event. `BatchJobHistoryCard` at
+      `components/deploy/batch-job-history-card.tsx` (emerald=healthy, amber=some_failures,
+      rose=all_failed, muted=no_data, 📋 icon): verdict/total/success% badges, summary paragraph,
+      aggregate stats grid (Succeeded/Failed/Avg rows/Avg duration), run timeline table with status
+      badges, started/completed timestamps, row count, duration, error column, sr-only figcaption.
+      `BatchJobHistoryVerdict`, `BatchJobHistoryRun`, `BatchJobHistoryResult` TypeScript interfaces;
+      `batch_job_history?` on `ChatMessage`; `attachBatchJobHistoryToLastMessage` Zustand action;
+      `api.deploy.batchJobHistory()` client method; SSE handlers + card render in page.tsx.
+      *Day 94 (12:00): 42 backend + 20 frontend = 62 new tests. Baseline: 6498/3689 → 6540/3709.*
+
 - [x] **Production Prediction Explanation via Chat** — Track D perpetual. Analysts can ask "explain
       the last prediction", "why did the model give that result?", "what drove that production
       prediction", "feature contributions for the most recent API call", etc. REST endpoint `GET
