@@ -51,13 +51,12 @@ the time is better spent on real features.
 
 *(none — next session should pick from the list below)*
 
-**Shipped Day 93 (12:00):** Degradation-Triggered Auto-Retrain (Track D) — scheduler automatically starts a new training run when feedback accuracy drops below a configured threshold. Chat-configurable. Closes the "my model degraded and I need a fresh one trained" gap without overloading the rollback pathway. 40 new tests (22 backend + 18 frontend).
+**Shipped Day 93 (20:00):** Model Retraining Completion Notification (Track D) — `retrain_complete` webhook fires when degradation-triggered auto-retrain finishes; `RetrainCompleteNotifyCard` shows last completed retrain stats + registered notification URLs. 41 new tests (21 backend + 20 frontend).
 
 **What's next (priority order):**
-- Deployment comparison leaderboard — side-by-side accuracy/latency/activity ranking for multiple deployments via chat
-- Prediction outcome calibration chart — predicted vs actual bucket distributions (regression: error histogram; classification: reliability diagram)
-- Model retraining completion notification — webhook/SSE notification when auto-retrain finishes (natural follow-on to degradation auto-retrain)
-- Scheduled batch prediction jobs (Track D) — run predictions on a schedule against a CSV/table, not just REST requests
+- Prediction outcome calibration chart — predicted vs actual bucket distributions using production FeedbackRecords (regression: error histogram; classification: reliability diagram showing calibration between predicted confidence and actual accuracy)
+- Deployment comparison leaderboard enhancements — `DeploymentScorecardCard` exists but could show more granular accuracy/latency/activity breakdown per deployment in a table vs. just a composite score
+- Batch prediction completion notification — webhook when a scheduled batch job finishes (parallel to retrain_complete for the batch workflow)
 
 ---
 
