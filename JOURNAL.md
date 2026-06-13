@@ -1,5 +1,29 @@
 # Journal
 
+## Day 94 — 12:00 — Batch Job History Analytics (Track D)
+
+**Feature shipped:** Batch Job History Analytics — closes the analyst gap between "I scheduled batch predictions" and "how have those batch runs actually performed over time?" Distinct from the existing Batch Job Results card (distribution analytics of the latest run), this surfaces the full multi-run timeline: job statuses, completion times, row counts, durations, error messages, and aggregate health metrics across up to the last 20 runs.
+
+**What was built:**
+- `compute_batch_job_history(run_dicts, n=20)` pure function in `core/analyzer.py`: accepts plain dicts (no DB dependency), computes total/success/failed/running counts, success_rate, avg_row_count, avg_duration_sec, last_run_at, and a timeline list; verdict logic: `healthy` (≥90% success), `some_failures` (50–90%), `all_failed` (<50%), `no_data` (0 runs); summary is plain-English per verdict; duration per entry computed from started_at/completed_at ISO strings
+- `GET /api/deploy/{id}/batch-job-history?n=20` REST endpoint in `api/deploy.py`: validates deployment active, queries last N `BatchJobRun` records ordered by `started_at.desc()`, maps to dicts, calls pure function, enriches with `deployment_id`
+- `_BATCH_JOB_HISTORY_PATTERNS` (8 NL variants: "batch job history", "show me batch run history", "batch history", "when did my batch job run", "batch success rate", "batch failure history", "how often does my batch job run", "recent batch runs") added to `api/chat.py`; chat handler calls REST endpoint via `requests.get`, injects verdict+summary+total+success_rate into system_prompt; emits `{type:"batch_job_history"}` SSE event; guarded by `ctx["deployment"]`
+- `BatchJobHistoryCard` at `components/deploy/batch-job-history-card.tsx` (emerald=healthy, amber=some_failures, rose=all_failed, muted=no_data, 📋 icon): verdict/total/success% badges, summary paragraph, aggregate stats grid (Succeeded/Failed/Avg rows/Avg duration), run timeline table with status badges (emerald/rose/blue), started/completed timestamps, row count, duration (formatted as Xs or Xm Ys), error column with title attribute for truncated text, sr-only figcaption, last-activity footer
+- Full TypeScript wiring: `BatchJobHistoryVerdict`, `BatchJobHistoryRun`, `BatchJobHistoryResult` interfaces; `batch_job_history?` on `ChatMessage`; `attachBatchJobHistoryToLastMessage` Zustand action; `api.deploy.batchJobHistory()` client method; SSE handlers in both EventSource branches; card render in `page.tsx`
+
+**Design choices:**
+- 90%/50% verdict thresholds match typical SLA expectations: below 90% warrants attention, below 50% is a critical failure requiring investigation
+- Duration formatted as "Xs" or "Xm Ys" — analysts understand clock time, not decimal seconds
+- The `error` column truncates with `title` tooltip so analysts can see the full error on hover without the table overflowing
+
+**Tests:** 42 backend (2 constants + 2 no_data + 11 healthy + 4 some_failures + 4 all_failed + 5 timeline + 9 regex + 3 REST endpoint) + 20 frontend (17 card component + 3 store action) = **62 new tests**, all passing. Baseline: 6498 backend / 3689 frontend → **6540 backend / 3709 frontend** (+42 / +20). Backend lint: clean. Frontend build + TypeScript: clean.
+
+**What's next:**
+- Model performance decay rate analysis — "how fast is my model degrading?" with a linear trend line over weekly feedback accuracy, estimated weeks until below threshold
+- Prediction confidence distribution shift alert — proactive webhook when the distribution of confidence scores changes significantly from baseline
+
+---
+
 ## Day 94 — 04:00 — Prediction Outcome Calibration Chart (Track D)
 
 **Feature shipped:** Prediction Outcome Calibration Chart — closes the critical analyst gap between "my model looks calibrated on training data" and "is it actually calibrated on production inputs I've verified?" Built from `FeedbackRecord` outcomes (not validation data), the card shows either a reliability diagram (classification: confidence bucket → actual accuracy with perfect-calibration diagonal) or an error histogram (regression: actual − predicted distribution revealing bias and spread).
