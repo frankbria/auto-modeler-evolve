@@ -2,6 +2,7 @@ import React from "react"
 import { render, screen } from "@testing-library/react"
 import { BatchJobHistoryCard } from "@/components/deploy/batch-job-history-card"
 import { BatchJobHistoryResult } from "@/lib/types"
+import { useAppStore } from "@/lib/store"
 
 const healthyResult: BatchJobHistoryResult = {
   deployment_id: "dep-1",
@@ -201,13 +202,11 @@ describe("BatchJobHistoryCard", () => {
 
 describe("BatchJobHistoryCard store action", () => {
   it("attachBatchJobHistoryToLastMessage exists in store", () => {
-    const { useAppStore } = require("@/lib/store")
     const state = useAppStore.getState()
     expect(typeof state.attachBatchJobHistoryToLastMessage).toBe("function")
   })
 
   it("attaches batch_job_history to last assistant message", () => {
-    const { useAppStore } = require("@/lib/store")
     useAppStore.setState({
       messages: [
         { role: "user", content: "show batch history" },
@@ -220,7 +219,6 @@ describe("BatchJobHistoryCard store action", () => {
   })
 
   it("does not overwrite if last message is user", () => {
-    const { useAppStore } = require("@/lib/store")
     useAppStore.setState({
       messages: [{ role: "user", content: "show batch history" }],
     })
