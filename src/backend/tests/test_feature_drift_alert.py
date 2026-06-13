@@ -509,9 +509,9 @@ def test_feature_drift_alert_patterns_enable():
         "automatic drift notification",
     ]
     for phrase in phrases:
-        assert _FEATURE_DRIFT_ALERT_PATTERNS.search(
-            phrase
-        ), f"Pattern missed: {phrase!r}"
+        assert _FEATURE_DRIFT_ALERT_PATTERNS.search(phrase), (
+            f"Pattern missed: {phrase!r}"
+        )
 
 
 def test_feature_drift_alert_patterns_disable():
@@ -523,9 +523,9 @@ def test_feature_drift_alert_patterns_disable():
         "deactivate drift notification",
     ]
     for phrase in phrases:
-        assert _FEATURE_DRIFT_ALERT_PATTERNS.search(
-            phrase
-        ), f"Pattern missed: {phrase!r}"
+        assert _FEATURE_DRIFT_ALERT_PATTERNS.search(phrase), (
+            f"Pattern missed: {phrase!r}"
+        )
 
 
 def test_feature_drift_alert_patterns_status():
@@ -536,9 +536,9 @@ def test_feature_drift_alert_patterns_status():
         "check feature drift webhook",
     ]
     for phrase in phrases:
-        assert _FEATURE_DRIFT_ALERT_PATTERNS.search(
-            phrase
-        ), f"Pattern missed: {phrase!r}"
+        assert _FEATURE_DRIFT_ALERT_PATTERNS.search(phrase), (
+            f"Pattern missed: {phrase!r}"
+        )
 
 
 def test_disable_feature_drift_alert_re():
@@ -567,6 +567,6 @@ def test_feature_drift_alert_no_false_positives():
         "compare model versions",
     ]
     for phrase in non_matches:
-        assert not _FEATURE_DRIFT_ALERT_PATTERNS.search(
-            phrase
-        ), f"False positive: {phrase!r}"
+        assert not _FEATURE_DRIFT_ALERT_PATTERNS.search(phrase), (
+            f"False positive: {phrase!r}"
+        )
