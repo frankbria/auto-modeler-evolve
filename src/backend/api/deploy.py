@@ -2752,9 +2752,7 @@ def set_accuracy_alert(
             + (
                 f"drops below {thr:.0%}."
                 if problem_type == "classification" and thr is not None
-                else f"exceeds {thr:.1f}%."
-                if thr is not None
-                else ""
+                else f"exceeds {thr:.1f}%." if thr is not None else ""
             )
             if threshold_set
             else "Accuracy alert disabled."
@@ -6527,9 +6525,7 @@ def get_model_status_report(
                 else (
                     "good"
                     if feedback_accuracy >= 0.8
-                    else "moderate"
-                    if feedback_accuracy >= 0.6
-                    else "needs attention"
+                    else "moderate" if feedback_accuracy >= 0.6 else "needs attention"
                 )
             )
     except Exception:  # noqa: BLE001
@@ -7255,6 +7251,119 @@ def get_production_threshold_optimizer(
     from core.validator import compute_production_threshold_optimizer
 
     result = compute_production_threshold_optimizer(feedback_pairs)
+    run = session.get(ModelRun, deployment.model_run_id)
+    result["deployment_id"] = deployment_id
+    result["algorithm"] = run.algorithm if run else "Unknown"
+    result["target_col"] = deployment.target_column
+    return result
+
+
+@router.get("/api/deploy/{deployment_id}/outcome-calibration")
+def get_outcome_calibration(
+    deployment_id: str,
+    session: Session = Depends(get_session),
+) -> dict:
+    """Build a calibration chart from production FeedbackRecord outcomes.
+
+    For classification: reliability diagram (confidence bucket → actual accuracy).
+    For regression: error histogram (actual − predicted distribution).
+
+    Returns ``verdict: "no_data"`` when fewer than 5 usable feedback records exist.
+    """
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment:
+        raise HTTPException(status_code=404, detail="Deployment not found.")
+
+    problem_type = deployment.problem_type or "classification"
+
+    if problem_type == "classification":
+        # Need confidence scores from PredictionLog and is_correct from FeedbackRecord
+        feedback_records = session.exec(
+            select(FeedbackRecord).where(
+                FeedbackRecord.deployment_id == deployment_id,
+                FeedbackRecord.prediction_log_id.is_not(None),
+            )
+        ).all()
+
+        if len(feedback_records) < 5:
+            return {
+                "verdict": "no_data",
+                "n_samples": len(feedback_records),
+                "summary": (
+                    f"Only {len(feedback_records)} feedback record(s) found. "
+                    "Need at least 5 with linked predictions to build a calibration chart. "
+                    "Record actual outcomes after making predictions to build up feedback data."
+                ),
+                "deployment_id": deployment_id,
+                "problem_type": problem_type,
+            }
+
+        log_ids = [fb.prediction_log_id for fb in feedback_records]
+        logs = session.exec(
+            select(PredictionLog).where(PredictionLog.id.in_(log_ids))
+        ).all()
+        logs_map = {log.id: log for log in logs}
+
+        feedback_pairs: list[dict] = []
+        for fb in feedback_records:
+            log = logs_map.get(fb.prediction_log_id)  # type: ignore[arg-type]
+            if log is None or log.confidence is None:
+                continue
+            # Determine is_correct from stored flag or by comparing labels
+            is_correct = fb.is_correct
+            if is_correct is None and fb.actual_label is not None:
+                try:
+                    predicted_label = str(json.loads(log.prediction))
+                except Exception:  # noqa: BLE001
+                    predicted_label = str(log.prediction)
+                is_correct = predicted_label == str(fb.actual_label)
+            if is_correct is None:
+                continue
+            feedback_pairs.append(
+                {"confidence": log.confidence, "is_correct": is_correct}
+            )
+
+    else:
+        # Regression: need actual_value from FeedbackRecord and prediction_numeric from PredictionLog
+        feedback_records = session.exec(
+            select(FeedbackRecord).where(
+                FeedbackRecord.deployment_id == deployment_id,
+                FeedbackRecord.actual_value.is_not(None),
+                FeedbackRecord.prediction_log_id.is_not(None),
+            )
+        ).all()
+
+        if len(feedback_records) < 5:
+            return {
+                "verdict": "no_data",
+                "n_samples": len(feedback_records),
+                "summary": (
+                    f"Only {len(feedback_records)} feedback record(s) with actual values found. "
+                    "Need at least 5 to build an error histogram. "
+                    "Record actual numeric outcomes after making predictions."
+                ),
+                "deployment_id": deployment_id,
+                "problem_type": problem_type,
+            }
+
+        log_ids = [fb.prediction_log_id for fb in feedback_records]
+        logs = session.exec(
+            select(PredictionLog).where(PredictionLog.id.in_(log_ids))
+        ).all()
+        logs_map = {log.id: log for log in logs}
+
+        feedback_pairs = []
+        for fb in feedback_records:
+            log = logs_map.get(fb.prediction_log_id)  # type: ignore[arg-type]
+            if log is None or log.prediction_numeric is None:
+                continue
+            feedback_pairs.append(
+                {"actual": fb.actual_value, "predicted": log.prediction_numeric}
+            )
+
+    from core.analyzer import compute_prediction_outcome_calibration
+
+    result = compute_prediction_outcome_calibration(feedback_pairs, problem_type)
     run = session.get(ModelRun, deployment.model_run_id)
     result["deployment_id"] = deployment_id
     result["algorithm"] = run.algorithm if run else "Unknown"

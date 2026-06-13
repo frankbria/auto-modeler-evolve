@@ -223,6 +223,7 @@ interface AppState {
   attachDeploymentHealthScorecardToLastMessage: (deployment_health_scorecard: import("./types").DeploymentHealthScorecardResult) => void
   attachConfidenceBandToLastMessage: (confidence_band: import("./types").ConfidenceBandResult) => void
   attachRetrainCompleteNotifyToLastMessage: (retrain_complete_notify: import("./types").RetrainCompleteNotifyResult) => void
+  attachOutcomeCalibrationToLastMessage: (outcome_calibration: import("./types").OutcomeCalibrationResult) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -1940,6 +1941,15 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, retrain_complete_notify }
+      }
+      return { messages }
+    }),
+  attachOutcomeCalibrationToLastMessage: (outcome_calibration) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, outcome_calibration }
       }
       return { messages }
     }),

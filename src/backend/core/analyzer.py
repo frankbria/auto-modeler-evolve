@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import re
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -8809,4 +8810,285 @@ def compute_confidence_band(
         "problem_type": problem_type,
         "value_label": label,
         "summary": summary,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Prediction Outcome Calibration Chart
+# ---------------------------------------------------------------------------
+_MIN_CALIBRATION_SAMPLES = 5
+_N_CALIBRATION_BUCKETS = 10
+
+
+def compute_prediction_outcome_calibration(
+    feedback_pairs: list[dict],
+    problem_type: str,
+    n_buckets: int = _N_CALIBRATION_BUCKETS,
+) -> dict:
+    """Build a calibration chart from production FeedbackRecord outcomes.
+
+    For **classification**: groups predictions by confidence bucket and
+    computes the actual accuracy in each bucket (reliability diagram).
+    Expected Calibration Error (ECE) measures overall calibration quality.
+    Perfect calibration = confidence equals accuracy in every bucket.
+
+    For **regression**: computes the distribution of prediction errors
+    (actual − predicted) as an error histogram, exposing bias and spread.
+
+    Args:
+        feedback_pairs: For classification: list of dicts with keys
+            ``confidence`` (float 0-1) and ``is_correct`` (bool).
+            For regression: list of dicts with keys ``actual`` (float)
+            and ``predicted`` (float).
+        problem_type: ``"classification"`` or ``"regression"``.
+        n_buckets: Number of histogram bins (default 10).
+
+    Returns:
+        A dict with ``verdict``, ``summary``, ``n_samples``, and
+        problem-type-specific keys.
+    """
+    if problem_type not in ("classification", "regression"):
+        return {
+            "verdict": "not_applicable",
+            "summary": "Calibration chart requires a classification or regression model.",
+            "n_samples": 0,
+            "problem_type": problem_type,
+        }
+
+    if len(feedback_pairs) < _MIN_CALIBRATION_SAMPLES:
+        return {
+            "verdict": "no_data",
+            "summary": (
+                f"Only {len(feedback_pairs)} feedback record(s) available. "
+                f"Need at least {_MIN_CALIBRATION_SAMPLES} to build a calibration chart. "
+                "Record actual outcomes after making predictions to build up feedback data."
+            ),
+            "n_samples": len(feedback_pairs),
+            "problem_type": problem_type,
+        }
+
+    if problem_type == "classification":
+        return _classification_calibration(feedback_pairs, n_buckets)
+    return _regression_calibration(feedback_pairs, n_buckets)
+
+
+def _classification_calibration(pairs: list[dict], n_buckets: int) -> dict:
+    """Reliability diagram: confidence buckets vs actual accuracy."""
+    # Collect valid pairs
+    valid: list[tuple[float, bool]] = []
+    for p in pairs:
+        try:
+            conf = float(p["confidence"])
+            correct = bool(p["is_correct"])
+            if 0.0 <= conf <= 1.0:
+                valid.append((conf, correct))
+        except (KeyError, TypeError, ValueError):
+            continue
+
+    n = len(valid)
+    if n < _MIN_CALIBRATION_SAMPLES:
+        return {
+            "verdict": "no_data",
+            "summary": (
+                f"Only {n} valid (confidence, outcome) pairs. "
+                f"Need at least {_MIN_CALIBRATION_SAMPLES}."
+            ),
+            "n_samples": n,
+            "problem_type": "classification",
+        }
+
+    # Build bucket boundaries
+    step = 1.0 / n_buckets
+    buckets = []
+    weighted_error_sum = 0.0
+    overconf_sum = 0.0
+    underconf_sum = 0.0
+    overconf_n = 0
+    underconf_n = 0
+
+    for i in range(n_buckets):
+        lo = round(i * step, 4)
+        hi = round((i + 1) * step, 4)
+        bucket_pairs = [
+            (c, ok)
+            for c, ok in valid
+            if lo <= c < hi or (i == n_buckets - 1 and c == 1.0)
+        ]
+        bn = len(bucket_pairs)
+        if bn == 0:
+            buckets.append(
+                {
+                    "lo": lo,
+                    "hi": hi,
+                    "n": 0,
+                    "mean_confidence": None,
+                    "actual_accuracy": None,
+                    "deviation": None,
+                }
+            )
+            continue
+        mean_conf = sum(c for c, _ in bucket_pairs) / bn
+        actual_acc = sum(1 for _, ok in bucket_pairs if ok) / bn
+        deviation = mean_conf - actual_acc  # positive = overconfident
+        weighted_error_sum += bn * abs(deviation)
+        if deviation > 0:
+            overconf_sum += deviation
+            overconf_n += 1
+        else:
+            underconf_sum += abs(deviation)
+            underconf_n += 1
+        buckets.append(
+            {
+                "lo": lo,
+                "hi": hi,
+                "n": bn,
+                "mean_confidence": round(mean_conf, 4),
+                "actual_accuracy": round(actual_acc, 4),
+                "deviation": round(deviation, 4),
+            }
+        )
+
+    ece = round(weighted_error_sum / n, 4)
+    overall_accuracy = sum(1 for _, ok in valid if ok) / n
+
+    # Classify calibration quality
+    if ece < 0.05:
+        verdict = "well_calibrated"
+        summary = (
+            f"Your model is well-calibrated across {n} production outcomes. "
+            f"ECE = {ece:.3f} — confidence scores are reliable probability estimates."
+        )
+    elif ece < 0.10:
+        if overconf_n >= underconf_n:
+            verdict = "slightly_overconfident"
+            summary = (
+                f"Your model is slightly overconfident (ECE = {ece:.3f}, {n} outcomes). "
+                "Confidence scores tend to exceed actual accuracy. Consider Platt scaling or isotonic regression."
+            )
+        else:
+            verdict = "slightly_underconfident"
+            summary = (
+                f"Your model is slightly underconfident (ECE = {ece:.3f}, {n} outcomes). "
+                "Confidence scores are slightly conservative relative to actual accuracy."
+            )
+    else:
+        if overconf_n >= underconf_n:
+            verdict = "overconfident"
+            summary = (
+                f"Your model is overconfident (ECE = {ece:.3f}, {n} outcomes). "
+                "High confidence does not reliably predict high accuracy. "
+                "Calibration post-processing (Platt scaling, isotonic regression) is recommended."
+            )
+        else:
+            verdict = "underconfident"
+            summary = (
+                f"Your model is underconfident (ECE = {ece:.3f}, {n} outcomes). "
+                "Confidence scores are significantly lower than actual accuracy suggests."
+            )
+
+    filled_buckets = [b for b in buckets if b["n"] > 0]
+    return {
+        "verdict": verdict,
+        "summary": summary,
+        "n_samples": n,
+        "problem_type": "classification",
+        "ece": ece,
+        "overall_accuracy": round(overall_accuracy, 4),
+        "buckets": buckets,
+        "n_filled_buckets": len(filled_buckets),
+    }
+
+
+def _regression_calibration(pairs: list[dict], n_buckets: int) -> dict:
+    """Error histogram: distribution of (actual − predicted) errors."""
+    errors: list[float] = []
+    for p in pairs:
+        try:
+            actual = float(p["actual"])
+            predicted = float(p["predicted"])
+            errors.append(actual - predicted)
+        except (KeyError, TypeError, ValueError):
+            continue
+
+    n = len(errors)
+    if n < _MIN_CALIBRATION_SAMPLES:
+        return {
+            "verdict": "no_data",
+            "summary": (
+                f"Only {n} valid (actual, predicted) pairs. "
+                f"Need at least {_MIN_CALIBRATION_SAMPLES}."
+            ),
+            "n_samples": n,
+            "problem_type": "regression",
+        }
+
+    mean_error = sum(errors) / n
+    mae = sum(abs(e) for e in errors) / n
+    rmse = math.sqrt(sum(e * e for e in errors) / n)
+    sorted_e = sorted(errors)
+    mid = n // 2
+    median_error = sorted_e[mid] if n % 2 else (sorted_e[mid - 1] + sorted_e[mid]) / 2
+    variance = sum((e - mean_error) ** 2 for e in errors) / n
+    std_error = math.sqrt(variance)
+
+    # Build histogram
+    e_min = sorted_e[0]
+    e_max = sorted_e[-1]
+    if e_min == e_max:
+        bin_width = 1.0
+    else:
+        bin_width = (e_max - e_min) / n_buckets
+
+    bins: list[dict] = []
+    for i in range(n_buckets):
+        lo = e_min + i * bin_width
+        hi = e_min + (i + 1) * bin_width
+        if i == n_buckets - 1:
+            count = sum(1 for e in errors if lo <= e <= hi)
+        else:
+            count = sum(1 for e in errors if lo <= e < hi)
+        bins.append({"lo": round(lo, 4), "hi": round(hi, 4), "count": count})
+
+    # Classify verdict by bias and variance
+    bias_ratio = abs(mean_error) / (std_error + 1e-9)
+    if n < 10:
+        verdict = "low_data"
+        summary = (
+            f"Limited data ({n} outcomes): mean error = {mean_error:+.3f}, MAE = {mae:.3f}. "
+            "Collect more feedback for a reliable calibration chart."
+        )
+    elif bias_ratio < 0.3:
+        verdict = "unbiased"
+        summary = (
+            f"Your model is unbiased across {n} outcomes. "
+            f"Mean error = {mean_error:+.3f} (close to zero), MAE = {mae:.3f}."
+        )
+    elif mean_error > 0:
+        verdict = "positive_bias"
+        summary = (
+            f"Your model has a positive bias across {n} outcomes: "
+            f"predictions tend to be {abs(mean_error):.3f} units below actual values on average. "
+            f"MAE = {mae:.3f}."
+        )
+    else:
+        verdict = "negative_bias"
+        summary = (
+            f"Your model has a negative bias across {n} outcomes: "
+            f"predictions tend to be {abs(mean_error):.3f} units above actual values on average. "
+            f"MAE = {mae:.3f}."
+        )
+
+    return {
+        "verdict": verdict,
+        "summary": summary,
+        "n_samples": n,
+        "problem_type": "regression",
+        "mean_error": round(mean_error, 4),
+        "median_error": round(median_error, 4),
+        "std_error": round(std_error, 4),
+        "mae": round(mae, 4),
+        "rmse": round(rmse, 4),
+        "error_min": round(e_min, 4),
+        "error_max": round(e_max, 4),
+        "bins": bins,
     }

@@ -585,6 +585,7 @@ export interface ChatMessage {
   deployment_health_scorecard?: DeploymentHealthScorecardResult
   confidence_band?: ConfidenceBandResult
   retrain_complete_notify?: RetrainCompleteNotifyResult
+  outcome_calibration?: OutcomeCalibrationResult
 }
 
 export interface RollbackVersionEntry {
@@ -5103,4 +5104,56 @@ export interface RetrainCompleteNotifyResult {
   retrain_complete_webhooks: string[]
   last_completed_retrain: RetrainCompletedRun | null
   summary: string
+}
+
+export interface OutcomeCalibrationBucket {
+  lo: number
+  hi: number
+  n: number
+  mean_confidence: number | null
+  actual_accuracy: number | null
+  deviation: number | null
+}
+
+export interface OutcomeCalibrationBin {
+  lo: number
+  hi: number
+  count: number
+}
+
+export type OutcomeCalibrationVerdict =
+  | "well_calibrated"
+  | "slightly_overconfident"
+  | "slightly_underconfident"
+  | "overconfident"
+  | "underconfident"
+  | "unbiased"
+  | "positive_bias"
+  | "negative_bias"
+  | "low_data"
+  | "no_data"
+  | "not_applicable"
+
+export interface OutcomeCalibrationResult {
+  deployment_id: string
+  algorithm: string | null
+  target_col: string | null
+  verdict: OutcomeCalibrationVerdict
+  summary: string
+  n_samples: number
+  problem_type: string
+  // classification-only
+  ece?: number
+  overall_accuracy?: number
+  buckets?: OutcomeCalibrationBucket[]
+  n_filled_buckets?: number
+  // regression-only
+  mean_error?: number
+  median_error?: number
+  std_error?: number
+  mae?: number
+  rmse?: number
+  error_min?: number
+  error_max?: number
+  bins?: OutcomeCalibrationBin[]
 }

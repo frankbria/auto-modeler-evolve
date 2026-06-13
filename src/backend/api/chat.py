@@ -3941,6 +3941,20 @@ _RETRAIN_COMPLETE_NOTIFY_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+_OUTCOME_CALIB_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"prediction\s+outcome\s+calibration\b|"
+    r"(?:show|plot|display|view|see)\s+(?:me\s+)?(?:the\s+)?(?:outcome\s+)?calibration\s+(?:chart|diagram|plot|report|from\s+feedback)?\b|"
+    r"(?:are|is)\s+(?:my\s+)?(?:model.s?\s+)?(?:confidence\s+scores?|predictions?)\s+(?:well\s+)?calibrated\s+(?:based\s+on|from|using)\s+(?:(?:actual|real|production)\s+)?(?:outcomes?|feedback|results?)\b|"
+    r"reliability\s+diagram\b|"
+    r"(?:calibration|error)\s+(?:chart|histogram|plot|diagram|curve)\s+(?:from|using|based\s+on)\s+(?:feedback|outcomes?|results?)\b|"
+    r"(?:how\s+(?:well\s+)?calibrated|calibration\s+quality)\s+(?:are|is)\s+(?:my\s+)?(?:predictions?|confidence\s+scores?)\b|"
+    r"prediction\s+(?:error\s+)?histogram\s+(?:from|using)\s+feedback\b|"
+    r"prediction\s+accuracy\s+(?:by|per)\s+confidence\s+bucket\b"
+    r")",
+    re.IGNORECASE,
+)
+
 _SEGMENT_DRIFT_PATTERNS = re.compile(
     r"(?i)(?:"
     r"(?:is\s+(?:my\s+)?(?:model|drift)\s+(?:drifting|worse)\s+(?:more\s+)?(?:in|for)\s+\w+)\b|"
@@ -15930,9 +15944,7 @@ def send_message(
             _wu_trend = (
                 "up"
                 if (_wu_change_pct or 0) > 5
-                else "down"
-                if (_wu_change_pct or 0) < -5
-                else "flat"
+                else "down" if (_wu_change_pct or 0) < -5 else "flat"
             )
 
             # Per-day breakdown for the current week (7 entries)
@@ -15951,7 +15963,9 @@ def send_message(
             _wu_feature_tally: dict[str, dict[str, int]] = {}
             _wu_recent_logs = [
                 lg for lg in _wu_logs if lg.created_at >= _wu_week_start
-            ][:100]  # cap to last 100 for performance
+            ][
+                :100
+            ]  # cap to last 100 for performance
             for _wl in _wu_recent_logs:
                 try:
                     _feat_dict: dict = json.loads(_wl.input_features or "{}")
@@ -18307,6 +18321,55 @@ def send_message(
                 )
         except Exception:  # noqa: BLE001
             pass  # Retrain complete notify is nice-to-have; never crash chat
+
+    # Prediction outcome calibration — reliability diagram (classification) or error histogram (regression)
+    # built from production FeedbackRecord outcomes.
+    # Distinct from: _CALIBRATION_CHECK_PATTERNS (training-time Brier/ECE on validation data),
+    # _PROD_THRESHOLD_OPT_PATTERNS (sweeps thresholds, not a visual chart).
+    outcome_calib_event: dict | None = None
+    if _OUTCOME_CALIB_PATTERNS.search(body.message) and ctx["deployment"]:
+        try:
+            import requests as _oc_requests
+
+            _oc_dep = ctx["deployment"]
+            _oc_dep_id = _oc_dep.id if hasattr(_oc_dep, "id") else str(_oc_dep)
+            _oc_resp = _oc_requests.get(
+                f"http://localhost:8000/api/deploy/{_oc_dep_id}/outcome-calibration",
+                timeout=10,
+            )
+            if _oc_resp.status_code == 200:
+                _oc_data = _oc_resp.json()
+                outcome_calib_event = _oc_data
+                _oc_verdict = _oc_data.get("verdict", "no_data")
+                _oc_prob_type = _oc_data.get("problem_type", "classification")
+                _oc_n = _oc_data.get("n_samples", 0)
+                _oc_summary = _oc_data.get("summary", "")
+                if _oc_prob_type == "classification":
+                    _oc_ece = _oc_data.get("ece")
+                    system_prompt += (
+                        "\n\n## Prediction Outcome Calibration (Classification)\n"
+                        f"Verdict: {_oc_verdict} | n_outcomes: {_oc_n} | ECE: {_oc_ece}\n"
+                        f"Summary: {_oc_summary}\n"
+                        "Explain to the analyst in plain English what ECE (Expected Calibration Error) means: "
+                        "a well-calibrated model's 80% confidence really means it's right 80% of the time. "
+                        "If verdict is overconfident/underconfident, suggest Platt scaling or isotonic regression as remedies. "
+                        "If well_calibrated, affirm that confidence scores are trustworthy probability estimates."
+                    )
+                else:
+                    _oc_mae = _oc_data.get("mae")
+                    _oc_mean_err = _oc_data.get("mean_error")
+                    system_prompt += (
+                        "\n\n## Prediction Outcome Calibration (Regression)\n"
+                        f"Verdict: {_oc_verdict} | n_outcomes: {_oc_n} | MAE: {_oc_mae} | Mean error: {_oc_mean_err:+.4f}\n"
+                        f"Summary: {_oc_summary}\n"
+                        "Explain to the analyst what a prediction error histogram shows: "
+                        "the spread of (actual − predicted) values reveals bias (systematic over/under-prediction) "
+                        "and variance (how consistent the predictions are). "
+                        "If verdict is positive_bias, the model is under-predicting; negative_bias means over-predicting. "
+                        "Suggest re-training with more recent data or feature engineering if bias is significant."
+                    )
+        except Exception:  # noqa: BLE001
+            pass  # Outcome calibration is nice-to-have; never crash chat
 
     # Canary deployment — route a % of traffic to a different model version for live A/B testing.
     # Distinct from: _AB_TEST_PATTERNS (champion/challenger across two full deployments),
@@ -20875,9 +20938,7 @@ def send_message(
                         else (
                             "healthy"
                             if _n_failed == 0
-                            else "warning"
-                            if _n_failed / _n_total < 0.1
-                            else "critical"
+                            else "warning" if _n_failed / _n_total < 0.1 else "critical"
                         )
                     )
                     _wh_total_events += _n_total
@@ -20936,9 +20997,7 @@ def send_message(
                     else (
                         "warning"
                         if any(d["status"] == "warning" for d in _wh_dep_summaries)
-                        else "no_events"
-                        if _wh_total_events == 0
-                        else "healthy"
+                        else "no_events" if _wh_total_events == 0 else "healthy"
                     )
                 )
             )
@@ -22213,6 +22272,9 @@ def send_message(
 
         if retrain_complete_notify_event:
             yield f"data: {json.dumps({'type': 'retrain_complete_notify', 'retrain_complete_notify': retrain_complete_notify_event})}\n\n"
+
+        if outcome_calib_event:
+            yield f"data: {json.dumps({'type': 'outcome_calibration', 'outcome_calibration': outcome_calib_event})}\n\n"
 
         if canary_event:
             yield f"data: {json.dumps({'type': 'canary_status', 'canary_status': canary_event})}\n\n"

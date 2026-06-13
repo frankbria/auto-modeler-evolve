@@ -1444,6 +1444,9 @@ export const api = {
     confidenceBand: (deploymentId: string, nDays?: number): Promise<import("./types").ConfidenceBandResult> =>
       fetch(`${API_URL}/api/deploy/${deploymentId}/confidence-band${nDays ? `?n_days=${nDays}` : ""}`).then((r) => r.json()),
 
+    outcomeCalibration: (deploymentId: string): Promise<import("./types").OutcomeCalibrationResult> =>
+      fetch(`${API_URL}/api/deploy/${deploymentId}/outcome-calibration`).then((r) => r.json()),
+
     getDegradationRetrainStatus: (deploymentId: string): Promise<import("./types").DegradationRetrainConfig> =>
       fetch(`${API_URL}/api/deploy/${deploymentId}/degradation-retrain-status`).then((r) => r.json()),
 
