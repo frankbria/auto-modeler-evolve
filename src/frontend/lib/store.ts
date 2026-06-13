@@ -222,6 +222,7 @@ interface AppState {
   attachCanaryStatusToLastMessage: (canary_status: import("./types").CanaryStatusResult) => void
   attachDeploymentHealthScorecardToLastMessage: (deployment_health_scorecard: import("./types").DeploymentHealthScorecardResult) => void
   attachConfidenceBandToLastMessage: (confidence_band: import("./types").ConfidenceBandResult) => void
+  attachRetrainCompleteNotifyToLastMessage: (retrain_complete_notify: import("./types").RetrainCompleteNotifyResult) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -1930,6 +1931,15 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, confidence_band }
+      }
+      return { messages }
+    }),
+  attachRetrainCompleteNotifyToLastMessage: (retrain_complete_notify) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, retrain_complete_notify }
       }
       return { messages }
     }),

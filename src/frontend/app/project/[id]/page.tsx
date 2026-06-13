@@ -146,6 +146,7 @@ import { SavedScenariosCard } from "@/components/deploy/saved-scenarios-card"
 import { CanaryCard } from "@/components/deploy/canary-card"
 import { DeploymentHealthScorecardCard } from "@/components/deploy/deployment-health-scorecard-card"
 import { ConfidenceBandCard } from "@/components/deploy/confidence-band-card"
+import { RetrainCompleteNotifyCard } from "@/components/deploy/retrain-complete-notify-card"
 import { EnsembleRecommendationCard } from "@/components/models/ensemble-recommendation-card"
 import { TuningChatCard } from "@/components/models/tuning-chat-card"
 import { CvScoreDistributionCard } from "@/components/models/cv-score-distribution-card"
@@ -463,6 +464,7 @@ export default function ProjectWorkspace() {
     attachCanaryStatusToLastMessage,
     attachDeploymentHealthScorecardToLastMessage,
     attachConfidenceBandToLastMessage,
+    attachRetrainCompleteNotifyToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -921,6 +923,8 @@ export default function ProjectWorkspace() {
                 attachDeploymentHealthScorecardToLastMessage(json.deployment_health_scorecard as import("@/lib/types").DeploymentHealthScorecardResult)
               } else if (json.type === "confidence_band" && json.confidence_band) {
                 attachConfidenceBandToLastMessage(json.confidence_band as import("@/lib/types").ConfidenceBandResult)
+              } else if (json.type === "retrain_complete_notify" && json.retrain_complete_notify) {
+                attachRetrainCompleteNotifyToLastMessage(json.retrain_complete_notify as import("@/lib/types").RetrainCompleteNotifyResult)
               } else if (json.type === "uptime_summary" && json.uptime_summary) {
                 attachUptimeSummaryToLastMessage(json.uptime_summary as import("@/lib/types").ApiUptimeSummaryResult)
               } else if (json.type === "cost_sensitive_threshold" && json.cost_sensitive_threshold) {
@@ -1171,6 +1175,8 @@ export default function ProjectWorkspace() {
                 attachDeploymentHealthScorecardToLastMessage(json.deployment_health_scorecard as import("@/lib/types").DeploymentHealthScorecardResult)
               } else if (json.type === "confidence_band" && json.confidence_band) {
                 attachConfidenceBandToLastMessage(json.confidence_band as import("@/lib/types").ConfidenceBandResult)
+              } else if (json.type === "retrain_complete_notify" && json.retrain_complete_notify) {
+                attachRetrainCompleteNotifyToLastMessage(json.retrain_complete_notify as import("@/lib/types").RetrainCompleteNotifyResult)
               } else if (json.type === "uptime_summary" && json.uptime_summary) {
                 attachUptimeSummaryToLastMessage(json.uptime_summary as import("@/lib/types").ApiUptimeSummaryResult)
               } else if (json.type === "cost_sensitive_threshold" && json.cost_sensitive_threshold) {
@@ -1370,6 +1376,7 @@ export default function ProjectWorkspace() {
     attachCanaryStatusToLastMessage,
     attachDeploymentHealthScorecardToLastMessage,
     attachConfidenceBandToLastMessage,
+    attachRetrainCompleteNotifyToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -2172,6 +2179,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.confidence_band && (
                       <ConfidenceBandCard data={msg.confidence_band} />
+                    )}
+                    {msg.retrain_complete_notify && (
+                      <RetrainCompleteNotifyCard data={msg.retrain_complete_notify} />
                     )}
                     {msg.uptime_summary && (
                       <ApiUptimeSummaryCard result={msg.uptime_summary} />

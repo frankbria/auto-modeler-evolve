@@ -584,6 +584,7 @@ export interface ChatMessage {
   canary_status?: CanaryStatusResult
   deployment_health_scorecard?: DeploymentHealthScorecardResult
   confidence_band?: ConfidenceBandResult
+  retrain_complete_notify?: RetrainCompleteNotifyResult
 }
 
 export interface RollbackVersionEntry {
@@ -5083,5 +5084,23 @@ export interface ConfidenceBandResult {
   verdict: "stable" | "moderate_spread" | "high_spread" | "no_data"
   problem_type: string
   value_label: string
+  summary: string
+}
+
+export interface RetrainCompletedRun {
+  run_id: string
+  algorithm: string
+  status: string
+  primary_metric: string
+  primary_metric_value: number | null
+  training_duration_ms: number | null
+  completed_at: string | null
+}
+
+export interface RetrainCompleteNotifyResult {
+  deployment_id: string
+  has_notification: boolean
+  retrain_complete_webhooks: string[]
+  last_completed_retrain: RetrainCompletedRun | null
   summary: string
 }

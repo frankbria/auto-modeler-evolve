@@ -216,6 +216,7 @@ def _train_in_background(
     imbalance_strategy: str | None = None,
     split_strategy: str = "random",
     custom_class_weights: dict | None = None,
+    deployment_id: str | None = None,
 ) -> None:
     """Runs in a daemon thread. Updates ModelRun status in DB and pushes SSE events."""
     # Mark as training
@@ -298,6 +299,36 @@ def _train_in_background(
                 "training_duration_ms": result["training_duration_ms"],
             },
         )
+
+        if deployment_id:
+            try:
+                from core.webhook import EVENT_RETRAIN_COMPLETE, dispatch_webhooks
+
+                _m = result["metrics"]
+                _primary_key = (
+                    "accuracy"
+                    if "accuracy" in _m
+                    else ("r2" if "r2" in _m else next(iter(_m), ""))
+                )
+                dispatch_webhooks(
+                    deployment_id,
+                    EVENT_RETRAIN_COMPLETE,
+                    {
+                        "deployment_id": deployment_id,
+                        "run_id": model_run_id,
+                        "algorithm": algorithm,
+                        "primary_metric": _primary_key,
+                        "primary_metric_value": _m.get(_primary_key),
+                        "training_duration_ms": result["training_duration_ms"],
+                        "message": (
+                            f"Auto-retrain complete: {algorithm} trained in "
+                            f"{result['training_duration_ms']}ms. "
+                            f"{_primary_key}={_m.get(_primary_key)}"
+                        ),
+                    },
+                )
+            except Exception:  # noqa: BLE001
+                pass  # Best-effort; never crash training completion
 
     except Exception as exc:  # noqa: BLE001
         with Session(_db.engine) as session:

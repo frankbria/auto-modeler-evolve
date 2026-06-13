@@ -10139,6 +10139,7 @@ def _check_and_trigger_degradation_retrain(deployment_id: str) -> None:
                 _problem_type,
                 _model_dir,
             ),
+            kwargs={"deployment_id": deployment_id},
             daemon=True,
             name=f"DegradationRetrain-{deployment_id}",
         )

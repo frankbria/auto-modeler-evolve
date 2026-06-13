@@ -3927,6 +3927,20 @@ _DEGRADATION_RETRAIN_THRESHOLD_RE = re.compile(
     r"(?i)(?:below|under|less\s+than|drops?\s+(?:below|under|to)|falls?\s+(?:below|under|to))?\s*(\d+(?:\.\d+)?)\s*%?"
 )
 
+_RETRAIN_COMPLETE_NOTIFY_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"(?:notify|alert|tell|inform)\s+(?:me\s+)?when\s+(?:(?:re.?train(?:ing)?|training)\s+(?:is\s+)?(?:done|complete|finish(?:ed)?|over))\b|"
+    r"(?:re.?train(?:ing)?|training)\s+(?:completion|complete|done|finish(?:ed)?)\s+(?:notify|notification|alert|webhook)\b|"
+    r"(?:notify|alert|tell)\s+(?:me\s+)?when\s+(?:auto.?)?re.?train(?:ing)?\s+(?:finish(?:es)?|complete[sd]?|done)\b|"
+    r"(?:re.?train(?:ing)?|auto.?re.?train(?:ing)?)\s+(?:complete|done|finish(?:ed)?)\s+(?:notification|alert|webhook|status)\b|"
+    r"(?:how\s+(?:do\s+I|can\s+I|to))\s+(?:get\s+)?(?:notified|alerted)\s+when\s+re.?train(?:ing)?\s+(?:is\s+)?(?:finish(?:es)?|complete[sd]?|done)\b|"
+    r"(?:show|check|get|view|what\s+is)\s+(?:(?:my|the)\s+)?re.?train(?:ing)?\s+(?:completion\s+)?(?:notification|notify|alert)\s*(?:config(?:uration)?|setting|status)?\b|"
+    r"re.?train(?:ing)?\s+complete\b|"
+    r"(?:did|has|when\s+did)\s+(?:(?:auto.?)?re.?train(?:ing)?|(?:the\s+)?(?:last\s+)?re.?train(?:ing)?)\s+(?:finish|complete|end|done)\b"
+    r")",
+    re.IGNORECASE,
+)
+
 _SEGMENT_DRIFT_PATTERNS = re.compile(
     r"(?i)(?:"
     r"(?:is\s+(?:my\s+)?(?:model|drift)\s+(?:drifting|worse)\s+(?:more\s+)?(?:in|for)\s+\w+)\b|"
@@ -18192,6 +18206,98 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Degradation retrain config is nice-to-have; never crash chat
 
+    # Retrain completion notification — shows last completed auto-retrain result + retrain_complete webhook config.
+    # Natural follow-on to degradation_retrain: "you triggered a retrain, how do you know when it finished?"
+    # Distinct from: _DEGRADATION_RETRAIN_PATTERNS (configures the trigger), _RETRAIN_READINESS_PATTERNS (recommends).
+    retrain_complete_notify_event: dict | None = None
+    if _RETRAIN_COMPLETE_NOTIFY_PATTERNS.search(body.message) and ctx["deployment"]:
+        try:
+            from models.model_run import ModelRun as _RCN_MR
+            from models.webhook_config import WebhookConfig as _RCN_WH
+            from sqlmodel import select as _rcn_select
+
+            _rcn_dep = ctx["deployment"]
+            _rcn_dep_id = _rcn_dep.id if hasattr(_rcn_dep, "id") else str(_rcn_dep)
+            _rcn_dep_obj = session.get(Deployment, _rcn_dep_id)
+
+            if _rcn_dep_obj:
+                _rcn_project_id = _rcn_dep_obj.project_id
+                _rcn_run = session.exec(
+                    _rcn_select(_RCN_MR)
+                    .where(
+                        _RCN_MR.project_id == _rcn_project_id,
+                        _RCN_MR.status == "done",
+                    )
+                    .order_by(_RCN_MR.created_at.desc())
+                    .limit(1)
+                ).first()
+
+                _rcn_webhooks = session.exec(
+                    _rcn_select(_RCN_WH).where(
+                        _RCN_WH.deployment_id == _rcn_dep_id,
+                        _RCN_WH.is_active == True,  # noqa: E712
+                    )
+                ).all()
+                _rcn_notify_webhooks = [
+                    w for w in _rcn_webhooks if "retrain_complete" in (w.event_types or [])
+                ]
+
+                _rcn_last_run: dict | None = None
+                if _rcn_run:
+                    import json as _rcn_json
+
+                    _rcn_metrics = {}
+                    try:
+                        _rcn_metrics = _rcn_json.loads(_rcn_run.metrics or "{}")
+                    except Exception:  # noqa: BLE001
+                        pass
+                    _rcn_primary_key = (
+                        "accuracy"
+                        if "accuracy" in _rcn_metrics
+                        else ("r2" if "r2" in _rcn_metrics else next(iter(_rcn_metrics), ""))
+                    )
+                    _rcn_last_run = {
+                        "run_id": _rcn_run.id,
+                        "algorithm": _rcn_run.algorithm,
+                        "status": _rcn_run.status,
+                        "primary_metric": _rcn_primary_key,
+                        "primary_metric_value": _rcn_metrics.get(_rcn_primary_key),
+                        "training_duration_ms": _rcn_run.training_duration_ms,
+                        "completed_at": (
+                            _rcn_run.created_at.isoformat() if _rcn_run.created_at else None
+                        ),
+                    }
+
+                _rcn_has_notification = len(_rcn_notify_webhooks) > 0
+                _rcn_webhook_urls = [w.url for w in _rcn_notify_webhooks]
+                retrain_complete_notify_event = {
+                    "deployment_id": _rcn_dep_id,
+                    "has_notification": _rcn_has_notification,
+                    "retrain_complete_webhooks": _rcn_webhook_urls,
+                    "last_completed_retrain": _rcn_last_run,
+                    "summary": (
+                        f"Retrain complete webhook registered at {len(_rcn_notify_webhooks)} URL(s). "
+                        f"Last completed run: {_rcn_last_run['algorithm']} "
+                        f"({_rcn_last_run['primary_metric']}={_rcn_last_run['primary_metric_value']})."
+                        if _rcn_has_notification and _rcn_last_run
+                        else "No retrain_complete webhooks registered. Register a webhook with event type 'retrain_complete' to be notified when auto-retraining finishes."
+                        if not _rcn_has_notification
+                        else "Retrain complete webhooks registered. No completed model runs yet for this deployment."
+                    ),
+                }
+                system_prompt += (
+                    "\n\n## Retrain Completion Notification\n"
+                    f"{retrain_complete_notify_event['summary']} "
+                    "Explain to the analyst in plain English: "
+                    "A 'retrain_complete' webhook fires automatically when degradation-triggered retraining finishes. "
+                    "If they want to be notified, they need to register a webhook URL with event type 'retrain_complete'. "
+                    "They can do this via the Webhooks section of the deployment panel. "
+                    "The webhook payload includes: algorithm, primary metric value, training_duration_ms, and a plain-English message. "
+                    "Point out the last completed run details if available."
+                )
+        except Exception:  # noqa: BLE001
+            pass  # Retrain complete notify is nice-to-have; never crash chat
+
     # Canary deployment — route a % of traffic to a different model version for live A/B testing.
     # Distinct from: _AB_TEST_PATTERNS (champion/challenger across two full deployments),
     # _AUTO_ROLLBACK_PATTERNS (automatic rollback on accuracy drop).
@@ -22094,6 +22200,9 @@ def send_message(
 
         if degradation_retrain_event:
             yield f"data: {json.dumps({'type': 'degradation_retrain_config', 'degradation_retrain_config': degradation_retrain_event})}\n\n"
+
+        if retrain_complete_notify_event:
+            yield f"data: {json.dumps({'type': 'retrain_complete_notify', 'retrain_complete_notify': retrain_complete_notify_event})}\n\n"
 
         if canary_event:
             yield f"data: {json.dumps({'type': 'canary_status', 'canary_status': canary_event})}\n\n"
