@@ -51,6 +51,8 @@ the time is better spent on real features.
 
 *(none — next session should pick from the list below)*
 
+**Shipped Day 94 (20:00):** Model Performance Decay Rate Analysis (Track D) — answers "how fast is my model degrading?" using per-week FeedbackRecord accuracy grouped by ISO calendar week, numpy polyfit linear trend, and weeks-until-threshold estimate. `compute_performance_decay_rate()` pure function (verdicts: degrading_fast/degrading_slowly/stable/improving/below_threshold/no_data); `GET /api/deploy/{id}/performance-decay-rate?threshold_pct=80` REST endpoint; `_PERF_DECAY_PATTERNS` (8 NL variants); `PerformanceDecayRateCard` (rose/amber/sky/emerald/muted border, 📉 icon, Recharts LineChart with dashed threshold reference line, slope tile, weeks estimate, alert callout). 27 backend + 22 frontend = **49 new tests**. Baseline: 6540/3709 → **6567/3731**.
+
 **Shipped Day 94 (12:00):** Batch Job History Analytics (Track D) — multi-run timeline showing job statuses, completion times, row counts, durations, error messages, aggregate health (healthy/some_failures/all_failed/no_data). `compute_batch_job_history()` pure function; `GET /api/deploy/{id}/batch-job-history?n=20` REST endpoint; `_BATCH_JOB_HISTORY_PATTERNS` (8 NL variants); `BatchJobHistoryCard` (emerald/amber/rose/muted border, run timeline table). 62 new tests (42 backend + 20 frontend). Baseline: 6498/3689 → **6540/3709**.
 
 **Shipped Day 94 (04:00):** Prediction Outcome Calibration Chart (Track D) — reliability diagram (classification) or error histogram (regression) built from production FeedbackRecord outcomes. `compute_prediction_outcome_calibration()` pure function; `GET /api/deploy/{id}/outcome-calibration` REST endpoint; `_OUTCOME_CALIB_PATTERNS` (8 NL variants); `OutcomeCalibrationCard` (Recharts LineChart reliability diagram or BarChart error histogram). 59 new tests (38 backend + 21 frontend). Baseline: 6460/3668 → **6498/3689**.
@@ -58,8 +60,8 @@ the time is better spent on real features.
 **Shipped Day 93 (20:00):** Model Retraining Completion Notification (Track D) — `retrain_complete` webhook fires when degradation-triggered auto-retrain finishes; `RetrainCompleteNotifyCard` shows last completed retrain stats + registered notification URLs. 41 new tests (21 backend + 20 frontend).
 
 **What's next (priority order):**
-- Model performance decay rate analysis — "how fast is my model degrading?" with a linear trend line over weekly feedback accuracy, estimated weeks until below threshold
 - Prediction confidence distribution shift alert — proactive webhook when the distribution of confidence scores changes significantly from baseline (related to but distinct from covariate drift)
+- Comparative model improvement plan — "create a ranked improvement roadmap for all my models" (Track B)
 
 ---
 
