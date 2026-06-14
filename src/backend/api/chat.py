@@ -20656,9 +20656,21 @@ def send_message(
                 system_prompt += (
                     f"\n\n## Performance Decay Rate\n{_pdr_summary}\n"
                     f"Verdict: {_pdr_verdict}. "
-                    + (f"Current accuracy: {_pdr_curr}%. " if _pdr_curr is not None else "")
-                    + (f"Slope: {_pdr_slope:+.2f}% per week. " if _pdr_slope is not None else "")
-                    + (f"Weeks until below threshold: {_pdr_weeks}." if _pdr_weeks is not None else "")
+                    + (
+                        f"Current accuracy: {_pdr_curr}%. "
+                        if _pdr_curr is not None
+                        else ""
+                    )
+                    + (
+                        f"Slope: {_pdr_slope:+.2f}% per week. "
+                        if _pdr_slope is not None
+                        else ""
+                    )
+                    + (
+                        f"Weeks until below threshold: {_pdr_weeks}."
+                        if _pdr_weeks is not None
+                        else ""
+                    )
                     + "\n"
                     "Tell the analyst how fast their model is degrading in plain English. "
                     "If degrading_fast or below_threshold, strongly recommend retraining. "

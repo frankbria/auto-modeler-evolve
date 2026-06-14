@@ -9372,14 +9372,22 @@ def compute_performance_decay_rate(
             f"(currently {current_accuracy:.1f}%). Retraining is strongly recommended."
         )
     elif verdict == "degrading_fast":
-        wk = f"approximately {weeks_until:.0f} week{'s' if weeks_until != 1 else ''}" if weeks_until else "soon"
+        wk = (
+            f"approximately {weeks_until:.0f} week{'s' if weeks_until != 1 else ''}"
+            if weeks_until
+            else "soon"
+        )
         summary = (
             f"Accuracy is {slope_dir} quickly — losing {slope_abs:.1f}% per week "
             f"(currently {current_accuracy:.1f}%). "
             f"At this rate it will fall below {threshold_f:.0f}% in {wk}."
         )
     elif verdict == "degrading_slowly":
-        wk = f"approximately {weeks_until:.0f} week{'s' if weeks_until != 1 else ''}" if weeks_until else "a long time"
+        wk = (
+            f"approximately {weeks_until:.0f} week{'s' if weeks_until != 1 else ''}"
+            if weeks_until
+            else "a long time"
+        )
         summary = (
             f"Accuracy is slowly declining — {slope_abs:.1f}% per week "
             f"(currently {current_accuracy:.1f}%). "

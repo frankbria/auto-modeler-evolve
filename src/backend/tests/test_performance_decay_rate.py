@@ -44,6 +44,7 @@ def test_perf_decay_verdicts_are_constants():
 def _make_pair(is_correct: bool, week_offset: int = 0) -> dict:
     """Make a feedback pair for a specific week offset from 2025-01-06 (Monday)."""
     from datetime import date, timedelta
+
     d = date(2025, 1, 6) + timedelta(weeks=week_offset)
     return {"created_at": f"{d.isoformat()}T10:00:00", "is_correct": is_correct}
 
@@ -359,7 +360,9 @@ def _test_engine_and_client(tmp_path):
 
     try:
         with Session(engine) as s:
-            proj = Project(id=str(uuid.uuid4()), name="Test", created_at=datetime.utcnow())
+            proj = Project(
+                id=str(uuid.uuid4()), name="Test", created_at=datetime.utcnow()
+            )
             ds = Dataset(
                 id=str(uuid.uuid4()),
                 project_id=proj.id,
@@ -441,7 +444,9 @@ def test_perf_decay_rest_no_feedback(_test_engine_and_client, tmp_path):
     db_module.engine = engine
     try:
         with Session(engine) as s:
-            proj = Project(id=str(uuid.uuid4()), name="P2", created_at=datetime.utcnow())
+            proj = Project(
+                id=str(uuid.uuid4()), name="P2", created_at=datetime.utcnow()
+            )
             run = ModelRun(
                 id=str(uuid.uuid4()),
                 project_id=proj.id,
