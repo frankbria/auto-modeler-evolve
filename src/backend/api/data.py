@@ -823,15 +823,14 @@ def merge_project_datasets(
     project_id: str,
     body: MergeRequest,
     session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ):
     """Merge two datasets within a project on a shared join key.
 
     Creates a new Dataset record for the merged result.
     Returns preview + full column stats for the merged dataset.
     """
-    project = session.get(Project, project_id)
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    get_owned_project(project_id, current_user, session)
 
     ds1 = session.get(Dataset, body.dataset_id_1)
     ds2 = session.get(Dataset, body.dataset_id_2)
@@ -842,6 +841,12 @@ def merge_project_datasets(
     if not ds2:
         raise HTTPException(
             status_code=404, detail=f"Dataset {body.dataset_id_2} not found"
+        )
+    # Source datasets come from the request body, not the path — authorize both
+    # so a caller cannot merge another tenant's datasets into their project.
+    for _ds in (ds1, ds2):
+        assert_owns_project(
+            session.get(Project, _ds.project_id), current_user, "Dataset"
         )
 
     path1, path2 = Path(ds1.file_path), Path(ds2.file_path)

@@ -157,6 +157,30 @@ async def test_cross_tenant_dataset_forbidden(client, second_client):
 
 
 @pytest.mark.asyncio
+async def test_cross_tenant_merge_via_body_forbidden(client, second_client):
+    """A caller must not merge ANOTHER tenant's datasets (body-keyed) into their
+    own project. Source dataset ids come from the body, not the path."""
+    # User A owns a dataset.
+    proj_a = (await client.post("/api/projects", json={"name": "A merge"})).json()
+    ds_a = (
+        await client.post("/api/data/sample", json={"project_id": proj_a["id"]})
+    ).json()["dataset_id"]
+
+    # User B owns a destination project, and tries to pull in A's dataset.
+    proj_b = (await second_client.post("/api/projects", json={"name": "B"})).json()
+    resp = await second_client.post(
+        f"/api/data/{proj_b['id']}/merge",
+        json={
+            "dataset_id_1": ds_a,
+            "dataset_id_2": ds_a,
+            "join_key": "product",
+            "how": "inner",
+        },
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
 async def test_cross_tenant_model_and_deployment_forbidden(client, second_client):
     ids = _seed_owned_stack(A_OWNER)
 
