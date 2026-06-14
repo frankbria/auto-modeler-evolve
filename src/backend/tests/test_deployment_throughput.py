@@ -228,7 +228,7 @@ def test_throughput_endpoint_no_data():
     dep_id = str(uuid.uuid4())
 
     with _Session(engine) as session:
-        project = Project(id=project_id, name="TP Project")
+        project = Project(owner_id="test-default-owner", id=project_id, name="TP Project")
         session.add(project)
         dep = Deployment(
             id=dep_id,
@@ -260,7 +260,7 @@ def test_throughput_endpoint_with_data():
     dep_id = str(uuid.uuid4())
 
     with _Session(engine) as session:
-        project = Project(id=project_id, name="TP Project 2")
+        project = Project(owner_id="test-default-owner", id=project_id, name="TP Project 2")
         session.add(project)
         dep = Deployment(
             id=dep_id,
@@ -303,7 +303,7 @@ def test_throughput_endpoint_custom_n():
     dep_id = str(uuid.uuid4())
 
     with _Session(engine) as session:
-        project = Project(id=project_id, name="TP Project 3")
+        project = Project(owner_id="test-default-owner", id=project_id, name="TP Project 3")
         session.add(project)
         dep = Deployment(
             id=dep_id,

@@ -255,6 +255,9 @@ def _make_app_with_db(db_url: str):
 
     from main import app
 
+    from tests.conftest import install_test_auth
+
+    install_test_auth(app)
     return app
 
 

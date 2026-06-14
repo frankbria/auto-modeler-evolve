@@ -344,7 +344,7 @@ async def test_error_correlation_endpoint_200_with_real_run(tmp_path, monkeypatc
     SQLModel.metadata.create_all(engine)
 
     with Session(engine) as session:
-        proj = Project(id=str(uuid.uuid4()), name="Test", status="exploring")
+        proj = Project(owner_id="test-default-owner", id=str(uuid.uuid4()), name="Test", status="exploring")
         session.add(proj)
 
         csv_path = tmp_path / "data.csv"

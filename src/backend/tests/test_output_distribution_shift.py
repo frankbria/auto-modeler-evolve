@@ -306,7 +306,7 @@ async def test_output_distribution_shift_endpoint_no_data(_db_url, tmp_path):
 
     # Create minimal project + deployment without enough PredictionLogs
     with Session(db_module.engine) as session:
-        proj = Project(name="shift-test", description="")
+        proj = Project(owner_id="test-default-owner", name="shift-test", description="")
         session.add(proj)
         session.commit()
         session.refresh(proj)

@@ -303,6 +303,8 @@ def _make_test_app():
 
     app = FastAPI()
     app.include_router(router)
+    from tests.conftest import install_test_auth
+    install_test_auth(app)
     return app
 
 
@@ -337,7 +339,7 @@ def _seed_db_with_run(tmp_path: Path):
     joblib.dump(m, model_path)
 
     with Session(engine) as session:
-        project = Project(name="test")
+        project = Project(owner_id="test-default-owner", name="test")
         session.add(project)
         session.commit()
         session.refresh(project)
@@ -390,6 +392,8 @@ class TestMinFeatureSetEndpoint:
 
         app = FastAPI()
         app.include_router(router)
+        from tests.conftest import install_test_auth
+        install_test_auth(app)
 
         import api.validation as val_mod
 
@@ -414,6 +418,8 @@ class TestMinFeatureSetEndpoint:
 
         app = FastAPI()
         app.include_router(router)
+        from tests.conftest import install_test_auth
+        install_test_auth(app)
 
         import api.validation as val_mod
 

@@ -346,7 +346,7 @@ async def _make_project_with_runs(tmp_path):
 
     SQLModel.metadata.create_all(db.engine)
     with next(db.get_session()) as session:
-        proj = Project(id="sel-proj-1", name="Selection Test Project")
+        proj = Project(owner_id="test-default-owner", id="sel-proj-1", name="Selection Test Project")
         session.merge(proj)
         run1 = ModelRun(
             id="sel-run-1",
@@ -466,7 +466,7 @@ async def test_model_selection_endpoint_no_completed_runs(tmp_path, set_test_env
     SQLModel.metadata.create_all(db.engine)
 
     with next(db.get_session()) as session:
-        proj = Project(id="empty-proj", name="Empty Project")
+        proj = Project(owner_id="test-default-owner", id="empty-proj", name="Empty Project")
         session.merge(proj)
         session.commit()
 

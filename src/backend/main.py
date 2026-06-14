@@ -1,3 +1,4 @@
+import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -15,6 +16,8 @@ from api.projects import router as projects_router
 from api.templates import router as templates_router
 from api.validation import router as validation_router
 from api.analysis_templates import router as analysis_templates_router
+from api.auth import router as auth_router
+from auth.security import using_insecure_default_secret
 from core.scheduler import start_scheduler
 from db import create_db_and_tables
 
@@ -27,6 +30,11 @@ async def lifespan(app: FastAPI):
     DATA_DIR.mkdir(exist_ok=True)
     UPLOAD_DIR.mkdir(exist_ok=True)
     create_db_and_tables()
+    if using_insecure_default_secret():
+        logging.getLogger(__name__).warning(
+            "AUTH_SECRET is not set — using an insecure development secret. "
+            "Set AUTH_SECRET before any non-local deployment."
+        )
     start_scheduler()
     yield
 
@@ -46,6 +54,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(auth_router)
 app.include_router(projects_router)
 app.include_router(data_router)
 app.include_router(chat_router)

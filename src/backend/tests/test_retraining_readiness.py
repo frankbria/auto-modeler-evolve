@@ -317,7 +317,7 @@ async def test_retraining_readiness_200_with_deployment(ac, tmp_path):
     joblib.dump(reg, model_path)
 
     with Session(db_module.engine) as sess:
-        proj = Project(name="Test")
+        proj = Project(owner_id="test-default-owner", name="Test")
         sess.add(proj)
         sess.flush()
 

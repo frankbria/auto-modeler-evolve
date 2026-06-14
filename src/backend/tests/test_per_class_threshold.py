@@ -303,7 +303,7 @@ async def test_endpoint_400_regression_model(client, tmp_path):
     csv_path.write_text("a,b,target\n1,2,3\n4,5,6\n7,8,9\n")
 
     with Session(db_module.engine) as sess:
-        proj = Project(name="p1")
+        proj = Project(owner_id="test-default-owner", name="p1")
         sess.add(proj)
         sess.flush()
         ds = Dataset(

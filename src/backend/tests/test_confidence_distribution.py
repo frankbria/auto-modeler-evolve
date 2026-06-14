@@ -273,7 +273,7 @@ async def test_confidence_dist_regression_returns_400(ac, tmp_path):
     csv_content = "x,y\n" + "\n".join(f"{i},{i * 2}" for i in range(n))
 
     with Session(db_module.engine) as session:
-        proj = Project(name="p")
+        proj = Project(owner_id="test-default-owner", name="p")
         session.add(proj)
         session.commit()
         session.refresh(proj)
@@ -348,7 +348,7 @@ async def test_confidence_dist_classification_200(ac, tmp_path):
     csv_content = f"a,b,target\n{csv_rows}"
 
     with Session(db_module.engine) as session:
-        proj = Project(name="cls_cd")
+        proj = Project(owner_id="test-default-owner", name="cls_cd")
         session.add(proj)
         session.commit()
         session.refresh(proj)

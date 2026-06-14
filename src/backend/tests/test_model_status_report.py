@@ -155,7 +155,7 @@ class TestModelStatusReportEndpoint:
         run_id = str(uuid.uuid4())
         proj_id = str(uuid.uuid4())
         with Session(db.engine) as s:
-            proj = Project(id=proj_id, name="Test Project")
+            proj = Project(owner_id="test-default-owner", id=proj_id, name="Test Project")
             s.add(proj)
             run = ModelRun(
                 id=run_id,

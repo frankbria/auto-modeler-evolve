@@ -347,7 +347,7 @@ def _create_real_deployment(tmp_path):
     joblib.dump(model, model_path)
 
     with Session(db_module.engine) as s:
-        proj = Project(name=f"sweep-test-{id(db_module.engine)}")
+        proj = Project(owner_id="test-default-owner", name=f"sweep-test-{id(db_module.engine)}")
         s.add(proj)
         s.commit()
         s.refresh(proj)

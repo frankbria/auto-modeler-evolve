@@ -31,9 +31,12 @@ from db import get_session
 from models.dataset import Dataset
 from models.feature_set import FeatureSet
 
-router = APIRouter(prefix="/api/features", tags=["features"])
+from auth.dependencies import require_owner
 
-
+router = APIRouter(
+    prefix="/api/features", tags=["features"],
+    dependencies=[Depends(require_owner)],
+)
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

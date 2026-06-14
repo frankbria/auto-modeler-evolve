@@ -73,7 +73,7 @@ async def _make_project(tmp_path, project_id: str):
     db.engine = create_engine(f"sqlite:///{test_db}", echo=False)
     SQLModel.metadata.create_all(db.engine)
     with next(db.get_session()) as session:
-        proj = Project(id=project_id, name="Test Project")
+        proj = Project(owner_id="test-default-owner", id=project_id, name="Test Project")
         session.merge(proj)
         session.commit()
     return project_id
@@ -242,7 +242,7 @@ def test_trigger_auto_retrain_no_selected_model(tmp_path):
     SQLModel.metadata.create_all(db.engine)
 
     with next(db.get_session()) as session:
-        proj = Project(id="ar-core-1", name="Core Test")
+        proj = Project(owner_id="test-default-owner", id="ar-core-1", name="Core Test")
         session.add(proj)
         session.commit()
 
@@ -286,7 +286,7 @@ async def test_upload_response_includes_auto_retrain_field(tmp_path, set_test_en
     SQLModel.metadata.create_all(db.engine)
 
     with next(db.get_session()) as session:
-        proj = Project(id="ar-upload-1", name="Upload Test")
+        proj = Project(owner_id="test-default-owner", id="ar-upload-1", name="Upload Test")
         session.add(proj)
         session.commit()
 

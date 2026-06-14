@@ -342,7 +342,7 @@ async def test_get_production_threshold_optimizer_no_data(client, db_engine):
     from models.dataset import Dataset
 
     with Session(db_engine) as session:
-        proj = Project(name="Test Project")
+        proj = Project(owner_id="test-default-owner", name="Test Project")
         session.add(proj)
         session.commit()
         session.refresh(proj)

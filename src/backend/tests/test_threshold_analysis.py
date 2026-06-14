@@ -262,7 +262,7 @@ async def test_threshold_analysis_regression_returns_400(ac, tmp_path):
     from models.project import Project
 
     with Session(db_module.engine) as session:
-        proj = Project(name="p")
+        proj = Project(owner_id="test-default-owner", name="p")
         session.add(proj)
         session.commit()
         session.refresh(proj)
@@ -337,7 +337,7 @@ async def test_threshold_analysis_classification_200(ac, tmp_path):
     csv_content = f"a,b,target\n{csv_rows}"
 
     with Session(db_module.engine) as session:
-        proj = Project(name="cls")
+        proj = Project(owner_id="test-default-owner", name="cls")
         session.add(proj)
         session.commit()
         session.refresh(proj)

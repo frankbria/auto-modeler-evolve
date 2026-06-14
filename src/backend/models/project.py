@@ -11,6 +11,7 @@ def _utcnow() -> datetime:
 
 class Project(SQLModel, table=True):
     id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    owner_id: str = Field(foreign_key="user.id", index=True)
     name: str
     description: Optional[str] = None
     created_at: datetime = Field(default_factory=_utcnow)

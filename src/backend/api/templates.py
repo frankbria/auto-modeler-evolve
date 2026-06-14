@@ -20,12 +20,17 @@ from sqlmodel import Session
 from db import get_session
 from models.dataset import Dataset
 from models.project import Project
+from models.user import User
 from core.analyzer import analyze_dataframe, compute_full_profile
 import pandas as pd
 import json
 
-router = APIRouter(prefix="/api/templates", tags=["templates"])
+from auth.dependencies import get_current_user
 
+router = APIRouter(
+    prefix="/api/templates", tags=["templates"],
+    dependencies=[Depends(get_current_user)],
+)
 # ---------------------------------------------------------------------------
 # Template registry
 # ---------------------------------------------------------------------------
@@ -160,7 +165,11 @@ def get_template(template_id: str):
 
 
 @router.post("/{template_id}/apply", status_code=201)
-def apply_template(template_id: str, session: Session = Depends(get_session)):
+def apply_template(
+    template_id: str,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
     """Create a new project from a template.
 
     Creates a Project + Dataset record, copies sample data to the upload directory,
@@ -185,6 +194,7 @@ def apply_template(template_id: str, session: Session = Depends(get_session)):
         name=tpl["name"],
         description=tpl["description"],
         status="exploring",
+        owner_id=current_user.id,
     )
     session.add(project)
     session.commit()

@@ -327,7 +327,7 @@ async def _make_project_with_db(tmp_path, project_id: str):
     db.engine = create_engine(f"sqlite:///{test_db}", echo=False)
     SQLModel.metadata.create_all(db.engine)
     with next(db.get_session()) as session:
-        proj = Project(id=project_id, name="Health Summary Test")
+        proj = Project(owner_id="test-default-owner", id=project_id, name="Health Summary Test")
         session.merge(proj)
         session.commit()
     return project_id

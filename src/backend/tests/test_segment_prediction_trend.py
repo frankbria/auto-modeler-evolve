@@ -337,7 +337,7 @@ def _create_deployment(engine) -> str:
     from models.project import Project
 
     with Session(engine) as s:
-        proj = Project(name=f"spt-test-{id(engine)}")
+        proj = Project(owner_id="test-default-owner", name=f"spt-test-{id(engine)}")
         s.add(proj)
         s.commit()
         s.refresh(proj)

@@ -119,7 +119,7 @@ def _create_project_and_deployment(session, tmp_path):
     from models.model_run import ModelRun
     from models.project import Project
 
-    proj = Project(name="Test", status="deployed")
+    proj = Project(owner_id="test-default-owner", name="Test", status="deployed")
     session.add(proj)
     session.commit()
     session.refresh(proj)

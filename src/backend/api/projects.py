@@ -3,10 +3,12 @@ import os
 from datetime import UTC, datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
+from auth.dependencies import get_current_user
+from auth.scoping import get_owned_project
 from core.advisor import compute_cross_project_comparison
 from core.analyzer import compute_portfolio_summary, compute_project_health_summary
 from core.onboarding import compute_onboarding_state
@@ -18,8 +20,13 @@ from models.feedback_record import FeedbackRecord
 from models.model_run import ModelRun
 from models.prediction_log import PredictionLog
 from models.project import Project
+from models.user import User
 
-router = APIRouter(prefix="/api/projects", tags=["projects"])
+router = APIRouter(
+    prefix="/api/projects",
+    tags=["projects"],
+    dependencies=[Depends(get_current_user)],
+)
 
 
 class ProjectCreate(BaseModel):
@@ -50,8 +57,14 @@ class ProjectWithStats(ProjectResponse):
 
 
 @router.post("", response_model=ProjectResponse, status_code=201)
-def create_project(body: ProjectCreate, session: Session = Depends(get_session)):
-    project = Project(name=body.name, description=body.description)
+def create_project(
+    body: ProjectCreate,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    project = Project(
+        name=body.name, description=body.description, owner_id=current_user.id
+    )
     session.add(project)
     session.commit()
     session.refresh(project)
@@ -59,8 +72,13 @@ def create_project(body: ProjectCreate, session: Session = Depends(get_session))
 
 
 @router.get("", response_model=list[ProjectWithStats])
-def list_projects(session: Session = Depends(get_session)):
-    projects = session.exec(select(Project)).all()
+def list_projects(
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    projects = session.exec(
+        select(Project).where(Project.owner_id == current_user.id)
+    ).all()
     result = []
     for project in projects:
         dataset = session.exec(
@@ -107,14 +125,19 @@ def list_projects(session: Session = Depends(get_session)):
 
 
 @router.get("/portfolio")
-def get_portfolio(session: Session = Depends(get_session)):
-    """Return a cross-project portfolio summary for all projects.
+def get_portfolio(
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    """Return a cross-project portfolio summary for the current user's projects.
 
     Aggregates all projects with their best model metrics, deployment status,
     and prediction counts into a single overview — useful for analysts managing
     multiple prediction projects.
     """
-    projects = session.exec(select(Project)).all()
+    projects = session.exec(
+        select(Project).where(Project.owner_id == current_user.id)
+    ).all()
     project_summaries = []
 
     for project in projects:
@@ -193,14 +216,19 @@ def get_portfolio(session: Session = Depends(get_session)):
 
 
 @router.get("/cross-comparison")
-def get_cross_project_comparison(session: Session = Depends(get_session)):
+def get_cross_project_comparison(
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
     """Return a head-to-head normalized comparison of models across all projects.
 
     Unlike /portfolio (flat list), this ranks each project's best model by a
     normalized 0-100 performance score and generates plain-English comparison
     insights — answering "how does my revenue model compare to my churn model?"
     """
-    projects = session.exec(select(Project)).all()
+    projects = session.exec(
+        select(Project).where(Project.owner_id == current_user.id)
+    ).all()
     project_summaries = []
 
     for project in projects:
@@ -276,10 +304,12 @@ def get_cross_project_comparison(session: Session = Depends(get_session)):
 
 
 @router.get("/{project_id}", response_model=ProjectWithStats)
-def get_project(project_id: str, session: Session = Depends(get_session)):
-    project = session.get(Project, project_id)
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+def get_project(
+    project_id: str,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    project = get_owned_project(project_id, current_user, session)
     dataset = session.exec(
         select(Dataset).where(Dataset.project_id == project_id)
     ).first()
@@ -317,10 +347,9 @@ def update_project(
     project_id: str,
     body: ProjectUpdate,
     session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ):
-    project = session.get(Project, project_id)
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    project = get_owned_project(project_id, current_user, session)
     if body.name is not None:
         project.name = body.name
     if body.description is not None:
@@ -333,14 +362,17 @@ def update_project(
 
 
 @router.post("/{project_id}/duplicate", response_model=ProjectResponse, status_code=201)
-def duplicate_project(project_id: str, session: Session = Depends(get_session)):
-    project = session.get(Project, project_id)
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+def duplicate_project(
+    project_id: str,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    project = get_owned_project(project_id, current_user, session)
     new_project = Project(
         name=f"{project.name} (copy)",
         description=project.description,
         status="exploring",
+        owner_id=current_user.id,
     )
     session.add(new_project)
     session.commit()
@@ -349,10 +381,12 @@ def duplicate_project(project_id: str, session: Session = Depends(get_session)):
 
 
 @router.delete("/{project_id}", status_code=204)
-def delete_project(project_id: str, session: Session = Depends(get_session)):
-    project = session.get(Project, project_id)
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+def delete_project(
+    project_id: str,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    project = get_owned_project(project_id, current_user, session)
     session.delete(project)
     session.commit()
 
@@ -366,6 +400,7 @@ def delete_project(project_id: str, session: Session = Depends(get_session)):
 def generate_project_narrative(
     project_id: str,
     session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ):
     """Generate a plain-English executive summary of the project.
 
@@ -376,9 +411,7 @@ def generate_project_narrative(
     Uses Claude when an Anthropic auth token is available; falls back to a structured
     static summary otherwise.
     """
-    project = session.get(Project, project_id)
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    project = get_owned_project(project_id, current_user, session)
 
     # ---- Gather context -------------------------------------------------------
 
@@ -664,6 +697,7 @@ def _static_narrative(ctx: dict) -> str:
 def get_executive_briefing(
     project_id: str,
     session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ):
     """Generate a structured, VP-ready executive briefing for the project.
 
@@ -675,9 +709,7 @@ def get_executive_briefing(
     """
     from core.storyteller import generate_executive_briefing
 
-    project = session.get(Project, project_id)
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    project = get_owned_project(project_id, current_user, session)
 
     dataset = session.exec(
         select(Dataset).where(Dataset.project_id == project_id)
@@ -763,6 +795,7 @@ def get_executive_briefing(
 def get_project_alerts(
     project_id: str,
     session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ):
     """Scan all active deployments for actionable health alerts.
 
@@ -774,9 +807,7 @@ def get_project_alerts(
 
     Returns alerts sorted by severity (critical → warning).
     """
-    project = session.get(Project, project_id)
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    get_owned_project(project_id, current_user, session)
 
     deployments = session.exec(
         select(Deployment).where(
@@ -970,11 +1001,13 @@ class AutoRetrainUpdate(BaseModel):
 
 
 @router.get("/{project_id}/auto-retrain")
-def get_auto_retrain(project_id: str, session: Session = Depends(get_session)):
+def get_auto_retrain(
+    project_id: str,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
     """Return the auto-retrain configuration for the project."""
-    project = session.get(Project, project_id)
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    project = get_owned_project(project_id, current_user, session)
 
     selected_run = session.exec(
         select(ModelRun).where(
@@ -997,11 +1030,10 @@ def set_auto_retrain(
     project_id: str,
     body: AutoRetrainUpdate,
     session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ):
     """Enable or disable auto-retrain for the project."""
-    project = session.get(Project, project_id)
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    project = get_owned_project(project_id, current_user, session)
 
     project.auto_retrain = body.enabled
     session.add(project)
@@ -1027,6 +1059,7 @@ def set_auto_retrain(
 def get_project_health_summary(
     project_id: str,
     session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ):
     """Return a health summary for all active deployments in a project.
 
@@ -1035,9 +1068,7 @@ def get_project_health_summary(
     and provides a plain-English overall summary.  Designed to be called on
     project load so the frontend can surface proactive drift alerts in chat.
     """
-    project = session.get(Project, project_id)
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    get_owned_project(project_id, current_user, session)
 
     # Load all active deployments for this project
     deployments = session.exec(
@@ -1077,6 +1108,7 @@ def get_project_health_summary(
 def get_onboarding_state(
     project_id: str,
     session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ):
     """Return the analyst's onboarding progress for this project.
 
@@ -1084,9 +1116,7 @@ def get_onboarding_state(
     feature set, model runs, deployment) and returns a structured guide the
     frontend can render as a step-by-step wizard.
     """
-    project = session.get(Project, project_id)
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    get_owned_project(project_id, current_user, session)
 
     # Dataset
     dataset = session.exec(
