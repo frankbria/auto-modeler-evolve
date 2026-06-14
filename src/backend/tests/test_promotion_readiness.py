@@ -479,7 +479,7 @@ async def test_promotion_readiness_400_pending_run(_db_url, tmp_path):
     csv_path.write_bytes(SAMPLE_CSV)
 
     with Session(db_module.engine) as session:
-        proj = Project(name="promo-test-pending", description="")
+        proj = Project(owner_id="test-default-owner", name="promo-test-pending", description="")
         session.add(proj)
         session.commit()
         session.refresh(proj)
@@ -551,7 +551,7 @@ async def test_promotion_readiness_done_run(_db_url, tmp_path):
     )
 
     with Session(db_module.engine) as session:
-        proj = Project(name="promo-done-test", description="")
+        proj = Project(owner_id="test-default-owner", name="promo-done-test", description="")
         session.add(proj)
         session.commit()
         session.refresh(proj)

@@ -284,7 +284,7 @@ def test_uptime_endpoint_returns_dict(client):
 
     with TestClient(app) as c:
         with next(get_session()) as session:
-            proj = Project(id=str(uuid.uuid4()), name="uptime-test")
+            proj = Project(owner_id="test-default-owner", id=str(uuid.uuid4()), name="uptime-test")
             session.add(proj)
             dep = Deployment(
                 id=str(uuid.uuid4()),
@@ -311,7 +311,7 @@ def test_uptime_endpoint_n_days_param(client):
 
     with TestClient(app) as c:
         with next(get_session()) as session:
-            proj = Project(id=str(uuid.uuid4()), name="uptime-test-days")
+            proj = Project(owner_id="test-default-owner", id=str(uuid.uuid4()), name="uptime-test-days")
             session.add(proj)
             dep = Deployment(
                 id=str(uuid.uuid4()),

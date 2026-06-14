@@ -275,7 +275,7 @@ def _create_test_deployment(session_engine):
     from models.project import Project
 
     with Session(session_engine) as s:
-        proj = Project(name=f"seg-test-{id(session_engine)}")
+        proj = Project(owner_id="test-default-owner", name=f"seg-test-{id(session_engine)}")
         s.add(proj)
         s.commit()
         s.refresh(proj)

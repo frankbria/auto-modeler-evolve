@@ -148,7 +148,7 @@ def _create_project_and_deployment(session):
     from models.model_run import ModelRun
     from models.project import Project
 
-    proj = Project(name="RPTest", status="deployed")
+    proj = Project(owner_id="test-default-owner", name="RPTest", status="deployed")
     session.add(proj)
     session.commit()
     session.refresh(proj)

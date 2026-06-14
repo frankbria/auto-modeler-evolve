@@ -248,7 +248,7 @@ class TestLocalExplanationChatIntegration:
         joblib.dump(model, model_path)
 
         with Session(self._engine) as session:
-            project = Project(name="ExplainTest", status="exploring")
+            project = Project(owner_id="test-default-owner", name="ExplainTest", status="exploring")
             session.add(project)
             session.flush()
 
@@ -376,7 +376,7 @@ class TestLocalExplanationChatIntegration:
         csv_path.write_text("units,revenue\n1,5\n")
 
         with Session(self._engine) as session:
-            project = Project(name="NoModel", status="exploring")
+            project = Project(owner_id="test-default-owner", name="NoModel", status="exploring")
             session.add(project)
             session.flush()
             dataset = Dataset(

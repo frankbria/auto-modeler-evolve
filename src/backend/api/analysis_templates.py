@@ -16,9 +16,12 @@ from sqlmodel import Session, select
 from db import get_session
 from models.analysis_template import AnalysisTemplate
 
-router = APIRouter(prefix="/api/projects", tags=["analysis-templates"])
+from auth.dependencies import require_owner
 
-
+router = APIRouter(
+    prefix="/api/projects", tags=["analysis-templates"],
+    dependencies=[Depends(require_owner)],
+)
 # ---------------------------------------------------------------------------
 # Request / response schemas
 # ---------------------------------------------------------------------------

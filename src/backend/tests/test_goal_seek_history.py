@@ -122,7 +122,7 @@ def client_and_deployment():
             c.app.dependency_overrides.get(get_session, get_session)()
         )
 
-        project = Project(
+        project = Project(owner_id="test-default-owner", 
             id="gsh-proj",
             name="GSH Project",
             created_at=datetime.now(UTC).replace(tzinfo=None),

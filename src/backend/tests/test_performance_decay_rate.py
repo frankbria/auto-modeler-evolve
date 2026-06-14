@@ -360,7 +360,7 @@ def _test_engine_and_client(tmp_path):
 
     try:
         with Session(engine) as s:
-            proj = Project(
+            proj = Project(owner_id="test-default-owner", 
                 id=str(uuid.uuid4()), name="Test", created_at=datetime.utcnow()
             )
             ds = Dataset(
@@ -444,7 +444,7 @@ def test_perf_decay_rest_no_feedback(_test_engine_and_client, tmp_path):
     db_module.engine = engine
     try:
         with Session(engine) as s:
-            proj = Project(
+            proj = Project(owner_id="test-default-owner", 
                 id=str(uuid.uuid4()), name="P2", created_at=datetime.utcnow()
             )
             run = ModelRun(

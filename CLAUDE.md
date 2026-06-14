@@ -125,6 +125,27 @@ When accepting a column as a grouping/segmenting parameter:
 - Reject if `n_unique >= n_rows * 0.8` (relative near-unique — catches continuous numeric columns)
 - Return HTTP 400 with a plain-English explanation
 
+### Authentication & Owner/Tenant Authorization
+Auth is **backend-native** (FastAPI owns it — BetterAuth is frontend-only and cannot
+protect the Python API). Follow this exactly when adding endpoints:
+- **Auth**: `User` model + `/api/auth` (register/login/me); bcrypt passwords, JWT
+  (HS256) signed with `AUTH_SECRET` (see `src/backend/.env.example`). `get_current_user`
+  → 401 on missing/invalid token.
+- **Ownership** lives on `Project.owner_id` (non-nullable). Child entities cascade-scope
+  through their owning project — do NOT add `owner_id` to child tables.
+- **Every new management router** gets `dependencies=[Depends(require_owner)]` (auth +
+  path-resource ownership in one line). `require_owner` is **soft on missing** resources
+  (only blocks cross-tenant *existing* ones) so handlers keep their own 404/empty
+  semantics; cross-tenant → 404 (never 403, to avoid existence leaks).
+- **Resource ids in the body/query** (not the path) are NOT covered by `require_owner` —
+  authorize them explicitly with `get_owned_*` / `assert_owns_project` (see
+  `api/data.py` upload/merge/join-keys).
+- **Public surface**: `/api/predict/*` serving stays unauthenticated (per-deployment API
+  keys); the deploy router uses `require_owner_allow_public`.
+- **Tests**: the shared `client` fixture is transparently authenticated; use `anon_client`
+  for 401 assertions and `second_client` for cross-tenant (IDOR) tests
+  (`tests/test_tenant_isolation.py`).
+
 ## UX North Star
 
 This is built for **business analysts**, not data scientists. Every interaction should

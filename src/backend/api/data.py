@@ -68,8 +68,19 @@ from models.dataset_filter import DatasetFilter
 from models.feature_set import FeatureSet
 from models.project import Project
 
-router = APIRouter(prefix="/api/data", tags=["data"])
+from auth.dependencies import get_current_user, require_owner
+from auth.scoping import (
+    assert_owns_project,
+    assert_project_not_foreign,
+    get_owned_dataset,
+    get_owned_project,
+)
+from models.user import User
 
+router = APIRouter(
+    prefix="/api/data", tags=["data"],
+    dependencies=[Depends(require_owner)],
+)
 UPLOAD_DIR = Path(__file__).parent.parent / "data" / "uploads"
 SAMPLE_CSV = Path(__file__).parent.parent / "data" / "sample" / "sample_sales.csv"
 
@@ -117,7 +128,9 @@ def upload_csv(
     file: UploadFile,
     project_id: str = Form(...),
     session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ):
+    assert_project_not_foreign(project_id, current_user, session)
     if not file.filename or not _is_accepted_file(file.filename):
         raise HTTPException(
             status_code=400,
@@ -345,15 +358,15 @@ class SampleLoadRequest(BaseModel):
 
 @router.post("/sample", status_code=201)
 def load_sample_dataset(
-    body: SampleLoadRequest, session: Session = Depends(get_session)
+    body: SampleLoadRequest,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ):
     """Copy the bundled sample sales CSV into the given project as its dataset.
 
     Idempotent: if the project already has a dataset, returns the existing one.
     """
-    project = session.get(Project, body.project_id)
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    get_owned_project(body.project_id, current_user, session)
 
     # Check for existing dataset
     existing = session.exec(
@@ -750,21 +763,27 @@ class JoinKeysRequest(BaseModel):
 
 @router.post("/join-keys")
 def get_join_key_suggestions(
-    body: JoinKeysRequest, session: Session = Depends(get_session)
+    body: JoinKeysRequest,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ):
     """Suggest candidate join keys for merging two datasets.
 
     Returns common columns ranked by uniqueness — the best join key candidates first.
     """
     ds1 = session.get(Dataset, body.dataset_id_1)
-    ds2 = session.get(Dataset, body.dataset_id_2)
     if not ds1:
         raise HTTPException(
             status_code=404, detail=f"Dataset {body.dataset_id_1} not found"
         )
+    ds2 = session.get(Dataset, body.dataset_id_2)
     if not ds2:
         raise HTTPException(
             status_code=404, detail=f"Dataset {body.dataset_id_2} not found"
+        )
+    for _ds in (ds1, ds2):
+        assert_owns_project(
+            session.get(Project, _ds.project_id), current_user, "Dataset"
         )
 
     path1, path2 = Path(ds1.file_path), Path(ds2.file_path)
@@ -804,15 +823,14 @@ def merge_project_datasets(
     project_id: str,
     body: MergeRequest,
     session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ):
     """Merge two datasets within a project on a shared join key.
 
     Creates a new Dataset record for the merged result.
     Returns preview + full column stats for the merged dataset.
     """
-    project = session.get(Project, project_id)
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    get_owned_project(project_id, current_user, session)
 
     ds1 = session.get(Dataset, body.dataset_id_1)
     ds2 = session.get(Dataset, body.dataset_id_2)
@@ -823,6 +841,12 @@ def merge_project_datasets(
     if not ds2:
         raise HTTPException(
             status_code=404, detail=f"Dataset {body.dataset_id_2} not found"
+        )
+    # Source datasets come from the request body, not the path — authorize both
+    # so a caller cannot merge another tenant's datasets into their project.
+    for _ds in (ds1, ds2):
+        assert_owns_project(
+            session.get(Project, _ds.project_id), current_user, "Dataset"
         )
 
     path1, path2 = Path(ds1.file_path), Path(ds2.file_path)
@@ -928,16 +952,18 @@ class UrlImportRequest(BaseModel):
 
 
 @router.post("/upload-url", status_code=201)
-def upload_from_url(body: UrlImportRequest, session: Session = Depends(get_session)):
+def upload_from_url(
+    body: UrlImportRequest,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
     """Import a dataset from a URL (Google Sheets public link or direct CSV URL).
 
     For Google Sheets: the sheet must be shared as "Anyone with the link can view".
     Converts Google Sheets URLs to direct CSV export URLs automatically.
     For other URLs: fetches directly and expects CSV content.
     """
-    project = session.get(Project, body.project_id)
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    get_owned_project(body.project_id, current_user, session)
 
     url = body.url.strip()
     if not url.startswith(("http://", "https://")):
@@ -1079,6 +1105,7 @@ async def upload_sqlite_db(
     project_id: str = Form(...),
     file: UploadFile = Form(...),
     session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ):
     """Upload a SQLite database file (.db or .sqlite).
 
@@ -1086,9 +1113,7 @@ async def upload_sqlite_db(
     table to extract as a Dataset.  The file is stored temporarily under
     data/db_uploads/{project_id}/.
     """
-    project = session.get(Project, project_id)
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    get_owned_project(project_id, current_user, session)
 
     filename = file.filename or "database.db"
     ext = Path(filename).suffix.lower()
@@ -1139,15 +1164,17 @@ class DbExtractRequest(BaseModel):
 
 
 @router.post("/extract-db", status_code=201)
-def extract_db_table(body: DbExtractRequest, session: Session = Depends(get_session)):
+def extract_db_table(
+    body: DbExtractRequest,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
     """Extract a table (or custom SELECT query) from an uploaded SQLite database.
 
     Creates a new Dataset record with the extracted data — identical to
     uploading a CSV. The query must be a SELECT statement for safety.
     """
-    project = session.get(Project, body.project_id)
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    get_owned_project(body.project_id, current_user, session)
 
     db_path = Path(body.db_path)
     if not db_path.exists():
@@ -2709,6 +2736,7 @@ def compare_datasets(
     baseline_id: str,
     new_id: str,
     session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ) -> dict:
     """Compare two datasets and return a structured drift report.
 
@@ -2723,13 +2751,8 @@ def compare_datasets(
         Drift report with row/column counts, numeric distribution shifts,
         categorical changes, overall drift_score, and a plain-English summary.
     """
-    baseline = session.get(Dataset, baseline_id)
-    if not baseline:
-        raise HTTPException(status_code=404, detail="Baseline dataset not found")
-
-    new_ds = session.get(Dataset, new_id)
-    if not new_ds:
-        raise HTTPException(status_code=404, detail="New dataset not found")
+    baseline = get_owned_dataset(baseline_id, current_user, session)
+    new_ds = get_owned_dataset(new_id, current_user, session)
 
     baseline_path = Path(baseline.file_path)
     new_path = Path(new_ds.file_path)

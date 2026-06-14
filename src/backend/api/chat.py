@@ -5,7 +5,7 @@ from pathlib import Path
 
 import anthropic
 import pandas as pd
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 from sqlmodel import Session, select
@@ -26,8 +26,14 @@ from models.model_run import ModelRun
 from models.prediction_log import PredictionLog
 from models.project import Project
 
-router = APIRouter(prefix="/api/chat", tags=["chat"])
+from auth.dependencies import get_current_user
+from auth.scoping import get_owned_project
+from models.user import User
 
+router = APIRouter(
+    prefix="/api/chat", tags=["chat"],
+    dependencies=[Depends(get_current_user)],
+)
 MODEL = "claude-haiku-4-5-20251001"
 MAX_TOKENS = 1024
 
@@ -6022,10 +6028,9 @@ def send_message(
     project_id: str,
     body: ChatMessage,
     session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ):
-    project = session.get(Project, project_id)
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    project = get_owned_project(project_id, current_user, session)
 
     # Get or create conversation
     statement = select(Conversation).where(Conversation.project_id == project_id)
@@ -22603,7 +22608,14 @@ def send_message(
 def get_history(
     project_id: str,
     session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ):
+    # Soft scoping: unknown or non-owned projects return empty history (no leak,
+    # no 404) — preserves the established "history is always safe to call" UX.
+    project = session.get(Project, project_id)
+    if project is None or project.owner_id != current_user.id:
+        return {"messages": []}
+
     statement = select(Conversation).where(Conversation.project_id == project_id)
     conversation = session.exec(statement).first()
     if not conversation:
@@ -22737,11 +22749,10 @@ def _build_export_html(
 def export_conversation(
     project_id: str,
     session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ):
     """Return conversation history as a downloadable self-contained HTML report."""
-    project = session.get(Project, project_id)
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    project = get_owned_project(project_id, current_user, session)
 
     # Load conversation messages
     conv_stmt = select(Conversation).where(Conversation.project_id == project_id)

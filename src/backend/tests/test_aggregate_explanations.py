@@ -218,7 +218,7 @@ def _setup_deployment_with_logs(session, tmp_path, n_logs=3):
     from models.prediction_log import PredictionLog
     from models.project import Project
 
-    project = Project(name="AggTest")
+    project = Project(owner_id="test-default-owner", name="AggTest")
     session.add(project)
     session.flush()
 

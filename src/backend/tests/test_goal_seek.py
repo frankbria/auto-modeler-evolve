@@ -374,7 +374,7 @@ def client_with_gs(tmp_path) -> Generator[tuple[TestClient, str], None, None]:
         eng = create_engine("sqlite:///:memory:")
         SQLModel.metadata.create_all(eng)
         with Session(eng) as s:
-            proj = Project(id="gs-proj-1", name="GSTest")
+            proj = Project(owner_id="test-default-owner", id="gs-proj-1", name="GSTest")
             s.add(proj)
             ds = Dataset(
                 id="gs-ds-1",
@@ -481,7 +481,7 @@ def _make_chat_client(tmp_path, db_path="sqlite:///:memory:"):
         eng = create_engine("sqlite:///:memory:")
         SQLModel.metadata.create_all(eng)
         with Session(eng) as s:
-            proj = Project(id="chat-gs-proj", name="ChatGSTest")
+            proj = Project(owner_id="test-default-owner", id="chat-gs-proj", name="ChatGSTest")
             s.add(proj)
             ds = Dataset(
                 id="chat-gs-ds",
@@ -577,7 +577,7 @@ def test_chat_goal_seek_not_triggered_without_deployment(mock_anthropic, tmp_pat
         eng = create_engine("sqlite:///:memory:")
         SQLModel.metadata.create_all(eng)
         with Session(eng) as s:
-            proj = Project(id="nodep-proj", name="NoDep")
+            proj = Project(owner_id="test-default-owner", id="nodep-proj", name="NoDep")
             s.add(proj)
             ds = Dataset(
                 id="nodep-ds",

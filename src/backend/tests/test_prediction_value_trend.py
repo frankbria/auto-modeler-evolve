@@ -357,7 +357,7 @@ async def test_endpoint_no_data(_db_url, tmp_path):
     csv_path.write_text(csv_data)
 
     with Session(db_module.engine) as sess:
-        proj = Project(name="TrendTest")
+        proj = Project(owner_id="test-default-owner", name="TrendTest")
         sess.add(proj)
         sess.flush()
         ds = Dataset(

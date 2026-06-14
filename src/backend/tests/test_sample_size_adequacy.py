@@ -257,7 +257,7 @@ async def test_sample_size_regression_returns_200(ac, tmp_path):
     csv_content = f"a,b,target\n{csv_rows}"
 
     with Session(db_module.engine) as session:
-        proj = Project(name="ssa_reg")
+        proj = Project(owner_id="test-default-owner", name="ssa_reg")
         session.add(proj)
         session.commit()
         session.refresh(proj)
@@ -337,7 +337,7 @@ async def test_sample_size_not_done_run_returns_400(ac, tmp_path):
     from models.project import Project
 
     with Session(db_module.engine) as session:
-        proj = Project(name="ssa_pending")
+        proj = Project(owner_id="test-default-owner", name="ssa_pending")
         session.add(proj)
         session.commit()
         session.refresh(proj)

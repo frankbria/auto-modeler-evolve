@@ -283,7 +283,7 @@ async def _insert_quality_run(
         metrics = {"r2": 0.80, "cv_mean": 0.78, "cv_std": 0.03}
 
     with next(db.get_session()) as session:
-        proj = Project(id=project_id, name=f"Quality Test ({project_id})")
+        proj = Project(owner_id="test-default-owner", id=project_id, name=f"Quality Test ({project_id})")
         session.merge(proj)
         run = ModelRun(
             id=run_id,

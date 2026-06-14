@@ -57,7 +57,7 @@ def test_conv_export_pattern_no_match():
 def _make_project(name="Test Project"):
     from models.project import Project
 
-    return Project(id="test-proj", name=name)
+    return Project(owner_id="test-default-owner", id="test-proj", name=name)
 
 
 def _make_dataset():
@@ -185,7 +185,7 @@ async def test_export_returns_html(tmp_path, set_test_env):
 
     project_id = "exp-html-1"
     with next(db.get_session()) as session:
-        session.merge(Project(id=project_id, name="Revenue Analysis"))
+        session.merge(Project(owner_id="test-default-owner", id=project_id, name="Revenue Analysis"))
         msgs = json.dumps(
             [
                 {"role": "user", "content": "Show me the trend"},
@@ -219,7 +219,7 @@ async def test_export_returns_attachment_header(tmp_path, set_test_env):
 
     project_id = "exp-hdr-1"
     with next(db.get_session()) as session:
-        session.merge(Project(id=project_id, name="My Project"))
+        session.merge(Project(owner_id="test-default-owner", id=project_id, name="My Project"))
         session.commit()
 
     async with AsyncClient(
@@ -265,7 +265,7 @@ async def test_export_includes_model_info(tmp_path, set_test_env):
 
     project_id = "exp-model-1"
     with next(db.get_session()) as session:
-        session.merge(Project(id=project_id, name="Churn Project"))
+        session.merge(Project(owner_id="test-default-owner", id=project_id, name="Churn Project"))
         run = ModelRun(
             id="run-export-1",
             project_id=project_id,

@@ -101,7 +101,7 @@ def _setup_deployment(session, tmp_path):
     from models.project import Project
 
     # Project
-    project = Project(name="TestProject")
+    project = Project(owner_id="test-default-owner", name="TestProject")
     session.add(project)
     session.flush()
 
@@ -288,7 +288,7 @@ def test_explain_no_predictions_404(tmp_path):
     from main import app
 
     with Session(db_mod.engine) as session:
-        project = Project(name="EmptyProject")
+        project = Project(owner_id="test-default-owner", name="EmptyProject")
         session.add(project)
         session.flush()
 
@@ -467,7 +467,7 @@ def test_chat_no_event_without_deployment(tmp_path, anthropic_mock):
     db_mod._apply_migrations()
 
     with Session(db_mod.engine) as session:
-        project = Project(name="NoDeploy")
+        project = Project(owner_id="test-default-owner", name="NoDeploy")
         session.add(project)
         session.commit()
         project_id = project.id

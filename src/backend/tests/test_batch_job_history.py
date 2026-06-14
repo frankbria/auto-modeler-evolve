@@ -361,7 +361,7 @@ def _create_deployment(engine, dep_id: str = "dep-bjh-1", is_active: bool = True
     from models.feature_set import FeatureSet
 
     with Session(engine) as s:
-        proj = Project(id="proj-bjh", name="BJH Test")
+        proj = Project(owner_id="test-default-owner", id="proj-bjh", name="BJH Test")
         s.add(proj)
         s.flush()
 

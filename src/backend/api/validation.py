@@ -50,9 +50,12 @@ from models.dataset import Dataset
 from models.feature_set import FeatureSet
 from models.model_run import ModelRun
 
-router = APIRouter(tags=["validation"])
+from auth.dependencies import require_owner
 
-
+router = APIRouter(
+    tags=["validation"],
+    dependencies=[Depends(require_owner)],
+)
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

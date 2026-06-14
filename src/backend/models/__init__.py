@@ -1,5 +1,6 @@
 """SQLModel table models — imported here so all tables register before create_all."""
 
+from models.user import User
 from models.project import Project
 from models.dataset import Dataset
 from models.feature_set import FeatureSet
@@ -20,6 +21,7 @@ from models.goal_seek_record import GoalSeekRecord
 from models.deployment_changelog import DeploymentChangelog
 
 __all__ = [
+    "User",
     "Project",
     "Dataset",
     "FeatureSet",

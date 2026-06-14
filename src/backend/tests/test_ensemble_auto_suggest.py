@@ -50,19 +50,19 @@ class TestProjectModelField:
     def test_last_ensemble_suggest_run_count_exists(self):
         from models.project import Project
 
-        p = Project(name="test")
+        p = Project(owner_id="test-default-owner", name="test")
         assert hasattr(p, "last_ensemble_suggest_run_count")
 
     def test_field_defaults_to_none(self):
         from models.project import Project
 
-        p = Project(name="test")
+        p = Project(owner_id="test-default-owner", name="test")
         assert p.last_ensemble_suggest_run_count is None
 
     def test_field_accepts_int(self):
         from models.project import Project
 
-        p = Project(name="test")
+        p = Project(owner_id="test-default-owner", name="test")
         p.last_ensemble_suggest_run_count = 3
         assert p.last_ensemble_suggest_run_count == 3
 

@@ -337,7 +337,7 @@ async def test_feature_psi_no_data_response(_db_url, tmp_path):
     from models.deployment import Deployment
 
     with Session(db_module.engine) as session:
-        proj = Project(name="psi-test", description="")
+        proj = Project(owner_id="test-default-owner", name="psi-test", description="")
         session.add(proj)
         session.commit()
         session.refresh(proj)

@@ -51,8 +51,12 @@ from models.feature_set import FeatureSet
 from models.model_run import ModelRun
 from models.project import Project
 
-router = APIRouter(tags=["models"])
+from auth.dependencies import require_owner
 
+router = APIRouter(
+    tags=["models"],
+    dependencies=[Depends(require_owner)],
+)
 # ---------------------------------------------------------------------------
 # In-process event bus for SSE training progress
 # ---------------------------------------------------------------------------

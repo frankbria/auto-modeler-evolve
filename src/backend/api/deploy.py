@@ -90,8 +90,24 @@ from models.deployment_changelog import (
 from models.weekly_digest_config import WeeklyDigestConfig
 from models.saved_scenario import SavedScenario
 
-router = APIRouter(tags=["deployment"])
+from auth.dependencies import get_current_user, require_owner_allow_public
+from auth.scoping import get_owned_deployment
+from models.project import Project as OwnerProject
+from models.user import User
 
+router = APIRouter(
+    tags=["deployment"],
+    dependencies=[Depends(require_owner_allow_public)],
+)
+
+
+def _owned_project_ids(current_user: "User", session: "Session") -> list[str]:
+    """Project ids owned by the current user — for scoping list/aggregate queries."""
+    return list(
+        session.exec(
+            select(OwnerProject.id).where(OwnerProject.owner_id == current_user.id)
+        ).all()
+    )
 DEPLOY_DIR = Path(__file__).parent.parent / "data" / "deployments"
 
 
@@ -387,9 +403,13 @@ def deploy_model(
 def list_deployments(
     project_id: str | None = Query(None),
     session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ):
-    """Return all active deployments, optionally filtered by project."""
-    q = select(Deployment).where(Deployment.is_active == True)  # noqa: E712
+    """Return the current user's active deployments, optionally filtered by project."""
+    q = select(Deployment).where(
+        Deployment.is_active == True,  # noqa: E712
+        Deployment.project_id.in_(_owned_project_ids(current_user, session)),
+    )
     if project_id:
         q = q.where(Deployment.project_id == project_id)
     deployments = session.exec(q).all()
@@ -402,18 +422,24 @@ def list_deployments(
 
 
 @router.get("/api/deploy/overview")
-def deployments_overview(session: Session = Depends(get_session)):
-    """Return a cross-project status overview for all active deployments.
+def deployments_overview(
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    """Return a cross-project status overview for the current user's deployments.
 
     Aggregates health, request volume, environment, and configuration data
-    for every active Deployment row across all projects.
+    for every active Deployment row across the user's own projects.
     """
     from datetime import UTC, datetime
 
     now = datetime.now(UTC).replace(tzinfo=None)
     active_deployments = list(
         session.exec(
-            select(Deployment).where(Deployment.is_active == True)  # noqa: E712
+            select(Deployment).where(
+                Deployment.is_active == True,  # noqa: E712
+                Deployment.project_id.in_(_owned_project_ids(current_user, session)),
+            )
         ).all()
     )
 
@@ -906,6 +932,7 @@ class CompareRequest(BaseModel):
 def compare_deployments(
     body: CompareRequest,
     session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ):
     """Compare predictions from multiple deployed model versions on the same input.
 
@@ -925,10 +952,11 @@ def compare_deployments(
             status_code=400, detail="Maximum 4 deployments can be compared at once"
         )
 
+    owned_project_ids = set(_owned_project_ids(current_user, session))
     results = []
     for dep_id in body.deployment_ids:
         dep = session.get(Deployment, dep_id)
-        if not dep or not dep.is_active:
+        if not dep or not dep.is_active or dep.project_id not in owned_project_ids:
             results.append(
                 {"deployment_id": dep_id, "error": "Deployment not found or inactive"}
             )
@@ -3582,8 +3610,12 @@ def list_schedule_runs(
 
 
 @router.get("/api/deploy/batch-outputs/{filename}")
-def download_batch_output(filename: str):
-    """Download a completed batch prediction CSV."""
+def download_batch_output(
+    filename: str,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    """Download a completed batch prediction CSV (owner-scoped)."""
     from fastapi.responses import FileResponse
 
     # Security: filename must be alphanumeric + underscores/dashes + .csv
@@ -3591,6 +3623,14 @@ def download_batch_output(filename: str):
 
     if not re.match(r"^[\w\-]+\.csv$", filename):
         raise HTTPException(status_code=400, detail="Invalid filename")
+
+    # Authorize: the file must belong to a batch job run on the user's deployment.
+    job_run = session.exec(
+        select(BatchJobRun).where(BatchJobRun.output_path.like(f"%{filename}"))
+    ).first()
+    if job_run is None:
+        raise HTTPException(status_code=404, detail="Output file not found")
+    get_owned_deployment(job_run.deployment_id, current_user, session)
 
     from core.scheduler import BATCH_OUTPUT_DIR
 

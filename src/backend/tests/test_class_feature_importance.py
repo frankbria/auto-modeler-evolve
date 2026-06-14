@@ -349,7 +349,7 @@ async def test_class_feat_imp_returns_200(ac, tmp_path):
     joblib.dump(model, model_path)
 
     with Session(db_module.engine) as session:
-        proj = Project(name="cfi_test")
+        proj = Project(owner_id="test-default-owner", name="cfi_test")
         session.add(proj)
         session.commit()
         session.refresh(proj)
@@ -432,7 +432,7 @@ async def test_class_feat_imp_400_regression(ac, tmp_path):
     joblib.dump(model, model_path)
 
     with Session(db_module.engine) as session:
-        proj = Project(name="reg_cfi")
+        proj = Project(owner_id="test-default-owner", name="reg_cfi")
         session.add(proj)
         session.commit()
         session.refresh(proj)
