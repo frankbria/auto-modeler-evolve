@@ -9250,3 +9250,158 @@ def compute_batch_job_history(run_dicts: list[dict], n: int = 20) -> dict:
         "verdict": verdict,
         "summary": summary,
     }
+
+
+def compute_performance_decay_rate(
+    feedback_pairs: list[dict],
+    threshold_pct: float = 80.0,
+) -> dict:
+    """Compute the rate at which model accuracy is decaying over time.
+
+    ``feedback_pairs`` is a list of dicts with keys ``created_at`` (ISO string)
+    and ``is_correct`` (bool).  Records are grouped by ISO calendar week; each
+    week's accuracy is the fraction of correct labels.  A linear trend (numpy
+    polyfit) is fitted to the weekly accuracies in chronological order.
+
+    Returns a dict with:
+    - ``weekly_data``: list[{week, accuracy_pct, n_samples}] sorted asc
+    - ``slope_pct_per_week``: regression slope (positive = improving)
+    - ``weeks_until_threshold``: estimated weeks before accuracy falls below
+      ``threshold_pct`` using the linear model (None if already below or stable)
+    - ``current_accuracy_pct``: accuracy of the most recent week
+    - ``threshold_pct``: the threshold used for estimation
+    - ``verdict``: ``degrading_fast`` | ``degrading_slowly`` | ``stable`` |
+                   ``improving`` | ``below_threshold`` | ``no_data``
+    - ``summary``: plain-English description
+    """
+    import numpy as _np
+    from datetime import datetime as _dt
+
+    _MIN_PAIRS = 5
+    _MIN_WEEKS = 2
+
+    if not feedback_pairs or len(feedback_pairs) < _MIN_PAIRS:
+        return {
+            "weekly_data": [],
+            "slope_pct_per_week": None,
+            "weeks_until_threshold": None,
+            "current_accuracy_pct": None,
+            "threshold_pct": round(threshold_pct, 1),
+            "verdict": "no_data",
+            "summary": (
+                f"Not enough feedback to compute a decay rate — need at least {_MIN_PAIRS} labeled records."
+            ),
+        }
+
+    # Group by ISO week
+    week_buckets: dict[str, list[bool]] = {}
+    for pair in feedback_pairs:
+        raw_ts = pair.get("created_at")
+        is_correct = pair.get("is_correct")
+        if raw_ts is None or is_correct is None:
+            continue
+        try:
+            ts = _dt.fromisoformat(str(raw_ts).replace("Z", "+00:00"))
+        except (ValueError, TypeError):
+            continue
+        week_key = ts.strftime("%Y-W%V")  # ISO week label e.g. "2025-W03"
+        week_buckets.setdefault(week_key, []).append(bool(is_correct))
+
+    if len(week_buckets) < _MIN_WEEKS:
+        return {
+            "weekly_data": [],
+            "slope_pct_per_week": None,
+            "weeks_until_threshold": None,
+            "current_accuracy_pct": None,
+            "threshold_pct": round(threshold_pct, 1),
+            "verdict": "no_data",
+            "summary": (
+                f"Need at least {_MIN_WEEKS} weeks of feedback to compute a decay rate "
+                f"({len(week_buckets)} week{'s' if len(week_buckets) != 1 else ''} found)."
+            ),
+        }
+
+    # Sort weeks chronologically
+    sorted_weeks = sorted(week_buckets.keys())
+    weekly_data = []
+    accuracies: list[float] = []
+    for week in sorted_weeks:
+        records = week_buckets[week]
+        acc = sum(records) / len(records) * 100.0
+        weekly_data.append(
+            {"week": week, "accuracy_pct": round(acc, 1), "n_samples": len(records)}
+        )
+        accuracies.append(acc)
+
+    # Linear trend
+    x = _np.arange(len(accuracies), dtype=float)
+    y = _np.array(accuracies, dtype=float)
+    coeffs = _np.polyfit(x, y, 1)
+    slope = float(coeffs[0])  # pct / week
+
+    current_accuracy = accuracies[-1]
+    threshold_f = float(threshold_pct)
+
+    # Estimate weeks until threshold using linear extrapolation
+    weeks_until: float | None = None
+    if slope < 0 and current_accuracy > threshold_f:
+        # weeks from now until predicted accuracy == threshold
+        weeks_until = round((current_accuracy - threshold_f) / abs(slope), 1)
+    elif current_accuracy <= threshold_f:
+        weeks_until = 0.0  # already below
+
+    # Verdict
+    if current_accuracy <= threshold_f:
+        verdict = "below_threshold"
+    elif slope <= -2.0:
+        verdict = "degrading_fast"
+    elif slope <= -0.5:
+        verdict = "degrading_slowly"
+    elif slope >= 0.5:
+        verdict = "improving"
+    else:
+        verdict = "stable"
+
+    # Plain-English summary
+    slope_dir = "dropping" if slope < 0 else "rising" if slope > 0 else "flat"
+    slope_abs = abs(round(slope, 2))
+
+    if verdict == "below_threshold":
+        summary = (
+            f"Accuracy is already below the {threshold_f:.0f}% threshold "
+            f"(currently {current_accuracy:.1f}%). Retraining is strongly recommended."
+        )
+    elif verdict == "degrading_fast":
+        wk = f"approximately {weeks_until:.0f} week{'s' if weeks_until != 1 else ''}" if weeks_until else "soon"
+        summary = (
+            f"Accuracy is {slope_dir} quickly — losing {slope_abs:.1f}% per week "
+            f"(currently {current_accuracy:.1f}%). "
+            f"At this rate it will fall below {threshold_f:.0f}% in {wk}."
+        )
+    elif verdict == "degrading_slowly":
+        wk = f"approximately {weeks_until:.0f} week{'s' if weeks_until != 1 else ''}" if weeks_until else "a long time"
+        summary = (
+            f"Accuracy is slowly declining — {slope_abs:.1f}% per week "
+            f"(currently {current_accuracy:.1f}%). "
+            f"At this rate it will fall below {threshold_f:.0f}% in {wk}."
+        )
+    elif verdict == "improving":
+        summary = (
+            f"Accuracy is trending upward — gaining {slope_abs:.1f}% per week "
+            f"(currently {current_accuracy:.1f}%). Your model is getting better over time."
+        )
+    else:
+        summary = (
+            f"Accuracy is stable at approximately {current_accuracy:.1f}% "
+            f"(slope: {slope:+.2f}% per week). No retraining needed right now."
+        )
+
+    return {
+        "weekly_data": weekly_data,
+        "slope_pct_per_week": round(slope, 3),
+        "weeks_until_threshold": weeks_until,
+        "current_accuracy_pct": round(current_accuracy, 1),
+        "threshold_pct": round(threshold_f, 1),
+        "verdict": verdict,
+        "summary": summary,
+    }

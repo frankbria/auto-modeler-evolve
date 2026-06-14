@@ -149,6 +149,7 @@ import { ConfidenceBandCard } from "@/components/deploy/confidence-band-card"
 import { RetrainCompleteNotifyCard } from "@/components/deploy/retrain-complete-notify-card"
 import OutcomeCalibrationCard from "@/components/deploy/outcome-calibration-card"
 import { BatchJobHistoryCard } from "@/components/deploy/batch-job-history-card"
+import { PerformanceDecayRateCard } from "@/components/deploy/performance-decay-rate-card"
 import { EnsembleRecommendationCard } from "@/components/models/ensemble-recommendation-card"
 import { TuningChatCard } from "@/components/models/tuning-chat-card"
 import { CvScoreDistributionCard } from "@/components/models/cv-score-distribution-card"
@@ -469,6 +470,7 @@ export default function ProjectWorkspace() {
     attachRetrainCompleteNotifyToLastMessage,
     attachOutcomeCalibrationToLastMessage,
     attachBatchJobHistoryToLastMessage,
+    attachPerformanceDecayRateToLastMessage,
   } = useAppStore()
 
   const [chatInput, setChatInput] = useState("")
@@ -933,6 +935,8 @@ export default function ProjectWorkspace() {
                 attachOutcomeCalibrationToLastMessage(json.outcome_calibration as import("@/lib/types").OutcomeCalibrationResult)
               } else if (json.type === "batch_job_history" && json.batch_job_history) {
                 attachBatchJobHistoryToLastMessage(json.batch_job_history as import("@/lib/types").BatchJobHistoryResult)
+              } else if (json.type === "performance_decay_rate" && json.performance_decay_rate) {
+                attachPerformanceDecayRateToLastMessage(json.performance_decay_rate as import("@/lib/types").PerformanceDecayResult)
               } else if (json.type === "uptime_summary" && json.uptime_summary) {
                 attachUptimeSummaryToLastMessage(json.uptime_summary as import("@/lib/types").ApiUptimeSummaryResult)
               } else if (json.type === "cost_sensitive_threshold" && json.cost_sensitive_threshold) {
@@ -1189,6 +1193,8 @@ export default function ProjectWorkspace() {
                 attachOutcomeCalibrationToLastMessage(json.outcome_calibration as import("@/lib/types").OutcomeCalibrationResult)
               } else if (json.type === "batch_job_history" && json.batch_job_history) {
                 attachBatchJobHistoryToLastMessage(json.batch_job_history as import("@/lib/types").BatchJobHistoryResult)
+              } else if (json.type === "performance_decay_rate" && json.performance_decay_rate) {
+                attachPerformanceDecayRateToLastMessage(json.performance_decay_rate as import("@/lib/types").PerformanceDecayResult)
               } else if (json.type === "uptime_summary" && json.uptime_summary) {
                 attachUptimeSummaryToLastMessage(json.uptime_summary as import("@/lib/types").ApiUptimeSummaryResult)
               } else if (json.type === "cost_sensitive_threshold" && json.cost_sensitive_threshold) {
@@ -1391,6 +1397,7 @@ export default function ProjectWorkspace() {
     attachRetrainCompleteNotifyToLastMessage,
     attachOutcomeCalibrationToLastMessage,
     attachBatchJobHistoryToLastMessage,
+    attachPerformanceDecayRateToLastMessage,
   ])
 
   const onDrop = useCallback(
@@ -2202,6 +2209,9 @@ export default function ProjectWorkspace() {
                     )}
                     {msg.batch_job_history && (
                       <BatchJobHistoryCard result={msg.batch_job_history} />
+                    )}
+                    {msg.performance_decay_rate && (
+                      <PerformanceDecayRateCard result={msg.performance_decay_rate} />
                     )}
                     {msg.uptime_summary && (
                       <ApiUptimeSummaryCard result={msg.uptime_summary} />

@@ -5313,6 +5313,49 @@ def get_batch_job_history(
     return result
 
 
+@router.get("/api/deploy/{deployment_id}/performance-decay-rate")
+def get_performance_decay_rate(
+    deployment_id: str,
+    threshold_pct: float = 80.0,
+    session: Session = Depends(get_session),
+):
+    """Return the weekly accuracy decay rate for a deployment.
+
+    Uses ``FeedbackRecord`` ground-truth labels to compute per-week accuracy,
+    fits a linear trend, and estimates how many weeks until accuracy drops below
+    ``threshold_pct`` (default 80%).  Requires at least 5 labeled feedback
+    records spanning at least 2 calendar weeks.
+    """
+    from core.analyzer import compute_performance_decay_rate
+
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment or not deployment.is_active:
+        raise HTTPException(status_code=404, detail="Deployment not found or inactive")
+
+    threshold_pct = max(0.0, min(100.0, threshold_pct))
+
+    feedbacks = session.exec(
+        select(FeedbackRecord)
+        .where(
+            FeedbackRecord.deployment_id == deployment_id,
+            FeedbackRecord.is_correct.is_not(None),
+        )
+        .order_by(FeedbackRecord.created_at.asc())
+    ).all()
+
+    pairs = [
+        {
+            "created_at": f.created_at.isoformat() if f.created_at else None,
+            "is_correct": f.is_correct,
+        }
+        for f in feedbacks
+    ]
+
+    result = compute_performance_decay_rate(pairs, threshold_pct=threshold_pct)
+    result["deployment_id"] = deployment_id
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Prediction alert rule endpoints
 # ---------------------------------------------------------------------------

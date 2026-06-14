@@ -1459,5 +1459,13 @@ export const api = {
 
     batchJobHistory: (deploymentId: string, n?: number): Promise<import("./types").BatchJobHistoryResult> =>
       fetch(`${API_URL}/api/deploy/${deploymentId}/batch-job-history${n ? `?n=${n}` : ""}`).then((r) => r.json()),
+
+    performanceDecayRate: (
+      deploymentId: string,
+      thresholdPct?: number,
+    ): Promise<import("./types").PerformanceDecayResult> =>
+      fetch(
+        `${API_URL}/api/deploy/${deploymentId}/performance-decay-rate${thresholdPct !== undefined ? `?threshold_pct=${thresholdPct}` : ""}`,
+      ).then((r) => r.json()),
   },
 }

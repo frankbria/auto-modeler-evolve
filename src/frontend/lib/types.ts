@@ -587,6 +587,7 @@ export interface ChatMessage {
   retrain_complete_notify?: RetrainCompleteNotifyResult
   outcome_calibration?: OutcomeCalibrationResult
   batch_job_history?: BatchJobHistoryResult
+  performance_decay_rate?: PerformanceDecayResult
 }
 
 export interface RollbackVersionEntry {
@@ -5183,5 +5184,30 @@ export interface BatchJobHistoryResult {
   avg_duration_sec: number | null
   last_run_at: string | null
   verdict: BatchJobHistoryVerdict
+  summary: string
+}
+
+export type PerformanceDecayVerdict =
+  | "degrading_fast"
+  | "degrading_slowly"
+  | "stable"
+  | "improving"
+  | "below_threshold"
+  | "no_data"
+
+export interface PerformanceDecayWeekEntry {
+  week: string
+  accuracy_pct: number
+  n_samples: number
+}
+
+export interface PerformanceDecayResult {
+  deployment_id: string
+  weekly_data: PerformanceDecayWeekEntry[]
+  slope_pct_per_week: number | null
+  weeks_until_threshold: number | null
+  current_accuracy_pct: number | null
+  threshold_pct: number
+  verdict: PerformanceDecayVerdict
   summary: string
 }

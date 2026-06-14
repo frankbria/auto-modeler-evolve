@@ -225,6 +225,7 @@ interface AppState {
   attachRetrainCompleteNotifyToLastMessage: (retrain_complete_notify: import("./types").RetrainCompleteNotifyResult) => void
   attachOutcomeCalibrationToLastMessage: (outcome_calibration: import("./types").OutcomeCalibrationResult) => void
   attachBatchJobHistoryToLastMessage: (batch_job_history: import("./types").BatchJobHistoryResult) => void
+  attachPerformanceDecayRateToLastMessage: (performance_decay_rate: import("./types").PerformanceDecayResult) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -1960,6 +1961,15 @@ export const useAppStore = create<AppState>((set) => ({
       const last = messages[messages.length - 1]
       if (last && last.role === "assistant") {
         messages[messages.length - 1] = { ...last, batch_job_history }
+      }
+      return { messages }
+    }),
+  attachPerformanceDecayRateToLastMessage: (performance_decay_rate) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === "assistant") {
+        messages[messages.length - 1] = { ...last, performance_decay_rate }
       }
       return { messages }
     }),

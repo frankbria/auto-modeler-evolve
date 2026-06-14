@@ -4430,6 +4430,20 @@ _BATCH_JOB_HISTORY_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+_PERF_DECAY_PATTERNS = re.compile(
+    r"(?i)(?:"
+    r"(?:how\s+fast|how\s+quickly|how\s+rapidly)\s+(?:is|has?)\s+(?:my\s+)?model\s+(?:degrading|declining|dropping|decaying|deteriorating)\b|"
+    r"model\s+(?:performance\s+)?decay(?:\s+rate)?\b|"
+    r"performance\s+decay(?:\s+rate|(?:\s+over\s+time)?)\b|"
+    r"accuracy\s+(?:decay|decline|trend|degradation)(?:\s+rate|(?:\s+over\s+time)?)?\b|"
+    r"(?:how\s+fast|how\s+quickly)\s+(?:is|has?)\s+(?:my\s+)?(?:model\s+)?accuracy\s+(?:dropping|falling|declining|decaying)\b|"
+    r"(?:when|how\s+long)\s+(?:will|until)\s+(?:my\s+)?(?:model\s+)?accuracy\s+(?:fall|drop|reach|hit)\s+(?:below|under)?\b|"
+    r"(?:weeks?\s+until|time\s+until|how\s+(?:many\s+)?weeks?)\s+(?:my\s+)?model\s+(?:degrades?|drops?\s+below|falls?\s+below)\b|"
+    r"(?:is|has?)\s+(?:my\s+)?model\s+(?:getting\s+)?(?:worse|degrading|declining)\s+over\s+time\b"
+    r")",
+    re.IGNORECASE,
+)
+
 _PROD_EXPLAIN_PATTERNS = re.compile(
     r"(?i)(?:"
     r"explain\s+(?:the\s+)?(?:last|latest|most\s+recent)\s+(?:production\s+|live\s+|real\s+)?(?:prediction|api\s+(?:call|result)|request)\b|"
@@ -20619,6 +20633,41 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass  # Batch results are nice-to-have; never crash chat
 
+    # Performance decay rate via chat
+    perf_decay_event: dict | None = None
+    if _PERF_DECAY_PATTERNS.search(body.message) and ctx["deployment"]:
+        try:
+            import requests as _pdr_requests
+
+            _pdr_dep = ctx["deployment"]
+            _pdr_dep_id = _pdr_dep.id if hasattr(_pdr_dep, "id") else str(_pdr_dep)
+            _pdr_resp = _pdr_requests.get(
+                f"http://localhost:8000/api/deploy/{_pdr_dep_id}/performance-decay-rate?threshold_pct=80",
+                timeout=10,
+            )
+            if _pdr_resp.status_code == 200:
+                _pdr_result = _pdr_resp.json()
+                perf_decay_event = _pdr_result
+                _pdr_verdict = _pdr_result.get("verdict", "no_data")
+                _pdr_slope = _pdr_result.get("slope_pct_per_week")
+                _pdr_curr = _pdr_result.get("current_accuracy_pct")
+                _pdr_weeks = _pdr_result.get("weeks_until_threshold")
+                _pdr_summary = _pdr_result.get("summary", "")
+                system_prompt += (
+                    f"\n\n## Performance Decay Rate\n{_pdr_summary}\n"
+                    f"Verdict: {_pdr_verdict}. "
+                    + (f"Current accuracy: {_pdr_curr}%. " if _pdr_curr is not None else "")
+                    + (f"Slope: {_pdr_slope:+.2f}% per week. " if _pdr_slope is not None else "")
+                    + (f"Weeks until below threshold: {_pdr_weeks}." if _pdr_weeks is not None else "")
+                    + "\n"
+                    "Tell the analyst how fast their model is degrading in plain English. "
+                    "If degrading_fast or below_threshold, strongly recommend retraining. "
+                    "If stable or improving, reassure them. Include the weeks-until-threshold "
+                    "estimate where available."
+                )
+        except Exception:  # noqa: BLE001
+            pass  # Performance decay is nice-to-have; never crash chat
+
     # Batch job history via chat
     batch_job_history_event: dict | None = None
     if _BATCH_JOB_HISTORY_PATTERNS.search(body.message) and ctx["deployment"]:
@@ -22408,6 +22457,9 @@ def send_message(
 
         if batch_job_history_event:
             yield f"data: {json.dumps({'type': 'batch_job_history', 'batch_job_history': batch_job_history_event})}\n\n"
+
+        if perf_decay_event:
+            yield f"data: {json.dumps({'type': 'performance_decay_rate', 'performance_decay_rate': perf_decay_event})}\n\n"
 
         if prod_explanation_event:
             yield f"data: {json.dumps({'type': 'prod_prediction_explanation', 'prod_prediction_explanation': prod_explanation_event})}\n\n"
