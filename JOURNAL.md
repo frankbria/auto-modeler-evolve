@@ -1,5 +1,28 @@
 # Journal
 
+## Day 94 — 20:00 — Model Performance Decay Rate Analysis (Track D)
+
+**Feature shipped:** Model Performance Decay Rate Analysis — closes the analyst gap between "my accuracy is dropping" and "how fast is it dropping, and when will it cross my acceptable threshold?" This is distinct from RetrainingReadinessCard (composite urgency score across multiple signals) and DegradationRetrainCard (auto-trigger threshold configuration). This feature is purely about quantifying the rate of accuracy decay from labeled feedback over time.
+
+**What was built:**
+- `compute_performance_decay_rate(feedback_pairs, threshold_pct=80.0)` pure function in `core/analyzer.py`: groups `FeedbackRecord` dicts by ISO calendar week (`%Y-W%V`), computes per-week accuracy %, fits a linear trend via `numpy.polyfit`, extrapolates `weeks_until_threshold = (current − threshold) / |slope|` when degrading; verdicts: `degrading_fast` (slope ≤ −2% /week), `degrading_slowly` (slope ≤ −0.5%), `stable` (|slope| < 0.5), `improving` (slope ≥ 0.5), `below_threshold` (current ≤ threshold), `no_data` (< 5 pairs or < 2 weeks); returns `weekly_data` list (week, accuracy_pct, n_samples), slope, weeks_until_threshold, current_accuracy_pct, threshold_pct, verdict, plain-English summary
+- `GET /api/deploy/{id}/performance-decay-rate?threshold_pct=80` REST endpoint in `api/deploy.py`: queries all `FeedbackRecord` entries with non-null `is_correct`, maps to dicts, calls pure function, enriches with `deployment_id`
+- `_PERF_DECAY_PATTERNS` (8 NL variants: "how fast is my model degrading?", "model decay rate", "performance decay", "accuracy decline rate", "how fast is accuracy dropping?", "when will accuracy fall below", "weeks until model degrades", "is my model getting worse over time?") + handler in `api/chat.py`; guarded by `ctx["deployment"]`; injects verdict/slope/current/weeks into system_prompt; emits `{type:"performance_decay_rate"}` SSE event
+- `PerformanceDecayRateCard` at `components/deploy/performance-decay-rate-card.tsx` (rose=degrading_fast/below_threshold, amber=degrading_slowly, sky=stable, emerald=improving, muted=no_data, 📉 icon): current accuracy + slope (color-coded red/green) + weeks-until-threshold stats grid; Recharts LineChart with indigo accuracy line + red dashed threshold reference line; alert `role="alert"` callout for degrading_fast/below_threshold; sr-only figcaption; footer shows threshold used
+- Full TypeScript wiring: `PerformanceDecayVerdict`, `PerformanceDecayWeekEntry`, `PerformanceDecayResult` interfaces; `performance_decay_rate?` on `ChatMessage`; `attachPerformanceDecayRateToLastMessage` Zustand action; `api.deploy.performanceDecayRate()` client method; SSE handlers in both EventSource branches; card render in `page.tsx`
+
+**Design choices:**
+- ISO week (`%Y-W%V`) grouping avoids calendar month boundary distortions (a week is always 7 days); analysts think in weeks for model health
+- Slope threshold of ±0.5%/week for stable vs improving/degrading is intentionally conservative — many production models fluctuate ±1% weekly without a real trend
+- The `weeks_until_threshold` label shows "Now" when already below threshold and "N/A" when stable/improving — analysts know exactly what action is needed without interpreting slope math
+
+**Tests:** 27 backend (2 constants + 3 no_data + 3 stable/improving/degrading + 2 below_threshold/threshold_estimate + 2 data_structure + 8 regex + 3 REST endpoint) + 22 frontend (17 card component + 3 store action, 2 no_data) = **49 new tests**, all passing. Baseline: 6540/3709 → **6567 backend / 3731 frontend** (+27 / +22). Backend lint: clean. Frontend build + TypeScript + lint: clean.
+
+**What's next:**
+- Prediction confidence distribution shift alert — proactive webhook when the distribution of confidence scores diverges significantly from baseline
+
+---
+
 ## Day 94 — 12:00 — Batch Job History Analytics (Track D)
 
 **Feature shipped:** Batch Job History Analytics — closes the analyst gap between "I scheduled batch predictions" and "how have those batch runs actually performed over time?" Distinct from the existing Batch Job Results card (distribution analytics of the latest run), this surfaces the full multi-run timeline: job statuses, completion times, row counts, durations, error messages, and aggregate health metrics across up to the last 20 runs.
