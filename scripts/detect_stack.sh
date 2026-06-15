@@ -114,6 +114,46 @@ detect_single_stack() {
     fi
 }
 
+# ── JSON emission (injection-safe) ──
+# All output is assembled by python3's json.dumps over argv values — NEVER by
+# string-interpolating untrusted basenames into a JSON template. Args:
+#   $1 stack  $2 build  $3 test  $4 lint  $5 format
+#   then flat groups of 6 per substack: name stack build test lint format
+# Security note (issue #2): the build/test/lint/format strings come from the
+# fixed internal map above; the only attacker-controlled value is a substack
+# basename, which is validated against [A-Za-z0-9._-] before it ever reaches here.
+emit_json() {
+    python3 - "$@" <<'PY'
+import json
+import sys
+
+argv = sys.argv[1:]
+stack, build, test, lint, fmt = argv[:5]
+rest = argv[5:]
+
+out = {"stack": stack, "build": build, "test": test, "lint": lint, "format": fmt}
+
+subs = []
+for i in range(0, len(rest), 6):
+    name, sstack, sbuild, stest, slint, sfmt = rest[i : i + 6]
+    subs.append(
+        {
+            "name": name,
+            "dir": name,
+            "stack": sstack,
+            "build": sbuild,
+            "test": stest,
+            "lint": slint,
+            "format": sfmt,
+        }
+    )
+if subs:
+    out["substacks"] = subs
+
+print(json.dumps(out, indent=2))
+PY
+}
+
 # ── Main detection ──
 
 # Try root directory first
@@ -121,53 +161,41 @@ detect_single_stack "$PROJECT_DIR"
 
 # If unknown, scan immediate subdirectories for monorepo layout
 if [ "$STACK" = "unknown" ]; then
-    SUBSTACKS=""
+    SUBARGS=()        # flat 6-tuples (name stack build test lint format) per substack
     SUBSTACK_COUNT=0
 
     for subdir in "$PROJECT_DIR"/*/; do
         [ -d "$subdir" ] || continue
         detect_single_stack "$subdir"
-        if [ "$STACK" != "unknown" ]; then
-            SUBDIR_NAME=$(basename "$subdir")
-            [ "$SUBSTACK_COUNT" -gt 0 ] && SUBSTACKS="$SUBSTACKS,"
-            SUBSTACKS="$SUBSTACKS{\"name\":\"$SUBDIR_NAME\",\"dir\":\"$SUBDIR_NAME\",\"stack\":\"$STACK\",\"build\":\"$BUILD_CMD\",\"test\":\"$TEST_CMD\",\"lint\":\"$LINT_CMD\",\"format\":\"$FORMAT_CMD\"}"
-            SUBSTACK_COUNT=$((SUBSTACK_COUNT + 1))
+        # A directory that is not a buildable stack is irrelevant — ignore it
+        # (including oddly-named scratch dirs).
+        if [ "$STACK" = "unknown" ]; then
+            continue
         fi
+        SUBDIR_NAME=$(basename "$subdir")
+        # Fail closed: a directory that IS a buildable substack but whose name
+        # could break JSON/shell quoting is treated as tampering, not silently
+        # skipped — otherwise a lone unsafe stack would surface as "unknown" and
+        # callers would skip verification of a suspicious layout (issue #2). Such
+        # a name can never reach JSON emission.
+        if ! [[ "$SUBDIR_NAME" =~ ^[A-Za-z0-9._-]+$ ]]; then
+            printf 'detect_stack: refusing unsafe substack directory name: %q\n' "$SUBDIR_NAME" >&2
+            exit 1
+        fi
+        SUBARGS+=("$SUBDIR_NAME" "$STACK" "$BUILD_CMD" "$TEST_CMD" "$LINT_CMD" "$FORMAT_CMD")
+        SUBSTACK_COUNT=$((SUBSTACK_COUNT + 1))
     done
 
-    if [ "$SUBSTACK_COUNT" -gt 1 ]; then
-        # Monorepo: multiple substacks detected
-        cat <<EOF
-{
-  "stack": "monorepo",
-  "substacks": [$SUBSTACKS],
-  "build": "",
-  "test": "",
-  "lint": "",
-  "format": ""
-}
-EOF
+    if [ "$SUBSTACK_COUNT" -ge 1 ]; then
+        # One or more nested stacks: always emit cwd-bearing substack metadata
+        # (each carries its own "dir") so callers run commands from the correct
+        # subdirectory. Even a single nested stack uses this shape — promoting it
+        # to a top-level single output would drop the dir and run from the root.
+        emit_json "monorepo" "" "" "" "" "${SUBARGS[@]}"
         exit 0
-    elif [ "$SUBSTACK_COUNT" -eq 1 ]; then
-        # Single substack found in subdir — re-detect to set variables
-        for subdir in "$PROJECT_DIR"/*/; do
-            [ -d "$subdir" ] || continue
-            detect_single_stack "$subdir"
-            if [ "$STACK" != "unknown" ]; then
-                break
-            fi
-        done
     fi
     # If 0 substacks, STACK remains "unknown" — fall through to single output
 fi
 
 # Single-stack output (or unknown)
-cat <<EOF
-{
-  "stack": "$STACK",
-  "build": "$BUILD_CMD",
-  "test": "$TEST_CMD",
-  "lint": "$LINT_CMD",
-  "format": "$FORMAT_CMD"
-}
-EOF
+emit_json "$STACK" "$BUILD_CMD" "$TEST_CMD" "$LINT_CMD" "$FORMAT_CMD"
