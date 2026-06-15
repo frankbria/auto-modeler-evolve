@@ -7,7 +7,7 @@
  *   deployed state display, and the public /predict/[id] dashboard.
  */
 
-import { test, expect } from "@playwright/test"
+import { test, expect } from "./fixtures"
 
 const BACKEND = "http://localhost:8000"
 

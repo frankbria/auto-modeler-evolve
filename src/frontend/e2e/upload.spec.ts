@@ -6,7 +6,7 @@
  * badge, column stats, and insights all appear after upload.
  */
 
-import { test, expect } from "@playwright/test"
+import { test, expect } from "./fixtures"
 import path from "path"
 
 const BACKEND = "http://localhost:8000"
