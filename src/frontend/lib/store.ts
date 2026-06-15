@@ -1,5 +1,8 @@
 import { create } from "zustand"
+import { api } from "./api"
+import { getToken, setToken, clearToken } from "./auth-token"
 import type {
+  User,
   Project,
   Dataset,
   ChatMessage,
@@ -26,6 +29,15 @@ import type {
 } from "./types"
 
 interface AppState {
+  // --- Auth ---
+  user: User | null
+  token: string | null
+  isAuthenticated: boolean
+  login: (email: string, password: string) => Promise<void>
+  register: (email: string, password: string, name?: string) => Promise<void>
+  logout: () => void
+  loadCurrentUser: () => Promise<void>
+
   projects: Project[]
   currentProject: Project | null
   currentDataset: Dataset | null
@@ -229,6 +241,41 @@ interface AppState {
 }
 
 export const useAppStore = create<AppState>((set) => ({
+  // --- Auth ---
+  user: null,
+  token: null,
+  isAuthenticated: false,
+
+  login: async (email, password) => {
+    const res = await api.auth.login(email, password)
+    setToken(res.access_token)
+    set({ user: res.user, token: res.access_token, isAuthenticated: true })
+  },
+
+  register: async (email, password, name) => {
+    const res = await api.auth.register(email, password, name)
+    setToken(res.access_token)
+    set({ user: res.user, token: res.access_token, isAuthenticated: true })
+  },
+
+  logout: () => {
+    clearToken()
+    set({ user: null, token: null, isAuthenticated: false })
+  },
+
+  loadCurrentUser: async () => {
+    const token = getToken()
+    if (!token) return
+    try {
+      const user = await api.auth.me()
+      set({ user, token, isAuthenticated: true })
+    } catch {
+      // Stale/invalid token — apiFetch already cleared it on 401.
+      clearToken()
+      set({ user: null, token: null, isAuthenticated: false })
+    }
+  },
+
   projects: [],
   currentProject: null,
   currentDataset: null,
