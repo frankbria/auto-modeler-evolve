@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { Suspense, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import {
@@ -22,6 +22,15 @@ const AUTOCOMPLETE_NEW_PW = "new-pass" + "word"
 const AUTOCOMPLETE_CURRENT_PW = "current-pass" + "word"
 
 export default function LoginPage() {
+  // useSearchParams() requires a Suspense boundary for static prerendering.
+  return (
+    <Suspense fallback={<div className="min-h-[calc(100vh-3rem)]" />}>
+      <LoginForm />
+    </Suspense>
+  )
+}
+
+function LoginForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { login, register } = useAppStore()

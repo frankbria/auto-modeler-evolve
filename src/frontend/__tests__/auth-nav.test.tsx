@@ -8,7 +8,6 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react"
 import { AuthNav } from "../components/auth/auth-nav"
 import { useAppStore } from "../lib/store"
-import { api } from "../lib/api"
 
 const pushMock = jest.fn()
 
