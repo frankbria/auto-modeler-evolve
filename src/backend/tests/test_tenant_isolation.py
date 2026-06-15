@@ -128,6 +128,44 @@ async def test_public_prediction_form_endpoints_not_blocked_by_auth(anon_client)
 
 
 @pytest.mark.asyncio
+async def test_public_mirrors_honor_api_key_protection(anon_client):
+    """Public prediction-form mirrors must not expose a key-protected
+    deployment's schema/metadata without the API key (issue #25)."""
+    import hashlib
+
+    import db
+    from models.deployment import Deployment
+
+    ids = _seed_owned_stack(A_OWNER)
+    dep = ids["deployment"]
+    api_key = "secret-key-123"
+    salt = "s4lt"
+    with Session(db.engine) as s:
+        row = s.get(Deployment, dep)
+        row.api_key_enabled = True
+        row.api_key_salt = salt
+        row.api_key_hash = hashlib.sha256(f"{salt}:{api_key}".encode()).hexdigest()
+        s.add(row)
+        s.commit()
+
+    paths = [
+        f"/api/predict/{dep}/info",
+        f"/api/predict/{dep}/dashboard-config",
+        f"/api/predict/{dep}/dashboard-metadata",
+        f"/api/predict/{dep}/presets",
+    ]
+    # Without the key → 401 (protection honored).
+    for path in paths:
+        resp = await anon_client.get(path)
+        assert resp.status_code == 401, f"{path} (no key) -> {resp.status_code}"
+    # With the correct key → reachable (not 401).
+    headers = {"Authorization": f"Bearer {api_key}"}
+    for path in paths:
+        resp = await anon_client.get(path, headers=headers)
+        assert resp.status_code != 401, f"{path} (with key) -> {resp.status_code}"
+
+
+@pytest.mark.asyncio
 async def test_public_mirrors_hide_inactive_deployments(anon_client):
     """A stale share link must stop leaking details once the owner undeploys
     (soft-delete, ``is_active=False``)."""
