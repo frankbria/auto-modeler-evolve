@@ -129,10 +129,16 @@ def default_auth_override():
 
     import db
     from auth.dependencies import (
-        _user_from_authorization,
+        _extract_token,
+        _user_from_token,
         get_current_user,
         get_optional_user,
     )
+
+    def _user_from_authorization(authorization, session):
+        # Header-only resolution for the transparent test override (no Request).
+        return _user_from_token(_extract_token(authorization, None), session)
+
     from main import app
     from models.user import User
 

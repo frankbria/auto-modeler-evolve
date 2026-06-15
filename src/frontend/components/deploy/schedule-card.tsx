@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { api } from "@/lib/api"
+import { api, withAccessToken } from "@/lib/api"
 import { BatchSchedule, BatchJobRun } from "@/lib/types"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -402,7 +402,7 @@ export function ScheduleCard({ deploymentId }: ScheduleCardProps) {
                           )}
                           {run.download_url ? (
                             <a
-                              href={`${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"}${run.download_url}`}
+                              href={withAccessToken(`${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"}${run.download_url}`)}
                               download
                               className="text-primary underline"
                               data-testid={`download-run-${run.id}`}

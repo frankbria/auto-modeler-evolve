@@ -2,6 +2,7 @@
 
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { withAccessToken } from "@/lib/api"
 import type { PredictionLogExportResult } from "@/lib/types"
 
 // ---------------------------------------------------------------------------
@@ -70,7 +71,7 @@ export function PredictionLogExportCard({ result }: PredictionLogExportCardProps
             </p>
 
             <a
-              href={download_url}
+              href={withAccessToken(download_url)}
               download
               className="inline-flex items-center gap-1.5 rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 transition-colors"
               aria-label={`Download ${total_predictions.toLocaleString()} prediction records as CSV`}

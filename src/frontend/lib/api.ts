@@ -104,6 +104,21 @@ function redirectToLogin(): void {
   }
 }
 
+/**
+ * Append the current bearer token as an `access_token` query param.
+ *
+ * For owner-scoped endpoints consumed by browser APIs that CANNOT set an
+ * Authorization header — `EventSource` (SSE streams) and direct download links
+ * (`<a href>` / `window.open`). The backend accepts this query fallback (see
+ * `_extract_token`). Returns the URL unchanged when no token is stored.
+ */
+export function withAccessToken(url: string): string {
+  const token = getToken()
+  if (!token) return url
+  const sep = url.includes("?") ? "&" : "?"
+  return `${url}${sep}access_token=${encodeURIComponent(token)}`
+}
+
 export const api = {
   auth: {
     register: (email: string, password: string, name?: string): Promise<AuthResponse> =>
@@ -590,7 +605,7 @@ export const api = {
     },
 
     downloadDatasetUrl: (datasetId: string): string =>
-      `${API_URL}/api/data/${datasetId}/download`,
+      withAccessToken(`${API_URL}/api/data/${datasetId}/download`),
 
     getSummaryStats: (
       datasetId: string
@@ -897,16 +912,16 @@ export const api = {
       }).then((r) => r.json()),
 
     downloadUrl: (modelRunId: string): string =>
-      `${API_URL}/api/models/${modelRunId}/download`,
+      withAccessToken(`${API_URL}/api/models/${modelRunId}/download`),
 
     reportUrl: (modelRunId: string): string =>
-      `${API_URL}/api/models/${modelRunId}/report`,
+      withAccessToken(`${API_URL}/api/models/${modelRunId}/report`),
 
     exportModelCardUrl: (runId: string): string =>
-      `${API_URL}/api/models/${runId}/export-model-card`,
+      withAccessToken(`${API_URL}/api/models/${runId}/export-model-card`),
 
     trainingStreamUrl: (projectId: string): string =>
-      `${API_URL}/api/models/${projectId}/training-stream`,
+      withAccessToken(`${API_URL}/api/models/${projectId}/training-stream`),
 
     readiness: (modelRunId: string): Promise<import("./types").ModelReadiness> =>
       apiFetch(`${API_URL}/api/models/${modelRunId}/readiness`).then((r) => r.json()),
@@ -1157,7 +1172,7 @@ export const api = {
       }),
 
     exportServiceUrl: (deploymentId: string): string =>
-      `${API_URL}/api/deploy/${deploymentId}/export`,
+      withAccessToken(`${API_URL}/api/deploy/${deploymentId}/export`),
 
     getWebhooks: (
       deploymentId: string
@@ -1292,7 +1307,7 @@ export const api = {
     ): string => {
       const params = new URLSearchParams({ language })
       if (baseUrl) params.set("base_url", baseUrl)
-      return `${API_URL}/api/deploy/${deploymentId}/sdk?${params.toString()}`
+      return withAccessToken(`${API_URL}/api/deploy/${deploymentId}/sdk?${params.toString()}`)
     },
 
     setRateLimit: async (

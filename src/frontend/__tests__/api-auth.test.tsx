@@ -12,7 +12,7 @@ import fetchMock from "jest-fetch-mock"
 
 fetchMock.enableMocks()
 
-import { api } from "../lib/api"
+import { api, withAccessToken } from "../lib/api"
 import { setToken, getToken } from "../lib/auth-token"
 
 const BASE = "http://localhost:8000"
@@ -128,6 +128,28 @@ describe("api.auth endpoints", () => {
     expect(fetchMock.mock.calls[0][0]).toBe(`${BASE}/api/auth/me`)
     expect(authHeaderOf()).toBe("Bearer tok-123")
     expect(user.email).toBe("a@b.com")
+  })
+
+  it("withAccessToken appends the token for header-less callers (EventSource / downloads)", () => {
+    expect(withAccessToken("http://x/api/models/p1/training-stream")).toBe(
+      "http://x/api/models/p1/training-stream"
+    )
+    setToken("tok-123")
+    // No existing query string → uses `?`.
+    expect(withAccessToken("http://x/api/models/p1/training-stream")).toBe(
+      "http://x/api/models/p1/training-stream?access_token=tok-123"
+    )
+    // Existing query string → uses `&`.
+    expect(withAccessToken("http://x/api/deploy/d1/sdk?language=python")).toBe(
+      "http://x/api/deploy/d1/sdk?language=python&access_token=tok-123"
+    )
+  })
+
+  it("URL-returning methods carry the token when logged in (stream + downloads)", () => {
+    setToken("tok-123")
+    expect(api.models.trainingStreamUrl("p1")).toContain("access_token=tok-123")
+    expect(api.models.downloadUrl("r1")).toContain("access_token=tok-123")
+    expect(api.deploy.exportServiceUrl("d1")).toContain("access_token=tok-123")
   })
 
   it("me() is a passive probe — clears a stale token on 401 but does not throw a navigation", async () => {

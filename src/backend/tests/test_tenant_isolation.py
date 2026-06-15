@@ -106,6 +106,46 @@ async def test_public_predict_endpoint_not_blocked_by_auth(anon_client):
     assert resp.status_code != 401
 
 
+def test_extract_token_header_then_query_fallback():
+    """Header wins; otherwise fall back to the ?access_token query param."""
+    from auth.dependencies import _extract_token
+
+    class _Req:
+        def __init__(self, params):
+            self.query_params = params
+
+    assert _extract_token("Bearer abc", None) == "abc"
+    assert _extract_token(None, _Req({"access_token": "xyz"})) == "xyz"
+    # Header takes precedence over a query param.
+    assert _extract_token("Bearer abc", _Req({"access_token": "xyz"})) == "abc"
+    assert _extract_token(None, _Req({})) is None
+    assert _extract_token(None, None) is None
+
+
+@pytest.mark.asyncio
+async def test_query_param_token_authenticates_management_request(anon_client):
+    """EventSource / download URLs can't set headers, so an owner-scoped request
+    must also authenticate via ?access_token=<jwt> (issue #25)."""
+    import db
+    from auth.security import create_access_token, hash_password
+    from models.user import User
+
+    uid = "qtoken-owner"
+    with Session(db.engine) as s:
+        s.add(
+            User(id=uid, email="qtoken@test.local", hashed_password=hash_password("x" * 8))
+        )
+        s.commit()
+    token = create_access_token(uid)
+
+    # No Authorization header — token only in the query string.
+    ok = await anon_client.get(f"/api/projects?access_token={token}")
+    assert ok.status_code == 200, ok.text
+    # A bogus query token is still rejected.
+    bad = await anon_client.get("/api/projects?access_token=not-a-jwt")
+    assert bad.status_code == 401
+
+
 @pytest.mark.asyncio
 async def test_public_prediction_form_endpoints_not_blocked_by_auth(anon_client):
     """The anonymous /predict/[id] page bootstraps via the public prediction

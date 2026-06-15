@@ -1,6 +1,7 @@
 "use client"
 
 import type { ModelCardExportInfo } from "@/lib/types"
+import { withAccessToken } from "@/lib/api"
 
 interface ModelCardExportCardProps {
   info: ModelCardExportInfo
@@ -11,7 +12,7 @@ export function ModelCardExportCard({ info }: ModelCardExportCardProps) {
     typeof window !== "undefined"
       ? window.location.origin.replace(":3000", ":8000")
       : "http://localhost:8000"
-  const downloadUrl = `${backendBase}${info.download_url}`
+  const downloadUrl = withAccessToken(`${backendBase}${info.download_url}`)
 
   return (
     <figure
