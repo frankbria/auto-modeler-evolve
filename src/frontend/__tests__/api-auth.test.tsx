@@ -129,4 +129,16 @@ describe("api.auth endpoints", () => {
     expect(authHeaderOf()).toBe("Bearer tok-123")
     expect(user.email).toBe("a@b.com")
   })
+
+  it("me() is a passive probe — clears a stale token on 401 but does not throw a navigation", async () => {
+    // The nav's session probe runs on public pages too. It still clears the
+    // dead token, but suppresses the /login redirect so a stale token can't
+    // bounce an anonymous visitor off a public /predict/[id] link. (jsdom can't
+    // observe window.location navigation; the no-redirect path is covered by
+    // the public-route E2E in e2e/auth.spec.ts.)
+    setToken("stale")
+    fetchMock.mockResponseOnce("", { status: 401 })
+    await expect(api.auth.me()).rejects.toThrow()
+    expect(getToken()).toBeNull()
+  })
 })

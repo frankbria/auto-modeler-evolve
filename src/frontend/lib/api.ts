@@ -64,7 +64,8 @@ function isPublicPredictionUrl(url: string): boolean {
  */
 export async function apiFetch(
   input: string,
-  init?: RequestInit
+  init?: RequestInit,
+  opts: { suppressLoginRedirect?: boolean } = {}
 ): Promise<Response> {
   const token = getToken()
   const publicPrediction = isPublicPredictionUrl(input)
@@ -82,7 +83,13 @@ export async function apiFetch(
 
   if (res.status === 401 && !publicPrediction) {
     clearToken()
-    redirectToLogin()
+    // `suppressLoginRedirect` is for passive session probes (e.g. the nav's
+    // /api/auth/me hydration), which run on every page — including the public
+    // /predict/[id] — and must NOT bounce an anonymous visitor to /login just
+    // because a stale token happens to sit in localStorage.
+    if (!opts.suppressLoginRedirect) {
+      redirectToLogin()
+    }
   }
   return res
 }
@@ -120,7 +127,11 @@ export const api = {
       }),
 
     me: (): Promise<User> =>
-      apiFetch(`${API_URL}/api/auth/me`).then((r) => {
+      // Passive session probe — suppress the global 401→/login redirect so a
+      // stale token on a public page doesn't bounce an anonymous visitor.
+      apiFetch(`${API_URL}/api/auth/me`, undefined, {
+        suppressLoginRedirect: true,
+      }).then((r) => {
         if (!r.ok) throw new Error("Not authenticated")
         return r.json()
       }),
