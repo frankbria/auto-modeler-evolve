@@ -51,13 +51,12 @@ describe("public predict page — no owner-scoped calls (IDOR #25)", () => {
     jest.clearAllMocks()
   })
 
-  it("loads only the single deployment and never calls an owner-scoped endpoint", async () => {
-    // The public-surface loads the page makes; intentionally NO deployments list.
+  it("loads via the public prediction surface and never calls an owner-scoped endpoint", async () => {
     fetchMock.mockResponse(async (req) => {
-      if (req.url.includes("/api/deploy/deploy-current")) {
+      if (req.url.includes("/api/predict/deploy-current/info")) {
         return JSON.stringify(currentDeployment)
       }
-      // presets / dashboard config / metadata — benign empties
+      // public presets / dashboard config / metadata — benign empties
       return JSON.stringify({})
     })
 
@@ -69,7 +68,11 @@ describe("public predict page — no owner-scoped calls (IDOR #25)", () => {
     })
 
     const calledUrls = fetchMock.mock.calls.map((c) => String(c[0]))
-    // No owner-scoped deployment enumeration.
+    // Loads its data from the PUBLIC prediction surface…
+    expect(calledUrls.some((u) => u.includes("/api/predict/deploy-current/info"))).toBe(true)
+    // …and calls NO owner-scoped management endpoint (no /api/deploy/*, no
+    // /api/deployments enumeration, no project_id filter).
+    expect(calledUrls.some((u) => /\/api\/deploy\//.test(u))).toBe(false)
     expect(calledUrls.some((u) => u.includes("/api/deployments"))).toBe(false)
     expect(calledUrls.some((u) => u.includes("project_id="))).toBe(false)
     // The compare-versions UI (which enumerated siblings) must be gone.

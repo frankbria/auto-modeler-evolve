@@ -106,6 +106,43 @@ async def test_public_predict_endpoint_not_blocked_by_auth(anon_client):
     assert resp.status_code != 401
 
 
+@pytest.mark.asyncio
+async def test_public_prediction_form_endpoints_not_blocked_by_auth(anon_client):
+    """The anonymous /predict/[id] page bootstraps via the public prediction
+    surface; those read endpoints must load for a real deployment without a
+    user token (issue #25)."""
+    ids = _seed_owned_stack(A_OWNER)
+    dep = ids["deployment"]
+
+    info = await anon_client.get(f"/api/predict/{dep}/info")
+    assert info.status_code == 200, info.text
+
+    # The remaining form endpoints must be reachable anonymously (never 401).
+    for path in (
+        f"/api/predict/{dep}/presets",
+        f"/api/predict/{dep}/dashboard-config",
+        f"/api/predict/{dep}/dashboard-metadata",
+    ):
+        resp = await anon_client.get(path)
+        assert resp.status_code != 401, f"{path} -> {resp.status_code}"
+
+
+@pytest.mark.asyncio
+async def test_owner_scoped_deploy_reads_still_require_auth(anon_client):
+    """Opening the public /api/predict/* mirrors must NOT open the owner-scoped
+    /api/deploy/* management endpoints they shadow."""
+    ids = _seed_owned_stack(A_OWNER)
+    dep = ids["deployment"]
+    for path in (
+        f"/api/deploy/{dep}",
+        f"/api/deploy/{dep}/presets",
+        f"/api/deploy/{dep}/dashboard-config",
+        f"/api/deploy/{dep}/dashboard-metadata",
+    ):
+        resp = await anon_client.get(path)
+        assert resp.status_code == 401, f"{path} -> {resp.status_code}"
+
+
 # ---------------------------------------------------------------------------
 # 2. Cross-tenant access is forbidden (404)
 # ---------------------------------------------------------------------------

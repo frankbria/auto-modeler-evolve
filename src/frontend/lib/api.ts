@@ -1453,6 +1453,25 @@ export const api = {
     getDashboardMetadata: (deploymentId: string): Promise<import("@/lib/types").DashboardMetadata> =>
       apiFetch(`${API_URL}/api/deploy/${deploymentId}/dashboard-metadata`).then((r) => r.json()),
 
+    // --- PUBLIC prediction-surface reads (used by the anonymous /predict/[id]
+    // page). These hit /api/predict/{id}/... which is gated by per-deployment
+    // API keys, not user auth — so no Bearer token is attached and a 401 won't
+    // bounce a visitor to /login. The /api/deploy/* siblings above stay
+    // owner-scoped for the authenticated workspace.
+    getPublicInfo: (deploymentId: string): Promise<Deployment> =>
+      apiFetch(`${API_URL}/api/predict/${deploymentId}/info`).then((r) => r.json()),
+
+    getPublicPresets: (
+      deploymentId: string
+    ): Promise<import("./types").DeploymentPreset[]> =>
+      apiFetch(`${API_URL}/api/predict/${deploymentId}/presets`).then((r) => r.json()),
+
+    getPublicDashboardConfig: (deploymentId: string): Promise<import("@/lib/types").DashboardConfigResponse> =>
+      apiFetch(`${API_URL}/api/predict/${deploymentId}/dashboard-config`).then((r) => r.json()),
+
+    getPublicDashboardMetadata: (deploymentId: string): Promise<import("@/lib/types").DashboardMetadata> =>
+      apiFetch(`${API_URL}/api/predict/${deploymentId}/dashboard-metadata`).then((r) => r.json()),
+
     updateDashboardMetadata: async (
       deploymentId: string,
       opts: { title?: string; description?: string; clear?: boolean }

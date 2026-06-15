@@ -505,6 +505,11 @@ def deployments_overview(
 # ---------------------------------------------------------------------------
 
 
+# `/api/predict/...` is the PUBLIC prediction surface (gated by per-deployment
+# API keys, not user auth). The same read-only handler is exposed there so the
+# public prediction page can load a single shared deployment's form without
+# authenticating, while `/api/deploy/{id}` stays owner-scoped for management.
+@router.get("/api/predict/{deployment_id}/info")
 @router.get("/api/deploy/{deployment_id}")
 def get_deployment(
     deployment_id: str,
@@ -5053,6 +5058,7 @@ class PresetBody(BaseModel):
     feature_values: dict
 
 
+@router.get("/api/predict/{deployment_id}/presets")  # public prediction surface
 @router.get("/api/deploy/{deployment_id}/presets")
 def list_presets(
     deployment_id: str,
@@ -5870,6 +5876,7 @@ class DashboardConfigBatchBody(BaseModel):
     fields: list[_DashboardFieldEntry]
 
 
+@router.get("/api/predict/{deployment_id}/dashboard-config")  # public surface
 @router.get("/api/deploy/{deployment_id}/dashboard-config")
 def get_dashboard_config(
     deployment_id: str,
@@ -6005,6 +6012,7 @@ def delete_dashboard_config(
 # ---------------------------------------------------------------------------
 
 
+@router.get("/api/predict/{deployment_id}/dashboard-metadata")  # public surface
 @router.get("/api/deploy/{deployment_id}/dashboard-metadata")
 def get_dashboard_metadata(
     deployment_id: str,

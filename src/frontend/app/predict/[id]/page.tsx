@@ -369,7 +369,7 @@ export default function PredictionDashboard() {
 
   useEffect(() => {
     api.deploy
-      .get(deploymentId)
+      .getPublicInfo(deploymentId)
       .then((d) => {
         setDeployment(d)
         // Pre-fill inputs with training-average defaults
@@ -399,19 +399,19 @@ export default function PredictionDashboard() {
   }, [deploymentId])
 
   useEffect(() => {
-    api.deploy.getPresets(deploymentId).then(setPresets).catch(() => {})
+    api.deploy.getPublicPresets(deploymentId).then(setPresets).catch(() => {})
   }, [deploymentId])
 
   useEffect(() => {
     api.deploy
-      .getDashboardConfig(deploymentId)
+      .getPublicDashboardConfig(deploymentId)
       .then((cfg) => setDashboardConfig(cfg.fields ?? []))
       .catch(() => {})
   }, [deploymentId])
 
   useEffect(() => {
     api.deploy
-      .getDashboardMetadata(deploymentId)
+      .getPublicDashboardMetadata(deploymentId)
       .then((m) =>
         setDashboardMeta({
           title: m.dashboard_title,
