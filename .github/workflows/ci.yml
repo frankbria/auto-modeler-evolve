@@ -5,6 +5,14 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+    # 'labeled'/'unlabeled' so (re)approving a fork PR via the 'ci-approved' label
+    # re-evaluates the gate below; 'synchronize' so each new fork commit must be
+    # re-approved — approval is bound to the reviewed commit, not the PR (issue #2).
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+# Least privilege: build verification never needs write access to the repo.
+permissions:
+  contents: read
 
 jobs:
   verify:
@@ -30,10 +38,53 @@ jobs:
         with:
           version: "latest"
 
+      # Fork PRs run untrusted code. Do NOT execute build/test until a maintainer
+      # explicitly approves by adding the 'ci-approved' label (issue #2, AC #4).
+      # This step FAILS the job so the gated PR is never reported as verified
+      # (a skipped step would leave the required check green and mergeable). Adding
+      # the label re-runs the workflow (see `types: [..., labeled]`) and lets the
+      # verification step below run instead.
+      - name: Require approval for fork PRs
+        if: >-
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name != github.repository &&
+          (
+            github.event.action == 'synchronize' ||
+            !contains(github.event.pull_request.labels.*.name, 'ci-approved')
+          )
+        run: |
+          echo "::error::Build verification is gated for fork PRs. A maintainer must review the current head commit and (re)add the 'ci-approved' label — approval is rechecked on every new commit. CI stays red until then."
+          exit 1
+
       - name: Detect and verify project
+        if: >-
+          github.event_name == 'push' ||
+          github.event.pull_request.head.repo.full_name == github.repository ||
+          (
+            github.event.action != 'synchronize' &&
+            contains(github.event.pull_request.labels.*.name, 'ci-approved')
+          )
         run: |
           chmod +x scripts/detect_stack.sh
-          STACK_JSON=$(bash scripts/detect_stack.sh src/ 2>/dev/null || echo '{"stack":"unknown"}')
+
+          # run_cmd: execute a trusted fixed command string as an argv array — no
+          # eval, no shell — defense in depth against command injection (issue #2).
+          run_cmd() {
+            local cmdstr="$1"; shift
+            [ -n "$cmdstr" ] || return 0
+            local -a parts
+            read -ra parts <<<"$cmdstr"
+            [ "${#parts[@]}" -gt 0 ] || return 0
+            "${parts[@]}" "$@"
+          }
+
+          # A non-zero exit means detection refused to proceed (e.g. an unsafe
+          # substack directory name) — fail closed, do NOT coerce to "unknown"
+          # (which would skip verification and report green) (issue #2).
+          if ! STACK_JSON=$(bash scripts/detect_stack.sh src/); then
+            echo "::error::Stack detection failed — refusing to verify (unsafe directory name?)."
+            exit 1
+          fi
           STACK=$(echo "$STACK_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['stack'])")
           echo "Detected stack: $STACK"
 
@@ -45,30 +96,45 @@ jobs:
           if [ "$STACK" = "monorepo" ]; then
             echo "Monorepo detected — verifying each substack..."
             echo "$STACK_JSON" | python3 -c "
-          import json, subprocess, sys, os
+          import json, subprocess, sys, os, shlex
 
           data = json.load(sys.stdin)
           substacks = data.get('substacks', [])
           failed = False
 
+
+          def run(args, cwd):
+              return subprocess.run(args, cwd=cwd)
+
+
           for s in substacks:
               subdir = os.path.join('src', s['dir'])
               print(f\"\n=== {s['name']} ({s['stack']}) ===\")
 
-              # Install dependencies
+              # Install dependencies (fixed argv, shell=False). A failed install
+              # fails the substack so the check never goes green on broken deps.
+              install_ok = True
               if s['stack'] in ('typescript', 'javascript', 'nextjs'):
-                  subprocess.run('npm ci || npm install', shell=True, cwd=subdir)
+                  if run(['npm', 'ci'], subdir).returncode != 0:
+                      install_ok = run(['npm', 'install'], subdir).returncode == 0
               elif s['stack'] == 'python':
                   if os.path.exists(os.path.join(subdir, 'uv.lock')):
-                      subprocess.run('uv sync', shell=True, cwd=subdir)
-                  else:
-                      subprocess.run('pip install -e . 2>/dev/null || pip install -r requirements.txt 2>/dev/null || true', shell=True, cwd=subdir)
+                      install_ok = run(['uv', 'sync'], subdir).returncode == 0
+                  elif run(['pip', 'install', '-e', '.'], subdir).returncode != 0:
+                      install_ok = run(['pip', 'install', '-r', 'requirements.txt'], subdir).returncode == 0
 
+              if not install_ok:
+                  print(f\"::error::Dependency installation failed for {s['name']}\")
+                  failed = True
+                  continue
+
+              # Build/test/lint come from detect_stack.sh's fixed map; split into an
+              # argv array and run shell=False so no string is ever shell-evaluated.
               for cmd_name in ('build', 'test', 'lint'):
                   cmd = s.get(cmd_name, '')
                   if cmd:
                       print(f'Running {cmd_name}: {cmd}')
-                      result = subprocess.run(cmd, shell=True, cwd=subdir)
+                      result = subprocess.run(shlex.split(cmd), cwd=subdir)
                       if result.returncode != 0 and cmd_name != 'lint':
                           failed = True
 
@@ -88,7 +154,7 @@ jobs:
               rust) ;;
             esac
 
-            [ -n "$BUILD_CMD" ] && echo "Running build: $BUILD_CMD" && eval "$BUILD_CMD"
-            [ -n "$TEST_CMD" ] && echo "Running tests: $TEST_CMD" && eval "$TEST_CMD"
-            [ -n "$LINT_CMD" ] && echo "Running lint: $LINT_CMD" && eval "$LINT_CMD" || true
+            [ -n "$BUILD_CMD" ] && echo "Running build: $BUILD_CMD" && run_cmd "$BUILD_CMD"
+            [ -n "$TEST_CMD" ] && echo "Running tests: $TEST_CMD" && run_cmd "$TEST_CMD"
+            [ -n "$LINT_CMD" ] && echo "Running lint: $LINT_CMD" && run_cmd "$LINT_CMD" || true
           fi

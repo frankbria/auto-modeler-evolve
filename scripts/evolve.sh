@@ -22,6 +22,23 @@
 
 set -euo pipefail
 
+# ── run_cmd: execute a trusted command string as an argv array (no shell) ──
+# The build/test/lint/format strings come from detect_stack.sh's fixed internal
+# map; substack basenames are validated to [A-Za-z0-9._-] before detection. We
+# still refuse to hand these to `eval`/`sh -c`: word-splitting into an argv array
+# means even a future tainted string is never interpreted by a shell, closing the
+# command-injection / RCE vector from issue #2. Extra args (e.g. --quiet) are
+# appended as additional argv elements.
+run_cmd() {
+    local cmdstr="$1"
+    shift
+    [ -n "$cmdstr" ] || return 0
+    local -a parts
+    read -ra parts <<<"$cmdstr"
+    [ "${#parts[@]}" -gt 0 ] || return 0
+    "${parts[@]}" "$@"
+}
+
 # ── Auth: prefer stored OAuth credentials locally; CI injects ANTHROPIC_API_KEY ──
 if [ "${CI:-false}" != "true" ]; then
     unset ANTHROPIC_API_KEY 2>/dev/null || true
@@ -118,7 +135,12 @@ echo ""
 
 # ── Step 1: Detect project stack ──
 echo "-> Detecting project stack..."
-STACK_JSON=$(bash scripts/detect_stack.sh "$PROJECT_DIR" 2>/dev/null || echo '{"stack":"unknown","build":"","test":"","lint":"","format":""}')
+# A non-zero exit means detection refused to proceed (e.g. an unsafe substack
+# directory name) — fail closed rather than coercing to "unknown" (issue #2).
+if ! STACK_JSON=$(bash scripts/detect_stack.sh "$PROJECT_DIR"); then
+    echo "ERROR: stack detection failed (unsafe directory name?) — aborting." >&2
+    exit 1
+fi
 STACK=$(echo "$STACK_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['stack'])" 2>/dev/null || echo "unknown")
 BUILD_CMD=$(echo "$STACK_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['build'])" 2>/dev/null || echo "")
 TEST_CMD=$(echo "$STACK_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['test'])" 2>/dev/null || echo "")
@@ -152,18 +174,18 @@ for s in json.load(sys.stdin):
 " 2>/dev/null | while IFS='|' read -r sdir sbuild stest; do
         SUBPATH="$PROJECT_DIR/$sdir"
         if [ -n "$sbuild" ]; then
-            (cd "$SUBPATH" && eval "$sbuild" --quiet 2>/dev/null) && echo "  $sdir build OK." || echo "  $sdir build has issues (agent will address)."
+            (cd "$SUBPATH" && run_cmd "$sbuild" --quiet 2>/dev/null) && echo "  $sdir build OK." || echo "  $sdir build has issues (agent will address)."
         fi
         if [ -n "$stest" ]; then
-            (cd "$SUBPATH" && eval "$stest" --quiet 2>/dev/null) && echo "  $sdir tests OK." || true
+            (cd "$SUBPATH" && run_cmd "$stest" --quiet 2>/dev/null) && echo "  $sdir tests OK." || true
         fi
     done
     echo ""
 elif [ -n "$BUILD_CMD" ] && [ "$STACK" != "unknown" ]; then
     echo "-> Checking existing build..."
     cd "$PROJECT_DIR" 2>/dev/null || true
-    eval "$BUILD_CMD" --quiet 2>/dev/null && echo "  Build OK." || echo "  Build has issues (agent will address)."
-    [ -n "$TEST_CMD" ] && eval "$TEST_CMD" --quiet 2>/dev/null && echo "  Tests OK." || true
+    run_cmd "$BUILD_CMD" --quiet 2>/dev/null && echo "  Build OK." || echo "  Build has issues (agent will address)."
+    [ -n "$TEST_CMD" ] && run_cmd "$TEST_CMD" --quiet 2>/dev/null && echo "  Tests OK." || true
     cd - > /dev/null 2>/dev/null || true
     echo ""
 fi
@@ -437,7 +459,12 @@ echo "-> Session complete. Checking results..."
 
 # ── Step 6: Verify build (if stack detected) ──
 # Re-detect stack in case bootstrap session created project files
-STACK_JSON=$(bash scripts/detect_stack.sh "$PROJECT_DIR" 2>/dev/null || echo '{"stack":"unknown","build":"","test":"","lint":"","format":""}')
+# A non-zero exit means detection refused to proceed (e.g. an unsafe substack
+# directory name) — fail closed rather than coercing to "unknown" (issue #2).
+if ! STACK_JSON=$(bash scripts/detect_stack.sh "$PROJECT_DIR"); then
+    echo "ERROR: stack detection failed (unsafe directory name?) — aborting." >&2
+    exit 1
+fi
 STACK=$(echo "$STACK_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['stack'])" 2>/dev/null || echo "unknown")
 BUILD_CMD=$(echo "$STACK_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['build'])" 2>/dev/null || echo "")
 TEST_CMD=$(echo "$STACK_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['test'])" 2>/dev/null || echo "")
@@ -451,8 +478,8 @@ verify_single_stack() {
     if [ -n "$sformat" ]; then
         local sformat_fix
         sformat_fix=$(echo "$sformat" | sed 's/ --check//')
-        if ! (cd "$subpath" && eval "$sformat") 2>/dev/null; then
-            (cd "$subpath" && eval "$sformat_fix") 2>/dev/null && \
+        if ! (cd "$subpath" && run_cmd "$sformat") 2>/dev/null; then
+            (cd "$subpath" && run_cmd "$sformat_fix") 2>/dev/null && \
                 git add -A && git commit -m "Day $DAY ($SESSION_TIME): auto-format $label" || true
         fi
     fi
@@ -460,15 +487,15 @@ verify_single_stack() {
     # Collect errors
     if [ -n "$sbuild" ]; then
         local bout
-        bout=$( (cd "$subpath" && eval "$sbuild") 2>&1) || echo "[$label build] $bout" >> "$ERRORS_FILE"
+        bout=$( (cd "$subpath" && run_cmd "$sbuild") 2>&1) || echo "[$label build] $bout" >> "$ERRORS_FILE"
     fi
     if [ -n "$stest" ]; then
         local tout
-        tout=$( (cd "$subpath" && eval "$stest") 2>&1) || echo "[$label test] $tout" >> "$ERRORS_FILE"
+        tout=$( (cd "$subpath" && run_cmd "$stest") 2>&1) || echo "[$label test] $tout" >> "$ERRORS_FILE"
     fi
     if [ -n "$slint" ]; then
         local lout
-        lout=$( (cd "$subpath" && eval "$slint") 2>&1) || echo "[$label lint] $lout" >> "$ERRORS_FILE"
+        lout=$( (cd "$subpath" && run_cmd "$slint") 2>&1) || echo "[$label lint] $lout" >> "$ERRORS_FILE"
     fi
 }
 
