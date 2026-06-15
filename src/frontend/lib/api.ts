@@ -1469,19 +1469,34 @@ export const api = {
     // API keys, not user auth — so no Bearer token is attached and a 401 won't
     // bounce a visitor to /login. The /api/deploy/* siblings above stay
     // owner-scoped for the authenticated workspace.
+    // These reject on a non-OK status (e.g. 404 for a missing/inactive
+    // deployment) so the predict page's `.catch` shows the not-found/inactive
+    // state instead of rendering an error body as if it were real data.
     getPublicInfo: (deploymentId: string): Promise<Deployment> =>
-      apiFetch(`${API_URL}/api/predict/${deploymentId}/info`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/predict/${deploymentId}/info`).then((r) => {
+        if (!r.ok) throw new Error("Deployment not found or inactive")
+        return r.json()
+      }),
 
     getPublicPresets: (
       deploymentId: string
     ): Promise<import("./types").DeploymentPreset[]> =>
-      apiFetch(`${API_URL}/api/predict/${deploymentId}/presets`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/predict/${deploymentId}/presets`).then((r) => {
+        if (!r.ok) throw new Error("Deployment not found or inactive")
+        return r.json()
+      }),
 
     getPublicDashboardConfig: (deploymentId: string): Promise<import("@/lib/types").DashboardConfigResponse> =>
-      apiFetch(`${API_URL}/api/predict/${deploymentId}/dashboard-config`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/predict/${deploymentId}/dashboard-config`).then((r) => {
+        if (!r.ok) throw new Error("Deployment not found or inactive")
+        return r.json()
+      }),
 
     getPublicDashboardMetadata: (deploymentId: string): Promise<import("@/lib/types").DashboardMetadata> =>
-      apiFetch(`${API_URL}/api/predict/${deploymentId}/dashboard-metadata`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/predict/${deploymentId}/dashboard-metadata`).then((r) => {
+        if (!r.ok) throw new Error("Deployment not found or inactive")
+        return r.json()
+      }),
 
     updateDashboardMetadata: async (
       deploymentId: string,

@@ -78,4 +78,22 @@ describe("public predict page — no owner-scoped calls (IDOR #25)", () => {
     // The compare-versions UI (which enumerated siblings) must be gone.
     expect(screen.queryByTestId("compare-models-card")).not.toBeInTheDocument()
   })
+
+  it("shows the not-found/inactive state when the public info endpoint 404s", async () => {
+    // A stale share link to an undeployed (inactive) deployment must surface the
+    // error state, not render an error body as if it were a real deployment.
+    fetchMock.mockResponse(async (req) => {
+      if (req.url.includes("/api/predict/deploy-current/info")) {
+        return { status: 404, body: JSON.stringify({ detail: "Deployment not found or inactive" }) }
+      }
+      return { status: 404, body: JSON.stringify({ detail: "not found" }) }
+    })
+
+    const { default: PredictionDashboard } = await import("../app/predict/[id]/page")
+    render(<PredictionDashboard />)
+
+    await waitFor(() => {
+      expect(screen.getByText(/not found or inactive/i)).toBeInTheDocument()
+    })
+  })
 })
