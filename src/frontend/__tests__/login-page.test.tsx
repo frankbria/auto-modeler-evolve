@@ -72,6 +72,17 @@ describe("LoginPage", () => {
     await waitFor(() => expect(pushMock).toHaveBeenCalledWith("/project/abc"))
   })
 
+  it("ignores an off-site redirect target and goes home instead", async () => {
+    redirectParam = "//evil.com/phish"
+    mockLogin.mockResolvedValueOnce(AUTH)
+    render(<LoginPage />)
+    fireEvent.change(screen.getByLabelText(/email/i), { target: { value: "a@b.com" } })
+    fireEvent.change(screen.getByLabelText(/password/i), { target: { value: PW } })
+    fireEvent.click(screen.getByRole("button", { name: /sign in/i }))
+    await waitFor(() => expect(pushMock).toHaveBeenCalledWith("/"))
+    expect(pushMock).not.toHaveBeenCalledWith("//evil.com/phish")
+  })
+
   it("shows an error message when login fails", async () => {
     mockLogin.mockRejectedValueOnce(new Error("Invalid email or password"))
     render(<LoginPage />)

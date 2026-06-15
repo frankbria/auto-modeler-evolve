@@ -41,22 +41,36 @@ import { getToken, clearToken } from "./auth-token"
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
 
 /**
+ * Public prediction-serving endpoints (`/api/predict/<id>…`) authenticate with a
+ * per-deployment API key that the caller passes explicitly — NOT the user's JWT.
+ * The backend feeds their `Authorization` header into `_verify_api_key`, so
+ * injecting the user token would be rejected as an invalid API key, and a 401
+ * there means "bad key", not "expired session". `/api/predict/compare` is the
+ * one exception: it is an owner-only endpoint that genuinely uses the user JWT.
+ */
+function isPublicPredictionUrl(url: string): boolean {
+  return url.includes("/api/predict/") && !url.includes("/api/predict/compare")
+}
+
+/**
  * Auth-aware fetch — the single chokepoint for every API call.
  *
  * Injects `Authorization: Bearer <token>` when the user is logged in, and on a
  * 401 clears the (now invalid) token and bounces to /login so the user can
  * re-authenticate. When no token is stored the call is passed through verbatim
  * so unauthenticated/public surfaces (and existing call signatures) are
- * unchanged.
+ * unchanged. Public prediction-serving endpoints are exempt from both behaviours
+ * (see `isPublicPredictionUrl`).
  */
 export async function apiFetch(
   input: string,
   init?: RequestInit
 ): Promise<Response> {
   const token = getToken()
+  const publicPrediction = isPublicPredictionUrl(input)
 
   let res: Response
-  if (token) {
+  if (token && !publicPrediction) {
     const headers = new Headers(init?.headers)
     if (!headers.has("Authorization")) {
       headers.set("Authorization", `Bearer ${token}`)
@@ -66,7 +80,7 @@ export async function apiFetch(
     res = init === undefined ? await fetch(input) : await fetch(input, init)
   }
 
-  if (res.status === 401) {
+  if (res.status === 401 && !publicPrediction) {
     clearToken()
     redirectToLogin()
   }

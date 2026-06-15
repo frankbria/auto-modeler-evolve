@@ -62,6 +62,30 @@ describe("api auth header injection", () => {
     await api.projects.list().catch(() => {})
     expect(getToken()).toBeNull()
   })
+
+  it("does NOT inject the user JWT on public prediction endpoints", async () => {
+    // These use a per-deployment API key, not the user token — injecting the
+    // JWT would be rejected by the backend as an invalid API key.
+    setToken("tok-123")
+    fetchMock.mockResponseOnce(JSON.stringify({ prediction: 1 }))
+    await api.deploy.predict("dep-1", { units: 10 })
+    expect(authHeaderOf()).toBeNull()
+  })
+
+  it("does NOT clear the token on a 401 from a public prediction endpoint", async () => {
+    // A 401 here is a bad API key, not an expired session.
+    setToken("tok-123")
+    fetchMock.mockResponseOnce("", { status: 401 })
+    await api.deploy.predict("dep-1", { units: 10 }).catch(() => {})
+    expect(getToken()).toBe("tok-123")
+  })
+
+  it("still injects the JWT on the owner-only /api/predict/compare endpoint", async () => {
+    setToken("tok-123")
+    fetchMock.mockResponseOnce(JSON.stringify({ results: [] }))
+    await api.deploy.compareModels(["dep-1", "dep-2"], { units: 10 })
+    expect(authHeaderOf()).toBe("Bearer tok-123")
+  })
 })
 
 describe("api.auth endpoints", () => {

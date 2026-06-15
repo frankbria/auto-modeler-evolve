@@ -21,6 +21,18 @@ type Mode = "login" | "register"
 const AUTOCOMPLETE_NEW_PW = "new-pass" + "word"
 const AUTOCOMPLETE_CURRENT_PW = "current-pass" + "word"
 
+/**
+ * Constrain the post-login `redirect` target to a same-origin path so a crafted
+ * `?redirect=//evil.com`, `?redirect=https://evil.com`, `?redirect=/\evil.com`
+ * or `?redirect=javascript:…` can't bounce an authenticated user off-site.
+ */
+function safeRedirect(raw: string | null): string {
+  if (!raw || !raw.startsWith("/") || raw.startsWith("//") || raw.includes("\\")) {
+    return "/"
+  }
+  return raw
+}
+
 export default function LoginPage() {
   // useSearchParams() requires a Suspense boundary for static prerendering.
   return (
@@ -42,7 +54,7 @@ function LoginForm() {
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
-  const redirectTo = searchParams.get("redirect") || "/"
+  const redirectTo = safeRedirect(searchParams.get("redirect"))
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
