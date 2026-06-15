@@ -1,6 +1,7 @@
 import type { Metadata } from "next"
 import { Nunito_Sans } from "next/font/google"
 import Link from "next/link"
+import { AuthNav } from "@/components/auth/auth-nav"
 import "./globals.css"
 
 const nunitoSans = Nunito_Sans({
@@ -39,6 +40,7 @@ export default function RootLayout({
               Home
             </Link>
           </div>
+          <AuthNav />
         </nav>
         <main id="main-content">{children}</main>
       </body>

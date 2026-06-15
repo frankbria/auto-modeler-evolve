@@ -141,7 +141,18 @@ protect the Python API). Follow this exactly when adding endpoints:
   authorize them explicitly with `get_owned_*` / `assert_owns_project` (see
   `api/data.py` upload/merge/join-keys).
 - **Public surface**: `/api/predict/*` serving stays unauthenticated (per-deployment API
-  keys); the deploy router uses `require_owner_allow_public`.
+  keys); the deploy router uses `require_owner_allow_public`. The anonymous
+  `/predict/[id]` page loads a single shared deployment via the public mirrors
+  `GET /api/predict/{id}/{info,presets,dashboard-config,dashboard-metadata}` — thin
+  handlers that reject inactive deployments and call `_verify_api_key`. NEVER load the
+  public page from an owner-scoped `/api/deploy/*` endpoint (that was the #25 IDOR).
+- **Frontend is auth-aware** (#25): `lib/auth-token.ts` stores the JWT in localStorage;
+  the single `apiFetch` chokepoint in `lib/api.ts` injects `Authorization: Bearer` on
+  every management call and, on 401, clears the token + redirects to `/login` (public
+  `/api/predict/*` URLs are exempt — they use API keys, not the user JWT). A
+  `<RequireAuth>` client guard wraps owner-scoped pages; `/login` + `/predict/[id]` stay
+  public. Header-less callers (SSE/EventSource, downloads) can't add the Bearer header —
+  streams use the header-authenticated `streamSSE`; do NOT put the JWT in a URL query.
 - **Tests**: the shared `client` fixture is transparently authenticated; use `anon_client`
   for 401 assertions and `second_client` for cross-tenant (IDOR) tests
   (`tests/test_tenant_isolation.py`).

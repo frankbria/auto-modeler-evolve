@@ -510,7 +510,12 @@ def get_deployment(
     deployment_id: str,
     session: Session = Depends(get_session),
 ):
-    """Return deployment info + feature schema for the prediction form."""
+    """Return deployment info + feature schema for the prediction form.
+
+    Owner-scoped (router dependency): the owner may view their deployment even
+    after undeploy (``is_active=False``) for version history / rollback. The
+    PUBLIC mirror below intentionally hides inactive deployments.
+    """
     deployment = session.get(Deployment, deployment_id)
     if not deployment:
         raise HTTPException(status_code=404, detail="Deployment not found")
@@ -523,6 +528,28 @@ def get_deployment(
         **_deployment_response(deployment),
         "feature_schema": schema,
     }
+
+
+# `/api/predict/...` is the PUBLIC prediction surface (no user auth). These thin
+# mirrors let the anonymous /predict/[id] page load a single shared deployment's
+# form. Unlike the owner routes they (a) reject inactive (undeployed)
+# deployments so a stale share link can't keep leaking details after undeploy,
+# and (b) honor per-deployment API-key protection via `_verify_api_key` — a
+# key-protected deployment must not expose its schema/metadata on the public
+# surface without the key, exactly like the prediction endpoints.
+@router.get("/api/predict/{deployment_id}/info")
+def get_deployment_public(
+    deployment_id: str,
+    authorization: str | None = Header(default=None),
+    session: Session = Depends(get_session),
+):
+    """Public mirror of ``get_deployment`` — hides inactive deployments and
+    enforces API-key protection."""
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment or not deployment.is_active:
+        raise HTTPException(status_code=404, detail="Deployment not found or inactive")
+    _verify_api_key(deployment, authorization)
+    return get_deployment(deployment_id, session)
 
 
 # ---------------------------------------------------------------------------
@@ -5081,6 +5108,21 @@ def list_presets(
     ]
 
 
+@router.get("/api/predict/{deployment_id}/presets")
+def list_presets_public(
+    deployment_id: str,
+    authorization: str | None = Header(default=None),
+    session: Session = Depends(get_session),
+):
+    """Public mirror of ``list_presets`` — enforces API-key protection so a
+    key-protected deployment's presets aren't readable without the key."""
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment or not deployment.is_active:
+        raise HTTPException(status_code=404, detail="Deployment not found or inactive")
+    _verify_api_key(deployment, authorization)
+    return list_presets(deployment_id, session)
+
+
 @router.post("/api/deploy/{deployment_id}/presets", status_code=201)
 def create_preset(
     deployment_id: str,
@@ -6025,6 +6067,38 @@ def get_dashboard_metadata(
             else "Prediction Dashboard"
         ),
     }
+
+
+# Public mirrors of the dashboard read endpoints — reject inactive deployments
+# and honor API-key protection (see get_deployment_public).
+@router.get("/api/predict/{deployment_id}/dashboard-config")
+def get_dashboard_config_public(
+    deployment_id: str,
+    authorization: str | None = Header(default=None),
+    session: Session = Depends(get_session),
+):
+    """Public mirror of ``get_dashboard_config`` — hides inactive deployments and
+    enforces API-key protection."""
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment or not deployment.is_active:
+        raise HTTPException(status_code=404, detail="Deployment not found or inactive")
+    _verify_api_key(deployment, authorization)
+    return get_dashboard_config(deployment_id, session)
+
+
+@router.get("/api/predict/{deployment_id}/dashboard-metadata")
+def get_dashboard_metadata_public(
+    deployment_id: str,
+    authorization: str | None = Header(default=None),
+    session: Session = Depends(get_session),
+):
+    """Public mirror of ``get_dashboard_metadata`` — hides inactive deployments
+    and enforces API-key protection."""
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment or not deployment.is_active:
+        raise HTTPException(status_code=404, detail="Deployment not found or inactive")
+    _verify_api_key(deployment, authorization)
+    return get_dashboard_metadata(deployment_id, session)
 
 
 @router.put("/api/deploy/{deployment_id}/dashboard-metadata")

@@ -14,9 +14,18 @@ import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { api } from "@/lib/api"
 import { useAppStore } from "@/lib/store"
+import { RequireAuth } from "@/components/auth/require-auth"
 import type { Project } from "@/lib/types"
 
 export default function HomePage() {
+  return (
+    <RequireAuth>
+      <HomePageInner />
+    </RequireAuth>
+  )
+}
+
+function HomePageInner() {
   const router = useRouter()
   const { projects, setProjects } = useAppStore()
   const [showForm, setShowForm] = useState(false)

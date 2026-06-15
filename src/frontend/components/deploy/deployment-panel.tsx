@@ -1223,8 +1223,8 @@ export function DeploymentPanel({
             deploymentId={deployment.id}
             onRollback={() => {
               // Refresh deployment info after rollback
-              fetch(`${process.env.NEXT_PUBLIC_API_URL ?? ""}/api/deploy/${deployment.id}`)
-                .then((r) => r.json())
+              api.deploy
+                .get(deployment.id)
                 .then((d) => setDeployment(d))
                 .catch(() => {})
             }}
@@ -1235,8 +1235,8 @@ export function DeploymentPanel({
           <ABTestCard
             deploymentId={deployment.id}
             onPromoted={() => {
-              fetch(`${process.env.NEXT_PUBLIC_API_URL ?? ""}/api/deploy/${deployment.id}`)
-                .then((r) => r.json())
+              api.deploy
+                .get(deployment.id)
                 .then((d) => setDeployment(d))
                 .catch(() => {})
             }}

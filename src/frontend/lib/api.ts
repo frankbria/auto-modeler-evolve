@@ -33,66 +33,213 @@ import type {
   DataReadinessResult,
   TargetCorrelationResult,
   ProjectHealthSummary,
+  AuthResponse,
+  User,
 } from "./types"
+import { getToken, clearToken } from "./auth-token"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
 
+/**
+ * Public prediction-serving endpoints (`/api/predict/<id>…`) authenticate with a
+ * per-deployment API key that the caller passes explicitly — NOT the user's JWT.
+ * The backend feeds their `Authorization` header into `_verify_api_key`, so
+ * injecting the user token would be rejected as an invalid API key, and a 401
+ * there means "bad key", not "expired session". `/api/predict/compare` is the
+ * one exception: it is an owner-only endpoint that genuinely uses the user JWT.
+ */
+function isPublicPredictionUrl(url: string): boolean {
+  return url.includes("/api/predict/") && !url.includes("/api/predict/compare")
+}
+
+/**
+ * Auth-aware fetch — the single chokepoint for every API call.
+ *
+ * Injects `Authorization: Bearer <token>` when the user is logged in, and on a
+ * 401 clears the (now invalid) token and bounces to /login so the user can
+ * re-authenticate. When no token is stored the call is passed through verbatim
+ * so unauthenticated/public surfaces (and existing call signatures) are
+ * unchanged. Public prediction-serving endpoints are exempt from both behaviours
+ * (see `isPublicPredictionUrl`).
+ */
+export async function apiFetch(
+  input: string,
+  init?: RequestInit,
+  opts: { suppressLoginRedirect?: boolean } = {}
+): Promise<Response> {
+  const token = getToken()
+  const publicPrediction = isPublicPredictionUrl(input)
+
+  let res: Response
+  if (token && !publicPrediction) {
+    const headers = new Headers(init?.headers)
+    if (!headers.has("Authorization")) {
+      headers.set("Authorization", `Bearer ${token}`)
+    }
+    res = await fetch(input, { ...init, headers })
+  } else {
+    res = init === undefined ? await fetch(input) : await fetch(input, init)
+  }
+
+  if (res.status === 401 && !publicPrediction) {
+    clearToken()
+    // `suppressLoginRedirect` is for passive session probes (e.g. the nav's
+    // /api/auth/me hydration), which run on every page — including the public
+    // /predict/[id] — and must NOT bounce an anonymous visitor to /login just
+    // because a stale token happens to sit in localStorage.
+    if (!opts.suppressLoginRedirect) {
+      redirectToLogin()
+    }
+  }
+  return res
+}
+
+function redirectToLogin(): void {
+  if (typeof window === "undefined") return
+  if (window.location.pathname === "/login") return
+  try {
+    window.location.assign("/login")
+  } catch {
+    // jsdom / non-browser environments don't implement navigation — ignore.
+  }
+}
+
+/**
+ * Consume a Server-Sent Events stream over an authenticated fetch.
+ *
+ * EventSource can't send an Authorization header, so owner-scoped streams use
+ * this instead: `apiFetch` attaches the bearer token in the header, and each
+ * `data:` frame is parsed and handed to `onEvent`. Resolves when the stream
+ * ends or `signal` aborts. Keeping auth in the header avoids ever putting the
+ * session token in a URL (where it would leak into logs / history).
+ */
+export async function streamSSE(
+  url: string,
+  onEvent: (data: unknown) => void,
+  signal?: AbortSignal
+): Promise<void> {
+  const res = await apiFetch(url, { signal })
+  if (!res.ok || !res.body) return
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ""
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    const frames = buffer.split("\n\n")
+    buffer = frames.pop() ?? ""
+    for (const frame of frames) {
+      const dataLine = frame
+        .split("\n")
+        .find((line) => line.startsWith("data:"))
+      if (!dataLine) continue
+      const payload = dataLine.slice(5).trim()
+      if (!payload) continue
+      try {
+        onEvent(JSON.parse(payload))
+      } catch {
+        // malformed frame — ignore
+      }
+    }
+  }
+}
+
 export const api = {
+  auth: {
+    register: (email: string, password: string, name?: string): Promise<AuthResponse> =>
+      fetch(`${API_URL}/api/auth/register`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password, ...(name ? { name } : {}) }),
+      }).then(async (r) => {
+        if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail ?? "Registration failed")
+        return r.json()
+      }),
+
+    login: (email: string, password: string): Promise<AuthResponse> =>
+      fetch(`${API_URL}/api/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      }).then(async (r) => {
+        if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail ?? "Invalid email or password")
+        return r.json()
+      }),
+
+    me: (): Promise<User> =>
+      // Passive session probe — suppress the global 401→/login redirect so a
+      // stale token on a public page doesn't bounce an anonymous visitor.
+      apiFetch(`${API_URL}/api/auth/me`, undefined, {
+        suppressLoginRedirect: true,
+      }).then((r) => {
+        if (!r.ok) throw new Error("Not authenticated")
+        return r.json()
+      }),
+  },
+
   projects: {
     list: (): Promise<Project[]> =>
-      fetch(`${API_URL}/api/projects`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/projects`).then((r) => r.json()),
 
     create: (name: string, description?: string): Promise<Project> =>
-      fetch(`${API_URL}/api/projects`, {
+      apiFetch(`${API_URL}/api/projects`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, description }),
       }).then((r) => r.json()),
 
     get: (id: string): Promise<Project> =>
-      fetch(`${API_URL}/api/projects/${id}`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/projects/${id}`).then((r) => r.json()),
 
     update: (
       id: string,
       body: { name?: string; description?: string }
     ): Promise<Project> =>
-      fetch(`${API_URL}/api/projects/${id}`, {
+      apiFetch(`${API_URL}/api/projects/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       }).then((r) => r.json()),
 
     duplicate: (id: string): Promise<Project> =>
-      fetch(`${API_URL}/api/projects/${id}/duplicate`, {
+      apiFetch(`${API_URL}/api/projects/${id}/duplicate`, {
         method: "POST",
       }).then((r) => r.json()),
 
     delete: (id: string): Promise<Response> =>
-      fetch(`${API_URL}/api/projects/${id}`, { method: "DELETE" }),
+      apiFetch(`${API_URL}/api/projects/${id}`, { method: "DELETE" }),
 
     narrative: (id: string): Promise<ProjectNarrative> =>
-      fetch(`${API_URL}/api/projects/${id}/narrative`, { method: "POST" }).then((r) =>
+      apiFetch(`${API_URL}/api/projects/${id}/narrative`, { method: "POST" }).then((r) =>
         r.json()
       ),
 
     executiveBriefing: (id: string): Promise<import("./types").ExecutiveBriefingResult> =>
-      fetch(`${API_URL}/api/projects/${id}/executive-briefing`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/projects/${id}/executive-briefing`).then((r) => r.json()),
 
     alerts: (id: string): Promise<ProjectAlerts> =>
-      fetch(`${API_URL}/api/projects/${id}/alerts`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/projects/${id}/alerts`).then((r) => r.json()),
 
     healthSummary: (id: string): Promise<ProjectHealthSummary> =>
-      fetch(`${API_URL}/api/projects/${id}/health-summary`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/projects/${id}/health-summary`).then((r) => r.json()),
+
+    setAutoRetrain: (id: string, enabled: boolean): Promise<Response> =>
+      apiFetch(`${API_URL}/api/projects/${id}/auto-retrain`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled }),
+      }),
 
     analysisTemplates: (id: string): Promise<import("./types").AnalysisTemplate[]> =>
-      fetch(`${API_URL}/api/projects/${id}/analysis-templates`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/projects/${id}/analysis-templates`).then((r) => r.json()),
 
     createAnalysisTemplate: (
       id: string,
       name: string,
       queries: string[]
     ): Promise<import("./types").AnalysisTemplate> =>
-      fetch(`${API_URL}/api/projects/${id}/analysis-templates`, {
+      apiFetch(`${API_URL}/api/projects/${id}/analysis-templates`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, queries }),
@@ -102,12 +249,12 @@ export const api = {
       projectId: string,
       templateId: string
     ): Promise<void> =>
-      fetch(`${API_URL}/api/projects/${projectId}/analysis-templates/${templateId}`, {
+      apiFetch(`${API_URL}/api/projects/${projectId}/analysis-templates/${templateId}`, {
         method: "DELETE",
       }).then(() => undefined),
 
     crossComparison: (): Promise<import("./types").CrossProjectComparisonResult> =>
-      fetch(`${API_URL}/api/projects/cross-comparison`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/projects/cross-comparison`).then((r) => r.json()),
   },
 
   data: {
@@ -115,14 +262,14 @@ export const api = {
       const form = new FormData()
       form.append("project_id", projectId)
       form.append("file", file)
-      return fetch(`${API_URL}/api/data/upload`, {
+      return apiFetch(`${API_URL}/api/data/upload`, {
         method: "POST",
         body: form,
       }).then((r) => r.json())
     },
 
     loadSample: (projectId: string): Promise<UploadResponse> =>
-      fetch(`${API_URL}/api/data/sample`, {
+      apiFetch(`${API_URL}/api/data/sample`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ project_id: projectId }),
@@ -133,14 +280,14 @@ export const api = {
       url: string,
       filename?: string
     ): Promise<UploadResponse & { source: string }> =>
-      fetch(`${API_URL}/api/data/upload-url`, {
+      apiFetch(`${API_URL}/api/data/upload-url`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ project_id: projectId, url, filename }),
       }).then((r) => r.json()),
 
     sampleInfo: (): Promise<{ filename: string; row_count: number; column_count: number; columns: string[]; description: string }> =>
-      fetch(`${API_URL}/api/data/sample/info`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/data/sample/info`).then((r) => r.json()),
 
     uploadDb: (
       projectId: string,
@@ -149,7 +296,7 @@ export const api = {
       const form = new FormData()
       form.append("project_id", projectId)
       form.append("file", file)
-      return fetch(`${API_URL}/api/data/upload-db`, {
+      return apiFetch(`${API_URL}/api/data/upload-db`, {
         method: "POST",
         body: form,
       }).then((r) => r.json())
@@ -161,7 +308,7 @@ export const api = {
       tableName: string,
       query?: string
     ): Promise<UploadResponse & { table_name: string; query: string; source: string }> =>
-      fetch(`${API_URL}/api/data/extract-db`, {
+      apiFetch(`${API_URL}/api/data/extract-db`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ project_id: projectId, db_path: dbPath, table_name: tableName, query }),
@@ -170,13 +317,13 @@ export const api = {
     preview: (
       datasetId: string
     ): Promise<UploadResponse> =>
-      fetch(`${API_URL}/api/data/${datasetId}/preview`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/data/${datasetId}/preview`).then((r) => r.json()),
 
     profile: (datasetId: string) =>
-      fetch(`${API_URL}/api/data/${datasetId}/profile`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/data/${datasetId}/profile`).then((r) => r.json()),
 
     query: (datasetId: string, question: string): Promise<QueryResponse> =>
-      fetch(`${API_URL}/api/data/${datasetId}/query`, {
+      apiFetch(`${API_URL}/api/data/${datasetId}/query`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ question }),
@@ -199,7 +346,7 @@ export const api = {
       if (valueColumn) params.set("value_column", valueColumn)
       if (window) params.set("window", window.toString())
       const qs = params.toString() ? `?${params}` : ""
-      return fetch(`${API_URL}/api/data/${datasetId}/timeseries${qs}`).then((r) => r.json())
+      return apiFetch(`${API_URL}/api/data/${datasetId}/timeseries${qs}`).then((r) => r.json())
     },
 
     correlations: (datasetId: string): Promise<{
@@ -208,7 +355,7 @@ export const api = {
       pairs?: Array<{ col_a: string; col_b: string; correlation: number }>
       message?: string
     }> =>
-      fetch(`${API_URL}/api/data/${datasetId}/correlations`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/data/${datasetId}/correlations`).then((r) => r.json()),
 
     boxplot: (
       datasetId: string,
@@ -217,14 +364,14 @@ export const api = {
     ): Promise<import("./types").ChartSpec> => {
       const params = new URLSearchParams({ column })
       if (groupby) params.set("groupby", groupby)
-      return fetch(`${API_URL}/api/data/${datasetId}/boxplot?${params}`).then((r) => r.json())
+      return apiFetch(`${API_URL}/api/data/${datasetId}/boxplot?${params}`).then((r) => r.json())
     },
 
     clean: (
       datasetId: string,
       operation: import("./types").CleanOperation
     ): Promise<import("./types").CleanResult> =>
-      fetch(`${API_URL}/api/data/${datasetId}/clean`, {
+      apiFetch(`${API_URL}/api/data/${datasetId}/clean`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(operation),
@@ -236,7 +383,7 @@ export const api = {
       contamination?: number,
       nTop?: number
     ): Promise<AnomalyResult> =>
-      fetch(`${API_URL}/api/data/${datasetId}/anomalies`, {
+      apiFetch(`${API_URL}/api/data/${datasetId}/anomalies`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -247,7 +394,7 @@ export const api = {
       }).then((r) => r.json()),
 
     listByProject: (projectId: string): Promise<DatasetListItem[]> =>
-      fetch(`${API_URL}/api/data/project/${projectId}/datasets`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/data/project/${projectId}/datasets`).then((r) => r.json()),
 
     joinKeys: (
       datasetId1: string,
@@ -258,7 +405,7 @@ export const api = {
       join_key_suggestions: JoinKeySuggestion[]
       common_column_count: number
     }> =>
-      fetch(`${API_URL}/api/data/join-keys`, {
+      apiFetch(`${API_URL}/api/data/join-keys`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ dataset_id_1: datasetId1, dataset_id_2: datasetId2 }),
@@ -276,7 +423,7 @@ export const api = {
         save_as_filename?: string
       }
     ): Promise<MergeResponse> =>
-      fetch(`${API_URL}/api/data/${projectId}/merge`, {
+      apiFetch(`${API_URL}/api/data/${projectId}/merge`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -285,17 +432,17 @@ export const api = {
     refresh: (datasetId: string, file: File): Promise<DatasetRefreshResult> => {
       const form = new FormData()
       form.append("file", file)
-      return fetch(`${API_URL}/api/data/${datasetId}/refresh`, {
+      return apiFetch(`${API_URL}/api/data/${datasetId}/refresh`, {
         method: "POST",
         body: form,
       }).then((r) => r.json())
     },
 
     getDictionary: (datasetId: string): Promise<DataDictionary> =>
-      fetch(`${API_URL}/api/data/${datasetId}/dictionary`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/data/${datasetId}/dictionary`).then((r) => r.json()),
 
     generateDictionary: (datasetId: string): Promise<DataDictionary> =>
-      fetch(`${API_URL}/api/data/${datasetId}/dictionary`, { method: "POST" }).then((r) =>
+      apiFetch(`${API_URL}/api/data/${datasetId}/dictionary`, { method: "POST" }).then((r) =>
         r.json()
       ),
 
@@ -308,7 +455,7 @@ export const api = {
     ): Promise<CrosstabResult> => {
       const params = new URLSearchParams({ rows, cols, agg })
       if (values) params.set("values", values)
-      return fetch(`${API_URL}/api/data/${datasetId}/crosstab?${params}`).then((r) => r.json())
+      return apiFetch(`${API_URL}/api/data/${datasetId}/crosstab?${params}`).then((r) => r.json())
     },
 
     computeColumn: (
@@ -316,7 +463,7 @@ export const api = {
       name: string,
       expression: string
     ): Promise<ComputeResult> =>
-      fetch(`${API_URL}/api/data/${datasetId}/compute`, {
+      apiFetch(`${API_URL}/api/data/${datasetId}/compute`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, expression }),
@@ -328,7 +475,7 @@ export const api = {
       val1: string,
       val2: string
     ): Promise<SegmentComparisonResult> =>
-      fetch(
+      apiFetch(
         `${API_URL}/api/data/${datasetId}/compare-segments?col=${encodeURIComponent(col)}&val1=${encodeURIComponent(val1)}&val2=${encodeURIComponent(val2)}`
       ).then((r) => r.json()),
 
@@ -341,7 +488,7 @@ export const api = {
       if (target) params.set("target", target)
       if (periods !== undefined) params.set("periods", String(periods))
       const qs = params.toString()
-      return fetch(
+      return apiFetch(
         `${API_URL}/api/data/${datasetId}/forecast${qs ? `?${qs}` : ""}`
       ).then((r) => r.json())
     },
@@ -353,7 +500,7 @@ export const api = {
       const params = new URLSearchParams()
       if (target) params.set("target", target)
       const qs = params.toString()
-      return fetch(
+      return apiFetch(
         `${API_URL}/api/data/${datasetId}/readiness-check${qs ? `?${qs}` : ""}`
       ).then((r) => r.json())
     },
@@ -365,7 +512,7 @@ export const api = {
     ): Promise<TargetCorrelationResult> => {
       const params = new URLSearchParams({ target })
       if (topN !== undefined) params.set("top_n", String(topN))
-      return fetch(
+      return apiFetch(
         `${API_URL}/api/data/${datasetId}/target-correlations?${params.toString()}`
       ).then((r) => r.json())
     },
@@ -375,7 +522,7 @@ export const api = {
       oldName: string,
       newName: string
     ): Promise<{ dataset_id: string; old_name: string; new_name: string; row_count: number; column_count: number }> =>
-      fetch(`${API_URL}/api/data/${datasetId}/rename-column`, {
+      apiFetch(`${API_URL}/api/data/${datasetId}/rename-column`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ old_name: oldName, new_name: newName }),
@@ -385,7 +532,7 @@ export const api = {
       const params = new URLSearchParams()
       if (target) params.set("target", target)
       const qs = params.toString()
-      return fetch(
+      return apiFetch(
         `${API_URL}/api/data/${datasetId}/story${qs ? `?${qs}` : ""}`
       ).then((r) => r.json())
     },
@@ -394,25 +541,25 @@ export const api = {
       datasetId: string,
       conditions: import("./types").FilterCondition[]
     ): Promise<import("./types").FilterSetResult> =>
-      fetch(`${API_URL}/api/data/${datasetId}/set-filter`, {
+      apiFetch(`${API_URL}/api/data/${datasetId}/set-filter`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ conditions }),
       }).then((r) => r.json()),
 
     clearFilter: (datasetId: string): Promise<{ dataset_id: string; cleared: boolean }> =>
-      fetch(`${API_URL}/api/data/${datasetId}/clear-filter`, {
+      apiFetch(`${API_URL}/api/data/${datasetId}/clear-filter`, {
         method: "DELETE",
       }).then((r) => r.json()),
 
     getActiveFilter: (datasetId: string): Promise<import("./types").ActiveFilter> =>
-      fetch(`${API_URL}/api/data/${datasetId}/active-filter`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/data/${datasetId}/active-filter`).then((r) => r.json()),
 
     getColumnProfile: (
       datasetId: string,
       col: string
     ): Promise<import("./types").ColumnProfile> =>
-      fetch(
+      apiFetch(
         `${API_URL}/api/data/${datasetId}/column-profile?col=${encodeURIComponent(col)}`
       ).then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`)
@@ -428,7 +575,7 @@ export const api = {
       if (features && features.length > 0) params.set("features", features.join(","))
       if (nClusters !== undefined) params.set("n_clusters", String(nClusters))
       const qs = params.toString()
-      return fetch(
+      return apiFetch(
         `${API_URL}/api/data/${datasetId}/clusters${qs ? `?${qs}` : ""}`
       ).then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`)
@@ -455,7 +602,7 @@ export const api = {
         p2_start: p2Start,
         p2_end: p2End,
       })
-      return fetch(`${API_URL}/api/data/${datasetId}/compare-time-windows?${params}`).then(
+      return apiFetch(`${API_URL}/api/data/${datasetId}/compare-time-windows?${params}`).then(
         (r) => {
           if (!r.ok) throw new Error(`HTTP ${r.status}`)
           return r.json()
@@ -470,7 +617,7 @@ export const api = {
       order: "asc" | "desc" = "desc"
     ): Promise<import("./types").TopNResult> => {
       const params = new URLSearchParams({ col, n: String(n), order })
-      return fetch(`${API_URL}/api/data/${datasetId}/top-n?${params}`).then((r) => {
+      return apiFetch(`${API_URL}/api/data/${datasetId}/top-n?${params}`).then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`)
         return r.json()
       })
@@ -484,7 +631,7 @@ export const api = {
     ): Promise<import("./types").RecordTableResult> => {
       const params = new URLSearchParams({ n: String(n), offset: String(offset) })
       if (where) params.set("where", where)
-      return fetch(`${API_URL}/api/data/${datasetId}/records?${params}`).then((r) => {
+      return apiFetch(`${API_URL}/api/data/${datasetId}/records?${params}`).then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`)
         return r.json()
       })
@@ -496,7 +643,7 @@ export const api = {
     getSummaryStats: (
       datasetId: string
     ): Promise<import("./types").SummaryStatsResult> =>
-      fetch(`${API_URL}/api/data/${datasetId}/summary-stats`).then((r) =>
+      apiFetch(`${API_URL}/api/data/${datasetId}/summary-stats`).then((r) =>
         r.json()
       ),
 
@@ -505,7 +652,7 @@ export const api = {
       col: string,
       n: number = 20
     ): Promise<import("./types").ValueCountResult> =>
-      fetch(
+      apiFetch(
         `${API_URL}/api/data/${datasetId}/value-counts?col=${encodeURIComponent(col)}&n=${n}`
       ).then((r) => r.json()),
 
@@ -514,7 +661,7 @@ export const api = {
       col1: string,
       col2: string
     ): Promise<import("./types").PairCorrelationResult> =>
-      fetch(
+      apiFetch(
         `${API_URL}/api/data/${datasetId}/pair-correlation?col1=${encodeURIComponent(col1)}&col2=${encodeURIComponent(col2)}`
       ).then((r) => r.json()),
 
@@ -525,7 +672,7 @@ export const api = {
     ): Promise<import("./types").StatQueryResult> => {
       const params = new URLSearchParams({ agg })
       if (col) params.set("col", col)
-      return fetch(
+      return apiFetch(
         `${API_URL}/api/data/${datasetId}/stat-query?${params.toString()}`
       ).then((r) => r.json())
     },
@@ -541,7 +688,7 @@ export const api = {
         group_col: groupCol,
         value_col: valueCol,
       })
-      return fetch(
+      return apiFetch(
         `${API_URL}/api/data/${datasetId}/group-trends?${params.toString()}`
       ).then((r) => r.json())
     },
@@ -549,7 +696,7 @@ export const api = {
     predictionOpportunities: (
       datasetId: string
     ): Promise<import("./types").PredictionOpportunitiesResult> =>
-      fetch(`${API_URL}/api/data/${datasetId}/prediction-opportunities`).then(
+      apiFetch(`${API_URL}/api/data/${datasetId}/prediction-opportunities`).then(
         (r) => r.json()
       ),
 
@@ -557,28 +704,28 @@ export const api = {
       baselineId: string,
       newId: string
     ): Promise<import("./types").DatasetComparisonResult> =>
-      fetch(
+      apiFetch(
         `${API_URL}/api/data/compare?baseline_id=${encodeURIComponent(baselineId)}&new_id=${encodeURIComponent(newId)}`
       ).then((r) => r.json()),
   },
 
   chat: {
     send: (projectId: string, message: string): Promise<Response> =>
-      fetch(`${API_URL}/api/chat/${projectId}`, {
+      apiFetch(`${API_URL}/api/chat/${projectId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message }),
       }),
 
     history: (projectId: string): Promise<{ messages: ChatMessage[] }> =>
-      fetch(`${API_URL}/api/chat/${projectId}/history`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/chat/${projectId}/history`).then((r) => r.json()),
   },
 
   features: {
     suggestions: (
       datasetId: string
     ): Promise<{ dataset_id: string; suggestions: FeatureSuggestion[] }> =>
-      fetch(`${API_URL}/api/features/${datasetId}/suggestions`).then((r) =>
+      apiFetch(`${API_URL}/api/features/${datasetId}/suggestions`).then((r) =>
         r.json()
       ),
 
@@ -586,7 +733,7 @@ export const api = {
       datasetId: string,
       transformations: { column: string; transform_type: string; params?: Record<string, unknown> }[]
     ): Promise<FeatureSetResult> =>
-      fetch(`${API_URL}/api/features/${datasetId}/apply`, {
+      apiFetch(`${API_URL}/api/features/${datasetId}/apply`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ transformations }),
@@ -597,7 +744,7 @@ export const api = {
       targetColumn: string,
       featureSetId?: string
     ): Promise<TargetResult> =>
-      fetch(`${API_URL}/api/features/${datasetId}/target`, {
+      apiFetch(`${API_URL}/api/features/${datasetId}/target`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -610,7 +757,7 @@ export const api = {
       datasetId: string,
       targetColumn: string
     ): Promise<FeatureImportanceResult> =>
-      fetch(
+      apiFetch(
         `${API_URL}/api/features/${datasetId}/importance?target_column=${encodeURIComponent(targetColumn)}`
       ).then((r) => r.json()),
 
@@ -620,7 +767,7 @@ export const api = {
       step_count: number
       steps: Array<{ index: number; column: string; transform_type: string; params?: Record<string, unknown> }>
     }> =>
-      fetch(`${API_URL}/api/features/${featureSetId}/steps`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/features/${featureSetId}/steps`).then((r) => r.json()),
 
     addStep: (
       featureSetId: string,
@@ -633,7 +780,7 @@ export const api = {
       total_columns: number
       preview: Record<string, unknown>[]
     }> =>
-      fetch(`${API_URL}/api/features/${featureSetId}/steps`, {
+      apiFetch(`${API_URL}/api/features/${featureSetId}/steps`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(step),
@@ -650,7 +797,7 @@ export const api = {
       new_columns: string[]
       total_columns: number
     }> =>
-      fetch(`${API_URL}/api/features/${featureSetId}/steps/${stepIndex}`, {
+      apiFetch(`${API_URL}/api/features/${featureSetId}/steps/${stepIndex}`, {
         method: "DELETE",
       }).then((r) => r.json()),
   },
@@ -664,29 +811,29 @@ export const api = {
       n_features: number
       recommendations: ModelRecommendation[]
     }> =>
-      fetch(`${API_URL}/api/models/${projectId}/recommendations`).then((r) =>
+      apiFetch(`${API_URL}/api/models/${projectId}/recommendations`).then((r) =>
         r.json()
       ),
 
     classImbalance: (
       projectId: string
     ): Promise<import("./types").ClassImbalanceResult> =>
-      fetch(`${API_URL}/api/models/${projectId}/imbalance`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/models/${projectId}/imbalance`).then((r) => r.json()),
 
     splitStrategy: (
       projectId: string
     ): Promise<import("./types").SplitStrategyInfo> =>
-      fetch(`${API_URL}/api/models/${projectId}/split-strategy`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/models/${projectId}/split-strategy`).then((r) => r.json()),
 
     featureSelection: (
       runId: string
     ): Promise<import("./types").FeatureSelectionResult> =>
-      fetch(`${API_URL}/api/models/${runId}/feature-selection`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/models/${runId}/feature-selection`).then((r) => r.json()),
 
     thresholdAnalysis: (
       runId: string
     ): Promise<import("./types").ThresholdAnalysisResult> =>
-      fetch(`${API_URL}/api/models/${runId}/threshold-analysis`).then((r) => {
+      apiFetch(`${API_URL}/api/models/${runId}/threshold-analysis`).then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`)
         return r.json()
       }),
@@ -694,7 +841,7 @@ export const api = {
     sampleSizeAdequacy: (
       runId: string
     ): Promise<import("./types").SampleSizeAdequacyResult> =>
-      fetch(`${API_URL}/api/models/${runId}/sample-size-adequacy`).then((r) => {
+      apiFetch(`${API_URL}/api/models/${runId}/sample-size-adequacy`).then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`)
         return r.json()
       }),
@@ -702,7 +849,7 @@ export const api = {
     classFeatureImportance: (
       runId: string
     ): Promise<import("./types").ClassFeatureImportanceResult> =>
-      fetch(`${API_URL}/api/models/${runId}/class-feature-importance`).then((r) => {
+      apiFetch(`${API_URL}/api/models/${runId}/class-feature-importance`).then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`)
         return r.json()
       }),
@@ -710,7 +857,7 @@ export const api = {
     calibration: (
       runId: string
     ): Promise<import("./types").CalibrationData> =>
-      fetch(`${API_URL}/api/models/${runId}/calibration`).then((r) => {
+      apiFetch(`${API_URL}/api/models/${runId}/calibration`).then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`)
         return r.json()
       }),
@@ -719,7 +866,7 @@ export const api = {
       runId: string,
       nBins: number = 10
     ): Promise<import("./types").CalibrationCheckResult> =>
-      fetch(`${API_URL}/api/models/${runId}/calibration-check?n_bins=${nBins}`).then(
+      apiFetch(`${API_URL}/api/models/${runId}/calibration-check?n_bins=${nBins}`).then(
         (r) => {
           if (!r.ok) throw new Error(`HTTP ${r.status}`)
           return r.json()
@@ -729,7 +876,7 @@ export const api = {
     improvementSuggestions: (
       projectId: string
     ): Promise<import("./types").ModelImprovementResult> =>
-      fetch(`${API_URL}/api/models/${projectId}/improvement-suggestions`).then((r) => {
+      apiFetch(`${API_URL}/api/models/${projectId}/improvement-suggestions`).then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`)
         return r.json()
       }),
@@ -738,7 +885,7 @@ export const api = {
       projectId: string,
       criteria: import("./types").SelectionCriteria = "balanced"
     ): Promise<import("./types").ModelSelectionResult> =>
-      fetch(
+      apiFetch(
         `${API_URL}/api/models/${projectId}/model-selection?criteria=${encodeURIComponent(criteria)}`
       ).then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`)
@@ -746,19 +893,19 @@ export const api = {
       }),
 
     qualityScore: (runId: string): Promise<import("./types").ModelQualityScoreResult> =>
-      fetch(`${API_URL}/api/models/${runId}/quality-score`).then((r) => {
+      apiFetch(`${API_URL}/api/models/${runId}/quality-score`).then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`)
         return r.json()
       }),
 
     promotionReadiness: (runId: string): Promise<import("./types").PromotionReadinessResult> =>
-      fetch(`${API_URL}/api/models/${runId}/promotion-readiness`).then((r) => {
+      apiFetch(`${API_URL}/api/models/${runId}/promotion-readiness`).then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`)
         return r.json()
       }),
 
     crossModelFeatures: (projectId: string): Promise<import("./types").CrossModelFeatureResult> =>
-      fetch(`${API_URL}/api/models/${projectId}/cross-model-features`).then((r) => {
+      apiFetch(`${API_URL}/api/models/${projectId}/cross-model-features`).then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`)
         return r.json()
       }),
@@ -770,7 +917,7 @@ export const api = {
       splitStrategy?: string | null,
       excludedFeatures?: string[] | null
     ): Promise<TrainingStatus> =>
-      fetch(`${API_URL}/api/models/${projectId}/train`, {
+      apiFetch(`${API_URL}/api/models/${projectId}/train`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -782,18 +929,18 @@ export const api = {
       }).then((r) => r.json()),
 
     runs: (projectId: string): Promise<{ project_id: string; runs: ModelRun[] }> =>
-      fetch(`${API_URL}/api/models/${projectId}/runs`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/models/${projectId}/runs`).then((r) => r.json()),
 
     compare: (projectId: string): Promise<ModelComparison> =>
-      fetch(`${API_URL}/api/models/${projectId}/compare`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/models/${projectId}/compare`).then((r) => r.json()),
 
     comparisonRadar: (projectId: string): Promise<{ chart: import("./types").ChartSpec } | null> =>
-      fetch(`${API_URL}/api/models/${projectId}/comparison-radar`).then((r) =>
+      apiFetch(`${API_URL}/api/models/${projectId}/comparison-radar`).then((r) =>
         r.status === 204 ? null : r.json()
       ),
 
     select: (modelRunId: string): Promise<ModelRun> =>
-      fetch(`${API_URL}/api/models/${modelRunId}/select`, {
+      apiFetch(`${API_URL}/api/models/${modelRunId}/select`, {
         method: "POST",
       }).then((r) => r.json()),
 
@@ -810,23 +957,23 @@ export const api = {
       `${API_URL}/api/models/${projectId}/training-stream`,
 
     readiness: (modelRunId: string): Promise<import("./types").ModelReadiness> =>
-      fetch(`${API_URL}/api/models/${modelRunId}/readiness`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/models/${modelRunId}/readiness`).then((r) => r.json()),
 
     tune: (modelRunId: string): Promise<TuningResult> =>
-      fetch(`${API_URL}/api/models/${modelRunId}/tune`, { method: "POST" }).then((r) =>
+      apiFetch(`${API_URL}/api/models/${modelRunId}/tune`, { method: "POST" }).then((r) =>
         r.json()
       ),
 
     retrain: (projectId: string): Promise<import("./types").RetrainResponse> =>
-      fetch(`${API_URL}/api/models/${projectId}/retrain`, { method: "POST" }).then((r) =>
+      apiFetch(`${API_URL}/api/models/${projectId}/retrain`, { method: "POST" }).then((r) =>
         r.json()
       ),
 
     history: (projectId: string): Promise<ModelVersionHistory> =>
-      fetch(`${API_URL}/api/models/${projectId}/history`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/models/${projectId}/history`).then((r) => r.json()),
 
     getModelCard: (projectId: string): Promise<import("./types").ModelCard> =>
-      fetch(`${API_URL}/api/models/${projectId}/model-card`).then((r) => {
+      apiFetch(`${API_URL}/api/models/${projectId}/model-card`).then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`)
         return r.json()
       }),
@@ -835,7 +982,7 @@ export const api = {
       modelRunId: string,
       col: string,
     ): Promise<import("./types").SegmentPerformanceResult> =>
-      fetch(
+      apiFetch(
         `${API_URL}/api/models/${modelRunId}/segment-performance?col=${encodeURIComponent(col)}`,
       ).then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`)
@@ -846,7 +993,7 @@ export const api = {
       modelRunId: string,
       n: number = 10,
     ): Promise<import("./types").PredictionErrorResult> =>
-      fetch(`${API_URL}/api/models/${modelRunId}/prediction-errors?n=${n}`).then((r) => {
+      apiFetch(`${API_URL}/api/models/${modelRunId}/prediction-errors?n=${n}`).then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`)
         return r.json()
       }),
@@ -854,67 +1001,67 @@ export const api = {
 
   validation: {
     metrics: (modelRunId: string): Promise<ValidationMetricsResponse> =>
-      fetch(`${API_URL}/api/validate/${modelRunId}/metrics`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/validate/${modelRunId}/metrics`).then((r) => r.json()),
 
     explain: (modelRunId: string): Promise<GlobalExplanationResponse> =>
-      fetch(`${API_URL}/api/validate/${modelRunId}/explain`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/validate/${modelRunId}/explain`).then((r) => r.json()),
 
     explainRow: (modelRunId: string, rowIndex: number): Promise<RowExplanationResponse> =>
-      fetch(`${API_URL}/api/validate/${modelRunId}/explain/${rowIndex}`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/validate/${modelRunId}/explain/${rowIndex}`).then((r) => r.json()),
   },
 
   deploy: {
     deploy: (modelRunId: string): Promise<Deployment> =>
-      fetch(`${API_URL}/api/deploy/${modelRunId}`, { method: "POST" }).then((r) =>
+      apiFetch(`${API_URL}/api/deploy/${modelRunId}`, { method: "POST" }).then((r) =>
         r.json()
       ),
 
     list: (): Promise<Deployment[]> =>
-      fetch(`${API_URL}/api/deployments`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/deployments`).then((r) => r.json()),
 
     listByProject: (projectId: string): Promise<Deployment[]> =>
-      fetch(`${API_URL}/api/deployments?project_id=${projectId}`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/deployments?project_id=${projectId}`).then((r) => r.json()),
 
     get: (deploymentId: string): Promise<Deployment> =>
-      fetch(`${API_URL}/api/deploy/${deploymentId}`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/deploy/${deploymentId}`).then((r) => r.json()),
 
     undeploy: (deploymentId: string): Promise<Response> =>
-      fetch(`${API_URL}/api/deploy/${deploymentId}`, { method: "DELETE" }),
+      apiFetch(`${API_URL}/api/deploy/${deploymentId}`, { method: "DELETE" }),
 
     predict: (
       deploymentId: string,
       inputData: Record<string, unknown>
     ): Promise<PredictionResult> =>
-      fetch(`${API_URL}/api/predict/${deploymentId}`, {
+      apiFetch(`${API_URL}/api/predict/${deploymentId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(inputData),
       }).then((r) => r.json()),
 
     analytics: (deploymentId: string, days?: number): Promise<import("./types").DeploymentAnalytics> =>
-      fetch(`${API_URL}/api/deploy/${deploymentId}/analytics${days ? `?days=${days}` : ""}`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/deploy/${deploymentId}/analytics${days ? `?days=${days}` : ""}`).then((r) => r.json()),
 
     logs: (deploymentId: string, limit?: number, offset?: number): Promise<import("./types").PredictionLogsResponse> =>
-      fetch(`${API_URL}/api/deploy/${deploymentId}/logs?limit=${limit ?? 20}&offset=${offset ?? 0}`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/deploy/${deploymentId}/logs?limit=${limit ?? 20}&offset=${offset ?? 0}`).then((r) => r.json()),
 
     drift: (deploymentId: string, window?: number): Promise<import("./types").DriftReport> =>
-      fetch(`${API_URL}/api/deploy/${deploymentId}/drift${window ? `?window=${window}` : ""}`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/deploy/${deploymentId}/drift${window ? `?window=${window}` : ""}`).then((r) => r.json()),
 
     sla: (deploymentId: string): Promise<import("./types").SlaData> =>
-      fetch(`${API_URL}/api/deploy/${deploymentId}/sla`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/deploy/${deploymentId}/sla`).then((r) => r.json()),
 
     goalSeekHistory: (deploymentId: string): Promise<import("./types").GoalSeekHistoryResult> =>
-      fetch(`${API_URL}/api/deploy/${deploymentId}/goal-seek/history`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/deploy/${deploymentId}/goal-seek/history`).then((r) => r.json()),
 
     deploymentChangelog: (deploymentId: string): Promise<import("./types").DeploymentChangelogResult> =>
-      fetch(`${API_URL}/api/deploy/${deploymentId}/changelog`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/deploy/${deploymentId}/changelog`).then((r) => r.json()),
 
     whatif: (
       deploymentId: string,
       base: Record<string, unknown>,
       overrides: Record<string, unknown>
     ): Promise<import("./types").WhatIfResult> =>
-      fetch(`${API_URL}/api/predict/${deploymentId}/whatif`, {
+      apiFetch(`${API_URL}/api/predict/${deploymentId}/whatif`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ base, overrides }),
@@ -930,23 +1077,23 @@ export const api = {
         comment?: string
       }
     ): Promise<import("./types").FeedbackRecord> =>
-      fetch(`${API_URL}/api/predict/${deploymentId}/feedback`, {
+      apiFetch(`${API_URL}/api/predict/${deploymentId}/feedback`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       }).then((r) => r.json()),
 
     feedbackAccuracy: (deploymentId: string): Promise<import("./types").FeedbackAccuracy> =>
-      fetch(`${API_URL}/api/deploy/${deploymentId}/feedback-accuracy`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/deploy/${deploymentId}/feedback-accuracy`).then((r) => r.json()),
 
     trainingVsProduction: (deploymentId: string): Promise<import("./types").ProdPerformanceResult> =>
-      fetch(`${API_URL}/api/deploy/${deploymentId}/training-vs-production`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/deploy/${deploymentId}/training-vs-production`).then((r) => r.json()),
 
     health: (deploymentId: string): Promise<import("./types").ModelHealth> =>
-      fetch(`${API_URL}/api/deploy/${deploymentId}/health`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/deploy/${deploymentId}/health`).then((r) => r.json()),
 
     explain: (deploymentId: string, inputs: Record<string, unknown>): Promise<import("./types").PredictionExplanation> =>
-      fetch(`${API_URL}/api/predict/${deploymentId}/explain`, {
+      apiFetch(`${API_URL}/api/predict/${deploymentId}/explain`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(inputs),
@@ -960,7 +1107,7 @@ export const api = {
       base: Record<string, unknown>,
       scenarios: Array<{ label: string; overrides: Record<string, unknown> }>
     ): Promise<import("./types").ScenarioComparison> =>
-      fetch(`${API_URL}/api/predict/${deploymentId}/scenarios`, {
+      apiFetch(`${API_URL}/api/predict/${deploymentId}/scenarios`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ base, scenarios }),
@@ -973,7 +1120,7 @@ export const api = {
       deploymentIds: string[],
       features: Record<string, unknown>
     ): Promise<import("./types").ComparisonResponse> =>
-      fetch(`${API_URL}/api/predict/compare`, {
+      apiFetch(`${API_URL}/api/predict/compare`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ deployment_ids: deploymentIds, features }),
@@ -986,20 +1133,20 @@ export const api = {
       deploymentId: string,
       baseUrl?: string
     ): Promise<import("./types").IntegrationSnippets> =>
-      fetch(
+      apiFetch(
         `${API_URL}/api/deploy/${deploymentId}/integration${baseUrl ? `?base_url=${encodeURIComponent(baseUrl)}` : ""}`
       ).then((r) => r.json()),
 
     generateApiKey: (deploymentId: string): Promise<import("./types").ApiKeyResult> =>
-      fetch(`${API_URL}/api/deploy/${deploymentId}/api-key`, { method: "POST" }).then(
+      apiFetch(`${API_URL}/api/deploy/${deploymentId}/api-key`, { method: "POST" }).then(
         (r) => r.json()
       ),
 
     disableApiKey: (deploymentId: string): Promise<Response> =>
-      fetch(`${API_URL}/api/deploy/${deploymentId}/api-key`, { method: "DELETE" }),
+      apiFetch(`${API_URL}/api/deploy/${deploymentId}/api-key`, { method: "DELETE" }),
 
     getSchedules: (deploymentId: string): Promise<import("./types").BatchSchedule[]> =>
-      fetch(`${API_URL}/api/deploy/${deploymentId}/schedules`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/deploy/${deploymentId}/schedules`).then((r) => r.json()),
 
     createSchedule: (
       deploymentId: string,
@@ -1011,7 +1158,7 @@ export const api = {
         day_of_month?: number | null
       }
     ): Promise<import("./types").BatchSchedule> =>
-      fetch(`${API_URL}/api/deploy/${deploymentId}/schedules`, {
+      apiFetch(`${API_URL}/api/deploy/${deploymentId}/schedules`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -1021,7 +1168,7 @@ export const api = {
       }),
 
     deleteSchedule: (deploymentId: string, scheduleId: string): Promise<void> =>
-      fetch(`${API_URL}/api/deploy/${deploymentId}/schedules/${scheduleId}`, {
+      apiFetch(`${API_URL}/api/deploy/${deploymentId}/schedules/${scheduleId}`, {
         method: "DELETE",
       }).then(() => undefined),
 
@@ -1029,7 +1176,7 @@ export const api = {
       deploymentId: string,
       scheduleId: string
     ): Promise<{ status: string; schedule_id: string }> =>
-      fetch(`${API_URL}/api/deploy/${deploymentId}/schedules/${scheduleId}/run`, {
+      apiFetch(`${API_URL}/api/deploy/${deploymentId}/schedules/${scheduleId}/run`, {
         method: "POST",
       }).then((r) => r.json()),
 
@@ -1037,20 +1184,20 @@ export const api = {
       deploymentId: string,
       scheduleId: string
     ): Promise<import("./types").BatchJobRun[]> =>
-      fetch(
+      apiFetch(
         `${API_URL}/api/deploy/${deploymentId}/schedules/${scheduleId}/runs`
       ).then((r) => r.json()),
 
     getVersions: (
       deploymentId: string
     ): Promise<import("./types").DeploymentVersionHistory> =>
-      fetch(`${API_URL}/api/deploy/${deploymentId}/versions`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/deploy/${deploymentId}/versions`).then((r) => r.json()),
 
     rollback: (
       deploymentId: string,
       versionNumber: number
     ): Promise<import("./types").RollbackResult> =>
-      fetch(`${API_URL}/api/deploy/${deploymentId}/rollback/${versionNumber}`, {
+      apiFetch(`${API_URL}/api/deploy/${deploymentId}/rollback/${versionNumber}`, {
         method: "POST",
       }).then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`)
@@ -1063,7 +1210,7 @@ export const api = {
     getWebhooks: (
       deploymentId: string
     ): Promise<import("./types").WebhookConfig[]> =>
-      fetch(`${API_URL}/api/deploy/${deploymentId}/webhooks`).then((r) =>
+      apiFetch(`${API_URL}/api/deploy/${deploymentId}/webhooks`).then((r) =>
         r.json()
       ),
 
@@ -1072,7 +1219,7 @@ export const api = {
       url: string,
       eventTypes: string[]
     ): Promise<import("./types").WebhookConfig> =>
-      fetch(`${API_URL}/api/deploy/${deploymentId}/webhooks`, {
+      apiFetch(`${API_URL}/api/deploy/${deploymentId}/webhooks`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url, event_types: eventTypes }),
@@ -1085,7 +1232,7 @@ export const api = {
       deploymentId: string,
       webhookId: string
     ): Promise<void> =>
-      fetch(
+      apiFetch(
         `${API_URL}/api/deploy/${deploymentId}/webhooks/${webhookId}`,
         { method: "DELETE" }
       ).then(() => undefined),
@@ -1094,7 +1241,7 @@ export const api = {
       deploymentId: string,
       webhookId: string
     ): Promise<import("./types").WebhookTestResult> =>
-      fetch(
+      apiFetch(
         `${API_URL}/api/deploy/${deploymentId}/webhooks/${webhookId}/test`,
         { method: "POST" }
       ).then((r) => r.json()),
@@ -1102,7 +1249,7 @@ export const api = {
     getAbTest: (
       deploymentId: string
     ): Promise<import("./types").ABTest> =>
-      fetch(`${API_URL}/api/deploy/${deploymentId}/ab-test`).then((r) => {
+      apiFetch(`${API_URL}/api/deploy/${deploymentId}/ab-test`).then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`)
         return r.json()
       }),
@@ -1112,7 +1259,7 @@ export const api = {
       challengerId: string,
       championSplitPct: number
     ): Promise<import("./types").ABTest> =>
-      fetch(`${API_URL}/api/deploy/${deploymentId}/ab-test`, {
+      apiFetch(`${API_URL}/api/deploy/${deploymentId}/ab-test`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1125,14 +1272,14 @@ export const api = {
       }),
 
     endAbTest: (deploymentId: string): Promise<void> =>
-      fetch(`${API_URL}/api/deploy/${deploymentId}/ab-test`, {
+      apiFetch(`${API_URL}/api/deploy/${deploymentId}/ab-test`, {
         method: "DELETE",
       }).then(() => undefined),
 
     promoteChallenger: (
       deploymentId: string
     ): Promise<{ message: string; deployment: import("./types").Deployment }> =>
-      fetch(`${API_URL}/api/deploy/${deploymentId}/ab-test/promote`, {
+      apiFetch(`${API_URL}/api/deploy/${deploymentId}/ab-test/promote`, {
         method: "POST",
       }).then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`)
@@ -1142,7 +1289,7 @@ export const api = {
     promoteToProduction: (
       deploymentId: string
     ): Promise<import("./types").EnvironmentPromotionResult> =>
-      fetch(`${API_URL}/api/deploy/${deploymentId}/promote-to-production`, {
+      apiFetch(`${API_URL}/api/deploy/${deploymentId}/promote-to-production`, {
         method: "POST",
       }).then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`)
@@ -1152,7 +1299,7 @@ export const api = {
     demoteToStaging: (
       deploymentId: string
     ): Promise<import("./types").EnvironmentPromotionResult> =>
-      fetch(`${API_URL}/api/deploy/${deploymentId}/demote-to-staging`, {
+      apiFetch(`${API_URL}/api/deploy/${deploymentId}/demote-to-staging`, {
         method: "POST",
       }).then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`)
@@ -1162,14 +1309,14 @@ export const api = {
     getPresets: (
       deploymentId: string
     ): Promise<import("./types").DeploymentPreset[]> =>
-      fetch(`${API_URL}/api/deploy/${deploymentId}/presets`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/deploy/${deploymentId}/presets`).then((r) => r.json()),
 
     createPreset: (
       deploymentId: string,
       name: string,
       featureValues: Record<string, string | number>
     ): Promise<import("./types").DeploymentPreset> =>
-      fetch(`${API_URL}/api/deploy/${deploymentId}/presets`, {
+      apiFetch(`${API_URL}/api/deploy/${deploymentId}/presets`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, feature_values: featureValues }),
@@ -1182,7 +1329,7 @@ export const api = {
       deploymentId: string,
       presetId: string
     ): Promise<void> =>
-      fetch(`${API_URL}/api/deploy/${deploymentId}/presets/${presetId}`, {
+      apiFetch(`${API_URL}/api/deploy/${deploymentId}/presets/${presetId}`, {
         method: "DELETE",
       }).then(() => undefined),
 
@@ -1201,7 +1348,7 @@ export const api = {
       rateLimitRpm: number | null,
       monthlyQuota: number | null
     ) => {
-      const res = await fetch(`${API_URL}/api/deploy/${deploymentId}/rate-limit`, {
+      const res = await apiFetch(`${API_URL}/api/deploy/${deploymentId}/rate-limit`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ rate_limit_rpm: rateLimitRpm, monthly_quota: monthlyQuota }),
@@ -1211,7 +1358,7 @@ export const api = {
     },
 
     quotaStatus: async (deploymentId: string) => {
-      const res = await fetch(`${API_URL}/api/deploy/${deploymentId}/quota-status`)
+      const res = await apiFetch(`${API_URL}/api/deploy/${deploymentId}/quota-status`)
       if (!res.ok) throw new Error(await res.text())
       return res.json()
     },
@@ -1219,7 +1366,7 @@ export const api = {
     covariateDrift: async (
       deploymentId: string
     ): Promise<import("./types").CovariateDriftAlertResult> => {
-      const res = await fetch(
+      const res = await apiFetch(
         `${API_URL}/api/deploy/${deploymentId}/covariate-drift`
       )
       if (!res.ok) throw new Error(await res.text())
@@ -1229,7 +1376,7 @@ export const api = {
     predictionAudit: async (
       deploymentId: string
     ): Promise<import("./types").PredictionAuditResult> => {
-      const res = await fetch(
+      const res = await apiFetch(
         `${API_URL}/api/deploy/${deploymentId}/prediction-audit`
       )
       if (!res.ok) throw new Error(await res.text())
@@ -1239,7 +1386,7 @@ export const api = {
     getAlertRules: async (
       deploymentId: string
     ): Promise<{ count: number; rules: import("./types").AlertRuleEntry[] }> => {
-      const res = await fetch(
+      const res = await apiFetch(
         `${API_URL}/api/deploy/${deploymentId}/alert-rules`
       )
       if (!res.ok) throw new Error(await res.text())
@@ -1254,7 +1401,7 @@ export const api = {
       conditionValue: number | null,
       conditionClass: string | null
     ): Promise<import("./types").AlertRuleEntry> => {
-      const res = await fetch(
+      const res = await apiFetch(
         `${API_URL}/api/deploy/${deploymentId}/alert-rules`,
         {
           method: "POST",
@@ -1276,7 +1423,7 @@ export const api = {
       deploymentId: string,
       ruleId: string
     ): Promise<void> => {
-      const res = await fetch(
+      const res = await apiFetch(
         `${API_URL}/api/deploy/${deploymentId}/alert-rules/${ruleId}`,
         { method: "DELETE" }
       )
@@ -1284,7 +1431,7 @@ export const api = {
     },
 
     accuracyAlertStatus: async (deploymentId: string) => {
-      const res = await fetch(
+      const res = await apiFetch(
         `${API_URL}/api/deploy/${deploymentId}/accuracy-alert-status`
       )
       if (!res.ok) throw new Error(await res.text())
@@ -1292,7 +1439,7 @@ export const api = {
     },
 
     setAccuracyAlert: async (deploymentId: string, threshold: number | null) => {
-      const res = await fetch(
+      const res = await apiFetch(
         `${API_URL}/api/deploy/${deploymentId}/accuracy-alert`,
         {
           method: "PUT",
@@ -1305,7 +1452,7 @@ export const api = {
     },
 
     setConfidenceThreshold: async (deploymentId: string, threshold: number | null) => {
-      const res = await fetch(
+      const res = await apiFetch(
         `${API_URL}/api/deploy/${deploymentId}/confidence-threshold`,
         {
           method: "PUT",
@@ -1318,7 +1465,7 @@ export const api = {
     },
 
     getConfidenceThresholdStatus: async (deploymentId: string): Promise<import("./types").ConfidenceThresholdConfig> => {
-      const res = await fetch(
+      const res = await apiFetch(
         `${API_URL}/api/deploy/${deploymentId}/confidence-threshold-status`
       )
       if (!res.ok) throw new Error(await res.text())
@@ -1326,7 +1473,7 @@ export const api = {
     },
 
     listInputValidationRules: async (deploymentId: string) => {
-      const res = await fetch(`${API_URL}/api/deploy/${deploymentId}/input-validation-rules`)
+      const res = await apiFetch(`${API_URL}/api/deploy/${deploymentId}/input-validation-rules`)
       if (!res.ok) throw new Error(await res.text())
       return res.json()
     },
@@ -1341,7 +1488,7 @@ export const api = {
         allowed_values?: string[] | null
       }
     ) => {
-      const res = await fetch(`${API_URL}/api/deploy/${deploymentId}/input-validation-rules`, {
+      const res = await apiFetch(`${API_URL}/api/deploy/${deploymentId}/input-validation-rules`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(rule),
@@ -1351,7 +1498,7 @@ export const api = {
     },
 
     deleteInputValidationRule: async (deploymentId: string, ruleId: string) => {
-      const res = await fetch(
+      const res = await apiFetch(
         `${API_URL}/api/deploy/${deploymentId}/input-validation-rules/${ruleId}`,
         { method: "DELETE" }
       )
@@ -1360,10 +1507,44 @@ export const api = {
     },
 
     getDashboardConfig: (deploymentId: string): Promise<import("@/lib/types").DashboardConfigResponse> =>
-      fetch(`${API_URL}/api/deploy/${deploymentId}/dashboard-config`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/deploy/${deploymentId}/dashboard-config`).then((r) => r.json()),
 
     getDashboardMetadata: (deploymentId: string): Promise<import("@/lib/types").DashboardMetadata> =>
-      fetch(`${API_URL}/api/deploy/${deploymentId}/dashboard-metadata`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/deploy/${deploymentId}/dashboard-metadata`).then((r) => r.json()),
+
+    // --- PUBLIC prediction-surface reads (used by the anonymous /predict/[id]
+    // page). These hit /api/predict/{id}/... which is gated by per-deployment
+    // API keys, not user auth — so no Bearer token is attached and a 401 won't
+    // bounce a visitor to /login. The /api/deploy/* siblings above stay
+    // owner-scoped for the authenticated workspace.
+    // These reject on a non-OK status (e.g. 404 for a missing/inactive
+    // deployment) so the predict page's `.catch` shows the not-found/inactive
+    // state instead of rendering an error body as if it were real data.
+    getPublicInfo: (deploymentId: string): Promise<Deployment> =>
+      apiFetch(`${API_URL}/api/predict/${deploymentId}/info`).then((r) => {
+        if (!r.ok) throw new Error("Deployment not found or inactive")
+        return r.json()
+      }),
+
+    getPublicPresets: (
+      deploymentId: string
+    ): Promise<import("./types").DeploymentPreset[]> =>
+      apiFetch(`${API_URL}/api/predict/${deploymentId}/presets`).then((r) => {
+        if (!r.ok) throw new Error("Deployment not found or inactive")
+        return r.json()
+      }),
+
+    getPublicDashboardConfig: (deploymentId: string): Promise<import("@/lib/types").DashboardConfigResponse> =>
+      apiFetch(`${API_URL}/api/predict/${deploymentId}/dashboard-config`).then((r) => {
+        if (!r.ok) throw new Error("Deployment not found or inactive")
+        return r.json()
+      }),
+
+    getPublicDashboardMetadata: (deploymentId: string): Promise<import("@/lib/types").DashboardMetadata> =>
+      apiFetch(`${API_URL}/api/predict/${deploymentId}/dashboard-metadata`).then((r) => {
+        if (!r.ok) throw new Error("Deployment not found or inactive")
+        return r.json()
+      }),
 
     updateDashboardMetadata: async (
       deploymentId: string,
@@ -1373,7 +1554,7 @@ export const api = {
       if (opts.title !== undefined) params.set("title", opts.title)
       if (opts.description !== undefined) params.set("description", opts.description)
       if (opts.clear) params.set("clear", "true")
-      const r = await fetch(
+      const r = await apiFetch(
         `${API_URL}/api/deploy/${deploymentId}/dashboard-metadata?${params}`,
         { method: "PUT" }
       )
@@ -1381,17 +1562,17 @@ export const api = {
     },
 
     getEmbedCode: (deploymentId: string): Promise<import("@/lib/types").EmbedCodeResult> =>
-      fetch(`${API_URL}/api/deploy/${deploymentId}/embed-code`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/deploy/${deploymentId}/embed-code`).then((r) => r.json()),
 
     getOutputAnomalies: (deploymentId: string, n = 50): Promise<import("@/lib/types").PredictionOutputAnomalyResult> =>
-      fetch(`${API_URL}/api/deploy/${deploymentId}/output-anomalies?n=${n}`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/deploy/${deploymentId}/output-anomalies?n=${n}`).then((r) => r.json()),
 
     featureSweep: (
       deploymentId: string,
       direction: 'maximize' | 'minimize' = 'maximize',
       nSteps = 10
     ): Promise<import("@/lib/types").FeatureSweepResult> =>
-      fetch(
+      apiFetch(
         `${API_URL}/api/deploy/${deploymentId}/feature-sweep?direction=${direction}&n_steps=${nSteps}`
       ).then((r) => r.json()),
 
@@ -1404,7 +1585,7 @@ export const api = {
         params.set("features", JSON.stringify(featureValues))
       }
       const qs = params.toString()
-      return fetch(
+      return apiFetch(
         `${API_URL}/api/deploy/${deploymentId}/share-link${qs ? `?${qs}` : ""}`
       ).then((r) => r.json())
     },
@@ -1413,7 +1594,7 @@ export const api = {
       deploymentId: string,
       n = 200
     ): Promise<import("@/lib/types").CanaryStatusResult> =>
-      fetch(`${API_URL}/api/deploy/${deploymentId}/canary/status?n=${n}`).then((r) =>
+      apiFetch(`${API_URL}/api/deploy/${deploymentId}/canary/status?n=${n}`).then((r) =>
         r.json()
       ),
 
@@ -1422,49 +1603,49 @@ export const api = {
       versionNumber: number,
       trafficPct: number
     ): Promise<import("@/lib/types").CanaryStatusResult> =>
-      fetch(`${API_URL}/api/deploy/${deploymentId}/canary/start`, {
+      apiFetch(`${API_URL}/api/deploy/${deploymentId}/canary/start`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ version_number: versionNumber, traffic_pct: trafficPct }),
       }).then((r) => r.json()),
 
     canaryCancel: (deploymentId: string): Promise<{ canary_is_active: boolean; message: string }> =>
-      fetch(`${API_URL}/api/deploy/${deploymentId}/canary/cancel`, {
+      apiFetch(`${API_URL}/api/deploy/${deploymentId}/canary/cancel`, {
         method: "POST",
       }).then((r) => r.json()),
 
     canaryPromote: (deploymentId: string): Promise<{ promoted: boolean; new_version_number: number; message: string }> =>
-      fetch(`${API_URL}/api/deploy/${deploymentId}/canary/promote`, {
+      apiFetch(`${API_URL}/api/deploy/${deploymentId}/canary/promote`, {
         method: "POST",
       }).then((r) => r.json()),
 
     healthScorecard: (deploymentId: string, n?: number): Promise<import("./types").DeploymentHealthScorecardResult> =>
-      fetch(`${API_URL}/api/deploy/${deploymentId}/health-scorecard${n ? `?n=${n}` : ""}`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/deploy/${deploymentId}/health-scorecard${n ? `?n=${n}` : ""}`).then((r) => r.json()),
 
     confidenceBand: (deploymentId: string, nDays?: number): Promise<import("./types").ConfidenceBandResult> =>
-      fetch(`${API_URL}/api/deploy/${deploymentId}/confidence-band${nDays ? `?n_days=${nDays}` : ""}`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/deploy/${deploymentId}/confidence-band${nDays ? `?n_days=${nDays}` : ""}`).then((r) => r.json()),
 
     outcomeCalibration: (deploymentId: string): Promise<import("./types").OutcomeCalibrationResult> =>
-      fetch(`${API_URL}/api/deploy/${deploymentId}/outcome-calibration`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/deploy/${deploymentId}/outcome-calibration`).then((r) => r.json()),
 
     getDegradationRetrainStatus: (deploymentId: string): Promise<import("./types").DegradationRetrainConfig> =>
-      fetch(`${API_URL}/api/deploy/${deploymentId}/degradation-retrain-status`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/deploy/${deploymentId}/degradation-retrain-status`).then((r) => r.json()),
 
     setDegradationRetrain: (deploymentId: string, enabled: boolean, accuracyThresholdPct?: number): Promise<import("./types").DegradationRetrainConfig> =>
-      fetch(`${API_URL}/api/deploy/${deploymentId}/degradation-retrain`, {
+      apiFetch(`${API_URL}/api/deploy/${deploymentId}/degradation-retrain`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ enabled, accuracy_threshold_pct: accuracyThresholdPct ?? null }),
       }).then((r) => r.json()),
 
     batchJobHistory: (deploymentId: string, n?: number): Promise<import("./types").BatchJobHistoryResult> =>
-      fetch(`${API_URL}/api/deploy/${deploymentId}/batch-job-history${n ? `?n=${n}` : ""}`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/deploy/${deploymentId}/batch-job-history${n ? `?n=${n}` : ""}`).then((r) => r.json()),
 
     performanceDecayRate: (
       deploymentId: string,
       thresholdPct?: number,
     ): Promise<import("./types").PerformanceDecayResult> =>
-      fetch(
+      apiFetch(
         `${API_URL}/api/deploy/${deploymentId}/performance-decay-rate${thresholdPct !== undefined ? `?threshold_pct=${thresholdPct}` : ""}`,
       ).then((r) => r.json()),
   },

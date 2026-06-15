@@ -9,6 +9,7 @@
 import React from "react"
 import { render, screen, fireEvent, waitFor, act } from "@testing-library/react"
 import fetchMock from "jest-fetch-mock"
+import { useAppStore } from "../lib/store"
 
 // Enable fetch mocking BEFORE any imports that use fetch
 fetchMock.enableMocks()
@@ -89,6 +90,14 @@ describe("HomePage", () => {
     fetchMock.resetMocks()
     mockPush.mockReset()
     jest.clearAllMocks()
+    // Authenticated so the RequireAuth guard renders the home page. No token in
+    // localStorage, so apiFetch stays a transparent pass-through and the
+    // existing fetchMock call-signature assertions remain valid.
+    useAppStore.setState({
+      user: { id: "u1", email: "tester@example.com", name: "Tester" },
+      token: "test-token",
+      isAuthenticated: true,
+    })
   })
 
   it("renders loading state initially", async () => {
@@ -260,7 +269,6 @@ describe("PredictionDashboard", () => {
     fetchMock.mockResponseOnce(JSON.stringify([])) // getPresets
     fetchMock.mockResponseOnce(JSON.stringify({ deployment_id: "deployment-123", fields: [], total_count: 0, visible_count: 0, locked_count: 0 })) // getDashboardConfig
     fetchMock.mockResponseOnce(JSON.stringify({ deployment_id: "deployment-123", dashboard_title: null, dashboard_description: null, auto_title: "Output Predictor" })) // getDashboardMetadata
-    fetchMock.mockResponseOnce(JSON.stringify([])) // listByProject for CompareModelsCard
     fetchMock.mockResponseOnce(
       JSON.stringify({ prediction: 1200.5, deployment_id: "deployment-123" })
     )
@@ -274,7 +282,7 @@ describe("PredictionDashboard", () => {
     if (predictButton) {
       await act(async () => { fireEvent.click(predictButton) })
       await waitFor(() => {
-        expect(fetchMock).toHaveBeenCalledTimes(6)
+        expect(fetchMock).toHaveBeenCalledTimes(5)
       })
     }
   })
@@ -284,7 +292,6 @@ describe("PredictionDashboard", () => {
     fetchMock.mockResponseOnce(JSON.stringify([])) // getPresets
     fetchMock.mockResponseOnce(JSON.stringify({ deployment_id: "deployment-123", fields: [], total_count: 0, visible_count: 0, locked_count: 0 })) // getDashboardConfig
     fetchMock.mockResponseOnce(JSON.stringify({ deployment_id: "deployment-123", dashboard_title: null, dashboard_description: null, auto_title: "Output Predictor" })) // getDashboardMetadata
-    fetchMock.mockResponseOnce(JSON.stringify([])) // listByProject for CompareModelsCard
     fetchMock.mockResponseOnce(
       JSON.stringify({ prediction: 1200.5, deployment_id: "deployment-123" })
     )
@@ -304,7 +311,7 @@ describe("PredictionDashboard", () => {
         // After prediction, the result value or prediction-related text should appear
         const allText = document.body.textContent ?? ""
         expect(allText.length).toBeGreaterThan(0)
-        expect(fetchMock).toHaveBeenCalledTimes(6)
+        expect(fetchMock).toHaveBeenCalledTimes(5)
       })
     }
   })
@@ -314,7 +321,6 @@ describe("PredictionDashboard", () => {
     fetchMock.mockResponseOnce(JSON.stringify([])) // getPresets
     fetchMock.mockResponseOnce(JSON.stringify({ deployment_id: "deployment-123", fields: [], total_count: 0, visible_count: 0, locked_count: 0 })) // getDashboardConfig
     fetchMock.mockResponseOnce(JSON.stringify({ deployment_id: "deployment-123", dashboard_title: null, dashboard_description: null, auto_title: "Output Predictor" })) // getDashboardMetadata
-    fetchMock.mockResponseOnce(JSON.stringify([])) // listByProject for CompareModelsCard
     fetchMock.mockResponseOnce(
       JSON.stringify({ detail: "Prediction failed" }),
       { status: 500 }
@@ -331,7 +337,7 @@ describe("PredictionDashboard", () => {
       await act(async () => { fireEvent.click(predictButton) })
       await waitFor(() => {
         // Error message or fallback render
-        expect(fetchMock).toHaveBeenCalledTimes(6)
+        expect(fetchMock).toHaveBeenCalledTimes(5)
       })
     }
   })
@@ -345,7 +351,6 @@ describe("PredictionDashboard", () => {
     fetchMock.mockResponseOnce(JSON.stringify([])) // getPresets
     fetchMock.mockResponseOnce(JSON.stringify({ deployment_id: "deployment-123", fields: [], total_count: 0, visible_count: 0, locked_count: 0 })) // getDashboardConfig
     fetchMock.mockResponseOnce(JSON.stringify({ deployment_id: "deployment-123", dashboard_title: null, dashboard_description: null, auto_title: "Output Predictor" })) // getDashboardMetadata
-    fetchMock.mockResponseOnce(JSON.stringify([])) // listByProject
     fetchMock.mockResponseOnce(
       JSON.stringify({ prediction: 1500.0, deployment_id: "deployment-123" })
     )
@@ -381,7 +386,6 @@ describe("PredictionDashboard", () => {
     fetchMock.mockResponseOnce(JSON.stringify([])) // getPresets
     fetchMock.mockResponseOnce(JSON.stringify({ deployment_id: "deployment-123", fields: [], total_count: 0, visible_count: 0, locked_count: 0 })) // getDashboardConfig
     fetchMock.mockResponseOnce(JSON.stringify({ deployment_id: "deployment-123", dashboard_title: null, dashboard_description: null, auto_title: "Output Predictor" })) // getDashboardMetadata
-    fetchMock.mockResponseOnce(JSON.stringify([])) // listByProject
     fetchMock.mockResponseOnce(
       JSON.stringify({ prediction: 900.0, deployment_id: "deployment-123" })
     )
@@ -502,7 +506,6 @@ describe("PredictionDashboard", () => {
     fetchMock.mockResponseOnce(JSON.stringify([])) // getPresets
     fetchMock.mockResponseOnce(JSON.stringify({ deployment_id: "deployment-123", fields: [], total_count: 0, visible_count: 0, locked_count: 0 })) // getDashboardConfig
     fetchMock.mockResponseOnce(JSON.stringify({ deployment_id: "deployment-123", dashboard_title: null, dashboard_description: null, auto_title: "Output Predictor" })) // getDashboardMetadata
-    fetchMock.mockResponseOnce(JSON.stringify([])) // listByProject
     fetchMock.mockResponseOnce(JSON.stringify({ prediction: 999.0 }))
     const { default: PredictionDashboard } = await import("../app/predict/[id]/page")
     render(<PredictionDashboard />)
@@ -523,7 +526,6 @@ describe("PredictionDashboard", () => {
     fetchMock.mockResponseOnce(JSON.stringify([])) // getPresets
     fetchMock.mockResponseOnce(JSON.stringify({ deployment_id: "deployment-123", fields: [], total_count: 0, visible_count: 0, locked_count: 0 })) // getDashboardConfig
     fetchMock.mockResponseOnce(JSON.stringify({ deployment_id: "deployment-123", dashboard_title: null, dashboard_description: null, auto_title: "Output Predictor" })) // getDashboardMetadata
-    fetchMock.mockResponseOnce(JSON.stringify([])) // listByProject
     fetchMock.mockResponseOnce(JSON.stringify({ prediction: 100.0 }))
     fetchMock.mockResponseOnce(JSON.stringify({ prediction: 200.0 }))
 

@@ -171,7 +171,6 @@ function queueFetches(
     dashboard_description: null,
     auto_title: "Revenue Predictor",
   }))
-  fetchMock.mockResponseOnce(JSON.stringify([deployment]))    // listByProject (compare)
   fetchMock.mockResponseOnce(JSON.stringify(predResult))      // POST predict
   fetchMock.mockResponseOnce(JSON.stringify(expl))            // POST explain
 }

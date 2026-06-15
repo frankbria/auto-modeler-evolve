@@ -109,7 +109,6 @@ describe("PredictionDashboard — confidence intervals", () => {
     fetchMock.mockResponseOnce(JSON.stringify([])) // getPresets
     fetchMock.mockResponseOnce(JSON.stringify({ deployment_id: "dep-base", fields: [], total_count: 0, visible_count: 0, locked_count: 0 })) // getDashboardConfig
     fetchMock.mockResponseOnce(JSON.stringify({ deployment_id: "dep-base", dashboard_title: null, dashboard_description: null, auto_title: "Output Predictor" })) // getDashboardMetadata
-    fetchMock.mockResponseOnce(JSON.stringify([baseDeployment])) // listByProject
     fetchMock.mockResponseOnce(JSON.stringify(regressionResultWithCI))
 
     const { default: PredictionDashboard } = await import("../app/predict/[id]/page")
@@ -136,7 +135,6 @@ describe("PredictionDashboard — confidence intervals", () => {
     fetchMock.mockResponseOnce(JSON.stringify([])) // getPresets
     fetchMock.mockResponseOnce(JSON.stringify({ deployment_id: "dep-base", fields: [], total_count: 0, visible_count: 0, locked_count: 0 })) // getDashboardConfig
     fetchMock.mockResponseOnce(JSON.stringify({ deployment_id: "dep-base", dashboard_title: null, dashboard_description: null, auto_title: "Output Predictor" })) // getDashboardMetadata
-    fetchMock.mockResponseOnce(JSON.stringify([baseDeployment])) // listByProject
     fetchMock.mockResponseOnce(JSON.stringify(regressionResultWithCI))
 
     const { default: PredictionDashboard } = await import("../app/predict/[id]/page")
@@ -163,7 +161,6 @@ describe("PredictionDashboard — confidence intervals", () => {
     fetchMock.mockResponseOnce(JSON.stringify([])) // getPresets
     fetchMock.mockResponseOnce(JSON.stringify({ deployment_id: "dep-base", fields: [], total_count: 0, visible_count: 0, locked_count: 0 })) // getDashboardConfig
     fetchMock.mockResponseOnce(JSON.stringify({ deployment_id: "dep-base", dashboard_title: null, dashboard_description: null, auto_title: "Output Predictor" })) // getDashboardMetadata
-    fetchMock.mockResponseOnce(JSON.stringify([baseDeployment])) // listByProject
     fetchMock.mockResponseOnce(JSON.stringify(regressionResultNoCI))
 
     const { default: PredictionDashboard } = await import("../app/predict/[id]/page")
@@ -177,7 +174,7 @@ describe("PredictionDashboard — confidence intervals", () => {
     if (predictButton) {
       await act(async () => { fireEvent.click(predictButton) })
       await waitFor(() => {
-        expect(fetchMock).toHaveBeenCalledTimes(6)
+        expect(fetchMock).toHaveBeenCalledTimes(5)
       })
       // CI badge should NOT be present
       const ciBadge = document.querySelector("[data-testid='confidence-interval']")
@@ -190,7 +187,6 @@ describe("PredictionDashboard — confidence intervals", () => {
     fetchMock.mockResponseOnce(JSON.stringify([])) // getPresets
     fetchMock.mockResponseOnce(JSON.stringify({ deployment_id: "dep-cls", fields: [], total_count: 0, visible_count: 0, locked_count: 0 })) // getDashboardConfig
     fetchMock.mockResponseOnce(JSON.stringify({ deployment_id: "dep-cls", dashboard_title: null, dashboard_description: null, auto_title: "Output Predictor" })) // getDashboardMetadata
-    fetchMock.mockResponseOnce(JSON.stringify([classificationDeployment])) // listByProject
     fetchMock.mockResponseOnce(JSON.stringify(classificationResultWithConfidence))
 
     const { default: PredictionDashboard } = await import("../app/predict/[id]/page")
@@ -215,7 +211,6 @@ describe("PredictionDashboard — confidence intervals", () => {
     fetchMock.mockResponseOnce(JSON.stringify([])) // getPresets
     fetchMock.mockResponseOnce(JSON.stringify({ deployment_id: "dep-cls", fields: [], total_count: 0, visible_count: 0, locked_count: 0 })) // getDashboardConfig
     fetchMock.mockResponseOnce(JSON.stringify({ deployment_id: "dep-cls", dashboard_title: null, dashboard_description: null, auto_title: "Output Predictor" })) // getDashboardMetadata
-    fetchMock.mockResponseOnce(JSON.stringify([classificationDeployment])) // listByProject
     fetchMock.mockResponseOnce(JSON.stringify(classificationResultWithConfidence))
 
     const { default: PredictionDashboard } = await import("../app/predict/[id]/page")

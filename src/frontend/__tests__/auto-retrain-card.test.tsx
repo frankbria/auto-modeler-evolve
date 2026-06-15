@@ -84,7 +84,7 @@ describe("AutoRetrainCard — toggle interaction", () => {
 
     await waitFor(() => {
       expect(global.fetch).toHaveBeenCalledWith(
-        "/api/projects/proj-1/auto-retrain",
+        expect.stringContaining("/api/projects/proj-1/auto-retrain"),
         expect.objectContaining({ method: "PUT" })
       )
     })

@@ -7,7 +7,7 @@
  *   start training, wait for completion, verify metrics appear, select a model.
  */
 
-import { test, expect } from "@playwright/test"
+import { test, expect } from "./fixtures"
 
 const BACKEND = "http://localhost:8000"
 

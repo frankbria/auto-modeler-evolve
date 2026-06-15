@@ -106,6 +106,108 @@ async def test_public_predict_endpoint_not_blocked_by_auth(anon_client):
     assert resp.status_code != 401
 
 
+@pytest.mark.asyncio
+async def test_public_prediction_form_endpoints_not_blocked_by_auth(anon_client):
+    """The anonymous /predict/[id] page bootstraps via the public prediction
+    surface; those read endpoints must load for a real deployment without a
+    user token (issue #25)."""
+    ids = _seed_owned_stack(A_OWNER)
+    dep = ids["deployment"]
+
+    info = await anon_client.get(f"/api/predict/{dep}/info")
+    assert info.status_code == 200, info.text
+
+    # The remaining form endpoints must load anonymously (200, not just non-401).
+    for path in (
+        f"/api/predict/{dep}/presets",
+        f"/api/predict/{dep}/dashboard-config",
+        f"/api/predict/{dep}/dashboard-metadata",
+    ):
+        resp = await anon_client.get(path)
+        assert resp.status_code == 200, f"{path} -> {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.asyncio
+async def test_public_mirrors_honor_api_key_protection(anon_client):
+    """Public prediction-form mirrors must not expose a key-protected
+    deployment's schema/metadata without the API key (issue #25)."""
+    import hashlib
+
+    import db
+    from models.deployment import Deployment
+
+    ids = _seed_owned_stack(A_OWNER)
+    dep = ids["deployment"]
+    api_key = "secret-key-123"
+    salt = "s4lt"
+    with Session(db.engine) as s:
+        row = s.get(Deployment, dep)
+        row.api_key_enabled = True
+        row.api_key_salt = salt
+        row.api_key_hash = hashlib.sha256(f"{salt}:{api_key}".encode()).hexdigest()
+        s.add(row)
+        s.commit()
+
+    paths = [
+        f"/api/predict/{dep}/info",
+        f"/api/predict/{dep}/dashboard-config",
+        f"/api/predict/{dep}/dashboard-metadata",
+        f"/api/predict/{dep}/presets",
+    ]
+    # Without the key → 401 (protection honored).
+    for path in paths:
+        resp = await anon_client.get(path)
+        assert resp.status_code == 401, f"{path} (no key) -> {resp.status_code}"
+    # With the correct key → reachable (200).
+    headers = {"Authorization": f"Bearer {api_key}"}
+    for path in paths:
+        resp = await anon_client.get(path, headers=headers)
+        assert (
+            resp.status_code == 200
+        ), f"{path} (with key) -> {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.asyncio
+async def test_public_mirrors_hide_inactive_deployments(anon_client):
+    """A stale share link must stop leaking details once the owner undeploys
+    (soft-delete, ``is_active=False``)."""
+    import db
+    from models.deployment import Deployment
+
+    ids = _seed_owned_stack(A_OWNER)
+    dep = ids["deployment"]
+    with Session(db.engine) as s:
+        row = s.get(Deployment, dep)
+        row.is_active = False
+        s.add(row)
+        s.commit()
+
+    for path in (
+        f"/api/predict/{dep}/info",
+        f"/api/predict/{dep}/dashboard-config",
+        f"/api/predict/{dep}/dashboard-metadata",
+        f"/api/predict/{dep}/presets",
+    ):
+        resp = await anon_client.get(path)
+        assert resp.status_code == 404, f"{path} -> {resp.status_code}"
+
+
+@pytest.mark.asyncio
+async def test_owner_scoped_deploy_reads_still_require_auth(anon_client):
+    """Opening the public /api/predict/* mirrors must NOT open the owner-scoped
+    /api/deploy/* management endpoints they shadow."""
+    ids = _seed_owned_stack(A_OWNER)
+    dep = ids["deployment"]
+    for path in (
+        f"/api/deploy/{dep}",
+        f"/api/deploy/{dep}/presets",
+        f"/api/deploy/{dep}/dashboard-config",
+        f"/api/deploy/{dep}/dashboard-metadata",
+    ):
+        resp = await anon_client.get(path)
+        assert resp.status_code == 401, f"{path} -> {resp.status_code}"
+
+
 # ---------------------------------------------------------------------------
 # 2. Cross-tenant access is forbidden (404)
 # ---------------------------------------------------------------------------

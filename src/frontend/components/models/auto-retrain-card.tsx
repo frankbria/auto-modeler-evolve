@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import type { AutoRetrainResult } from "@/lib/types"
+import { api } from "@/lib/api"
 
 interface AutoRetrainCardProps {
   result: AutoRetrainResult
@@ -23,14 +24,7 @@ export function AutoRetrainCard({ result, onToggle }: AutoRetrainCardProps) {
   async function handleToggle() {
     setLoading(true)
     try {
-      const res = await fetch(
-        `/api/projects/${result.project_id}/auto-retrain`,
-        {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ enabled: !enabled }),
-        }
-      )
+      const res = await api.projects.setAutoRetrain(result.project_id, !enabled)
       if (res.ok) {
         setEnabled(!enabled)
         onToggle?.(!enabled)
