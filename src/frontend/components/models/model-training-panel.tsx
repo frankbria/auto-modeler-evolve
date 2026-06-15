@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import {
   RadarChart,
   Radar,
@@ -114,12 +114,23 @@ export function ModelTrainingPanel({ projectId, onModelSelected, onModelDownload
       .finally(() => setLoading(false))
   }, [projectId])
 
-  // Subscribe to the SSE training stream while any runs are in progress.
-  // Uses a header-authenticated fetch stream (streamSSE) rather than
-  // EventSource, which can't send the bearer token.
+  // Open ONE stream per training session. Depend on the boolean `inProgress`
+  // (not the `runs` array) so per-run status events don't abort and reopen the
+  // connection mid-training.
+  const trainingInProgress = runs.some(
+    (r) => r.status === "pending" || r.status === "training"
+  )
+  // Keep the completion callback fresh without making it a stream dependency.
+  const onTrainingCompleteRef = useRef(onTrainingComplete)
   useEffect(() => {
-    const inProgress = runs.some((r) => r.status === "pending" || r.status === "training")
-    if (!inProgress) return
+    onTrainingCompleteRef.current = onTrainingComplete
+  }, [onTrainingComplete])
+
+  // Subscribe to the SSE training stream while a session is in progress. Uses a
+  // header-authenticated fetch stream (streamSSE) rather than EventSource, which
+  // can't send the bearer token.
+  useEffect(() => {
+    if (!trainingInProgress) return
 
     const controller = new AbortController()
 
@@ -136,24 +147,31 @@ export function ModelTrainingPanel({ projectId, onModelSelected, onModelDownload
       }
       if (event.type === "all_done") {
         controller.abort()
-        const [data, cmp, radar, hist] = await Promise.all([
-          api.models.runs(projectId),
-          api.models.compare(projectId),
-          api.models.comparisonRadar(projectId),
-          api.models.history(projectId).catch(() => null),
-        ])
+        // Reconcile the run list FIRST and unconditionally — optional
+        // enrichments (compare/radar/history) must not block it if they fail.
+        const data = await api.models.runs(projectId)
         setRuns(data.runs)
-        setComparison(cmp)
-        setRadarChart(radar?.chart ?? null)
-        if (hist) setVersionHistory(hist)
+
+        api.models.compare(projectId).then(setComparison).catch(() => {})
+        api.models
+          .comparisonRadar(projectId)
+          .then((radar) => setRadarChart(radar?.chart ?? null))
+          .catch(() => {})
+        api.models
+          .history(projectId)
+          .then((hist) => {
+            if (hist) setVersionHistory(hist)
+          })
+          .catch(() => {})
+
         // Load feature selection for the best new run
         const bestDone = data.runs.find((r: ModelRun) => r.status === "done")
         if (bestDone) {
           api.models.featureSelection(bestDone.id).then(setFeatureSelectionData).catch(() => {})
         }
         // Surface next-step guidance chips in the chat
-        if (onTrainingComplete && Array.isArray(event.next_step_chips)) {
-          onTrainingComplete(event.next_step_chips as string[])
+        if (onTrainingCompleteRef.current && Array.isArray(event.next_step_chips)) {
+          onTrainingCompleteRef.current(event.next_step_chips as string[])
         }
       } else if (event.type === "status" || event.type === "done" || event.type === "failed") {
         setRuns((prev) =>
@@ -183,7 +201,7 @@ export function ModelTrainingPanel({ projectId, onModelSelected, onModelDownload
     )
 
     return () => controller.abort()
-  }, [runs, projectId, onTrainingComplete])
+  }, [trainingInProgress, projectId])
 
   const toggleAlgo = useCallback((algo: string) => {
     setSelectedAlgos((prev) => {

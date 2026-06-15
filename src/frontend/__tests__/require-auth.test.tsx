@@ -69,4 +69,18 @@ describe("RequireAuth", () => {
     expect(await screen.findByText("secret content")).toBeInTheDocument()
     expect(replaceMock).not.toHaveBeenCalled()
   })
+
+  it("renders children (no redirect) on a transient /me failure when a token is present", async () => {
+    // Token survives (apiFetch only clears on 401); a network/5xx blip must not
+    // bounce a logged-in user to /login.
+    setToken("tok-1")
+    mockMe.mockRejectedValueOnce(new Error("network down"))
+    render(
+      <RequireAuth>
+        <div>secret content</div>
+      </RequireAuth>
+    )
+    expect(await screen.findByText("secret content")).toBeInTheDocument()
+    expect(replaceMock).not.toHaveBeenCalled()
+  })
 })

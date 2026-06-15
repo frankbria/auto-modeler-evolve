@@ -224,6 +224,13 @@ export const api = {
     healthSummary: (id: string): Promise<ProjectHealthSummary> =>
       apiFetch(`${API_URL}/api/projects/${id}/health-summary`).then((r) => r.json()),
 
+    setAutoRetrain: (id: string, enabled: boolean): Promise<Response> =>
+      apiFetch(`${API_URL}/api/projects/${id}/auto-retrain`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled }),
+      }),
+
     analysisTemplates: (id: string): Promise<import("./types").AnalysisTemplate[]> =>
       apiFetch(`${API_URL}/api/projects/${id}/analysis-templates`).then((r) => r.json()),
 

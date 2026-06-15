@@ -27,22 +27,27 @@ export const test = base.extend<{ authToken: string }>({
   authToken: async ({ playwright }, use, testInfo) => {
     const ctx = await playwright.request.newContext()
     const email = `e2e+${testInfo.workerIndex}-${testInfo.testId}@example.com`
-    const res = await ctx.post(`${BACKEND}/api/auth/register`, {
-      data: { email, password: TEST_PW },
-    })
-    if (!res.ok()) {
-      // User may already exist from a prior run with the same testId — log in.
-      const login = await ctx.post(`${BACKEND}/api/auth/login`, {
-        data: { email, password: TEST_PW },
-      })
-      const body = await login.json()
-      await ctx.dispose()
-      await use(body.access_token)
-      return
+
+    const tokenFrom = async (resp: import("@playwright/test").APIResponse) => {
+      if (!resp.ok()) return undefined
+      const body = await resp.json().catch(() => ({}))
+      return typeof body?.access_token === "string" ? body.access_token : undefined
     }
-    const body = await res.json()
+
+    let token = await tokenFrom(
+      await ctx.post(`${BACKEND}/api/auth/register`, { data: { email, password: TEST_PW } })
+    )
+    if (!token) {
+      // User may already exist from a prior run with the same testId — log in.
+      token = await tokenFrom(
+        await ctx.post(`${BACKEND}/api/auth/login`, { data: { email, password: TEST_PW } })
+      )
+    }
     await ctx.dispose()
-    await use(body.access_token)
+    if (!token) {
+      throw new Error(`auth fixture: could not obtain a token for ${email}`)
+    }
+    await use(token)
   },
 
   request: async ({ playwright, authToken }, use) => {

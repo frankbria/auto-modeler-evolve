@@ -117,14 +117,14 @@ async def test_public_prediction_form_endpoints_not_blocked_by_auth(anon_client)
     info = await anon_client.get(f"/api/predict/{dep}/info")
     assert info.status_code == 200, info.text
 
-    # The remaining form endpoints must be reachable anonymously (never 401).
+    # The remaining form endpoints must load anonymously (200, not just non-401).
     for path in (
         f"/api/predict/{dep}/presets",
         f"/api/predict/{dep}/dashboard-config",
         f"/api/predict/{dep}/dashboard-metadata",
     ):
         resp = await anon_client.get(path)
-        assert resp.status_code != 401, f"{path} -> {resp.status_code}"
+        assert resp.status_code == 200, f"{path} -> {resp.status_code}: {resp.text}"
 
 
 @pytest.mark.asyncio
@@ -158,11 +158,13 @@ async def test_public_mirrors_honor_api_key_protection(anon_client):
     for path in paths:
         resp = await anon_client.get(path)
         assert resp.status_code == 401, f"{path} (no key) -> {resp.status_code}"
-    # With the correct key → reachable (not 401).
+    # With the correct key → reachable (200).
     headers = {"Authorization": f"Bearer {api_key}"}
     for path in paths:
         resp = await anon_client.get(path, headers=headers)
-        assert resp.status_code != 401, f"{path} (with key) -> {resp.status_code}"
+        assert (
+            resp.status_code == 200
+        ), f"{path} (with key) -> {resp.status_code}: {resp.text}"
 
 
 @pytest.mark.asyncio
