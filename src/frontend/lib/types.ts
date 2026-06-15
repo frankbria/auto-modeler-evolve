@@ -1,3 +1,15 @@
+export interface User {
+  id: string
+  email: string
+  name?: string | null
+}
+
+export interface AuthResponse {
+  access_token: string
+  token_type: string
+  user: User
+}
+
 export interface Project {
   id: string
   name: string

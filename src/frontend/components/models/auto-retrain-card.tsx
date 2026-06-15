@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import type { AutoRetrainResult } from "@/lib/types"
+import { apiFetch } from "@/lib/api"
 
 interface AutoRetrainCardProps {
   result: AutoRetrainResult
@@ -23,8 +24,8 @@ export function AutoRetrainCard({ result, onToggle }: AutoRetrainCardProps) {
   async function handleToggle() {
     setLoading(true)
     try {
-      const res = await fetch(
-        `/api/projects/${result.project_id}/auto-retrain`,
+      const res = await apiFetch(
+        `${process.env.NEXT_PUBLIC_API_URL ?? ""}/api/projects/${result.project_id}/auto-retrain`,
         {
           method: "PUT",
           headers: { "Content-Type": "application/json" },

@@ -4,7 +4,7 @@ import { useState, useCallback, useEffect, useRef, useMemo } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { api } from "@/lib/api"
+import { api, apiFetch } from "@/lib/api"
 import type { Deployment, DeploymentAnalytics, ModelReadiness, DriftReport, FeedbackAccuracy, ModelHealth, ProjectAlerts, ProjectAlert, SlaData, FeatureSchemaEntry, PredictionResult } from "@/lib/types"
 import { IntegrationCard } from "./integration-card"
 import { ExportServiceCard } from "./export-service-card"
@@ -1223,7 +1223,7 @@ export function DeploymentPanel({
             deploymentId={deployment.id}
             onRollback={() => {
               // Refresh deployment info after rollback
-              fetch(`${process.env.NEXT_PUBLIC_API_URL ?? ""}/api/deploy/${deployment.id}`)
+              apiFetch(`${process.env.NEXT_PUBLIC_API_URL ?? ""}/api/deploy/${deployment.id}`)
                 .then((r) => r.json())
                 .then((d) => setDeployment(d))
                 .catch(() => {})
@@ -1235,7 +1235,7 @@ export function DeploymentPanel({
           <ABTestCard
             deploymentId={deployment.id}
             onPromoted={() => {
-              fetch(`${process.env.NEXT_PUBLIC_API_URL ?? ""}/api/deploy/${deployment.id}`)
+              apiFetch(`${process.env.NEXT_PUBLIC_API_URL ?? ""}/api/deploy/${deployment.id}`)
                 .then((r) => r.json())
                 .then((d) => setDeployment(d))
                 .catch(() => {})

@@ -4,6 +4,7 @@ import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { apiFetch } from "@/lib/api"
 
 // ---------------------------------------------------------------------------
 // ExportServiceCard — download the model as a self-contained FastAPI service
@@ -28,7 +29,7 @@ export function ExportServiceCard({
     setError(null)
     try {
       const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? ""
-      const resp = await fetch(`${apiUrl}/api/deploy/${deploymentId}/export`)
+      const resp = await apiFetch(`${apiUrl}/api/deploy/${deploymentId}/export`)
       if (!resp.ok) {
         setError("Export failed. Please try again.")
         return
