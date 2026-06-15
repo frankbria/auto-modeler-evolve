@@ -101,4 +101,33 @@ describe("auth store slice", () => {
     expect(mockMe).not.toHaveBeenCalled()
     expect(useAppStore.getState().isAuthenticated).toBe(false)
   })
+
+  it("loadCurrentUser keeps the session on a transient failure (token survives)", async () => {
+    // Simulate an established session, then a network/5xx failure where the
+    // token is NOT cleared (apiFetch only clears on 401).
+    tokenStore.setToken("tok-1")
+    useAppStore.setState({ user: USER, token: "tok-1", isAuthenticated: true })
+    mockMe.mockRejectedValueOnce(new Error("network down"))
+    await act(async () => {
+      await useAppStore.getState().loadCurrentUser()
+    })
+    // No spurious logout.
+    expect(useAppStore.getState().isAuthenticated).toBe(true)
+    expect(tokenStore.getToken()).toBe("tok-1")
+  })
+
+  it("loadCurrentUser logs out when the token was cleared (401)", async () => {
+    tokenStore.setToken("tok-1")
+    useAppStore.setState({ user: USER, token: "tok-1", isAuthenticated: true })
+    // A 401 path: apiFetch would have cleared the token before me() rejects.
+    mockMe.mockImplementationOnce(async () => {
+      tokenStore.clearToken()
+      throw new Error("Not authenticated")
+    })
+    await act(async () => {
+      await useAppStore.getState().loadCurrentUser()
+    })
+    expect(useAppStore.getState().isAuthenticated).toBe(false)
+    expect(useAppStore.getState().user).toBeNull()
+  })
 })

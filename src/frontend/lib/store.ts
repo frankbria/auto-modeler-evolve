@@ -270,9 +270,13 @@ export const useAppStore = create<AppState>((set) => ({
       const user = await api.auth.me()
       set({ user, token, isAuthenticated: true })
     } catch {
-      // Stale/invalid token — apiFetch already cleared it on 401.
-      clearToken()
-      set({ user: null, token: null, isAuthenticated: false })
+      // `apiFetch` clears the token only on a 401 (truly invalid session). If
+      // it's gone, reflect logged-out. For transient failures (network / 5xx)
+      // the token survives — leave the session untouched rather than forcing an
+      // avoidable re-login.
+      if (!getToken()) {
+        set({ user: null, token: null, isAuthenticated: false })
+      }
     }
   },
 
