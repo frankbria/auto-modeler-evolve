@@ -505,17 +505,17 @@ def deployments_overview(
 # ---------------------------------------------------------------------------
 
 
-# `/api/predict/...` is the PUBLIC prediction surface (gated by per-deployment
-# API keys, not user auth). The same read-only handler is exposed there so the
-# public prediction page can load a single shared deployment's form without
-# authenticating, while `/api/deploy/{id}` stays owner-scoped for management.
-@router.get("/api/predict/{deployment_id}/info")
 @router.get("/api/deploy/{deployment_id}")
 def get_deployment(
     deployment_id: str,
     session: Session = Depends(get_session),
 ):
-    """Return deployment info + feature schema for the prediction form."""
+    """Return deployment info + feature schema for the prediction form.
+
+    Owner-scoped (router dependency): the owner may view their deployment even
+    after undeploy (``is_active=False``) for version history / rollback. The
+    PUBLIC mirror below intentionally hides inactive deployments.
+    """
     deployment = session.get(Deployment, deployment_id)
     if not deployment:
         raise HTTPException(status_code=404, detail="Deployment not found")
@@ -528,6 +528,22 @@ def get_deployment(
         **_deployment_response(deployment),
         "feature_schema": schema,
     }
+
+
+# `/api/predict/...` is the PUBLIC prediction surface (no user auth). These thin
+# mirrors let the anonymous /predict/[id] page load a single shared deployment's
+# form, and — unlike the owner routes — reject inactive (undeployed) deployments
+# so a stale share link can't keep leaking details after the owner undeploys.
+@router.get("/api/predict/{deployment_id}/info")
+def get_deployment_public(
+    deployment_id: str,
+    session: Session = Depends(get_session),
+):
+    """Public mirror of ``get_deployment`` that hides inactive deployments."""
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment or not deployment.is_active:
+        raise HTTPException(status_code=404, detail="Deployment not found or inactive")
+    return get_deployment(deployment_id, session)
 
 
 # ---------------------------------------------------------------------------
@@ -5876,7 +5892,6 @@ class DashboardConfigBatchBody(BaseModel):
     fields: list[_DashboardFieldEntry]
 
 
-@router.get("/api/predict/{deployment_id}/dashboard-config")  # public surface
 @router.get("/api/deploy/{deployment_id}/dashboard-config")
 def get_dashboard_config(
     deployment_id: str,
@@ -6012,7 +6027,6 @@ def delete_dashboard_config(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/api/predict/{deployment_id}/dashboard-metadata")  # public surface
 @router.get("/api/deploy/{deployment_id}/dashboard-metadata")
 def get_dashboard_metadata(
     deployment_id: str,
@@ -6033,6 +6047,32 @@ def get_dashboard_metadata(
             else "Prediction Dashboard"
         ),
     }
+
+
+# Public mirrors of the dashboard read endpoints — reject inactive deployments
+# so a stale share link stops working once the owner undeploys.
+@router.get("/api/predict/{deployment_id}/dashboard-config")
+def get_dashboard_config_public(
+    deployment_id: str,
+    session: Session = Depends(get_session),
+):
+    """Public mirror of ``get_dashboard_config`` that hides inactive deployments."""
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment or not deployment.is_active:
+        raise HTTPException(status_code=404, detail="Deployment not found or inactive")
+    return get_dashboard_config(deployment_id, session)
+
+
+@router.get("/api/predict/{deployment_id}/dashboard-metadata")
+def get_dashboard_metadata_public(
+    deployment_id: str,
+    session: Session = Depends(get_session),
+):
+    """Public mirror of ``get_dashboard_metadata`` that hides inactive deployments."""
+    deployment = session.get(Deployment, deployment_id)
+    if not deployment or not deployment.is_active:
+        raise HTTPException(status_code=404, detail="Deployment not found or inactive")
+    return get_dashboard_metadata(deployment_id, session)
 
 
 @router.put("/api/deploy/{deployment_id}/dashboard-metadata")

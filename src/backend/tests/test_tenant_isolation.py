@@ -128,6 +128,31 @@ async def test_public_prediction_form_endpoints_not_blocked_by_auth(anon_client)
 
 
 @pytest.mark.asyncio
+async def test_public_mirrors_hide_inactive_deployments(anon_client):
+    """A stale share link must stop leaking details once the owner undeploys
+    (soft-delete, ``is_active=False``)."""
+    import db
+    from models.deployment import Deployment
+
+    ids = _seed_owned_stack(A_OWNER)
+    dep = ids["deployment"]
+    with Session(db.engine) as s:
+        row = s.get(Deployment, dep)
+        row.is_active = False
+        s.add(row)
+        s.commit()
+
+    for path in (
+        f"/api/predict/{dep}/info",
+        f"/api/predict/{dep}/dashboard-config",
+        f"/api/predict/{dep}/dashboard-metadata",
+        f"/api/predict/{dep}/presets",
+    ):
+        resp = await anon_client.get(path)
+        assert resp.status_code == 404, f"{path} -> {resp.status_code}"
+
+
+@pytest.mark.asyncio
 async def test_owner_scoped_deploy_reads_still_require_auth(anon_client):
     """Opening the public /api/predict/* mirrors must NOT open the owner-scoped
     /api/deploy/* management endpoints they shadow."""
