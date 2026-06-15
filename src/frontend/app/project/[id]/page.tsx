@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useCallback } from "react"
 import { useParams, useRouter } from "next/navigation"
 import { useDropzone } from "react-dropzone"
 import { Button } from "@/components/ui/button"
+import { RequireAuth } from "@/components/auth/require-auth"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
@@ -274,6 +275,14 @@ function buildWelcomeBackMessage(projectName: string, messages: ChatMsg[]): stri
 type RightTab = "data" | "features" | "importance" | "models" | "validate" | "deploy"
 
 export default function ProjectWorkspace() {
+  return (
+    <RequireAuth>
+      <ProjectWorkspaceInner />
+    </RequireAuth>
+  )
+}
+
+function ProjectWorkspaceInner() {
   const params = useParams<{ id: string }>()
   const router = useRouter()
   const projectId = params.id

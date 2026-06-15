@@ -9,6 +9,7 @@
 import React from "react"
 import { render, screen, fireEvent, waitFor, act } from "@testing-library/react"
 import fetchMock from "jest-fetch-mock"
+import { useAppStore } from "../lib/store"
 
 // Enable fetch mocking BEFORE any imports that use fetch
 fetchMock.enableMocks()
@@ -89,6 +90,14 @@ describe("HomePage", () => {
     fetchMock.resetMocks()
     mockPush.mockReset()
     jest.clearAllMocks()
+    // Authenticated so the RequireAuth guard renders the home page. No token in
+    // localStorage, so apiFetch stays a transparent pass-through and the
+    // existing fetchMock call-signature assertions remain valid.
+    useAppStore.setState({
+      user: { id: "u1", email: "tester@example.com", name: "Tester" },
+      token: "test-token",
+      isAuthenticated: true,
+    })
   })
 
   it("renders loading state initially", async () => {

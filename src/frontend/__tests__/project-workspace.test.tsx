@@ -224,6 +224,12 @@ const mockSampleUpload = {
 
 function resetStore() {
   useAppStore.setState({
+    // Authenticated so the RequireAuth guard renders the workspace. No token in
+    // localStorage, so apiFetch stays a transparent pass-through and existing
+    // fetchMock call-signature assertions remain valid.
+    user: { id: "u1", email: "tester@example.com", name: "Tester" },
+    token: "test-token",
+    isAuthenticated: true,
     projects: [],
     currentProject: null,
     currentDataset: null,
