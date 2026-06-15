@@ -12,7 +12,7 @@ import fetchMock from "jest-fetch-mock"
 
 fetchMock.enableMocks()
 
-import { api, withAccessToken } from "../lib/api"
+import { api, streamSSE } from "../lib/api"
 import { setToken, getToken } from "../lib/auth-token"
 
 const BASE = "http://localhost:8000"
@@ -130,26 +130,46 @@ describe("api.auth endpoints", () => {
     expect(user.email).toBe("a@b.com")
   })
 
-  it("withAccessToken appends the token for header-less callers (EventSource / downloads)", () => {
-    expect(withAccessToken("http://x/api/models/p1/training-stream")).toBe(
-      "http://x/api/models/p1/training-stream"
-    )
+  it("streamSSE authenticates via the header and parses data frames", async () => {
+    // jsdom lacks ReadableStream/streaming Response, so mock the minimal shape
+    // streamSSE consumes: { ok, body: { getReader() } }.
     setToken("tok-123")
-    // No existing query string → uses `?`.
-    expect(withAccessToken("http://x/api/models/p1/training-stream")).toBe(
-      "http://x/api/models/p1/training-stream?access_token=tok-123"
-    )
-    // Existing query string → uses `&`.
-    expect(withAccessToken("http://x/api/deploy/d1/sdk?language=python")).toBe(
-      "http://x/api/deploy/d1/sdk?language=python&access_token=tok-123"
-    )
-  })
+    const encoder = new TextEncoder()
+    const chunks = [
+      'data: {"type":"status","run_id":"r1"}\n\n',
+      'data: {"type":"all_done"}\n\n',
+    ]
+    let i = 0
+    const fakeResponse = {
+      ok: true,
+      body: {
+        getReader: () => ({
+          read: () =>
+            i < chunks.length
+              ? Promise.resolve({ done: false, value: encoder.encode(chunks[i++]) })
+              : Promise.resolve({ done: true, value: undefined }),
+        }),
+      },
+    } as unknown as Response
 
-  it("URL-returning methods carry the token when logged in (stream + downloads)", () => {
-    setToken("tok-123")
-    expect(api.models.trainingStreamUrl("p1")).toContain("access_token=tok-123")
-    expect(api.models.downloadUrl("r1")).toContain("access_token=tok-123")
-    expect(api.deploy.exportServiceUrl("d1")).toContain("access_token=tok-123")
+    let capturedInit: RequestInit | undefined
+    const fetchSpy = jest
+      .spyOn(global, "fetch")
+      .mockImplementation((_url, init) => {
+        capturedInit = init as RequestInit
+        return Promise.resolve(fakeResponse)
+      })
+
+    const events: unknown[] = []
+    await streamSSE("http://x/api/models/p1/training-stream", (e) => events.push(e))
+
+    // Token rides in the header — never the URL.
+    expect(new Headers(capturedInit?.headers).get("Authorization")).toBe("Bearer tok-123")
+    expect(events).toEqual([
+      { type: "status", run_id: "r1" },
+      { type: "all_done" },
+    ])
+    fetchSpy.mockRestore()
   })
 
   it("me() is a passive probe — clears a stale token on 401 but does not throw a navigation", async () => {

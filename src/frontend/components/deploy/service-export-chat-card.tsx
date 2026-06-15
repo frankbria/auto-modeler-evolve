@@ -3,7 +3,6 @@
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import type { ServiceExportChatResult } from "@/lib/types"
-import { withAccessToken } from "@/lib/api"
 
 interface ServiceExportChatCardProps {
   result: ServiceExportChatResult
@@ -11,7 +10,7 @@ interface ServiceExportChatCardProps {
 
 export function ServiceExportChatCard({ result }: ServiceExportChatCardProps) {
   const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? ""
-  const downloadUrl = withAccessToken(`${apiUrl}${result.download_url}`)
+  const downloadUrl = `${apiUrl}${result.download_url}`
 
   const algoLabel = result.algorithm
     ? result.algorithm.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())

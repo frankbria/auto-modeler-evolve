@@ -1,7 +1,6 @@
 "use client"
 
 import { Badge } from "@/components/ui/badge"
-import { withAccessToken } from "@/lib/api"
 import type { DataExportResult } from "@/lib/types"
 
 interface DataExportCardProps {
@@ -26,7 +25,7 @@ export function DataExportCard({ result }: DataExportCardProps) {
         {result.filtered ? " (active filter applied)" : ""}
       </p>
       <a
-        href={withAccessToken(result.download_url)}
+        href={result.download_url}
         download={result.filename}
         className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors"
       >

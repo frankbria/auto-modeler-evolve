@@ -20,29 +20,12 @@ _UNAUTHENTICATED = HTTPException(
 )
 
 
-def _extract_token(
-    authorization: Optional[str], request: Optional[Request]
-) -> Optional[str]:
-    """Pull the JWT from the Authorization header, falling back to the
-    ``access_token`` query parameter.
-
-    The query fallback exists for browser callers that cannot set headers —
-    ``EventSource`` (SSE streams) and direct download links (``<a href>`` /
-    ``window.open``). Such URLs are same-origin and short-lived; the token is
-    only read here, never logged by the app.
-    """
-    if authorization and authorization.lower().startswith("bearer "):
-        return authorization.split(" ", 1)[1].strip()
-    if request is not None:
-        query_token = request.query_params.get("access_token")
-        if query_token:
-            return query_token.strip()
-    return None
-
-
-def _user_from_token(token: Optional[str], session: Session) -> Optional[User]:
-    if not token:
+def _user_from_authorization(
+    authorization: Optional[str], session: Session
+) -> Optional[User]:
+    if not authorization or not authorization.lower().startswith("bearer "):
         return None
+    token = authorization.split(" ", 1)[1].strip()
     user_id = decode_access_token(token)
     if not user_id:
         return None
@@ -53,7 +36,6 @@ def _user_from_token(token: Optional[str], session: Session) -> Optional[User]:
 
 
 def get_current_user(
-    request: Request,
     authorization: Optional[str] = Header(default=None),
     session: Session = Depends(get_session),
 ) -> User:
@@ -61,14 +43,13 @@ def get_current_user(
 
     Attach to any management route with ``Depends(get_current_user)``.
     """
-    user = _user_from_token(_extract_token(authorization, request), session)
+    user = _user_from_authorization(authorization, session)
     if user is None:
         raise _UNAUTHENTICATED
     return user
 
 
 def get_optional_user(
-    request: Request,
     authorization: Optional[str] = Header(default=None),
     session: Session = Depends(get_session),
 ) -> Optional[User]:
@@ -76,7 +57,7 @@ def get_optional_user(
 
     For endpoints that are public but can personalize when a token is present.
     """
-    return _user_from_token(_extract_token(authorization, request), session)
+    return _user_from_authorization(authorization, session)
 
 
 def require_owner(

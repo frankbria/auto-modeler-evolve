@@ -105,18 +105,44 @@ function redirectToLogin(): void {
 }
 
 /**
- * Append the current bearer token as an `access_token` query param.
+ * Consume a Server-Sent Events stream over an authenticated fetch.
  *
- * For owner-scoped endpoints consumed by browser APIs that CANNOT set an
- * Authorization header — `EventSource` (SSE streams) and direct download links
- * (`<a href>` / `window.open`). The backend accepts this query fallback (see
- * `_extract_token`). Returns the URL unchanged when no token is stored.
+ * EventSource can't send an Authorization header, so owner-scoped streams use
+ * this instead: `apiFetch` attaches the bearer token in the header, and each
+ * `data:` frame is parsed and handed to `onEvent`. Resolves when the stream
+ * ends or `signal` aborts. Keeping auth in the header avoids ever putting the
+ * session token in a URL (where it would leak into logs / history).
  */
-export function withAccessToken(url: string): string {
-  const token = getToken()
-  if (!token) return url
-  const sep = url.includes("?") ? "&" : "?"
-  return `${url}${sep}access_token=${encodeURIComponent(token)}`
+export async function streamSSE(
+  url: string,
+  onEvent: (data: unknown) => void,
+  signal?: AbortSignal
+): Promise<void> {
+  const res = await apiFetch(url, { signal })
+  if (!res.ok || !res.body) return
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ""
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    const frames = buffer.split("\n\n")
+    buffer = frames.pop() ?? ""
+    for (const frame of frames) {
+      const dataLine = frame
+        .split("\n")
+        .find((line) => line.startsWith("data:"))
+      if (!dataLine) continue
+      const payload = dataLine.slice(5).trim()
+      if (!payload) continue
+      try {
+        onEvent(JSON.parse(payload))
+      } catch {
+        // malformed frame — ignore
+      }
+    }
+  }
 }
 
 export const api = {
@@ -605,7 +631,7 @@ export const api = {
     },
 
     downloadDatasetUrl: (datasetId: string): string =>
-      withAccessToken(`${API_URL}/api/data/${datasetId}/download`),
+      `${API_URL}/api/data/${datasetId}/download`,
 
     getSummaryStats: (
       datasetId: string
@@ -912,16 +938,16 @@ export const api = {
       }).then((r) => r.json()),
 
     downloadUrl: (modelRunId: string): string =>
-      withAccessToken(`${API_URL}/api/models/${modelRunId}/download`),
+      `${API_URL}/api/models/${modelRunId}/download`,
 
     reportUrl: (modelRunId: string): string =>
-      withAccessToken(`${API_URL}/api/models/${modelRunId}/report`),
+      `${API_URL}/api/models/${modelRunId}/report`,
 
     exportModelCardUrl: (runId: string): string =>
-      withAccessToken(`${API_URL}/api/models/${runId}/export-model-card`),
+      `${API_URL}/api/models/${runId}/export-model-card`,
 
     trainingStreamUrl: (projectId: string): string =>
-      withAccessToken(`${API_URL}/api/models/${projectId}/training-stream`),
+      `${API_URL}/api/models/${projectId}/training-stream`,
 
     readiness: (modelRunId: string): Promise<import("./types").ModelReadiness> =>
       apiFetch(`${API_URL}/api/models/${modelRunId}/readiness`).then((r) => r.json()),
@@ -1172,7 +1198,7 @@ export const api = {
       }),
 
     exportServiceUrl: (deploymentId: string): string =>
-      withAccessToken(`${API_URL}/api/deploy/${deploymentId}/export`),
+      `${API_URL}/api/deploy/${deploymentId}/export`,
 
     getWebhooks: (
       deploymentId: string
@@ -1307,7 +1333,7 @@ export const api = {
     ): string => {
       const params = new URLSearchParams({ language })
       if (baseUrl) params.set("base_url", baseUrl)
-      return withAccessToken(`${API_URL}/api/deploy/${deploymentId}/sdk?${params.toString()}`)
+      return `${API_URL}/api/deploy/${deploymentId}/sdk?${params.toString()}`
     },
 
     setRateLimit: async (

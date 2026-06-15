@@ -1,7 +1,6 @@
 "use client"
 
 import type { ModelStatusReportInfo } from "@/lib/types"
-import { withAccessToken } from "@/lib/api"
 
 interface ModelStatusReportCardProps {
   info: ModelStatusReportInfo
@@ -12,7 +11,7 @@ export function ModelStatusReportCard({ info }: ModelStatusReportCardProps) {
     typeof window !== "undefined"
       ? window.location.origin.replace(":3000", ":8000")
       : "http://localhost:8000"
-  const downloadUrl = withAccessToken(`${backendBase}${info.download_url}`)
+  const downloadUrl = `${backendBase}${info.download_url}`
 
   const healthColor =
     info.health_score >= 75

@@ -18,7 +18,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { api } from "@/lib/api"
+import { api, streamSSE } from "@/lib/api"
 import type { ChartSpec, ClassImbalanceResult, EnsembleMetricsExtra, FeatureSelectionResult, ModelRecommendation, ModelRun, ModelComparison, ModelMetrics, TuningResult, ModelVersionHistory } from "@/lib/types"
 import { ImbalanceCard } from "@/components/models/imbalance-card"
 import { FeatureSelectionCard } from "@/components/models/feature-selection-card"
@@ -114,64 +114,75 @@ export function ModelTrainingPanel({ projectId, onModelSelected, onModelDownload
       .finally(() => setLoading(false))
   }, [projectId])
 
-  // Subscribe to SSE training stream while any runs are in progress
+  // Subscribe to the SSE training stream while any runs are in progress.
+  // Uses a header-authenticated fetch stream (streamSSE) rather than
+  // EventSource, which can't send the bearer token.
   useEffect(() => {
     const inProgress = runs.some((r) => r.status === "pending" || r.status === "training")
     if (!inProgress) return
 
-    const es = new EventSource(api.models.trainingStreamUrl(projectId))
+    const controller = new AbortController()
 
-    es.onmessage = async (e) => {
-      try {
-        const event = JSON.parse(e.data)
-        if (event.type === "all_done") {
-          es.close()
-          const [data, cmp, radar, hist] = await Promise.all([
-            api.models.runs(projectId),
-            api.models.compare(projectId),
-            api.models.comparisonRadar(projectId),
-            api.models.history(projectId).catch(() => null),
-          ])
-          setRuns(data.runs)
-          setComparison(cmp)
-          setRadarChart(radar?.chart ?? null)
-          if (hist) setVersionHistory(hist)
-          // Load feature selection for the best new run
-          const bestDone = data.runs.find((r: ModelRun) => r.status === "done")
-          if (bestDone) {
-            api.models.featureSelection(bestDone.id).then(setFeatureSelectionData).catch(() => {})
-          }
-          // Surface next-step guidance chips in the chat
-          if (onTrainingComplete && Array.isArray(event.next_step_chips)) {
-            onTrainingComplete(event.next_step_chips)
-          }
-        } else if (event.type === "status" || event.type === "done" || event.type === "failed") {
-          setRuns((prev) =>
-            prev.map((r) =>
-              r.id === event.run_id
-                ? {
-                    ...r,
-                    status: event.status,
-                    metrics: event.metrics ?? r.metrics,
-                    summary: event.summary ?? r.summary,
-                    training_duration_ms: event.training_duration_ms ?? r.training_duration_ms,
-                    error_message: event.error ?? r.error_message,
-                  }
-                : r
-            )
-          )
+    const handleEvent = async (raw: unknown) => {
+      const event = raw as {
+        type?: string
+        run_id?: string
+        status?: ModelRun["status"]
+        metrics?: ModelRun["metrics"]
+        summary?: string
+        training_duration_ms?: number
+        error?: string
+        next_step_chips?: unknown
+      }
+      if (event.type === "all_done") {
+        controller.abort()
+        const [data, cmp, radar, hist] = await Promise.all([
+          api.models.runs(projectId),
+          api.models.compare(projectId),
+          api.models.comparisonRadar(projectId),
+          api.models.history(projectId).catch(() => null),
+        ])
+        setRuns(data.runs)
+        setComparison(cmp)
+        setRadarChart(radar?.chart ?? null)
+        if (hist) setVersionHistory(hist)
+        // Load feature selection for the best new run
+        const bestDone = data.runs.find((r: ModelRun) => r.status === "done")
+        if (bestDone) {
+          api.models.featureSelection(bestDone.id).then(setFeatureSelectionData).catch(() => {})
         }
-      } catch {
-        // malformed event — ignore
+        // Surface next-step guidance chips in the chat
+        if (onTrainingComplete && Array.isArray(event.next_step_chips)) {
+          onTrainingComplete(event.next_step_chips as string[])
+        }
+      } else if (event.type === "status" || event.type === "done" || event.type === "failed") {
+        setRuns((prev) =>
+          prev.map((r) =>
+            r.id === event.run_id
+              ? {
+                  ...r,
+                  status: event.status ?? r.status,
+                  metrics: event.metrics ?? r.metrics,
+                  summary: event.summary ?? r.summary,
+                  training_duration_ms: event.training_duration_ms ?? r.training_duration_ms,
+                  error_message: event.error ?? r.error_message,
+                }
+              : r
+          )
+        )
       }
     }
 
-    es.onerror = () => {
-      es.close()
-      api.models.runs(projectId).then((d) => setRuns(d.runs)).catch(() => {})
-    }
+    streamSSE(api.models.trainingStreamUrl(projectId), handleEvent, controller.signal).catch(
+      () => {
+        // Stream ended or errored — reconcile with a plain refresh.
+        if (!controller.signal.aborted) {
+          api.models.runs(projectId).then((d) => setRuns(d.runs)).catch(() => {})
+        }
+      }
+    )
 
-    return () => es.close()
+    return () => controller.abort()
   }, [runs, projectId, onTrainingComplete])
 
   const toggleAlgo = useCallback((algo: string) => {

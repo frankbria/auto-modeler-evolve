@@ -2,7 +2,6 @@
 
 import { Badge } from "@/components/ui/badge"
 import type { ReportReady } from "@/lib/types"
-import { withAccessToken } from "@/lib/api"
 
 interface ReportReadyCardProps {
   result: ReportReady
@@ -43,7 +42,7 @@ const API_URL =
     : "http://localhost:8000"
 
 export function ReportReadyCard({ result }: ReportReadyCardProps) {
-  const downloadUrl = withAccessToken(`${API_URL}${result.download_url}`)
+  const downloadUrl = `${API_URL}${result.download_url}`
   const metricLabel = metricDisplay(result.metric_name, result.metric_value)
 
   return (

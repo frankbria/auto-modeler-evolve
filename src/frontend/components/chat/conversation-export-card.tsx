@@ -1,7 +1,6 @@
 "use client"
 
 import type { ConversationExportInfo } from "@/lib/types"
-import { withAccessToken } from "@/lib/api"
 
 interface ConversationExportCardProps {
   info: ConversationExportInfo
@@ -12,7 +11,7 @@ export function ConversationExportCard({ info }: ConversationExportCardProps) {
     typeof window !== "undefined"
       ? window.location.origin.replace(":3000", ":8000")
       : "http://localhost:8000"
-  const downloadUrl = withAccessToken(`${backendBase}${info.download_url}`)
+  const downloadUrl = `${backendBase}${info.download_url}`
 
   return (
     <figure
