@@ -74,11 +74,15 @@ def assert_safe_url(url: str, *, allow_unresolved: bool = False) -> None:
     A host given as an IP literal in a blocked range is always rejected,
     regardless of ``allow_unresolved``.
     """
-    parsed = urlparse(url)
-    if parsed.scheme not in ("http", "https"):
-        raise UnsafeURLError("URL must start with http:// or https://")
+    try:
+        parsed = urlparse(url)
+        scheme, host = parsed.scheme, parsed.hostname
+    except ValueError as exc:
+        # Malformed URL (e.g. bad IPv6 brackets) — treat as unsafe, not a 500.
+        raise UnsafeURLError(f"Malformed URL: {exc}") from exc
 
-    host = parsed.hostname
+    if scheme not in ("http", "https"):
+        raise UnsafeURLError("URL must start with http:// or https://")
     if not host:
         raise UnsafeURLError("URL has no host")
 
@@ -122,11 +126,13 @@ class _ValidatingRedirectHandler(urllib.request.HTTPRedirectHandler):
 
 
 def safe_urlopen(req, *, timeout: float, allow_unresolved: bool = False):
-    """Like ``urllib.request.urlopen`` but re-validates every redirect hop.
+    """Like ``urllib.request.urlopen`` but SSRF-validates the request.
 
-    The caller is expected to have validated the initial URL with
-    ``assert_safe_url`` already (so an unsafe first hop yields a clean error);
-    this adds redirect-time validation, which the default opener does not do.
+    Validates the initial URL itself (so this is safe to use as a standalone
+    primitive — callers need not pre-check) and re-validates every redirect hop,
+    which the default opener does not do.
     """
+    url = req.full_url if hasattr(req, "full_url") else req
+    assert_safe_url(url, allow_unresolved=allow_unresolved)
     opener = urllib.request.build_opener(_ValidatingRedirectHandler(allow_unresolved))
     return opener.open(req, timeout=timeout)

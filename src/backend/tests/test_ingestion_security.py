@@ -78,8 +78,16 @@ class TestSsrfGuard:
     def test_allows_public_host(self):
         from core.ssrf_guard import assert_safe_url
 
-        # Resolves to a public address — must not raise.
-        assert_safe_url("https://example.com/data.csv")
+        # A globally-routable public IP literal — must not raise, and needs no
+        # DNS (deterministic offline / in isolated CI).
+        assert_safe_url("https://8.8.8.8/data.csv")
+
+    def test_rejects_malformed_url(self):
+        from core.ssrf_guard import UnsafeURLError, assert_safe_url
+
+        # Bad IPv6 brackets must surface as UnsafeURLError, not a raw ValueError.
+        with pytest.raises(UnsafeURLError):
+            assert_safe_url("http://[::1")
 
     def test_localhost_hostname_blocked(self):
         from core.ssrf_guard import UnsafeURLError, assert_safe_url
@@ -488,10 +496,14 @@ class TestWebhookSsrf:
         assert r.status_code == 201, r.text
 
     def test_dispatch_blocks_private_without_network(self):
-        """_do_dispatch refuses a private target and never calls urlopen."""
+        """_do_dispatch refuses a private target and never opens a connection.
+
+        Patch the symbol _do_dispatch actually calls (``core.ssrf_guard.safe_urlopen``,
+        imported locally at call time) so the assertion exercises the real path.
+        """
         from core.webhook import _do_dispatch
 
-        with mock.patch("urllib.request.urlopen") as m:
+        with mock.patch("core.ssrf_guard.safe_urlopen") as m:
             status = _do_dispatch("wid", "http://127.0.0.1:9999/hook", "secret", {})
         assert status == 0
         m.assert_not_called()
