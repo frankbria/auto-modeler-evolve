@@ -1,6 +1,7 @@
 "use client"
 
 import { Badge } from "@/components/ui/badge"
+import { useDownload } from "@/lib/use-download"
 import type { ReportReady } from "@/lib/types"
 
 interface ReportReadyCardProps {
@@ -36,13 +37,8 @@ function metricDisplay(name: string, value: number | null): string {
   return `${name.toUpperCase()}: ${value.toFixed(3)}`
 }
 
-const API_URL =
-  typeof window !== "undefined"
-    ? process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
-    : "http://localhost:8000"
-
 export function ReportReadyCard({ result }: ReportReadyCardProps) {
-  const downloadUrl = `${API_URL}${result.download_url}`
+  const { download, downloading, error } = useDownload()
   const metricLabel = metricDisplay(result.metric_name, result.metric_value)
 
   return (
@@ -75,16 +71,23 @@ export function ReportReadyCard({ result }: ReportReadyCardProps) {
       </p>
 
       {/* Download button */}
-      <a
-        href={downloadUrl}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="flex w-full items-center justify-center gap-2 rounded-md border border-teal-500/30 bg-teal-500/10 px-3 py-2 text-sm font-medium text-teal-700 transition-colors hover:bg-teal-500/20 dark:text-teal-400"
+      <button
+        type="button"
+        onClick={() =>
+          download(result.download_url, `report_${result.model_run_id}.pdf`)
+        }
+        disabled={downloading}
+        className="flex w-full items-center justify-center gap-2 rounded-md border border-teal-500/30 bg-teal-500/10 px-3 py-2 text-sm font-medium text-teal-700 transition-colors hover:bg-teal-500/20 disabled:opacity-60 dark:text-teal-400"
         data-testid="download-report-btn"
       >
         <span>⬇</span>
-        Download PDF Report
-      </a>
+        {downloading ? "Preparing…" : "Download PDF Report"}
+      </button>
+      {error && (
+        <p className="mt-2 text-xs text-red-600" role="alert">
+          {error}
+        </p>
+      )}
     </div>
   )
 }

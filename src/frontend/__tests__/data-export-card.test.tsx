@@ -2,10 +2,16 @@
  * Tests for DataExportCard component and Zustand store integration.
  */
 import React from "react"
-import { render, screen } from "@testing-library/react"
+import { render, screen, fireEvent } from "@testing-library/react"
 import { DataExportCard } from "@/components/data/data-export-card"
 import type { DataExportResult } from "@/lib/types"
 import { useAppStore } from "@/lib/store"
+
+jest.mock("@/lib/api", () => {
+  const actual = jest.requireActual("@/lib/api")
+  return { ...actual, downloadFile: jest.fn().mockResolvedValue(undefined) }
+})
+import { downloadFile } from "@/lib/api"
 
 const exportResult: DataExportResult = {
   dataset_id: "ds-001",
@@ -28,6 +34,8 @@ const filteredExportResult: DataExportResult = {
 // ---------------------------------------------------------------------------
 
 describe("DataExportCard rendering", () => {
+  beforeEach(() => jest.clearAllMocks())
+
   it("renders the export ready header", () => {
     render(<DataExportCard result={exportResult} />)
     expect(screen.getByText("Dataset Export Ready")).toBeInTheDocument()
@@ -39,11 +47,21 @@ describe("DataExportCard rendering", () => {
     expect(screen.getByText(/150/)).toBeInTheDocument()
   })
 
-  it("renders Download CSV link", () => {
+  it("renders Download CSV button", () => {
     render(<DataExportCard result={exportResult} />)
-    const link = screen.getByRole("link", { name: /download csv/i })
-    expect(link).toBeInTheDocument()
-    expect(link).toHaveAttribute("href", "/api/data/ds-001/download")
+    expect(
+      screen.getByRole("button", { name: /download csv/i })
+    ).toBeInTheDocument()
+  })
+
+  it("downloads via the authenticated helper with the dataset path (no token in URL)", () => {
+    render(<DataExportCard result={exportResult} />)
+    fireEvent.click(screen.getByRole("button", { name: /download csv/i }))
+    expect(downloadFile).toHaveBeenCalledTimes(1)
+    const [url, filename] = (downloadFile as jest.Mock).mock.calls[0]
+    expect(url).toBe("/api/data/ds-001/download")
+    expect(url).not.toMatch(/token/i)
+    expect(filename).toBe("sales.csv")
   })
 
   it("does not show Filtered badge when not filtered", () => {

@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { api } from "@/lib/api"
+import { api, downloadFile } from "@/lib/api"
 import { BatchSchedule, BatchJobRun } from "@/lib/types"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -121,6 +121,14 @@ export function ScheduleCard({ deploymentId }: ScheduleCardProps) {
     } catch {
       setError("Failed to trigger run")
       setTriggering(null)
+    }
+  }
+
+  async function handleDownloadRun(url: string, runId: string) {
+    try {
+      await downloadFile(url, `batch_run_${runId}.csv`)
+    } catch {
+      setError("Failed to download run output")
     }
   }
 
@@ -401,14 +409,16 @@ export function ScheduleCard({ deploymentId }: ScheduleCardProps) {
                             </span>
                           )}
                           {run.download_url ? (
-                            <a
-                              href={`${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"}${run.download_url}`}
-                              download
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleDownloadRun(run.download_url!, run.id)
+                              }
                               className="text-primary underline"
                               data-testid={`download-run-${run.id}`}
                             >
                               Download
-                            </a>
+                            </button>
                           ) : run.error ? (
                             <span className="text-destructive truncate max-w-[120px]" title={run.error}>
                               {run.error}

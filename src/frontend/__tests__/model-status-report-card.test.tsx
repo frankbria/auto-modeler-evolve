@@ -1,8 +1,14 @@
 import React from "react"
-import { render, screen } from "@testing-library/react"
+import { render, screen, fireEvent } from "@testing-library/react"
 import { ModelStatusReportCard } from "@/components/deploy/model-status-report-card"
 import { useAppStore } from "@/lib/store"
 import type { ModelStatusReportInfo } from "@/lib/types"
+
+jest.mock("@/lib/api", () => {
+  const actual = jest.requireActual("@/lib/api")
+  return { ...actual, downloadFile: jest.fn().mockResolvedValue(undefined) }
+})
+import { downloadFile } from "@/lib/api"
 
 const baseInfo: ModelStatusReportInfo = {
   deployment_id: "dep-123",
@@ -23,6 +29,8 @@ const baseInfo: ModelStatusReportInfo = {
 }
 
 describe("ModelStatusReportCard", () => {
+  beforeEach(() => jest.clearAllMocks())
+
   it("renders the card with correct label", () => {
     render(<ModelStatusReportCard info={baseInfo} />)
     expect(screen.getByText("Model Status Report")).toBeInTheDocument()
@@ -91,11 +99,15 @@ describe("ModelStatusReportCard", () => {
     expect(el).toHaveTextContent("104 predictions")
   })
 
-  it("has a download link pointing to backend", () => {
+  it("downloads via the authenticated helper with the report path (no token in URL)", () => {
     render(<ModelStatusReportCard info={baseInfo} />)
-    const link = screen.getByTestId("download-report-link")
-    expect(link).toHaveAttribute("href", expect.stringContaining("/api/deploy/dep-123/status-report"))
-    expect(link).toHaveAttribute("download")
+    const btn = screen.getByTestId("download-report-link")
+    expect(btn.tagName).toBe("BUTTON")
+    fireEvent.click(btn)
+    expect(downloadFile).toHaveBeenCalledTimes(1)
+    const [url] = (downloadFile as jest.Mock).mock.calls[0]
+    expect(url).toBe("/api/deploy/dep-123/status-report")
+    expect(url).not.toMatch(/token/i)
   })
 
   it("has accessible progressbar for health score", () => {

@@ -3,11 +3,19 @@
  */
 
 import React from "react"
-import { render, screen } from "@testing-library/react"
+import { render, screen, fireEvent } from "@testing-library/react"
 import "@testing-library/jest-dom"
 import { ServiceExportChatCard } from "../components/deploy/service-export-chat-card"
 import { useAppStore } from "../lib/store"
 import type { ServiceExportChatResult } from "../lib/types"
+
+jest.mock("../lib/api", () => {
+  const actual = jest.requireActual("../lib/api")
+  return { ...actual, downloadFile: jest.fn().mockResolvedValue(undefined) }
+})
+import { downloadFile } from "../lib/api"
+
+beforeEach(() => jest.clearAllMocks())
 
 const fullResult: ServiceExportChatResult = {
   deployment_id: "dep-001",
@@ -106,24 +114,28 @@ describe("ServiceExportChatCard", () => {
     expect(screen.getByText(/features included/i)).toBeInTheDocument()
   })
 
-  it("renders download link with correct href", () => {
+  it("downloads via the authenticated helper with the export path (no token in URL)", () => {
     render(<ServiceExportChatCard result={fullResult} />)
-    const link = screen.getByTestId("service-export-download-link")
-    expect(link).toHaveAttribute("href", "/api/deploy/dep-001/export")
+    fireEvent.click(screen.getByTestId("service-export-download-link"))
+    expect(downloadFile).toHaveBeenCalledTimes(1)
+    const [url] = (downloadFile as jest.Mock).mock.calls[0]
+    expect(url).toBe("/api/deploy/dep-001/export")
+    expect(url).not.toMatch(/token/i)
   })
 
-  it("renders download link with aria-label", () => {
+  it("renders download control with aria-label", () => {
     render(<ServiceExportChatCard result={fullResult} />)
-    const link = screen.getByTestId("service-export-download-link")
-    const label = link.getAttribute("aria-label") ?? ""
+    const btn = screen.getByTestId("service-export-download-link")
+    const label = btn.getAttribute("aria-label") ?? ""
     expect(label.toLowerCase()).toContain("download")
     expect(label.toLowerCase()).toContain("model service as zip")
   })
 
-  it("renders download link with download attribute", () => {
+  it("renders the download control as a button (no raw href)", () => {
     render(<ServiceExportChatCard result={fullResult} />)
-    const link = screen.getByTestId("service-export-download-link")
-    expect(link).toHaveAttribute("download")
+    expect(screen.getByTestId("service-export-download-link").tagName).toBe(
+      "BUTTON"
+    )
   })
 
   it("renders classification result correctly", () => {

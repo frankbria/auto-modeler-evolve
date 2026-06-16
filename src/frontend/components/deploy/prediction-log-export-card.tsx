@@ -2,6 +2,7 @@
 
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { useDownload } from "@/lib/use-download"
 import type { PredictionLogExportResult } from "@/lib/types"
 
 // ---------------------------------------------------------------------------
@@ -23,6 +24,7 @@ function formatDate(iso: string | null): string {
 
 export function PredictionLogExportCard({ result }: PredictionLogExportCardProps) {
   const { total_predictions, download_url, first_prediction_at, last_prediction_at } = result
+  const { download, downloading, error } = useDownload()
   const isEmpty = total_predictions === 0
 
   return (
@@ -69,15 +71,23 @@ export function PredictionLogExportCard({ result }: PredictionLogExportCardProps
               spreadsheet-ready format.
             </p>
 
-            <a
-              href={download_url}
-              download
-              className="inline-flex items-center gap-1.5 rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 transition-colors"
+            <button
+              type="button"
+              onClick={() =>
+                download(download_url, `predictions_${result.deployment_id}.csv`)
+              }
+              disabled={downloading}
+              className="inline-flex items-center gap-1.5 rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 transition-colors disabled:opacity-60"
               aria-label={`Download ${total_predictions.toLocaleString()} prediction records as CSV`}
             >
               <span aria-hidden="true">⬇</span>
-              Download CSV
-            </a>
+              {downloading ? "Preparing…" : "Download CSV"}
+            </button>
+            {error && (
+              <p className="text-xs text-red-600" role="alert">
+                {error}
+              </p>
+            )}
           </>
         )}
 

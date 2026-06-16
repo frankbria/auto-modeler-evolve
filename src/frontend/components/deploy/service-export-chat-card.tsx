@@ -2,6 +2,7 @@
 
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { useDownload } from "@/lib/use-download"
 import type { ServiceExportChatResult } from "@/lib/types"
 
 interface ServiceExportChatCardProps {
@@ -9,8 +10,7 @@ interface ServiceExportChatCardProps {
 }
 
 export function ServiceExportChatCard({ result }: ServiceExportChatCardProps) {
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? ""
-  const downloadUrl = `${apiUrl}${result.download_url}`
+  const { download, downloading, error } = useDownload("Download failed. Please try again.")
 
   const algoLabel = result.algorithm
     ? result.algorithm.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
@@ -80,16 +80,27 @@ export function ServiceExportChatCard({ result }: ServiceExportChatCardProps) {
           </p>
         )}
 
-        {/* Download link */}
-        <a
-          href={downloadUrl}
-          download
+        {/* Download button */}
+        <button
+          type="button"
+          onClick={() =>
+            download(
+              result.download_url,
+              `automodeler_${result.deployment_id}.zip`
+            )
+          }
+          disabled={downloading}
           data-testid="service-export-download-link"
           aria-label={`Download ${algoLabel} model service as ZIP`}
-          className="flex w-full items-center justify-center rounded-md bg-indigo-600 hover:bg-indigo-700 px-4 py-2 text-sm font-medium text-white transition-colors"
+          className="flex w-full items-center justify-center rounded-md bg-indigo-600 hover:bg-indigo-700 px-4 py-2 text-sm font-medium text-white transition-colors disabled:opacity-60"
         >
-          Download as ZIP
-        </a>
+          {downloading ? "Preparing…" : "Download as ZIP"}
+        </button>
+        {error && (
+          <p className="text-xs text-red-600" role="alert">
+            {error}
+          </p>
+        )}
       </CardContent>
     </Card>
   )

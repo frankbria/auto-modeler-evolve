@@ -2,6 +2,7 @@
 
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { useDownload } from "@/lib/use-download"
 import type { RecentPredictionsResult } from "@/lib/types"
 
 // ---------------------------------------------------------------------------
@@ -57,6 +58,7 @@ function LatencyBadge({ ms }: { ms: number | null }) {
 
 export function RecentPredictionsCard({ result }: RecentPredictionsCardProps) {
   const { n_shown, total_all_time, predictions, export_url, summary } = result
+  const { download, downloading, error } = useDownload()
   const isEmpty = total_all_time === 0
 
   return (
@@ -159,16 +161,24 @@ export function RecentPredictionsCard({ result }: RecentPredictionsCardProps) {
 
             <div className="flex items-center justify-between text-xs text-slate-500">
               <span>{summary}</span>
-              <a
-                href={export_url}
-                download
-                className="inline-flex items-center gap-1 rounded border border-slate-300 bg-white px-2 py-1 hover:bg-slate-50 transition-colors text-slate-600"
+              <button
+                type="button"
+                onClick={() =>
+                  download(export_url, `predictions_${result.deployment_id}.csv`)
+                }
+                disabled={downloading}
+                className="inline-flex items-center gap-1 rounded border border-slate-300 bg-white px-2 py-1 hover:bg-slate-50 transition-colors text-slate-600 disabled:opacity-60"
                 aria-label="Download all prediction logs as CSV"
               >
                 <span aria-hidden="true">⬇</span>
-                Download all as CSV
-              </a>
+                {downloading ? "Preparing…" : "Download all as CSV"}
+              </button>
             </div>
+            {error && (
+              <p className="text-xs text-red-600" role="alert">
+                {error}
+              </p>
+            )}
           </>
         )}
 

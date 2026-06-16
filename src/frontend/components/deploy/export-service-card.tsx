@@ -4,7 +4,7 @@ import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { api, apiFetch } from "@/lib/api"
+import { api, downloadFile } from "@/lib/api"
 
 // ---------------------------------------------------------------------------
 // ExportServiceCard — download the model as a self-contained FastAPI service
@@ -28,24 +28,10 @@ export function ExportServiceCard({
     setDownloading(true)
     setError(null)
     try {
-      const resp = await apiFetch(api.deploy.exportServiceUrl(deploymentId))
-      if (!resp.ok) {
-        setError("Export failed. Please try again.")
-        return
-      }
-      const blob = await resp.blob()
-      const disposition = resp.headers.get("content-disposition") ?? ""
-      const match = disposition.match(/filename="([^"]+)"/)
-      const filename = match ? match[1] : `automodeler_${deploymentId}.zip`
-
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement("a")
-      a.href = url
-      a.download = filename
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(url)
+      await downloadFile(
+        api.deploy.exportServiceUrl(deploymentId),
+        `automodeler_${deploymentId}.zip`
+      )
     } catch {
       setError("Export failed. Please try again.")
     } finally {

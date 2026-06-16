@@ -1,5 +1,6 @@
 "use client"
 
+import { useDownload } from "@/lib/use-download"
 import type { ModelCardExportInfo } from "@/lib/types"
 
 interface ModelCardExportCardProps {
@@ -7,11 +8,7 @@ interface ModelCardExportCardProps {
 }
 
 export function ModelCardExportCard({ info }: ModelCardExportCardProps) {
-  const backendBase =
-    typeof window !== "undefined"
-      ? window.location.origin.replace(":3000", ":8000")
-      : "http://localhost:8000"
-  const downloadUrl = `${backendBase}${info.download_url}`
+  const { download, downloading, error } = useDownload()
 
   return (
     <figure
@@ -69,14 +66,22 @@ export function ModelCardExportCard({ info }: ModelCardExportCardProps) {
       )}
 
       {/* Download button */}
-      <a
-        href={downloadUrl}
-        download
-        className="block w-full text-center text-sm font-medium py-1.5 px-4 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition-colors"
+      <button
+        type="button"
+        onClick={() =>
+          download(info.download_url, `model_card_${info.run_id}.html`)
+        }
+        disabled={downloading}
+        className="block w-full text-center text-sm font-medium py-1.5 px-4 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition-colors disabled:opacity-60"
         aria-label="Download model card as HTML file"
       >
-        Download HTML Model Card
-      </a>
+        {downloading ? "Preparing…" : "Download HTML Model Card"}
+      </button>
+      {error && (
+        <p className="mt-2 text-xs text-red-600" role="alert">
+          {error}
+        </p>
+      )}
     </figure>
   )
 }

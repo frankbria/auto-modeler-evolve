@@ -1,5 +1,6 @@
 "use client"
 
+import { useDownload } from "@/lib/use-download"
 import type { ModelStatusReportInfo } from "@/lib/types"
 
 interface ModelStatusReportCardProps {
@@ -7,11 +8,7 @@ interface ModelStatusReportCardProps {
 }
 
 export function ModelStatusReportCard({ info }: ModelStatusReportCardProps) {
-  const backendBase =
-    typeof window !== "undefined"
-      ? window.location.origin.replace(":3000", ":8000")
-      : "http://localhost:8000"
-  const downloadUrl = `${backendBase}${info.download_url}`
+  const { download, downloading, error } = useDownload()
 
   const healthColor =
     info.health_score >= 75
@@ -132,15 +129,23 @@ export function ModelStatusReportCard({ info }: ModelStatusReportCardProps) {
       </p>
 
       {/* Download */}
-      <a
-        href={downloadUrl}
-        download
-        className="block w-full text-center text-sm font-medium py-1.5 px-4 rounded-lg bg-gray-800 text-white hover:bg-gray-700 transition-colors"
+      <button
+        type="button"
+        onClick={() =>
+          download(info.download_url, `status_report_${info.deployment_id}.html`)
+        }
+        disabled={downloading}
+        className="block w-full text-center text-sm font-medium py-1.5 px-4 rounded-lg bg-gray-800 text-white hover:bg-gray-700 transition-colors disabled:opacity-60"
         aria-label="Download full monitoring status report as HTML"
         data-testid="download-report-link"
       >
-        Download Full Report
-      </a>
+        {downloading ? "Preparing…" : "Download Full Report"}
+      </button>
+      {error && (
+        <p className="mt-2 text-xs text-red-600" role="alert">
+          {error}
+        </p>
+      )}
 
       <figcaption className="sr-only">
         Model status report for {info.project_name}: health score {info.health_score} out of 100

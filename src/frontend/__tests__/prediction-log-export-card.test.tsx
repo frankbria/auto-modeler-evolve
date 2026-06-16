@@ -3,10 +3,18 @@
  */
 
 import React from "react"
-import { render, screen } from "@testing-library/react"
+import { render, screen, fireEvent } from "@testing-library/react"
 import { PredictionLogExportCard } from "../components/deploy/prediction-log-export-card"
 import type { PredictionLogExportResult } from "../lib/types"
 import { useAppStore } from "../lib/store"
+
+jest.mock("../lib/api", () => {
+  const actual = jest.requireActual("../lib/api")
+  return { ...actual, downloadFile: jest.fn().mockResolvedValue(undefined) }
+})
+import { downloadFile } from "../lib/api"
+
+beforeEach(() => jest.clearAllMocks())
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -62,16 +70,22 @@ describe("PredictionLogExportCard", () => {
     expect(screen.getByText(/Last prediction/i)).toBeInTheDocument()
   })
 
-  it("renders download link with correct href", () => {
+  it("downloads via the authenticated helper with the export path (no token in URL)", () => {
     render(<PredictionLogExportCard result={WITH_DATA} />)
-    const link = screen.getByRole("link", { name: /download.*prediction.*csv/i })
-    expect(link).toHaveAttribute("href", WITH_DATA.download_url)
+    fireEvent.click(
+      screen.getByRole("button", { name: /download.*prediction.*csv/i })
+    )
+    expect(downloadFile).toHaveBeenCalledTimes(1)
+    const [url] = (downloadFile as jest.Mock).mock.calls[0]
+    expect(url).toBe(WITH_DATA.download_url)
+    expect(url).not.toMatch(/token/i)
   })
 
-  it("download link has download attribute", () => {
+  it("renders the download control as a button", () => {
     render(<PredictionLogExportCard result={WITH_DATA} />)
-    const link = screen.getByRole("link", { name: /download.*csv/i })
-    expect(link).toHaveAttribute("download")
+    expect(
+      screen.getByRole("button", { name: /download.*csv/i })
+    ).toBeInTheDocument()
   })
 
   it("shows empty state when no predictions", () => {
@@ -79,8 +93,9 @@ describe("PredictionLogExportCard", () => {
     expect(screen.getByText(/No predictions recorded yet/i)).toBeInTheDocument()
   })
 
-  it("does not show download link in empty state", () => {
+  it("does not show download control in empty state", () => {
     render(<PredictionLogExportCard result={EMPTY_RESULT} />)
+    expect(screen.queryByRole("button")).not.toBeInTheDocument()
     expect(screen.queryByRole("link")).not.toBeInTheDocument()
   })
 

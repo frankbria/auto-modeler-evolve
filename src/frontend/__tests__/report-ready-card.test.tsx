@@ -2,10 +2,16 @@
  * Tests for ReportReadyCard component and attachReportToLastMessage store action.
  */
 import React from "react"
-import { render, screen } from "@testing-library/react"
+import { render, screen, fireEvent } from "@testing-library/react"
 import { ReportReadyCard } from "@/components/models/report-ready-card"
 import type { ReportReady } from "@/lib/types"
 import { useAppStore } from "@/lib/store"
+
+jest.mock("@/lib/api", () => {
+  const actual = jest.requireActual("@/lib/api")
+  return { ...actual, downloadFile: jest.fn().mockResolvedValue(undefined) }
+})
+import { downloadFile } from "@/lib/api"
 
 // --- Fixtures -----------------------------------------------------------
 
@@ -39,6 +45,8 @@ const nullMetricReport: ReportReady = {
 // --- Component rendering tests ------------------------------------------
 
 describe("ReportReadyCard", () => {
+  beforeEach(() => jest.clearAllMocks())
+
   it("renders with testid", () => {
     render(<ReportReadyCard result={regressionReport} />)
     expect(screen.getByTestId("report-ready-card")).toBeInTheDocument()
@@ -79,17 +87,20 @@ describe("ReportReadyCard", () => {
     expect(screen.getByText(/Accuracy\s*92\.1%/)).toBeInTheDocument()
   })
 
-  it("renders download button link", () => {
+  it("renders download button", () => {
     render(<ReportReadyCard result={regressionReport} />)
     const btn = screen.getByTestId("download-report-btn")
     expect(btn).toBeInTheDocument()
-    expect(btn).toHaveAttribute("target", "_blank")
+    expect(btn.tagName).toBe("BUTTON")
   })
 
-  it("download button href includes the download_url path", () => {
+  it("downloads via the authenticated helper with the report path (no token in URL)", () => {
     render(<ReportReadyCard result={regressionReport} />)
-    const btn = screen.getByTestId("download-report-btn")
-    expect(btn.getAttribute("href")).toContain("/api/models/run-abc/report")
+    fireEvent.click(screen.getByTestId("download-report-btn"))
+    expect(downloadFile).toHaveBeenCalledTimes(1)
+    const [url] = (downloadFile as jest.Mock).mock.calls[0]
+    expect(url).toBe("/api/models/run-abc/report")
+    expect(url).not.toMatch(/token/i)
   })
 
   it("shows Download PDF Report button text", () => {

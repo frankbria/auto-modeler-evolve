@@ -145,6 +145,71 @@ export async function streamSSE(
   }
 }
 
+/**
+ * Download an owner-scoped file over an authenticated fetch.
+ *
+ * `<a href>` and `window.open` can't carry the `Authorization` header, so every
+ * owner-scoped download routes through here instead: `apiFetch` attaches the
+ * bearer token in the header, the response body is read as a Blob, and a
+ * client-side object-URL download is triggered. The session token therefore
+ * never appears in the URL (where it would leak into proxy/server logs and
+ * browser history) — the reason this was deferred in #25 and finished in #28.
+ *
+ * `url` may be absolute (e.g. an `api.*Url(...)` builder result) or a relative
+ * backend path from an API response (`result.download_url`), which is resolved
+ * against `API_URL`. The filename is taken from the response's
+ * `Content-Disposition` header when present, otherwise `fallbackFilename`.
+ * Throws if the request fails so callers can surface an error state.
+ */
+export async function downloadFile(
+  url: string,
+  fallbackFilename = "download"
+): Promise<void> {
+  const target = /^https?:\/\//i.test(url) ? url : `${API_URL}${url}`
+  // Defense in depth: `apiFetch` attaches the bearer token, so only ever send
+  // it to our own API origin. A tainted/cross-origin absolute URL must never
+  // receive the Authorization header (token-leak guard).
+  if (new URL(target).origin !== new URL(API_URL).origin) {
+    throw new Error("Refusing to download from a non-API origin")
+  }
+  const res = await apiFetch(target)
+  if (!res.ok) {
+    throw new Error(`Download failed (${res.status})`)
+  }
+  const blob = await res.blob()
+
+  const disposition = res.headers.get("content-disposition") ?? ""
+  // RFC 5987 `filename*=UTF-8''…` is percent-encoded and must be decoded; the
+  // plain `filename="…"` form is literal and may itself contain a `%` (e.g. a
+  // target-column name), so decoding it would throw URIError and abort a valid
+  // download. Prefer the extended form, decode it defensively, else use plain.
+  const extended = disposition.match(/filename\*=(?:UTF-8'')?"?([^";]+)"?/i)
+  const plain = disposition.match(/filename=\s*"?([^";]+?)"?\s*(?:;|$)/i)
+  let filename = fallbackFilename
+  if (extended) {
+    const raw = extended[1].trim()
+    try {
+      filename = decodeURIComponent(raw)
+    } catch {
+      filename = raw
+    }
+  } else if (plain) {
+    filename = plain[1].trim()
+  }
+
+  const objectUrl = URL.createObjectURL(blob)
+  try {
+    const a = document.createElement("a")
+    a.href = objectUrl
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+  } finally {
+    URL.revokeObjectURL(objectUrl)
+  }
+}
+
 export const api = {
   auth: {
     register: (email: string, password: string, name?: string): Promise<AuthResponse> =>

@@ -206,7 +206,7 @@ import {
   FeaturesAppliedCard,
 } from "@/components/features/feature-suggestions-chat-card"
 import { WorkflowProgress } from "@/components/ui/workflow-progress"
-import { api } from "@/lib/api"
+import { api, downloadFile } from "@/lib/api"
 import { useAppStore } from "@/lib/store"
 import type {
   Dataset,
@@ -664,6 +664,40 @@ function ProjectWorkspaceInner() {
       setLoadingImportance(false)
     }
   }, [currentDataset, targetColumn])
+
+  // Owner-scoped model artifacts (#28): download over an authenticated fetch so
+  // the bearer token rides in the header — `window.open` can't send one and 401s.
+  const handleModelDownload = useCallback(
+    async (runId: string) => {
+      try {
+        await downloadFile(api.models.downloadUrl(runId), `model_${runId}.joblib`)
+      } catch {
+        addMessage({
+          role: "assistant",
+          content:
+            "I couldn't download that model file just now. Please try again in a moment.",
+          timestamp: new Date().toISOString(),
+        })
+      }
+    },
+    [addMessage]
+  )
+
+  const handleModelReport = useCallback(
+    async (runId: string) => {
+      try {
+        await downloadFile(api.models.reportUrl(runId), `report_${runId}.pdf`)
+      } catch {
+        addMessage({
+          role: "assistant",
+          content:
+            "I couldn't download that report just now. Please try again in a moment.",
+          timestamp: new Date().toISOString(),
+        })
+      }
+    },
+    [addMessage]
+  )
 
   const handleFeatureApplied = useCallback(
     (result: FeatureSetResult) => {
@@ -2566,12 +2600,8 @@ function ProjectWorkspaceInner() {
                             timestamp: new Date().toISOString(),
                           })
                         }}
-                        onModelDownload={(runId) => {
-                          window.open(api.models.downloadUrl(runId), "_blank")
-                        }}
-                        onModelReport={(runId) => {
-                          window.open(api.models.reportUrl(runId), "_blank")
-                        }}
+                        onModelDownload={handleModelDownload}
+                        onModelReport={handleModelReport}
                         onTrainingComplete={(chips) => {
                           if (chips.length > 0) setChatSuggestions(chips)
                         }}
