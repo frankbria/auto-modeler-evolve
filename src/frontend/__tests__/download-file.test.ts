@@ -124,6 +124,15 @@ describe("downloadFile", () => {
     expect(mockAnchor?.getAttribute("download")).toBe("report q1.csv")
   })
 
+  it("refuses a cross-origin absolute URL without sending the token", async () => {
+    const fetchMock = mockFetch(true)
+    await expect(
+      downloadFile("https://evil.example.com/api/models/run-1/report")
+    ).rejects.toThrow(/non-API origin/)
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(mockCreateObjectURL).not.toHaveBeenCalled()
+  })
+
   it("throws when the request fails", async () => {
     mockFetch(false, null, 403)
     await expect(downloadFile("/api/models/run-1/report")).rejects.toThrow(

@@ -166,6 +166,12 @@ export async function downloadFile(
   fallbackFilename = "download"
 ): Promise<void> {
   const target = /^https?:\/\//i.test(url) ? url : `${API_URL}${url}`
+  // Defense in depth: `apiFetch` attaches the bearer token, so only ever send
+  // it to our own API origin. A tainted/cross-origin absolute URL must never
+  // receive the Authorization header (token-leak guard).
+  if (new URL(target).origin !== new URL(API_URL).origin) {
+    throw new Error("Refusing to download from a non-API origin")
+  }
   const res = await apiFetch(target)
   if (!res.ok) {
     throw new Error(`Download failed (${res.status})`)
