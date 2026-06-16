@@ -1031,8 +1031,6 @@ class TestDataApiNarrationExceptions:
     @pytest.mark.asyncio
     async def test_url_import_narration_exception_silenced(self, ac):
         """Lines 829-830: narration exception in URL import is silenced."""
-        import urllib.request as urlreq
-
         client, _, monkeypatch = ac
         import api.data as data_mod
 
@@ -1053,7 +1051,10 @@ class TestDataApiNarrationExceptions:
             def __exit__(self, *args):
                 pass
 
-        monkeypatch.setattr(urlreq, "urlopen", lambda req, timeout=None: MockResponse())
+        monkeypatch.setattr(
+            "api.data.safe_urlopen",
+            lambda req, timeout=None, allow_unresolved=None: MockResponse(),
+        )
 
         r = await client.post("/api/projects", json={"name": "url_narr"})
         project_id = r.json()["id"]
@@ -1156,8 +1157,6 @@ class TestDataApiUrlBadCsv:
     @pytest.mark.asyncio
     async def test_url_import_bad_csv_content(self, ac):
         """Lines 773-774: downloaded content cannot be parsed as CSV → 400."""
-        import urllib.request as urlreq
-
         client, _, monkeypatch = ac
 
         class MockResponse:
@@ -1170,7 +1169,10 @@ class TestDataApiUrlBadCsv:
             def __exit__(self, *args):
                 pass
 
-        monkeypatch.setattr(urlreq, "urlopen", lambda req, timeout=None: MockResponse())
+        monkeypatch.setattr(
+            "api.data.safe_urlopen",
+            lambda req, timeout=None, allow_unresolved=None: MockResponse(),
+        )
 
         r = await client.post("/api/projects", json={"name": "badcsv"})
         project_id = r.json()["id"]

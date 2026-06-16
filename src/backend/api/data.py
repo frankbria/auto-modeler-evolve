@@ -61,7 +61,14 @@ from core.readiness import compute_data_readiness
 from core.computed import add_computed_column
 from core.dictionary import generate_dictionary
 from core.merger import merge_datasets, suggest_join_keys
+from core.path_safety import (
+    UnsafePathError,
+    assert_within,
+    resolve_within,
+    sanitize_filename,
+)
 from core.query_engine import run_nl_query
+from core.ssrf_guard import assert_safe_url, safe_urlopen
 from db import get_session
 from models.dataset import Dataset
 from models.dataset_filter import DatasetFilter
@@ -78,7 +85,8 @@ from auth.scoping import (
 from models.user import User
 
 router = APIRouter(
-    prefix="/api/data", tags=["data"],
+    prefix="/api/data",
+    tags=["data"],
     dependencies=[Depends(require_owner)],
 )
 UPLOAD_DIR = Path(__file__).parent.parent / "data" / "uploads"
@@ -137,19 +145,23 @@ def upload_csv(
             detail="Only CSV and Excel files (.csv, .xlsx, .xls) are accepted",
         )
 
+    # Sanitize the client-supplied filename: strip any directory component and
+    # reject traversal/absolute names before it touches the filesystem.
+    safe_filename = sanitize_filename(file.filename)
+
     project_upload_dir = UPLOAD_DIR / project_id
     project_upload_dir.mkdir(parents=True, exist_ok=True)
 
-    original_path = project_upload_dir / file.filename
+    original_path = project_upload_dir / safe_filename
     contents = file.file.read()
     original_path.write_bytes(contents)
 
     try:
-        ext = Path(file.filename).suffix.lower()
+        ext = Path(safe_filename).suffix.lower()
         if ext in (".xlsx", ".xls"):
             df = pd.read_excel(original_path, engine="openpyxl")
             # Store as CSV so all downstream readers use a consistent format
-            csv_filename = Path(file.filename).stem + ".csv"
+            csv_filename = Path(safe_filename).stem + ".csv"
             file_path = project_upload_dir / csv_filename
             df.to_csv(file_path, index=False)
             original_path.unlink(missing_ok=True)  # drop the xlsx; keep only CSV
@@ -157,7 +169,7 @@ def upload_csv(
         else:
             df = pd.read_csv(original_path)
             file_path = original_path
-            stored_filename = file.filename
+            stored_filename = safe_filename
     except Exception as exc:
         original_path.unlink(missing_ok=True)
         raise HTTPException(
@@ -882,7 +894,9 @@ def merge_project_datasets(
     out_filename = body.save_as_filename or f"{base1}+{base2}_merged.csv"
     project_upload_dir = UPLOAD_DIR / project_id
     project_upload_dir.mkdir(parents=True, exist_ok=True)
-    out_path = project_upload_dir / out_filename
+    # Sanitize the (possibly user-supplied) output name and confine it.
+    out_filename = sanitize_filename(out_filename)
+    out_path = resolve_within(project_upload_dir, out_filename)
     merged_df.to_csv(out_path, index=False)
 
     profile = compute_full_profile(merged_df)
@@ -981,13 +995,20 @@ def upload_from_url(
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    # Download the CSV content
+    # Block SSRF: reject loopback / link-local / private targets before we
+    # fetch. allow_unresolved=False — we are about to connect, so an
+    # unresolvable host is both useless and suspicious. Re-resolving here also
+    # blunts DNS rebinding between the Google-Sheets rewrite and the fetch.
+    assert_safe_url(download_url, allow_unresolved=False)
+
+    # Download the CSV content. safe_urlopen re-validates every redirect hop so
+    # a public first hop cannot 302 us onto an internal host.
     try:
         req = urllib.request.Request(
             download_url,
             headers={"User-Agent": "AutoModeler/1.0"},
         )
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with safe_urlopen(req, timeout=30, allow_unresolved=False) as resp:
             raw_bytes = resp.read()
     except Exception as exc:
         raise HTTPException(
@@ -1020,10 +1041,11 @@ def upload_from_url(
     if df.empty:
         raise HTTPException(status_code=400, detail="Imported dataset is empty")
 
-    # Save to filesystem
+    # Save to filesystem (stored_filename is derived from user input / URL path)
+    stored_filename = sanitize_filename(stored_filename)
     project_upload_dir = UPLOAD_DIR / body.project_id
     project_upload_dir.mkdir(parents=True, exist_ok=True)
-    file_path = project_upload_dir / stored_filename
+    file_path = resolve_within(project_upload_dir, stored_filename)
     df.to_csv(file_path, index=False)
 
     profile = compute_full_profile(df)
@@ -1100,6 +1122,35 @@ def upload_from_url(
 _DB_UPLOADS_DIR = UPLOAD_DIR.parent / "db_uploads"
 
 
+def _deny_attach_authorizer(action: int, *args) -> int:
+    """SQLite authorizer that blocks ATTACH/DETACH.
+
+    ``mode=ro`` only makes the *main* database read-only — a crafted query can
+    still ``ATTACH DATABASE '/etc/...'`` and read other files. Denying ATTACH at
+    the authorizer layer closes that arbitrary-file-read path regardless of the
+    (first-keyword) SELECT check.
+    """
+    if action in (sqlite3.SQLITE_ATTACH, sqlite3.SQLITE_DETACH):
+        return sqlite3.SQLITE_DENY
+    return sqlite3.SQLITE_OK
+
+
+def _open_readonly_sqlite(db_path: Path) -> sqlite3.Connection:
+    """Open an uploaded SQLite file with every escalation path disabled.
+
+    Read-only (``mode=ro``) so a crafted file cannot write the main DB; extension
+    loading disabled so it cannot load a shared library; ATTACH/DETACH denied so
+    it cannot read other files on disk.
+    """
+    conn = sqlite3.connect(f"{db_path.as_uri()}?mode=ro", uri=True)
+    try:
+        conn.enable_load_extension(False)
+    except (AttributeError, sqlite3.NotSupportedError):
+        pass  # extension loading unsupported in this build — already safe
+    conn.set_authorizer(_deny_attach_authorizer)
+    return conn
+
+
 @router.post("/upload-db", status_code=201)
 async def upload_sqlite_db(
     project_id: str = Form(...),
@@ -1115,7 +1166,7 @@ async def upload_sqlite_db(
     """
     get_owned_project(project_id, current_user, session)
 
-    filename = file.filename or "database.db"
+    filename = sanitize_filename(file.filename or "database.db")
     ext = Path(filename).suffix.lower()
     if ext not in (".db", ".sqlite", ".sqlite3"):
         raise HTTPException(
@@ -1125,7 +1176,7 @@ async def upload_sqlite_db(
 
     db_dir = _DB_UPLOADS_DIR / project_id
     db_dir.mkdir(parents=True, exist_ok=True)
-    db_path = db_dir / filename
+    db_path = resolve_within(db_dir, filename)
     db_path.write_bytes(await file.read())
 
     try:
@@ -1176,7 +1227,17 @@ def extract_db_table(
     """
     get_owned_project(body.project_id, current_user, session)
 
-    db_path = Path(body.db_path)
+    # Confine db_path to this project's server-managed upload dir. A client must
+    # not be able to point us at /etc/passwd or the app's own automodeler.db.
+    # An out-of-dir path is reported as "not found" (same as a missing file) so
+    # we never leak whether an arbitrary server path exists.
+    db_dir = _DB_UPLOADS_DIR / body.project_id
+    try:
+        db_path = assert_within(db_dir, Path(body.db_path))
+    except UnsafePathError:
+        raise HTTPException(
+            status_code=404, detail="Database file not found. Upload it first."
+        ) from None
     if not db_path.exists():
         raise HTTPException(
             status_code=404, detail="Database file not found. Upload it first."
@@ -1191,9 +1252,13 @@ def extract_db_table(
         )
 
     try:
-        conn = sqlite3.connect(str(db_path))
+        # Read-only + no extension loading + ATTACH denied (see helper) so a
+        # crafted SQLite file cannot write, load a library, or read other files.
+        conn = _open_readonly_sqlite(db_path)
         df = pd.read_sql_query(query, conn)
         conn.close()
+    except HTTPException:
+        raise
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=400, detail=f"Query failed: {exc}") from exc
 
@@ -1204,9 +1269,10 @@ def extract_db_table(
     out_filename = body.save_as_filename or f"{body.table_name}.csv"
     if not out_filename.endswith(".csv"):
         out_filename += ".csv"
+    out_filename = sanitize_filename(out_filename)
     project_upload_dir = UPLOAD_DIR / body.project_id
     project_upload_dir.mkdir(parents=True, exist_ok=True)
-    out_path = project_upload_dir / out_filename
+    out_path = resolve_within(project_upload_dir, out_filename)
     df.to_csv(out_path, index=False)
 
     profile = compute_full_profile(df)

@@ -2,10 +2,14 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 import models  # noqa: F401 — ensures all SQLModel tables are registered before create_all
+
+from core.path_safety import UnsafePathError
+from core.ssrf_guard import UnsafeURLError
 
 from api.chat import router as chat_router
 from api.data import router as data_router
@@ -64,6 +68,18 @@ app.include_router(validation_router)
 app.include_router(deploy_router)
 app.include_router(templates_router)
 app.include_router(analysis_templates_router)
+
+
+@app.exception_handler(UnsafeURLError)
+async def _unsafe_url_handler(request: Request, exc: UnsafeURLError) -> JSONResponse:
+    """A rejected outbound URL (SSRF guard) is a client error, not a 500."""
+    return JSONResponse(status_code=400, content={"detail": str(exc)})
+
+
+@app.exception_handler(UnsafePathError)
+async def _unsafe_path_handler(request: Request, exc: UnsafePathError) -> JSONResponse:
+    """A rejected filename / path (traversal guard) is a client error, not a 500."""
+    return JSONResponse(status_code=400, content={"detail": str(exc)})
 
 
 @app.get("/health")

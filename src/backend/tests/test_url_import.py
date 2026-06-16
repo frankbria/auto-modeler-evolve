@@ -102,7 +102,7 @@ def test_is_google_sheets_url_false():
 
 async def test_upload_from_direct_csv_url(ac, project_id):
     """Importing a plain CSV URL creates a dataset and returns preview."""
-    with patch("urllib.request.urlopen", return_value=_mock_urlopen(SAMPLE_CSV_BYTES)):
+    with patch("api.data.safe_urlopen", return_value=_mock_urlopen(SAMPLE_CSV_BYTES)):
         resp = await ac.post(
             "/api/data/upload-url",
             json={"project_id": project_id, "url": "https://example.com/data.csv"},
@@ -119,7 +119,7 @@ async def test_upload_from_google_sheets_url(ac, project_id):
     """Google Sheets URL is converted to export URL and imported."""
     sheets_url = "https://docs.google.com/spreadsheets/d/SHEET_ID_123/edit"
     with patch(
-        "urllib.request.urlopen", return_value=_mock_urlopen(SAMPLE_CSV_BYTES)
+        "api.data.safe_urlopen", return_value=_mock_urlopen(SAMPLE_CSV_BYTES)
     ) as mock_open:
         resp = await ac.post(
             "/api/data/upload-url",
@@ -136,7 +136,7 @@ async def test_upload_from_google_sheets_url(ac, project_id):
 
 async def test_upload_url_custom_filename(ac, project_id):
     """User can override the stored filename."""
-    with patch("urllib.request.urlopen", return_value=_mock_urlopen(SAMPLE_CSV_BYTES)):
+    with patch("api.data.safe_urlopen", return_value=_mock_urlopen(SAMPLE_CSV_BYTES)):
         resp = await ac.post(
             "/api/data/upload-url",
             json={
@@ -170,7 +170,7 @@ async def test_upload_url_project_not_found(ac):
 
 async def test_upload_url_network_failure(ac, project_id):
     """Returns 400 when the URL cannot be fetched."""
-    with patch("urllib.request.urlopen", side_effect=Exception("Connection refused")):
+    with patch("api.data.safe_urlopen", side_effect=Exception("Connection refused")):
         resp = await ac.post(
             "/api/data/upload-url",
             json={"project_id": project_id, "url": "https://example.com/data.csv"},
@@ -183,7 +183,7 @@ async def test_upload_url_not_csv_content(ac, project_id):
     """Returns 400 when the downloaded content is not parseable as CSV."""
     html_bytes = b"<html><body>Not a CSV</body></html>"
     # pandas will parse HTML as a table or raise; either way we get a 400
-    with patch("urllib.request.urlopen", return_value=_mock_urlopen(html_bytes)):
+    with patch("api.data.safe_urlopen", return_value=_mock_urlopen(html_bytes)):
         resp = await ac.post(
             "/api/data/upload-url",
             json={"project_id": project_id, "url": "https://example.com/page.html"},
@@ -197,7 +197,7 @@ async def test_upload_url_google_sheets_with_gid(ac, project_id):
     """gid query param is preserved in the export URL for multi-tab sheets."""
     sheets_url = "https://docs.google.com/spreadsheets/d/SHEET_ID/edit#gid=999"
     with patch(
-        "urllib.request.urlopen", return_value=_mock_urlopen(SAMPLE_CSV_BYTES)
+        "api.data.safe_urlopen", return_value=_mock_urlopen(SAMPLE_CSV_BYTES)
     ) as mock_open:
         resp = await ac.post(
             "/api/data/upload-url",
@@ -210,7 +210,7 @@ async def test_upload_url_google_sheets_with_gid(ac, project_id):
 
 async def test_upload_url_filename_from_url_path(ac, project_id):
     """Filename is derived from the last path segment when not overridden."""
-    with patch("urllib.request.urlopen", return_value=_mock_urlopen(SAMPLE_CSV_BYTES)):
+    with patch("api.data.safe_urlopen", return_value=_mock_urlopen(SAMPLE_CSV_BYTES)):
         resp = await ac.post(
             "/api/data/upload-url",
             json={
@@ -225,7 +225,7 @@ async def test_upload_url_filename_from_url_path(ac, project_id):
 async def test_upload_url_google_sheets_filename_derived(ac, project_id):
     """Google Sheets import derives filename from sheet ID when no override given."""
     sheets_url = "https://docs.google.com/spreadsheets/d/LONGSHEETIDABC/edit"
-    with patch("urllib.request.urlopen", return_value=_mock_urlopen(SAMPLE_CSV_BYTES)):
+    with patch("api.data.safe_urlopen", return_value=_mock_urlopen(SAMPLE_CSV_BYTES)):
         resp = await ac.post(
             "/api/data/upload-url",
             json={"project_id": project_id, "url": sheets_url},

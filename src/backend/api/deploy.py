@@ -108,6 +108,8 @@ def _owned_project_ids(current_user: "User", session: "Session") -> list[str]:
             select(OwnerProject.id).where(OwnerProject.owner_id == current_user.id)
         ).all()
     )
+
+
 DEPLOY_DIR = Path(__file__).parent.parent / "data" / "deployments"
 
 
@@ -2807,9 +2809,7 @@ def set_accuracy_alert(
             + (
                 f"drops below {thr:.0%}."
                 if problem_type == "classification" and thr is not None
-                else f"exceeds {thr:.1f}%."
-                if thr is not None
-                else ""
+                else f"exceeds {thr:.1f}%." if thr is not None else ""
             )
             if threshold_set
             else "Accuracy alert disabled."
@@ -4512,6 +4512,7 @@ def create_webhook(
     - "health_degraded" — model health score < 60
     - "sla_exceeded"    — p95 prediction latency crossed 500ms (fires once/hour max)
     """
+    from core.ssrf_guard import UnsafeURLError, assert_safe_url
     from core.webhook import ALL_EVENTS
 
     deployment = session.get(Deployment, deployment_id)
@@ -4522,6 +4523,15 @@ def create_webhook(
         raise HTTPException(
             status_code=400, detail="URL must start with http:// or https://"
         )
+
+    # Reject SSRF targets at registration. allow_unresolved=True: a webhook host
+    # may legitimately not resolve yet (staging endpoint not deployed), and the
+    # dispatch-time guard re-checks anyway — so only block hosts we can *confirm*
+    # point at a loopback / link-local / private address.
+    try:
+        assert_safe_url(body.url, allow_unresolved=True)
+    except UnsafeURLError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     unknown = set(body.event_types) - ALL_EVENTS
     if unknown:
@@ -6727,9 +6737,7 @@ def get_model_status_report(
                 else (
                     "good"
                     if feedback_accuracy >= 0.8
-                    else "moderate"
-                    if feedback_accuracy >= 0.6
-                    else "needs attention"
+                    else "moderate" if feedback_accuracy >= 0.6 else "needs attention"
                 )
             )
     except Exception:  # noqa: BLE001
