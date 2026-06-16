@@ -1,7 +1,15 @@
 import React from "react"
-import { render, screen } from "@testing-library/react"
+import { render, screen, fireEvent } from "@testing-library/react"
 import { RecentPredictionsCard } from "@/components/deploy/recent-predictions-card"
 import type { RecentPredictionsResult } from "@/lib/types"
+
+jest.mock("@/lib/api", () => {
+  const actual = jest.requireActual("@/lib/api")
+  return { ...actual, downloadFile: jest.fn().mockResolvedValue(undefined) }
+})
+import { downloadFile } from "@/lib/api"
+
+beforeEach(() => jest.clearAllMocks())
 
 const EMPTY_RESULT: RecentPredictionsResult = {
   deployment_id: "dep-001",
@@ -234,13 +242,24 @@ describe("RecentPredictionsCard", () => {
     })
   })
 
-  describe("export link", () => {
-    it("renders download CSV link", () => {
+  describe("export control", () => {
+    it("renders a download CSV button (not a raw link)", () => {
       render(<RecentPredictionsCard result={RESULT_WITH_ROWS} />)
-      const link = screen.getByRole("link", { name: /download all prediction logs as csv/i })
-      expect(link).toBeInTheDocument()
-      expect(link).toHaveAttribute("href", "/api/deploy/dep-001/export-prediction-logs")
-      expect(link).toHaveAttribute("download")
+      expect(
+        screen.getByRole("button", { name: /download all prediction logs as csv/i })
+      ).toBeInTheDocument()
+      expect(screen.queryByRole("link")).not.toBeInTheDocument()
+    })
+
+    it("downloads via the authenticated helper with the export path (no token in URL)", () => {
+      render(<RecentPredictionsCard result={RESULT_WITH_ROWS} />)
+      fireEvent.click(
+        screen.getByRole("button", { name: /download all prediction logs as csv/i })
+      )
+      expect(downloadFile).toHaveBeenCalledTimes(1)
+      const [url] = (downloadFile as jest.Mock).mock.calls[0]
+      expect(url).toBe("/api/deploy/dep-001/export-prediction-logs")
+      expect(url).not.toMatch(/token/i)
     })
   })
 

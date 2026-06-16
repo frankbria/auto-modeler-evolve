@@ -13,6 +13,14 @@ import fetchMock from "jest-fetch-mock"
 // Enable fetch mocking BEFORE any module imports that touch fetch
 fetchMock.enableMocks()
 
+// Mock only the header-authenticated download helper (#28); keep the rest of
+// the api layer real so it still flows through fetchMock.
+jest.mock("@/lib/api", () => {
+  const actual = jest.requireActual("@/lib/api")
+  return { ...actual, downloadFile: jest.fn().mockResolvedValue(undefined) }
+})
+import { downloadFile } from "@/lib/api"
+
 // ---------------------------------------------------------------------------
 // Mocks — nav, dropzone, child panels
 // ---------------------------------------------------------------------------
@@ -869,8 +877,8 @@ describe("ProjectWorkspace — child panel callbacks", () => {
     })
   })
 
-  it("onModelDownload calls window.open", async () => {
-    const openSpy = jest.spyOn(window, "open").mockImplementation(() => null)
+  it("onModelDownload downloads the model via the authenticated helper (no token in URL)", async () => {
+    ;(downloadFile as jest.Mock).mockClear()
     render(<ProjectWorkspace />)
     await waitFor(() => expect(screen.getByText("Models")).toBeInTheDocument())
 
@@ -878,12 +886,14 @@ describe("ProjectWorkspace — child panel callbacks", () => {
     await waitFor(() => expect(screen.getByTestId("model-training-panel")).toBeInTheDocument())
 
     fireEvent.click(screen.getByText("Download Model"))
-    expect(openSpy).toHaveBeenCalled()
-    openSpy.mockRestore()
+    await waitFor(() => expect(downloadFile).toHaveBeenCalledTimes(1))
+    const [url] = (downloadFile as jest.Mock).mock.calls[0]
+    expect(url).toContain("/api/models/run-1/download")
+    expect(url).not.toMatch(/token/i)
   })
 
-  it("onModelReport calls window.open", async () => {
-    const openSpy = jest.spyOn(window, "open").mockImplementation(() => null)
+  it("onModelReport downloads the report via the authenticated helper (no token in URL)", async () => {
+    ;(downloadFile as jest.Mock).mockClear()
     render(<ProjectWorkspace />)
     await waitFor(() => expect(screen.getByText("Models")).toBeInTheDocument())
 
@@ -891,8 +901,10 @@ describe("ProjectWorkspace — child panel callbacks", () => {
     await waitFor(() => expect(screen.getByTestId("model-training-panel")).toBeInTheDocument())
 
     fireEvent.click(screen.getByText("View Report"))
-    expect(openSpy).toHaveBeenCalled()
-    openSpy.mockRestore()
+    await waitFor(() => expect(downloadFile).toHaveBeenCalledTimes(1))
+    const [url] = (downloadFile as jest.Mock).mock.calls[0]
+    expect(url).toContain("/api/models/run-1/report")
+    expect(url).not.toMatch(/token/i)
   })
 })
 

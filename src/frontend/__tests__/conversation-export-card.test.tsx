@@ -1,6 +1,14 @@
-import { render, screen } from "@testing-library/react"
+import { render, screen, fireEvent } from "@testing-library/react"
 import { ConversationExportCard } from "@/components/chat/conversation-export-card"
 import type { ConversationExportInfo } from "@/lib/types"
+
+jest.mock("@/lib/api", () => {
+  const actual = jest.requireActual("@/lib/api")
+  return { ...actual, downloadFile: jest.fn().mockResolvedValue(undefined) }
+})
+import { downloadFile } from "@/lib/api"
+
+beforeEach(() => jest.clearAllMocks())
 
 const baseInfo: ConversationExportInfo = {
   project_id: "proj-1",
@@ -42,22 +50,24 @@ describe("ConversationExportCard — rendering", () => {
     expect(screen.queryByText(/\.csv/i)).not.toBeInTheDocument()
   })
 
-  it("renders a download link", () => {
+  it("renders a download button", () => {
     render(<ConversationExportCard info={baseInfo} />)
-    const link = screen.getByRole("link", { name: /download/i })
-    expect(link).toBeInTheDocument()
+    const btn = screen.getByRole("button", { name: /download/i })
+    expect(btn).toBeInTheDocument()
   })
 
-  it("download link contains the export URL", () => {
+  it("downloads via the authenticated helper with the export path (no token in URL)", () => {
     render(<ConversationExportCard info={baseInfo} />)
-    const link = screen.getByRole("link", { name: /download/i })
-    expect(link.getAttribute("href")).toContain("/api/chat/proj-1/export")
+    fireEvent.click(screen.getByRole("button", { name: /download/i }))
+    expect(downloadFile).toHaveBeenCalledTimes(1)
+    const [url] = (downloadFile as jest.Mock).mock.calls[0]
+    expect(url).toBe("/api/chat/proj-1/export")
+    expect(url).not.toMatch(/token/i)
   })
 
-  it("has download attribute on the link", () => {
+  it("does not render a raw download link/href", () => {
     render(<ConversationExportCard info={baseInfo} />)
-    const link = screen.getByRole("link", { name: /download/i })
-    expect(link).toHaveAttribute("download")
+    expect(screen.queryByRole("link")).not.toBeInTheDocument()
   })
 
   it("has accessible figure role with aria-label", () => {

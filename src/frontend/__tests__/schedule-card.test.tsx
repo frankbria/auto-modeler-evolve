@@ -5,7 +5,7 @@
 import React from "react"
 import { render, screen, fireEvent, waitFor } from "@testing-library/react"
 import { ScheduleCard } from "@/components/deploy/schedule-card"
-import { api } from "@/lib/api"
+import { api, downloadFile } from "@/lib/api"
 import type { BatchSchedule, BatchJobRun } from "@/lib/types"
 
 jest.mock("@/lib/api")
@@ -193,7 +193,7 @@ describe("ScheduleCard", () => {
     })
   })
 
-  it("shows download link for successful runs", async () => {
+  it("shows download control for successful runs", async () => {
     ;(api.deploy.getSchedules as jest.Mock).mockResolvedValue([mockSchedule])
     render(<ScheduleCard deploymentId="dep-1" />)
 
@@ -203,6 +203,22 @@ describe("ScheduleCard", () => {
     await waitFor(() => {
       expect(screen.getByTestId("download-run-run-1")).toBeInTheDocument()
     })
+  })
+
+  it("downloads a run via the authenticated helper (no token in URL)", async () => {
+    ;(api.deploy.getSchedules as jest.Mock).mockResolvedValue([mockSchedule])
+    render(<ScheduleCard deploymentId="dep-1" />)
+
+    await waitFor(() => screen.getByTestId("history-btn-sched-1"))
+    fireEvent.click(screen.getByTestId("history-btn-sched-1"))
+
+    await waitFor(() => screen.getByTestId("download-run-run-1"))
+    fireEvent.click(screen.getByTestId("download-run-run-1"))
+
+    expect(downloadFile).toHaveBeenCalledTimes(1)
+    const [url] = (downloadFile as jest.Mock).mock.calls[0]
+    expect(url).toBe(mockJobRun.download_url)
+    expect(url).not.toMatch(/token/i)
   })
 
   it("shows last_error when schedule has an error", async () => {
