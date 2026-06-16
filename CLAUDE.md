@@ -151,8 +151,12 @@ protect the Python API). Follow this exactly when adding endpoints:
   every management call and, on 401, clears the token + redirects to `/login` (public
   `/api/predict/*` URLs are exempt — they use API keys, not the user JWT). A
   `<RequireAuth>` client guard wraps owner-scoped pages; `/login` + `/predict/[id]` stay
-  public. Header-less callers (SSE/EventSource, downloads) can't add the Bearer header —
-  streams use the header-authenticated `streamSSE`; do NOT put the JWT in a URL query.
+  public. Header-less callers (SSE/EventSource, file downloads) can't add the Bearer
+  header — streams use the header-authenticated `streamSSE`, and owner-scoped downloads
+  use `downloadFile(url, fallbackFilename?)` / the `useDownload` hook (#28): fetch the
+  blob through `apiFetch`, read the filename from `Content-Disposition`, trigger a
+  client-side object-URL download. NEVER render an owner-scoped `<a href download>` /
+  `window.open` (it 401s) and do NOT put the JWT in a URL query.
 - **Tests**: the shared `client` fixture is transparently authenticated; use `anon_client`
   for 401 assertions and `second_client` for cross-tenant (IDOR) tests
   (`tests/test_tenant_isolation.py`).
