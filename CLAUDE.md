@@ -157,6 +157,24 @@ protect the Python API). Follow this exactly when adding endpoints:
   for 401 assertions and `second_client` for cross-tenant (IDOR) tests
   (`tests/test_tenant_isolation.py`).
 
+### Ingestion Security (SSRF / path-traversal / file-read — #3)
+Any handler that makes an outbound request to a user-influenced URL, writes a file under
+a user-influenced name, or opens a user-supplied path MUST reuse these guards — do NOT
+hand-roll checks (that is how P1.3 happened):
+- **Outbound URLs** (URL import, webhooks): `core.ssrf_guard.assert_safe_url(url,
+  allow_unresolved=...)` before connecting (`allow_unresolved=True` at *registration*,
+  `False` at *fetch/dispatch*), and fetch via `safe_urlopen` (re-validates every redirect
+  hop). The guard allowlists by routability (`not ip.is_global`), so loopback/link-local/
+  RFC1918/ULA/CGNAT are all blocked.
+- **File writes**: `core.path_safety.sanitize_filename(name)` then `resolve_within(base_dir,
+  name)` — never join a raw filename onto an upload dir.
+- **Opening an uploaded path** (e.g. `extract-db` `db_path`): `assert_within(base_dir, path)`
+  to confine it (out-of-dir → 404, no existence leak), and open SQLite via
+  `_open_readonly_sqlite` (`mode=ro` + extension loading off + ATTACH/DETACH denied).
+- `UnsafeURLError`/`UnsafePathError` are mapped to HTTP 400 by app-level handlers in
+  `main.py`; for confinement-as-not-found cases catch `UnsafePathError` and raise 404.
+- Negative tests live in `tests/test_ingestion_security.py`.
+
 ## UX North Star
 
 This is built for **business analysts**, not data scientists. Every interaction should
