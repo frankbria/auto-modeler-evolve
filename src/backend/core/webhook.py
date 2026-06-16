@@ -81,6 +81,19 @@ def _do_dispatch(
     try:
         import urllib.request
 
+        from core.ssrf_guard import UnsafeURLError, assert_safe_url, safe_urlopen
+
+        # Re-validate immediately before connecting. This is the real SSRF /
+        # DNS-rebinding guard: a URL that was safe at registration is re-resolved
+        # here, so a host that has since flipped to a private address is blocked.
+        try:
+            assert_safe_url(url, allow_unresolved=False)
+        except UnsafeURLError as exc:
+            logger.warning(
+                "Webhook %s dispatch to %s blocked: %s", webhook_id, url, exc
+            )
+            return 0
+
         body = json.dumps(payload).encode()
         sig = _sign_payload(secret, body)
         req = urllib.request.Request(
@@ -93,7 +106,9 @@ def _do_dispatch(
             },
             method="POST",
         )
-        with urllib.request.urlopen(req, timeout=10) as resp:  # noqa: S310
+        # safe_urlopen re-validates redirect hops so a registered URL cannot
+        # bounce the signed payload onto an internal host.
+        with safe_urlopen(req, timeout=10, allow_unresolved=False) as resp:
             return resp.status
     except Exception as exc:
         logger.warning("Webhook %s dispatch to %s failed: %s", webhook_id, url, exc)

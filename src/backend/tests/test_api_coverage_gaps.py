@@ -566,7 +566,7 @@ class TestDataApiCoverageGaps:
         mock_cm.__enter__ = MagicMock(return_value=mock_resp)
         mock_cm.__exit__ = MagicMock(return_value=False)
 
-        with patch("urllib.request.urlopen", return_value=mock_cm):
+        with patch("api.data.safe_urlopen", return_value=mock_cm):
             resp = await ac.post(
                 "/api/data/upload-url",
                 json={"url": "https://example.com/data.html", "project_id": project_id},
@@ -595,7 +595,7 @@ class TestDataApiCoverageGaps:
         mock_cm.__enter__ = MagicMock(return_value=mock_resp)
         mock_cm.__exit__ = MagicMock(return_value=False)
 
-        with patch("urllib.request.urlopen", return_value=mock_cm):
+        with patch("api.data.safe_urlopen", return_value=mock_cm):
             resp = await ac.post(
                 "/api/data/upload-url",
                 json={"url": "https://example.com/data.csv", "project_id": project_id},
