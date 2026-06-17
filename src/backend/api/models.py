@@ -52,6 +52,7 @@ from models.model_run import ModelRun
 from models.project import Project
 
 from auth.dependencies import require_owner
+from core import storage
 
 router = APIRouter(
     tags=["models"],
@@ -66,7 +67,9 @@ _training_queues: dict[str, queue.Queue] = {}
 # project_id → count of still-running training threads
 _training_counters: dict[str, int] = {}
 
-MODELS_DIR = Path(__file__).parent.parent / "data" / "models"
+# Resolve through core.storage so model writes and cascade/janitor cleanup share
+# one root (honors DATA_DIR); identical to <backend>/data/models when unset.
+MODELS_DIR = storage.models_dir()
 
 
 # ---------------------------------------------------------------------------

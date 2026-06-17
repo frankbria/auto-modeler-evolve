@@ -32,6 +32,20 @@ constants that ignore `DATA_DIR`, so test artifact writes leaked into the real
 `src/backend/data` tree. `core/storage.py` resolves the root at call time from
 `DATA_DIR`; the cascade/janitor use it so tests isolate to `tmp_path`.
 
+## Cleanup must share ONE root with the writers (codex review, issue #4)
+First cut had `core/storage.py` (cleanup side) read `DATA_DIR` but left the
+writer constants (`api.data.UPLOAD_DIR`, `api.models.MODELS_DIR`,
+`api.deploy.DEPLOY_DIR`, `core.scheduler.BATCH_OUTPUT_DIR`,
+`api.templates.UPLOAD_DIR`) as import-time `__file__` paths that ignore
+`DATA_DIR`. With `DATA_DIR` unset they agree (default prod), but the moment an
+operator sets `DATA_DIR` to relocate data off a full disk — the exact remedy for
+this issue's disk-fill threat — writers keep writing to `<backend>/data` while
+the cascade/janitor look in `$DATA_DIR` and silently miss every artifact.
+**Fix:** point all five writer constants at the `core.storage` helpers so a
+single root drives both writes and cleanup. **Lesson:** a "single source of
+truth" module only delivers if the *writers* consume it too — centralizing the
+delete path alone is a half-fix the reader/writer split will defeat.
+
 ## Full-suite-only failures = global-state pollution / clock flakiness (issue #4)
 Three tests passed in isolation but failed in the 53-min full run. None were
 production bugs — all were test fragility surfaced only by the long, ordered run:

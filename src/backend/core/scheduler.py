@@ -13,9 +13,13 @@ import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from core import storage
+
 logger = logging.getLogger(__name__)
 
-BATCH_OUTPUT_DIR = Path(__file__).parent.parent / "data" / "batch_outputs"
+# Resolve through core.storage so batch-output writes and cascade/janitor cleanup
+# share one root (honors DATA_DIR); identical to <backend>/data/batch_outputs unset.
+BATCH_OUTPUT_DIR = storage.batch_outputs_dir()
 
 
 # ---------------------------------------------------------------------------
@@ -420,7 +424,8 @@ def _scheduler_loop() -> None:
                 burst_deps = session.exec(
                     select(Deployment).where(
                         Deployment.is_active == True,  # noqa: E712
-                        Deployment.high_activity_threshold_per_hour != None,  # noqa: E711
+                        Deployment.high_activity_threshold_per_hour
+                        != None,  # noqa: E711
                     )
                 ).all()
                 high_activity_dep_ids = [d.id for d in burst_deps]
@@ -439,7 +444,8 @@ def _scheduler_loop() -> None:
                     select(Deployment).where(
                         Deployment.is_active == True,  # noqa: E712
                         Deployment.auto_rollback_enabled == True,  # noqa: E712
-                        Deployment.auto_rollback_accuracy_threshold != None,  # noqa: E711
+                        Deployment.auto_rollback_accuracy_threshold
+                        != None,  # noqa: E711
                     )
                 ).all()
                 rollback_dep_ids = [d.id for d in rollback_deps]
@@ -468,7 +474,8 @@ def _scheduler_loop() -> None:
                     select(Deployment).where(
                         Deployment.is_active == True,  # noqa: E712
                         Deployment.degradation_retrain_enabled == True,  # noqa: E712
-                        Deployment.degradation_retrain_accuracy_threshold != None,  # noqa: E711
+                        Deployment.degradation_retrain_accuracy_threshold
+                        != None,  # noqa: E711
                     )
                 ).all()
                 degradation_retrain_dep_ids = [d.id for d in degradation_retrain_deps]
