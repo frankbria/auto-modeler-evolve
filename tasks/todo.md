@@ -1,113 +1,126 @@
-# Issue #4 — [P2.1] Cascade project delete + artifact GC (orphans, unbounded disk)
+# Issue #5 — Fix train/test data leakage inflating all model metrics
 
-**Branch:** `fix/4-cascade-delete-artifact-gc`
-**Severity:** HIGH (blocker) · data-integrity
+**Severity:** HIGH (blocker) · Labels: blocker, data-integrity, ml-correctness
+**Branch:** `fix/5-train-test-leakage`
 
-## Problem
-`delete_project` does `session.delete(project); session.commit()` with no cascade and
-no artifact removal. ~23 child tables (4 levels deep) become orphans; trained models,
-uploads, db_uploads and deployment pipelines are never removed. Orphaned Deployment rows
-can still serve `/api/predict/{id}`. Disk grows unbounded → fills shared VPS → SQLite
-writer goes offline. (Audit also cites test pollution: thousands of leaked dirs in the
-real data tree, caused by import-time artifact-dir constants that ignore `DATA_DIR`.)
+## The problem (verified in code)
+- `core/trainer.py:573-600` `prepare_features()` fits numeric-median imputation and
+  per-feature `LabelEncoder` on the **full dataset**, then `train_single_model` splits
+  that already-leaked matrix (`trainer.py:965-979`) and also hands the whole matrix to
+  `cross_val_score` (`trainer.py:1112-1119`).
+- `api/validation.py` `_build_Xy` re-loads the **entire CSV** and every diagnostic
+  (confusion matrix, calibration, threshold, segment, errors — 15 endpoints) predicts on
+  **all rows** → in-sample, not held-out.
+- `trainer.py:976-979` n<10 fallback sets `X_train = X_test = X`, yet
+  `_classification_summary` (`trainer.py:1237`) still prints "% accuracy on the held-out
+  test set".
 
-## Ownership graph (rooted at Project)
-- **Direct (project_id):** Dataset, ModelRun, Deployment, Conversation, AnalysisTemplate
-- **via dataset_id:** FeatureSet, DatasetFilter
-- **via deployment_id:** PredictionLog, FeedbackRecord, DeploymentChangelog, DeploymentPreset,
-  DashboardFieldConfig, InputValidationRule, PredictionAlertRule, SavedScenario,
-  WebhookConfig, WebhookEvent, WeeklyDigestConfig, GoalSeekRecord, BatchSchedule,
-  BatchJobRun, DeploymentVersion
-- **via champion_id/challenger_id (= deployment.id):** ABTest
+## Key architectural constraints (from exploration — do NOT break these)
+1. The saved `.joblib` model is a **bare estimator over a numeric feature space**
+   (one column per feature). `core/deployer.py` has ~30 functions (predict, explain,
+   sensitivity, sweep, goal-seek) that build/perturb **numeric** vectors and call
+   `model.predict`/`predict_proba`. We must NOT change the model's numeric input contract.
+2. Serving preprocessing lives in `deployer.PredictionPipeline` (medians + per-feature
+   `LabelEncoder`), built by `build_prediction_pipeline(full_df)`. The model's ordinal
+   codes MUST match serving's codes or predictions silently corrupt.
+3. `prepare_features` is called by ~12 test files + analysis fns expecting a numeric
+   ndarray — changing its return type is high blast radius.
+4. DB has an inline-migration mechanism (`db._apply_migrations`) — adding a nullable
+   `ModelRun` column is cheap and safe for existing DBs.
 
-## Artifacts on disk
-- `data/uploads/{project_id}/` (datasets)
-- `data/db_uploads/{project_id}/` (extract-db)
-- `data/models/{project_id}/{model_run_id}.joblib` (trained models)
-- `data/deployments/{model_run_id}_pipeline.joblib` (deployment pipelines)
+## Design (contained, correct): split-first + train-fold-fit preprocessor + persisted test indices
 
-## Plan
+### Step 1 — `core/preprocessing.py` (new): single source of truth for the transform
+- `build_preprocessor(df, feature_cols) -> ColumnTransformer` (UNFITTED):
+  `SimpleImputer(strategy="median")` for numeric cols + `OrdinalEncoder(handle_unknown=
+  "use_encoded_value", unknown_value=-1)` for categorical. Output = one column per
+  feature, order = `feature_cols` (preserves `feature_importances_` alignment).
+- `extract_clean_xy(df, feature_cols, target_col, problem_type) -> (X_raw_df, y, le_target)`:
+  drop missing-target rows (reset_index), encode **target** globally (standard practice,
+  not leakage), return the **raw** (untransformed) feature frame.
+- Tests: `tests/test_preprocessing.py`.
 
-1. **`core/storage.py`** — single source of truth for artifact paths. Base dir resolves at
-   call time from `DATA_DIR` env, falling back to `<backend>/data` (current behaviour).
-   Helpers: `uploads_dir()`, `db_uploads_dir()`, `models_dir()`, `deployments_dir()`,
-   `project_upload_dir(pid)`, `project_db_uploads_dir(pid)`, `project_models_dir(pid)`,
-   `deployment_pipeline_path(run_id)`, `project_artifact_paths(pid, run_ids)`.
-   - Point the existing `UPLOAD_DIR / _DB_UPLOADS_DIR / MODELS_DIR / DEPLOY_DIR` constants at
-     these helpers so writes and removals share one resolution (single source of truth).
-   - Add a test asserting storage layout matches the api-module constants (anti-drift).
+### Step 2 — `core/trainer.py`: split first, fit preprocessing on train fold only
+- Flow: `X_raw, y, le = extract_clean_xy(...)` → split the **raw** frame (random or
+  chronological) → `prep = build_preprocessor(...)` → `prep.fit(X_train_raw)` →
+  `X_train = prep.transform(...)`, `X_test = prep.transform(X_test_raw)` → fit bare
+  estimator on numeric `X_train` → metrics on `prep.transform(X_test_raw)` (LEAK-FREE).
+- CV: `cross_val_score(Pipeline([("prep", build_preprocessor(...)), ("model",
+  fresh_estimator)]), X_raw, y, cv=...)` so prep refits each fold (LEAK-FREE).
+- Persist the fitted `prep` as sidecar `{model_run_id}.prep.joblib` (next to the model).
+- Return `test_indices` (positional indices into the clean frame) in the result dict.
+- Apply the same split-first treatment to ensemble / goal-driven / tuning training paths.
 
-2. **`core/cascade.py`** — `delete_project_cascade(session, project_id)`:
-   - Collect deployment_ids, dataset_ids, model_run_ids for the project.
-   - Bulk-`delete()` all descendant rows in dependency order (grandchildren by
-     deployment_id → children by dataset_id → direct children by project_id → project),
-     all in **one transaction / single commit** → zero orphan rows.
-   - After commit, remove artifact dirs/files via `core/storage` (guarded by
-     `path_safety.assert_within`). Best-effort on files (FS isn't transactional); the
-     janitor reaps any leftover.
+### Step 3 — n<10 honesty (`trainer.py`)
+- When `n < MIN_HELDOUT` (=10) → mark `metrics["evaluation"] = "in_sample"`,
+  `metrics["n_too_small"] = True`; summaries emit "on the training data (dataset too
+  small for a held-out test — treat as optimistic)" instead of "held-out test set".
+  Held-out wording only when a real test split exists.
 
-3. **Wire `delete_project`** (api/projects.py) to call `delete_project_cascade`.
+### Step 4 — persist held-out test indices on `ModelRun`
+- `models/model_run.py`: add `test_indices: Optional[str]` (JSON list) + `evaluation`
+  (str) nullable columns.
+- `db._apply_migrations`: add `("modelrun", "test_indices", "TEXT")`,
+  `("modelrun", "evaluation", "TEXT")`.
+- `api/models.py`: store `result["test_indices"]` JSON on the run after training.
 
-4. **`core/janitor.py`** — GC artifacts with no referencing DB row:
-   - `collect_orphans(session)`: remove `uploads/`, `db_uploads/`, `models/` subdirs whose
-     `{project_id}` has no Project row; remove `deployments/*_pipeline.joblib` whose
-     `model_run_id` has no ModelRun/Deployment row.
-   - `enforce_upload_retention(session, max_age_days=None)`: age sweep for orphaned uploads.
-   - `run_janitor(session)`: convenience wrapper, returns a summary (dirs/files removed).
-   - Wire best-effort invocation on app startup (lifespan), guarded so it never blocks boot.
+### Step 5 — `api/validation.py`: diagnostics on held-out rows only
+- `_build_Xy` → add `held_out_only` path. When the run has `test_indices`, slice the
+  clean frame to those positional rows and transform via the persisted `{run}.prep.joblib`
+  (NOT a refit on full data). Confusion / calibration / threshold / segment / errors all
+  use the held-out slice.
+- Legacy models with no `test_indices`: fall back to full-data prediction but tag the
+  response `evaluation: "in_sample"` + a plain-English note (no silent inflation).
 
-5. **PRAGMA `foreign_keys=ON`** via SQLAlchemy `Engine "connect"` event in `db.py`
-   (applies to all engines incl. test). Low risk: only the existing `owner_id` FK is
-   declared, so enforcement adds "no project without a real user" without breaking inserts.
-   **Deviation (criterion 2):** we do NOT add hard child-FK constraints with `ondelete=CASCADE`.
-   Rationale: (a) the existing SQLite DB cannot gain FK constraints without a full table
-   rebuild, so they'd never protect production data anyway; (b) enforcing child FKs would
-   break existing insert/test patterns (the `backfill` fixture seeds only parent Projects).
-   The transactional app-level cascade delivers the identical guarantee (zero orphans),
-   verified by tests. Will confirm the full suite stays green with PRAGMA on; if it breaks
-   unrelated tests, scope PRAGMA to the production engine and document.
+### Step 6 — serving alignment (`core/deployer.py`)
+- `build_prediction_pipeline`: when a persisted `{run}.prep.joblib` exists, source the
+  `medians` + per-feature category orderings FROM it (so serving ordinal codes == training
+  codes). Keep computing means/stds/ranges from the df for UX warnings. Falls back to
+  current full-df fit when no preprocessor sidecar (legacy/retrain edge).
 
-6. **Tests** (`tests/test_project_cascade_delete.py`, `tests/test_janitor.py`):
-   - Seed a project with rows in every child table + artifact dirs/files (via storage).
-   - `DELETE /api/projects/{id}` → assert zero rows across ALL child tables + all artifact
-     dirs/files removed (the criterion-4 assertion).
-   - Cross-tenant: `second_client` DELETE → 404, nothing removed.
-   - Janitor: orphan dir removed; live-project dir kept; retention sweep.
-   - PRAGMA: assert `PRAGMA foreign_keys` returns 1 on a fresh connection.
+### Step 7 — leakage regression test (AC4)
+- `tests/test_train_test_leakage.py`: data where a categorical feature has a test-only
+  category and numeric NaNs; assert (a) the preprocessor passed to CV is unfitted/refit
+  per fold, (b) held-out metrics from the new path are NOT inflated vs a manual leak-free
+  baseline, (c) the old global-fit path would inflate (documents the bug), (d) n<10 result
+  is tagged `in_sample` and summary omits "held-out".
 
-## Acceptance criteria (from issue #4)
-- [x] `delete_project` transactional: deletes all child rows + removes artifact dirs in one commit
-      → `core/cascade.py::delete_project_cascade`, wired into `api/projects.py`.
-- [x] `PRAGMA foreign_keys=ON` enabled (`db.py` Engine connect listener). Hard child-FK
-      `ondelete=CASCADE` intentionally NOT added (documented deviation — brownfield SQLite
-      can't be retrofitted + would break insert/test patterns; app-level cascade is the
-      mechanism).
-- [x] Janitor GCs artifact files with no referencing row + enforces upload retention
-      → `core/janitor.py` (`collect_orphans`, `enforce_upload_retention`, `run_janitor`),
-      best-effort on startup in `main.py` lifespan.
-- [x] Test asserts zero orphan rows + removed dirs after delete
-      → `tests/test_project_cascade_delete.py`, `tests/test_janitor.py`,
-      `tests/test_storage_layout.py`.
+## Acceptance criteria (from issue #5) — ALL MET
+- [x] Imputation/encoding in an sklearn Pipeline (SimpleImputer + OrdinalEncoder w/
+      handle_unknown) fit only on each training fold; unfitted Pipeline passed to the
+      train/test fit (via `_split_and_preprocess`) and to `cross_val_score`
+      (`trainer.train_single_model` CV block + `validation._leakfree_cv`).
+- [x] Calibration/threshold/confusion/segment/error/fairness diagnostics computed on
+      persisted held-out indices (`validation._build_eval_Xy`), never in-sample.
+- [x] Never emit "held-out test set" when X_train is X_test; `_tag_evaluation` marks
+      `evaluation=in_sample` + summaries say "on the training data"; held-out requires
+      n >= MIN_HELDOUT_ROWS (10).
+- [x] Leakage regression test (`tests/test_train_test_leakage.py`, 5 tests): prep refit
+      per CV fold, held-out metric == manual leak-free baseline, leaky path diverges,
+      n<10 tagged in_sample.
 
-## Implementation notes / extra changes
-- **`core/storage.py`** (new): single source of truth for artifact paths; call-time
-  `DATA_DIR` resolution (default = `<backend>/data`, identical to the legacy constants).
-- **`tests/conftest.py`**: extended the autouse `backfill` fixture to also seed the owner
-  `User` for any flushed `Project` (PRAGMA now enforces `owner_id → user.id`). The user
-  INSERT is emitted immediately on the flush connection — a deferred `session.add` would
-  race the Project insert because the bare column FK gives no ORM save-order dependency.
-  See tasks/lessons.md.
+## Status: implementation complete; full backend suite green (6678 passed, 1 fixed).
+The sole full-suite failure (`test_calibration_check_endpoint_200_classification`) was a
+real behavior change, not a flake: held-out calibration on the 40-row fixture left only 8
+rows (< calibration's 10-sample floor). Fixed correctly by raising `_MIN_HELDOUT_EVAL_ROWS`
+to 10 so too-small held-out sets fall back to in-sample (honestly tagged) instead of
+erroring — matching the trainer's MIN_HELDOUT_ROWS and the UX "fail gracefully" rule.
 
-## Status: implementation complete; full backend suite verified green.
+## Test strategy
+- Pure-function tests for `preprocessing` + `trainer` leak-free path (no DB).
+- REST tests via `client` for validation endpoints returning held-out diagnostics +
+  `evaluation` tag; `anon_client` unaffected.
+- Regression test (Step 7) is the AC4 gate.
+- Full `uv run pytest` must stay green; ruff + black clean.
 
-Full suite (6663 tests) initially reported `3 failed, 6660 passed` — all three were
-**test fragility surfaced only by the full ordered 53-min run**, not production bugs
-(no production code changed to fix them):
-- `test_storage_layout_matches_api_constants` — read api-module `*_DIR` globals that
-  ~150 other tests reassign in-place without `monkeypatch`. Fixed: reload the modules
-  to read declared constants.
-- `test_uptime_degraded_day_status`, `test_uptime_active_day_has_predictions` —
-  pre-existing flaky tests (unchanged since #24) that assert relative-to-now logs land
-  on "today"; slips a day when run in the first UTC hour. Fixed: anchor logs to noon UTC.
-
-See tasks/lessons.md for the patterns.
+## Deviations / decisions (self-adapted; issue body had the plan)
+- **OrdinalEncoder over OneHotEncoder**: preserves one-column-per-feature so
+  `feature_importances_`/`coef_` alignment and deployer's numeric perturbation machinery
+  keep working. OneHot would explode the feature space and break ~30 deployer functions.
+- **Model stays a bare estimator + sidecar preprocessor** (NOT a wrapped sklearn Pipeline
+  artifact): wrapping would change the model's input contract from numeric→raw and break
+  the entire serving/explanation layer. Sidecar preprocessor gives leak-free training and
+  train==serve code alignment with minimal blast radius.
+- Learning-curve / overfitting / data-quality diagnostics (`compute_learning_curve` etc.)
+  are NOT in the issue's AC list — left as a documented Known Limitation unless trivially
+  covered, to contain risk.

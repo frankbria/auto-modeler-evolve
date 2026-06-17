@@ -19,6 +19,13 @@ class ModelRun(SQLModel, table=True):
     summary: Optional[str] = None  # Plain-English metric summary
     training_duration_ms: Optional[int] = None
     model_path: Optional[str] = None
+    # Positional indices (JSON list) of the held-out test rows in the cleaned,
+    # target-dropna'd, index-reset feature frame. Lets validation diagnostics
+    # score on the true held-out set instead of in-sample (issue #5). None for
+    # legacy runs and for datasets too small for a genuine held-out split.
+    test_indices: Optional[str] = None  # JSON list[int]
+    # "held_out" | "in_sample" — how the stored metrics were measured.
+    evaluation: Optional[str] = None
     is_selected: bool = False
     is_deployed: bool = False
     status: str = Field(default="pending")  # pending | training | done | failed

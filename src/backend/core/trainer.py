@@ -55,9 +55,16 @@ from sklearn.metrics import (
     recall_score,
 )
 from sklearn.model_selection import RandomizedSearchCV, train_test_split
+from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import LabelEncoder
 from sklearn.utils.class_weight import compute_sample_weight
+from core.preprocessing import build_preprocessor
 from core.validator import run_cross_validation
+
+# Minimum rows required to carve out a genuine held-out test set. Below this the
+# model is trained and evaluated on the same rows; metrics are then labelled
+# in-sample (never "held-out") — see issue #5.
+MIN_HELDOUT_ROWS = 10
 
 try:
     from imblearn.over_sampling import SMOTE as _SMOTE
@@ -699,10 +706,12 @@ def _train_ensemble_model(
     split_strategy: str,
     date_col_used: Optional[str],
     info: dict,
+    feature_cols: Optional[list[str]] = None,
 ) -> dict:
     """Build and train a VotingClassifier/Regressor or StackingClassifier/Regressor.
 
-    Returns the same dict format as train_single_model.
+    Returns the same dict format as train_single_model. ``feature_cols`` enables
+    the leak-free raw-mode path (preprocessing fit on the training fold only).
     """
     algorithms = (
         REGRESSION_ALGORITHMS
@@ -719,20 +728,17 @@ def _train_ensemble_model(
             "Install scikit-learn base algorithms or check the registry."
         )
 
-    # Train/test split (same logic as train_single_model)
+    # Train/test split + (raw-mode) leak-free preprocessing fit on train only.
     n = len(X)
-    if n >= 10:
-        if split_strategy == "chronological":
-            train_idx, test_idx = chronological_split(n)
-            X_train, X_test = X[train_idx], X[test_idx]
-            y_train, y_test = y[train_idx], y[test_idx]
-        else:
-            X_train, X_test, y_train, y_test = train_test_split(
-                X, y, test_size=0.2, random_state=42
-            )
-    else:
-        X_train = X_test = X
-        y_train = y_test = y
+    (
+        X_train,
+        X_test,
+        y_train,
+        y_test,
+        preprocessor,
+        test_indices,
+        has_heldout,
+    ) = _split_and_preprocess(X, y, split_strategy, feature_cols)
 
     # Build the ensemble model
     if ensemble_type == "voting":
@@ -762,9 +768,11 @@ def _train_ensemble_model(
 
     if problem_type == "regression":
         metrics = _regression_metrics(y_test, y_pred)
+        _tag_evaluation(metrics, has_heldout)
         summary = _regression_summary(metrics)
     else:
         metrics = _classification_metrics(y_test, y_pred)
+        _tag_evaluation(metrics, has_heldout)
         summary = _classification_summary(metrics)
 
     metrics["train_size"] = len(X_train)
@@ -836,12 +844,15 @@ def _train_ensemble_model(
     model_dir.mkdir(parents=True, exist_ok=True)
     model_path = str(model_dir / f"{model_run_id}.joblib")
     joblib.dump(model, model_path)
+    if preprocessor is not None:
+        joblib.dump(preprocessor, str(model_dir / f"{model_run_id}.prep.joblib"))
 
     return {
         "metrics": metrics,
         "model_path": model_path,
         "training_duration_ms": elapsed_ms,
         "summary": summary,
+        "test_indices": test_indices,
     }
 
 
@@ -907,6 +918,62 @@ def chronological_split(
     return train_idx, test_idx
 
 
+def _split_and_preprocess(
+    X,
+    y: np.ndarray,
+    split_strategy: str,
+    feature_cols: Optional[list[str]],
+):
+    """Split rows, then (raw mode) fit preprocessing on the training fold only.
+
+    Returns ``(X_train, X_test, y_train, y_test, preprocessor, test_indices,
+    has_heldout)``.
+
+    - **Raw mode** (``feature_cols`` given): ``X`` is a raw feature DataFrame.
+      The split happens on the rows *first*; the preprocessor is fit on the
+      training rows only and used to transform both folds — no test statistics
+      leak into imputation/encoding (issue #5). ``preprocessor`` is the fitted
+      transformer to persist for serving/validation.
+    - **Legacy mode** (``feature_cols`` is ``None``): ``X`` is already numeric;
+      it is split directly and ``preprocessor`` is ``None``.
+
+    When ``n < MIN_HELDOUT_ROWS`` the same rows are used for train and test
+    (metrics are in-sample); ``has_heldout`` is ``False`` and ``test_indices``
+    is ``None`` (there is no genuine held-out set to persist).
+    """
+    n = len(X)
+    has_heldout = n >= MIN_HELDOUT_ROWS
+
+    if has_heldout:
+        if split_strategy == "chronological":
+            train_idx, test_idx = chronological_split(n)
+        else:
+            # Split on positional indices so raw/legacy modes partition
+            # identically and legacy metrics are unchanged vs the old
+            # train_test_split(X, y, random_state=42).
+            train_idx, test_idx = train_test_split(
+                np.arange(n), test_size=0.2, random_state=42
+            )
+    else:
+        train_idx = test_idx = np.arange(n)
+
+    if feature_cols is not None:
+        X_df = X
+        X_train_raw = X_df.iloc[train_idx]
+        X_test_raw = X_df.iloc[test_idx]
+        preprocessor = build_preprocessor(X_df, feature_cols)
+        preprocessor.fit(X_train_raw)
+        X_train = preprocessor.transform(X_train_raw)
+        X_test = preprocessor.transform(X_test_raw)
+    else:
+        preprocessor = None
+        X_train, X_test = X[train_idx], X[test_idx]
+
+    y_train, y_test = y[train_idx], y[test_idx]
+    test_indices = test_idx.tolist() if has_heldout else None
+    return X_train, X_test, y_train, y_test, preprocessor, test_indices, has_heldout
+
+
 def train_single_model(
     X: np.ndarray,
     y: np.ndarray,
@@ -919,6 +986,7 @@ def train_single_model(
     date_col_used: Optional[str] = None,
     custom_class_weights: Optional[dict] = None,
     label_encoder: Optional[object] = None,
+    feature_cols: Optional[list[str]] = None,
 ) -> dict:
     """Train one sklearn model, compute held-out metrics, and save to disk.
 
@@ -929,9 +997,13 @@ def train_single_model(
         of rows are used as the test set.  Only meaningful when the training
         DataFrame was sorted by a date column before prepare_features().
     date_col_used: the name of the date column used for sorting (metadata only).
+    feature_cols: when provided, ``X`` is a **raw** (untransformed) feature
+        DataFrame and preprocessing (median impute + ordinal encode) is fit on
+        the training fold ONLY — the leak-free path (issue #5). When ``None``,
+        ``X`` is a pre-built numeric matrix (legacy callers / unit tests).
 
     Returns:
-        {metrics, model_path, training_duration_ms, summary}
+        {metrics, model_path, training_duration_ms, summary, test_indices}
     """
     algorithms = (
         REGRESSION_ALGORITHMS
@@ -957,26 +1029,22 @@ def train_single_model(
             split_strategy,
             date_col_used,
             info,
+            feature_cols=feature_cols,
         )
 
     model_class = info["class"]
     params = dict(info["params"])  # copy so we don't mutate the registry
 
-    # Train/test split
-    n = len(X)
-    if n >= 10:
-        if split_strategy == "chronological":
-            train_idx, test_idx = chronological_split(n)
-            X_train, X_test = X[train_idx], X[test_idx]
-            y_train, y_test = y[train_idx], y[test_idx]
-        else:
-            X_train, X_test, y_train, y_test = train_test_split(
-                X, y, test_size=0.2, random_state=42
-            )
-    else:
-        # Too few rows — train/eval on same data (metrics will be optimistic)
-        X_train = X_test = X
-        y_train = y_test = y
+    # Train/test split + (raw-mode) leak-free preprocessing fit on train only.
+    (
+        X_train,
+        X_test,
+        y_train,
+        y_test,
+        preprocessor,
+        test_indices,
+        has_heldout,
+    ) = _split_and_preprocess(X, y, split_strategy, feature_cols)
 
     # ---- Class imbalance strategy ----
     apply_threshold_tuning = False
@@ -1076,9 +1144,11 @@ def train_single_model(
 
     if problem_type == "regression":
         metrics = _regression_metrics(y_test, y_pred)
+        _tag_evaluation(metrics, has_heldout)
         summary = _regression_summary(metrics)
     else:
         metrics = _classification_metrics(y_test, y_pred)
+        _tag_evaluation(metrics, has_heldout)
         summary = _classification_summary(metrics)
         if optimal_threshold is not None:
             metrics["optimal_threshold"] = round(float(optimal_threshold), 2)
@@ -1104,15 +1174,27 @@ def train_single_model(
     model_dir.mkdir(parents=True, exist_ok=True)
     model_path = str(model_dir / f"{model_run_id}.joblib")
     joblib.dump(model_to_save, model_path)
+    # Persist the train-fold-fit preprocessor (raw mode) so serving and the
+    # held-out validation diagnostics transform with the SAME statistics the
+    # model was trained on (issue #5).
+    if preprocessor is not None:
+        joblib.dump(preprocessor, str(model_dir / f"{model_run_id}.prep.joblib"))
 
-    # Run cross-validation on the full dataset so the training panel can show
-    # CV score ± std alongside the train/test split metrics.  Skip for tiny
-    # datasets (CV needs at least 2 rows) and catch all errors so CV never
-    # blocks a successful training result.
-    if len(X) >= 10:
+    # Run cross-validation so the training panel can show CV score ± std.
+    # In raw mode the unfitted preprocessor is wrapped in a Pipeline and handed
+    # to cross_val_score so it refits on each fold — no leakage (issue #5).
+    if len(X) >= MIN_HELDOUT_ROWS:
         try:
-            unfitted = model_class(**params)
-            cv_result = run_cross_validation(unfitted, X, y, problem_type)
+            if feature_cols is not None:
+                cv_estimator = Pipeline(
+                    [
+                        ("prep", build_preprocessor(X, feature_cols)),
+                        ("model", model_class(**params)),
+                    ]
+                )
+            else:
+                cv_estimator = model_class(**params)
+            cv_result = run_cross_validation(cv_estimator, X, y, problem_type)
             if cv_result["mean"] is not None:
                 metrics["cv_mean"] = cv_result["mean"]
                 metrics["cv_std"] = cv_result["std"]
@@ -1125,6 +1207,7 @@ def train_single_model(
         "model_path": model_path,
         "training_duration_ms": elapsed_ms,
         "summary": summary,
+        "test_indices": test_indices,
     }
 
 
@@ -1183,6 +1266,21 @@ def _add_calibration_metrics(
 # ---------------------------------------------------------------------------
 
 
+def _tag_evaluation(metrics: dict, has_heldout: bool) -> None:
+    """Mark whether metrics were measured on a held-out set or in-sample.
+
+    Below ``MIN_HELDOUT_ROWS`` the model is evaluated on its own training rows;
+    the summaries must say so rather than claiming a "held-out test set" (#5).
+    """
+    metrics["evaluation"] = "held_out" if has_heldout else "in_sample"
+    if not has_heldout:
+        metrics["n_too_small"] = True
+
+
+def _is_in_sample(metrics: dict) -> bool:
+    return metrics.get("evaluation") == "in_sample"
+
+
 def _regression_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> dict:
     return {
         "r2": round(float(r2_score(y_true, y_pred)), 4),
@@ -1217,8 +1315,14 @@ def _regression_summary(metrics: dict) -> str:
         quality = "moderate fit"
     else:
         quality = "weak fit"
+    where = (
+        "on the training data (dataset too small for a held-out test — treat as "
+        "optimistic)"
+        if _is_in_sample(metrics)
+        else "on the held-out test set"
+    )
     return (
-        f"R² = {r2:.2f} ({quality} — 1.0 would be perfect). "
+        f"R² = {r2:.2f} ({quality} — 1.0 would be perfect) {where}. "
         f"On average, predictions are off by {mae:.2f} units (MAE)."
     )
 
@@ -1233,8 +1337,14 @@ def _classification_summary(metrics: dict) -> str:
             f" Decision threshold tuned to {metrics['optimal_threshold']:.2f} "
             f"to maximise F1 on imbalanced data."
         )
+    where = (
+        "on the training data (dataset too small for a held-out test — treat as "
+        "optimistic)"
+        if _is_in_sample(metrics)
+        else "on the held-out test set"
+    )
     return (
-        f"{pct}% accuracy on the held-out test set. "
+        f"{pct}% accuracy {where}. "
         f"F1 = {f1:.2f} (balances precision and recall; 1.0 is perfect).{threshold_note}"
     )
 
@@ -1342,6 +1452,7 @@ def tune_model(
     new_model_run_id: str,
     n_iter: int = 10,
     cv: int = 3,
+    feature_cols: Optional[list[str]] = None,
 ) -> dict:
     """Run RandomizedSearchCV to find better hyperparameters for the given algorithm.
 
@@ -1390,15 +1501,19 @@ def tune_model(
             "tunable": False,
         }
 
-    # Train/test split
-    n = len(X)
-    if n >= 10:
-        X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=0.2, random_state=42
-        )
-    else:
-        X_train = X_test = X
-        y_train = y_test = y
+    # Train/test split + (raw-mode) leak-free preprocessing fit on train only.
+    # The reported held-out metric below is then leak-free; the inner
+    # RandomizedSearchCV CV reuses the train-fold preprocessor, which only
+    # affects hyperparameter selection (not the reported metric).
+    (
+        X_train,
+        X_test,
+        y_train,
+        y_test,
+        preprocessor,
+        test_indices,
+        has_heldout,
+    ) = _split_and_preprocess(X, y, "random", feature_cols)
 
     # Scoring metric
     scoring = "r2" if problem_type == "regression" else "f1_weighted"
@@ -1430,9 +1545,11 @@ def tune_model(
 
     if problem_type == "regression":
         metrics = _regression_metrics(y_test, y_pred)
+        _tag_evaluation(metrics, has_heldout)
         summary = _regression_summary(metrics)
     else:
         metrics = _classification_metrics(y_test, y_pred)
+        _tag_evaluation(metrics, has_heldout)
         summary = _classification_summary(metrics)
 
     metrics["train_size"] = len(X_train)
@@ -1444,6 +1561,8 @@ def tune_model(
     import joblib as _jl
 
     _jl.dump(best_model, model_path)
+    if preprocessor is not None:
+        _jl.dump(preprocessor, str(model_dir / f"{new_model_run_id}.prep.joblib"))
 
     return {
         "best_params": best_params,
@@ -1453,6 +1572,7 @@ def tune_model(
         "training_duration_ms": elapsed_ms,
         "summary": summary,
         "tunable": True,
+        "test_indices": test_indices,
     }
 
 
@@ -1793,6 +1913,7 @@ def run_goal_driven_training(
     goal_target: float,
     model_dir: Path,
     base_id: str,
+    feature_cols: Optional[list[str]] = None,
 ) -> dict:
     """Try algorithms in priority order until the target metric is achieved.
 
@@ -1826,7 +1947,11 @@ def run_goal_driven_training(
     if len(X) > _GOAL_MAX_ROWS:
         rng = np.random.default_rng(42)
         idx = rng.choice(len(X), size=_GOAL_MAX_ROWS, replace=False)
-        X_trial, y_trial = X[idx], y[idx]
+        if feature_cols is not None:
+            X_trial = X.iloc[idx].reset_index(drop=True)
+        else:
+            X_trial = X[idx]
+        y_trial = y[idx]
     else:
         X_trial, y_trial = X, y
 
@@ -1839,7 +1964,13 @@ def run_goal_driven_training(
         trial_id = f"{base_id}_goal_{algo_key}"
         try:
             result = train_single_model(
-                X_trial, y_trial, algo_key, problem_type, model_dir, trial_id
+                X_trial,
+                y_trial,
+                algo_key,
+                problem_type,
+                model_dir,
+                trial_id,
+                feature_cols=feature_cols,
             )
             score = _goal_score(result["metrics"], goal_metric)
             algo_name = all_algos[algo_key]["name"]
@@ -1875,6 +2006,7 @@ def run_goal_driven_training(
                 f"{base_id}_goal_tuned",
                 n_iter=10,
                 cv=3,
+                feature_cols=feature_cols,
             )
             if tune_result.get("metrics"):
                 tuned_score = _goal_score(tune_result["metrics"], goal_metric)

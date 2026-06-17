@@ -96,11 +96,20 @@ def build_prediction_pipeline(
     feature_names: list[str],
     target_col: str,
     problem_type: str,
+    preprocessor=None,
 ) -> PredictionPipeline:
     """Fit a PredictionPipeline from the training DataFrame.
 
     Mirrors the preprocessing in trainer.prepare_features so that predictions
     on new data use the exact same encoding/fill logic.
+
+    ``preprocessor`` (the persisted train-fold ColumnTransformer, issue #5):
+    when provided, the categorical ordinal codes and numeric medians used at
+    serve time are sourced from it instead of being re-fit on the full dataset.
+    This guarantees the codes the deployed model receives match the codes it was
+    trained on — a category absent from the training fold would otherwise shift
+    every code and silently corrupt predictions. Display stats (means, stds,
+    ranges, known categories) are still computed from ``df`` for UX warnings.
     """
     pipeline = PredictionPipeline(
         feature_names=feature_names,
@@ -108,6 +117,17 @@ def build_prediction_pipeline(
         target_column=target_col,
         problem_type=problem_type,
     )
+
+    # Pull training-fold transform stats so serving matches training exactly.
+    train_medians: dict[str, float] = {}
+    train_categories: dict[str, list[str]] = {}
+    if preprocessor is not None:
+        try:
+            from core.preprocessing import extract_serving_stats
+
+            train_medians, train_categories = extract_serving_stats(preprocessor)
+        except Exception:  # noqa: BLE001
+            train_medians, train_categories = {}, {}
 
     # Drop rows with missing target to match training
     df_clean = (
@@ -120,7 +140,8 @@ def build_prediction_pipeline(
         series = df_clean[col]
         if pd.api.types.is_numeric_dtype(series):
             pipeline.column_types[col] = "numeric"
-            pipeline.medians[col] = float(series.median())
+            # Prefer the training-fold median so imputation matches training.
+            pipeline.medians[col] = float(train_medians.get(col, series.median()))
             pipeline.feature_means[col] = float(series.mean())
             pipeline.feature_stds[col] = float(series.std()) if len(series) > 1 else 1.0
             s_clean = series.dropna()
@@ -134,7 +155,12 @@ def build_prediction_pipeline(
         else:
             pipeline.column_types[col] = "categorical"
             le = LabelEncoder()
-            le.fit(series.fillna("MISSING").astype(str))
+            if col in train_categories:
+                # Reconstruct the encoder from the training-fold category order
+                # so le.transform(v) == the ordinal code the model was trained on.
+                le.classes_ = np.array(train_categories[col])
+            else:
+                le.fit(series.fillna("MISSING").astype(str))
             pipeline.label_encoders[col] = le
             known = [c for c in series.dropna().astype(str).unique() if c != "MISSING"]
             pipeline.feature_ranges[col] = {"known_categories": sorted(known)}
@@ -1400,9 +1426,7 @@ def compute_prediction_cohort(
         direction_label = (
             "higher"
             if top_mean > overall_mean
-            else "lower"
-            if top_mean < overall_mean
-            else "similar"
+            else "lower" if top_mean < overall_mean else "similar"
         )
         numeric_profile.append(
             {

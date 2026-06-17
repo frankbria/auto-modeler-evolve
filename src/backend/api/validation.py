@@ -99,7 +99,12 @@ def _build_Xy(
     file_path: Path,
     feature_set: FeatureSet,
 ) -> tuple[np.ndarray, np.ndarray, list[str]]:
-    """Load CSV, apply transforms, return (X, y, feature_names)."""
+    """Load CSV, apply transforms, return (X, y, feature_names).
+
+    Full-dataset numeric matrix — used for model-property views (feature
+    importance, partial dependence, single-row explanations) that are not
+    held-out evaluations.
+    """
     df = pd.read_csv(file_path)
     transforms = json.loads(feature_set.transformations or "[]")
     if transforms:
@@ -111,6 +116,128 @@ def _build_Xy(
 
     X, y, _ = prepare_features(df, feature_cols, target_col, problem_type)
     return X, y, feature_cols
+
+
+def _prep_sidecar_path(model_path: str | None) -> Path | None:
+    """Path of the persisted train-fold preprocessor for a model, if any.
+
+    Saved next to the model as ``{model_run_id}.prep.joblib`` (see trainer #5).
+    """
+    if not model_path:
+        return None
+    p = Path(model_path)
+    return p.with_name(f"{p.stem}.prep.joblib")
+
+
+# Below this many held-out rows the per-bin / per-segment / calibration
+# diagnostics aren't meaningful (calibration itself requires >=10 samples), so we
+# fall back to the full dataset tagged "in_sample" rather than erroring on a
+# sliver. Matches the trainer's MIN_HELDOUT_ROWS so a dataset big enough to carve
+# a held-out split is big enough to diagnose on it.
+_MIN_HELDOUT_EVAL_ROWS = 10
+
+
+def _build_eval_Xy(
+    run: ModelRun,
+    file_path: Path,
+    feature_set: FeatureSet,
+) -> tuple[np.ndarray, np.ndarray, list[str], str, pd.DataFrame]:
+    """Return the matrix diagnostics should score on + how it was obtained.
+
+    When the run persisted held-out ``test_indices`` AND its preprocessor
+    sidecar is present, load the cleaned raw frame, slice to the held-out rows,
+    and transform with the **train-fold** preprocessor — so calibration /
+    threshold / confusion / segment / error diagnostics are computed on data the
+    model never trained on (issue #5).
+
+    Falls back to the full dataset (tagged ``"in_sample"``) for legacy runs that
+    predate held-out persistence, so old models still render — but honestly
+    labelled, never silently inflated.
+
+    Returns ``(X_numeric, y, feature_cols, evaluation, eval_df)`` where
+    ``eval_df`` is the transformed dataframe rows aligned 1:1 with ``X``/``y``
+    (so callers can pull display values / segment columns for exactly the rows
+    scored), and ``evaluation`` is ``"held_out"`` or ``"in_sample"``.
+    """
+    df = pd.read_csv(file_path)
+    transforms = json.loads(feature_set.transformations or "[]")
+    if transforms:
+        df, _ = apply_transformations(df, transforms)
+
+    target_col = feature_set.target_column
+    feature_cols = [c for c in df.columns if c != target_col]
+    problem_type = feature_set.problem_type or "regression"
+
+    # Positions in the transformed df that survive target-dropna — both
+    # extract_clean_xy and prepare_features drop the same rows, so this maps
+    # cleaned-frame position -> transformed-df position for row alignment.
+    kept = np.flatnonzero(df[target_col].notna().to_numpy())
+
+    test_idx = json.loads(run.test_indices) if run.test_indices else None
+    prep_path = _prep_sidecar_path(run.model_path)
+    if test_idx and prep_path is not None and prep_path.exists():
+        from core.preprocessing import extract_clean_xy
+
+        X_raw, y, _le = extract_clean_xy(df, feature_cols, target_col, problem_type)
+        # Guard against frame drift (dataset edited after training).
+        valid = [i for i in test_idx if 0 <= i < len(X_raw) and i < len(kept)]
+        if len(valid) >= _MIN_HELDOUT_EVAL_ROWS:
+            prep = joblib.load(str(prep_path))
+            X = prep.transform(X_raw.iloc[valid])
+            eval_df = df.iloc[kept[valid]].reset_index(drop=True)
+            return X, np.asarray(y)[valid], feature_cols, "held_out", eval_df
+
+    # Legacy / too-few-held-out: full-data prediction (optimistic, but tagged).
+    X, y, _ = prepare_features(df, feature_cols, target_col, problem_type)
+    eval_df = df.iloc[kept].reset_index(drop=True)
+    return X, y, feature_cols, "in_sample", eval_df
+
+
+_IN_SAMPLE_NOTE = (
+    "These diagnostics were computed on the training data (this model predates "
+    "held-out tracking or the dataset is too small), so they are optimistic. "
+    "Retrain to get held-out diagnostics."
+)
+
+
+def _eval_note(evaluation: str) -> str | None:
+    """Plain-English caveat to attach when diagnostics are in-sample."""
+    return None if evaluation == "held_out" else _IN_SAMPLE_NOTE
+
+
+def _build_raw_xy(
+    file_path: Path,
+    feature_set: FeatureSet,
+) -> tuple[pd.DataFrame, np.ndarray, list[str], str]:
+    """Load CSV + transforms and return the **raw** (untransformed) feature
+    frame, target, feature names, and problem type — for wrapping an unfitted
+    preprocessor in a CV Pipeline so cross-validation stays leak-free (#5).
+    """
+    from core.preprocessing import extract_clean_xy
+
+    df = pd.read_csv(file_path)
+    transforms = json.loads(feature_set.transformations or "[]")
+    if transforms:
+        df, _ = apply_transformations(df, transforms)
+    target_col = feature_set.target_column
+    feature_cols = [c for c in df.columns if c != target_col]
+    problem_type = feature_set.problem_type or "regression"
+    X_raw, y, _le = extract_clean_xy(df, feature_cols, target_col, problem_type)
+    return X_raw, y, feature_cols, problem_type
+
+
+def _leakfree_cv(run: ModelRun, file_path: Path, feature_set: FeatureSet) -> dict:
+    """Run cross-validation with preprocessing refit per fold (leak-free, #5)."""
+    from sklearn.pipeline import Pipeline
+
+    from core.preprocessing import build_preprocessor
+
+    X_raw, y, feature_cols, problem_type = _build_raw_xy(file_path, feature_set)
+    unfitted = _get_unfitted_model(run.algorithm, problem_type)
+    cv_estimator = Pipeline(
+        [("prep", build_preprocessor(X_raw, feature_cols)), ("model", unfitted)]
+    )
+    return run_cross_validation(cv_estimator, X_raw, y, problem_type)
 
 
 def _get_unfitted_model(algorithm: str, problem_type: str):
@@ -145,13 +272,13 @@ def get_validation_metrics(
     problem_type = feature_set.problem_type or "regression"
     metrics = json.loads(run.metrics) if run.metrics else {}
 
-    X, y, feature_cols = _build_Xy(file_path, feature_set)
+    # Cross-validation with preprocessing refit per fold (leak-free, #5).
+    cv_result = _leakfree_cv(run, file_path, feature_set)
 
-    # Cross-validation
-    unfitted = _get_unfitted_model(run.algorithm, problem_type)
-    cv_result = run_cross_validation(unfitted, X, y, problem_type)
-
-    # Confusion matrix or residuals
+    # Confusion matrix / residuals on the held-out slice (never in-sample, #5).
+    X, y, feature_cols, evaluation, _eval_df = _build_eval_Xy(
+        run, file_path, feature_set
+    )
     fitted_model = joblib.load(run.model_path)
     y_pred = fitted_model.predict(X)
 
@@ -179,6 +306,8 @@ def get_validation_metrics(
         "held_out_metrics": metrics,
         "cross_validation": cv_result,
         "error_analysis": error_analysis,
+        "evaluation": evaluation,
+        "evaluation_note": _eval_note(evaluation),
         "confidence": confidence,
     }
 
@@ -303,15 +432,21 @@ def get_segment_performance(
             ),
         )
 
-    # Build features and get predictions
+    # Build held-out features + predictions (never in-sample, #5).
     problem_type = feature_set.problem_type or "regression"
-    X, y, _feature_cols = _build_Xy(file_path, feature_set)
+    X, y, _feature_cols, evaluation, eval_df = _build_eval_Xy(
+        run, file_path, feature_set
+    )
 
     fitted_model = joblib.load(run.model_path)
     y_pred = fitted_model.predict(X)
 
-    # Align group values with X rows (both come from the same CSV in the same order)
-    group_values = df_raw[col].tolist()[: len(y)]
+    # Pull group values for exactly the scored rows. ``eval_df`` is aligned 1:1
+    # with X/y; fall back to the raw column if a transform dropped it.
+    if col in eval_df.columns:
+        group_values = eval_df[col].tolist()
+    else:
+        group_values = df_raw[col].tolist()[: len(y)]
 
     result = compute_segment_performance(
         group_values=group_values,
@@ -325,6 +460,8 @@ def get_segment_performance(
         "group_col": col,
         "algorithm": run.algorithm,
         "problem_type": problem_type,
+        "evaluation": evaluation,
+        "evaluation_note": _eval_note(evaluation),
         **result,
     }
 
@@ -352,19 +489,20 @@ def get_prediction_errors(
     run, feature_set, dataset, file_path = _load_run_context(model_run_id, session)
 
     problem_type = feature_set.problem_type or "regression"
-    X, y, feature_cols = _build_Xy(file_path, feature_set)
+    X, y, feature_cols, evaluation, eval_df = _build_eval_Xy(
+        run, file_path, feature_set
+    )
 
     fitted_model = joblib.load(run.model_path)
     y_pred = fitted_model.predict(X)
 
-    # Build display rows from the raw (pre-transform) CSV so analysts see
-    # original values, not encoded integers.
-    df_raw = pd.read_csv(file_path)
+    # Build display rows from ``eval_df`` (aligned 1:1 with the scored rows) so
+    # analysts see original values for exactly the held-out errors.
     target_col = feature_set.target_column
-    display_cols = [c for c in feature_cols if c in df_raw.columns]
+    display_cols = [c for c in feature_cols if c in eval_df.columns]
     feature_rows = [
         {col: row[col] for col in display_cols if col in row}
-        for row in df_raw.head(len(y)).to_dict(orient="records")
+        for row in eval_df.to_dict(orient="records")
     ]
 
     # Resolve classification class labels from pipeline if available
@@ -397,6 +535,8 @@ def get_prediction_errors(
         "problem_type": problem_type,
         "target_col": target_col,
         "n_requested": n,
+        "evaluation": evaluation,
+        "evaluation_note": _eval_note(evaluation),
         **result,
     }
 
@@ -424,7 +564,9 @@ def get_error_distribution(
     run, feature_set, dataset, file_path = _load_run_context(model_run_id, session)
 
     problem_type = feature_set.problem_type or "regression"
-    X, y, feature_cols = _build_Xy(file_path, feature_set)
+    X, y, feature_cols, evaluation, _eval_df = _build_eval_Xy(
+        run, file_path, feature_set
+    )
 
     fitted_model = joblib.load(run.model_path)
     y_pred = fitted_model.predict(X)
@@ -453,6 +595,8 @@ def get_error_distribution(
     result["model_run_id"] = model_run_id
     result["algorithm"] = run.algorithm
     result["target_col"] = feature_set.target_column
+    result["evaluation"] = evaluation
+    result["evaluation_note"] = _eval_note(evaluation)
 
     return result
 
@@ -593,17 +737,21 @@ def get_fairness_metrics(
             ),
         )
 
-    # Build X, y for predictions
-    X, y, feature_cols = _build_Xy(file_path, feature_set)
+    # Build held-out X, y for predictions (never in-sample, #5).
+    X, y, feature_cols, evaluation, eval_df = _build_eval_Xy(
+        run, file_path, feature_set
+    )
 
     fitted_model = joblib.load(run.model_path)
     y_pred = fitted_model.predict(X)
 
-    # Align sensitive column with the rows used after feature prep
-    # (_build_Xy may drop rows with NaN target; use first len(y) rows)
+    # Sensitive column for exactly the scored rows (eval_df is aligned 1:1).
     target_col = feature_set.target_column
-    df_aligned = df_raw.dropna(subset=[target_col]).reset_index(drop=True)
-    sensitive_vals = df_aligned[col].values[: len(y)]
+    if col in eval_df.columns:
+        sensitive_vals = eval_df[col].values
+    else:
+        df_aligned = df_raw.dropna(subset=[target_col]).reset_index(drop=True)
+        sensitive_vals = df_aligned[col].values[: len(y)]
 
     result = compute_fairness_metrics(
         y_true=y,
@@ -616,6 +764,8 @@ def get_fairness_metrics(
     result["model_run_id"] = model_run_id
     result["algorithm"] = run.algorithm
     result["target_col"] = target_col
+    result["evaluation"] = evaluation
+    result["evaluation_note"] = _eval_note(evaluation)
 
     return result
 
@@ -644,7 +794,9 @@ def get_threshold_analysis(
             detail="Threshold analysis is only available for classification models.",
         )
 
-    X, y, _feature_cols = _build_Xy(file_path, feature_set)
+    X, y, _feature_cols, evaluation, _eval_df = _build_eval_Xy(
+        run, file_path, feature_set
+    )
 
     fitted_model = joblib.load(run.model_path)
 
@@ -679,6 +831,8 @@ def get_threshold_analysis(
     result["model_run_id"] = model_run_id
     result["algorithm"] = run.algorithm
     result["target_col"] = feature_set.target_column
+    result["evaluation"] = evaluation
+    result["evaluation_note"] = _eval_note(evaluation)
 
     return result
 
@@ -711,7 +865,9 @@ def get_per_class_threshold(
             detail="Per-class threshold analysis is only available for classification models.",
         )
 
-    X, y, _feature_cols = _build_Xy(file_path, feature_set)
+    X, y, _feature_cols, evaluation, _eval_df = _build_eval_Xy(
+        run, file_path, feature_set
+    )
 
     fitted_model = joblib.load(run.model_path)
 
@@ -737,6 +893,8 @@ def get_per_class_threshold(
     result["model_run_id"] = model_run_id
     result["algorithm"] = run.algorithm
     result["target_col"] = feature_set.target_column
+    result["evaluation"] = evaluation
+    result["evaluation_note"] = _eval_note(evaluation)
 
     return result
 
@@ -770,7 +928,9 @@ def get_confidence_distribution(
             detail="Confidence distribution is only available for classification models.",
         )
 
-    X, y, _feature_cols = _build_Xy(file_path, feature_set)
+    X, y, _feature_cols, evaluation, _eval_df = _build_eval_Xy(
+        run, file_path, feature_set
+    )
 
     fitted_model = joblib.load(run.model_path)
 
@@ -799,6 +959,8 @@ def get_confidence_distribution(
     result["model_run_id"] = model_run_id
     result["algorithm"] = run.algorithm
     result["target_col"] = feature_set.target_column
+    result["evaluation"] = evaluation
+    result["evaluation_note"] = _eval_note(evaluation)
 
     return result
 
@@ -879,7 +1041,9 @@ async def get_calibration_check(
             detail="Calibration check is only available for classification models.",
         )
 
-    X, y, _feature_cols = _build_Xy(file_path, feature_set)
+    X, y, _feature_cols, evaluation, _eval_df = _build_eval_Xy(
+        run, file_path, feature_set
+    )
 
     fitted_model = joblib.load(run.model_path)
 
@@ -908,6 +1072,8 @@ async def get_calibration_check(
     result["model_run_id"] = model_run_id
     result["algorithm"] = run.algorithm
     result["target_col"] = feature_set.target_column
+    result["evaluation"] = evaluation
+    result["evaluation_note"] = _eval_note(evaluation)
 
     return result
 
@@ -932,7 +1098,9 @@ def get_error_correlation(
     run, feature_set, _dataset, file_path = _load_run_context(model_run_id, session)
 
     problem_type = feature_set.problem_type or "regression"
-    X, y, feature_cols = _build_Xy(file_path, feature_set)
+    X, y, feature_cols, evaluation, _eval_df = _build_eval_Xy(
+        run, file_path, feature_set
+    )
 
     fitted_model = joblib.load(run.model_path)
     y_pred = fitted_model.predict(X)
@@ -951,6 +1119,8 @@ def get_error_correlation(
     result["model_run_id"] = model_run_id
     result["algorithm"] = run.algorithm
     result["target_col"] = feature_set.target_column
+    result["evaluation"] = evaluation
+    result["evaluation_note"] = _eval_note(evaluation)
 
     return result
 

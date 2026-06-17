@@ -206,7 +206,23 @@ def _build_pipeline_for_run(
     problem_type = feature_set.problem_type or "regression"
 
     DEPLOY_DIR.mkdir(parents=True, exist_ok=True)
-    pipeline = build_prediction_pipeline(df, feature_names, target_col, problem_type)
+    # Load the persisted train-fold preprocessor (issue #5) so serving's ordinal
+    # codes / medians match what the model was trained on. Absent for legacy
+    # runs — build_prediction_pipeline then falls back to full-data fitting.
+    _preprocessor = None
+    if run.model_path:
+        try:
+            import joblib as _joblib
+
+            _prep_path = Path(run.model_path)
+            _prep_path = _prep_path.with_name(f"{_prep_path.stem}.prep.joblib")
+            if _prep_path.exists():
+                _preprocessor = _joblib.load(str(_prep_path))
+        except Exception:  # noqa: BLE001
+            _preprocessor = None
+    pipeline = build_prediction_pipeline(
+        df, feature_names, target_col, problem_type, preprocessor=_preprocessor
+    )
 
     # Compute residual std for regression prediction intervals
     if problem_type == "regression" and target_col in df.columns:

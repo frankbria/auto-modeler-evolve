@@ -89,6 +89,8 @@ def _apply_migrations():
         ("deployment", "degradation_retrain_enabled", "INTEGER NOT NULL DEFAULT 0"),
         ("deployment", "degradation_retrain_accuracy_threshold", "REAL"),
         ("deployment", "degradation_retrain_last_triggered_at", "TEXT"),
+        ("modelrun", "test_indices", "TEXT"),
+        ("modelrun", "evaluation", "TEXT"),
     ]
     with engine.connect() as conn:
         for table, col, definition in migrations:
