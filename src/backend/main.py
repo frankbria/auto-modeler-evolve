@@ -1,4 +1,5 @@
 import logging
+import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -34,6 +35,24 @@ async def lifespan(app: FastAPI):
     DATA_DIR.mkdir(exist_ok=True)
     UPLOAD_DIR.mkdir(exist_ok=True)
     create_db_and_tables()
+
+    # Reclaim disk from any artifacts orphaned by crashes / out-of-band deletes.
+    # Runs in a daemon thread so a large first-boot backlog (the audit found
+    # thousands of leaked dirs) can't block the app from serving. run_janitor
+    # never raises, and opens its own short-lived session.
+    def _sweep() -> None:
+        try:
+            from sqlmodel import Session
+
+            from core.janitor import run_janitor
+            from db import engine as _engine
+
+            with Session(_engine) as _session:
+                run_janitor(_session)
+        except Exception:  # noqa: BLE001 - background best-effort
+            logging.getLogger(__name__).exception("Startup janitor sweep failed")
+
+    threading.Thread(target=_sweep, name="artifact-janitor", daemon=True).start()
     if using_insecure_default_secret():
         logging.getLogger(__name__).warning(
             "AUTH_SECRET is not set — using an insecure development secret. "

@@ -119,6 +119,25 @@ Analytics functions (e.g., `compute_segment_performance()`) must:
 - Have no database dependencies
 - Be fully testable in isolation without a running server
 
+### Artifact Storage & Cascade Delete (#4)
+On-disk artifacts (uploads, db_uploads, models, deployment pipelines, batch
+outputs) have ONE source of truth: `core/storage.py`, which resolves the root at
+call time from `DATA_DIR` (default `<backend>/data`). Follow this exactly:
+- **Never hardcode** `Path(__file__).parent.parent / "data" / ...`. New artifact
+  paths go through a `core.storage` helper; writer modules point their `*_DIR`
+  constants at those helpers so writes and the cascade/janitor cleanup share one
+  root (a writer that ignores `DATA_DIR` while cleanup honors it silently leaks
+  every file once `DATA_DIR` is set — that was the #4 footgun).
+- **Deleting a parent must cascade.** `delete_project` calls
+  `core.cascade.delete_project_cascade` — a leaf-first bulk delete of the whole
+  ownership subtree in one transaction (zero orphans), then artifact removal
+  (path_safety-guarded) post-commit. Adding a new child table? Add it to the
+  cascade and to `tests/test_project_cascade_delete.py`'s coverage.
+- **Orphans are reaped** by `core/janitor.py` (startup sweep). Any new artifact
+  type needs a janitor rule + upload-style retention if it can leak.
+- SQLite FK enforcement is ON (`db.py` `PRAGMA foreign_keys`); brownfield child
+  FKs are NOT retrofitted — the app-level cascade is the mechanism.
+
 ### Column Cardinality Guards
 When accepting a column as a grouping/segmenting parameter:
 - Reject if `n_unique > 50` (absolute high-cardinality)

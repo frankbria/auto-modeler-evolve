@@ -22,13 +22,15 @@ from models.dataset import Dataset
 from models.project import Project
 from models.user import User
 from core.analyzer import analyze_dataframe, compute_full_profile
+from core import storage
 import pandas as pd
 import json
 
 from auth.dependencies import get_current_user
 
 router = APIRouter(
-    prefix="/api/templates", tags=["templates"],
+    prefix="/api/templates",
+    tags=["templates"],
     dependencies=[Depends(get_current_user)],
 )
 # ---------------------------------------------------------------------------
@@ -36,7 +38,7 @@ router = APIRouter(
 # ---------------------------------------------------------------------------
 
 SAMPLE_DIR = Path(__file__).parent.parent / "data" / "sample"
-UPLOAD_DIR = Path(__file__).parent.parent / "data" / "uploads"
+UPLOAD_DIR = storage.uploads_dir()  # shared root via core.storage (honors DATA_DIR)
 
 TEMPLATES: dict[str, dict] = {
     "sales_forecast": {

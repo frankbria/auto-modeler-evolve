@@ -68,6 +68,7 @@ from core.path_safety import (
     sanitize_filename,
 )
 from core.query_engine import run_nl_query
+from core import storage
 from core.ssrf_guard import assert_safe_url, safe_urlopen
 from db import get_session
 from models.dataset import Dataset
@@ -89,7 +90,10 @@ router = APIRouter(
     tags=["data"],
     dependencies=[Depends(require_owner)],
 )
-UPLOAD_DIR = Path(__file__).parent.parent / "data" / "uploads"
+# Resolve through core.storage so writers and the cascade/janitor cleanup share
+# one root: if DATA_DIR is set (e.g. to relocate data off a full disk), both move
+# together. With DATA_DIR unset this is identical to <backend>/data/uploads.
+UPLOAD_DIR = storage.uploads_dir()
 SAMPLE_CSV = Path(__file__).parent.parent / "data" / "sample" / "sample_sales.csv"
 
 _ACCEPTED_EXTENSIONS = {".csv", ".xlsx", ".xls"}
@@ -1119,7 +1123,7 @@ def upload_from_url(
 # Allows analysts to upload a .db file, browse its tables, and extract
 # any table (or a custom SELECT query) as a Dataset — same pipeline as CSV.
 
-_DB_UPLOADS_DIR = UPLOAD_DIR.parent / "db_uploads"
+_DB_UPLOADS_DIR = storage.db_uploads_dir()
 
 
 def _deny_attach_authorizer(action: int, *args) -> int:

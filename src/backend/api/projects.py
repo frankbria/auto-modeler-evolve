@@ -11,6 +11,7 @@ from auth.dependencies import get_current_user
 from auth.scoping import get_owned_project
 from core.advisor import compute_cross_project_comparison
 from core.analyzer import compute_portfolio_summary, compute_project_health_summary
+from core.cascade import delete_project_cascade
 from core.onboarding import compute_onboarding_state
 from db import get_session
 from models.dataset import Dataset
@@ -181,9 +182,7 @@ def get_portfolio(
             metric_name = (
                 "r2"
                 if "r2" in metrics
-                else "accuracy"
-                if "accuracy" in metrics
-                else None
+                else "accuracy" if "accuracy" in metrics else None
             )
             if metric_val is not None and (
                 best_metric_value is None or metric_val > best_metric_value
@@ -269,9 +268,7 @@ def get_cross_project_comparison(
             metric_name = (
                 "r2"
                 if "r2" in metrics
-                else "accuracy"
-                if "accuracy" in metrics
-                else None
+                else "accuracy" if "accuracy" in metrics else None
             )
             if metric_val is not None and (
                 best_metric_value is None or metric_val > best_metric_value
@@ -386,9 +383,11 @@ def delete_project(
     session: Session = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ):
+    # Authorize (404 on missing / cross-tenant), then cascade-delete every
+    # descendant row + on-disk artifact in one transaction. A bare
+    # session.delete(project) would orphan ~23 child tables and leak artifacts.
     project = get_owned_project(project_id, current_user, session)
-    session.delete(project)
-    session.commit()
+    delete_project_cascade(session, project.id)
 
 
 # ---------------------------------------------------------------------------
@@ -624,9 +623,7 @@ def _static_narrative(ctx: dict) -> str:
         quality = (
             "clean"
             if d["missing_pct"] < 5
-            else "mostly complete"
-            if d["missing_pct"] < 20
-            else "with some gaps"
+            else "mostly complete" if d["missing_pct"] < 20 else "with some gaps"
         )
         parts.append(
             f"The analysis is based on **{d['filename']}** — "

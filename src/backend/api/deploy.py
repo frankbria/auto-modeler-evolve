@@ -92,6 +92,7 @@ from models.saved_scenario import SavedScenario
 
 from auth.dependencies import get_current_user, require_owner_allow_public
 from auth.scoping import get_owned_deployment
+from core import storage
 from models.project import Project as OwnerProject
 from models.user import User
 
@@ -110,7 +111,9 @@ def _owned_project_ids(current_user: "User", session: "Session") -> list[str]:
     )
 
 
-DEPLOY_DIR = Path(__file__).parent.parent / "data" / "deployments"
+# Resolve through core.storage so pipeline writes and cascade/janitor cleanup
+# share one root (honors DATA_DIR); identical to <backend>/data/deployments unset.
+DEPLOY_DIR = storage.deployments_dir()
 
 
 # ---------------------------------------------------------------------------
