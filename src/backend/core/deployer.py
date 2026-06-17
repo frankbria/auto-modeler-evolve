@@ -46,9 +46,15 @@ class PredictionPipeline:
     # numeric: {"p5": float, "p95": float, "min": float, "max": float}
     # categorical: {"known_categories": list[str]}
     feature_ranges: dict[str, dict] = field(default_factory=dict)
+    # Code emitted for an unseen category at serve time. Defaults to 0.0 for
+    # legacy pipelines, but is set to the training OrdinalEncoder's unknown
+    # sentinel (-1) when built from a train-fold preprocessor, so serving encodes
+    # unseen categories exactly as the model was trained to expect them (#5).
+    unknown_code: float = 0.0
 
     def transform(self, input_dict: dict) -> np.ndarray:
         """Transform a single row dict into a feature vector for prediction."""
+        unknown_code = getattr(self, "unknown_code", 0.0)
         row = []
         for col in self.feature_names:
             val = input_dict.get(col)
@@ -60,14 +66,11 @@ class PredictionPipeline:
                 # Categorical
                 str_val = str(val) if val is not None else "MISSING"
                 le = self.label_encoders.get(col)
-                if le is not None:
-                    if str_val in le.classes_:
-                        row.append(float(le.transform([str_val])[0]))
-                    else:
-                        # Unseen category — use 0 (best-effort)
-                        row.append(0.0)
+                if le is not None and str_val in le.classes_:
+                    row.append(float(le.transform([str_val])[0]))
                 else:
-                    row.append(0.0)
+                    # Unseen category — match the training-fold unknown sentinel.
+                    row.append(unknown_code)
         return np.array(row, dtype=float).reshape(1, -1)
 
     def transform_df(self, df: pd.DataFrame) -> np.ndarray:
@@ -123,9 +126,14 @@ def build_prediction_pipeline(
     train_categories: dict[str, list[str]] = {}
     if preprocessor is not None:
         try:
-            from core.preprocessing import extract_serving_stats
+            from core.preprocessing import (
+                UNKNOWN_ENCODED_VALUE,
+                extract_serving_stats,
+            )
 
             train_medians, train_categories = extract_serving_stats(preprocessor)
+            # Match the training OrdinalEncoder's unseen-category sentinel.
+            pipeline.unknown_code = float(UNKNOWN_ENCODED_VALUE)
         except Exception:  # noqa: BLE001
             train_medians, train_categories = {}, {}
 

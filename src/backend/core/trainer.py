@@ -1501,45 +1501,77 @@ def tune_model(
             "tunable": False,
         }
 
-    # Train/test split + (raw-mode) leak-free preprocessing fit on train only.
-    # The reported held-out metric below is then leak-free; the inner
-    # RandomizedSearchCV CV reuses the train-fold preprocessor, which only
-    # affects hyperparameter selection (not the reported metric).
-    (
-        X_train,
-        X_test,
-        y_train,
-        y_test,
-        preprocessor,
-        test_indices,
-        has_heldout,
-    ) = _split_and_preprocess(X, y, "random", feature_cols)
+    # Train/test split (positional, so raw/legacy partition identically).
+    n = len(X)
+    has_heldout = n >= MIN_HELDOUT_ROWS
+    if has_heldout:
+        train_idx, test_idx = train_test_split(
+            np.arange(n), test_size=0.2, random_state=42
+        )
+    else:
+        train_idx = test_idx = np.arange(n)
+    test_indices = test_idx.tolist() if has_heldout else None
+    y_train, y_test = y[train_idx], y[test_idx]
 
     # Scoring metric
     scoring = "r2" if problem_type == "regression" else "f1_weighted"
 
     # Base model with fixed defaults that we don't want to tune (e.g. random_state, verbosity)
     fixed_params = {k: v for k, v in default_params.items() if k not in param_grid}
-    base_model = model_class(**fixed_params)
 
     start = time.time()
-    search = RandomizedSearchCV(
-        estimator=base_model,
-        param_distributions=param_grid,
-        n_iter=min(n_iter, 10),
-        scoring=scoring,
-        cv=min(cv, 3),
-        random_state=42,
-        n_jobs=-1,
-        refit=True,
-        error_score="raise",
-    )
-    search.fit(X_train, y_train)
+    if feature_cols is not None:
+        # Raw mode: search over a Pipeline so preprocessing refits inside every
+        # inner CV fold — hyperparameter selection is leak-free (#5). The chosen
+        # params are then refit as a BARE estimator on the train-fold-preprocessed
+        # data so the saved artifact stays a bare numeric model + sidecar prep.
+        X_train_raw, X_test_raw = X.iloc[train_idx], X.iloc[test_idx]
+        pipe = Pipeline(
+            [
+                ("prep", build_preprocessor(X, feature_cols)),
+                ("model", model_class(**fixed_params)),
+            ]
+        )
+        search = RandomizedSearchCV(
+            estimator=pipe,
+            param_distributions={f"model__{k}": v for k, v in param_grid.items()},
+            n_iter=min(n_iter, 10),
+            scoring=scoring,
+            cv=min(cv, 3),
+            random_state=42,
+            n_jobs=-1,
+            refit=True,
+            error_score="raise",
+        )
+        search.fit(X_train_raw, y_train)
+        tuned_cv_score = round(float(search.best_score_), 4)
+        best_params = {k[len("model__") :]: v for k, v in search.best_params_.items()}
+        preprocessor = build_preprocessor(X, feature_cols)
+        preprocessor.fit(X_train_raw)
+        X_train = preprocessor.transform(X_train_raw)
+        X_test = preprocessor.transform(X_test_raw)
+        best_model = model_class(**{**fixed_params, **best_params})
+        best_model.fit(X_train, y_train)
+    else:
+        # Legacy numeric path (unchanged): X is already a numeric matrix.
+        preprocessor = None
+        X_train, X_test = X[train_idx], X[test_idx]
+        search = RandomizedSearchCV(
+            estimator=model_class(**fixed_params),
+            param_distributions=param_grid,
+            n_iter=min(n_iter, 10),
+            scoring=scoring,
+            cv=min(cv, 3),
+            random_state=42,
+            n_jobs=-1,
+            refit=True,
+            error_score="raise",
+        )
+        search.fit(X_train, y_train)
+        best_model = search.best_estimator_
+        best_params = dict(search.best_params_)
+        tuned_cv_score = round(float(search.best_score_), 4)
     elapsed_ms = int((time.time() - start) * 1000)
-
-    best_model = search.best_estimator_
-    best_params = {k: v for k, v in search.best_params_.items()}
-    tuned_cv_score = round(float(search.best_score_), 4)
 
     y_pred = best_model.predict(X_test)
 

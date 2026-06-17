@@ -164,6 +164,21 @@ def _build_eval_Xy(
     if transforms:
         df, _ = apply_transformations(df, transforms)
 
+    # Reproduce the EXACT frame ordering/sampling the trainer used so positional
+    # test_indices line up (#5). api/models.py samples large datasets first, then
+    # sorts chronologically — mirror that order or held-out rows would be
+    # mis-identified for chronological / >50k-row runs.
+    run_metrics = json.loads(run.metrics) if run.metrics else {}
+    from core.trainer import sample_large_dataset as _sample_large_dataset
+
+    df, _sample_info = _sample_large_dataset(df)
+    if run_metrics.get("split_strategy") == "chronological" and run_metrics.get(
+        "date_col_used"
+    ):
+        _date_col = run_metrics["date_col_used"]
+        if _date_col in df.columns:
+            df = df.sort_values(_date_col).reset_index(drop=True)
+
     target_col = feature_set.target_column
     feature_cols = [c for c in df.columns if c != target_col]
     problem_type = feature_set.problem_type or "regression"

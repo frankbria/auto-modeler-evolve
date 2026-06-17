@@ -239,3 +239,49 @@ def test_tiny_dataset_is_tagged_in_sample_not_heldout():
     assert result["test_indices"] is None
     assert "held-out test set" not in result["summary"]
     assert "training data" in result["summary"]
+
+
+# ---------------------------------------------------------------------------
+# Serving alignment: codes + unseen sentinel match the training preprocessor
+# ---------------------------------------------------------------------------
+
+
+def test_serving_pipeline_matches_training_codes_and_unknown_sentinel():
+    """build_prediction_pipeline sourced from the train-fold preprocessor must
+    (a) encode known categories with the SAME ordinal code the model trained on
+    even when a category is missing from the train fold, and (b) map an unseen
+    category to the training unknown sentinel (-1), not 0 (codex P1/P2, #5)."""
+    from core.deployer import build_prediction_pipeline
+    from core.preprocessing import UNKNOWN_ENCODED_VALUE, coerce_raw_features
+
+    # Train fold is missing category "c" (present only in the full dataset) — the
+    # classic code-shift trap.
+    train_df = pd.DataFrame({"region": ["a", "b", "a", "b"], "x": [1.0, 2.0, 3.0, 4.0]})
+    full_df = pd.DataFrame(
+        {
+            "region": ["a", "b", "c", "a", "b", "c"],
+            "x": [1.0, 2.0, 9.0, 3.0, 4.0, 8.0],
+            "target": [0, 1, 0, 1, 0, 1],
+        }
+    )
+    feature_cols = ["region", "x"]
+
+    prep = build_preprocessor(train_df, feature_cols)
+    prep.fit(coerce_raw_features(train_df, feature_cols))
+
+    pipeline = build_prediction_pipeline(
+        full_df, feature_cols, "target", "classification", preprocessor=prep
+    )
+
+    # Known category codes match the training OrdinalEncoder exactly.
+    train_codes = prep.transform(coerce_raw_features(train_df, feature_cols))
+    for row, region in zip(train_df.itertuples(index=False), train_df["region"]):
+        vec = pipeline.transform({"region": region, "x": row.x})
+        # region is feature 0
+        expected = train_codes[list(train_df["region"]).index(region)][0]
+        assert vec[0, 0] == expected
+
+    # Unseen-at-train category -> training unknown sentinel, not 0.
+    assert pipeline.unknown_code == float(UNKNOWN_ENCODED_VALUE)
+    vec_unseen = pipeline.transform({"region": "zzz_never_seen", "x": 1.0})
+    assert vec_unseen[0, 0] == float(UNKNOWN_ENCODED_VALUE)
