@@ -147,8 +147,11 @@ def test_uptime_degraded_single_day():
 
 
 def test_uptime_degraded_day_status():
-    # Today's predictions all have high latency
-    logs = _make_log_dicts([0.01, 0.02, 0.03], [3000.0, 3000.0, 3000.0])
+    # Today's predictions all have high latency. Anchor them at noon UTC so the
+    # day bucket can't slip to "yesterday" when the suite runs near UTC midnight
+    # (the function buckets by utcnow's calendar date — see flaky-clock guard).
+    noon_today = datetime.utcnow().replace(hour=12, minute=0, second=0, microsecond=0)
+    logs = [{"created_at": noon_today, "response_ms": 3000.0} for _ in range(3)]
     result = compute_api_uptime_summary(logs, n_days=7)
     today = datetime.utcnow().strftime("%Y-%m-%d")
     today_stat = next((s for s in result["daily_stats"] if s["date"] == today), None)
@@ -203,8 +206,10 @@ def test_uptime_silent_days_have_no_latency():
 
 def test_uptime_active_day_has_predictions():
     now = datetime.utcnow()
-    # Use exact datetime that is definitely today to avoid date boundary issues
-    logs = [{"created_at": now - timedelta(hours=1), "response_ms": 100.0}]
+    # Anchor at noon UTC today: "1 hour ago" slips to the previous calendar day
+    # when the suite runs in the first UTC hour, flaking the today-bucket assert.
+    noon_today = now.replace(hour=12, minute=0, second=0, microsecond=0)
+    logs = [{"created_at": noon_today, "response_ms": 100.0}]
     result = compute_api_uptime_summary(logs, n_days=7)
     today = now.strftime("%Y-%m-%d")
     today_stat = next((s for s in result["daily_stats"] if s["date"] == today), None)
@@ -284,7 +289,9 @@ def test_uptime_endpoint_returns_dict(client):
 
     with TestClient(app) as c:
         with next(get_session()) as session:
-            proj = Project(owner_id="test-default-owner", id=str(uuid.uuid4()), name="uptime-test")
+            proj = Project(
+                owner_id="test-default-owner", id=str(uuid.uuid4()), name="uptime-test"
+            )
             session.add(proj)
             dep = Deployment(
                 id=str(uuid.uuid4()),
@@ -311,7 +318,11 @@ def test_uptime_endpoint_n_days_param(client):
 
     with TestClient(app) as c:
         with next(get_session()) as session:
-            proj = Project(owner_id="test-default-owner", id=str(uuid.uuid4()), name="uptime-test-days")
+            proj = Project(
+                owner_id="test-default-owner",
+                id=str(uuid.uuid4()),
+                name="uptime-test-days",
+            )
             session.add(proj)
             dep = Deployment(
                 id=str(uuid.uuid4()),

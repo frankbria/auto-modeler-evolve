@@ -1,57 +1,113 @@
-# Issue #25 — Frontend authentication + auth-aware API layer
+# Issue #4 — [P2.1] Cascade project delete + artifact GC (orphans, unbounded disk)
 
-**Issue:** [P1.1-frontend] Frontend authentication + auth-aware API layer (follow-up to #1)
-**Plan source:** issue body (adapted to codebase)
-**Branch:** `feat/25-frontend-auth`
+**Branch:** `fix/4-cascade-delete-artifact-gc`
+**Severity:** HIGH (blocker) · data-integrity
 
-## Context (from codebase exploration)
-- Backend auth is live & backend-native:
-  - `POST /api/auth/register` → `{access_token, token_type:"bearer", user:{id,email,name}}`
-  - `POST /api/auth/login` → same `TokenResponse`
-  - `GET /api/auth/me` → `{id,email,name}` (requires `Authorization: Bearer`)
-  - CORS allows all origins + `Authorization` header.
-- `lib/api.ts`: one `API_URL` const, ~100 methods each calling raw `fetch()` → add ONE `apiFetch` chokepoint.
-- `lib/store.ts`: Zustand, no auth slice. No `middleware.ts`, no auth context. Root layout is plain.
-- IDOR: `app/predict/[id]/page.tsx:309` `CompareModelsCard` → `api.deploy.listByProject(projectId)` leaks sibling deployments.
+## Problem
+`delete_project` does `session.delete(project); session.commit()` with no cascade and
+no artifact removal. ~23 child tables (4 levels deep) become orphans; trained models,
+uploads, db_uploads and deployment pipelines are never removed. Orphaned Deployment rows
+can still serve `/api/predict/{id}`. Disk grows unbounded → fills shared VPS → SQLite
+writer goes offline. (Audit also cites test pollution: thousands of leaked dirs in the
+real data tree, caused by import-time artifact-dir constants that ignore `DATA_DIR`.)
 
-## Key design decisions
-1. **Token storage:** `localStorage` via a small `lib/auth-token.ts` helper (get/set/clear). Client-only app → no SSR token need.
-2. **Route protection:** client-side guard (recommended over `middleware.ts`, which runs server-side and cannot read a localStorage token; the app has no SSR-protected data). A `<RequireAuth>` wrapper guards `/` and `/project/[id]`; `/login` and `/predict/[id]` stay public.
-3. **401 handling:** `apiFetch` detects 401 → clears token + redirects to `/login` (single chokepoint).
-4. **IDOR fix:** remove the sibling-enumeration (`listByProject`) from the public predict page. The "Compare Model Versions" feature is owner-only by nature; the public page keeps only the single-deployment public fetch.
+## Ownership graph (rooted at Project)
+- **Direct (project_id):** Dataset, ModelRun, Deployment, Conversation, AnalysisTemplate
+- **via dataset_id:** FeatureSet, DatasetFilter
+- **via deployment_id:** PredictionLog, FeedbackRecord, DeploymentChangelog, DeploymentPreset,
+  DashboardFieldConfig, InputValidationRule, PredictionAlertRule, SavedScenario,
+  WebhookConfig, WebhookEvent, WeeklyDigestConfig, GoalSeekRecord, BatchSchedule,
+  BatchJobRun, DeploymentVersion
+- **via champion_id/challenger_id (= deployment.id):** ABTest
 
-## Steps (TDD: RED → GREEN → REFACTOR)
+## Artifacts on disk
+- `data/uploads/{project_id}/` (datasets)
+- `data/db_uploads/{project_id}/` (extract-db)
+- `data/models/{project_id}/{model_run_id}.joblib` (trained models)
+- `data/deployments/{model_run_id}_pipeline.joblib` (deployment pipelines)
 
-- [x] **Step 1 — Token helper + auth-aware fetch chokepoint**
-  - `lib/auth-token.ts`: `getToken/setToken/clearToken` (localStorage, SSR-safe guard).
-  - `lib/api.ts`: add `apiFetch(url, options)` injecting `Authorization: Bearer <token>`; on 401 → clear token + redirect `/login`. Route all existing methods through it (keep public `auth.register/login` token-free).
-  - `lib/api.ts`: add `api.auth.register/login/me`.
-  - `lib/types.ts`: add `User`, `AuthResponse`.
-  - Tests: `__tests__/api-auth.test.tsx` — header attached on authed call, absent on login, 401 clears token.
+## Plan
 
-- [x] **Step 2 — Zustand auth slice**
-  - `lib/store.ts`: `user`, `token`, `isAuthenticated`, `login()`, `register()`, `logout()`, `loadCurrentUser()`.
-  - Tests: `__tests__/auth-store.test.tsx`.
+1. **`core/storage.py`** — single source of truth for artifact paths. Base dir resolves at
+   call time from `DATA_DIR` env, falling back to `<backend>/data` (current behaviour).
+   Helpers: `uploads_dir()`, `db_uploads_dir()`, `models_dir()`, `deployments_dir()`,
+   `project_upload_dir(pid)`, `project_db_uploads_dir(pid)`, `project_models_dir(pid)`,
+   `deployment_pipeline_path(run_id)`, `project_artifact_paths(pid, run_ids)`.
+   - Point the existing `UPLOAD_DIR / _DB_UPLOADS_DIR / MODELS_DIR / DEPLOY_DIR` constants at
+     these helpers so writes and removals share one resolution (single source of truth).
+   - Add a test asserting storage layout matches the api-module constants (anti-drift).
 
-- [x] **Step 3 — Login / register UI**
-  - `app/login/page.tsx`: thin email+password form (toggle register), Nova/Hugeicons, calls store actions, redirects on success.
-  - Tests: `__tests__/login-page.test.tsx`.
+2. **`core/cascade.py`** — `delete_project_cascade(session, project_id)`:
+   - Collect deployment_ids, dataset_ids, model_run_ids for the project.
+   - Bulk-`delete()` all descendant rows in dependency order (grandchildren by
+     deployment_id → children by dataset_id → direct children by project_id → project),
+     all in **one transaction / single commit** → zero orphan rows.
+   - After commit, remove artifact dirs/files via `core/storage` (guarded by
+     `path_safety.assert_within`). Best-effort on files (FS isn't transactional); the
+     janitor reaps any leftover.
 
-- [x] **Step 4 — Route protection + nav**
-  - `components/auth/require-auth.tsx`: client guard; unauthenticated → `/login`.
-  - Wrap `app/page.tsx` and `app/project/[id]/page.tsx`.
-  - `app/layout.tsx`: show user email + logout when authenticated.
-  - Tests: `__tests__/require-auth.test.tsx`.
+3. **Wire `delete_project`** (api/projects.py) to call `delete_project_cascade`.
 
-- [x] **Step 5 — Fix public predict IDOR**
-  - `app/predict/[id]/page.tsx`: remove `CompareModelsCard` sibling enumeration (`listByProject`). Public page loads only the single shared deployment.
-  - Tests: `__tests__/predict-page-public.test.tsx` — asserts no owner-scoped call.
+4. **`core/janitor.py`** — GC artifacts with no referencing DB row:
+   - `collect_orphans(session)`: remove `uploads/`, `db_uploads/`, `models/` subdirs whose
+     `{project_id}` has no Project row; remove `deployments/*_pipeline.joblib` whose
+     `model_run_id` has no ModelRun/Deployment row.
+   - `enforce_upload_retention(session, max_age_days=None)`: age sweep for orphaned uploads.
+   - `run_janitor(session)`: convenience wrapper, returns a summary (dirs/files removed).
+   - Wire best-effort invocation on app startup (lifespan), guarded so it never blocks boot.
 
-- [x] **Step 6 — E2E**
-  - `e2e/auth.spec.ts`: register/login → protected action; `/predict/[id]` reachable without login.
+5. **PRAGMA `foreign_keys=ON`** via SQLAlchemy `Engine "connect"` event in `db.py`
+   (applies to all engines incl. test). Low risk: only the existing `owner_id` FK is
+   declared, so enforcement adds "no project without a real user" without breaking inserts.
+   **Deviation (criterion 2):** we do NOT add hard child-FK constraints with `ondelete=CASCADE`.
+   Rationale: (a) the existing SQLite DB cannot gain FK constraints without a full table
+   rebuild, so they'd never protect production data anyway; (b) enforcing child FKs would
+   break existing insert/test patterns (the `backfill` fixture seeds only parent Projects).
+   The transactional app-level cascade delivers the identical guarantee (zero orphans),
+   verified by tests. Will confirm the full suite stays green with PRAGMA on; if it breaks
+   unrelated tests, scope PRAGMA to the production engine and document.
 
-## Acceptance criteria
-- [ ] Unauthenticated users redirected to login for protected routes; `/predict/[id]` stays public.
-- [ ] All authenticated API calls carry a Bearer token; 401 triggers re-login.
-- [ ] Public predict page calls no owner-scoped endpoint; exposes no sibling-deployment data.
-- [ ] Unit tests assert the auth header is attached; E2E covers login → protected action.
+6. **Tests** (`tests/test_project_cascade_delete.py`, `tests/test_janitor.py`):
+   - Seed a project with rows in every child table + artifact dirs/files (via storage).
+   - `DELETE /api/projects/{id}` → assert zero rows across ALL child tables + all artifact
+     dirs/files removed (the criterion-4 assertion).
+   - Cross-tenant: `second_client` DELETE → 404, nothing removed.
+   - Janitor: orphan dir removed; live-project dir kept; retention sweep.
+   - PRAGMA: assert `PRAGMA foreign_keys` returns 1 on a fresh connection.
+
+## Acceptance criteria (from issue #4)
+- [x] `delete_project` transactional: deletes all child rows + removes artifact dirs in one commit
+      → `core/cascade.py::delete_project_cascade`, wired into `api/projects.py`.
+- [x] `PRAGMA foreign_keys=ON` enabled (`db.py` Engine connect listener). Hard child-FK
+      `ondelete=CASCADE` intentionally NOT added (documented deviation — brownfield SQLite
+      can't be retrofitted + would break insert/test patterns; app-level cascade is the
+      mechanism).
+- [x] Janitor GCs artifact files with no referencing row + enforces upload retention
+      → `core/janitor.py` (`collect_orphans`, `enforce_upload_retention`, `run_janitor`),
+      best-effort on startup in `main.py` lifespan.
+- [x] Test asserts zero orphan rows + removed dirs after delete
+      → `tests/test_project_cascade_delete.py`, `tests/test_janitor.py`,
+      `tests/test_storage_layout.py`.
+
+## Implementation notes / extra changes
+- **`core/storage.py`** (new): single source of truth for artifact paths; call-time
+  `DATA_DIR` resolution (default = `<backend>/data`, identical to the legacy constants).
+- **`tests/conftest.py`**: extended the autouse `backfill` fixture to also seed the owner
+  `User` for any flushed `Project` (PRAGMA now enforces `owner_id → user.id`). The user
+  INSERT is emitted immediately on the flush connection — a deferred `session.add` would
+  race the Project insert because the bare column FK gives no ORM save-order dependency.
+  See tasks/lessons.md.
+
+## Status: implementation complete; full backend suite verified green.
+
+Full suite (6663 tests) initially reported `3 failed, 6660 passed` — all three were
+**test fragility surfaced only by the full ordered 53-min run**, not production bugs
+(no production code changed to fix them):
+- `test_storage_layout_matches_api_constants` — read api-module `*_DIR` globals that
+  ~150 other tests reassign in-place without `monkeypatch`. Fixed: reload the modules
+  to read declared constants.
+- `test_uptime_degraded_day_status`, `test_uptime_active_day_has_predictions` —
+  pre-existing flaky tests (unchanged since #24) that assert relative-to-now logs land
+  on "today"; slips a day when run in the first UTC hour. Fixed: anchor logs to noon UTC.
+
+See tasks/lessons.md for the patterns.

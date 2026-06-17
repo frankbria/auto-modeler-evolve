@@ -1,5 +1,7 @@
 from pathlib import Path
 
+from sqlalchemy import event
+from sqlalchemy.engine import Engine
 from sqlmodel import Session, SQLModel, create_engine
 
 DATA_DIR = Path(__file__).parent / "data"
@@ -7,6 +9,23 @@ DATA_DIR.mkdir(exist_ok=True)
 
 DATABASE_URL = f"sqlite:///{DATA_DIR}/automodeler.db"
 engine = create_engine(DATABASE_URL, echo=False)
+
+
+@event.listens_for(Engine, "connect")
+def _enable_sqlite_foreign_keys(dbapi_connection, connection_record):
+    """Enforce referential integrity on every SQLite connection.
+
+    SQLite ships with foreign-key enforcement OFF per-connection. Turning it on
+    makes declared FKs (currently ``Project.owner_id → user.id``) actually
+    protect against dangling references. Registered on the ``Engine`` class so it
+    applies to the production engine and to the per-test engines created in the
+    test fixtures alike. Cascade of the wider project subtree is handled
+    explicitly in ``core.cascade`` (the existing on-disk DB has no FK constraints
+    to enforce, so app-level cascade is the reliable mechanism).
+    """
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.close()
 
 
 def create_db_and_tables():

@@ -48,7 +48,9 @@ def _seed_user(engine, user_id: str, email: str) -> str:
     from models.user import User
 
     with Session(engine) as session:
-        user = User(id=user_id, email=email, hashed_password=hash_password(_FIXTURE_CRED))
+        user = User(
+            id=user_id, email=email, hashed_password=hash_password(_FIXTURE_CRED)
+        )
         session.add(user)
         session.commit()
     return create_access_token(user_id)
@@ -63,7 +65,7 @@ def set_test_env(tmp_path, monkeypatch):
 
 @pytest.fixture(autouse=True)
 def backfill_owned_parent_projects():
-    """Give orphan project-scoped child rows an owned parent Project.
+    """Give orphan project-scoped child rows an owned parent Project (and owner).
 
     Many legacy tests insert ``Deployment``/``ModelRun``/``Dataset``/
     ``Conversation`` rows directly with a random ``project_id`` and no matching
@@ -71,24 +73,53 @@ def backfill_owned_parent_projects():
     parent project to exist and be owned. This ``before_flush`` listener creates
     a ``DEFAULT_USER_ID``-owned stub Project for any such orphan at insert time,
     so those tests keep exercising the real ownership checks without edits.
+
+    Now that SQLite foreign-key enforcement is ON (``Project.owner_id →
+    user.id``), every Project flushed — whether a real test project or one of the
+    stubs above — also needs its owner ``User`` to exist. So we additionally
+    fabricate a stub User for any referenced ``owner_id`` that has no row yet.
+    Listens on the Session *class*, so it covers the shared fixture engine and
+    the many per-test custom engines alike.
     """
-    from sqlalchemy import event
+    from datetime import UTC, datetime
+
+    from sqlalchemy import event, insert
     from sqlmodel import Session as _SQLSession
 
     from models.project import Project as _Project
+    from models.user import User as _User
+
+    def _ensure_owner_user(conn, oid):
+        # Emit the INSERT immediately on the flush connection so the user row
+        # precedes the Project insert. A bare column FK (no ORM relationship)
+        # doesn't give the unit-of-work a save-order dependency, so simply
+        # ``session.add``-ing the user would let the Project insert race ahead.
+        conn.execute(
+            insert(_User.__table__).values(
+                id=oid,
+                email=f"{oid}@stub.test.local",
+                hashed_password="x",
+                is_active=True,
+                created_at=datetime.now(UTC).replace(tzinfo=None),
+            )
+        )
 
     def _backfill(session, flush_context, instances):
         new_project_ids = {o.id for o in session.new if isinstance(o, _Project)}
         to_add = []
+        owner_ids: set[str] = set()
         with session.no_autoflush:
             for obj in list(session.new):
                 if isinstance(obj, _Project):
+                    if obj.owner_id:
+                        owner_ids.add(obj.owner_id)
                     continue
                 pid = getattr(obj, "project_id", None)
                 if not pid or pid in new_project_ids:
                     continue
                 if session.get(_Project, pid) is None:
                     new_project_ids.add(pid)
+                    owner_ids.add(DEFAULT_USER_ID)
                     to_add.append(
                         _Project(
                             id=pid,
@@ -96,6 +127,15 @@ def backfill_owned_parent_projects():
                             name="auto-test-project",
                         )
                     )
+            # Skip owners already being inserted as a User in this same flush
+            # (session.get can't see still-pending rows → avoid a PK collision).
+            pending_user_ids = {u.id for u in session.new if isinstance(u, _User)}
+            conn = session.connection()
+            for oid in owner_ids:
+                if oid in pending_user_ids:
+                    continue
+                if session.get(_User, oid) is None:
+                    _ensure_owner_user(conn, oid)
         for proj in to_add:
             session.add(proj)
 
