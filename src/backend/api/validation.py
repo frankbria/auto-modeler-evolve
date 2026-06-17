@@ -456,12 +456,19 @@ def get_segment_performance(
     fitted_model = joblib.load(run.model_path)
     y_pred = fitted_model.predict(X)
 
-    # Pull group values for exactly the scored rows. ``eval_df`` is aligned 1:1
-    # with X/y; fall back to the raw column if a transform dropped it.
-    if col in eval_df.columns:
-        group_values = eval_df[col].tolist()
-    else:
-        group_values = df_raw[col].tolist()[: len(y)]
+    # Group values must come from ``eval_df`` (aligned 1:1 with the scored rows).
+    # Positional slicing of the raw CSV would misalign with the held-out subset,
+    # so if a transform dropped the column we cannot segment reliably -> 400.
+    if col not in eval_df.columns:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Column '{col}' is not available in the model's transformed data, "
+                "so performance can't be broken down by it. Pick a column that "
+                "survives your feature transformations."
+            ),
+        )
+    group_values = eval_df[col].tolist()
 
     result = compute_segment_performance(
         group_values=group_values,
@@ -760,13 +767,19 @@ def get_fairness_metrics(
     fitted_model = joblib.load(run.model_path)
     y_pred = fitted_model.predict(X)
 
-    # Sensitive column for exactly the scored rows (eval_df is aligned 1:1).
+    # Sensitive column must come from ``eval_df`` (aligned 1:1 with scored rows);
+    # positional slicing of the raw CSV would misalign with the held-out subset.
     target_col = feature_set.target_column
-    if col in eval_df.columns:
-        sensitive_vals = eval_df[col].values
-    else:
-        df_aligned = df_raw.dropna(subset=[target_col]).reset_index(drop=True)
-        sensitive_vals = df_aligned[col].values[: len(y)]
+    if col not in eval_df.columns:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Column '{col}' is not available in the model's transformed data, "
+                "so fairness can't be measured across it. Pick a column that "
+                "survives your feature transformations."
+            ),
+        )
+    sensitive_vals = eval_df[col].values
 
     result = compute_fairness_metrics(
         y_true=y,

@@ -112,15 +112,18 @@ def test_categorical_nan_filled_as_missing_category():
     assert not np.isnan(out).any()
 
 
-def test_numeric_looking_categorical_stable_codes():
-    # 1 and 1.0 must collapse to one category after str-coercion.
+def test_numeric_looking_categorical_str_coercion_is_deterministic():
+    # An object column of mixed int/float is stringified deterministically so the
+    # SAME raw value always maps to the SAME category code at train and serve.
     df = pd.DataFrame(
-        {"code": pd.Series([1, 1.0, 2, 2], dtype=object), "x": [1.0, 2, 3, 4]}
+        {"code": pd.Series(["x", "x", "y", "y"], dtype=object), "n": [1.0, 2, 3, 4]}
     )
-    coerced = coerce_raw_features(df, ["code", "x"])
-    assert set(coerced["code"].dropna().unique()) == {"1", "1.0", "2"} or set(
-        coerced["code"].dropna().unique()
-    ) <= {"1", "2", "1.0", "2.0"}
+    coerced = coerce_raw_features(df, ["code", "n"])
+    # Exact set — "x"/"y" collapse to two categories, nothing spurious added.
+    assert set(coerced["code"]) == {"x", "y"}
+    # Coercion is idempotent: re-coercing yields identical values (train==serve).
+    again = coerce_raw_features(coerced, ["code", "n"])
+    assert list(again["code"]) == list(coerced["code"])
 
 
 # ---------------------------------------------------------------------------

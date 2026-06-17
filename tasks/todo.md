@@ -95,9 +95,9 @@
 - [x] Never emit "held-out test set" when X_train is X_test; `_tag_evaluation` marks
       `evaluation=in_sample` + summaries say "on the training data"; held-out requires
       n >= MIN_HELDOUT_ROWS (10).
-- [x] Leakage regression test (`tests/test_train_test_leakage.py`, 5 tests): prep refit
+- [x] Leakage regression test (`tests/test_train_test_leakage.py`, 6 tests): prep refit
       per CV fold, held-out metric == manual leak-free baseline, leaky path diverges,
-      n<10 tagged in_sample.
+      n<10 tagged in_sample, serving codes/unknown-sentinel match the train-fold prep.
 
 ## Status: implementation complete; full backend suite green (6678 passed, 1 fixed).
 The sole full-suite failure (`test_calibration_check_endpoint_200_classification`) was a

@@ -207,19 +207,33 @@ def _build_pipeline_for_run(
 
     DEPLOY_DIR.mkdir(parents=True, exist_ok=True)
     # Load the persisted train-fold preprocessor (issue #5) so serving's ordinal
-    # codes / medians match what the model was trained on. Absent for legacy
-    # runs — build_prediction_pipeline then falls back to full-data fitting.
+    # codes / medians match what the model was trained on. Legacy runs (trained
+    # before this existed) have no sidecar and `run.evaluation` is unset — they
+    # legitimately fall back to full-data fitting. But a NEW leak-free run
+    # (`run.evaluation` set) whose sidecar is missing/corrupt MUST fail closed:
+    # full-data fitting could assign different ordinal codes than the model was
+    # trained on and silently corrupt every prediction.
+    _is_leakfree_run = bool(getattr(run, "evaluation", None))
     _preprocessor = None
     if run.model_path:
-        try:
-            import joblib as _joblib
+        _prep_path = Path(run.model_path)
+        _prep_path = _prep_path.with_name(f"{_prep_path.stem}.prep.joblib")
+        if _prep_path.exists():
+            try:
+                import joblib as _joblib
 
-            _prep_path = Path(run.model_path)
-            _prep_path = _prep_path.with_name(f"{_prep_path.stem}.prep.joblib")
-            if _prep_path.exists():
                 _preprocessor = _joblib.load(str(_prep_path))
-        except Exception:  # noqa: BLE001
-            _preprocessor = None
+            except Exception:  # noqa: BLE001
+                _preprocessor = None
+    if _is_leakfree_run and _preprocessor is None:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "This model's preprocessing artifact is missing or unreadable, so "
+                "it can't be deployed safely (serving could encode features "
+                "differently than training). Please retrain the model."
+            ),
+        )
     pipeline = build_prediction_pipeline(
         df, feature_names, target_col, problem_type, preprocessor=_preprocessor
     )
