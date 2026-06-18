@@ -1,126 +1,79 @@
-# Issue #5 — Fix train/test data leakage inflating all model metrics
+# Issue #6 — [P2.3] Stop auto-retrain rebinding live feature_set before training succeeds
 
-**Severity:** HIGH (blocker) · Labels: blocker, data-integrity, ml-correctness
-**Branch:** `fix/5-train-test-leakage`
+**Source plan**: issue body (`PLAN_SOURCE = comment` — plan lives in the issue body itself).
+**Severity**: HIGH (blocker), data-integrity.
 
-## The problem (verified in code)
-- `core/trainer.py:573-600` `prepare_features()` fits numeric-median imputation and
-  per-feature `LabelEncoder` on the **full dataset**, then `train_single_model` splits
-  that already-leaked matrix (`trainer.py:965-979`) and also hands the whole matrix to
-  `cross_val_score` (`trainer.py:1112-1119`).
-- `api/validation.py` `_build_Xy` re-loads the **entire CSV** and every diagnostic
-  (confusion matrix, calibration, threshold, segment, errors — 15 endpoints) predicts on
-  **all rows** → in-sample, not held-out.
-- `trainer.py:976-979` n<10 fallback sets `X_train = X_test = X`, yet
-  `_classification_summary` (`trainer.py:1237`) still prints "% accuracy on the held-out
-  test set".
+## Root cause
+`core/retrain.py::_do_trigger`:
+1. Mutates `feature_set.dataset_id = new_dataset_id` (line 69) and **commits** (line 81) on the
+   feature_set that the **currently-deployed** ModelRun still references — *before* training runs.
+2. Training can `return None` (lines 89–110: missing dataset file, empty `feature_cols`) or raise in
+   the background thread. Either way the live model's feature_set is permanently rebound to a new
+   dataset with no rollback → provenance + retrain reproducibility corrupted.
+3. Lines 118–119 mutate `_training_queues[project_id]` / `_training_counters[project_id]` without
+   `_lock`, racing `start_training`/chat-driven training (which do hold `_lock`) → clobbered
+   queue/counter and SSE sentinel races.
 
-## Key architectural constraints (from exploration — do NOT break these)
-1. The saved `.joblib` model is a **bare estimator over a numeric feature space**
-   (one column per feature). `core/deployer.py` has ~30 functions (predict, explain,
-   sensitivity, sweep, goal-seek) that build/perturb **numeric** vectors and call
-   `model.predict`/`predict_proba`. We must NOT change the model's numeric input contract.
-2. Serving preprocessing lives in `deployer.PredictionPipeline` (medians + per-feature
-   `LabelEncoder`), built by `build_prediction_pipeline(full_df)`. The model's ordinal
-   codes MUST match serving's codes or predictions silently corrupt.
-3. `prepare_features` is called by ~12 test files + analysis fns expecting a numeric
-   ndarray — changing its return type is high blast radius.
-4. DB has an inline-migration mechanism (`db._apply_migrations`) — adding a nullable
-   `ModelRun` column is cheap and safe for existing DBs.
+## Fix design — Option A: create a new run-scoped FeatureSet (NOT mutate the existing one)
+- The existing feature_set (referenced by the deployed run) is **never touched**.
+- A new `FeatureSet` row (copy of `transformations` / `column_mapping` / `target_column` /
+  `problem_type`, `is_active=True`) points at `new_dataset_id`; the new `ModelRun` references it.
+- All early-return ("skipped retrain") checks move **before any DB write**, so a skipped retrain
+  leaves the DB completely untouched.
+- Queue/counter setup is wrapped in `with _lock:` (matching `api/models.py:528` `start_training`).
+- `column_mapping` is now copied for provenance completeness (previously dropped).
 
-## Design (contained, correct): split-first + train-fold-fit preprocessor + persisted test indices
+## Acceptance criteria (from issue)
+- [x] Do not mutate the existing feature_set in place — create a new FeatureSet pointing at
+      `new_dataset_id`.
+- [x] A skipped/failed retrain must leave prior state untouched.
+- [x] Acquire `_lock` around queue/counter setup.
+- [x] Add a test forcing a failed retrain and asserting `feature_set.dataset_id` is unchanged.
 
-### Step 1 — `core/preprocessing.py` (new): single source of truth for the transform
-- `build_preprocessor(df, feature_cols) -> ColumnTransformer` (UNFITTED):
-  `SimpleImputer(strategy="median")` for numeric cols + `OrdinalEncoder(handle_unknown=
-  "use_encoded_value", unknown_value=-1)` for categorical. Output = one column per
-  feature, order = `feature_cols` (preserves `feature_importances_` alignment).
-- `extract_clean_xy(df, feature_cols, target_col, problem_type) -> (X_raw_df, y, le_target)`:
-  drop missing-target rows (reset_index), encode **target** globally (standard practice,
-  not leakage), return the **raw** (untransformed) feature frame.
-- Tests: `tests/test_preprocessing.py`.
+## Adapted plan steps
 
-### Step 2 — `core/trainer.py`: split first, fit preprocessing on train fold only
-- Flow: `X_raw, y, le = extract_clean_xy(...)` → split the **raw** frame (random or
-  chronological) → `prep = build_preprocessor(...)` → `prep.fit(X_train_raw)` →
-  `X_train = prep.transform(...)`, `X_test = prep.transform(X_test_raw)` → fit bare
-  estimator on numeric `X_train` → metrics on `prep.transform(X_test_raw)` (LEAK-FREE).
-- CV: `cross_val_score(Pipeline([("prep", build_preprocessor(...)), ("model",
-  fresh_estimator)]), X_raw, y, cv=...)` so prep refits each fold (LEAK-FREE).
-- Persist the fitted `prep` as sidecar `{model_run_id}.prep.joblib` (next to the model).
-- Return `test_indices` (positional indices into the clean frame) in the result dict.
-- Apply the same split-first treatment to ensemble / goal-driven / tuning training paths.
+### Step 1 — RED: tests first (TDD)
+**File**: `src/backend/tests/test_auto_retrain.py` (append)
+- `test_retrain_skipped_leaves_feature_set_unchanged`: project with a selected/done ModelRun whose
+  FeatureSet points at `OLD`; call `trigger_auto_retrain(project, NEW)` where the NEW dataset's file
+  does not exist on disk. Assert: returns `None`; original `FeatureSet.dataset_id == OLD`; no new
+  FeatureSet or ModelRun rows were created. (This test FAILS on current code — it reproduces the bug.)
+- `test_retrain_empty_feature_cols_leaves_state_untouched`: NEW dataset file exists but yields zero
+  feature columns. Assert returns `None` and original feature_set unchanged, no new rows.
+- `test_retrain_creates_new_feature_set_not_in_place`: success path — verify a SECOND FeatureSet row
+  is created with `dataset_id == NEW`, the original FeatureSet keeps `dataset_id == OLD`, and the new
+  ModelRun references the NEW feature_set's id.
+- `test_retrain_queue_counter_set_under_lock`: smoke test that after a triggered retrain the project's
+  queue/counter entries exist (the `_lock` acquisition is a code-level guarantee; this asserts the
+  observable side-effect).
 
-### Step 3 — n<10 honesty (`trainer.py`)
-- When `n < MIN_HELDOUT` (=10) → mark `metrics["evaluation"] = "in_sample"`,
-  `metrics["n_too_small"] = True`; summaries emit "on the training data (dataset too
-  small for a held-out test — treat as optimistic)" instead of "held-out test set".
-  Held-out wording only when a real test split exists.
+### Step 2 — GREEN: fix `core/retrain.py::_do_trigger`
+- Capture `transformations`, `column_mapping`, `target_column`, `problem_type`, `algorithm` from the
+  selected run's feature_set (read-only).
+- Read new `Dataset`; if missing/no `file_path`/file-missing → `return None` (**before any write**).
+- Exit session; load df, apply transforms; if `not feature_cols` → `return None` (**before any write**).
+- Open a session: create NEW `FeatureSet(dataset_id=new_dataset_id, ...copy)`, flush for id, create
+  `ModelRun(feature_set_id=new_fs.id, status="pending")`, commit, refresh.
+- Wrap `_training_queues`/`_training_counters` setup in `with _lock:`.
+- Launch background thread unchanged (now pointing at `new_run_id`).
 
-### Step 4 — persist held-out test indices on `ModelRun`
-- `models/model_run.py`: add `test_indices: Optional[str]` (JSON list) + `evaluation`
-  (str) nullable columns.
-- `db._apply_migrations`: add `("modelrun", "test_indices", "TEXT")`,
-  `("modelrun", "evaluation", "TEXT")`.
-- `api/models.py`: store `result["test_indices"]` JSON on the run after training.
+### Step 3 — REFACTOR: lint/typecheck, run the new + existing retrain tests, then the broader suite
+- `uv run ruff check` + `uv run black --check` on touched files.
+- `uv run pytest tests/test_auto_retrain.py -q` (new tests pass, existing still pass).
+- `uv run pytest -q` (no regressions; retrain-adjacent tests in particular).
 
-### Step 5 — `api/validation.py`: diagnostics on held-out rows only
-- `_build_Xy` → add `held_out_only` path. When the run has `test_indices`, slice the
-  clean frame to those positional rows and transform via the persisted `{run}.prep.joblib`
-  (NOT a refit on full data). Confusion / calibration / threshold / segment / errors all
-  use the held-out slice.
-- Legacy models with no `test_indices`: fall back to full-data prediction but tag the
-  response `evaluation: "in_sample"` + a plain-English note (no silent inflation).
+## Test strategy → acceptance mapping
+| Criterion | Test |
+|---|---|
+| Don't mutate existing feature_set | `test_retrain_creates_new_feature_set_not_in_place` |
+| Skipped/failed leaves state untouched | `test_retrain_skipped_leaves_feature_set_unchanged` + `test_retrain_empty_feature_cols_leaves_state_untouched` |
+| Acquire `_lock` | code review + `test_retrain_queue_counter_set_under_lock` |
+| Test forcing failed retrain asserting dataset_id unchanged | `test_retrain_skipped_leaves_feature_set_unchanged` |
 
-### Step 6 — serving alignment (`core/deployer.py`)
-- `build_prediction_pipeline`: when a persisted `{run}.prep.joblib` exists, source the
-  `medians` + per-feature category orderings FROM it (so serving ordinal codes == training
-  codes). Keep computing means/stds/ranges from the df for UX warnings. Falls back to
-  current full-df fit when no preprocessor sidecar (legacy/retrain edge).
-
-### Step 7 — leakage regression test (AC4)
-- `tests/test_train_test_leakage.py`: data where a categorical feature has a test-only
-  category and numeric NaNs; assert (a) the preprocessor passed to CV is unfitted/refit
-  per fold, (b) held-out metrics from the new path are NOT inflated vs a manual leak-free
-  baseline, (c) the old global-fit path would inflate (documents the bug), (d) n<10 result
-  is tagged `in_sample` and summary omits "held-out".
-
-## Acceptance criteria (from issue #5) — ALL MET
-- [x] Imputation/encoding in an sklearn Pipeline (SimpleImputer + OrdinalEncoder w/
-      handle_unknown) fit only on each training fold; unfitted Pipeline passed to the
-      train/test fit (via `_split_and_preprocess`) and to `cross_val_score`
-      (`trainer.train_single_model` CV block + `validation._leakfree_cv`).
-- [x] Calibration/threshold/confusion/segment/error/fairness diagnostics computed on
-      persisted held-out indices (`validation._build_eval_Xy`), never in-sample.
-- [x] Never emit "held-out test set" when X_train is X_test; `_tag_evaluation` marks
-      `evaluation=in_sample` + summaries say "on the training data"; held-out requires
-      n >= MIN_HELDOUT_ROWS (10).
-- [x] Leakage regression test (`tests/test_train_test_leakage.py`, 6 tests): prep refit
-      per CV fold, held-out metric == manual leak-free baseline, leaky path diverges,
-      n<10 tagged in_sample, serving codes/unknown-sentinel match the train-fold prep.
-
-## Status: implementation complete; full backend suite green (6678 passed, 1 fixed).
-The sole full-suite failure (`test_calibration_check_endpoint_200_classification`) was a
-real behavior change, not a flake: held-out calibration on the 40-row fixture left only 8
-rows (< calibration's 10-sample floor). Fixed correctly by raising `_MIN_HELDOUT_EVAL_ROWS`
-to 10 so too-small held-out sets fall back to in-sample (honestly tagged) instead of
-erroring — matching the trainer's MIN_HELDOUT_ROWS and the UX "fail gracefully" rule.
-
-## Test strategy
-- Pure-function tests for `preprocessing` + `trainer` leak-free path (no DB).
-- REST tests via `client` for validation endpoints returning held-out diagnostics +
-  `evaluation` tag; `anon_client` unaffected.
-- Regression test (Step 7) is the AC4 gate.
-- Full `uv run pytest` must stay green; ruff + black clean.
-
-## Deviations / decisions (self-adapted; issue body had the plan)
-- **OrdinalEncoder over OneHotEncoder**: preserves one-column-per-feature so
-  `feature_importances_`/`coef_` alignment and deployer's numeric perturbation machinery
-  keep working. OneHot would explode the feature space and break ~30 deployer functions.
-- **Model stays a bare estimator + sidecar preprocessor** (NOT a wrapped sklearn Pipeline
-  artifact): wrapping would change the model's input contract from numeric→raw and break
-  the entire serving/explanation layer. Sidecar preprocessor gives leak-free training and
-  train==serve code alignment with minimal blast radius.
-- Learning-curve / overfitting / data-quality diagnostics (`compute_learning_curve` etc.)
-  are NOT in the issue's AC list — left as a documented Known Limitation unless trivially
-  covered, to contain risk.
+## Deviations / notes
+- Chose Option A (new FeatureSet) over Option B (defer `dataset_id` to `status='done'`) because B
+  would still mutate the *shared* feature_set that the old deployed run references — it just delays
+  the corruption, it doesn't prevent it. A creates clean per-run provenance.
+- Scope is strictly `core/retrain.py` + its tests. `MODELS_DIR` hardcoding in retrain.py:16 is a
+  known `core.storage` concern but is **out of scope** for this issue (YAGNI) and not required by any
+  acceptance criterion; left untouched.

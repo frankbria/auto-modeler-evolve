@@ -11,9 +11,9 @@ import logging
 import threading
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
+from core import storage
 
-MODELS_DIR = Path(__file__).parent.parent / "models" / "trained"
+logger = logging.getLogger(__name__)
 
 
 def trigger_auto_retrain(project_id: str, new_dataset_id: str) -> dict | None:
@@ -36,6 +36,12 @@ def _do_trigger(project_id: str, new_dataset_id: str) -> dict | None:
     from models.model_run import ModelRun
     from sqlmodel import Session, select
 
+    # ------------------------------------------------------------------
+    # Phase 1 — READ-ONLY discovery. No DB writes happen here, so a skipped
+    # retrain (no selected model / no usable feature set / missing dataset /
+    # no feature columns) leaves prior state completely untouched. The live
+    # (deployed) feature_set is never mutated in place (issue #6).
+    # ------------------------------------------------------------------
     with Session(db.engine) as session:
         # Find the selected model run
         selected_run = session.exec(
@@ -51,7 +57,7 @@ def _do_trigger(project_id: str, new_dataset_id: str) -> dict | None:
             )
             return None
 
-        # Get the feature set
+        # Get the live feature set (read-only — never mutate this)
         feature_set = session.get(FeatureSet, selected_run.feature_set_id)
         if not feature_set or not feature_set.target_column:
             logger.info(
@@ -64,25 +70,9 @@ def _do_trigger(project_id: str, new_dataset_id: str) -> dict | None:
         target_col = feature_set.target_column
         problem_type = feature_set.problem_type or "regression"
         transformations = feature_set.transformations
+        column_mapping = feature_set.column_mapping
 
-        # Update the feature set to point to the new dataset
-        feature_set.dataset_id = new_dataset_id
-        session.add(feature_set)
-
-        # Create a new model run
-        new_run = ModelRun(
-            project_id=project_id,
-            feature_set_id=feature_set.id,
-            algorithm=algorithm,
-            hyperparameters=json.dumps({}),
-            status="pending",
-        )
-        session.add(new_run)
-        session.commit()
-        session.refresh(new_run)
-        new_run_id = new_run.id
-
-        # Get the new dataset's file path
+        # Resolve the NEW dataset + its backing file before writing anything
         from models.dataset import Dataset
 
         dataset = session.get(Dataset, new_dataset_id)
@@ -95,7 +85,7 @@ def _do_trigger(project_id: str, new_dataset_id: str) -> dict | None:
         if not file_path.exists():
             return None
 
-    # Load dataframe and launch background training
+    # Load dataframe and validate feature columns (still read-only w.r.t. DB)
     import pandas as pd
 
     from core.feature_engine import apply_transformations
@@ -109,16 +99,54 @@ def _do_trigger(project_id: str, new_dataset_id: str) -> dict | None:
     if not feature_cols:
         return None
 
-    model_dir = MODELS_DIR / project_id
+    # ------------------------------------------------------------------
+    # Phase 2 — Create run-scoped provenance. A NEW FeatureSet points at the
+    # new dataset (copying the live feature set's config); a NEW ModelRun
+    # references it. The live feature_set is left untouched, so a later
+    # background-training failure cannot corrupt the deployed model's
+    # provenance (issue #6).
+    # ------------------------------------------------------------------
+    with Session(db.engine) as session:
+        new_feature_set = FeatureSet(
+            dataset_id=new_dataset_id,
+            transformations=transformations,
+            column_mapping=column_mapping,
+            target_column=target_col,
+            problem_type=problem_type,
+            is_active=True,
+        )
+        session.add(new_feature_set)
+        session.flush()  # populate new_feature_set.id
 
-    # Import training helpers lazily to avoid circular imports
-    from api.models import _training_counters, _training_queues
+        new_run = ModelRun(
+            project_id=project_id,
+            feature_set_id=new_feature_set.id,
+            algorithm=algorithm,
+            hyperparameters=json.dumps({}),
+            status="pending",
+        )
+        session.add(new_run)
+        session.commit()
+        session.refresh(new_run)
+        new_run_id = new_run.id
+
+    model_dir = storage.project_models_dir(project_id)
+
+    # Set up the SSE event queue for this training run under the shared lock,
+    # matching start_training's locking discipline (issue #6: previously
+    # mutated without _lock, racing concurrent training and clobbering the
+    # queue/counter + SSE sentinel).
+    from api.models import (
+        _lock,
+        _train_in_background,
+        _training_counters,
+        _training_queues,
+    )
     import queue
 
-    _training_queues[project_id] = queue.Queue()
-    _training_counters[project_id] = 1
-
-    from api.models import _train_in_background
+    with _lock:
+        _training_queues[project_id] = queue.Queue()
+        _training_counters[project_id] = 1
 
     t = threading.Thread(
         target=_train_in_background,

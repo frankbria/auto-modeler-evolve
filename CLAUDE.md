@@ -170,6 +170,29 @@ Reintroducing a global fit silently inflates every reported metric. Follow this 
   absent from the train fold would otherwise shift every ordinal code). A new leak-free
   run whose sidecar is missing/corrupt **fails closed** at deploy, never falls back.
 
+### Auto-Retrain Provenance & Locking (#6)
+The auto-retrain trigger (`core/retrain.py::_do_trigger`, fired from the upload endpoint
+when `project.auto_retrain`) must never corrupt the **currently-deployed** model's
+provenance. Rebinding the live feature_set before training succeeds permanently loses the
+original dataset association on any partial failure. Follow this exactly:
+- **Never mutate the live feature_set in place.** Do NOT do
+  `feature_set.dataset_id = new_dataset_id` on the feature_set referenced by the selected
+  `ModelRun`. Instead create a NEW run-scoped `FeatureSet` (copy of `transformations` /
+  `column_mapping` / `target_column` / `problem_type`, `is_active=True`) pointing at
+  `new_dataset_id`, and point the new `ModelRun` at it — that is the #6 footgun.
+- **Reads before writes.** All skip checks (no selected/done model, no usable feature_set,
+  missing `Dataset`, absent backing file, zero feature columns) must happen BEFORE any DB
+  write, so a skipped retrain leaves prior state completely untouched (no new rows, no
+  rebound feature_set). A background-training failure likewise leaves the live feature_set
+  immutable, because the worker only mutates the new `ModelRun`'s status.
+- **Lock the SSE plumbing.** Wrap `_training_queues[project_id] = queue.Queue()` /
+  `_training_counters[project_id] = N` in `with _lock:` (imported from `api.models`),
+  matching `start_training`'s locking discipline — never mutate them unlocked (races
+  concurrent training, clobbers the counter, and fires the end-of-stream sentinel early).
+- **Resolve artifact paths through `core.storage`** (`storage.project_models_dir(project_id)`),
+  never `Path(__file__).parent.parent / ...` — auto-retrain must write to the same
+  `DATA_DIR`-aware root as `start_training` so cascade-delete/janitor cleanup can reach it.
+
 ### Authentication & Owner/Tenant Authorization
 Auth is **backend-native** (FastAPI owns it — BetterAuth is frontend-only and cannot
 protect the Python API). Follow this exactly when adding endpoints:
