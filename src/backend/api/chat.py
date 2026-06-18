@@ -31,7 +31,8 @@ from auth.scoping import get_owned_project
 from models.user import User
 
 router = APIRouter(
-    prefix="/api/chat", tags=["chat"],
+    prefix="/api/chat",
+    tags=["chat"],
     dependencies=[Depends(get_current_user)],
 )
 MODEL = "claude-haiku-4-5-20251001"
@@ -6725,8 +6726,8 @@ def send_message(
 
                     import pandas as _pd
 
-                    from core.trainer import (
-                        prepare_features as _prepare_features,
+                    from core.preprocessing import (
+                        extract_clean_xy as _extract_clean_xy,
                     )
                     from core.trainer import (
                         run_goal_driven_training as _run_goal,
@@ -6743,7 +6744,9 @@ def send_message(
                     _target_col = _fs.target_column
                     _feat_cols = [c for c in _df_goal.columns if c != _target_col]
                     _problem_type = _fs.problem_type or "regression"
-                    _X, _y, _le = _prepare_features(
+                    # Leak-free: hand the raw frame + feature cols so each trial
+                    # fits preprocessing on its own training fold only (#5).
+                    _X, _y, _le = _extract_clean_xy(
                         _df_goal, _feat_cols, _target_col, _problem_type
                     )
                     import uuid as _uuid
@@ -6752,7 +6755,14 @@ def send_message(
                     _mdir = _Path("data/deployments")
                     _mdir.mkdir(parents=True, exist_ok=True)
                     goal_train_event = _run_goal(
-                        _X, _y, _problem_type, _goal_metric, _goal_target, _mdir, _gbase
+                        _X,
+                        _y,
+                        _problem_type,
+                        _goal_metric,
+                        _goal_target,
+                        _mdir,
+                        _gbase,
+                        feature_cols=_feat_cols,
                     )
                     goal_train_event["project_id"] = body.project_id
                     goal_train_event["target_col"] = _target_col
@@ -15980,9 +15990,7 @@ def send_message(
             _wu_trend = (
                 "up"
                 if (_wu_change_pct or 0) > 5
-                else "down"
-                if (_wu_change_pct or 0) < -5
-                else "flat"
+                else "down" if (_wu_change_pct or 0) < -5 else "flat"
             )
 
             # Per-day breakdown for the current week (7 entries)
@@ -16001,7 +16009,9 @@ def send_message(
             _wu_feature_tally: dict[str, dict[str, int]] = {}
             _wu_recent_logs = [
                 lg for lg in _wu_logs if lg.created_at >= _wu_week_start
-            ][:100]  # cap to last 100 for performance
+            ][
+                :100
+            ]  # cap to last 100 for performance
             for _wl in _wu_recent_logs:
                 try:
                     _feat_dict: dict = json.loads(_wl.input_features or "{}")
@@ -21051,9 +21061,7 @@ def send_message(
                         else (
                             "healthy"
                             if _n_failed == 0
-                            else "warning"
-                            if _n_failed / _n_total < 0.1
-                            else "critical"
+                            else "warning" if _n_failed / _n_total < 0.1 else "critical"
                         )
                     )
                     _wh_total_events += _n_total
@@ -21112,9 +21120,7 @@ def send_message(
                     else (
                         "warning"
                         if any(d["status"] == "warning" for d in _wh_dep_summaries)
-                        else "no_events"
-                        if _wh_total_events == 0
-                        else "healthy"
+                        else "no_events" if _wh_total_events == 0 else "healthy"
                     )
                 )
             )

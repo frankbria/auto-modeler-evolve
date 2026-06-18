@@ -262,9 +262,14 @@ def _train_in_background(
                 # No date column found — fall back to random split silently
                 effective_split = "random"
 
-        X, y, _le = prepare_features(df, feature_cols, target_col, problem_type)
+        # Leak-free path (issue #5): hand the trainer the RAW feature frame +
+        # column list so it splits first and fits imputation/encoding on the
+        # training fold only.
+        from core.preprocessing import extract_clean_xy
+
+        X_raw, y, _le = extract_clean_xy(df, feature_cols, target_col, problem_type)
         result = train_single_model(
-            X,
+            X_raw,
             y,
             algorithm,
             problem_type,
@@ -275,6 +280,7 @@ def _train_in_background(
             date_col_used=date_col_used,
             custom_class_weights=custom_class_weights,
             label_encoder=_le,
+            feature_cols=feature_cols,
         )
 
         # Augment metrics with sampling info (if dataset was sub-sampled)
@@ -291,6 +297,11 @@ def _train_in_background(
                 run.model_path = result["model_path"]
                 run.training_duration_ms = result["training_duration_ms"]
                 run.summary = result["summary"]
+                # Persist held-out test row indices + evaluation mode so the
+                # validation diagnostics score on the true held-out set (#5).
+                if result.get("test_indices") is not None:
+                    run.test_indices = json.dumps(result["test_indices"])
+                run.evaluation = result["metrics"].get("evaluation")
                 session.add(run)
                 session.commit()
 
@@ -1953,7 +1964,11 @@ def tune_model_endpoint(
     feature_cols = [c for c in df.columns if c != target_col]
     model_dir = MODELS_DIR / run.project_id
 
-    X, y, _ = prepare_features(df, feature_cols, target_col, problem_type)
+    # Leak-free path (#5): raw frame + feature cols so tuning splits first and
+    # fits preprocessing on the training fold only.
+    from core.preprocessing import extract_clean_xy
+
+    X, y, _ = extract_clean_xy(df, feature_cols, target_col, problem_type)
 
     # Create placeholder ModelRun for tuned model
     tuned_run = ModelRun(
@@ -1968,7 +1983,15 @@ def tune_model_endpoint(
     session.refresh(tuned_run)
 
     try:
-        result = tune_model(X, y, run.algorithm, problem_type, model_dir, tuned_run.id)
+        result = tune_model(
+            X,
+            y,
+            run.algorithm,
+            problem_type,
+            model_dir,
+            tuned_run.id,
+            feature_cols=feature_cols,
+        )
     except Exception as exc:
         tuned_run.status = "failed"
         tuned_run.error_message = str(exc)[:500]
@@ -1998,6 +2021,9 @@ def tune_model_endpoint(
     tuned_run.model_path = result["model_path"]
     tuned_run.training_duration_ms = result["training_duration_ms"]
     tuned_run.summary = result["summary"]
+    if result.get("test_indices") is not None:
+        tuned_run.test_indices = json.dumps(result["test_indices"])
+    tuned_run.evaluation = (tuned_metrics or {}).get("evaluation")
     tuned_run.hyperparameters = json.dumps(
         {
             "tuned": True,
