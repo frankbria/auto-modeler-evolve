@@ -144,6 +144,32 @@ When accepting a column as a grouping/segmenting parameter:
 - Reject if `n_unique >= n_rows * 0.8` (relative near-unique — catches continuous numeric columns)
 - Return HTTP 400 with a plain-English explanation
 
+### Leak-Free Training & Held-Out Diagnostics (#5)
+The cardinal ML-correctness rule: **preprocessing statistics (median imputation,
+categorical encoding) are fit on the training fold ONLY** — never the full dataset.
+Reintroducing a global fit silently inflates every reported metric. Follow this exactly:
+- **Build the transform via `core.preprocessing.build_preprocessor(df, feature_cols)`**
+  (an *unfitted* `ColumnTransformer`: `SimpleImputer(median)` + `OrdinalEncoder`,
+  one column per feature). `extract_clean_xy` returns the **raw** untransformed frame.
+  Never hand-roll `fillna(median)` / `LabelEncoder().fit_transform` on the full frame
+  before a split — that is the #5 footgun.
+- **Training** (`trainer.train_single_model`/ensemble/tune/goal): pass the **raw** frame
+  + `feature_cols`. The split happens FIRST; the preprocessor is fit on the train fold
+  and persisted as a `{model_run_id}.prep.joblib` sidecar; held-out positional
+  `test_indices` are returned and stored on `ModelRun`. Cross-validation wraps the
+  unfitted preprocessor in a `Pipeline` so it refits per fold.
+- **Honesty**: below `MIN_HELDOUT_ROWS` (10), metrics are `evaluation="in_sample"` and
+  summaries say "on the training data" — NEVER "held-out test set" when X_train==X_test.
+- **Validation diagnostics** (`api/validation.py`): score on the persisted held-out slice
+  via `_build_eval_Xy` (which reproduces the trainer's sample+chronological-sort ordering
+  before replaying `test_indices`, and transforms with the sidecar). Legacy runs with no
+  sidecar fall back to in-sample, tagged `evaluation: in_sample` — never silently inflated.
+  Segment/sensitive columns come from the aligned `eval_df`, never positional `df_raw`.
+- **Serving** (`deployer.build_prediction_pipeline`): source medians + categorical codes
+  from the train-fold preprocessor sidecar so serving codes match training (a category
+  absent from the train fold would otherwise shift every ordinal code). A new leak-free
+  run whose sidecar is missing/corrupt **fails closed** at deploy, never falls back.
+
 ### Authentication & Owner/Tenant Authorization
 Auth is **backend-native** (FastAPI owns it — BetterAuth is frontend-only and cannot
 protect the Python API). Follow this exactly when adding endpoints:
