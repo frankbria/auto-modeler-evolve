@@ -11,9 +11,9 @@ import logging
 import threading
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
+from core import storage
 
-MODELS_DIR = Path(__file__).parent.parent / "models" / "trained"
+logger = logging.getLogger(__name__)
 
 
 def trigger_auto_retrain(project_id: str, new_dataset_id: str) -> dict | None:
@@ -130,7 +130,7 @@ def _do_trigger(project_id: str, new_dataset_id: str) -> dict | None:
         session.refresh(new_run)
         new_run_id = new_run.id
 
-    model_dir = MODELS_DIR / project_id
+    model_dir = storage.project_models_dir(project_id)
 
     # Set up the SSE event queue for this training run under the shared lock,
     # matching start_training's locking discipline (issue #6: previously

@@ -590,3 +590,89 @@ def test_retrain_queue_counter_set_under_lock(tmp_path, monkeypatch):
     # The project now has an SSE queue and a running-thread counter entry
     assert "r-lock-1" in _am._training_queues
     assert _am._training_counters.get("r-lock-1") == 1
+
+
+def test_retrain_background_failure_leaves_live_feature_set_untouched(
+    tmp_path, monkeypatch
+):
+    """A retrain that LAUNCHES then fails in the background must leave the live
+    feature_set untouched. Mirrors the real _train_in_background failure path
+    (it catches the exception internally and marks the run 'failed') so the
+    trigger returns normally; the invariant is that the OLD feature_set is
+    never mutated, and the failed run is associated with a NEW feature_set.
+    """
+    from sqlmodel import Session, select
+
+    from models.dataset import Dataset
+    from models.feature_set import FeatureSet
+    from models.model_run import ModelRun
+
+    engine, old_ds_id, old_fs_id, _old_run_id = _bootstrap_retrain_project(
+        tmp_path, "r-fail-1"
+    )
+
+    new_csv = tmp_path / "new_fail.csv"
+    new_csv.write_text("f1,f2,target\n7,8,40\n9,10,50\n11,12,60\n")
+    with Session(engine) as session:
+        new_ds = Dataset(
+            project_id="r-fail-1",
+            filename="new_fail.csv",
+            file_path=str(new_csv),
+            row_count=3,
+            column_count=3,
+        )
+        session.add(new_ds)
+        session.commit()
+        session.refresh(new_ds)
+        new_ds_id = new_ds.id
+
+    # Simulate the real _train_in_background failure path: mark the run failed
+    # instead of raising (the real worker catches + records the error).
+    def _failing_train(model_run_id, *_args, **_kwargs):
+        with Session(engine) as s:
+            run = s.get(ModelRun, model_run_id)
+            if run:
+                run.status = "failed"
+                run.error_message = "simulated training failure"
+                s.add(run)
+                s.commit()
+
+    import api.models as _am
+    import core.retrain as _cr
+
+    monkeypatch.setattr(_am, "_train_in_background", _failing_train)
+
+    class _SyncThread:
+        def __init__(self, target=(), args=(), **_kw):
+            self._target = target
+            self._args = args
+
+        def start(self):
+            self._target(*self._args)
+
+    monkeypatch.setattr(_cr.threading, "Thread", _SyncThread)
+
+    from core.retrain import trigger_auto_retrain
+
+    result = trigger_auto_retrain("r-fail-1", new_ds_id)
+    assert result is not None  # the retrain was launched
+    failed_run_id = result["run_id"]
+
+    with Session(engine) as session:
+        # The OLD (live) feature_set is untouched — the core #6 invariant,
+        # now verified across the background-failure timing window too.
+        live_fs = session.get(FeatureSet, old_fs_id)
+        assert live_fs.dataset_id == old_ds_id
+
+        all_fs = list(session.exec(select(FeatureSet)).all())
+        assert len(all_fs) == 2  # original + one new
+
+        new_fs = next(f for f in all_fs if f.id != old_fs_id)
+        assert new_fs.dataset_id == new_ds_id
+
+        # The failed run references the NEW feature_set, not the live one,
+        # and ended up in the 'failed' state.
+        failed_run = session.get(ModelRun, failed_run_id)
+        assert failed_run.status == "failed"
+        assert failed_run.feature_set_id == new_fs.id
+        assert failed_run.feature_set_id != old_fs_id
