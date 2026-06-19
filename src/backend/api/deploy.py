@@ -1316,6 +1316,65 @@ def make_prediction(
 # ---------------------------------------------------------------------------
 
 
+# ponytail: generous upper bound — caps memory + per-row PredictionLog writes on
+# a single batch; raise it if real batches legitimately exceed this.
+_MAX_BATCH_ROWS: int = 100_000
+
+
+def _count_csv_rows(csv_bytes: bytes) -> int:
+    """Count data rows (excluding the header) in an uploaded CSV.
+
+    Uses csv.reader so quoted embedded newlines aren't miscounted. Returns 0
+    on undecodable / empty input — predict_batch surfaces the real parse error.
+    """
+    try:
+        reader = csv.reader(io.StringIO(csv_bytes.decode("utf-8", errors="replace")))
+        return max(sum(1 for _ in reader) - 1, 0)
+    except Exception:  # noqa: BLE001
+        return 0
+
+
+def _log_batch_predictions(
+    session: Session, deployment_id: str, result_csv: bytes
+) -> int:
+    """Write one PredictionLog per row of a batch result CSV.
+
+    The result CSV is the input columns plus a 'prediction' column (and
+    'confidence' for classification). Logging per row keeps quota enforcement
+    and usage analytics consistent with the single-prediction path. response_ms
+    is left None — per-row latency isn't meaningful for a batch. Returns the
+    number of rows logged.
+    """
+    reader = csv.DictReader(io.StringIO(result_csv.decode("utf-8", errors="replace")))
+    logs: list[PredictionLog] = []
+    for row in reader:
+        prediction = row.pop("prediction", None)
+        confidence_raw = row.pop("confidence", None)
+        try:
+            confidence = (
+                float(confidence_raw) if confidence_raw not in (None, "") else None
+            )
+        except (TypeError, ValueError):
+            confidence = None
+        try:
+            prediction_numeric = (
+                float(prediction) if prediction not in (None, "") else None
+            )
+        except (TypeError, ValueError):
+            prediction_numeric = None
+        logs.append(
+            PredictionLog(
+                deployment_id=deployment_id,
+                input_features=json.dumps(row),
+                prediction=json.dumps(prediction),
+                prediction_numeric=prediction_numeric,
+                confidence=confidence,
+            )
+        )
+    session.add_all(logs)
+    return len(logs)
+
+
 @router.post("/api/predict/{deployment_id}/batch")
 def batch_prediction(
     deployment_id: str,
@@ -1334,6 +1393,17 @@ def batch_prediction(
 
     _verify_api_key(deployment, authorization)
 
+    # Rate limiting — a batch upload is one request against the per-minute window
+    rpm = getattr(deployment, "rate_limit_rpm", None)
+    if rpm and not _check_rate_limit(deployment_id, rpm):
+        raise HTTPException(
+            status_code=429,
+            detail=(
+                f"Rate limit exceeded. This deployment allows {rpm} "
+                "requests per minute. Please slow down or contact the model owner."
+            ),
+        )
+
     if not deployment.pipeline_path or not Path(deployment.pipeline_path).exists():
         raise HTTPException(
             status_code=500, detail="Prediction pipeline not found on disk"
@@ -1344,10 +1414,43 @@ def batch_prediction(
         raise HTTPException(status_code=500, detail="Model file not found on disk")
 
     csv_bytes = file.file.read()
+
+    # Count data rows so every prediction is charged against the monthly quota,
+    # consistent with the single-prediction path.
+    n_rows = _count_csv_rows(csv_bytes)
+
+    # Reject oversized batches before the expensive parse/predict + per-row logging.
+    if n_rows > _MAX_BATCH_ROWS:
+        raise HTTPException(
+            status_code=413,
+            detail=(
+                f"Batch too large: {n_rows} rows exceeds the {_MAX_BATCH_ROWS}-row "
+                "limit. Split the file into smaller batches."
+            ),
+        )
+
+    # Monthly quota — every CSV row counts; reject the whole batch if it would exceed.
+    quota = getattr(deployment, "monthly_quota", None)
+    if quota:
+        _, used, _ = _check_monthly_quota(deployment, session)
+        if used + n_rows > quota:
+            raise HTTPException(
+                status_code=429,
+                detail=(
+                    f"Monthly prediction quota exceeded. This batch of {n_rows} "
+                    f"row(s) would bring usage to {used + n_rows}/{quota} predictions "
+                    "in the last 30 days. Contact the model owner to increase the limit."
+                ),
+            )
+
     result_csv = predict_batch(deployment.pipeline_path, run.model_path, csv_bytes)
 
+    # Log every row so quota / usage accounting matches the single-prediction path
+    # (quota is computed from PredictionLog counts).
+    logged = _log_batch_predictions(session, deployment_id, result_csv)
+
     # Update usage stats
-    deployment.request_count += 1
+    deployment.request_count += logged
     deployment.last_predicted_at = datetime.now(UTC).replace(tzinfo=None)
     session.add(deployment)
     session.commit()

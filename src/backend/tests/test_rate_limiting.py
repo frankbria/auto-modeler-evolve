@@ -314,6 +314,105 @@ async def test_prediction_allowed_under_quota(ac, deployment_id, trained_run_id)
 
 
 # ---------------------------------------------------------------------------
+# Tests — quota & rate limit enforcement on POST /api/predict/{id}/batch (#7)
+# ---------------------------------------------------------------------------
+
+_BATCH_CSV = (
+    b"region,units\n"
+    b"East,10\nWest,20\nEast,15\nWest,30\nNorth,25\n"
+    b"East,18\nWest,22\nNorth,19\nEast,13\nWest,28\n"  # 10 data rows
+)
+
+
+async def _post_batch(ac, deployment_id, csv_bytes=_BATCH_CSV):
+    return await ac.post(
+        f"/api/predict/{deployment_id}/batch",
+        files={"file": ("batch.csv", io.BytesIO(csv_bytes), "text/csv")},
+    )
+
+
+async def test_batch_counts_rows_against_quota(ac, deployment_id):
+    """A 10-row batch records 10 predictions toward the monthly quota."""
+    await ac.put(
+        f"/api/deploy/{deployment_id}/rate-limit",
+        json={"monthly_quota": 100},
+    )
+    res = await _post_batch(ac, deployment_id)
+    assert res.status_code == 200, res.text
+
+    status = (await ac.get(f"/api/deploy/{deployment_id}/quota-status")).json()
+    assert status["used_this_month"] == 10
+    assert status["remaining"] == 90
+
+
+async def test_batch_rejected_when_would_exceed_quota(ac, deployment_id):
+    """A batch larger than the remaining quota is rejected outright."""
+    await ac.put(
+        f"/api/deploy/{deployment_id}/rate-limit",
+        json={"monthly_quota": 5},
+    )
+    res = await _post_batch(ac, deployment_id)  # 10 rows > quota of 5
+    assert res.status_code == 429
+    assert "quota" in res.text.lower()
+
+
+async def test_batch_rejected_when_at_quota(ac, deployment_id):
+    """A batch against an already-at-quota deployment is rejected."""
+    await ac.put(
+        f"/api/deploy/{deployment_id}/rate-limit",
+        json={"monthly_quota": 3},
+    )
+    # Fill the quota with single predictions
+    for _ in range(3):
+        r = await ac.post(
+            f"/api/predict/{deployment_id}",
+            json={"region": "East", "units": 10},
+        )
+        assert r.status_code == 200, r.text
+    res = await _post_batch(ac, deployment_id)
+    assert res.status_code == 429
+    assert "quota" in res.text.lower()
+
+
+async def test_batch_respects_rate_limit(ac, deployment_id):
+    """Batch uploads count against the per-minute rate-limit window."""
+    await ac.put(
+        f"/api/deploy/{deployment_id}/rate-limit",
+        json={"rate_limit_rpm": 2},
+    )
+    # Exhaust the per-minute window with single predictions
+    for _ in range(2):
+        r = await ac.post(
+            f"/api/predict/{deployment_id}",
+            json={"region": "East", "units": 10},
+        )
+        assert r.status_code == 200, r.text
+    res = await _post_batch(ac, deployment_id)
+    assert res.status_code == 429
+    assert "rate limit" in res.text.lower()
+
+
+async def test_batch_rejected_when_too_large(ac, deployment_id):
+    """A CSV over the real row cap is rejected before parse/predict (413)."""
+    from api.deploy import _MAX_BATCH_ROWS
+
+    header = b"region,units\n"
+    big_csv = header + (b"East,10\n" * (_MAX_BATCH_ROWS + 1))
+    res = await _post_batch(ac, deployment_id, big_csv)
+    assert res.status_code == 413
+    assert "too large" in res.text.lower()
+
+
+def test_count_csv_rows_excludes_header():
+    """_count_csv_rows counts data rows only, header excluded."""
+    from api.deploy import _count_csv_rows
+
+    assert _count_csv_rows(_BATCH_CSV) == 10
+    assert _count_csv_rows(b"a,b\n") == 0  # header only
+    assert _count_csv_rows(b'a,b\n"x\ny",2\n') == 1  # quoted embedded newline
+
+
+# ---------------------------------------------------------------------------
 # Tests — _check_rate_limit() pure function
 # ---------------------------------------------------------------------------
 
