@@ -1316,6 +1316,11 @@ def make_prediction(
 # ---------------------------------------------------------------------------
 
 
+# ponytail: generous upper bound — caps memory + per-row PredictionLog writes on
+# a single batch; raise it if real batches legitimately exceed this.
+_MAX_BATCH_ROWS: int = 100_000
+
+
 def _count_csv_rows(csv_bytes: bytes) -> int:
     """Count data rows (excluding the header) in an uploaded CSV.
 
@@ -1413,6 +1418,16 @@ def batch_prediction(
     # Count data rows so every prediction is charged against the monthly quota,
     # consistent with the single-prediction path.
     n_rows = _count_csv_rows(csv_bytes)
+
+    # Reject oversized batches before the expensive parse/predict + per-row logging.
+    if n_rows > _MAX_BATCH_ROWS:
+        raise HTTPException(
+            status_code=413,
+            detail=(
+                f"Batch too large: {n_rows} rows exceeds the {_MAX_BATCH_ROWS}-row "
+                "limit. Split the file into smaller batches."
+            ),
+        )
 
     # Monthly quota — every CSV row counts; reject the whole batch if it would exceed.
     quota = getattr(deployment, "monthly_quota", None)

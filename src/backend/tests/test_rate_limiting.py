@@ -392,6 +392,16 @@ async def test_batch_respects_rate_limit(ac, deployment_id):
     assert "rate limit" in res.text.lower()
 
 
+async def test_batch_rejected_when_too_large(ac, deployment_id, monkeypatch):
+    """Batches over the row cap are rejected before parse/predict (413)."""
+    import api.deploy as deploy_module
+
+    monkeypatch.setattr(deploy_module, "_MAX_BATCH_ROWS", 3)
+    res = await _post_batch(ac, deployment_id)  # 10 rows > cap of 3
+    assert res.status_code == 413
+    assert "too large" in res.text.lower()
+
+
 def test_count_csv_rows_excludes_header():
     """_count_csv_rows counts data rows only, header excluded."""
     from api.deploy import _count_csv_rows
