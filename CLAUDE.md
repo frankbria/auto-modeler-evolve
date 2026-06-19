@@ -193,6 +193,23 @@ original dataset association on any partial failure. Follow this exactly:
   never `Path(__file__).parent.parent / ...` — auto-retrain must write to the same
   `DATA_DIR`-aware root as `start_training` so cascade-delete/janitor cleanup can reach it.
 
+### Deployed-Model Flag Consistency (#8)
+`ModelRun.is_deployed` is a denormalized mirror of "an active Deployment points at this
+run", read in 6+ hot paths (models, projects, advisor, PDF reports, drift detection). It
+MUST stay single-valued per served model. Follow this exactly:
+- **Any reassignment of `Deployment.model_run_id` goes through
+  `api.deploy._swap_is_deployed(session, old_run_id, new_run_id)`** — capture
+  `_old_run_id = <dep>.model_run_id` BEFORE overwriting the pointer, then call the helper
+  (it clears the old run and sets the new one; caller owns the commit). Never re-read
+  `<dep>.model_run_id` to find the old run AFTER the overwrite — that was the #8 footgun
+  (the guard `old_run.id != model_run_id` was always False, so the prior run stayed
+  `is_deployed=True`).
+- All five reassignment sites use it: redeploy (`execute_deployment`), manual rollback
+  (`rollback_deployment`), auto rollback (`_check_and_fire_accuracy_rollback`), A/B promote
+  (`promote_challenger`), canary promote (`promote_canary`). A new site that rebinds
+  `model_run_id` must call the helper and gets a multi-redeploy-style assertion in
+  `tests/test_deployer.py`.
+
 ### Authentication & Owner/Tenant Authorization
 Auth is **backend-native** (FastAPI owns it — BetterAuth is frontend-only and cannot
 protect the Python API). Follow this exactly when adding endpoints:

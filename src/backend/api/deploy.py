@@ -275,6 +275,27 @@ def _archive_current_version(deployment, session) -> None:
         session.add(v)
 
 
+def _swap_is_deployed(
+    session: Session, old_run_id: str | None, new_run_id: str
+) -> None:
+    """Move the denormalized ``is_deployed`` flag from the old run to the new run.
+
+    Call this whenever a Deployment's ``model_run_id`` is reassigned (redeploy,
+    rollback, A/B promote, canary promote, auto-rollback) so that exactly one
+    ModelRun per served model carries ``is_deployed=True``. The caller owns the
+    transaction — this only stages session adds, never commits.
+    """
+    if old_run_id and old_run_id != new_run_id:
+        old_run = session.get(ModelRun, old_run_id)
+        if old_run:
+            old_run.is_deployed = False
+            session.add(old_run)
+    new_run = session.get(ModelRun, new_run_id)
+    if new_run:
+        new_run.is_deployed = True
+        session.add(new_run)
+
+
 def execute_deployment(model_run_id: str, session: Session) -> dict:
     """Build and register a deployment for a completed model run.
 
@@ -316,6 +337,9 @@ def execute_deployment(model_run_id: str, session: Session) -> dict:
             getattr(existing_for_project, "current_version_number", 1) + 1
         )
 
+        # Capture the previously-served run BEFORE overwriting the pointer
+        _old_run_id = existing_for_project.model_run_id
+
         # Update deployment to point at new model
         existing_for_project.model_run_id = model_run_id
         existing_for_project.pipeline_path = str(pipeline_path)
@@ -342,12 +366,7 @@ def execute_deployment(model_run_id: str, session: Session) -> dict:
         session.add(new_version)
 
         # Mark old run as not deployed, new run as deployed
-        old_run = session.get(ModelRun, existing_for_project.model_run_id)
-        if old_run and old_run.id != model_run_id:
-            old_run.is_deployed = False
-            session.add(old_run)
-        run.is_deployed = True
-        session.add(run)
+        _swap_is_deployed(session, _old_run_id, model_run_id)
 
         session.commit()
         session.refresh(existing_for_project)
@@ -3919,6 +3938,7 @@ def rollback_deployment(
     new_version_number = getattr(deployment, "current_version_number", 1) + 1
 
     # Restore deployment from the target version snapshot
+    _old_run_id = deployment.model_run_id
     deployment.model_run_id = target.model_run_id
     deployment.pipeline_path = target.pipeline_path
     deployment.algorithm = target.algorithm
@@ -3941,6 +3961,8 @@ def rollback_deployment(
         is_current=True,
     )
     session.add(rollback_version)
+
+    _swap_is_deployed(session, _old_run_id, target.model_run_id)
 
     session.commit()
     session.refresh(deployment)
@@ -5101,6 +5123,7 @@ def promote_challenger(
     new_version_number = getattr(champion, "current_version_number", 1) + 1
 
     # Copy challenger's model info into the champion deployment
+    _old_run_id = champion.model_run_id
     champion.model_run_id = challenger.model_run_id
     champion.pipeline_path = challenger.pipeline_path
     champion.algorithm = challenger.algorithm
@@ -5131,6 +5154,8 @@ def promote_challenger(
     ab_test.ended_at = datetime.now(UTC).replace(tzinfo=None)
     ab_test.winner = "challenger"
     session.add(ab_test)
+
+    _swap_is_deployed(session, _old_run_id, challenger.model_run_id)
 
     session.commit()
     session.refresh(champion)
@@ -8782,6 +8807,7 @@ def _check_and_fire_accuracy_rollback(deployment_id: str) -> None:
                 _s.add(_v)
 
             _new_ver_num = _current_ver + 1
+            _old_run_id = _dep.model_run_id
             _dep.model_run_id = _prev.model_run_id
             _dep.pipeline_path = _prev.pipeline_path
             _dep.algorithm = _prev.algorithm
@@ -8804,6 +8830,8 @@ def _check_and_fire_accuracy_rollback(deployment_id: str) -> None:
                 is_current=True,
             )
             _s.add(_rollback_ver)
+
+            _swap_is_deployed(_s, _old_run_id, _prev.model_run_id)
             _s.commit()
 
             _rolled_back_to = _prev.version_number
@@ -10215,6 +10243,7 @@ def promote_canary(
     # Swap: canary becomes the current model
     new_version = deployment.current_version_number + 1
 
+    _old_run_id = deployment.model_run_id
     deployment.model_run_id = canary_run_id
     deployment.pipeline_path = canary_pipeline
     deployment.algorithm = canary_run.algorithm
@@ -10259,6 +10288,8 @@ def promote_canary(
     deployment.canary_traffic_pct = None
     deployment.canary_started_at = None
     session.add(deployment)
+
+    _swap_is_deployed(session, _old_run_id, canary_run_id)
     session.commit()
 
     return {
