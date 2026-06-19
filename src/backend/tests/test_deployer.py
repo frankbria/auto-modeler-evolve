@@ -337,9 +337,9 @@ class TestPredictFunctions:
         schema = get_feature_schema(pl_path)
         numeric_entries = [s for s in schema if s["type"] == "numeric"]
         for entry in numeric_entries:
-            assert "median" in entry, (
-                "median should still be present for backwards compat"
-            )
+            assert (
+                "median" in entry
+            ), "median should still be present for backwards compat"
 
 
 # ---------------------------------------------------------------------------
@@ -460,3 +460,40 @@ class TestDeployAPI:
         result_df = pd.read_csv(io.BytesIO(resp.content))
         assert "prediction" in result_df.columns
         assert len(result_df) == 2
+
+    def test_redeploy_clears_previous_is_deployed(self, client):
+        """Issue #8: after redeploy, exactly one run carries is_deployed=True."""
+        # Set up a project with two trained runs (two algorithms, one train call)
+        project_id = client.post("/api/projects", json={"name": "Redeploy"}).json()[
+            "id"
+        ]
+        dataset_id = client.post(
+            "/api/data/upload",
+            data={"project_id": project_id},
+            files={"file": ("sales.csv", io.BytesIO(SAMPLE_CSV), "text/csv")},
+        ).json()["dataset_id"]
+        client.post(f"/api/features/{dataset_id}/apply", json={"transformations": []})
+        client.post(
+            f"/api/features/{dataset_id}/target", json={"target_column": "revenue"}
+        )
+        run_ids = client.post(
+            f"/api/models/{project_id}/train",
+            json={"algorithms": ["linear_regression", "random_forest_regressor"]},
+        ).json()["model_run_ids"]
+
+        for _ in range(60):
+            runs = client.get(f"/api/models/{project_id}/runs").json()["runs"]
+            done = [r for r in runs if r["id"] in run_ids and r["status"] == "done"]
+            if len(done) == 2:
+                break
+            time.sleep(0.5)
+        assert len(done) == 2, "both runs should finish training"
+        run_a, run_b = run_ids[0], run_ids[1]
+
+        # Deploy run A, then redeploy run B (same project → in-place redeploy)
+        assert client.post(f"/api/deploy/{run_a}").status_code == 201
+        assert client.post(f"/api/deploy/{run_b}").status_code == 201
+
+        runs = client.get(f"/api/models/{project_id}/runs").json()["runs"]
+        deployed = [r["id"] for r in runs if r["is_deployed"]]
+        assert deployed == [run_b], f"exactly run B should be deployed, got {deployed}"
