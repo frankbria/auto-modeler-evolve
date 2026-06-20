@@ -217,6 +217,35 @@ def test_restore_rejects_db_less_archive(tmp_path):
     assert wal.read_bytes() == b"precious-wal-pages"  # live WAL untouched
 
 
+def test_restore_rejects_artifact_aliasing_the_db(tmp_path):
+    """A crafted artifact entry that resolves to the DB path must be rejected
+    before any live mutation (codex P1)."""
+    import io
+    import tarfile
+
+    data_root = tmp_path / "data"
+    data_root.mkdir()
+    db_file = data_root / "automodeler.db"
+    _make_db(db_file, value="live")
+
+    evil = tmp_path / "evil.tar.gz"
+    with tarfile.open(evil, "w:gz") as tar:
+        good_db = tmp_path / "snap.db"
+        _make_db(good_db, value="snapshot")
+        tar.add(good_db, arcname="automodeler.db")
+        junk = b"corrupt-the-db"
+        info = tarfile.TarInfo(name="data/automodeler.db")  # aliases db_file
+        info.size = len(junk)
+        tar.addfile(info, io.BytesIO(junk))
+
+    with pytest.raises(ValueError, match="aliases the database"):
+        backup.restore_backup(evil, db_file=db_file, data_root=data_root)
+
+    conn = sqlite3.connect(str(db_file))
+    assert conn.execute("SELECT v FROM t").fetchone() == ("live",)  # untouched
+    conn.close()
+
+
 def test_restore_leaves_live_state_intact_on_corrupt_archive(tmp_path):
     """A corrupt DB snapshot is rejected before any live file is replaced."""
     import tarfile

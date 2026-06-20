@@ -155,6 +155,16 @@ def restore_backup(
 
     # Stage on the same filesystem as the live DB so the final swap is an atomic
     # os.replace (a default /tmp staging dir is often a separate fs → EXDEV).
+    # An artifact entry must never resolve to the DB or its sidecars — otherwise a
+    # crafted ``data/automodeler.db`` would overwrite the validated snapshot after
+    # install (DB lives inside data_root by default), and ``data/...-wal`` would
+    # reappear after the sidecars are cleared.
+    db_aliases = {
+        db_file.resolve(),
+        db_file.with_name(db_file.name + "-wal").resolve(),
+        db_file.with_name(db_file.name + "-shm").resolve(),
+    }
+
     with tempfile.TemporaryDirectory(dir=db_file.parent) as staging_str:
         staging = Path(staging_str)
         staged_db: Path | None = None
@@ -172,6 +182,11 @@ def restore_backup(
                 elif name.startswith(f"{_DATA_PREFIX}/"):
                     rel = name[len(_DATA_PREFIX) + 1 :]
                     target = assert_within(data_root, data_root / rel)  # validate
+                    if target.resolve() in db_aliases:
+                        raise ValueError(
+                            f"Archive artifact {name!r} aliases the database file "
+                            "— refusing to restore."
+                        )
                     dest = assert_within(staging, staging / _DATA_PREFIX / rel)
                 else:
                     continue  # unknown member — ignore
