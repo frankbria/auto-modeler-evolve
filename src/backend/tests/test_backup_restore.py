@@ -163,6 +163,36 @@ def test_backup_dest_inside_data_root_skips_prior_archives(tmp_path):
     assert first.exists()  # the earlier archive was not consumed
 
 
+def test_backup_rejects_data_root_as_dest(tmp_path):
+    """Backing up into the data root itself would recurse — reject it (codex P1)."""
+    data_root = tmp_path / "data"
+    data_root.mkdir()
+    db_file = data_root / "automodeler.db"
+    _make_db(db_file)
+    with pytest.raises(ValueError, match="data root"):
+        backup.create_backup(data_root, db_file=db_file, data_root=data_root)
+
+
+def test_backup_dest_above_data_root_still_captures_artifacts(tmp_path):
+    """A destination above data_root must not silently drop every artifact
+    (the over-broad ancestor exclusion bug — codex P1)."""
+    import tarfile
+
+    data_root = tmp_path / "backend" / "data"
+    data_root.mkdir(parents=True)
+    db_file = data_root / "automodeler.db"
+    _make_db(db_file)
+    art = data_root / "models" / "m.joblib"
+    art.parent.mkdir()
+    art.write_bytes(b"M")
+
+    dest = tmp_path / "backend"  # ancestor of data_root
+    archive = backup.create_backup(dest, db_file=db_file, data_root=data_root)
+    with tarfile.open(archive) as tar:
+        names = tar.getnames()
+    assert "data/models/m.joblib" in names
+
+
 def test_restore_rejects_db_less_archive(tmp_path):
     """An archive with no DB snapshot must not wipe the live WAL/SHM — codex P2."""
     import io

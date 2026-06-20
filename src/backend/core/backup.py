@@ -88,9 +88,18 @@ def create_backup(
         db_file.with_name(db_file.name + "-wal").resolve(),
         db_file.with_name(db_file.name + "-shm").resolve(),
     }
-    # If the destination lives under data_root, never tar the archives themselves
-    # (each new backup would otherwise swallow every prior one → exponential).
+    # If the destination lives *strictly inside* data_root, skip its subtree so
+    # backups don't swallow prior archives (exponential growth). Refuse the data
+    # root itself (archives would mix with artifacts and recurse). A destination
+    # outside or above data_root is never walked, so it needs no exclusion.
     dest_resolved = dest_dir.resolve()
+    data_root_resolved = data_root.resolve()
+    if dest_resolved == data_root_resolved:
+        raise ValueError(
+            "dest_dir must not be the data root itself — use a subdirectory "
+            "(e.g. <data_root>/backups) or an external path."
+        )
+    dest_inside_data_root = data_root_resolved in dest_resolved.parents
 
     stamp = datetime.now().strftime("%Y%m%dT%H%M%S_%f")
     archive = dest_dir / f"automodeler-backup-{stamp}.tar.gz"
@@ -110,8 +119,10 @@ def create_backup(
                     resolved = path.resolve()
                     if resolved in excluded:
                         continue
-                    # Skip anything under the backup destination directory.
-                    if resolved == dest_resolved or dest_resolved in resolved.parents:
+                    # Skip the nested backup destination subtree, if any.
+                    if dest_inside_data_root and (
+                        resolved == dest_resolved or dest_resolved in resolved.parents
+                    ):
                         continue
                     rel = path.relative_to(data_root)
                     tar.add(path, arcname=f"{_DATA_PREFIX}/{rel.as_posix()}")
@@ -187,16 +198,17 @@ def restore_backup(
         # move is best-effort — a disk-full mid-move could partially restore, but
         # the archive is already fully extracted+validated so that window is tiny.
         os.replace(staged_db, db_file)
+        # Drop stale WAL/SHM *immediately* after the swap — before any artifact
+        # move can fail and bail out — or SQLite would replay the old WAL pages
+        # against the freshly restored DB and corrupt it.
+        for suffix in ("-wal", "-shm"):
+            sidecar = db_file.with_name(db_file.name + suffix)
+            if sidecar.exists():
+                sidecar.unlink()
+
         for staged, target in staged_artifacts:
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.move(str(staged), str(target))
-
-    # Drop any stale WAL/SHM from before the restore so the restored DB file is
-    # the single source of truth on next open (safe now: the DB was replaced).
-    for suffix in ("-wal", "-shm"):
-        sidecar = db_file.with_name(db_file.name + suffix)
-        if sidecar.exists():
-            sidecar.unlink()
 
 
 def _main(argv: list[str] | None = None) -> int:
