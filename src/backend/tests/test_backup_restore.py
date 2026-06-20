@@ -217,6 +217,58 @@ def test_restore_rejects_db_less_archive(tmp_path):
     assert wal.read_bytes() == b"precious-wal-pages"  # live WAL untouched
 
 
+def test_restore_replaces_managed_tree_not_overlay(tmp_path):
+    """Restoring an older backup must drop files created after the snapshot
+    (true restore, not overlay) — codex P2."""
+    data_root = tmp_path / "data"
+    data_root.mkdir()
+    db_file = data_root / "automodeler.db"
+    _make_db(db_file)
+    kept = data_root / "models" / "p" / "a.joblib"
+    kept.parent.mkdir(parents=True)
+    kept.write_bytes(b"A")
+
+    archive = backup.create_backup(tmp_path / "b", db_file=db_file, data_root=data_root)
+
+    # A file created *after* the snapshot, inside a managed root.
+    stale = data_root / "models" / "p" / "post_snapshot.joblib"
+    stale.write_bytes(b"STALE")
+
+    backup.restore_backup(archive, db_file=db_file, data_root=data_root)
+
+    assert kept.read_bytes() == b"A"
+    assert not stale.exists()  # post-snapshot file gone after restore
+
+
+def test_restore_rejects_duplicate_artifact_members(tmp_path):
+    """A crafted archive with the same artifact path twice must be rejected
+    before any live mutation — codex P2."""
+    import io
+    import tarfile
+
+    data_root = tmp_path / "data"
+    data_root.mkdir()
+    db_file = data_root / "automodeler.db"
+    _make_db(db_file, value="live")
+
+    evil = tmp_path / "dup.tar.gz"
+    with tarfile.open(evil, "w:gz") as tar:
+        good_db = tmp_path / "snap.db"
+        _make_db(good_db)
+        tar.add(good_db, arcname="automodeler.db")
+        for payload in (b"one", b"two"):
+            info = tarfile.TarInfo(name="data/models/p/x.joblib")
+            info.size = len(payload)
+            tar.addfile(info, io.BytesIO(payload))
+
+    with pytest.raises(ValueError, match="duplicate"):
+        backup.restore_backup(evil, db_file=db_file, data_root=data_root)
+
+    conn = sqlite3.connect(str(db_file))
+    assert conn.execute("SELECT v FROM t").fetchone() == ("live",)  # untouched
+    conn.close()
+
+
 def test_restore_rejects_artifact_aliasing_the_db(tmp_path):
     """A crafted artifact entry that resolves to the DB path must be rejected
     before any live mutation (codex P1)."""

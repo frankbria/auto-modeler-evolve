@@ -169,6 +169,7 @@ def restore_backup(
         staging = Path(staging_str)
         staged_db: Path | None = None
         staged_artifacts: list[tuple[Path, Path]] = []  # (staged, live target)
+        seen_targets: set[Path] = set()
 
         # --- Extract everything into staging (no live mutation yet) ----------
         with tarfile.open(archive, "r:gz") as tar:
@@ -187,6 +188,12 @@ def restore_backup(
                             f"Archive artifact {name!r} aliases the database file "
                             "— refusing to restore."
                         )
+                    if target.resolve() in seen_targets:
+                        raise ValueError(
+                            f"Archive contains duplicate artifact {name!r} "
+                            "— refusing to restore."
+                        )
+                    seen_targets.add(target.resolve())
                     dest = assert_within(staging, staging / _DATA_PREFIX / rel)
                 else:
                     continue  # unknown member — ignore
@@ -220,6 +227,24 @@ def restore_backup(
             sidecar = db_file.with_name(db_file.name + suffix)
             if sidecar.exists():
                 sidecar.unlink()
+
+        # Replace (not overlay) the managed artifact roots so the restored tree
+        # matches the backup exactly — files created after the snapshot must not
+        # survive. Names come from core.storage (the single source of truth) but
+        # are applied under the caller's data_root.
+        managed_roots = [
+            data_root / name
+            for name in (
+                storage.uploads_dir().name,
+                storage.db_uploads_dir().name,
+                storage.models_dir().name,
+                storage.deployments_dir().name,
+                storage.batch_outputs_dir().name,
+            )
+        ]
+        for root in managed_roots:
+            if root.exists():
+                shutil.rmtree(root, ignore_errors=True)
 
         for staged, target in staged_artifacts:
             target.parent.mkdir(parents=True, exist_ok=True)
