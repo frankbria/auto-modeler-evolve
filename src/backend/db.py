@@ -1,8 +1,9 @@
 import sqlite3
 from pathlib import Path
 
-from sqlalchemy import event
+from sqlalchemy import event, text
 from sqlalchemy.engine import Engine
+from sqlalchemy.exc import OperationalError
 from sqlmodel import Session, SQLModel, create_engine
 
 DATA_DIR = Path(__file__).parent / "data"
@@ -77,75 +78,90 @@ def create_db_and_tables():
     _apply_migrations()
 
 
-def _apply_migrations():
-    """Add any columns missing from pre-existing tables."""
-    migrations = [
-        ("project", "auto_retrain", "INTEGER NOT NULL DEFAULT 0"),
-        ("deployment", "api_key_enabled", "INTEGER NOT NULL DEFAULT 0"),
-        ("deployment", "api_key_hash", "TEXT"),
-        ("deployment", "api_key_salt", "TEXT"),
-        ("deployment", "current_version_number", "INTEGER NOT NULL DEFAULT 1"),
-        ("deployment", "environment", "TEXT NOT NULL DEFAULT 'staging'"),
-        ("predictionlog", "response_ms", "REAL"),
-        ("predictionlog", "ab_variant", "TEXT"),
-        ("deployment", "rate_limit_rpm", "INTEGER"),
-        ("deployment", "monthly_quota", "INTEGER"),
-        ("deployment", "quota_alert_threshold_pct", "INTEGER"),
-        ("deployment", "accuracy_alert_threshold", "REAL"),
-        ("deployment", "accuracy_alert_fired", "INTEGER NOT NULL DEFAULT 0"),
-        ("deployment", "confidence_threshold", "REAL"),
-        ("deployment", "dashboard_title", "TEXT"),
-        ("deployment", "dashboard_description", "TEXT"),
-        ("project", "last_milestone_state", "TEXT"),
-        ("project", "last_insight_dataset_id", "TEXT"),
-        ("project", "last_type_check_dataset_id", "TEXT"),
-        ("deployment", "sla_alert_last_fired_at", "TEXT"),
-        ("project", "last_ensemble_suggest_run_count", "INTEGER"),
-        ("project", "last_low_accuracy_guidance_run_count", "INTEGER"),
-        ("deployment", "feature_drift_alert_enabled", "INTEGER NOT NULL DEFAULT 0"),
-        ("deployment", "feature_drift_alert_last_fired_at", "TEXT"),
-        ("deployment", "low_activity_threshold_per_day", "INTEGER"),
-        ("deployment", "low_activity_alert_last_fired_at", "TEXT"),
-        ("deployment", "high_activity_threshold_per_hour", "INTEGER"),
-        ("deployment", "high_activity_burst_last_fired_at", "TEXT"),
-        ("deployment", "latency_alert_threshold_ms", "INTEGER"),
-        ("deployment", "latency_alert_last_fired_at", "TEXT"),
-        ("deployment", "auto_rollback_enabled", "INTEGER NOT NULL DEFAULT 0"),
-        ("deployment", "auto_rollback_accuracy_threshold", "REAL"),
-        ("deployment", "auto_rollback_triggered_at", "TEXT"),
-        ("deployment", "pred_value_alert_enabled", "INTEGER NOT NULL DEFAULT 0"),
-        ("deployment", "pred_value_alert_pct", "REAL"),
-        ("deployment", "pred_value_alert_last_fired_at", "TEXT"),
-        ("deployment", "input_dist_drift_alert_enabled", "INTEGER NOT NULL DEFAULT 0"),
-        (
-            "deployment",
-            "input_dist_drift_severity_threshold",
-            "TEXT NOT NULL DEFAULT 'medium'",
-        ),
-        ("deployment", "input_dist_drift_alert_last_fired_at", "TEXT"),
-        ("deployment", "canary_run_id", "TEXT"),
-        ("deployment", "canary_pipeline_path", "TEXT"),
-        ("deployment", "canary_traffic_pct", "INTEGER"),
-        ("deployment", "canary_is_active", "INTEGER NOT NULL DEFAULT 0"),
-        ("deployment", "canary_started_at", "TEXT"),
-        ("predictionlog", "served_by_canary", "INTEGER NOT NULL DEFAULT 0"),
-        ("deployment", "degradation_retrain_enabled", "INTEGER NOT NULL DEFAULT 0"),
-        ("deployment", "degradation_retrain_accuracy_threshold", "REAL"),
-        ("deployment", "degradation_retrain_last_triggered_at", "TEXT"),
-        ("modelrun", "test_indices", "TEXT"),
-        ("modelrun", "evaluation", "TEXT"),
-    ]
-    with engine.connect() as conn:
+def _apply_migrations(target_engine=None, migrations=None):
+    """Add any columns missing from pre-existing tables.
+
+    ``target_engine``/``migrations`` are injectable for tests; production calls
+    pass nothing and use the module engine and the canonical list below.
+    """
+    target_engine = target_engine or engine
+    if migrations is None:
+        migrations = [
+            ("project", "auto_retrain", "INTEGER NOT NULL DEFAULT 0"),
+            ("deployment", "api_key_enabled", "INTEGER NOT NULL DEFAULT 0"),
+            ("deployment", "api_key_hash", "TEXT"),
+            ("deployment", "api_key_salt", "TEXT"),
+            ("deployment", "current_version_number", "INTEGER NOT NULL DEFAULT 1"),
+            ("deployment", "environment", "TEXT NOT NULL DEFAULT 'staging'"),
+            ("predictionlog", "response_ms", "REAL"),
+            ("predictionlog", "ab_variant", "TEXT"),
+            ("deployment", "rate_limit_rpm", "INTEGER"),
+            ("deployment", "monthly_quota", "INTEGER"),
+            ("deployment", "quota_alert_threshold_pct", "INTEGER"),
+            ("deployment", "accuracy_alert_threshold", "REAL"),
+            ("deployment", "accuracy_alert_fired", "INTEGER NOT NULL DEFAULT 0"),
+            ("deployment", "confidence_threshold", "REAL"),
+            ("deployment", "dashboard_title", "TEXT"),
+            ("deployment", "dashboard_description", "TEXT"),
+            ("project", "last_milestone_state", "TEXT"),
+            ("project", "last_insight_dataset_id", "TEXT"),
+            ("project", "last_type_check_dataset_id", "TEXT"),
+            ("deployment", "sla_alert_last_fired_at", "TEXT"),
+            ("project", "last_ensemble_suggest_run_count", "INTEGER"),
+            ("project", "last_low_accuracy_guidance_run_count", "INTEGER"),
+            ("deployment", "feature_drift_alert_enabled", "INTEGER NOT NULL DEFAULT 0"),
+            ("deployment", "feature_drift_alert_last_fired_at", "TEXT"),
+            ("deployment", "low_activity_threshold_per_day", "INTEGER"),
+            ("deployment", "low_activity_alert_last_fired_at", "TEXT"),
+            ("deployment", "high_activity_threshold_per_hour", "INTEGER"),
+            ("deployment", "high_activity_burst_last_fired_at", "TEXT"),
+            ("deployment", "latency_alert_threshold_ms", "INTEGER"),
+            ("deployment", "latency_alert_last_fired_at", "TEXT"),
+            ("deployment", "auto_rollback_enabled", "INTEGER NOT NULL DEFAULT 0"),
+            ("deployment", "auto_rollback_accuracy_threshold", "REAL"),
+            ("deployment", "auto_rollback_triggered_at", "TEXT"),
+            ("deployment", "pred_value_alert_enabled", "INTEGER NOT NULL DEFAULT 0"),
+            ("deployment", "pred_value_alert_pct", "REAL"),
+            ("deployment", "pred_value_alert_last_fired_at", "TEXT"),
+            (
+                "deployment",
+                "input_dist_drift_alert_enabled",
+                "INTEGER NOT NULL DEFAULT 0",
+            ),
+            (
+                "deployment",
+                "input_dist_drift_severity_threshold",
+                "TEXT NOT NULL DEFAULT 'medium'",
+            ),
+            ("deployment", "input_dist_drift_alert_last_fired_at", "TEXT"),
+            ("deployment", "canary_run_id", "TEXT"),
+            ("deployment", "canary_pipeline_path", "TEXT"),
+            ("deployment", "canary_traffic_pct", "INTEGER"),
+            ("deployment", "canary_is_active", "INTEGER NOT NULL DEFAULT 0"),
+            ("deployment", "canary_started_at", "TEXT"),
+            ("predictionlog", "served_by_canary", "INTEGER NOT NULL DEFAULT 0"),
+            ("deployment", "degradation_retrain_enabled", "INTEGER NOT NULL DEFAULT 0"),
+            ("deployment", "degradation_retrain_accuracy_threshold", "REAL"),
+            ("deployment", "degradation_retrain_last_triggered_at", "TEXT"),
+            ("modelrun", "test_indices", "TEXT"),
+            ("modelrun", "evaluation", "TEXT"),
+        ]
+    with target_engine.connect() as conn:
         for table, col, definition in migrations:
             try:
-                conn.execute(
-                    __import__("sqlalchemy").text(
-                        f"ALTER TABLE {table} ADD COLUMN {col} {definition}"
-                    )
-                )
+                conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {definition}"))
                 conn.commit()
-            except Exception:
-                pass  # Column already exists
+            except OperationalError as exc:
+                conn.rollback()
+                # Idempotent re-run: the column already exists. Anything else
+                # (locked DB, missing table, bad SQL) is real schema drift —
+                # fail loud so startup aborts instead of booting "healthy" over
+                # an incompletely-migrated DB that 500s at request time.
+                if "duplicate column name" in str(exc).lower():
+                    continue
+                raise RuntimeError(
+                    f"Migration failed adding column {table}.{col}: {exc}"
+                ) from exc
 
 
 def get_session():
