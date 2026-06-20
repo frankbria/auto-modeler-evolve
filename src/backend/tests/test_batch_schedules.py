@@ -328,6 +328,7 @@ def test_run_job_fires_batch_complete_webhook(client, deployed):
         f"/api/deploy/{deployed}/schedules",
         json={"frequency": "daily", "run_hour": 9, "run_minute": 0},
     )
+    assert create.status_code == 201, create.text
     schedule_id = create.json()["id"]
 
     _run_job(schedule_id)
