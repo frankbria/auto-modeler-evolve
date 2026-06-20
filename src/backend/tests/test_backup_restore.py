@@ -163,6 +163,19 @@ def test_backup_dest_inside_data_root_skips_prior_archives(tmp_path):
     assert first.exists()  # the earlier archive was not consumed
 
 
+def test_backup_rejects_missing_db(tmp_path):
+    """Backing up a non-existent DB would make an unrestorable archive — fail
+    loudly instead (codex P2)."""
+    data_root = tmp_path / "data"
+    data_root.mkdir()
+    with pytest.raises(FileNotFoundError):
+        backup.create_backup(
+            tmp_path / "b",
+            db_file=data_root / "automodeler.db",
+            data_root=data_root,
+        )
+
+
 def test_backup_rejects_data_root_as_dest(tmp_path):
     """Backing up into the data root itself would recurse — reject it (codex P1)."""
     data_root = tmp_path / "data"

@@ -101,17 +101,22 @@ def create_backup(
         )
     dest_inside_data_root = data_root_resolved in dest_resolved.parents
 
+    # A DB-less archive is unrestorable (restore_backup rejects it), so fail loudly
+    # rather than reporting success for a backup that can never be restored.
+    if not db_file.exists():
+        raise FileNotFoundError(
+            f"Database file {db_file} does not exist — nothing to back up."
+        )
+
     stamp = datetime.now().strftime("%Y%m%dT%H%M%S_%f")
     archive = dest_dir / f"automodeler-backup-{stamp}.tar.gz"
 
     with tempfile.TemporaryDirectory() as tmp:
         snapshot = Path(tmp) / _DB_ARCNAME
-        if db_file.exists():
-            _snapshot_db(db_file, snapshot)
+        _snapshot_db(db_file, snapshot)
 
         with tarfile.open(archive, "w:gz") as tar:
-            if snapshot.exists():
-                tar.add(snapshot, arcname=_DB_ARCNAME)
+            tar.add(snapshot, arcname=_DB_ARCNAME)
             if data_root.exists():
                 for path in sorted(data_root.rglob("*")):
                     if not path.is_file():
