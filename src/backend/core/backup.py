@@ -27,6 +27,7 @@ See ``docs/BACKUP.md`` for the cron/timer schedule and the restore drill.
 
 from __future__ import annotations
 
+import os
 import shutil
 import sqlite3
 import tarfile
@@ -36,7 +37,7 @@ from pathlib import Path
 
 from core import storage
 from core.path_safety import assert_within
-from db import db_path
+from db import check_integrity, db_path
 
 _DB_ARCNAME = "automodeler.db"
 _DATA_PREFIX = "data"
@@ -87,6 +88,9 @@ def create_backup(
         db_file.with_name(db_file.name + "-wal").resolve(),
         db_file.with_name(db_file.name + "-shm").resolve(),
     }
+    # If the destination lives under data_root, never tar the archives themselves
+    # (each new backup would otherwise swallow every prior one → exponential).
+    dest_resolved = dest_dir.resolve()
 
     stamp = datetime.now().strftime("%Y%m%dT%H%M%S_%f")
     archive = dest_dir / f"automodeler-backup-{stamp}.tar.gz"
@@ -101,7 +105,13 @@ def create_backup(
                 tar.add(snapshot, arcname=_DB_ARCNAME)
             if data_root.exists():
                 for path in sorted(data_root.rglob("*")):
-                    if not path.is_file() or path.resolve() in excluded:
+                    if not path.is_file():
+                        continue
+                    resolved = path.resolve()
+                    if resolved in excluded:
+                        continue
+                    # Skip anything under the backup destination directory.
+                    if resolved == dest_resolved or dest_resolved in resolved.parents:
                         continue
                     rel = path.relative_to(data_root)
                     tar.add(path, arcname=f"{_DATA_PREFIX}/{rel.as_posix()}")
@@ -117,9 +127,14 @@ def restore_backup(
 ) -> None:
     """Restore the DB and artifact tree from an archive made by ``create_backup``.
 
-    The live DB file is replaced and artifact files are extracted into
-    ``data_root``. Every archive member is confined with ``assert_within`` before
-    extraction to defend against path-traversal in an untrusted archive.
+    Extracts the whole archive into a staging directory and validates the staged
+    DB *before* touching live state, so a truncated/corrupt/path-traversing
+    archive can't leave the live DB or artifacts half-overwritten. A DB-less
+    archive is rejected — restoring one would wipe the live WAL/SHM (losing any
+    committed-but-not-checkpointed pages) while leaving a stale DB behind.
+
+    Every artifact member is confined with ``assert_within`` to defend against
+    path-traversal in an untrusted archive.
     """
     archive = Path(archive)
     db_file = db_file or db_path()
@@ -127,28 +142,57 @@ def restore_backup(
     db_file.parent.mkdir(parents=True, exist_ok=True)
     data_root.mkdir(parents=True, exist_ok=True)
 
-    with tarfile.open(archive, "r:gz") as tar:
-        for member in tar.getmembers():
-            if not member.isfile():
-                continue
-            name = member.name
-            if name == _DB_ARCNAME:
-                target = db_file
-            elif name.startswith(f"{_DATA_PREFIX}/"):
-                rel = name[len(_DATA_PREFIX) + 1 :]
-                target = assert_within(data_root, data_root / rel)
-            else:
-                continue  # unknown member — ignore
-            extracted = tar.extractfile(member)
-            if extracted is None:
-                continue
-            target.parent.mkdir(parents=True, exist_ok=True)
-            # Stream — a model/dataset member can be larger than free RAM.
-            with extracted, open(target, "wb") as out:
-                shutil.copyfileobj(extracted, out)
+    # Stage on the same filesystem as the live DB so the final swap is an atomic
+    # os.replace (a default /tmp staging dir is often a separate fs → EXDEV).
+    with tempfile.TemporaryDirectory(dir=db_file.parent) as staging_str:
+        staging = Path(staging_str)
+        staged_db: Path | None = None
+        staged_artifacts: list[tuple[Path, Path]] = []  # (staged, live target)
 
-    # Drop any stale WAL/SHM left from before the restore so the restored DB
-    # file is the single source of truth on next open.
+        # --- Extract everything into staging (no live mutation yet) ----------
+        with tarfile.open(archive, "r:gz") as tar:
+            for member in tar.getmembers():
+                if not member.isfile():
+                    continue
+                name = member.name
+                if name == _DB_ARCNAME:
+                    dest = staged_db = staging / _DB_ARCNAME
+                    target = db_file
+                elif name.startswith(f"{_DATA_PREFIX}/"):
+                    rel = name[len(_DATA_PREFIX) + 1 :]
+                    target = assert_within(data_root, data_root / rel)  # validate
+                    dest = assert_within(staging, staging / _DATA_PREFIX / rel)
+                else:
+                    continue  # unknown member — ignore
+                extracted = tar.extractfile(member)
+                if extracted is None:
+                    continue
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                # Stream — a model/dataset member can be larger than free RAM.
+                with extracted, open(dest, "wb") as out:
+                    shutil.copyfileobj(extracted, out)
+                if name != _DB_ARCNAME:
+                    staged_artifacts.append((dest, target))
+
+        if staged_db is None:
+            raise ValueError(
+                f"Archive {archive} contains no database snapshot — refusing to "
+                "restore (would wipe live WAL/SHM and leave a stale DB)."
+            )
+        # Fail before touching live state if the snapshot itself is corrupt.
+        check_integrity(staged_db)
+
+        # --- Swap staged files into place ------------------------------------
+        # ponytail: the DB swap is atomic (os.replace); the multi-file artifact
+        # move is best-effort — a disk-full mid-move could partially restore, but
+        # the archive is already fully extracted+validated so that window is tiny.
+        os.replace(staged_db, db_file)
+        for staged, target in staged_artifacts:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(staged), str(target))
+
+    # Drop any stale WAL/SHM from before the restore so the restored DB file is
+    # the single source of truth on next open (safe now: the DB was replaced).
     for suffix in ("-wal", "-shm"):
         sidecar = db_file.with_name(db_file.name + suffix)
         if sidecar.exists():

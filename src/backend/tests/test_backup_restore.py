@@ -141,3 +141,82 @@ def test_restore_rejects_path_traversal(tmp_path):
     with pytest.raises(UnsafePathError):
         backup.restore_backup(evil, db_file=db_file, data_root=data_root)
     assert not (tmp_path / "escape.txt").exists()
+
+
+def test_backup_dest_inside_data_root_skips_prior_archives(tmp_path):
+    """dest_dir under data_root must not let backups swallow each other
+    (would grow exponentially) — codex P1."""
+    import tarfile
+
+    data_root = tmp_path / "data"
+    data_root.mkdir()
+    db_file = data_root / "automodeler.db"
+    _make_db(db_file)
+    dest = data_root / "backups"
+
+    first = backup.create_backup(dest, db_file=db_file, data_root=data_root)
+    second = backup.create_backup(dest, db_file=db_file, data_root=data_root)
+
+    with tarfile.open(second) as tar:
+        names = tar.getnames()
+    assert not any("backups" in n for n in names)
+    assert first.exists()  # the earlier archive was not consumed
+
+
+def test_restore_rejects_db_less_archive(tmp_path):
+    """An archive with no DB snapshot must not wipe the live WAL/SHM — codex P2."""
+    import io
+    import tarfile
+
+    data_root = tmp_path / "data"
+    data_root.mkdir()
+    db_file = data_root / "automodeler.db"
+    _make_db(db_file)
+    wal = db_file.with_name("automodeler.db-wal")
+    wal.write_bytes(b"precious-wal-pages")
+
+    dbless = tmp_path / "dbless.tar.gz"
+    with tarfile.open(dbless, "w:gz") as tar:
+        payload = b"x\n"
+        info = tarfile.TarInfo(name="data/uploads/p/x.csv")
+        info.size = len(payload)
+        tar.addfile(info, io.BytesIO(payload))
+
+    with pytest.raises(ValueError, match="no database"):
+        backup.restore_backup(dbless, db_file=db_file, data_root=data_root)
+    assert wal.read_bytes() == b"precious-wal-pages"  # live WAL untouched
+
+
+def test_restore_leaves_live_state_intact_on_corrupt_archive(tmp_path):
+    """A corrupt DB snapshot is rejected before any live file is replaced."""
+    import tarfile
+
+    data_root = tmp_path / "data"
+    data_root.mkdir()
+    db_file = data_root / "automodeler.db"
+    _make_db(db_file, value="live")
+    artifact = data_root / "models" / "m.joblib"
+    artifact.parent.mkdir()
+    artifact.write_bytes(b"LIVE-MODEL")
+
+    bad = tmp_path / "bad.tar.gz"
+    with tarfile.open(bad, "w:gz") as tar:
+        import io
+
+        junk = b"not a database"
+        info = tarfile.TarInfo(name="automodeler.db")
+        info.size = len(junk)
+        tar.addfile(info, io.BytesIO(junk))
+        good = b"NEW-MODEL"
+        info2 = tarfile.TarInfo(name="data/models/m.joblib")
+        info2.size = len(good)
+        tar.addfile(info2, io.BytesIO(good))
+
+    with pytest.raises(RuntimeError, match="integrity check failed"):
+        backup.restore_backup(bad, db_file=db_file, data_root=data_root)
+
+    # Live DB and artifact must be untouched.
+    conn = sqlite3.connect(str(db_file))
+    assert conn.execute("SELECT v FROM t").fetchone() == ("live",)
+    conn.close()
+    assert artifact.read_bytes() == b"LIVE-MODEL"
