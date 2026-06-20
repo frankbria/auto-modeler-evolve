@@ -83,6 +83,20 @@ the artifact tree back under the data root. Then start the app — the startup
 backs up a DB + artifact, wipes both, restores, and asserts the row and the
 artifact bytes come back (and that a path-traversal archive is rejected).
 
+## Consistency model
+
+The DB itself is captured atomically via the online backup API. The artifact tar
+is a best-effort same-window copy, **not** a global point-in-time snapshot. A
+project created or deleted *while the backup runs* can leave the archive with:
+
+- **Orphaned artifact files** (no DB row) — harmless; `core.janitor` reaps them
+  on the next startup after restore.
+- **A DB row whose file is missing** (rarer) — serving fails closed on the
+  missing artifact (404), and the next retrain/redeploy regenerates it.
+
+Schedule backups during low write activity. A true global snapshot would require
+quiescing all writers, which is out of scope for a cron backup.
+
 ## Notes
 
 - In production `DATA_DIR` is unset, so the DB and all artifacts live under one

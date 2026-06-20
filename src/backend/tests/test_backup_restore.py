@@ -96,7 +96,28 @@ def test_backup_excludes_live_wal_shm(tmp_path):
     with tarfile.open(archive) as tar:
         names = tar.getnames()
     assert "automodeler.db" in names
-    assert not any(n.startswith("data/automodeler.db") for n in names)
+    assert "data/automodeler.db" not in names
+    assert "data/automodeler.db-wal" not in names
+    assert "data/automodeler.db-shm" not in names
+
+
+def test_backup_includes_artifacts_named_like_the_db(tmp_path):
+    """Exclusion is by exact path, not basename: a real artifact whose name
+    starts with 'automodeler.db' must still be backed up (codex P1b)."""
+    import tarfile
+
+    data_root = tmp_path / "data"
+    data_root.mkdir()
+    db_file = data_root / "automodeler.db"
+    _make_db(db_file)
+    decoy = data_root / "uploads" / "p1" / "automodeler.db.csv"
+    decoy.parent.mkdir(parents=True)
+    decoy.write_bytes(b"col\n1\n")
+
+    archive = backup.create_backup(tmp_path / "b", db_file=db_file, data_root=data_root)
+    with tarfile.open(archive) as tar:
+        names = tar.getnames()
+    assert "data/uploads/p1/automodeler.db.csv" in names
 
 
 def test_restore_rejects_path_traversal(tmp_path):
