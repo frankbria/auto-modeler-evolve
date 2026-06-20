@@ -24,7 +24,7 @@ from api.analysis_templates import router as analysis_templates_router
 from api.auth import router as auth_router
 from auth.security import using_insecure_default_secret
 from core.scheduler import start_scheduler
-from db import create_db_and_tables
+from db import check_integrity, create_db_and_tables
 
 DATA_DIR = Path(__file__).parent / "data"
 UPLOAD_DIR = DATA_DIR / "uploads"
@@ -34,6 +34,8 @@ UPLOAD_DIR = DATA_DIR / "uploads"
 async def lifespan(app: FastAPI):
     DATA_DIR.mkdir(exist_ok=True)
     UPLOAD_DIR.mkdir(exist_ok=True)
+    # Fail-fast on a corrupt DB rather than serving silently-wrong data.
+    check_integrity()
     create_db_and_tables()
 
     # Reclaim disk from any artifacts orphaned by crashes / out-of-band deletes.

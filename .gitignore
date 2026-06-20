@@ -49,6 +49,8 @@ ISSUE_RESPONSE.md
 *.db
 *.sqlite
 *.sqlite3
+*.db-wal
+*.db-shm
 
 # Logs
 logs/

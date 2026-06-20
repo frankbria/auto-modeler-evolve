@@ -1,3 +1,4 @@
+import sqlite3
 from pathlib import Path
 
 from sqlalchemy import event
@@ -11,21 +12,63 @@ DATABASE_URL = f"sqlite:///{DATA_DIR}/automodeler.db"
 engine = create_engine(DATABASE_URL, echo=False)
 
 
-@event.listens_for(Engine, "connect")
-def _enable_sqlite_foreign_keys(dbapi_connection, connection_record):
-    """Enforce referential integrity on every SQLite connection.
+def db_path() -> Path:
+    """On-disk path of the SQLite database file (matches ``DATABASE_URL``)."""
+    return DATA_DIR / "automodeler.db"
 
-    SQLite ships with foreign-key enforcement OFF per-connection. Turning it on
-    makes declared FKs (currently ``Project.owner_id → user.id``) actually
-    protect against dangling references. Registered on the ``Engine`` class so it
-    applies to the production engine and to the per-test engines created in the
-    test fixtures alike. Cascade of the wider project subtree is handled
-    explicitly in ``core.cascade`` (the existing on-disk DB has no FK constraints
-    to enforce, so app-level cascade is the reliable mechanism).
+
+@event.listens_for(Engine, "connect")
+def _configure_sqlite_connection(dbapi_connection, connection_record):
+    """Set durability/integrity PRAGMAs on every SQLite connection.
+
+    - ``foreign_keys=ON``: SQLite ships FK enforcement OFF per-connection;
+      turning it on makes declared FKs (``Project.owner_id → user.id``) protect
+      against dangling references. App-level cascade still lives in
+      ``core.cascade`` (the on-disk DB has no FK constraints to enforce).
+    - ``journal_mode=WAL``: lets the background daemon threads read while one
+      writes, fixing the documented "database is locked"/"readonly database"
+      failures. WAL is a persistent database property; re-issuing it per connect
+      is idempotent.
+    - ``busy_timeout=30000``: a writer waits up to 30s for a lock instead of
+      failing immediately — this is per-connection, so it must be set on connect.
+
+    Registered on the ``Engine`` class so it covers the production engine and the
+    per-test engines created in the test fixtures alike.
     """
     cursor = dbapi_connection.cursor()
     cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.execute("PRAGMA busy_timeout=30000")
     cursor.close()
+
+
+def check_integrity(path: Path | None = None) -> None:
+    """Run ``PRAGMA quick_check`` and raise on corruption (fail-fast).
+
+    A missing file is fine — a fresh DB is created on first boot. A present but
+    corrupt file (torn pages, truncation, "not a database") raises ``RuntimeError``
+    so the app refuses to boot on bad data instead of serving silently-wrong
+    results. Restore from the latest backup (see ``docs/BACKUP.md``).
+    """
+    path = path or db_path()
+    if not path.exists():
+        return
+    try:
+        conn = sqlite3.connect(str(path))
+        try:
+            rows = conn.execute("PRAGMA quick_check").fetchall()
+        finally:
+            conn.close()
+    except sqlite3.DatabaseError as exc:
+        raise RuntimeError(
+            f"Database integrity check failed for {path}: {exc}. "
+            "Restore from the latest backup (docs/BACKUP.md)."
+        ) from exc
+    if rows != [("ok",)]:
+        raise RuntimeError(
+            f"Database integrity check failed for {path}: {rows}. "
+            "Restore from the latest backup (docs/BACKUP.md)."
+        )
 
 
 def create_db_and_tables():
