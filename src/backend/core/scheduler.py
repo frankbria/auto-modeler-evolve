@@ -136,6 +136,15 @@ def _run_job(schedule_id: str) -> None:
             session.commit()
             return
 
+        # Capture primitives needed after this session closes. On commit the ORM
+        # objects become detached + expired (engine uses expire_on_commit=True),
+        # so reading their attributes in the second session or the webhook block
+        # would raise DetachedInstanceError (issue #9).
+        deployment_id = schedule.deployment_id
+        model_path = run.model_path
+        pipeline_path = deployment.pipeline_path
+        dataset_file_path = dataset.file_path
+
         # Create job run record
         job_run = BatchJobRun(
             schedule_id=schedule_id,
@@ -154,10 +163,10 @@ def _run_job(schedule_id: str) -> None:
             return
 
         try:
-            csv_bytes = Path(dataset.file_path).read_bytes()
+            csv_bytes = Path(dataset_file_path).read_bytes()
             result_bytes = predict_batch(
-                deployment.pipeline_path,
-                run.model_path,
+                pipeline_path,
+                model_path,
                 csv_bytes,
             )
 
@@ -208,6 +217,15 @@ def _run_job(schedule_id: str) -> None:
 
         session.add(job_run)
         session.add(schedule)
+
+        # Capture webhook payload values before commit expires the ORM objects.
+        webhook_status = job_run.status
+        webhook_row_count = job_run.row_count
+        webhook_error = job_run.error
+        webhook_completed_at = (
+            job_run.completed_at.isoformat() if job_run.completed_at else None
+        )
+
         session.commit()
 
     # Fire batch_complete webhook (outside DB session — best-effort)
@@ -215,16 +233,14 @@ def _run_job(schedule_id: str) -> None:
         from core.webhook import EVENT_BATCH_COMPLETE, dispatch_webhooks
 
         dispatch_webhooks(
-            schedule.deployment_id,
+            deployment_id,
             EVENT_BATCH_COMPLETE,
             {
                 "schedule_id": schedule_id,
-                "status": job_run.status,
-                "row_count": job_run.row_count,
-                "error": job_run.error,
-                "completed_at": (
-                    job_run.completed_at.isoformat() if job_run.completed_at else None
-                ),
+                "status": webhook_status,
+                "row_count": webhook_row_count,
+                "error": webhook_error,
+                "completed_at": webhook_completed_at,
             },
         )
     except Exception:

@@ -298,6 +298,66 @@ def test_list_schedule_runs_empty(client, deployed):
     assert resp.json() == []
 
 
+def test_run_job_fires_batch_complete_webhook(client, deployed):
+    """End-to-end: _run_job runs the batch prediction and fires the
+    batch_complete webhook (regression for issue #9 — detached ORM objects
+    silently swallowed the dispatch and crashed the job before predicting)."""
+    from sqlmodel import Session, select
+
+    from core.scheduler import _run_job
+    from models.batch_schedule import BatchJobRun
+    from models.webhook_config import WebhookConfig
+    from models.webhook_event import WebhookEvent
+
+    # Register a webhook for batch_complete. Loopback URL is SSRF-blocked at
+    # dispatch (status 0) but the dispatch thread still logs a WebhookEvent —
+    # which is what proves the webhook fired, without any network call.
+    with Session(db_module.engine) as session:
+        session.add(
+            WebhookConfig(
+                deployment_id=deployed,
+                url="http://127.0.0.1:9/hook",
+                secret="s",
+                event_types='["batch_complete"]',
+                is_active=True,
+            )
+        )
+        session.commit()
+
+    create = client.post(
+        f"/api/deploy/{deployed}/schedules",
+        json={"frequency": "daily", "run_hour": 9, "run_minute": 0},
+    )
+    assert create.status_code == 201, create.text
+    schedule_id = create.json()["id"]
+
+    _run_job(schedule_id)
+
+    # The job itself must have succeeded (proves the second-session detached
+    # attribute access is fixed).
+    with Session(db_module.engine) as session:
+        job = session.exec(
+            select(BatchJobRun).where(BatchJobRun.schedule_id == schedule_id)
+        ).first()
+        assert job is not None
+        assert job.status == "success", job.error
+        assert job.row_count and job.row_count > 0
+
+    # The webhook dispatch happens in a daemon thread; poll for its event row.
+    for _ in range(20):
+        with Session(db_module.engine) as session:
+            evt = session.exec(
+                select(WebhookEvent).where(
+                    WebhookEvent.deployment_id == deployed,
+                    WebhookEvent.event_type == "batch_complete",
+                )
+            ).first()
+        if evt is not None:
+            break
+        time.sleep(0.25)
+    assert evt is not None, "batch_complete webhook never fired"
+
+
 def test_download_batch_output_invalid_filename(client):
     """Reject filenames with path traversal attempts."""
     resp = client.get("/api/deploy/batch-outputs/../etc/passwd")
