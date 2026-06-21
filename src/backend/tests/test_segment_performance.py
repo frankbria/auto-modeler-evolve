@@ -13,7 +13,6 @@ Covers:
 """
 
 import io
-import time
 
 import numpy as np
 import pandas as pd
@@ -28,6 +27,7 @@ from core.validator import (
     _segment_status,
     compute_segment_performance,
 )
+from tests.conftest import wait_for_run
 
 # ---------------------------------------------------------------------------
 # Sample CSV: 3 regions with different revenue distributions
@@ -254,16 +254,7 @@ async def trained_run_id(ac, project_id, dataset_id):
     assert train_resp.status_code == 202, train_resp.text
     run_id = train_resp.json()["model_run_ids"][0]
 
-    # Poll until done
-    for _ in range(40):
-        runs_resp = await ac.get(f"/api/models/{project_id}/runs")
-        run = next(
-            (r for r in runs_resp.json().get("runs", []) if r["id"] == run_id), None
-        )
-        if run and run["status"] == "done":
-            return run_id
-        time.sleep(0.25)
-    pytest.skip("Training did not complete in time")
+    return await wait_for_run(ac, project_id, run_id)
 
 
 # ---------------------------------------------------------------------------

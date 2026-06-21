@@ -10,6 +10,9 @@ unauthenticated (401) assertions and ``second_client`` for cross-tenant (IDOR)
 tests.
 """
 
+import os
+
+import anyio
 import pytest
 from httpx import AsyncClient, ASGITransport
 from sqlmodel import create_engine, Session, SQLModel
@@ -293,6 +296,125 @@ async def anon_client(tmp_path, set_test_env):
         transport=ASGITransport(app=app), base_url="http://test"
     ) as ac:
         yield ac
+
+
+# ---------------------------------------------------------------------------
+# Training-run wait helpers (issue #13)
+#
+# The old pattern — poll for status=='done' for ~10-15s then ``pytest.skip`` —
+# turned a 100%-failing training bug into a green SKIP. These helpers instead
+# break the moment a run reaches a terminal state ('done' OR 'failed') and then
+# *assert* it finished 'done', so a broken training fails loudly and fast. The
+# poll budget is CI-generous and tunable via ``TEST_TRAIN_TIMEOUT``.
+# ---------------------------------------------------------------------------
+
+#: Poll budget (seconds). Override on slow CI: ``TEST_TRAIN_TIMEOUT=40``.
+TRAIN_POLL_TIMEOUT = float(os.getenv("TEST_TRAIN_TIMEOUT", "20"))
+_POLL_INTERVAL = 0.25
+
+
+def _find_run(runs_payload: dict, run_id) -> dict | None:
+    return next((r for r in runs_payload.get("runs", []) if r["id"] == run_id), None)
+
+
+def _assert_done(run: dict | None, run_id) -> str:
+    assert run is not None, f"training run {run_id} never appeared in /runs"
+    status = run.get("status")
+    assert status == "done", (
+        f"training run {run_id} ended status={status!r}, expected 'done' "
+        f"(error_message={run.get('error_message')!r}, metrics={run.get('metrics')!r})"
+    )
+    return run_id
+
+
+async def wait_for_run(ac, project_id, run_id, *, timeout=TRAIN_POLL_TIMEOUT) -> str:
+    """Async: poll until ``run_id`` reaches a terminal state, then assert 'done'.
+
+    Breaks on ``status in ('done', 'failed')`` so a failed run is caught
+    immediately instead of after the full timeout. Uses ``anyio.sleep`` so the
+    event loop isn't blocked. Returns ``run_id`` for convenient chaining.
+    """
+    elapsed = 0.0
+    run = None
+    while elapsed < timeout:
+        resp = await ac.get(f"/api/models/{project_id}/runs")
+        run = _find_run(resp.json(), run_id)
+        if run and run.get("status") in ("done", "failed"):
+            break
+        await anyio.sleep(_POLL_INTERVAL)
+        elapsed += _POLL_INTERVAL
+    return _assert_done(run, run_id)
+
+
+def wait_for_run_sync(client, project_id, run_id, *, timeout=TRAIN_POLL_TIMEOUT) -> str:
+    """Sync ``TestClient`` variant of :func:`wait_for_run`.
+
+    No event loop is running under ``TestClient``, so ``time.sleep`` is fine
+    here — the event-loop-blocking concern only applies to async fixtures.
+    """
+    import time
+
+    elapsed = 0.0
+    run = None
+    while elapsed < timeout:
+        resp = client.get(f"/api/models/{project_id}/runs")
+        run = _find_run(resp.json(), run_id)
+        if run and run.get("status") in ("done", "failed"):
+            break
+        time.sleep(_POLL_INTERVAL)
+        elapsed += _POLL_INTERVAL
+    return _assert_done(run, run_id)
+
+
+# ---------------------------------------------------------------------------
+# Skip gate (issue #13)
+#
+# A skipped test is invisible in a bare ``pytest`` run, so a feature that
+# silently stopped working could hide behind a skip while CI stays green. This
+# gate fails the whole run on any skip whose reason isn't explicitly allowed.
+# The only legitimate skips are genuinely-optional native deps.
+# ---------------------------------------------------------------------------
+
+_ALLOWED_SKIP_SUBSTRINGS = (
+    "xgboost not installed",
+    "lightgbm not installed",
+)
+
+_unexpected_skips: list[tuple[str, str]] = []
+
+
+def _skip_reason(report) -> str:
+    longrepr = report.longrepr
+    # Skip longrepr is normally a (path, lineno, "Skipped: <reason>") tuple.
+    if isinstance(longrepr, tuple) and len(longrepr) == 3:
+        return str(longrepr[2])
+    return str(longrepr)
+
+
+def pytest_runtest_logreport(report):
+    # xfail also surfaces as skipped — those carry ``wasxfail`` and are expected.
+    if not report.skipped or hasattr(report, "wasxfail"):
+        return
+    reason = _skip_reason(report).lower()
+    if any(allowed.lower() in reason for allowed in _ALLOWED_SKIP_SUBSTRINGS):
+        return
+    _unexpected_skips.append((report.nodeid, _skip_reason(report)))
+
+
+def pytest_sessionfinish(session, exitstatus):
+    if not _unexpected_skips:
+        return
+    import sys
+
+    print(
+        "\n=== SKIP GATE: unexpected skips (not in allowlist) — treated as "
+        "failures ===",
+        file=sys.stderr,
+    )
+    for nodeid, reason in _unexpected_skips:
+        print(f"  SKIP  {nodeid}\n        {reason}", file=sys.stderr)
+    if session.exitstatus == 0:
+        session.exitstatus = 1
 
 
 @pytest.fixture

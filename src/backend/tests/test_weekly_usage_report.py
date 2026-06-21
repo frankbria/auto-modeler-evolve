@@ -8,7 +8,6 @@ Covers:
 
 import io
 import json
-import time
 
 import pytest
 from fastapi.testclient import TestClient
@@ -16,6 +15,7 @@ from sqlmodel import SQLModel, create_engine
 from unittest.mock import patch
 
 import db as db_module
+from tests.conftest import wait_for_run_sync
 
 SAMPLE_CSV = (
     b"product,region,units,revenue\n"
@@ -89,9 +89,9 @@ def test_weekly_usage_patterns_no_false_positives(phrase):
     """Unrelated phrases must NOT trigger the weekly usage report."""
     from api.chat import _WEEKLY_USAGE_PATTERNS
 
-    assert not _WEEKLY_USAGE_PATTERNS.search(phrase), (
-        f"Pattern should NOT match: {phrase!r}"
-    )
+    assert not _WEEKLY_USAGE_PATTERNS.search(
+        phrase
+    ), f"Pattern should NOT match: {phrase!r}"
 
 
 # ---------------------------------------------------------------------------
@@ -144,16 +144,7 @@ def _build_deployed_project(client, project_name="Weekly Usage Test"):
     assert r_train.status_code in (200, 202), r_train.text
     run_id = r_train.json()["model_run_ids"][0]
 
-    for _ in range(30):
-        runs = client.get(f"/api/models/{project_id}/runs").json()["runs"]
-        run = next((x for x in runs if x["id"] == run_id), None)
-        if run and run["status"] in ("done", "failed"):
-            break
-        time.sleep(0.5)
-
-    run = next((x for x in runs if x["id"] == run_id), None)
-    if not run or run["status"] != "done":
-        pytest.skip("training did not complete")
+    wait_for_run_sync(client, project_id, run_id)
 
     r_dep = client.post(f"/api/deploy/{run_id}")
     assert r_dep.status_code in (200, 201), r_dep.text

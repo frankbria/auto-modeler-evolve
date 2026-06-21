@@ -8,13 +8,13 @@ Covers:
 
 import io
 import json
-import time
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import SQLModel, create_engine
 
 import db as db_module
+from tests.conftest import wait_for_run_sync
 
 SAMPLE_CSV = (
     b"product,region,units,revenue\n"
@@ -78,9 +78,9 @@ def test_share_link_patterns_match(phrase: str) -> None:
 def test_share_link_patterns_no_false_positives(phrase: str) -> None:
     from api.chat import _SHARE_LINK_PATTERNS
 
-    assert not _SHARE_LINK_PATTERNS.search(phrase), (
-        f"Pattern falsely matched: {phrase!r}"
-    )
+    assert not _SHARE_LINK_PATTERNS.search(
+        phrase
+    ), f"Pattern falsely matched: {phrase!r}"
 
 
 # ---------------------------------------------------------------------------
@@ -131,15 +131,7 @@ def _build_deployed_project(client, project_name="Share Link Test"):
     )
     run_id = train_r.json()["model_run_ids"][0]
 
-    for _ in range(30):
-        runs = client.get(f"/api/models/{project_id}/runs").json()["runs"]
-        run = next(r for r in runs if r["id"] == run_id)
-        if run["status"] in ("done", "failed"):
-            break
-        time.sleep(0.5)
-
-    if run["status"] != "done":
-        pytest.skip("training did not complete")
+    wait_for_run_sync(client, project_id, run_id)
 
     r = client.post(f"/api/deploy/{run_id}")
     deployment_id = r.json()["id"]
@@ -253,11 +245,8 @@ def chat_client(tmp_path):
 
 
 def _deploy_for_chat(client):
-    try:
-        d = _build_deployed_project(client, project_name="Share Link Chat Test")
-        return d["project_id"], d["deployment_id"]
-    except pytest.skip.Exception:
-        return None, None
+    d = _build_deployed_project(client, project_name="Share Link Chat Test")
+    return d["project_id"], d["deployment_id"]
 
 
 def _chat(client, project_id, message):
@@ -281,8 +270,6 @@ def test_share_link_chat_event_emitted(chat_client):
     from unittest.mock import patch
 
     project_id, dep_id = _deploy_for_chat(chat_client)
-    if not dep_id:
-        pytest.skip("training did not complete")
 
     mock_stream = iter(["Here is your pre-filled scenario link."])
 
@@ -327,8 +314,6 @@ def test_share_link_chat_bookmark_variant(chat_client):
     from unittest.mock import patch
 
     project_id, dep_id = _deploy_for_chat(chat_client)
-    if not dep_id:
-        pytest.skip("training did not complete")
 
     mock_stream = iter(["Here is your bookmark link."])
 
@@ -347,8 +332,6 @@ def test_share_link_chat_copy_variant(chat_client):
     from unittest.mock import patch
 
     project_id, dep_id = _deploy_for_chat(chat_client)
-    if not dep_id:
-        pytest.skip("training did not complete")
 
     mock_stream = iter(["Here is your shareable link."])
 

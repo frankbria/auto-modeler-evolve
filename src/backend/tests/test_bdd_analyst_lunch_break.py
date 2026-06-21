@@ -11,7 +11,6 @@ This is the canonical integration test that validates the core vision:
 
 import io
 import json
-import time
 
 import pytest
 from fastapi.testclient import TestClient
@@ -19,6 +18,7 @@ from pytest_bdd import given, scenarios, then, when
 from sqlmodel import SQLModel, create_engine
 
 import db as db_module
+from tests.conftest import wait_for_run_sync
 
 scenarios("features/analyst_lunch_break.feature")
 
@@ -248,16 +248,9 @@ def train_model(client, ctx):
     assert run_ids, "No model run IDs returned"
     ctx["model_run_id"] = run_ids[0]
 
-    # Poll until done (max 15s — linear regression is fast)
-    for _ in range(30):
-        r = client.get(f"/api/models/{ctx['project_id']}/runs")
-        runs = r.json().get("runs", [])
-        run = next((x for x in runs if x["id"] == ctx["model_run_id"]), None)
-        if run and run["status"] == "done":
-            ctx["completed_run"] = run
-            return
-        time.sleep(0.5)
-    pytest.skip("Training did not complete within 15 seconds")
+    wait_for_run_sync(client, ctx["project_id"], ctx["model_run_id"])
+    runs = client.get(f"/api/models/{ctx['project_id']}/runs").json().get("runs", [])
+    ctx["completed_run"] = next(x for x in runs if x["id"] == ctx["model_run_id"])
 
 
 @then('a model run is created with status "done"')
@@ -307,15 +300,7 @@ def train_and_select(client, ctx):
     run_id = resp.json()["model_run_ids"][0]
     ctx["model_run_id"] = run_id
 
-    for _ in range(30):
-        r = client.get(f"/api/models/{ctx['project_id']}/runs")
-        runs = r.json().get("runs", [])
-        run = next((x for x in runs if x["id"] == run_id), None)
-        if run and run["status"] == "done":
-            break
-        time.sleep(0.5)
-    else:
-        pytest.skip("Training did not complete within 15 seconds")
+    wait_for_run_sync(client, ctx["project_id"], run_id)
 
     sel = client.post(f"/api/models/{run_id}/select")
     assert sel.status_code == 200, sel.text
@@ -422,9 +407,9 @@ def batch_has_prediction_column(ctx):
     assert resp.status_code == 200, f"Batch prediction failed: {resp.text}"
     lines = resp.text.strip().split("\n")
     header = lines[0].lower()
-    assert "revenue_prediction" in header or "prediction" in header, (
-        f"No prediction column in batch output header: {header}"
-    )
+    assert (
+        "revenue_prediction" in header or "prediction" in header
+    ), f"No prediction column in batch output header: {header}"
 
 
 @then("the output has 3 rows matching the input")

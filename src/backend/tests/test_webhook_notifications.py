@@ -26,6 +26,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlmodel import SQLModel, Session, create_engine
 
 import db as db_module
+from tests.conftest import wait_for_run
 
 _SAMPLE_CSV = (
     b"region,revenue,units\n"
@@ -111,22 +112,13 @@ async def feature_set_id(ac, dataset_id):
 
 @pytest.fixture()
 async def model_run_id(ac, project_id, feature_set_id):
-    import time
-
     r = await ac.post(
         f"/api/models/{project_id}/train",
         json={"algorithms": ["linear_regression"], "feature_set_id": feature_set_id},
     )
     assert r.status_code == 202, r.text
     run_id = r.json()["model_run_ids"][0]
-    for _ in range(40):
-        time.sleep(0.2)
-        r2 = await ac.get(f"/api/models/{project_id}/runs")
-        runs = r2.json().get("runs", [])
-        run = next((x for x in runs if x["id"] == run_id), None)
-        if run and run["status"] == "done":
-            return run_id
-    pytest.skip("Training did not complete in time")
+    return await wait_for_run(ac, project_id, run_id)
 
 
 @pytest.fixture()

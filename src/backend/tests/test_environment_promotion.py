@@ -11,13 +11,13 @@ Covers:
 """
 
 import io
-import time
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlmodel import SQLModel, create_engine
 
 import db as db_module
+from tests.conftest import wait_for_run
 
 _SAMPLE_CSV = (
     b"region,revenue,units\n"
@@ -102,13 +102,7 @@ async def feature_set_id(ac, dataset_id):
 
 
 async def _wait_for_run(ac, project_id, run_id):
-    for _ in range(30):
-        r = await ac.get(f"/api/models/{project_id}/runs")
-        run = next((x for x in r.json().get("runs", []) if x["id"] == run_id), None)
-        if run and run["status"] == "done":
-            return run_id
-        time.sleep(0.3)
-    pytest.skip("Training did not complete")
+    return await wait_for_run(ac, project_id, run_id)
 
 
 @pytest.fixture()
@@ -172,7 +166,9 @@ async def test_demote_to_staging(deployment_id, ac):
 @pytest.mark.anyio
 async def test_promote_demotes_existing_production(ac, project_id, feature_set_id):
     """Promoting a second deployment should demote the previous production one."""
-    # Train and deploy two runs on the same project
+    # Train two runs on the same project, capturing each run id so we can wait
+    # on the specific runs and FAIL (not skip) if either does not complete.
+    run_ids = []
     for _ in range(2):
         resp = await ac.post(
             f"/api/models/{project_id}/train",
@@ -182,22 +178,14 @@ async def test_promote_demotes_existing_production(ac, project_id, feature_set_i
             },
         )
         assert resp.status_code == 202, resp.text
+        run_ids.append(resp.json()["model_run_ids"][0])
 
-    r = await ac.get(f"/api/models/{project_id}/runs")
-    runs = [x for x in r.json().get("runs", []) if x["status"] == "done"]
-    # Wait for at least two done runs
-    for _ in range(30):
-        if len(runs) >= 2:
-            break
-        time.sleep(0.5)
-        r = await ac.get(f"/api/models/{project_id}/runs")
-        runs = [x for x in r.json().get("runs", []) if x["status"] == "done"]
-
-    if len(runs) < 2:
-        pytest.skip("Could not get 2 completed runs in time")
+    # Both runs must reach 'done' (wait_for_run asserts terminal status == 'done').
+    for run_id in run_ids:
+        await wait_for_run(ac, project_id, run_id)
 
     # Deploy first run
-    d1 = await ac.post(f"/api/deploy/{runs[0]['id']}")
+    d1 = await ac.post(f"/api/deploy/{run_ids[0]}")
     assert d1.status_code == 201
     dep1_id = d1.json()["id"]
 
@@ -206,7 +194,7 @@ async def test_promote_demotes_existing_production(ac, project_id, feature_set_i
 
     # The project already has an active deployment so second deploy will re-use same ID
     # Deploy second run — re-deploy updates the existing deployment in-place
-    d2 = await ac.post(f"/api/deploy/{runs[1]['id']}")
+    d2 = await ac.post(f"/api/deploy/{run_ids[1]}")
     assert d2.status_code == 201
 
     # The redeployed deployment is a new model on the same endpoint

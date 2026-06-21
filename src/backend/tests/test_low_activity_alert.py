@@ -34,6 +34,7 @@ from sqlmodel import SQLModel, Session, create_engine
 
 import db as db_module
 from core.webhook import ALL_EVENTS, EVENT_LOW_ACTIVITY
+from tests.conftest import wait_for_run
 
 _SAMPLE_CSV = (
     b"region,revenue,units\n"
@@ -88,8 +89,6 @@ async def ac(tmp_path):
 
 async def _make_deployment(ac):
     """Create project, upload CSV, train a model, and deploy it. Returns deployment_id."""
-    import time
-
     proj_r = await ac.post("/api/projects", json={"name": "LowActTest"})
     proj_id = proj_r.json()["id"]
 
@@ -117,14 +116,7 @@ async def _make_deployment(ac):
     assert train_r.status_code == 202
     run_id = train_r.json()["model_run_ids"][0]
 
-    for _ in range(30):
-        r = await ac.get(f"/api/models/{proj_id}/runs")
-        run = next((x for x in r.json().get("runs", []) if x["id"] == run_id), None)
-        if run and run["status"] == "done":
-            break
-        time.sleep(0.3)
-    else:
-        pytest.skip("Training did not complete")
+    await wait_for_run(ac, proj_id, run_id)
 
     dep_r = await ac.post(f"/api/deploy/{run_id}", json={})
     assert dep_r.status_code == 201

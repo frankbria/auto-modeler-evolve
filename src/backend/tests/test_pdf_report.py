@@ -13,6 +13,8 @@ import pytest
 from httpx import AsyncClient, ASGITransport
 from sqlmodel import SQLModel, Session, create_engine
 
+from tests.conftest import wait_for_run
+
 TEST_DATABASE_URL = "sqlite:///./test_pdf_report.db"
 
 
@@ -133,18 +135,9 @@ async def _train_model(client: AsyncClient, tmp_path) -> str:
         f"/api/models/{project_id}/train",
         json={"algorithms": ["linear_regression"]},
     )
-    # Poll until done
-    import asyncio
-
-    for _ in range(30):
-        r = await client.get(f"/api/models/{project_id}/runs")
-        runs = r.json()["runs"]
-        done = [ru for ru in runs if ru["status"] == "done"]
-        if done:
-            return done[0]["id"]
-        await asyncio.sleep(0.5)
-
-    pytest.skip("Training did not complete in time")
+    assert r.status_code == 202, r.text
+    run_id = r.json()["model_run_ids"][0]
+    return await wait_for_run(client, project_id, run_id)
 
 
 @pytest.mark.asyncio

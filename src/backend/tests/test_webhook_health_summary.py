@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import io
 import json
-import time
 import unittest.mock as mock
 
 import pytest
@@ -18,6 +17,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlmodel import SQLModel, create_engine
 
 import db as db_module
+from tests.conftest import wait_for_run
 
 _SAMPLE_CSV = (
     b"region,revenue,units\n"
@@ -113,14 +113,7 @@ async def model_run_id(ac, project_id, feature_set_id):
     )
     assert r.status_code == 202, r.text
     run_id = r.json()["model_run_ids"][0]
-    for _ in range(40):
-        time.sleep(0.2)
-        r2 = await ac.get(f"/api/models/{project_id}/runs")
-        runs = r2.json().get("runs", [])
-        run = next((x for x in runs if x["id"] == run_id), None)
-        if run and run["status"] == "done":
-            return run_id
-    pytest.skip("Training did not complete in time")
+    return await wait_for_run(ac, project_id, run_id)
 
 
 @pytest.fixture()

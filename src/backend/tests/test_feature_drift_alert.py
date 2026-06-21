@@ -25,7 +25,6 @@ Covers:
 from __future__ import annotations
 
 import io
-import time
 from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 
@@ -35,6 +34,7 @@ from sqlmodel import SQLModel, Session, create_engine
 
 import db as db_module
 from core.webhook import ALL_EVENTS, EVENT_FEATURE_DRIFT
+from tests.conftest import wait_for_run
 
 _SAMPLE_CSV = (
     b"region,revenue,units\n"
@@ -119,14 +119,7 @@ async def deployed(ac):
     assert resp.status_code == 202
     run_id = resp.json()["model_run_ids"][0]
 
-    for _ in range(30):
-        r = await ac.get(f"/api/models/{project_id}/runs")
-        run = next((x for x in r.json().get("runs", []) if x["id"] == run_id), None)
-        if run and run["status"] == "done":
-            break
-        time.sleep(0.3)
-    else:
-        pytest.skip("Training did not complete")
+    await wait_for_run(ac, project_id, run_id)
 
     resp = await ac.post(f"/api/deploy/{run_id}", json={})
     assert resp.status_code == 201, resp.text

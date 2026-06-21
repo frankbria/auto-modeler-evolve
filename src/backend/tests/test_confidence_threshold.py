@@ -10,13 +10,13 @@ Covers:
 """
 
 import io
-import time
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlmodel import SQLModel, create_engine
 
 import db as db_module
+from tests.conftest import wait_for_run
 
 _CLASSIFICATION_CSV = (
     b"age,income,approved\n"
@@ -100,14 +100,7 @@ async def classification_project(ac):
     )
     assert resp.status_code == 202
     run_id = resp.json()["model_run_ids"][0]
-    for _ in range(30):
-        r = await ac.get(f"/api/models/{project_id}/runs")
-        run = next((x for x in r.json().get("runs", []) if x["id"] == run_id), None)
-        if run and run["status"] == "done":
-            break
-        time.sleep(0.3)
-    else:
-        pytest.skip("Training did not complete")
+    await wait_for_run(ac, project_id, run_id)
 
     resp = await ac.post(f"/api/deploy/{run_id}", json={})
     assert resp.status_code == 201, resp.text
