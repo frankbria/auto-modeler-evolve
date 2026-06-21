@@ -135,6 +135,7 @@ async def _train_model(client: AsyncClient, tmp_path) -> str:
         f"/api/models/{project_id}/train",
         json={"algorithms": ["linear_regression"]},
     )
+    assert r.status_code == 202, r.text
     run_id = r.json()["model_run_ids"][0]
     return await wait_for_run(client, project_id, run_id)
 

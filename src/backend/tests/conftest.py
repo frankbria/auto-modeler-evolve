@@ -314,9 +314,7 @@ _POLL_INTERVAL = 0.25
 
 
 def _find_run(runs_payload: dict, run_id) -> dict | None:
-    return next(
-        (r for r in runs_payload.get("runs", []) if r["id"] == run_id), None
-    )
+    return next((r for r in runs_payload.get("runs", []) if r["id"] == run_id), None)
 
 
 def _assert_done(run: dict | None, run_id) -> str:
@@ -324,7 +322,7 @@ def _assert_done(run: dict | None, run_id) -> str:
     status = run.get("status")
     assert status == "done", (
         f"training run {run_id} ended status={status!r}, expected 'done' "
-        f"(error={run.get('error')!r}, metrics={run.get('metrics')!r})"
+        f"(error_message={run.get('error_message')!r}, metrics={run.get('metrics')!r})"
     )
     return run_id
 

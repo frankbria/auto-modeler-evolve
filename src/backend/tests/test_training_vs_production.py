@@ -21,6 +21,7 @@ from sqlmodel import SQLModel, create_engine
 
 import db as db_module
 from core.analyzer import compute_training_vs_production
+from tests.conftest import wait_for_run, wait_for_run_sync
 
 # ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -322,19 +323,14 @@ def _train_and_deploy_sync(client, pid: str, did: str) -> str:
         f"/api/features/{did}/target",
         json={"target_column": "revenue", "feature_set_id": fs["feature_set_id"]},
     )
-    client.post(f"/api/models/{pid}/train", json={"algorithms": ["linear_regression"]})
+    train = client.post(
+        f"/api/models/{pid}/train", json={"algorithms": ["linear_regression"]}
+    )
+    assert train.status_code == 202, train.text
+    run_id = train.json()["model_run_ids"][0]
+    wait_for_run_sync(client, pid, run_id)
 
-    import time as _time
-
-    for _ in range(60):
-        runs = client.get(f"/api/models/{pid}/runs").json()["runs"]
-        if runs and all(r["status"] in ("done", "failed") for r in runs):
-            break
-        _time.sleep(0.1)
-
-    runs = client.get(f"/api/models/{pid}/runs").json()["runs"]
-    done_run = next(r for r in runs if r["status"] == "done")
-    dep = client.post(f"/api/deploy/{done_run['id']}", json={"environment": "staging"})
+    dep = client.post(f"/api/deploy/{run_id}", json={"environment": "staging"})
     assert dep.status_code in (200, 201), dep.text
     dep_id = dep.json().get("deployment_id") or dep.json().get("id")
     assert dep_id, "deployment id should be returned"
@@ -350,23 +346,14 @@ async def _train_and_deploy_async(ac, pid: str, did: str) -> str:
         f"/api/features/{did}/target",
         json={"target_column": "revenue", "feature_set_id": fs["feature_set_id"]},
     )
-    await ac.post(
+    train = await ac.post(
         f"/api/models/{pid}/train", json={"algorithms": ["linear_regression"]}
     )
+    assert train.status_code == 202, train.text
+    run_id = train.json()["model_run_ids"][0]
+    await wait_for_run(ac, pid, run_id)
 
-    import asyncio as _asyncio
-
-    for _ in range(60):
-        runs = (await ac.get(f"/api/models/{pid}/runs")).json()["runs"]
-        if runs and all(r["status"] in ("done", "failed") for r in runs):
-            break
-        await _asyncio.sleep(0.1)
-
-    runs = (await ac.get(f"/api/models/{pid}/runs")).json()["runs"]
-    done_run = next(r for r in runs if r["status"] == "done")
-    dep = await ac.post(
-        f"/api/deploy/{done_run['id']}", json={"environment": "staging"}
-    )
+    dep = await ac.post(f"/api/deploy/{run_id}", json={"environment": "staging"})
     assert dep.status_code in (200, 201), dep.text
     dep_id = dep.json().get("deployment_id") or dep.json().get("id")
     assert dep_id, "deployment id should be returned"
