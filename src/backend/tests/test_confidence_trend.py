@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import io
 import json
-import time
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
@@ -21,6 +20,7 @@ from sqlmodel import SQLModel, create_engine
 
 import db as db_module
 from core.analyzer import compute_confidence_trend
+from tests.conftest import wait_for_run
 
 # ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -261,13 +261,7 @@ async def trained_run_id(ac, project_id, feature_set_id):
     )
     assert r.status_code == 202, r.text
     run_id = r.json()["model_run_ids"][0]
-    for _ in range(30):
-        resp = await ac.get(f"/api/models/{project_id}/runs")
-        run = next((x for x in resp.json().get("runs", []) if x["id"] == run_id), None)
-        if run and run["status"] == "done":
-            return run_id
-        time.sleep(0.3)
-    pytest.skip("Training did not complete")
+    return await wait_for_run(ac, project_id, run_id)
 
 
 @pytest.fixture()

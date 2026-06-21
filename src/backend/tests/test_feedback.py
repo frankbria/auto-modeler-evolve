@@ -227,8 +227,7 @@ class TestSubmitFeedback:
 
     def test_submit_feedback_with_prediction_log_id(self, client):
         dep_id, log_id = _setup_deployed_regression(client)
-        if not log_id:
-            pytest.skip("No log entry found")
+        assert log_id, "prediction log entry should exist after setup"
         r = client.post(
             f"/api/predict/{dep_id}/feedback",
             json={"prediction_log_id": log_id, "actual_value": 1200.0},
@@ -239,8 +238,7 @@ class TestSubmitFeedback:
 
     def test_submit_feedback_auto_computes_is_correct_for_classification(self, client):
         dep_id, log_id = _setup_deployed_classification(client)
-        if not log_id:
-            pytest.skip("No log entry found")
+        assert log_id, "prediction log entry should exist after setup"
 
         # Get what the model actually predicted
         logs = client.get(f"/api/deploy/{dep_id}/logs").json()["logs"]
@@ -256,8 +254,7 @@ class TestSubmitFeedback:
 
     def test_submit_feedback_wrong_prediction_sets_is_correct_false(self, client):
         dep_id, log_id = _setup_deployed_classification(client)
-        if not log_id:
-            pytest.skip("No log entry found")
+        assert log_id, "prediction log entry should exist after setup"
 
         # Get what the model predicted and provide the OTHER label
         logs = client.get(f"/api/deploy/{dep_id}/logs").json()["logs"]
@@ -339,8 +336,7 @@ class TestFeedbackAccuracyRegression:
 
     def test_feedback_with_log_id_computes_mae(self, client):
         dep_id, log_id = _setup_deployed_regression(client)
-        if not log_id:
-            pytest.skip("No prediction log entry")
+        assert log_id, "prediction log entry should exist after setup"
 
         # Submit feedback with log_id so MAE can be computed
         client.post(
@@ -362,8 +358,7 @@ class TestFeedbackAccuracyRegression:
 
     def test_accuracy_verdict_is_valid(self, client):
         dep_id, log_id = _setup_deployed_regression(client)
-        if not log_id:
-            pytest.skip("No log entry")
+        assert log_id, "prediction log entry should exist after setup"
         client.post(
             f"/api/predict/{dep_id}/feedback",
             json={"prediction_log_id": log_id, "actual_value": 1200.0},
@@ -386,8 +381,7 @@ class TestFeedbackAccuracyClassification:
 
     def test_correct_feedback_computes_accuracy(self, client):
         dep_id, log_id = _setup_deployed_classification(client)
-        if not log_id:
-            pytest.skip("No log entry")
+        assert log_id, "prediction log entry should exist after setup"
 
         # Submit 2 correct, 1 incorrect
         for correct in [True, True, False]:

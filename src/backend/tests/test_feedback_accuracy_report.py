@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import io
 import json
-import time
 import unittest.mock as mock
 from datetime import datetime, timezone
 from types import SimpleNamespace
@@ -22,6 +21,7 @@ from sqlmodel import SQLModel, create_engine
 
 import db as db_module
 from core.analyzer import compute_feedback_accuracy_report
+from tests.conftest import wait_for_run
 
 # ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -337,13 +337,7 @@ async def far_trained_run_id(far_client, far_project_id, far_feature_set_id):
     )
     assert r.status_code == 202, r.text
     run_id = r.json()["model_run_ids"][0]
-    for _ in range(30):
-        resp = await far_client.get(f"/api/models/{far_project_id}/runs")
-        run = next((x for x in resp.json().get("runs", []) if x["id"] == run_id), None)
-        if run and run["status"] == "done":
-            return run_id
-        time.sleep(0.3)
-    pytest.skip("Training did not complete")
+    return await wait_for_run(far_client, far_project_id, run_id)
 
 
 @pytest.fixture(scope="module")

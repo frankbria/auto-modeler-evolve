@@ -6,13 +6,12 @@ Covers:
 - _DEPLOYMENTS_OVERVIEW_PATTERNS chat intent detection
 """
 
-import time
-
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlmodel import SQLModel, create_engine
 
 import db as db_module
+from tests.conftest import wait_for_run
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -358,14 +357,7 @@ async def _create_deployment(
     assert train_resp.status_code == 202, train_resp.text
     run_id = train_resp.json()["model_run_ids"][0]
 
-    for _ in range(40):
-        r = await ac.get(f"/api/models/{project_id}/runs")
-        run = next((x for x in r.json().get("runs", []) if x["id"] == run_id), None)
-        if run and run["status"] == "done":
-            break
-        time.sleep(0.25)
-    else:
-        pytest.skip("Training did not complete in time")
+    await wait_for_run(ac, project_id, run_id)
 
     deploy_resp = await ac.post(f"/api/deploy/{run_id}")
     assert deploy_resp.status_code in (200, 201), deploy_resp.text

@@ -10,7 +10,6 @@ Covers:
 
 import io
 import json
-import time
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -18,6 +17,7 @@ from fastapi.testclient import TestClient
 from sqlmodel import SQLModel, create_engine
 
 import db as db_module
+from tests.conftest import wait_for_run_sync
 
 _SAMPLE_CSV = (
     b"region,revenue,units\n"
@@ -158,16 +158,7 @@ def _setup_project_with_deployment(client):
     assert train_r.status_code == 202
     run_id = train_r.json()["model_run_ids"][0]
 
-    for _ in range(30):
-        runs_r = client.get(f"/api/models/{proj_id}/runs")
-        run = next(
-            (x for x in runs_r.json().get("runs", []) if x["id"] == run_id), None
-        )
-        if run and run["status"] == "done":
-            break
-        time.sleep(0.3)
-    else:
-        pytest.skip("Training did not complete in time")
+    wait_for_run_sync(client, proj_id, run_id)
 
     dep_r = client.post(f"/api/deploy/{run_id}", json={})
     assert dep_r.status_code == 201, dep_r.text
@@ -235,22 +226,9 @@ def test_chat_rollback_to_previous_version(client):
         json={"algorithms": ["linear_regression"], "feature_set_id": fs_id2},
     )
     assert train_r2.status_code == 202
+    run2_id = train_r2.json()["model_run_ids"][0]
 
-    for _ in range(30):
-        runs_r = client.get(f"/api/models/{proj_id}/runs")
-        runs = runs_r.json().get("runs", [])
-        if any(r["status"] == "done" and r["id"] != run_id for r in runs):
-            break
-        time.sleep(0.3)
-    else:
-        pytest.skip("Re-training did not complete in time")
-
-    runs_r = client.get(f"/api/models/{proj_id}/runs")
-    run2_id = next(
-        r["id"]
-        for r in runs_r.json()["runs"]
-        if r["status"] == "done" and r["id"] != run_id
-    )
+    wait_for_run_sync(client, proj_id, run2_id)
     dep_r2 = client.post(f"/api/deploy/{run2_id}", json={})
     assert dep_r2.status_code in (200, 201)
 

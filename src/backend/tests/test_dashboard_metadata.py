@@ -19,6 +19,7 @@ from fastapi.testclient import TestClient
 from sqlmodel import SQLModel, create_engine
 
 import db as db_module
+from tests.conftest import wait_for_run_sync
 
 SAMPLE_CSV = (
     b"product,region,units,revenue\n"
@@ -177,8 +178,6 @@ def client(tmp_path):
 
 
 def _build_deployed_project(client, project_name="Dashboard Metadata Test"):
-    import time as _time
-
     r = client.post("/api/projects", json={"name": project_name})
     project_id = r.json()["id"]
 
@@ -198,15 +197,7 @@ def _build_deployed_project(client, project_name="Dashboard Metadata Test"):
     )
     run_id = train_r.json()["model_run_ids"][0]
 
-    for _ in range(30):
-        runs = client.get(f"/api/models/{project_id}/runs").json()["runs"]
-        run = next(r for r in runs if r["id"] == run_id)
-        if run["status"] in ("done", "failed"):
-            break
-        _time.sleep(0.5)
-
-    if run["status"] != "done":
-        pytest.skip("training did not complete")
+    wait_for_run_sync(client, project_id, run_id)
 
     r = client.post(f"/api/deploy/{run_id}")
     deployment_id = r.json()["id"]
@@ -351,11 +342,8 @@ def chat_client(tmp_path):
 
 
 def _deploy_for_chat(client):
-    try:
-        d = _build_deployed_project(client, project_name="Meta Chat Test")
-        return d["project_id"], d["deployment_id"]
-    except pytest.skip.Exception:
-        return None, None
+    d = _build_deployed_project(client, project_name="Meta Chat Test")
+    return d["project_id"], d["deployment_id"]
 
 
 def _chat(client, project_id, message):
@@ -381,8 +369,6 @@ def test_chat_set_dashboard_title(chat_client):
     from unittest.mock import patch
 
     project_id, dep_id = _deploy_for_chat(chat_client)
-    if not dep_id:
-        pytest.skip("training did not complete")
 
     mock_stream = iter(["Dashboard title set to Q2 Revenue Forecast."])
 
@@ -412,8 +398,6 @@ def test_chat_clear_dashboard_metadata(chat_client):
     from unittest.mock import patch
 
     project_id, dep_id = _deploy_for_chat(chat_client)
-    if not dep_id:
-        pytest.skip("training did not complete")
 
     # Pre-set a title
     chat_client.put(
@@ -439,8 +423,6 @@ def test_chat_dashboard_status_shows_event(chat_client):
     from unittest.mock import patch
 
     project_id, dep_id = _deploy_for_chat(chat_client)
-    if not dep_id:
-        pytest.skip("training did not complete")
 
     mock_stream = iter(["Current dashboard title is not set."])
 

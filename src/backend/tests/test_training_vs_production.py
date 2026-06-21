@@ -301,7 +301,76 @@ def _make_app_with_db(db_url: str):
     return app
 
 
-_ENDPOINT_CSV = b"region,revenue,units\nEast,100.0,10\nWest,200.0,20\nNorth,150.0,15\n"
+# A few rows so a real regression model can actually fit and deploy.
+_ENDPOINT_CSV = (
+    b"region,revenue,units\n"
+    b"East,100.0,10\nWest,200.0,20\nNorth,150.0,15\n"
+    b"South,250.0,25\nEast,120.0,12\nWest,210.0,21\n"
+    b"North,160.0,16\nSouth,260.0,26\nEast,130.0,13\nWest,220.0,22\n"
+)
+
+
+def _train_and_deploy_sync(client, pid: str, did: str) -> str:
+    """Train a real regression model via the API and deploy it. Returns deployment id.
+
+    Builds a genuine model artifact (model_path + prep sidecar + feature_set +
+    dataset) so the deploy endpoint succeeds — a hand-built ModelRun has no
+    serialized model file and deployment 404s.
+    """
+    fs = client.post(f"/api/features/{did}/apply", json={"transformations": []}).json()
+    client.post(
+        f"/api/features/{did}/target",
+        json={"target_column": "revenue", "feature_set_id": fs["feature_set_id"]},
+    )
+    client.post(f"/api/models/{pid}/train", json={"algorithms": ["linear_regression"]})
+
+    import time as _time
+
+    for _ in range(60):
+        runs = client.get(f"/api/models/{pid}/runs").json()["runs"]
+        if runs and all(r["status"] in ("done", "failed") for r in runs):
+            break
+        _time.sleep(0.1)
+
+    runs = client.get(f"/api/models/{pid}/runs").json()["runs"]
+    done_run = next(r for r in runs if r["status"] == "done")
+    dep = client.post(f"/api/deploy/{done_run['id']}", json={"environment": "staging"})
+    assert dep.status_code in (200, 201), dep.text
+    dep_id = dep.json().get("deployment_id") or dep.json().get("id")
+    assert dep_id, "deployment id should be returned"
+    return dep_id
+
+
+async def _train_and_deploy_async(ac, pid: str, did: str) -> str:
+    """Async variant of _train_and_deploy_sync for AsyncClient-based tests."""
+    fs = (
+        await ac.post(f"/api/features/{did}/apply", json={"transformations": []})
+    ).json()
+    await ac.post(
+        f"/api/features/{did}/target",
+        json={"target_column": "revenue", "feature_set_id": fs["feature_set_id"]},
+    )
+    await ac.post(
+        f"/api/models/{pid}/train", json={"algorithms": ["linear_regression"]}
+    )
+
+    import asyncio as _asyncio
+
+    for _ in range(60):
+        runs = (await ac.get(f"/api/models/{pid}/runs")).json()["runs"]
+        if runs and all(r["status"] in ("done", "failed") for r in runs):
+            break
+        await _asyncio.sleep(0.1)
+
+    runs = (await ac.get(f"/api/models/{pid}/runs")).json()["runs"]
+    done_run = next(r for r in runs if r["status"] == "done")
+    dep = await ac.post(
+        f"/api/deploy/{done_run['id']}", json={"environment": "staging"}
+    )
+    assert dep.status_code in (200, 201), dep.text
+    dep_id = dep.json().get("deployment_id") or dep.json().get("id")
+    assert dep_id, "deployment id should be returned"
+    return dep_id
 
 
 class TestTrainingVsProductionEndpoint:
@@ -327,38 +396,15 @@ class TestTrainingVsProductionEndpoint:
 
         import io
 
-        client.post(
+        up = client.post(
             "/api/data/upload",
             data={"project_id": pid},
             files={"file": ("data.csv", io.BytesIO(_ENDPOINT_CSV), "text/csv")},
         ).json()
-        # Deploy a mock model
-        from sqlmodel import Session as _Session
-        from models.model_run import ModelRun
-        import uuid
+        did = up["dataset_id"]
 
-        with _Session(db_module.engine) as session:
-            run = ModelRun(
-                id=str(uuid.uuid4()),
-                project_id=pid,
-                algorithm="linear_regression",
-                status="done",
-                metrics='{"r2": 0.8, "mae": 5.0}',
-            )
-            session.add(run)
-            session.commit()
-            session.refresh(run)
-            run_id = run.id
-
-        dep_resp = client.post(
-            f"/api/deploy/{run_id}",
-            json={"environment": "staging"},
-        )
-        if dep_resp.status_code not in (200, 201):
-            pytest.skip("Deployment creation failed in test environment")
-        dep_id = dep_resp.json().get("deployment_id") or dep_resp.json().get("id")
-        if not dep_id:
-            pytest.skip("Could not get deployment id")
+        # Train + deploy a real model (genuine artifact on disk).
+        dep_id = _train_and_deploy_sync(client, pid, did)
 
         resp = client.get(f"/api/deploy/{dep_id}/training-vs-production")
         assert resp.status_code == 200
@@ -410,48 +456,27 @@ async def test_prod_monitor_chat_emits_event():
             proj = (await ac.post("/api/projects", json={"name": "TVP Project"})).json()
             pid = proj["id"]
 
-            await ac.post(
-                "/api/data/upload",
-                data={"project_id": pid},
-                files={
-                    "file": (
-                        "data.csv",
-                        io.BytesIO(_ENDPOINT_CSV),
-                        "text/csv",
-                    )
-                },
-            )
-
-            # Inject model run directly
-            from models.model_run import ModelRun as MR
-            import uuid
-
-            from sqlmodel import Session as _Sess
-
-            with _Sess(db_module.engine) as sess:
-                run = MR(
-                    id=str(uuid.uuid4()),
-                    project_id=pid,
-                    algorithm="linear_regression",
-                    status="done",
-                    metrics='{"r2": 0.8, "mae": 5.0}',
+            up = (
+                await ac.post(
+                    "/api/data/upload",
+                    data={"project_id": pid},
+                    files={
+                        "file": (
+                            "data.csv",
+                            io.BytesIO(_ENDPOINT_CSV),
+                            "text/csv",
+                        )
+                    },
                 )
-                sess.add(run)
-                sess.commit()
-                sess.refresh(run)
-                run_id = run.id
+            ).json()
+            did = up["dataset_id"]
 
-            dep = await ac.post(f"/api/deploy/{run_id}", json={})
-            if dep.status_code not in (200, 201):
-                pytest.skip("Deployment creation failed")
-            dep_data = dep.json()
-            dep_id = dep_data.get("deployment_id") or dep_data.get("id")
-            if not dep_id:
-                pytest.skip("No deployment id returned")
+            # Train + deploy a real model (genuine artifact on disk).
+            await _train_and_deploy_async(ac, pid, did)
 
             MockAnthropic.return_value.messages.stream.return_value = _mock_stream()
             resp = await ac.post(
-                f"/api/chat/{pid}/message",
+                f"/api/chat/{pid}",
                 json={
                     "message": "is my model degrading in production",
                     "history": [],
@@ -460,9 +485,9 @@ async def test_prod_monitor_chat_emits_event():
             assert resp.status_code == 200
             events = _parse_events(resp)
             types = [e.get("type") for e in events]
-            assert "prod_performance" in types, (
-                f"Expected prod_performance. Got: {types}"
-            )
+            assert (
+                "prod_performance" in types
+            ), f"Expected prod_performance. Got: {types}"
             ev = next(e for e in events if e.get("type") == "prod_performance")
             data = ev["prod_performance"]
             assert "status" in data
@@ -500,16 +525,13 @@ async def test_prod_monitor_chat_no_deployment_guard():
 
             MockAnthropic.return_value.messages.stream.return_value = _mock_stream()
             resp = await ac.post(
-                f"/api/chat/{pid}/message",
+                f"/api/chat/{pid}",
                 json={
                     "message": "is my model degrading in production",
                     "history": [],
                 },
             )
-            if resp.status_code != 200:
-                pytest.skip(
-                    "Chat endpoint not available without initialized session context"
-                )
+            assert resp.status_code == 200, resp.text
             events = _parse_events(resp)
             types = [e.get("type") for e in events]
             assert "prod_performance" not in types

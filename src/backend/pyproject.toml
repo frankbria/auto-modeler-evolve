@@ -44,6 +44,14 @@ line-length = 88
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+# -rs: report skip reasons; --strict-markers: unknown @pytest.mark.* is an error.
+# The skip gate in tests/conftest.py fails the run on any non-allowlisted skip,
+# so this enforcement works under the existing bare ``uv run pytest`` (CI yaml
+# is protected and stays untouched).
+addopts = "-rs --strict-markers"
+markers = [
+    "anyio: anyio pytest plugin marker (registered for --strict-markers)",
+]
 
 [dependency-groups]
 dev = [

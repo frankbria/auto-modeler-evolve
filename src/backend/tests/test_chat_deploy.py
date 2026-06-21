@@ -10,7 +10,6 @@ Covers:
 """
 
 import json
-import time
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -18,6 +17,7 @@ from sqlmodel import SQLModel, create_engine
 
 import db as db_module
 from api.chat import _DEPLOY_CHAT_PATTERNS
+from tests.conftest import wait_for_run
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -117,16 +117,7 @@ async def trained_run_id(ac, project_id, feature_set_id):
     )
     assert resp.status_code == 202, resp.text
     run_id = resp.json()["model_run_ids"][0]
-
-    # Poll until done (max 10s)
-    for _ in range(20):
-        r = await ac.get(f"/api/models/{project_id}/runs")
-        runs = r.json().get("runs", [])
-        run = next((x for x in runs if x["id"] == run_id), None)
-        if run and run["status"] == "done":
-            return run_id
-        time.sleep(0.5)
-    pytest.skip("Training did not complete in time")
+    return await wait_for_run(ac, project_id, run_id)
 
 
 @pytest.fixture()

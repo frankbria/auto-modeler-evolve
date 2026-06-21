@@ -21,6 +21,7 @@ from fastapi.testclient import TestClient
 from sqlmodel import SQLModel, create_engine
 
 import db as db_module
+from tests.conftest import wait_for_run_sync
 
 SAMPLE_CSV = (
     b"product,region,units,revenue\n"
@@ -198,9 +199,7 @@ def client(tmp_path):
 
 
 def _build_deployed_project(client, project_name="Dashboard Config Test"):
-    """Helper: create → upload → train → deploy. Returns dict or raises pytest.skip."""
-    import time as _time
-
+    """Helper: create → upload → train → deploy. Returns dict."""
     r = client.post("/api/projects", json={"name": project_name})
     project_id = r.json()["id"]
 
@@ -220,15 +219,7 @@ def _build_deployed_project(client, project_name="Dashboard Config Test"):
     )
     run_id = train_r.json()["model_run_ids"][0]
 
-    for _ in range(30):
-        runs = client.get(f"/api/models/{project_id}/runs").json()["runs"]
-        run = next(r for r in runs if r["id"] == run_id)
-        if run["status"] in ("done", "failed"):
-            break
-        _time.sleep(0.5)
-
-    if run["status"] != "done":
-        pytest.skip("training did not complete")
+    wait_for_run_sync(client, project_id, run_id)
 
     r = client.post(f"/api/deploy/{run_id}")
     deployment_id = r.json()["id"]
@@ -383,11 +374,8 @@ def chat_client(tmp_path):
 
 def _deploy_project(client):
     """Helper: create → upload → train → deploy."""
-    try:
-        d = _build_deployed_project(client, project_name="Chat DC Test")
-        return d["project_id"], None, d["deployment_id"]
-    except pytest.skip.Exception:
-        return None, None, None
+    d = _build_deployed_project(client, project_name="Chat DC Test")
+    return d["project_id"], None, d["deployment_id"]
 
 
 def _chat(client, project_id, message):
@@ -414,8 +402,6 @@ def test_chat_hide_field(chat_client):
     from unittest.mock import patch
 
     project_id, _, dep_id = _deploy_project(chat_client)
-    if not dep_id:
-        pytest.skip("training did not complete")
 
     mock_stream = iter(["The field is now hidden."])
 
@@ -439,8 +425,6 @@ def test_chat_lock_field(chat_client):
     from unittest.mock import patch
 
     project_id, _, dep_id = _deploy_project(chat_client)
-    if not dep_id:
-        pytest.skip("training did not complete")
 
     mock_stream = iter(["Region locked to North."])
 
@@ -466,8 +450,6 @@ def test_chat_reset_dashboard(chat_client):
     from unittest.mock import patch
 
     project_id, _, dep_id = _deploy_project(chat_client)
-    if not dep_id:
-        pytest.skip("training did not complete")
 
     # First hide a field
     chat_client.put(
@@ -495,8 +477,6 @@ def test_chat_dashboard_status(chat_client):
     from unittest.mock import patch
 
     project_id, _, dep_id = _deploy_project(chat_client)
-    if not dep_id:
-        pytest.skip("training did not complete")
 
     mock_stream = iter(["Here is what's visible."])
 
@@ -614,8 +594,6 @@ def test_chat_label_field(chat_client):
     from unittest.mock import patch
 
     project_id, _, dep_id = _deploy_project(chat_client)
-    if not dep_id:
-        pytest.skip("training did not complete")
 
     mock_stream = iter(["Units will now show as 'Monthly Units Sold'."])
 
@@ -645,8 +623,6 @@ def test_chat_label_persists_in_db(chat_client):
     from unittest.mock import patch
 
     project_id, _, dep_id = _deploy_project(chat_client)
-    if not dep_id:
-        pytest.skip("training did not complete")
 
     mock_stream = iter(["Revenue labeled."])
 
@@ -670,8 +646,6 @@ def test_chat_label_event_has_labeled_count(chat_client):
     from unittest.mock import patch
 
     project_id, _, dep_id = _deploy_project(chat_client)
-    if not dep_id:
-        pytest.skip("training did not complete")
 
     mock_stream = iter(["Labeled."])
 
@@ -765,8 +739,6 @@ def test_chat_reorder_fields(chat_client):
     from unittest.mock import patch
 
     project_id, _, dep_id = _deploy_project(chat_client)
-    if not dep_id:
-        pytest.skip("training did not complete")
 
     mock_stream = iter(["Fields reordered."])
 
@@ -794,8 +766,6 @@ def test_chat_put_first(chat_client):
     from unittest.mock import patch
 
     project_id, _, dep_id = _deploy_project(chat_client)
-    if not dep_id:
-        pytest.skip("training did not complete")
 
     mock_stream = iter(["Units moved to first position."])
 
@@ -819,8 +789,6 @@ def test_chat_order_persists_in_db(chat_client):
     from unittest.mock import patch
 
     project_id, _, dep_id = _deploy_project(chat_client)
-    if not dep_id:
-        pytest.skip("training did not complete")
 
     mock_stream = iter(["Reordered."])
 
@@ -843,8 +811,6 @@ def test_chat_order_event_has_ordered_count(chat_client):
     from unittest.mock import patch
 
     project_id, _, dep_id = _deploy_project(chat_client)
-    if not dep_id:
-        pytest.skip("training did not complete")
 
     mock_stream = iter(["Fields reordered."])
 
