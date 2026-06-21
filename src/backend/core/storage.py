@@ -55,6 +55,10 @@ def batch_outputs_dir() -> Path:
     return data_root() / "batch_outputs"
 
 
+def logs_dir() -> Path:
+    return data_root() / "logs"
+
+
 # --- Per-entity helpers -----------------------------------------------------
 
 

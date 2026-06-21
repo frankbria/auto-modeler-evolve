@@ -19,6 +19,7 @@ import csv
 import hashlib
 import io
 import json
+import logging
 import random
 import secrets
 import threading
@@ -100,6 +101,8 @@ router = APIRouter(
     tags=["deployment"],
     dependencies=[Depends(require_owner_allow_public)],
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _owned_project_ids(current_user: "User", session: "Session") -> list[str]:
@@ -2890,8 +2893,8 @@ def _check_and_fire_accuracy_alert(
             ),
         }
         dispatch_webhooks(deployment_id, EVENT_ACCURACY_ALERT, payload)
-    except Exception:
-        pass  # Best-effort; never crash the feedback path
+    except Exception:  # noqa: BLE001 — best-effort; never crash the feedback path
+        logger.exception("Accuracy alert dispatch failed for %s", deployment_id)
 
 
 class AccuracyAlertRequest(BaseModel):
@@ -3532,8 +3535,8 @@ def _check_and_fire_quota_alert(
             ),
         }
         dispatch_webhooks(deployment_id, EVENT_QUOTA_ALERT, payload)
-    except Exception:
-        pass  # Best-effort; never crash the prediction path
+    except Exception:  # noqa: BLE001 — best-effort; never crash the prediction path
+        logger.exception("Quota alert dispatch failed for %s", deployment_id)
 
 
 # SLA latency alert constants
@@ -3620,8 +3623,8 @@ def _check_and_fire_sla_alert(
                 ),
             },
         )
-    except Exception:
-        pass  # Best-effort; never crash the prediction path
+    except Exception:  # noqa: BLE001 — best-effort; never crash the prediction path
+        logger.exception("SLA alert dispatch failed for %s", deployment_id)
 
 
 # ---------------------------------------------------------------------------
@@ -5732,8 +5735,8 @@ def _fire_alert_rules(
                         "predicted_class": predicted_class,
                     },
                 )
-    except Exception:
-        pass  # Best-effort; never crash the prediction path
+    except Exception:  # noqa: BLE001 — best-effort; never crash the prediction path
+        logger.exception("Alert-rule firing failed for %s", deployment_id)
 
 
 class AlertRuleRequest(BaseModel):
@@ -8254,8 +8257,8 @@ def _check_and_fire_feature_drift_alert(
                 ),
             },
         )
-    except Exception:
-        pass  # Best-effort; never crash the prediction path
+    except Exception:  # noqa: BLE001 — best-effort; never crash the caller
+        logger.exception("Feature-drift alert failed for %s", deployment_id)
 
 
 class FeatureDriftAlertRequest(BaseModel):
@@ -8398,8 +8401,8 @@ def _check_and_fire_low_activity_alert(deployment_id: str) -> None:
                 ),
             },
         )
-    except Exception:
-        pass  # Best-effort; never crash the scheduler
+    except Exception:  # noqa: BLE001 — best-effort; never crash the scheduler
+        logger.exception("Low-activity alert failed for %s", deployment_id)
 
 
 class LowActivityAlertRequest(BaseModel):
@@ -8550,8 +8553,8 @@ def _check_and_fire_high_activity_burst(deployment_id: str) -> None:
                 ),
             },
         )
-    except Exception:
-        pass  # Best-effort; never crash the scheduler
+    except Exception:  # noqa: BLE001 — best-effort; never crash the scheduler
+        logger.exception("High-activity burst alert failed for %s", deployment_id)
 
 
 class HighActivityBurstRequest(BaseModel):
@@ -8712,8 +8715,8 @@ def _check_and_fire_latency_alert(deployment_id: str) -> None:
                 ),
             },
         )
-    except Exception:
-        pass  # Best-effort; never crash the scheduler
+    except Exception:  # noqa: BLE001 — best-effort; never crash the scheduler
+        logger.exception("Latency alert failed for %s", deployment_id)
 
 
 # ---------------------------------------------------------------------------
@@ -8857,8 +8860,8 @@ def _check_and_fire_accuracy_rollback(deployment_id: str) -> None:
                 ),
             },
         )
-    except Exception:
-        pass  # Best-effort; never crash the scheduler
+    except Exception:  # noqa: BLE001 — best-effort; never crash the scheduler
+        logger.exception("Accuracy auto-rollback check failed for %s", deployment_id)
 
 
 class AutoRollbackRequest(BaseModel):
@@ -9139,8 +9142,8 @@ def _check_and_fire_pred_value_trend_alert(deployment_id: str) -> None:
                 ),
             },
         )
-    except Exception:
-        pass  # Best-effort; never crash the scheduler
+    except Exception:  # noqa: BLE001 — best-effort; never crash the scheduler
+        logger.exception("Prediction-value trend alert failed for %s", deployment_id)
 
 
 class PredValueAlertRequest(BaseModel):
@@ -9356,8 +9359,8 @@ def _check_and_fire_input_dist_drift_alert(deployment_id: str) -> None:
                 ),
             },
         )
-    except Exception:
-        pass  # Best-effort; never crash the scheduler
+    except Exception:  # noqa: BLE001 — best-effort; never crash the scheduler
+        logger.exception("Input-distribution drift alert failed for %s", deployment_id)
 
 
 class InputDistDriftAlertRequest(BaseModel):
@@ -10653,8 +10656,8 @@ def _check_and_trigger_degradation_retrain(deployment_id: str) -> None:
                 ),
             },
         )
-    except Exception:
-        pass  # Best-effort; never crash the scheduler
+    except Exception:  # noqa: BLE001 — best-effort; never crash the scheduler
+        logger.exception("Degradation auto-retrain check failed for %s", deployment_id)
 
 
 class DegradationRetrainRequest(BaseModel):

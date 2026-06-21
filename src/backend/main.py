@@ -1,6 +1,7 @@
 import logging
 import threading
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -9,6 +10,7 @@ from fastapi.responses import JSONResponse
 
 import models  # noqa: F401 — ensures all SQLModel tables are registered before create_all
 
+from core.obs import configure_logging, internal_error_handler
 from core.path_safety import UnsafePathError
 from core.ssrf_guard import UnsafeURLError
 
@@ -32,6 +34,7 @@ UPLOAD_DIR = DATA_DIR / "uploads"
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    configure_logging()
     DATA_DIR.mkdir(exist_ok=True)
     UPLOAD_DIR.mkdir(exist_ok=True)
     # Fail-fast on a corrupt DB rather than serving silently-wrong data.
@@ -103,6 +106,22 @@ async def _unsafe_path_handler(request: Request, exc: UnsafePathError) -> JSONRe
     return JSONResponse(status_code=400, content={"detail": str(exc)})
 
 
+# Catch-all: any unhandled exception logs a traceback (with a request id) and
+# returns a generic 500 instead of a bare stack-traced error.
+app.add_exception_handler(Exception, internal_error_handler)
+
+
 @app.get("/health")
 def health_check():
-    return {"status": "ok", "version": "0.1.0"}
+    """Liveness probe. Surfaces the scheduler's last tick so operators can tell
+    the background daemon is alive (it ticks every 60s)."""
+    from core.scheduler import last_tick
+
+    tick = last_tick()
+    return {
+        "status": "ok",
+        "version": "0.1.0",
+        "scheduler_last_tick": tick.isoformat() if tick else None,
+        "scheduler_alive": tick is not None
+        and (datetime.now(UTC) - tick).total_seconds() < 180,
+    }
