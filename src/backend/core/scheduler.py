@@ -14,8 +14,19 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from core import storage
+from core.obs import log_and_swallow
 
 logger = logging.getLogger(__name__)
+
+# Liveness beacon: stamped (UTC, tz-aware) at the top of every scheduler loop
+# iteration so /health can tell the background daemon is actually running.
+_last_tick: datetime | None = None
+
+
+def last_tick() -> datetime | None:
+    """Return the time of the scheduler's most recent loop iteration (UTC)."""
+    return _last_tick
+
 
 # Resolve through core.storage so batch-output writes and cascade/janitor cleanup
 # share one root (honors DATA_DIR); identical to <backend>/data/batch_outputs unset.
@@ -229,7 +240,9 @@ def _run_job(schedule_id: str) -> None:
         session.commit()
 
     # Fire batch_complete webhook (outside DB session — best-effort)
-    try:
+    with log_and_swallow(
+        f"batch_complete webhook for schedule {schedule_id}", log=logger
+    ):
         from core.webhook import EVENT_BATCH_COMPLETE, dispatch_webhooks
 
         dispatch_webhooks(
@@ -243,8 +256,6 @@ def _run_job(schedule_id: str) -> None:
                 "completed_at": webhook_completed_at,
             },
         )
-    except Exception:
-        pass
 
 
 # ---------------------------------------------------------------------------
@@ -325,21 +336,17 @@ def _run_weekly_digest(config_id: str) -> None:
         dist_shift_result = None
         readiness_result = None
 
-        try:
+        with log_and_swallow("weekly digest: anomaly signal", log=logger):
             if len(logs_data) >= 5:
                 anomaly_result = compute_prediction_output_anomalies(
                     logs_data, problem_type
                 )
-        except Exception:
-            pass
 
-        try:
+        with log_and_swallow("weekly digest: value-trend signal", log=logger):
             if problem_type == "regression" and len(logs_data) >= 2:
                 value_trend_result = compute_prediction_value_trend(
                     logs_data, "day", 30
                 )
-        except Exception:
-            pass
 
         # Usage 7-day comparison
         from datetime import timedelta
@@ -402,6 +409,8 @@ def _scheduler_loop() -> None:
     from sqlmodel import Session, select
 
     while True:
+        global _last_tick
+        _last_tick = datetime.now(UTC)
         try:
             now = datetime.now(UTC).replace(tzinfo=None)
             with Session(engine) as session:

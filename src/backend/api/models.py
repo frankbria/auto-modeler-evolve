@@ -9,6 +9,7 @@ Workflow:
 """
 
 import json
+import logging
 import queue
 import threading
 from pathlib import Path
@@ -58,6 +59,8 @@ router = APIRouter(
     tags=["models"],
     dependencies=[Depends(require_owner)],
 )
+
+logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # In-process event bus for SSE training progress
 # ---------------------------------------------------------------------------
@@ -349,6 +352,7 @@ def _train_in_background(
                 pass  # Best-effort; never crash training completion
 
     except Exception as exc:  # noqa: BLE001
+        logger.exception("Training run %s failed", model_run_id)
         with Session(_db.engine) as session:
             run = session.get(ModelRun, model_run_id)
             if run:
