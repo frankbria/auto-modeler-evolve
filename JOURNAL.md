@@ -1,5 +1,40 @@
 # Journal
 
+## Day 94 — Test-trust: convert skips to assertions + skip gate (closes #13, PR #40)
+
+**Hardening shipped (audit blocker P4.1 / GH#13, label `test-trust`):** ~43 backend test
+files polled training for `status=='done'` for 10–15s then `pytest.skip("Training did not
+complete")` on timeout. The loops never checked `'failed'`, so a 100%-failing training bug
+surfaced as a green SKIP — and a bare `uv run pytest` (no `--strict-markers`, no skip gate)
+stayed green. The headline "passing" count overstated real integration coverage.
+
+**What was built:**
+- Centralized waiters in `tests/conftest.py`: `async wait_for_run(ac, project_id, run_id)`
+  (uses `await anyio.sleep`) + `wait_for_run_sync(client, ...)` for sync `TestClient`
+  files. Both **break on `status in ('done','failed')`** then **assert `status=='done'`**
+  with a diagnostic (`error_message`/`metrics` from the `/runs` payload). A failed run now
+  fails in ~0ms instead of timing out into a skip. Budget tunable via `TEST_TRAIN_TIMEOUT`
+  (default 20s).
+- **Skip gate** in conftest: any `pytest.skip` whose reason isn't allowlisted
+  (`xgboost`/`lightgbm not installed`) fails the run via `session.exitstatus`.
+- `pyproject.toml`: `addopts = "-rs --strict-markers"` + registered `anyio` marker. The gate
+  lives in conftest, so enforcement works under the existing bare CI command — **protected
+  `.github/workflows/` untouched**, no human coordination needed.
+- Converted every inline training-poll loop to the helper (40 files import it); removed the
+  dead dashboard `except pytest.skip.Exception` plumbing; converted data-availability skips
+  to assertions in `test_feedback.py` (6×) and `test_environment_promotion.py`.
+
+**Real bugs surfaced by the conversion:** `test_training_vs_production.py` had 3 tests that
+**never actually ran** (wrong chat URL `/api/chat/{pid}/message`; hand-built `ModelRun` rows
+with no artifact could never deploy → skip-on-deploy-fail hid it). Fixed to train+deploy
+real models end-to-end.
+
+**Tests:** full backend suite **6721 passed, 0 skipped** with the gate active (local + CI
+verify 23m). Net **−239 lines** (removed duplicated poll boilerplate). CodeRabbit: 3 findings
+(error-field name, flaky local poll in the new helpers, missing 202 assert) all addressed.
+
+---
+
 ## Day 94 — 20:00 — Model Performance Decay Rate Analysis (Track D)
 
 **Feature shipped:** Model Performance Decay Rate Analysis — closes the analyst gap between "my accuracy is dropping" and "how fast is it dropping, and when will it cross my acceptable threshold?" This is distinct from RetrainingReadinessCard (composite urgency score across multiple signals) and DegradationRetrainCard (auto-trigger threshold configuration). This feature is purely about quantifying the rate of accuracy decay from labeled feedback over time.
