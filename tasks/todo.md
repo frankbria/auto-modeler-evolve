@@ -1,79 +1,47 @@
-# Issue #6 — [P2.3] Stop auto-retrain rebinding live feature_set before training succeeds
+# Issue #14 — Centralize fixture isolation; stop tests polluting the real data tree
 
-**Source plan**: issue body (`PLAN_SOURCE = comment` — plan lives in the issue body itself).
-**Severity**: HIGH (blocker), data-integrity.
+**Label:** test-trust · **Severity:** HIGH · Plan source: self-authored (no plan on issue)
 
 ## Root cause
-`core/retrain.py::_do_trigger`:
-1. Mutates `feature_set.dataset_id = new_dataset_id` (line 69) and **commits** (line 81) on the
-   feature_set that the **currently-deployed** ModelRun still references — *before* training runs.
-2. Training can `return None` (lines 89–110: missing dataset file, empty `feature_cols`) or raise in
-   the background thread. Either way the live model's feature_set is permanently rebound to a new
-   dataset with no rollback → provenance + retrain reproducibility corrupted.
-3. Lines 118–119 mutate `_training_queues[project_id]` / `_training_counters[project_id]` without
-   `_lock`, racing `start_training`/chat-driven training (which do hold `_lock`) → clobbered
-   queue/counter and SSE sentinel races.
+`set_test_env` (autouse) sets `DATA_DIR=tmp_path`, and `core.storage` resolves at
+call time — BUT the api modules cache the dirs as module-level constants at import
+time (before any test runs), so they point at the real `<backend>/data/` tree:
+- `api.models.MODELS_DIR`, `api.data.UPLOAD_DIR`, `api.data._DB_UPLOADS_DIR`,
+  `api.deploy.DEPLOY_DIR`, `api.templates.UPLOAD_DIR`, `core.scheduler.BATCH_OUTPUT_DIR`
 
-## Fix design — Option A: create a new run-scoped FeatureSet (NOT mutate the existing one)
-- The existing feature_set (referenced by the deployed run) is **never touched**.
-- A new `FeatureSet` row (copy of `transformations` / `column_mapping` / `target_column` /
-  `problem_type`, `is_active=True`) points at `new_dataset_id`; the new `ModelRun` references it.
-- All early-return ("skipped retrain") checks move **before any DB write**, so a skipped retrain
-  leaves the DB completely untouched.
-- Queue/counter setup is wrapped in `with _lock:` (matching `api/models.py:528` `start_training`).
-- `column_mapping` is now copied for provenance completeness (previously dropped).
+~11 per-file `client` fixtures patch only `db.engine`/`DATA_DIR` and forget these
+constants → training/upload/deploy endpoints write into the real tree.
+Reproduced leak: `data/uploads` 14k dirs, `data/models` 3k, `data/deployments` 4.4k, 254M.
 
-## Acceptance criteria (from issue)
-- [x] Do not mutate the existing feature_set in place — create a new FeatureSet pointing at
-      `new_dataset_id`.
-- [x] A skipped/failed retrain must leave prior state untouched.
-- [x] Acquire `_lock` around queue/counter setup.
-- [x] Add a test forcing a failed retrain and asserting `feature_set.dataset_id` is unchanged.
+## Plan (lazy + correct — one safety net beats rewriting 103 fixtures)
 
-## Adapted plan steps
+1. **Autouse isolation fixture** in `tests/conftest.py`: monkeypatch all 6 module
+   constants to the `storage.*_dir()` values (re-resolved under the per-test
+   `DATA_DIR=tmp_path`). Depends on `set_test_env` for ordering. Covers EVERY test —
+   central `client`, per-file `client` fixtures that forgot the patch, and non-client
+   tests that import the modules — so a forgetful fixture copy is no longer a hazard.
+   (Both value-imports of these constants are function-local/call-time, so patching
+   the source attr takes effect.)
 
-### Step 1 — RED: tests first (TDD)
-**File**: `src/backend/tests/test_auto_retrain.py` (append)
-- `test_retrain_skipped_leaves_feature_set_unchanged`: project with a selected/done ModelRun whose
-  FeatureSet points at `OLD`; call `trigger_auto_retrain(project, NEW)` where the NEW dataset's file
-  does not exist on disk. Assert: returns `None`; original `FeatureSet.dataset_id == OLD`; no new
-  FeatureSet or ModelRun rows were created. (This test FAILS on current code — it reproduces the bug.)
-- `test_retrain_empty_feature_cols_leaves_state_untouched`: NEW dataset file exists but yields zero
-  feature columns. Assert returns `None` and original feature_set unchanged, no new rows.
-- `test_retrain_creates_new_feature_set_not_in_place`: success path — verify a SECOND FeatureSet row
-  is created with `dataset_id == NEW`, the original FeatureSet keeps `dataset_id == OLD`, and the new
-  ModelRun references the NEW feature_set's id.
-- `test_retrain_queue_counter_set_under_lock`: smoke test that after a triggered retrain the project's
-  queue/counter entries exist (the `_lock` acquisition is a code-level guarantee; this asserts the
-  observable side-effect).
+2. **Session guard** in `conftest.py`: snapshot real `data/{models,uploads,deployments,
+   db_uploads,batch_outputs}` entries at `pytest_sessionstart`; at `pytest_sessionfinish`
+   fail the run (exitstatus=1) if any new entries appeared.
 
-### Step 2 — GREEN: fix `core/retrain.py::_do_trigger`
-- Capture `transformations`, `column_mapping`, `target_column`, `problem_type`, `algorithm` from the
-  selected run's feature_set (read-only).
-- Read new `Dataset`; if missing/no `file_path`/file-missing → `return None` (**before any write**).
-- Exit session; load df, apply transforms; if `not feature_cols` → `return None` (**before any write**).
-- Open a session: create NEW `FeatureSet(dataset_id=new_dataset_id, ...copy)`, flush for id, create
-  `ModelRun(feature_set_id=new_fs.id, status="pending")`, commit, refresh.
-- Wrap `_training_queues`/`_training_counters` setup in `with _lock:`.
-- Launch background thread unchanged (now pointing at `new_run_id`).
+3. **Purge** leaked working-tree dirs (contents of models/uploads/deployments/
+   db_uploads/batch_outputs; keep `data/sample` — tracked sample CSVs).
 
-### Step 3 — REFACTOR: lint/typecheck, run the new + existing retrain tests, then the broader suite
-- `uv run ruff check` + `uv run black --check` on touched files.
-- `uv run pytest tests/test_auto_retrain.py -q` (new tests pass, existing still pass).
-- `uv run pytest -q` (no regressions; retrain-adjacent tests in particular).
+4. **Verify**: run training/upload/deploy tests; confirm real tree stays empty and the
+   session guard passes on a full(ish) run.
 
-## Test strategy → acceptance mapping
-| Criterion | Test |
-|---|---|
-| Don't mutate existing feature_set | `test_retrain_creates_new_feature_set_not_in_place` |
-| Skipped/failed leaves state untouched | `test_retrain_skipped_leaves_feature_set_unchanged` + `test_retrain_empty_feature_cols_leaves_state_untouched` |
-| Acquire `_lock` | code review + `test_retrain_queue_counter_set_under_lock` |
-| Test forcing failed retrain asserting dataset_id unchanged | `test_retrain_skipped_leaves_feature_set_unchanged` |
+## Deliberate deviation from acceptance criteria
+AC#1 says "delete per-file copies". I'm NOT deleting the 103 per-file `client` fixtures:
+each also wires its own DB engine/seed data, and rewiring every test to the async central
+`client` (sync TestClient vs async AsyncClient, custom data) is a large, high-risk change.
+The autouse net neutralizes the "root enabler" (a forgetful copy can no longer leak),
+achieving the issue's stated impact goal without that risk. De-dup hygiene can follow later.
 
-## Deviations / notes
-- Chose Option A (new FeatureSet) over Option B (defer `dataset_id` to `status='done'`) because B
-  would still mutate the *shared* feature_set that the old deployed run references — it just delays
-  the corruption, it doesn't prevent it. A creates clean per-run provenance.
-- Scope is strictly `core/retrain.py` + its tests. `MODELS_DIR` hardcoding in retrain.py:16 is a
-  known `core.storage` concern but is **out of scope** for this issue (YAGNI) and not required by any
-  acceptance criterion; left untouched.
+## Acceptance criteria mapping
+- [x] Centralize isolation of UPLOAD_DIR/MODELS_DIR/deploy dirs into tmp_path → autouse `isolate_artifact_dirs` fixture (broader than just `client`); verified by test_fixture_isolation.py (6 constants)
+- [x] Session guard asserting `data/{models,uploads,...}` untouched after the run → `pytest_sessionstart`/`pytest_sessionfinish` diff; negative probe confirmed exit code 1 on leak
+- [x] Purge existing leaked dirs from the working tree → 254M → 488K (kept data/sample + dev db)
+- [ ] Full suite green + guard clean (running)
