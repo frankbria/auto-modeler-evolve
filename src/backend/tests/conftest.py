@@ -11,6 +11,16 @@ tests.
 """
 
 import os
+import tempfile
+
+# Belt-and-suspenders isolation (issue #14): point DATA_DIR at a session temp dir
+# NOW — at conftest import, before any api module captures its ``*_DIR`` constants
+# (those are evaluated at import time from ``core.storage``). Per-test fixtures
+# still repoint everything to ``tmp_path`` for inter-test isolation; this baseline
+# guarantees that even writes which outlive a test's ``monkeypatch`` — async
+# training workers, the scheduler thread — never fall back to the real
+# ``<backend>/data`` tree. ``setdefault`` respects an explicit DATA_DIR (e.g. CI).
+os.environ.setdefault("DATA_DIR", tempfile.mkdtemp(prefix="automodeler-test-data-"))
 
 import anyio
 import pytest
@@ -64,6 +74,43 @@ def set_test_env(tmp_path, monkeypatch):
     """Use temp directory for all file operations in tests."""
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
     yield tmp_path
+
+
+# (module_path, attr, storage_helper) for every artifact dir constant cached at
+# import time. ``core.storage`` resolves at call time, but the api modules snapshot
+# these into module-level constants *before* DATA_DIR is set, so they point at the
+# real ``<backend>/data`` tree. A per-file fixture that forgot to repoint them let
+# endpoints write into the source tree (issue #14). This single autouse net
+# repoints them all into tmp_path for every test, so a forgetful fixture copy can
+# no longer leak.
+_ARTIFACT_DIR_CONSTANTS = (
+    ("api.models", "MODELS_DIR", "models_dir"),
+    ("api.data", "UPLOAD_DIR", "uploads_dir"),
+    ("api.data", "_DB_UPLOADS_DIR", "db_uploads_dir"),
+    ("api.deploy", "DEPLOY_DIR", "deployments_dir"),
+    ("api.templates", "UPLOAD_DIR", "uploads_dir"),
+    ("core.scheduler", "BATCH_OUTPUT_DIR", "batch_outputs_dir"),
+)
+
+
+@pytest.fixture(autouse=True)
+def isolate_artifact_dirs(set_test_env, monkeypatch):
+    """Repoint every import-time artifact dir constant into the per-test tmp_path.
+
+    Depends on ``set_test_env`` so ``DATA_DIR`` is already tmp_path when the
+    ``storage.*_dir()`` helpers re-resolve. The two value-imports of these
+    constants in production code (``api.deploy``/``api.chat``) are function-local,
+    so patching the source attribute takes effect at call time.
+    """
+    import importlib
+
+    from core import storage
+
+    for module_path, attr, helper in _ARTIFACT_DIR_CONSTANTS:
+        module = importlib.import_module(module_path)
+        if hasattr(module, attr):
+            monkeypatch.setattr(module, attr, getattr(storage, helper)())
+    yield
 
 
 @pytest.fixture(autouse=True)
@@ -401,7 +448,7 @@ def pytest_runtest_logreport(report):
     _unexpected_skips.append((report.nodeid, _skip_reason(report)))
 
 
-def pytest_sessionfinish(session, exitstatus):
+def _report_unexpected_skips(session):
     if not _unexpected_skips:
         return
     import sys
@@ -413,6 +460,65 @@ def pytest_sessionfinish(session, exitstatus):
     )
     for nodeid, reason in _unexpected_skips:
         print(f"  SKIP  {nodeid}\n        {reason}", file=sys.stderr)
+    if session.exitstatus == 0:
+        session.exitstatus = 1
+
+
+def pytest_sessionfinish(session, exitstatus):
+    _report_unexpected_skips(session)
+    _report_data_tree_leak(session)
+
+
+# ---------------------------------------------------------------------------
+# Real-data-tree pollution guard (issue #14)
+#
+# Even with the isolate_artifact_dirs net, a future fixture could still write to
+# the real tree (e.g. by calling a writer with an absolute path). This guard
+# snapshots the real ``data/`` subdirs at session start and fails the whole run
+# if any new entries appear by session end — turning a silent leak into a loud,
+# blocking failure.
+# ---------------------------------------------------------------------------
+
+_REAL_DATA_SUBDIRS = ("models", "uploads", "deployments", "db_uploads", "batch_outputs")
+_data_tree_baseline: dict[str, set[str]] = {}
+
+
+def _snapshot_real_data_tree() -> dict[str, set[str]]:
+    from core import storage
+
+    root = storage._DEFAULT_ROOT
+    return {
+        sub: {p.name for p in (root / sub).iterdir()}
+        for sub in _REAL_DATA_SUBDIRS
+        if (root / sub).exists()
+    }
+
+
+def pytest_sessionstart(session):
+    _data_tree_baseline.update(_snapshot_real_data_tree())
+
+
+def _report_data_tree_leak(session):
+    import sys
+
+    from core import storage
+
+    after = _snapshot_real_data_tree()
+    leaked = {
+        sub: sorted(after.get(sub, set()) - _data_tree_baseline.get(sub, set()))
+        for sub in _REAL_DATA_SUBDIRS
+    }
+    leaked = {sub: names for sub, names in leaked.items() if names}
+    if not leaked:
+        return
+    print(
+        f"\n=== DATA-TREE GUARD: tests leaked into the real tree "
+        f"({storage._DEFAULT_ROOT}) — treated as failure ===",
+        file=sys.stderr,
+    )
+    for sub, names in leaked.items():
+        preview = ", ".join(names[:5]) + (" …" if len(names) > 5 else "")
+        print(f"  data/{sub}: +{len(names)} ({preview})", file=sys.stderr)
     if session.exitstatus == 0:
         session.exitstatus = 1
 

@@ -6722,8 +6722,6 @@ def send_message(
             if _goal_info:
                 _goal_metric, _goal_target = _goal_info
                 try:
-                    from pathlib import Path as _Path
-
                     import pandas as _pd
 
                     from core.preprocessing import (
@@ -6752,7 +6750,12 @@ def send_message(
                     import uuid as _uuid
 
                     _gbase = f"goal_{_uuid.uuid4().hex[:8]}"
-                    _mdir = _Path("data/deployments")
+                    # Route artifact paths through core.storage so they honor
+                    # DATA_DIR and stay reachable by cascade-delete/janitor — never
+                    # a hardcoded relative path (the #4 footgun).
+                    from core import storage as _storage
+
+                    _mdir = _storage.project_models_dir(project_id)
                     _mdir.mkdir(parents=True, exist_ok=True)
                     goal_train_event = _run_goal(
                         _X,
@@ -6764,7 +6767,7 @@ def send_message(
                         _gbase,
                         feature_cols=_feat_cols,
                     )
-                    goal_train_event["project_id"] = body.project_id
+                    goal_train_event["project_id"] = project_id
                     goal_train_event["target_col"] = _target_col
 
                     _metric_label = {
