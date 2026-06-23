@@ -110,7 +110,7 @@ test.describe("Deployment — Deploy tab UI", () => {
   }) => {
     await page.goto(`/project/${projectId}`)
     // Dataset state restores from DB automatically
-    await page.getByRole("button", { name: "Deploy" }).click({ timeout: 12_000 })
+    await page.getByRole("tab", { name: "Deploy" }).click({ timeout: 12_000 })
     await expect(
       page.getByRole("button", { name: /Deploy Model/i })
     ).toBeVisible({ timeout: 8_000 })
@@ -120,7 +120,7 @@ test.describe("Deployment — Deploy tab UI", () => {
     page,
   }) => {
     await page.goto(`/project/${projectId}`)
-    await page.getByRole("button", { name: "Deploy" }).click({ timeout: 12_000 })
+    await page.getByRole("tab", { name: "Deploy" }).click({ timeout: 12_000 })
     const deployBtn = page.getByRole("button", { name: /Deploy Model/i })
     await expect(deployBtn).toBeVisible({ timeout: 8_000 })
     await deployBtn.click()
@@ -131,7 +131,7 @@ test.describe("Deployment — Deploy tab UI", () => {
 
   test("deployed state shows dashboard URL and API endpoint", async ({ page }) => {
     await page.goto(`/project/${projectId}`)
-    await page.getByRole("button", { name: "Deploy" }).click({ timeout: 12_000 })
+    await page.getByRole("tab", { name: "Deploy" }).click({ timeout: 12_000 })
     await page.getByRole("button", { name: /Deploy Model/i }).click({ timeout: 8_000 })
     await expect(page.getByText(/Model deployed/i)).toBeVisible({ timeout: 15_000 })
 
@@ -145,7 +145,7 @@ test.describe("Deployment — Deploy tab UI", () => {
     page,
   }) => {
     await page.goto(`/project/${projectId}`)
-    await page.getByRole("button", { name: "Deploy" }).click({ timeout: 12_000 })
+    await page.getByRole("tab", { name: "Deploy" }).click({ timeout: 12_000 })
     await page.getByRole("button", { name: /Deploy Model/i }).click({ timeout: 8_000 })
     await expect(page.getByText(/Model deployed/i)).toBeVisible({ timeout: 15_000 })
 
@@ -159,13 +159,15 @@ test.describe("Deployment — Deploy tab UI", () => {
     page,
   }) => {
     await page.goto(`/project/${projectId}`)
-    await page.getByRole("button", { name: "Deploy" }).click({ timeout: 12_000 })
+    await page.getByRole("tab", { name: "Deploy" }).click({ timeout: 12_000 })
     await page.getByRole("button", { name: /Deploy Model/i }).click({ timeout: 8_000 })
     await expect(page.getByText(/Model deployed/i)).toBeVisible({ timeout: 15_000 })
 
     const undeployBtn = page.getByRole("button", { name: /Undeploy/i })
     await expect(undeployBtn).toBeVisible()
     await undeployBtn.click()
+    // Undeploy is now a two-step action — confirm the inline prompt
+    await page.getByRole("button", { name: /^Confirm$/i }).click({ timeout: 8_000 })
 
     // After undeploy, the Deploy Model button returns
     await expect(
@@ -202,9 +204,10 @@ test.describe("Prediction dashboard — /predict/[id]", () => {
 
   test("prediction dashboard shows the model name", async ({ page }) => {
     await page.goto(`/predict/${deploymentId}`)
-    // The page shows the algorithm or deployment heading
+    // The page shows the algorithm or deployment heading (several elements
+    // mention "prediction"; assert the first is visible to stay strict-safe)
     await expect(
-      page.getByText(/linear regression|prediction/i, { exact: false })
+      page.getByText(/linear regression|prediction/i, { exact: false }).first()
     ).toBeVisible({ timeout: 10_000 })
   })
 
@@ -215,10 +218,10 @@ test.describe("Prediction dashboard — /predict/[id]", () => {
     await expect(predictBtn).toBeVisible({ timeout: 10_000 })
     // Submit with defaults
     await predictBtn.click()
-    // After prediction, the result card shows "Predicted revenue"
-    // This text only appears inside the result card, not in the form
+    // After prediction, the result card shows "Predicted revenue" (rendered in
+    // a couple of places in the card — assert the first to stay strict-safe)
     await expect(
-      page.getByText(/Predicted revenue/i)
+      page.getByText(/Predicted revenue/i).first()
     ).toBeVisible({ timeout: 10_000 })
   })
 })
