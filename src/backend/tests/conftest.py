@@ -524,6 +524,61 @@ def _report_data_tree_leak(session):
 
 
 @pytest.fixture
+def mock_anthropic():
+    """Autospec'd ``anthropic.Anthropic`` patch (issue #15).
+
+    The Anthropic API is the one external boundary the suite mocks — real calls
+    cost money and need network/keys in CI. Unlike the legacy permissive
+    ``MagicMock`` mocks scattered across the chat tests, this fixture specs the
+    client against the *real* SDK so a wrong model id is recordable and a removed
+    method or bad signature on ``messages.stream`` fails loudly:
+
+    - Naive ``create_autospec(anthropic.Anthropic)`` does NOT expose
+      ``.messages.stream`` because ``.messages`` is a cached_property; we spec the
+      ``Messages`` resource onto it explicitly, which restores signature checking
+      (bogus method → ``AttributeError``; missing required kwarg → ``TypeError``).
+
+    Yields the spec'd client. ``client.messages.stream.call_args`` captures the
+    exact kwargs the app passed, so tests can assert the LLM contract.
+
+    Usage::
+
+        def test_x(client, mock_anthropic):
+            mock_anthropic.set_text("hello")     # optional; defaults to one chunk
+            ...
+            assert mock_anthropic.messages.stream.call_args.kwargs["model"] == "..."
+    """
+    import anthropic
+    from anthropic.resources import Messages
+    from unittest.mock import create_autospec, MagicMock, patch
+
+    spec_client = create_autospec(anthropic.Anthropic, instance=True)
+    # ``.messages`` is a cached_property → not specced by the class autospec; spec
+    # the resource directly so ``messages.stream`` validates names + signatures.
+    spec_client.messages = create_autospec(Messages, instance=True)
+
+    def _build_stream(chunks):
+        """Build a context-manager stub mimicking ``messages.stream(...)``."""
+        stream_cm = MagicMock()
+        stream_cm.__enter__.return_value = stream_cm
+        stream_cm.__exit__.return_value = False
+        stream_cm.text_stream = iter(chunks)
+        return stream_cm
+
+    spec_client.messages.stream.return_value = _build_stream(["ok"])
+
+    def set_text(*chunks):
+        """Set the streamed text deltas (defaults to a single ``"ok"`` chunk)."""
+        spec_client.messages.stream.return_value = _build_stream(list(chunks) or ["ok"])
+
+    # Attach as a convenience so tests can customize the streamed narration.
+    spec_client.set_text = set_text
+
+    with patch("anthropic.Anthropic", return_value=spec_client):
+        yield spec_client
+
+
+@pytest.fixture
 def sample_csv_content():
     """A small CSV representing sales data."""
     return b"""date,product,region,revenue,units

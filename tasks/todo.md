@@ -1,47 +1,24 @@
-# Issue #14 — Centralize fixture isolation; stop tests polluting the real data tree
+# Issue #15 — Autospec the Anthropic mock + LLM contract test
 
-**Label:** test-trust · **Severity:** HIGH · Plan source: self-authored (no plan on issue)
+## Problem
+80 test files mock `anthropic.Anthropic` with permissive `MagicMock` (`text_stream = iter([...])`, zero autospec). The LLM integration contract is unverified — a wrong model id, malformed `messages`, or removed SDK method passes CI. Also contradicts CLAUDE.md "no mocking — real services".
 
-## Root cause
-`set_test_env` (autouse) sets `DATA_DIR=tmp_path`, and `core.storage` resolves at
-call time — BUT the api modules cache the dirs as module-level constants at import
-time (before any test runs), so they point at the real `<backend>/data/` tree:
-- `api.models.MODELS_DIR`, `api.data.UPLOAD_DIR`, `api.data._DB_UPLOADS_DIR`,
-  `api.deploy.DEPLOY_DIR`, `api.templates.UPLOAD_DIR`, `core.scheduler.BATCH_OUTPUT_DIR`
+## Key findings (verified empirically, SDK 0.84.0)
+- Real call: `api/chat.py:21850` `client.messages.stream(model=MODEL, max_tokens=MAX_TOKENS, system=..., messages=api_messages)`; `MODEL="claude-haiku-4-5-20251001"`, `MAX_TOKENS=1024` (chat.py:38-39).
+- `api_messages` = `[{"role": ..., "content": ...}]` (chat.py:6071).
+- The `stream` call is unconditional in `send_message` → a bare project + plain message reaches it (no dataset/model needed).
+- **Naive `create_autospec(anthropic.Anthropic)` does NOT expose `.messages.stream`** (`.messages` is a cached_property). Working spec: `create_autospec(anthropic.Anthropic, instance=True)` + assign `create_autospec(anthropic.resources.Messages, instance=True)` to `.messages` → signature validation works.
 
-~11 per-file `client` fixtures patch only `db.engine`/`DATA_DIR` and forget these
-constants → training/upload/deploy endpoints write into the real tree.
-Reproduced leak: `data/uploads` 14k dirs, `data/models` 3k, `data/deployments` 4.4k, 254M.
+## Plan (TDD, scope = contract test + reusable fixture; confirmed by user)
+1. **conftest fixture** `mock_anthropic` — reusable autospec'd Anthropic patch.
+2. **`tests/test_anthropic_contract.py`** — contract test (model id + messages schema) + guard test (autospec rejects bad method/args).
+3. **CLAUDE.md** — document the Anthropic-boundary mocking exception.
+4. Run full suite + ruff/black, demo, PR, merge.
 
-## Plan (lazy + correct — one safety net beats rewriting 103 fixtures)
+## Out of scope (Known Limitation)
+Mass-converting all 80 permissive card-test mocks — they verify SSE cards/regex, not the LLM contract.
 
-1. **Autouse isolation fixture** in `tests/conftest.py`: monkeypatch all 6 module
-   constants to the `storage.*_dir()` values (re-resolved under the per-test
-   `DATA_DIR=tmp_path`). Depends on `set_test_env` for ordering. Covers EVERY test —
-   central `client`, per-file `client` fixtures that forgot the patch, and non-client
-   tests that import the modules — so a forgetful fixture copy is no longer a hazard.
-   (Both value-imports of these constants are function-local/call-time, so patching
-   the source attr takes effect.)
-
-2. **Session guard** in `conftest.py`: snapshot real `data/{models,uploads,deployments,
-   db_uploads,batch_outputs}` entries at `pytest_sessionstart`; at `pytest_sessionfinish`
-   fail the run (exitstatus=1) if any new entries appeared.
-
-3. **Purge** leaked working-tree dirs (contents of models/uploads/deployments/
-   db_uploads/batch_outputs; keep `data/sample` — tracked sample CSVs).
-
-4. **Verify**: run training/upload/deploy tests; confirm real tree stays empty and the
-   session guard passes on a full(ish) run.
-
-## Deliberate deviation from acceptance criteria
-AC#1 says "delete per-file copies". I'm NOT deleting the 103 per-file `client` fixtures:
-each also wires its own DB engine/seed data, and rewiring every test to the async central
-`client` (sync TestClient vs async AsyncClient, custom data) is a large, high-risk change.
-The autouse net neutralizes the "root enabler" (a forgetful copy can no longer leak),
-achieving the issue's stated impact goal without that risk. De-dup hygiene can follow later.
-
-## Acceptance criteria mapping
-- [x] Centralize isolation of UPLOAD_DIR/MODELS_DIR/deploy dirs into tmp_path → autouse `isolate_artifact_dirs` fixture (broader than just `client`); verified by test_fixture_isolation.py (6 constants)
-- [x] Session guard asserting `data/{models,uploads,...}` untouched after the run → `pytest_sessionstart`/`pytest_sessionfinish` diff; negative probe confirmed exit code 1 on leak
-- [x] Purge existing leaked dirs from the working tree → 254M → 488K (kept data/sample + dev db)
-- [ ] Full suite green + guard clean (running)
+## Acceptance criteria
+- [ ] `create_autospec` used so wrong args/method names fail
+- [ ] Contract test asserts model id + schema-valid messages payload
+- [ ] Mocking exception documented in CLAUDE.md
