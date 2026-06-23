@@ -218,10 +218,10 @@ test.describe("Prediction dashboard — /predict/[id]", () => {
     await expect(predictBtn).toBeVisible({ timeout: 10_000 })
     // Submit with defaults
     await predictBtn.click()
-    // After prediction, the result card shows "Predicted revenue"
-    // This text only appears inside the result card, not in the form
+    // After prediction, the result card shows "Predicted revenue" (rendered in
+    // a couple of places in the card — assert the first to stay strict-safe)
     await expect(
-      page.getByText(/Predicted revenue/i)
+      page.getByText(/Predicted revenue/i).first()
     ).toBeVisible({ timeout: 10_000 })
   })
 })
