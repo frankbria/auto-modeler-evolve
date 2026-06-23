@@ -45,8 +45,8 @@ test.describe("Data Upload — sample data shortcut", () => {
 
   test("upload panel shows dropzone and sample link", async ({ page }) => {
     await page.goto(`/project/${projectId}`)
-    // Dropzone copy
-    await expect(page.getByText(/Drop your CSV here/i)).toBeVisible({
+    // Dropzone copy (UI now advertises CSV *or* Excel)
+    await expect(page.getByText(/Drop your/i)).toBeVisible({
       timeout: 8_000,
     })
     // Sample data link
@@ -118,7 +118,7 @@ test.describe("Data Upload — file input", () => {
   test("uploading a CSV via file input shows 200-row badge", async ({ page }) => {
     await page.goto(`/project/${projectId}`)
     // Wait for upload panel to be visible
-    await expect(page.getByText(/Drop your CSV here/i)).toBeVisible({
+    await expect(page.getByText(/Drop your/i)).toBeVisible({
       timeout: 8_000,
     })
     // The hidden file <input> inside the dropzone
@@ -134,7 +134,7 @@ test.describe("Data Upload — file input", () => {
     page,
   }) => {
     await page.goto(`/project/${projectId}`)
-    await expect(page.getByText(/Drop your CSV here/i)).toBeVisible({
+    await expect(page.getByText(/Drop your/i)).toBeVisible({
       timeout: 8_000,
     })
     const fileInput = page.locator('input[type="file"]')
@@ -162,7 +162,7 @@ test.describe("Data tabs — after upload", () => {
     await page.goto(`/project/${projectId}`)
     // Dataset state is restored from DB on mount (project.dataset_id → preview fetch)
     for (const label of ["Data", "Features", "Importance", "Models", "Validate", "Deploy"]) {
-      await expect(page.getByRole("button", { name: label })).toBeVisible({
+      await expect(page.getByRole("tab", { name: label })).toBeVisible({
         timeout: 10_000,
       })
     }
@@ -171,7 +171,7 @@ test.describe("Data tabs — after upload", () => {
   test("Features tab shows feature suggestions after upload", async ({ page }) => {
     await page.goto(`/project/${projectId}`)
     // Dataset state is restored from DB on mount — tabs are immediately visible
-    await page.getByRole("button", { name: "Features" }).click({ timeout: 10_000 })
+    await page.getByRole("tab", { name: "Features" }).click({ timeout: 10_000 })
     // Should see either the section heading or the loading text
     await expect(
       page.getByRole("heading", { name: /Feature Suggestions/i })

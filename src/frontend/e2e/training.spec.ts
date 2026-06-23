@@ -102,7 +102,7 @@ test.describe("Model Training — algorithm recommendations", () => {
   test("Models tab shows algorithm recommendation cards", async ({ page }) => {
     await page.goto(`/project/${projectId}`)
     // Dataset state is restored automatically from DB — no need to click "Load sample"
-    await page.getByRole("button", { name: "Models" }).click({ timeout: 12_000 })
+    await page.getByRole("tab", { name: "Models" }).click({ timeout: 12_000 })
     // Wait for at least one algorithm card button to appear
     await expect(
       page.getByRole("button", { name: /Linear Regression/i }).first()
@@ -111,7 +111,7 @@ test.describe("Model Training — algorithm recommendations", () => {
 
   test("Models tab shows target column badge", async ({ page }) => {
     await page.goto(`/project/${projectId}`)
-    await page.getByRole("button", { name: "Models" }).click({ timeout: 12_000 })
+    await page.getByRole("tab", { name: "Models" }).click({ timeout: 12_000 })
     // The panel shows a badge with the target column name — use badge role
     const modelsPanel = page.locator('[data-slot="badge"]', { hasText: "revenue" })
     await expect(modelsPanel.first()).toBeVisible({ timeout: 12_000 })
@@ -119,7 +119,7 @@ test.describe("Model Training — algorithm recommendations", () => {
 
   test("algorithm cards are pre-selected and can be toggled", async ({ page }) => {
     await page.goto(`/project/${projectId}`)
-    await page.getByRole("button", { name: "Models" }).click({ timeout: 12_000 })
+    await page.getByRole("tab", { name: "Models" }).click({ timeout: 12_000 })
     // Wait for a "Train N models" button to appear (at least 1 pre-selected)
     await expect(
       page.getByRole("button", { name: /Train \d+ model/i })
@@ -144,7 +144,7 @@ test.describe("Model Training — train and view results", () => {
   test("Models tab shows completed run cards with metrics", async ({ page }) => {
     await page.goto(`/project/${projectId}`)
     // Dataset state restores from DB; models panel loads existing runs
-    await page.getByRole("button", { name: "Models" }).click({ timeout: 12_000 })
+    await page.getByRole("tab", { name: "Models" }).click({ timeout: 12_000 })
     // A "Done" badge should appear on the run card
     await expect(page.locator('[data-slot="badge"]', { hasText: "Done" })).toBeVisible({
       timeout: 12_000,
@@ -153,14 +153,14 @@ test.describe("Model Training — train and view results", () => {
 
   test("completed run card shows R² metric", async ({ page }) => {
     await page.goto(`/project/${projectId}`)
-    await page.getByRole("button", { name: "Models" }).click({ timeout: 12_000 })
+    await page.getByRole("tab", { name: "Models" }).click({ timeout: 12_000 })
     // Regression metrics row shows R²
     await expect(page.getByText(/R²/).first()).toBeVisible({ timeout: 12_000 })
   })
 
   test("can select a completed model", async ({ page }) => {
     await page.goto(`/project/${projectId}`)
-    await page.getByRole("button", { name: "Models" }).click({ timeout: 12_000 })
+    await page.getByRole("tab", { name: "Models" }).click({ timeout: 12_000 })
     // Wait for "Select this model" button
     const selectBtn = page.getByRole("button", { name: /select this model/i })
     await expect(selectBtn).toBeVisible({ timeout: 12_000 })
@@ -173,7 +173,7 @@ test.describe("Model Training — train and view results", () => {
 
   test("selecting a model sends a confirmation message in chat", async ({ page }) => {
     await page.goto(`/project/${projectId}`)
-    await page.getByRole("button", { name: "Models" }).click({ timeout: 12_000 })
+    await page.getByRole("tab", { name: "Models" }).click({ timeout: 12_000 })
     const selectBtn = page.getByRole("button", { name: /select this model/i })
     await expect(selectBtn).toBeVisible({ timeout: 12_000 })
     await selectBtn.click()
@@ -196,7 +196,7 @@ test.describe("Model Training — train via UI", () => {
     page,
   }) => {
     await page.goto(`/project/${projectId}`)
-    await page.getByRole("button", { name: "Models" }).click({ timeout: 12_000 })
+    await page.getByRole("tab", { name: "Models" }).click({ timeout: 12_000 })
 
     // Wait for recommendations to load, then click Train
     const trainBtn = page.getByRole("button", { name: /Train \d+ model/i })
