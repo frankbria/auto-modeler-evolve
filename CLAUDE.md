@@ -57,7 +57,16 @@ auto-modeler-evolve/
 - **Database:** SQLite via SQLModel
 - **ML:** scikit-learn, pandas, numpy, joblib
 - **LLM:** Anthropic SDK (Claude) for chat orchestration
-- **Testing:** pytest + pytest-bdd (no mocking — real services)
+- **Testing:** pytest + pytest-bdd (no mocking — real services). **One documented
+  exception (#15): the Anthropic SDK.** Real LLM calls cost money and need
+  network/keys, so chat tests mock `anthropic.Anthropic`. Mock it via the
+  autospec'd `mock_anthropic` conftest fixture (`create_autospec` against the real
+  SDK, with the `Messages` resource specced onto the cached-property `.messages`),
+  NOT a permissive `MagicMock` — so a removed method, bad `messages.stream`
+  signature, or wrong model id fails instead of passing. `tests/test_anthropic_contract.py`
+  pins the model id (`claude-haiku-4-5-20251001`) and the `messages` payload schema.
+  (Many legacy chat tests still use bare `MagicMock`; they verify SSE cards, not the
+  LLM boundary — the contract test + fixture cover that.)
 - **Linting:** ruff + black
 
 ### Frontend
