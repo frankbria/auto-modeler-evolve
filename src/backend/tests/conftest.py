@@ -558,6 +558,7 @@ def mock_anthropic():
     spec_client.messages = create_autospec(Messages, instance=True)
 
     def _build_stream(chunks):
+        """Build a context-manager stub mimicking ``messages.stream(...)``."""
         stream_cm = MagicMock()
         stream_cm.__enter__.return_value = stream_cm
         stream_cm.__exit__.return_value = False
