@@ -73,6 +73,10 @@ def _seed_user(engine, user_id: str, email: str) -> str:
 def set_test_env(tmp_path, monkeypatch):
     """Use temp directory for all file operations in tests."""
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    # The chat stream short-circuits with a friendly error when no Anthropic key
+    # is configured (#18). The SDK is mocked in tests, so provide a dummy key to
+    # exercise the mocked path; no-key-guard tests delenv it themselves.
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test-dummy")
     yield tmp_path
 
 
