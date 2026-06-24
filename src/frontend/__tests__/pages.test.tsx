@@ -133,6 +133,23 @@ describe("HomePage", () => {
     })
   })
 
+  it("surfaces a retry-able error instead of empty state on server failure (#17)", async () => {
+    fetchMock.mockResponseOnce(JSON.stringify({ detail: "boom" }), { status: 500 })
+    const { default: HomePage } = await import("../app/page")
+    render(<HomePage />)
+    await waitFor(() => {
+      expect(screen.getByTestId("error-display")).toBeInTheDocument()
+    })
+    // Must NOT masquerade as "no projects yet".
+    expect(screen.queryByText("No projects yet")).not.toBeInTheDocument()
+    // Retry re-fetches; this time succeed and the list renders.
+    fetchMock.mockResponseOnce(JSON.stringify(mockProjects))
+    fireEvent.click(screen.getByTestId("error-display-retry"))
+    await waitFor(() => {
+      expect(screen.getByText("Sales Forecast")).toBeInTheDocument()
+    })
+  })
+
   it("renders create project button", async () => {
     fetchMock.mockResponseOnce(JSON.stringify(mockProjects))
     const { default: HomePage } = await import("../app/page")

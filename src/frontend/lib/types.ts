@@ -424,6 +424,7 @@ export interface ChatMessage {
   content: string
   timestamp: string
   chart?: ChartSpec
+  monitoring_note?: MonitoringNote
   crosstab?: CrosstabResult
   compute?: ComputedColumnSuggestion
   segment_comparison?: SegmentComparisonResult
@@ -3753,6 +3754,22 @@ export interface AutoInsightResult {
   column_count: number
   findings: AutoInsightFinding[]
   summary: string
+}
+
+/**
+ * Generic monitoring note (#17) — a single compact card shared by the
+ * `readiness`, `drift`, `health`, and `alerts` SSE events. These were computed
+ * by the backend and narrated by the LLM, but their structured payloads had no
+ * frontend handler and were silently dropped. Rather than five bespoke cards,
+ * each maps its payload to this shape.
+ */
+export interface MonitoringNote {
+  kind: "readiness" | "drift" | "health" | "alerts"
+  title: string
+  summary: string
+  /** Short detail lines (checklist items, alert messages, key metrics). */
+  items?: string[]
+  tone?: "good" | "neutral" | "warning" | "critical"
 }
 
 export interface ColumnTypeSuggestion {

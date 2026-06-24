@@ -492,3 +492,58 @@ describe("api.data.compareSegments", () => {
     )
   })
 })
+
+// ---------------------------------------------------------------------------
+// HTTP error handling (#17) — methods that go through `apiFetch().then(unwrapJson)`
+// must reject with a typed `ApiError` on non-2xx instead of resolving the error
+// body as a success object.
+// ---------------------------------------------------------------------------
+
+import { ApiError } from "../lib/api"
+
+describe("HTTP error handling", () => {
+  it("rejects with ApiError carrying status 404 and parsed body", async () => {
+    fetchMock.mockResponseOnce(JSON.stringify({ detail: "Project not found" }), {
+      status: 404,
+      headers: { "Content-Type": "application/json" },
+    })
+    await expect(api.projects.get("missing")).rejects.toBeInstanceOf(ApiError)
+
+    fetchMock.mockResponseOnce(JSON.stringify({ detail: "Project not found" }), {
+      status: 404,
+      headers: { "Content-Type": "application/json" },
+    })
+    const err = await api.projects.get("missing").catch((e) => e as ApiError)
+    expect(err.status).toBe(404)
+    expect(err.body).toEqual({ detail: "Project not found" })
+  })
+
+  it("rejects with ApiError on 500 with the parsed error body", async () => {
+    fetchMock.mockResponseOnce(JSON.stringify({ detail: "boom" }), {
+      status: 500,
+      headers: { "Content-Type": "application/json" },
+    })
+    const err = await api.deploy.list().catch((e) => e as ApiError)
+    expect(err).toBeInstanceOf(ApiError)
+    expect(err.status).toBe(500)
+    expect(err.body).toEqual({ detail: "boom" })
+  })
+
+  it("tolerates a non-JSON error body (body is null, still throws)", async () => {
+    fetchMock.mockResponseOnce("<html>502 Bad Gateway</html>", { status: 502 })
+    const err = await api.models.recommendations("p1").catch((e) => e as ApiError)
+    expect(err).toBeInstanceOf(ApiError)
+    expect(err.status).toBe(502)
+    expect(err.body).toBeNull()
+  })
+
+  it("propagates a network failure (fetch rejects)", async () => {
+    fetchMock.mockRejectOnce(new Error("network down"))
+    await expect(api.data.getCrosstab("ds-1", "a", "b")).rejects.toThrow("network down")
+  })
+
+  it("does not throw on a 2xx response", async () => {
+    fetchMock.mockResponseOnce(JSON.stringify([{ id: "p1", name: "ok" }]))
+    await expect(api.projects.list()).resolves.toEqual([{ id: "p1", name: "ok" }])
+  })
+})
