@@ -34,4 +34,21 @@ describe("MonitoringNoteCard", () => {
     render(<MonitoringNoteCard note={{ kind: "health", title: "Model health", summary: "All good." }} />)
     expect(screen.queryByTestId("monitoring-note-items")).toBeNull()
   })
+
+  it("renders the error kind (graceful chat-stream failure, #18)", () => {
+    render(
+      <MonitoringNoteCard
+        note={{
+          kind: "error",
+          title: "Something went wrong",
+          summary: "The AI service is temporarily busy — please try again in a moment.",
+          tone: "critical",
+        }}
+      />
+    )
+    const card = screen.getByTestId("monitoring-note-card")
+    expect(card).toHaveAttribute("data-kind", "error")
+    expect(card).toHaveTextContent("⛔")
+    expect(screen.getByTestId("monitoring-note-summary")).toHaveTextContent("temporarily busy")
+  })
 })

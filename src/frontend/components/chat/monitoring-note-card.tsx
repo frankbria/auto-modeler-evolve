@@ -11,6 +11,7 @@ const KIND_ICON: Record<MonitoringNote["kind"], string> = {
   drift: "📈",
   health: "❤️",
   alerts: "🔔",
+  error: "⛔",
 }
 
 const TONE_BORDER: Record<NonNullable<MonitoringNote["tone"]>, string> = {

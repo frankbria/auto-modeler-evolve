@@ -1266,6 +1266,17 @@ export function createSSEHandlers(deps: SSEHandlerDeps): Record<string, SSEHandl
       if (!json.history) return
       setActiveTab("models")
   },
+  // Graceful chat-stream failure (#18): the backend yields this instead of
+  // silently truncating the stream. Reuses the MonitoringNoteCard (critical tone).
+  error: (json) => {
+      if (!json.message) return
+      attachMonitoringNoteToLastMessage({
+        kind: "error",
+        title: "Something went wrong",
+        summary: json.message,
+        tone: "critical",
+      })
+  },
   }
 }
 

@@ -1,4 +1,5 @@
 import json
+import os
 import re
 from datetime import UTC, datetime
 from pathlib import Path
@@ -21846,6 +21847,19 @@ def send_message(
 
     def stream_response():
         full_response = ""
+        error_occurred = False
+
+        # Fail gracefully if the AI service isn't configured — yield a friendly
+        # error card instead of letting client.messages.stream() raise mid-stream
+        # (the UX north star: "no stack traces, always suggest next steps"). #18
+        if not (
+            os.environ.get("ANTHROPIC_API_KEY")
+            or os.environ.get("ANTHROPIC_AUTH_TOKEN")
+        ):
+            yield f"data: {json.dumps({'type': 'error', 'message': 'AI service is not configured. Please contact your administrator.'})}\n\n"
+            yield f"data: {json.dumps({'type': 'done'})}\n\n"
+            return
+
         try:
             with client.messages.stream(
                 model=MODEL,
@@ -21858,24 +21872,42 @@ def send_message(
                     chunk = json.dumps({"type": "token", "content": text})
                     yield f"data: {chunk}\n\n"
 
-        finally:
-            # Save assistant response
-            messages.append(
-                {
-                    "role": "assistant",
-                    "content": full_response,
-                    "timestamp": _utcnow().isoformat(),
-                }
-            )
-            from db import engine
+        except anthropic.AuthenticationError:
+            error_occurred = True
+            yield f"data: {json.dumps({'type': 'error', 'message': 'Authentication failed — please check the API key configuration.'})}\n\n"
+        except anthropic.RateLimitError:
+            error_occurred = True
+            yield f"data: {json.dumps({'type': 'error', 'message': 'The AI service is temporarily busy — please try again in a moment.'})}\n\n"
+        except anthropic.APIConnectionError:
+            error_occurred = True
+            yield f"data: {json.dumps({'type': 'error', 'message': 'Could not reach the AI service — please check the connection and try again.'})}\n\n"
+        except anthropic.APIError:
+            error_occurred = True
+            yield f"data: {json.dumps({'type': 'error', 'message': 'The AI service returned an error — please try again.'})}\n\n"
+        except Exception:  # noqa: BLE001
+            error_occurred = True
+            yield f"data: {json.dumps({'type': 'error', 'message': 'Something went wrong while generating a response — please try again.'})}\n\n"
 
-            with Session(engine) as save_session:
-                conv = save_session.get(Conversation, conversation.id)
-                if conv:
-                    conv.messages = json.dumps(messages)
-                    conv.updated_at = _utcnow()
-                    save_session.add(conv)
-                    save_session.commit()
+        finally:
+            # Only persist a real assistant turn — never an empty/partial message
+            # from a failed stream (that corrupts conversation history). #18
+            if not error_occurred and full_response.strip():
+                messages.append(
+                    {
+                        "role": "assistant",
+                        "content": full_response,
+                        "timestamp": _utcnow().isoformat(),
+                    }
+                )
+                from db import engine
+
+                with Session(engine) as save_session:
+                    conv = save_session.get(Conversation, conversation.id)
+                    if conv:
+                        conv.messages = json.dumps(messages)
+                        conv.updated_at = _utcnow()
+                        save_session.add(conv)
+                        save_session.commit()
 
         # Emit readiness card if computed
         if readiness_data:

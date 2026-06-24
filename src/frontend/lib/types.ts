@@ -3764,7 +3764,7 @@ export interface AutoInsightResult {
  * each maps its payload to this shape.
  */
 export interface MonitoringNote {
-  kind: "readiness" | "drift" | "health" | "alerts"
+  kind: "readiness" | "drift" | "health" | "alerts" | "error"
   title: string
   summary: string
   /** Short detail lines (checklist items, alert messages, key metrics). */
