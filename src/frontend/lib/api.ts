@@ -105,6 +105,55 @@ function redirectToLogin(): void {
 }
 
 /**
+ * Typed HTTP error (#17). Carries the status, statusText, and parsed response
+ * body so the UI can show the backend's `{detail: ...}` message and tests can
+ * assert on specifics. Use `instanceof ApiError` to distinguish HTTP failures
+ * from network/other errors.
+ */
+export class ApiError extends Error {
+  readonly status: number
+  readonly statusText: string
+  readonly body: unknown
+
+  constructor(res: Response, body: unknown) {
+    const detail =
+      body && typeof body === "object" && "detail" in body
+        ? (body as { detail?: unknown }).detail
+        : undefined
+    super(
+      typeof detail === "string" && detail
+        ? detail
+        : `HTTP ${res.status} ${res.statusText}`.trim()
+    )
+    this.name = "ApiError"
+    this.status = res.status
+    this.statusText = res.statusText
+    this.body = body
+  }
+}
+
+/**
+ * Unwrap a JSON response, throwing `ApiError` on non-2xx (#17).
+ *
+ * Replaces the bare `r => r.json()` that ~114 methods used, which let
+ * HTTP 4xx/5xx error bodies resolve as success objects and render as garbage.
+ * On error it best-effort parses the body (json, else null) for the message;
+ * a 204 No Content resolves to `null`. Returns `any` (not a generic) so each
+ * `.then(unwrapJson)` keeps the call site's declared return type: `.then`'s
+ * callback type param defaults to `unknown`, not the contextual Promise type,
+ * so a generic would erase every method's return type to `unknown`.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- intentional glue: see doc above
+export async function unwrapJson(r: Response): Promise<any> {
+  if (!r.ok) {
+    const body = await r.json().catch(() => null)
+    throw new ApiError(r, body)
+  }
+  if (r.status === 204) return null
+  return r.json()
+}
+
+/**
  * Consume a Server-Sent Events stream over an authenticated fetch.
  *
  * EventSource can't send an Authorization header, so owner-scoped streams use
@@ -245,17 +294,17 @@ export const api = {
 
   projects: {
     list: (): Promise<Project[]> =>
-      apiFetch(`${API_URL}/api/projects`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/projects`).then(unwrapJson),
 
     create: (name: string, description?: string): Promise<Project> =>
       apiFetch(`${API_URL}/api/projects`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, description }),
-      }).then((r) => r.json()),
+      }).then(unwrapJson),
 
     get: (id: string): Promise<Project> =>
-      apiFetch(`${API_URL}/api/projects/${id}`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/projects/${id}`).then(unwrapJson),
 
     update: (
       id: string,
@@ -265,29 +314,27 @@ export const api = {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
-      }).then((r) => r.json()),
+      }).then(unwrapJson),
 
     duplicate: (id: string): Promise<Project> =>
       apiFetch(`${API_URL}/api/projects/${id}/duplicate`, {
         method: "POST",
-      }).then((r) => r.json()),
+      }).then(unwrapJson),
 
     delete: (id: string): Promise<Response> =>
       apiFetch(`${API_URL}/api/projects/${id}`, { method: "DELETE" }),
 
     narrative: (id: string): Promise<ProjectNarrative> =>
-      apiFetch(`${API_URL}/api/projects/${id}/narrative`, { method: "POST" }).then((r) =>
-        r.json()
-      ),
+      apiFetch(`${API_URL}/api/projects/${id}/narrative`, { method: "POST" }).then(unwrapJson),
 
     executiveBriefing: (id: string): Promise<import("./types").ExecutiveBriefingResult> =>
-      apiFetch(`${API_URL}/api/projects/${id}/executive-briefing`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/projects/${id}/executive-briefing`).then(unwrapJson),
 
     alerts: (id: string): Promise<ProjectAlerts> =>
-      apiFetch(`${API_URL}/api/projects/${id}/alerts`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/projects/${id}/alerts`).then(unwrapJson),
 
     healthSummary: (id: string): Promise<ProjectHealthSummary> =>
-      apiFetch(`${API_URL}/api/projects/${id}/health-summary`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/projects/${id}/health-summary`).then(unwrapJson),
 
     setAutoRetrain: (id: string, enabled: boolean): Promise<Response> =>
       apiFetch(`${API_URL}/api/projects/${id}/auto-retrain`, {
@@ -297,7 +344,7 @@ export const api = {
       }),
 
     analysisTemplates: (id: string): Promise<import("./types").AnalysisTemplate[]> =>
-      apiFetch(`${API_URL}/api/projects/${id}/analysis-templates`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/projects/${id}/analysis-templates`).then(unwrapJson),
 
     createAnalysisTemplate: (
       id: string,
@@ -308,7 +355,7 @@ export const api = {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, queries }),
-      }).then((r) => r.json()),
+      }).then(unwrapJson),
 
     deleteAnalysisTemplate: (
       projectId: string,
@@ -319,7 +366,7 @@ export const api = {
       }).then(() => undefined),
 
     crossComparison: (): Promise<import("./types").CrossProjectComparisonResult> =>
-      apiFetch(`${API_URL}/api/projects/cross-comparison`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/projects/cross-comparison`).then(unwrapJson),
   },
 
   data: {
@@ -330,7 +377,7 @@ export const api = {
       return apiFetch(`${API_URL}/api/data/upload`, {
         method: "POST",
         body: form,
-      }).then((r) => r.json())
+      }).then(unwrapJson)
     },
 
     loadSample: (projectId: string): Promise<UploadResponse> =>
@@ -338,7 +385,7 @@ export const api = {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ project_id: projectId }),
-      }).then((r) => r.json()),
+      }).then(unwrapJson),
 
     uploadFromUrl: (
       projectId: string,
@@ -349,10 +396,10 @@ export const api = {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ project_id: projectId, url, filename }),
-      }).then((r) => r.json()),
+      }).then(unwrapJson),
 
     sampleInfo: (): Promise<{ filename: string; row_count: number; column_count: number; columns: string[]; description: string }> =>
-      apiFetch(`${API_URL}/api/data/sample/info`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/data/sample/info`).then(unwrapJson),
 
     uploadDb: (
       projectId: string,
@@ -364,7 +411,7 @@ export const api = {
       return apiFetch(`${API_URL}/api/data/upload-db`, {
         method: "POST",
         body: form,
-      }).then((r) => r.json())
+      }).then(unwrapJson)
     },
 
     extractDb: (
@@ -377,22 +424,22 @@ export const api = {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ project_id: projectId, db_path: dbPath, table_name: tableName, query }),
-      }).then((r) => r.json()),
+      }).then(unwrapJson),
 
     preview: (
       datasetId: string
     ): Promise<UploadResponse> =>
-      apiFetch(`${API_URL}/api/data/${datasetId}/preview`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/data/${datasetId}/preview`).then(unwrapJson),
 
     profile: (datasetId: string) =>
-      apiFetch(`${API_URL}/api/data/${datasetId}/profile`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/data/${datasetId}/profile`).then(unwrapJson),
 
     query: (datasetId: string, question: string): Promise<QueryResponse> =>
       apiFetch(`${API_URL}/api/data/${datasetId}/query`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ question }),
-      }).then((r) => r.json()),
+      }).then(unwrapJson),
 
     timeseries: (
       datasetId: string,
@@ -411,7 +458,7 @@ export const api = {
       if (valueColumn) params.set("value_column", valueColumn)
       if (window) params.set("window", window.toString())
       const qs = params.toString() ? `?${params}` : ""
-      return apiFetch(`${API_URL}/api/data/${datasetId}/timeseries${qs}`).then((r) => r.json())
+      return apiFetch(`${API_URL}/api/data/${datasetId}/timeseries${qs}`).then(unwrapJson)
     },
 
     correlations: (datasetId: string): Promise<{
@@ -420,7 +467,7 @@ export const api = {
       pairs?: Array<{ col_a: string; col_b: string; correlation: number }>
       message?: string
     }> =>
-      apiFetch(`${API_URL}/api/data/${datasetId}/correlations`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/data/${datasetId}/correlations`).then(unwrapJson),
 
     boxplot: (
       datasetId: string,
@@ -429,7 +476,7 @@ export const api = {
     ): Promise<import("./types").ChartSpec> => {
       const params = new URLSearchParams({ column })
       if (groupby) params.set("groupby", groupby)
-      return apiFetch(`${API_URL}/api/data/${datasetId}/boxplot?${params}`).then((r) => r.json())
+      return apiFetch(`${API_URL}/api/data/${datasetId}/boxplot?${params}`).then(unwrapJson)
     },
 
     clean: (
@@ -440,7 +487,7 @@ export const api = {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(operation),
-      }).then((r) => r.json()),
+      }).then(unwrapJson),
 
     detectAnomalies: (
       datasetId: string,
@@ -456,10 +503,10 @@ export const api = {
           contamination: contamination ?? 0.05,
           n_top: nTop ?? 20,
         }),
-      }).then((r) => r.json()),
+      }).then(unwrapJson),
 
     listByProject: (projectId: string): Promise<DatasetListItem[]> =>
-      apiFetch(`${API_URL}/api/data/project/${projectId}/datasets`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/data/project/${projectId}/datasets`).then(unwrapJson),
 
     joinKeys: (
       datasetId1: string,
@@ -474,7 +521,7 @@ export const api = {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ dataset_id_1: datasetId1, dataset_id_2: datasetId2 }),
-      }).then((r) => r.json()),
+      }).then(unwrapJson),
 
     merge: (
       projectId: string,
@@ -492,7 +539,7 @@ export const api = {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
-      }).then((r) => r.json()),
+      }).then(unwrapJson),
 
     refresh: (datasetId: string, file: File): Promise<DatasetRefreshResult> => {
       const form = new FormData()
@@ -500,16 +547,14 @@ export const api = {
       return apiFetch(`${API_URL}/api/data/${datasetId}/refresh`, {
         method: "POST",
         body: form,
-      }).then((r) => r.json())
+      }).then(unwrapJson)
     },
 
     getDictionary: (datasetId: string): Promise<DataDictionary> =>
-      apiFetch(`${API_URL}/api/data/${datasetId}/dictionary`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/data/${datasetId}/dictionary`).then(unwrapJson),
 
     generateDictionary: (datasetId: string): Promise<DataDictionary> =>
-      apiFetch(`${API_URL}/api/data/${datasetId}/dictionary`, { method: "POST" }).then((r) =>
-        r.json()
-      ),
+      apiFetch(`${API_URL}/api/data/${datasetId}/dictionary`, { method: "POST" }).then(unwrapJson),
 
     getCrosstab: (
       datasetId: string,
@@ -520,7 +565,7 @@ export const api = {
     ): Promise<CrosstabResult> => {
       const params = new URLSearchParams({ rows, cols, agg })
       if (values) params.set("values", values)
-      return apiFetch(`${API_URL}/api/data/${datasetId}/crosstab?${params}`).then((r) => r.json())
+      return apiFetch(`${API_URL}/api/data/${datasetId}/crosstab?${params}`).then(unwrapJson)
     },
 
     computeColumn: (
@@ -532,7 +577,7 @@ export const api = {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, expression }),
-      }).then((r) => r.json()),
+      }).then(unwrapJson),
 
     compareSegments: (
       datasetId: string,
@@ -542,7 +587,7 @@ export const api = {
     ): Promise<SegmentComparisonResult> =>
       apiFetch(
         `${API_URL}/api/data/${datasetId}/compare-segments?col=${encodeURIComponent(col)}&val1=${encodeURIComponent(val1)}&val2=${encodeURIComponent(val2)}`
-      ).then((r) => r.json()),
+      ).then(unwrapJson),
 
     getForecast: (
       datasetId: string,
@@ -555,7 +600,7 @@ export const api = {
       const qs = params.toString()
       return apiFetch(
         `${API_URL}/api/data/${datasetId}/forecast${qs ? `?${qs}` : ""}`
-      ).then((r) => r.json())
+      ).then(unwrapJson)
     },
 
     getReadinessCheck: (
@@ -567,7 +612,7 @@ export const api = {
       const qs = params.toString()
       return apiFetch(
         `${API_URL}/api/data/${datasetId}/readiness-check${qs ? `?${qs}` : ""}`
-      ).then((r) => r.json())
+      ).then(unwrapJson)
     },
 
     getTargetCorrelations: (
@@ -579,7 +624,7 @@ export const api = {
       if (topN !== undefined) params.set("top_n", String(topN))
       return apiFetch(
         `${API_URL}/api/data/${datasetId}/target-correlations?${params.toString()}`
-      ).then((r) => r.json())
+      ).then(unwrapJson)
     },
 
     renameColumn: (
@@ -591,7 +636,7 @@ export const api = {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ old_name: oldName, new_name: newName }),
-      }).then((r) => r.json()),
+      }).then(unwrapJson),
 
     getDataStory: (datasetId: string, target?: string): Promise<import("./types").DataStory> => {
       const params = new URLSearchParams()
@@ -599,7 +644,7 @@ export const api = {
       const qs = params.toString()
       return apiFetch(
         `${API_URL}/api/data/${datasetId}/story${qs ? `?${qs}` : ""}`
-      ).then((r) => r.json())
+      ).then(unwrapJson)
     },
 
     setFilter: (
@@ -610,15 +655,15 @@ export const api = {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ conditions }),
-      }).then((r) => r.json()),
+      }).then(unwrapJson),
 
     clearFilter: (datasetId: string): Promise<{ dataset_id: string; cleared: boolean }> =>
       apiFetch(`${API_URL}/api/data/${datasetId}/clear-filter`, {
         method: "DELETE",
-      }).then((r) => r.json()),
+      }).then(unwrapJson),
 
     getActiveFilter: (datasetId: string): Promise<import("./types").ActiveFilter> =>
-      apiFetch(`${API_URL}/api/data/${datasetId}/active-filter`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/data/${datasetId}/active-filter`).then(unwrapJson),
 
     getColumnProfile: (
       datasetId: string,
@@ -708,9 +753,7 @@ export const api = {
     getSummaryStats: (
       datasetId: string
     ): Promise<import("./types").SummaryStatsResult> =>
-      apiFetch(`${API_URL}/api/data/${datasetId}/summary-stats`).then((r) =>
-        r.json()
-      ),
+      apiFetch(`${API_URL}/api/data/${datasetId}/summary-stats`).then(unwrapJson),
 
     getValueCounts: (
       datasetId: string,
@@ -719,7 +762,7 @@ export const api = {
     ): Promise<import("./types").ValueCountResult> =>
       apiFetch(
         `${API_URL}/api/data/${datasetId}/value-counts?col=${encodeURIComponent(col)}&n=${n}`
-      ).then((r) => r.json()),
+      ).then(unwrapJson),
 
     getPairCorrelation: (
       datasetId: string,
@@ -728,7 +771,7 @@ export const api = {
     ): Promise<import("./types").PairCorrelationResult> =>
       apiFetch(
         `${API_URL}/api/data/${datasetId}/pair-correlation?col1=${encodeURIComponent(col1)}&col2=${encodeURIComponent(col2)}`
-      ).then((r) => r.json()),
+      ).then(unwrapJson),
 
     getStatQuery: (
       datasetId: string,
@@ -739,7 +782,7 @@ export const api = {
       if (col) params.set("col", col)
       return apiFetch(
         `${API_URL}/api/data/${datasetId}/stat-query?${params.toString()}`
-      ).then((r) => r.json())
+      ).then(unwrapJson)
     },
 
     getGroupTrends: (
@@ -755,7 +798,7 @@ export const api = {
       })
       return apiFetch(
         `${API_URL}/api/data/${datasetId}/group-trends?${params.toString()}`
-      ).then((r) => r.json())
+      ).then(unwrapJson)
     },
 
     predictionOpportunities: (
@@ -771,7 +814,7 @@ export const api = {
     ): Promise<import("./types").DatasetComparisonResult> =>
       apiFetch(
         `${API_URL}/api/data/compare?baseline_id=${encodeURIComponent(baselineId)}&new_id=${encodeURIComponent(newId)}`
-      ).then((r) => r.json()),
+      ).then(unwrapJson),
   },
 
   chat: {
@@ -783,16 +826,14 @@ export const api = {
       }),
 
     history: (projectId: string): Promise<{ messages: ChatMessage[] }> =>
-      apiFetch(`${API_URL}/api/chat/${projectId}/history`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/chat/${projectId}/history`).then(unwrapJson),
   },
 
   features: {
     suggestions: (
       datasetId: string
     ): Promise<{ dataset_id: string; suggestions: FeatureSuggestion[] }> =>
-      apiFetch(`${API_URL}/api/features/${datasetId}/suggestions`).then((r) =>
-        r.json()
-      ),
+      apiFetch(`${API_URL}/api/features/${datasetId}/suggestions`).then(unwrapJson),
 
     apply: (
       datasetId: string,
@@ -802,7 +843,7 @@ export const api = {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ transformations }),
-      }).then((r) => r.json()),
+      }).then(unwrapJson),
 
     setTarget: (
       datasetId: string,
@@ -816,7 +857,7 @@ export const api = {
           target_column: targetColumn,
           feature_set_id: featureSetId,
         }),
-      }).then((r) => r.json()),
+      }).then(unwrapJson),
 
     importance: (
       datasetId: string,
@@ -824,7 +865,7 @@ export const api = {
     ): Promise<FeatureImportanceResult> =>
       apiFetch(
         `${API_URL}/api/features/${datasetId}/importance?target_column=${encodeURIComponent(targetColumn)}`
-      ).then((r) => r.json()),
+      ).then(unwrapJson),
 
     // Pipeline step management (incremental add/undo)
     getSteps: (featureSetId: string): Promise<{
@@ -832,7 +873,7 @@ export const api = {
       step_count: number
       steps: Array<{ index: number; column: string; transform_type: string; params?: Record<string, unknown> }>
     }> =>
-      apiFetch(`${API_URL}/api/features/${featureSetId}/steps`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/features/${featureSetId}/steps`).then(unwrapJson),
 
     addStep: (
       featureSetId: string,
@@ -849,7 +890,7 @@ export const api = {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(step),
-      }).then((r) => r.json()),
+      }).then(unwrapJson),
 
     removeStep: (
       featureSetId: string,
@@ -864,7 +905,7 @@ export const api = {
     }> =>
       apiFetch(`${API_URL}/api/features/${featureSetId}/steps/${stepIndex}`, {
         method: "DELETE",
-      }).then((r) => r.json()),
+      }).then(unwrapJson),
   },
 
   models: {
@@ -876,24 +917,22 @@ export const api = {
       n_features: number
       recommendations: ModelRecommendation[]
     }> =>
-      apiFetch(`${API_URL}/api/models/${projectId}/recommendations`).then((r) =>
-        r.json()
-      ),
+      apiFetch(`${API_URL}/api/models/${projectId}/recommendations`).then(unwrapJson),
 
     classImbalance: (
       projectId: string
     ): Promise<import("./types").ClassImbalanceResult> =>
-      apiFetch(`${API_URL}/api/models/${projectId}/imbalance`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/models/${projectId}/imbalance`).then(unwrapJson),
 
     splitStrategy: (
       projectId: string
     ): Promise<import("./types").SplitStrategyInfo> =>
-      apiFetch(`${API_URL}/api/models/${projectId}/split-strategy`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/models/${projectId}/split-strategy`).then(unwrapJson),
 
     featureSelection: (
       runId: string
     ): Promise<import("./types").FeatureSelectionResult> =>
-      apiFetch(`${API_URL}/api/models/${runId}/feature-selection`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/models/${runId}/feature-selection`).then(unwrapJson),
 
     thresholdAnalysis: (
       runId: string
@@ -991,13 +1030,13 @@ export const api = {
           split_strategy: splitStrategy ?? null,
           excluded_features: excludedFeatures ?? null,
         }),
-      }).then((r) => r.json()),
+      }).then(unwrapJson),
 
     runs: (projectId: string): Promise<{ project_id: string; runs: ModelRun[] }> =>
-      apiFetch(`${API_URL}/api/models/${projectId}/runs`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/models/${projectId}/runs`).then(unwrapJson),
 
     compare: (projectId: string): Promise<ModelComparison> =>
-      apiFetch(`${API_URL}/api/models/${projectId}/compare`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/models/${projectId}/compare`).then(unwrapJson),
 
     comparisonRadar: (projectId: string): Promise<{ chart: import("./types").ChartSpec } | null> =>
       apiFetch(`${API_URL}/api/models/${projectId}/comparison-radar`).then((r) =>
@@ -1007,7 +1046,7 @@ export const api = {
     select: (modelRunId: string): Promise<ModelRun> =>
       apiFetch(`${API_URL}/api/models/${modelRunId}/select`, {
         method: "POST",
-      }).then((r) => r.json()),
+      }).then(unwrapJson),
 
     downloadUrl: (modelRunId: string): string =>
       `${API_URL}/api/models/${modelRunId}/download`,
@@ -1022,20 +1061,16 @@ export const api = {
       `${API_URL}/api/models/${projectId}/training-stream`,
 
     readiness: (modelRunId: string): Promise<import("./types").ModelReadiness> =>
-      apiFetch(`${API_URL}/api/models/${modelRunId}/readiness`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/models/${modelRunId}/readiness`).then(unwrapJson),
 
     tune: (modelRunId: string): Promise<TuningResult> =>
-      apiFetch(`${API_URL}/api/models/${modelRunId}/tune`, { method: "POST" }).then((r) =>
-        r.json()
-      ),
+      apiFetch(`${API_URL}/api/models/${modelRunId}/tune`, { method: "POST" }).then(unwrapJson),
 
     retrain: (projectId: string): Promise<import("./types").RetrainResponse> =>
-      apiFetch(`${API_URL}/api/models/${projectId}/retrain`, { method: "POST" }).then((r) =>
-        r.json()
-      ),
+      apiFetch(`${API_URL}/api/models/${projectId}/retrain`, { method: "POST" }).then(unwrapJson),
 
     history: (projectId: string): Promise<ModelVersionHistory> =>
-      apiFetch(`${API_URL}/api/models/${projectId}/history`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/models/${projectId}/history`).then(unwrapJson),
 
     getModelCard: (projectId: string): Promise<import("./types").ModelCard> =>
       apiFetch(`${API_URL}/api/models/${projectId}/model-card`).then((r) => {
@@ -1066,29 +1101,27 @@ export const api = {
 
   validation: {
     metrics: (modelRunId: string): Promise<ValidationMetricsResponse> =>
-      apiFetch(`${API_URL}/api/validate/${modelRunId}/metrics`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/validate/${modelRunId}/metrics`).then(unwrapJson),
 
     explain: (modelRunId: string): Promise<GlobalExplanationResponse> =>
-      apiFetch(`${API_URL}/api/validate/${modelRunId}/explain`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/validate/${modelRunId}/explain`).then(unwrapJson),
 
     explainRow: (modelRunId: string, rowIndex: number): Promise<RowExplanationResponse> =>
-      apiFetch(`${API_URL}/api/validate/${modelRunId}/explain/${rowIndex}`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/validate/${modelRunId}/explain/${rowIndex}`).then(unwrapJson),
   },
 
   deploy: {
     deploy: (modelRunId: string): Promise<Deployment> =>
-      apiFetch(`${API_URL}/api/deploy/${modelRunId}`, { method: "POST" }).then((r) =>
-        r.json()
-      ),
+      apiFetch(`${API_URL}/api/deploy/${modelRunId}`, { method: "POST" }).then(unwrapJson),
 
     list: (): Promise<Deployment[]> =>
-      apiFetch(`${API_URL}/api/deployments`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/deployments`).then(unwrapJson),
 
     listByProject: (projectId: string): Promise<Deployment[]> =>
-      apiFetch(`${API_URL}/api/deployments?project_id=${projectId}`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/deployments?project_id=${projectId}`).then(unwrapJson),
 
     get: (deploymentId: string): Promise<Deployment> =>
-      apiFetch(`${API_URL}/api/deploy/${deploymentId}`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/deploy/${deploymentId}`).then(unwrapJson),
 
     undeploy: (deploymentId: string): Promise<Response> =>
       apiFetch(`${API_URL}/api/deploy/${deploymentId}`, { method: "DELETE" }),
@@ -1101,25 +1134,25 @@ export const api = {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(inputData),
-      }).then((r) => r.json()),
+      }).then(unwrapJson),
 
     analytics: (deploymentId: string, days?: number): Promise<import("./types").DeploymentAnalytics> =>
-      apiFetch(`${API_URL}/api/deploy/${deploymentId}/analytics${days ? `?days=${days}` : ""}`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/deploy/${deploymentId}/analytics${days ? `?days=${days}` : ""}`).then(unwrapJson),
 
     logs: (deploymentId: string, limit?: number, offset?: number): Promise<import("./types").PredictionLogsResponse> =>
-      apiFetch(`${API_URL}/api/deploy/${deploymentId}/logs?limit=${limit ?? 20}&offset=${offset ?? 0}`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/deploy/${deploymentId}/logs?limit=${limit ?? 20}&offset=${offset ?? 0}`).then(unwrapJson),
 
     drift: (deploymentId: string, window?: number): Promise<import("./types").DriftReport> =>
-      apiFetch(`${API_URL}/api/deploy/${deploymentId}/drift${window ? `?window=${window}` : ""}`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/deploy/${deploymentId}/drift${window ? `?window=${window}` : ""}`).then(unwrapJson),
 
     sla: (deploymentId: string): Promise<import("./types").SlaData> =>
-      apiFetch(`${API_URL}/api/deploy/${deploymentId}/sla`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/deploy/${deploymentId}/sla`).then(unwrapJson),
 
     goalSeekHistory: (deploymentId: string): Promise<import("./types").GoalSeekHistoryResult> =>
-      apiFetch(`${API_URL}/api/deploy/${deploymentId}/goal-seek/history`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/deploy/${deploymentId}/goal-seek/history`).then(unwrapJson),
 
     deploymentChangelog: (deploymentId: string): Promise<import("./types").DeploymentChangelogResult> =>
-      apiFetch(`${API_URL}/api/deploy/${deploymentId}/changelog`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/deploy/${deploymentId}/changelog`).then(unwrapJson),
 
     whatif: (
       deploymentId: string,
@@ -1130,7 +1163,7 @@ export const api = {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ base, overrides }),
-      }).then((r) => r.json()),
+      }).then(unwrapJson),
 
     submitFeedback: (
       deploymentId: string,
@@ -1146,16 +1179,16 @@ export const api = {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
-      }).then((r) => r.json()),
+      }).then(unwrapJson),
 
     feedbackAccuracy: (deploymentId: string): Promise<import("./types").FeedbackAccuracy> =>
-      apiFetch(`${API_URL}/api/deploy/${deploymentId}/feedback-accuracy`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/deploy/${deploymentId}/feedback-accuracy`).then(unwrapJson),
 
     trainingVsProduction: (deploymentId: string): Promise<import("./types").ProdPerformanceResult> =>
-      apiFetch(`${API_URL}/api/deploy/${deploymentId}/training-vs-production`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/deploy/${deploymentId}/training-vs-production`).then(unwrapJson),
 
     health: (deploymentId: string): Promise<import("./types").ModelHealth> =>
-      apiFetch(`${API_URL}/api/deploy/${deploymentId}/health`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/deploy/${deploymentId}/health`).then(unwrapJson),
 
     explain: (deploymentId: string, inputs: Record<string, unknown>): Promise<import("./types").PredictionExplanation> =>
       apiFetch(`${API_URL}/api/predict/${deploymentId}/explain`, {
@@ -1200,7 +1233,7 @@ export const api = {
     ): Promise<import("./types").IntegrationSnippets> =>
       apiFetch(
         `${API_URL}/api/deploy/${deploymentId}/integration${baseUrl ? `?base_url=${encodeURIComponent(baseUrl)}` : ""}`
-      ).then((r) => r.json()),
+      ).then(unwrapJson),
 
     generateApiKey: (deploymentId: string): Promise<import("./types").ApiKeyResult> =>
       apiFetch(`${API_URL}/api/deploy/${deploymentId}/api-key`, { method: "POST" }).then(
@@ -1211,7 +1244,7 @@ export const api = {
       apiFetch(`${API_URL}/api/deploy/${deploymentId}/api-key`, { method: "DELETE" }),
 
     getSchedules: (deploymentId: string): Promise<import("./types").BatchSchedule[]> =>
-      apiFetch(`${API_URL}/api/deploy/${deploymentId}/schedules`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/deploy/${deploymentId}/schedules`).then(unwrapJson),
 
     createSchedule: (
       deploymentId: string,
@@ -1243,7 +1276,7 @@ export const api = {
     ): Promise<{ status: string; schedule_id: string }> =>
       apiFetch(`${API_URL}/api/deploy/${deploymentId}/schedules/${scheduleId}/run`, {
         method: "POST",
-      }).then((r) => r.json()),
+      }).then(unwrapJson),
 
     getScheduleRuns: (
       deploymentId: string,
@@ -1251,12 +1284,12 @@ export const api = {
     ): Promise<import("./types").BatchJobRun[]> =>
       apiFetch(
         `${API_URL}/api/deploy/${deploymentId}/schedules/${scheduleId}/runs`
-      ).then((r) => r.json()),
+      ).then(unwrapJson),
 
     getVersions: (
       deploymentId: string
     ): Promise<import("./types").DeploymentVersionHistory> =>
-      apiFetch(`${API_URL}/api/deploy/${deploymentId}/versions`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/deploy/${deploymentId}/versions`).then(unwrapJson),
 
     rollback: (
       deploymentId: string,
@@ -1275,9 +1308,7 @@ export const api = {
     getWebhooks: (
       deploymentId: string
     ): Promise<import("./types").WebhookConfig[]> =>
-      apiFetch(`${API_URL}/api/deploy/${deploymentId}/webhooks`).then((r) =>
-        r.json()
-      ),
+      apiFetch(`${API_URL}/api/deploy/${deploymentId}/webhooks`).then(unwrapJson),
 
     createWebhook: (
       deploymentId: string,
@@ -1309,7 +1340,7 @@ export const api = {
       apiFetch(
         `${API_URL}/api/deploy/${deploymentId}/webhooks/${webhookId}/test`,
         { method: "POST" }
-      ).then((r) => r.json()),
+      ).then(unwrapJson),
 
     getAbTest: (
       deploymentId: string
@@ -1374,7 +1405,7 @@ export const api = {
     getPresets: (
       deploymentId: string
     ): Promise<import("./types").DeploymentPreset[]> =>
-      apiFetch(`${API_URL}/api/deploy/${deploymentId}/presets`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/deploy/${deploymentId}/presets`).then(unwrapJson),
 
     createPreset: (
       deploymentId: string,
@@ -1572,10 +1603,10 @@ export const api = {
     },
 
     getDashboardConfig: (deploymentId: string): Promise<import("@/lib/types").DashboardConfigResponse> =>
-      apiFetch(`${API_URL}/api/deploy/${deploymentId}/dashboard-config`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/deploy/${deploymentId}/dashboard-config`).then(unwrapJson),
 
     getDashboardMetadata: (deploymentId: string): Promise<import("@/lib/types").DashboardMetadata> =>
-      apiFetch(`${API_URL}/api/deploy/${deploymentId}/dashboard-metadata`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/deploy/${deploymentId}/dashboard-metadata`).then(unwrapJson),
 
     // --- PUBLIC prediction-surface reads (used by the anonymous /predict/[id]
     // page). These hit /api/predict/{id}/... which is gated by per-deployment
@@ -1627,10 +1658,10 @@ export const api = {
     },
 
     getEmbedCode: (deploymentId: string): Promise<import("@/lib/types").EmbedCodeResult> =>
-      apiFetch(`${API_URL}/api/deploy/${deploymentId}/embed-code`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/deploy/${deploymentId}/embed-code`).then(unwrapJson),
 
     getOutputAnomalies: (deploymentId: string, n = 50): Promise<import("@/lib/types").PredictionOutputAnomalyResult> =>
-      apiFetch(`${API_URL}/api/deploy/${deploymentId}/output-anomalies?n=${n}`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/deploy/${deploymentId}/output-anomalies?n=${n}`).then(unwrapJson),
 
     featureSweep: (
       deploymentId: string,
@@ -1639,7 +1670,7 @@ export const api = {
     ): Promise<import("@/lib/types").FeatureSweepResult> =>
       apiFetch(
         `${API_URL}/api/deploy/${deploymentId}/feature-sweep?direction=${direction}&n_steps=${nSteps}`
-      ).then((r) => r.json()),
+      ).then(unwrapJson),
 
     getShareLink: (
       deploymentId: string,
@@ -1652,16 +1683,14 @@ export const api = {
       const qs = params.toString()
       return apiFetch(
         `${API_URL}/api/deploy/${deploymentId}/share-link${qs ? `?${qs}` : ""}`
-      ).then((r) => r.json())
+      ).then(unwrapJson)
     },
 
     canaryStatus: (
       deploymentId: string,
       n = 200
     ): Promise<import("@/lib/types").CanaryStatusResult> =>
-      apiFetch(`${API_URL}/api/deploy/${deploymentId}/canary/status?n=${n}`).then((r) =>
-        r.json()
-      ),
+      apiFetch(`${API_URL}/api/deploy/${deploymentId}/canary/status?n=${n}`).then(unwrapJson),
 
     canaryStart: (
       deploymentId: string,
@@ -1672,39 +1701,39 @@ export const api = {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ version_number: versionNumber, traffic_pct: trafficPct }),
-      }).then((r) => r.json()),
+      }).then(unwrapJson),
 
     canaryCancel: (deploymentId: string): Promise<{ canary_is_active: boolean; message: string }> =>
       apiFetch(`${API_URL}/api/deploy/${deploymentId}/canary/cancel`, {
         method: "POST",
-      }).then((r) => r.json()),
+      }).then(unwrapJson),
 
     canaryPromote: (deploymentId: string): Promise<{ promoted: boolean; new_version_number: number; message: string }> =>
       apiFetch(`${API_URL}/api/deploy/${deploymentId}/canary/promote`, {
         method: "POST",
-      }).then((r) => r.json()),
+      }).then(unwrapJson),
 
     healthScorecard: (deploymentId: string, n?: number): Promise<import("./types").DeploymentHealthScorecardResult> =>
-      apiFetch(`${API_URL}/api/deploy/${deploymentId}/health-scorecard${n ? `?n=${n}` : ""}`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/deploy/${deploymentId}/health-scorecard${n ? `?n=${n}` : ""}`).then(unwrapJson),
 
     confidenceBand: (deploymentId: string, nDays?: number): Promise<import("./types").ConfidenceBandResult> =>
-      apiFetch(`${API_URL}/api/deploy/${deploymentId}/confidence-band${nDays ? `?n_days=${nDays}` : ""}`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/deploy/${deploymentId}/confidence-band${nDays ? `?n_days=${nDays}` : ""}`).then(unwrapJson),
 
     outcomeCalibration: (deploymentId: string): Promise<import("./types").OutcomeCalibrationResult> =>
-      apiFetch(`${API_URL}/api/deploy/${deploymentId}/outcome-calibration`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/deploy/${deploymentId}/outcome-calibration`).then(unwrapJson),
 
     getDegradationRetrainStatus: (deploymentId: string): Promise<import("./types").DegradationRetrainConfig> =>
-      apiFetch(`${API_URL}/api/deploy/${deploymentId}/degradation-retrain-status`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/deploy/${deploymentId}/degradation-retrain-status`).then(unwrapJson),
 
     setDegradationRetrain: (deploymentId: string, enabled: boolean, accuracyThresholdPct?: number): Promise<import("./types").DegradationRetrainConfig> =>
       apiFetch(`${API_URL}/api/deploy/${deploymentId}/degradation-retrain`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ enabled, accuracy_threshold_pct: accuracyThresholdPct ?? null }),
-      }).then((r) => r.json()),
+      }).then(unwrapJson),
 
     batchJobHistory: (deploymentId: string, n?: number): Promise<import("./types").BatchJobHistoryResult> =>
-      apiFetch(`${API_URL}/api/deploy/${deploymentId}/batch-job-history${n ? `?n=${n}` : ""}`).then((r) => r.json()),
+      apiFetch(`${API_URL}/api/deploy/${deploymentId}/batch-job-history${n ? `?n=${n}` : ""}`).then(unwrapJson),
 
     performanceDecayRate: (
       deploymentId: string,
@@ -1712,6 +1741,6 @@ export const api = {
     ): Promise<import("./types").PerformanceDecayResult> =>
       apiFetch(
         `${API_URL}/api/deploy/${deploymentId}/performance-decay-rate${thresholdPct !== undefined ? `?threshold_pct=${thresholdPct}` : ""}`,
-      ).then((r) => r.json()),
+      ).then(unwrapJson),
   },
 }

@@ -12,9 +12,10 @@ import {
 } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import { api } from "@/lib/api"
+import { api, ApiError } from "@/lib/api"
 import { useAppStore } from "@/lib/store"
 import { RequireAuth } from "@/components/auth/require-auth"
+import { ErrorDisplay } from "@/components/ui/error-display"
 import type { Project } from "@/lib/types"
 
 export default function HomePage() {
@@ -32,16 +33,32 @@ function HomePageInner() {
   const [newName, setNewName] = useState("")
   const [creating, setCreating] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState("")
 
-  useEffect(() => {
+  function loadProjects() {
+    setLoading(true)
+    setError(null)
     api.projects
       .list()
       .then(setProjects)
-      .catch(() => setProjects([]))
+      .catch((e) => {
+        // Show the failure instead of an empty "No projects yet" (#17): a
+        // server error is not the same as having no projects.
+        setError(
+          e instanceof ApiError
+            ? `Couldn't load your projects (server said ${e.status}).`
+            : "Couldn't load your projects. Check your connection and try again."
+        )
+      })
       .finally(() => setLoading(false))
-  }, [setProjects])
+  }
+
+  useEffect(() => {
+    loadProjects()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- run once on mount
+  }, [])
 
   async function handleCreate() {
     if (!newName.trim()) return
@@ -155,6 +172,8 @@ function HomePageInner() {
 
       {loading ? (
         <p className="text-sm text-muted-foreground">Loading projects...</p>
+      ) : error ? (
+        <ErrorDisplay message={error} onRetry={loadProjects} />
       ) : projects.length === 0 ? (
         <div className="rounded-xl border border-dashed p-10 text-center">
           <p className="text-sm font-medium">No projects yet</p>

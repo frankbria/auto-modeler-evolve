@@ -111,8 +111,16 @@ Every conversational feature follows this exact pipeline. Do not deviate:
 
 4. **Frontend card component** at `src/frontend/components/<domain>/<feature>-card.tsx`
    - TypeScript types in `src/frontend/lib/types.ts`
-   - API method in `src/frontend/lib/api.ts`
+   - API method in `src/frontend/lib/api.ts` (returns parsed JSON via the
+     `apiFetch(...).then(unwrapJson)` chain — `unwrapJson` throws a typed
+     `ApiError` on non-2xx; never re-add a bare `.then((r) => r.json())`, #17)
    - Zustand action in `src/frontend/lib/store.ts` (`attachFooToLastMessage`)
+   - **SSE handler** in `src/frontend/lib/sse-handlers.ts` — add a
+     `foo_result: (json) => { if (!json.foo_result) return; attachFooToLastMessage(...) }`
+     entry to the `createSSEHandlers` map (NOT a branch in `page.tsx`, which is
+     now a one-line `handlers[json.type]?.(json)` lookup, #17). Every type the
+     backend emits MUST have a handler here — `backend/tests/test_sse_contract.py`
+     fails CI otherwise (the silent-drop guard).
    - Unit tests in `src/frontend/__tests__/<feature>-card.test.tsx`
 
 ### Working DataFrame Convention

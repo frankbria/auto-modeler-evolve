@@ -311,12 +311,18 @@ describe("ProjectWorkspace — loading and initial state", () => {
     })
   })
 
-  it("shows WELCOME_MESSAGE when project fetch fails", async () => {
-    fetchMock.mockRejectOnce(new Error("Network error"))
+  it("surfaces a retry-able error (not a fake welcome) when project fetch fails (#17)", async () => {
+    // Previously this silently showed WELCOME_MESSAGE — but a server/network
+    // failure is not an empty project, so it now shows an error with a retry.
+    fetchMock.mockReject(new Error("Network error"))
     render(<ProjectWorkspace />)
     await waitFor(() => {
-      expect(screen.getByText(/upload a csv or excel file to get started/i)).toBeInTheDocument()
+      expect(screen.getByTestId("error-display")).toBeInTheDocument()
     })
+    expect(
+      screen.queryByText(/upload a csv or excel file to get started/i)
+    ).not.toBeInTheDocument()
+    expect(screen.getByTestId("error-display-retry")).toBeInTheDocument()
   })
 })
 

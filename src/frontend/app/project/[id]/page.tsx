@@ -176,6 +176,7 @@ import { CrossProjectComparisonCard } from "@/components/chat/cross-project-comp
 import { WhatNextCard } from "@/components/chat/what-next-card"
 import { MilestoneCard } from "@/components/chat/milestone-card"
 import { AutoInsightCard } from "@/components/chat/auto-insight-card"
+import { MonitoringNoteCard } from "@/components/chat/monitoring-note-card"
 import { ColumnTypeSuggestionCard } from "@/components/chat/column-type-suggestion-card"
 import { GoalSeekCard } from "@/components/deploy/goal-seek-card"
 import { GoalSeekHistoryCard } from "@/components/deploy/goal-seek-history-card"
@@ -206,7 +207,9 @@ import {
   FeaturesAppliedCard,
 } from "@/components/features/feature-suggestions-chat-card"
 import { WorkflowProgress } from "@/components/ui/workflow-progress"
-import { api, downloadFile } from "@/lib/api"
+import { api, downloadFile, ApiError } from "@/lib/api"
+import { ErrorDisplay } from "@/components/ui/error-display"
+import { createSSEHandlers } from "@/lib/sse-handlers"
 import { useAppStore } from "@/lib/store"
 import type {
   Dataset,
@@ -220,31 +223,8 @@ import type {
   CleanResult,
   RefreshPrompt,
   DatasetRefreshResult,
-  CrosstabResult,
   ComputedColumnSuggestion,
   ComputeResult,
-  SegmentComparisonResult,
-  ForecastResult,
-  DataReadinessResult,
-  TargetCorrelationResult,
-  GroupStatsResult,
-  RenameResult,
-  TrainingStartedResult,
-  DataStory,
-  FilterSetResult,
-  ActiveFilter,
-  DeployedResult,
-  ModelCard,
-  ReportReady,
-  FeatureSuggestionsChatResult,
-  FeaturesAppliedResult,
-  SegmentPerformanceResult,
-  ColumnProfile,
-  ClusteringResult,
-  TimeWindowComparison,
-  TopNResult,
-  WhatIfChatResult,
-  PredictionErrorResult,
 } from "@/lib/types"
 
 const WELCOME_MESSAGE =
@@ -420,6 +400,7 @@ function ProjectWorkspaceInner() {
     attachWhatNextToLastMessage,
     attachMilestoneToLastMessage,
     attachAutoInsightToLastMessage,
+    attachMonitoringNoteToLastMessage,
     attachColumnTypeSuggestionsToLastMessage,
     attachGoalSeekToLastMessage,
     attachGoalSeekHistoryToLastMessage,
@@ -485,6 +466,9 @@ function ProjectWorkspaceInner() {
   const [chatInput, setChatInput] = useState("")
   const [uploading, setUploading] = useState(false)
   const [loadingProject, setLoadingProject] = useState(true)
+  // Critical project-load failure (#17): show a retry instead of a fake welcome.
+  const [projectLoadError, setProjectLoadError] = useState<string | null>(null)
+  const [reloadKey, setReloadKey] = useState(0)
   const [activeTab, setActiveTab] = useState<RightTab>("data")
   const [rightPanelVisible, setRightPanelVisible] = useState(true)
   // Mobile: which panel is active ("chat" | "panel")
@@ -523,6 +507,7 @@ function ProjectWorkspaceInner() {
 
   useEffect(() => {
     async function load() {
+      setProjectLoadError(null)
       try {
         const [project, history] = await Promise.all([
           api.projects.get(projectId),
@@ -622,20 +607,21 @@ function ProjectWorkspaceInner() {
             },
           ])
         }
-      } catch {
-        setMessages([
-          {
-            role: "assistant",
-            content: WELCOME_MESSAGE,
-            timestamp: new Date().toISOString(),
-          },
-        ])
+      } catch (e) {
+        // Couldn't load the project itself (404/500/network). Surface a retry
+        // instead of a fake welcome message (#17). `history` is always 200, so
+        // reaching here means a genuine failure to load this project.
+        setProjectLoadError(
+          e instanceof ApiError && e.status === 404
+            ? "This project couldn't be found, or you don't have access to it."
+            : "Couldn't load this project. Check your connection and try again."
+        )
       } finally {
         setLoadingProject(false)
       }
     }
     load()
-  }, [projectId, setCurrentProject, setDataset, setMessages])
+  }, [projectId, reloadKey, setCurrentProject, setDataset, setMessages])
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -739,6 +725,196 @@ function ProjectWorkspaceInner() {
       const decoder = new TextDecoder()
       let buffer = ""
 
+      const sseHandlers = createSSEHandlers({
+        appendToLastMessage,
+        attachABTestResultToLastMessage,
+        attachAccuracyAlertConfigToLastMessage,
+        attachAggregateExplanationToLastMessage,
+        attachAlertRuleToLastMessage,
+        attachApiKeyResultToLastMessage,
+        attachAutoInsightToLastMessage,
+        attachMonitoringNoteToLastMessage,
+        attachAutoRetrainToLastMessage,
+        attachAutoRollbackConfigToLastMessage,
+        attachBatchJobHistoryToLastMessage,
+        attachBatchJobResultsToLastMessage,
+        attachCalibrationCheckToLastMessage,
+        attachCanaryStatusToLastMessage,
+        attachChartToLastMessage,
+        attachClassFeatureImportanceToLastMessage,
+        attachClassImbalanceCheckToLastMessage,
+        attachClustersToLastMessage,
+        attachCohortEvolutionToLastMessage,
+        attachColumnProfileToLastMessage,
+        attachColumnTypeSuggestionsToLastMessage,
+        attachComputeToLastMessage,
+        attachConfHeatmapToLastMessage,
+        attachConfidenceBandToLastMessage,
+        attachConfidenceDistributionToLastMessage,
+        attachConfidenceThresholdConfigToLastMessage,
+        attachConfidenceTrendToLastMessage,
+        attachConfusionMatrixChatToLastMessage,
+        attachConversationExportToLastMessage,
+        attachCorrelationToLastMessage,
+        attachCostEstimateToLastMessage,
+        attachCostSensitiveThresholdToLastMessage,
+        attachCounterfactualToLastMessage,
+        attachCovariateDriftAlertToLastMessage,
+        attachCrossDeployPredictionToLastMessage,
+        attachCrossModelFeaturesToLastMessage,
+        attachCrossProjectComparisonToLastMessage,
+        attachCrosstabToLastMessage,
+        attachCvScoreDistributionToLastMessage,
+        attachDashboardConfigToLastMessage,
+        attachDashboardMetadataToLastMessage,
+        attachDataExportToLastMessage,
+        attachDataQualityImpactToLastMessage,
+        attachDataReadinessToLastMessage,
+        attachDataStoryToLastMessage,
+        attachDatasetComparisonToLastMessage,
+        attachDegradationRetrainConfigToLastMessage,
+        attachDeployPredDistCompareToLastMessage,
+        attachDeployedToLastMessage,
+        attachDeploymentChangelogToLastMessage,
+        attachDeploymentHealthScorecardToLastMessage,
+        attachDeploymentScorecardToLastMessage,
+        attachDeploymentsOverviewToLastMessage,
+        attachDriftImportanceRankingToLastMessage,
+        attachEmbedCodeToLastMessage,
+        attachEnsembleRecommendationToLastMessage,
+        attachErrorCorrelationToLastMessage,
+        attachErrorDistributionToLastMessage,
+        attachExecutiveBriefingToLastMessage,
+        attachFairnessCheckToLastMessage,
+        attachFeEngineeringImpactToLastMessage,
+        attachFeatureDriftAlertConfigToLastMessage,
+        attachFeaturePsiToLastMessage,
+        attachFeatureRedundancyToLastMessage,
+        attachFeatureSelectionToLastMessage,
+        attachFeatureSuggestionsToLastMessage,
+        attachFeatureSweepToLastMessage,
+        attachFeaturesAppliedToLastMessage,
+        attachFeedbackAccuracyReportToLastMessage,
+        attachFilterToLastMessage,
+        attachForecastToLastMessage,
+        attachGoalSeekHistoryToLastMessage,
+        attachGoalSeekToLastMessage,
+        attachGoalTrainingToLastMessage,
+        attachGroupStatsToLastMessage,
+        attachGroupTrendsToLastMessage,
+        attachHealthSummaryToLastMessage,
+        attachHighActivityBurstConfigToLastMessage,
+        attachInlinePredictionToLastMessage,
+        attachInputDistDriftAlertConfigToLastMessage,
+        attachInputValidationRuleToLastMessage,
+        attachInteractionToLastMessage,
+        attachLatencyAlertConfigToLastMessage,
+        attachLearningCurveToLastMessage,
+        attachLocalExplanationToLastMessage,
+        attachLowAccuracyGuidanceToLastMessage,
+        attachLowActivityAlertConfigToLastMessage,
+        attachMilestoneToLastMessage,
+        attachMinFeatureSetToLastMessage,
+        attachModelCardExportToLastMessage,
+        attachModelCardToLastMessage,
+        attachModelComparisonSummaryToLastMessage,
+        attachModelImprovementToLastMessage,
+        attachModelQualityScoreToLastMessage,
+        attachModelSelectionToLastMessage,
+        attachModelStatusReportToLastMessage,
+        attachMonitoringDigestToLastMessage,
+        attachMultiPredictionToLastMessage,
+        attachNullMapToLastMessage,
+        attachOnboardingGuideToLastMessage,
+        attachOutcomeCalibrationToLastMessage,
+        attachOutputAnomaliesToLastMessage,
+        attachOutputDistributionShiftToLastMessage,
+        attachOverfittingAnalysisToLastMessage,
+        attachPairCorrelationToLastMessage,
+        attachPartialDependenceToLastMessage,
+        attachPerClassThresholdToLastMessage,
+        attachPerformanceDecayRateToLastMessage,
+        attachPopulationCounterfactualToLastMessage,
+        attachPortfolioToLastMessage,
+        attachPredValueAlertConfigToLastMessage,
+        attachPredictionAnalyticsChatToLastMessage,
+        attachPredictionAuditToLastMessage,
+        attachPredictionCohortToLastMessage,
+        attachPredictionDeltaToLastMessage,
+        attachPredictionErrorsToLastMessage,
+        attachPredictionLogExportToLastMessage,
+        attachPredictionOpportunitiesToLastMessage,
+        attachPredictionValueTrendToLastMessage,
+        attachPresetListToLastMessage,
+        attachPresetSavedToLastMessage,
+        attachProdInputDistToLastMessage,
+        attachProdPerformanceToLastMessage,
+        attachProdPredictionExplanationToLastMessage,
+        attachProductionThresholdOptimizerToLastMessage,
+        attachPromotionReadinessToLastMessage,
+        attachQuotaAlertConfigToLastMessage,
+        attachQuotaRunwayToLastMessage,
+        attachRankedPredictionsToLastMessage,
+        attachRateLimitToLastMessage,
+        attachRecentPredictionsToLastMessage,
+        attachRecordsToLastMessage,
+        attachRenameResultToLastMessage,
+        attachReportToLastMessage,
+        attachRetrainCompleteNotifyToLastMessage,
+        attachRetrainingReadinessToLastMessage,
+        attachRollbackChatToLastMessage,
+        attachSampleSizeAdequacyToLastMessage,
+        attachSavedScenariosToLastMessage,
+        attachScheduleSetToLastMessage,
+        attachSdkDownloadToLastMessage,
+        attachSegmentConfTrendToLastMessage,
+        attachSegmentDriftToLastMessage,
+        attachSegmentPerformanceToLastMessage,
+        attachSegmentPredTrendToLastMessage,
+        attachSegmentToLastMessage,
+        attachSensitivityToLastMessage,
+        attachServiceExportToLastMessage,
+        attachShareLinkToLastMessage,
+        attachSimilarRecordsToLastMessage,
+        attachSlaMetricsToLastMessage,
+        attachSplitStrategyToLastMessage,
+        attachStatQueryToLastMessage,
+        attachSummaryStatsToLastMessage,
+        attachTargetLeakageToLastMessage,
+        attachTemplateListToLastMessage,
+        attachTemplateReplayToLastMessage,
+        attachTemplateSavedToLastMessage,
+        attachThresholdAnalysisToLastMessage,
+        attachThroughputAssessmentToLastMessage,
+        attachTimeWindowToLastMessage,
+        attachTopNToLastMessage,
+        attachTrainingStartedToLastMessage,
+        attachTuneChatToLastMessage,
+        attachUptimeSummaryToLastMessage,
+        attachUsagePatternToLastMessage,
+        attachValueCountsToLastMessage,
+        attachVersionComparisonToLastMessage,
+        attachVersionHistoryToLastMessage,
+        attachWebhookHealthSummaryToLastMessage,
+        attachWebhookHistoryToLastMessage,
+        attachWebhookListChatToLastMessage,
+        attachWebhookRegisteredToLastMessage,
+        attachWebhookRemovedChatToLastMessage,
+        attachWebhookTestChatToLastMessage,
+        attachWeeklyDigestConfigToLastMessage,
+        attachWeeklyUsageReportToLastMessage,
+        attachWhatIfChatToLastMessage,
+        attachWhatNextToLastMessage,
+        setActiveFilter,
+        setActiveTab,
+        setAnomalyResult,
+        setChatSuggestions,
+        setCleaningSuggestion,
+        setComputeSuggestion,
+        setRefreshPrompt,
+        setStreaming,
+      })
+
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
@@ -752,498 +928,13 @@ function ProjectWorkspaceInner() {
           if (trimmed.startsWith("data: ")) {
             try {
               const json = JSON.parse(trimmed.slice(6))
-              if (json.type === "token") {
-                appendToLastMessage(json.content)
-              } else if (json.type === "chart" && json.chart) {
-                attachChartToLastMessage(json.chart)
-              } else if (json.type === "crosstab" && json.crosstab) {
-                attachCrosstabToLastMessage(json.crosstab as CrosstabResult)
-              } else if (json.type === "suggestions" && Array.isArray(json.suggestions)) {
-                setChatSuggestions(json.suggestions)
-              } else if (json.type === "next_step" && Array.isArray(json.chips)) {
-                setChatSuggestions(json.chips)
-              } else if (json.type === "anomalies" && json.anomalies) {
-                setAnomalyResult(json.anomalies as AnomalyResult)
-                setActiveTab("data")
-              } else if (json.type === "cleaning_suggestion" && json.cleaning) {
-                setCleaningSuggestion(json.cleaning as CleaningSuggestion)
-                setActiveTab("data")
-              } else if (json.type === "refresh_prompt" && json.refresh) {
-                setRefreshPrompt(json.refresh as RefreshPrompt)
-                setActiveTab("data")
-              } else if (json.type === "compute_suggestion" && json.compute) {
-                setComputeSuggestion(json.compute as ComputedColumnSuggestion)
-                attachComputeToLastMessage(json.compute as ComputedColumnSuggestion)
-                setActiveTab("data")
-              } else if (json.type === "segment_comparison" && json.segment_comparison) {
-                attachSegmentToLastMessage(json.segment_comparison as SegmentComparisonResult)
-              } else if (json.type === "forecast" && json.forecast) {
-                attachForecastToLastMessage(json.forecast as ForecastResult)
-              } else if (json.type === "data_readiness" && json.readiness) {
-                attachDataReadinessToLastMessage(json.readiness as DataReadinessResult)
-              } else if (json.type === "target_correlation" && json.correlation) {
-                attachCorrelationToLastMessage(json.correlation as TargetCorrelationResult)
-              } else if (json.type === "group_stats" && json.group_stats) {
-                attachGroupStatsToLastMessage(json.group_stats as GroupStatsResult)
-              } else if (json.type === "rename_result" && json.rename) {
-                attachRenameResultToLastMessage(json.rename as RenameResult)
-              } else if (json.type === "training_started" && json.training) {
-                attachTrainingStartedToLastMessage(json.training as TrainingStartedResult)
-              } else if (json.type === "data_story" && json.story) {
-                attachDataStoryToLastMessage(json.story as DataStory)
-              } else if (json.type === "filter_set" && json.filter_set) {
-                attachFilterToLastMessage(json.filter_set as FilterSetResult)
-                setActiveFilter({
-                  dataset_id: json.filter_set.dataset_id,
-                  active: true,
-                  filter_summary: json.filter_set.filter_summary,
-                  conditions: json.filter_set.conditions,
-                  original_rows: json.filter_set.original_rows,
-                  filtered_rows: json.filter_set.filtered_rows,
-                  row_reduction_pct: json.filter_set.row_reduction_pct,
-                } as ActiveFilter)
-              } else if (json.type === "filter_cleared") {
-                setActiveFilter(null)
-              } else if (json.type === "deployed" && json.deployment) {
-                attachDeployedToLastMessage(json.deployment as DeployedResult)
-              } else if (json.type === "model_card" && json.model_card) {
-                attachModelCardToLastMessage(json.model_card as ModelCard)
-              } else if (json.type === "report_ready" && json.report) {
-                attachReportToLastMessage(json.report as ReportReady)
-              } else if (json.type === "feature_suggestions" && json.suggestions) {
-                attachFeatureSuggestionsToLastMessage(json.suggestions as FeatureSuggestionsChatResult)
-              } else if (json.type === "features_applied" && json.applied) {
-                attachFeaturesAppliedToLastMessage(json.applied as FeaturesAppliedResult)
-              } else if (json.type === "segment_performance" && json.segment_performance) {
-                attachSegmentPerformanceToLastMessage(json.segment_performance as SegmentPerformanceResult)
-              } else if (json.type === "column_profile" && json.column_profile) {
-                attachColumnProfileToLastMessage(json.column_profile as ColumnProfile)
-              } else if (json.type === "clusters" && json.clusters) {
-                attachClustersToLastMessage(json.clusters as ClusteringResult)
-              } else if (json.type === "time_window_comparison" && json.time_window) {
-                attachTimeWindowToLastMessage(json.time_window as TimeWindowComparison)
-              } else if (json.type === "top_n" && json.top_n) {
-                attachTopNToLastMessage(json.top_n as TopNResult)
-              } else if (json.type === "whatif_result" && json.whatif) {
-                attachWhatIfChatToLastMessage(json.whatif as WhatIfChatResult)
-              } else if (json.type === "prediction_errors" && json.pred_errors) {
-                attachPredictionErrorsToLastMessage(json.pred_errors as PredictionErrorResult)
-              } else if (json.type === "records" && json.records) {
-                attachRecordsToLastMessage(json.records as import("@/lib/types").RecordTableResult)
-              } else if (json.type === "data_export" && json.data_export) {
-                attachDataExportToLastMessage(json.data_export as import("@/lib/types").DataExportResult)
-              } else if (json.type === "null_map" && json.null_map) {
-                attachNullMapToLastMessage(json.null_map as import("@/lib/types").NullMapResult)
-              } else if (json.type === "summary_stats" && json.summary_stats) {
-                attachSummaryStatsToLastMessage(json.summary_stats as import("@/lib/types").SummaryStatsResult)
-              } else if (json.type === "value_counts" && json.value_counts) {
-                attachValueCountsToLastMessage(json.value_counts as import("@/lib/types").ValueCountResult)
-              } else if (json.type === "pair_correlation" && json.pair_correlation) {
-                attachPairCorrelationToLastMessage(json.pair_correlation as import("@/lib/types").PairCorrelationResult)
-              } else if (json.type === "stat_query" && json.stat_query) {
-                attachStatQueryToLastMessage(json.stat_query as import("@/lib/types").StatQueryResult)
-              } else if (json.type === "group_trends" && json.group_trends) {
-                attachGroupTrendsToLastMessage(json.group_trends as import("@/lib/types").GroupTrendResult)
-              } else if (json.type === "split_strategy" && json.split_strategy) {
-                attachSplitStrategyToLastMessage(json.split_strategy as import("@/lib/types").SplitStrategyResult)
-              } else if (json.type === "feature_selection" && json.feature_selection) {
-                attachFeatureSelectionToLastMessage(json.feature_selection as import("@/lib/types").FeatureSelectionResult)
-              } else if (json.type === "model_improvement" && json.model_improvement) {
-                attachModelImprovementToLastMessage(json.model_improvement as import("@/lib/types").ModelImprovementResult)
-              } else if (json.type === "model_selection" && json.model_selection) {
-                attachModelSelectionToLastMessage(json.model_selection as import("@/lib/types").ModelSelectionResult)
-              } else if (json.type === "model_quality_score" && json.model_quality_score) {
-                attachModelQualityScoreToLastMessage(json.model_quality_score as import("@/lib/types").ModelQualityScoreResult)
-              } else if (json.type === "auto_retrain" && json.auto_retrain) {
-                attachAutoRetrainToLastMessage(json.auto_retrain as import("@/lib/types").AutoRetrainResult)
-              } else if (json.type === "conversation_export" && json.conversation_export) {
-                attachConversationExportToLastMessage(json.conversation_export as import("@/lib/types").ConversationExportInfo)
-              } else if (json.type === "health_summary" && json.health_summary) {
-                attachHealthSummaryToLastMessage(json.health_summary as import("@/lib/types").ProjectHealthSummary)
-              } else if (json.type === "prediction_opportunities" && json.prediction_opportunities) {
-                attachPredictionOpportunitiesToLastMessage(json.prediction_opportunities as import("@/lib/types").PredictionOpportunitiesResult)
-              } else if (json.type === "dataset_comparison" && json.dataset_comparison) {
-                attachDatasetComparisonToLastMessage(json.dataset_comparison as import("@/lib/types").DatasetComparisonResult)
-              } else if (json.type === "inline_prediction" && json.inline_prediction) {
-                attachInlinePredictionToLastMessage(json.inline_prediction as import("@/lib/types").InlinePredictionResult)
-              } else if (json.type === "multi_prediction" && json.multi_prediction) {
-                attachMultiPredictionToLastMessage(json.multi_prediction as import("@/lib/types").MultiPredictionResult)
-              } else if (json.type === "goal_training" && json.goal_training) {
-                attachGoalTrainingToLastMessage(json.goal_training as import("@/lib/types").GoalTrainingResult)
-              } else if (json.type === "sensitivity" && json.sensitivity) {
-                attachSensitivityToLastMessage(json.sensitivity as import("@/lib/types").SensitivityResult)
-              } else if (json.type === "interaction" && json.interaction) {
-                attachInteractionToLastMessage(json.interaction as import("@/lib/types").InteractionResult)
-              } else if (json.type === "ranked_predictions" && json.ranked_predictions) {
-                attachRankedPredictionsToLastMessage(json.ranked_predictions as import("@/lib/types").RankedPredictionsResult)
-              } else if (json.type === "prediction_cohort" && json.prediction_cohort) {
-                attachPredictionCohortToLastMessage(json.prediction_cohort as import("@/lib/types").PredictionCohortResult)
-              } else if (json.type === "cohort_evolution" && json.cohort_evolution) {
-                attachCohortEvolutionToLastMessage(json.cohort_evolution as import("@/lib/types").CohortEvolutionResult)
-              } else if (json.type === "counterfactual" && json.counterfactual) {
-                attachCounterfactualToLastMessage(json.counterfactual as import("@/lib/types").CounterfactualResult)
-              } else if (json.type === "population_counterfactual" && json.population_counterfactual) {
-                attachPopulationCounterfactualToLastMessage(json.population_counterfactual as import("@/lib/types").PopulationCounterfactualResult)
-              } else if (json.type === "similar_records" && json.similar_records) {
-                attachSimilarRecordsToLastMessage(json.similar_records as import("@/lib/types").SimilarRecordsResult)
-              } else if (json.type === "fe_impact" && json.fe_impact) {
-                attachFeEngineeringImpactToLastMessage(json.fe_impact as import("@/lib/types").FeatureEngineeringImpactResult)
-              } else if (json.type === "data_quality_impact" && json.data_quality_impact) {
-                attachDataQualityImpactToLastMessage(json.data_quality_impact as import("@/lib/types").DataQualityImpactResult)
-              } else if (json.type === "overfitting_analysis" && json.overfitting_analysis) {
-                attachOverfittingAnalysisToLastMessage(json.overfitting_analysis as import("@/lib/types").OverfittingAnalysisResult)
-              } else if (json.type === "feature_redundancy" && json.feature_redundancy) {
-                attachFeatureRedundancyToLastMessage(json.feature_redundancy as import("@/lib/types").FeatureRedundancyResult)
-              } else if (json.type === "target_leakage" && json.target_leakage) {
-                attachTargetLeakageToLastMessage(json.target_leakage as import("@/lib/types").TargetLeakageResult)
-              } else if (json.type === "threshold_analysis" && json.threshold_analysis) {
-              } else if (json.type === "per_class_threshold" && json.per_class_threshold) {
-                attachPerClassThresholdToLastMessage(json.per_class_threshold as import("@/lib/types").PerClassThresholdResult)
-                attachThresholdAnalysisToLastMessage(json.threshold_analysis as import("@/lib/types").ThresholdAnalysisResult)
-              } else if (json.type === "confidence_distribution" && json.confidence_distribution) {
-                attachConfidenceDistributionToLastMessage(json.confidence_distribution as import("@/lib/types").ConfidenceDistributionResult)
-              } else if (json.type === "sample_size_adequacy" && json.sample_size_adequacy) {
-                attachSampleSizeAdequacyToLastMessage(json.sample_size_adequacy as import("@/lib/types").SampleSizeAdequacyResult)
-              } else if (json.type === "class_feature_importance" && json.class_feature_importance) {
-                attachClassFeatureImportanceToLastMessage(json.class_feature_importance as import("@/lib/types").ClassFeatureImportanceResult)
-              } else if (json.type === "error_correlation" && json.error_correlation) {
-                attachErrorCorrelationToLastMessage(json.error_correlation as import("@/lib/types").ErrorCorrelationResult)
-              } else if (json.type === "output_anomalies" && json.output_anomalies) {
-                attachOutputAnomaliesToLastMessage(json.output_anomalies as import("@/lib/types").PredictionOutputAnomalyResult)
-              } else if (json.type === "output_distribution_shift" && json.output_distribution_shift) {
-                attachOutputDistributionShiftToLastMessage(json.output_distribution_shift as import("@/lib/types").PredictionOutputDistributionShiftResult)
-              } else if (json.type === "feature_psi" && json.feature_psi) {
-                attachFeaturePsiToLastMessage(json.feature_psi as import("@/lib/types").FeaturePsiResult)
-              } else if (json.type === "min_feature_set" && json.min_feature_set) {
-                attachMinFeatureSetToLastMessage(json.min_feature_set as import("@/lib/types").MinFeatureSetResult)
-              } else if (json.type === "retraining_readiness" && json.retraining_readiness) {
-                attachRetrainingReadinessToLastMessage(json.retraining_readiness as import("@/lib/types").RetrainingReadinessResult)
-              } else if (json.type === "prediction_value_trend" && json.prediction_value_trend) {
-                attachPredictionValueTrendToLastMessage(json.prediction_value_trend as import("@/lib/types").PredictionValueTrendResult)
-              } else if (json.type === "monitoring_digest" && json.monitoring_digest) {
-                attachMonitoringDigestToLastMessage(json.monitoring_digest as import("@/lib/types").MonitoringDigestResult)
-              } else if (json.type === "model_status_report" && json.model_status_report) {
-                attachModelStatusReportToLastMessage(json.model_status_report as import("@/lib/types").ModelStatusReportInfo)
-              } else if (json.type === "production_threshold_optimizer" && json.production_threshold_optimizer) {
-                attachProductionThresholdOptimizerToLastMessage(json.production_threshold_optimizer as import("@/lib/types").ProductionThresholdOptimizerResult)
-              } else if (json.type === "deploy_pred_dist_compare" && json.deploy_pred_dist_compare) {
-                attachDeployPredDistCompareToLastMessage(json.deploy_pred_dist_compare as import("@/lib/types").DeploymentPredictionComparisonResult)
-              } else if (json.type === "weekly_digest_config" && json.weekly_digest_config) {
-                attachWeeklyDigestConfigToLastMessage(json.weekly_digest_config as import("@/lib/types").WeeklyDigestConfigResult)
-              } else if (json.type === "promotion_readiness" && json.promotion_readiness) {
-                attachPromotionReadinessToLastMessage(json.promotion_readiness as import("@/lib/types").PromotionReadinessResult)
-              } else if (json.type === "deployment_scorecard" && json.deployment_scorecard) {
-                attachDeploymentScorecardToLastMessage(json.deployment_scorecard as import("@/lib/types").DeploymentScorecardResult)
-              } else if (json.type === "throughput_assessment" && json.throughput_assessment) {
-                attachThroughputAssessmentToLastMessage(json.throughput_assessment as import("@/lib/types").DeploymentThroughputResult)
-              } else if (json.type === "drift_importance_ranking" && json.drift_importance_ranking) {
-                attachDriftImportanceRankingToLastMessage(json.drift_importance_ranking as import("@/lib/types").DriftImportanceRankingResult)
-              } else if (json.type === "feature_drift_alert_config" && json.feature_drift_alert_config) {
-                attachFeatureDriftAlertConfigToLastMessage(json.feature_drift_alert_config as import("@/lib/types").FeatureDriftAlertConfig)
-              } else if (json.type === "input_dist_drift_alert_config" && json.input_dist_drift_alert_config) {
-                attachInputDistDriftAlertConfigToLastMessage(json.input_dist_drift_alert_config as import("@/lib/types").InputDistDriftAlertConfig)
-              } else if (json.type === "low_activity_alert_config" && json.low_activity_alert_config) {
-                attachLowActivityAlertConfigToLastMessage(json.low_activity_alert_config as import("@/lib/types").LowActivityAlertConfig)
-              } else if (json.type === "high_activity_burst_config" && json.high_activity_burst_config) {
-                attachHighActivityBurstConfigToLastMessage(json.high_activity_burst_config as import("@/lib/types").HighActivityBurstConfig)
-              } else if (json.type === "latency_alert_config" && json.latency_alert_config) {
-                attachLatencyAlertConfigToLastMessage(json.latency_alert_config as import("@/lib/types").LatencyAlertConfig)
-              } else if (json.type === "auto_rollback_config" && json.auto_rollback_config) {
-                attachAutoRollbackConfigToLastMessage(json.auto_rollback_config as import("@/lib/types").AutoRollbackConfig)
-              } else if (json.type === "pred_value_alert_config" && json.pred_value_alert_config) {
-                attachPredValueAlertConfigToLastMessage(json.pred_value_alert_config as import("@/lib/types").PredValueAlertConfig)
-              } else if (json.type === "degradation_retrain_config" && json.degradation_retrain_config) {
-                attachDegradationRetrainConfigToLastMessage(json.degradation_retrain_config as import("@/lib/types").DegradationRetrainConfig)
-              } else if (json.type === "segment_drift" && json.segment_drift) {
-                attachSegmentDriftToLastMessage(json.segment_drift as import("@/lib/types").SegmentDriftResult)
-              } else if (json.type === "segment_pred_trend" && json.segment_pred_trend) {
-                attachSegmentPredTrendToLastMessage(json.segment_pred_trend as import("@/lib/types").SegmentPredTrendResult)
-              } else if (json.type === "segment_conf_trend" && json.segment_conf_trend) {
-                attachSegmentConfTrendToLastMessage(json.segment_conf_trend as import("@/lib/types").SegmentConfTrendResult)
-              } else if (json.type === "conf_heatmap" && json.conf_heatmap) {
-                attachConfHeatmapToLastMessage(json.conf_heatmap as import("@/lib/types").ConfidenceHeatmapResult)
-              } else if (json.type === "feature_sweep" && json.feature_sweep) {
-                attachFeatureSweepToLastMessage(json.feature_sweep as import("@/lib/types").FeatureSweepResult)
-              } else if (json.type === "saved_scenarios" && json.saved_scenarios) {
-                attachSavedScenariosToLastMessage(json.saved_scenarios as import("@/lib/types").SavedScenariosResult)
-              } else if (json.type === "canary_status" && json.canary_status) {
-                attachCanaryStatusToLastMessage(json.canary_status as import("@/lib/types").CanaryStatusResult)
-              } else if (json.type === "deployment_health_scorecard" && json.deployment_health_scorecard) {
-                attachDeploymentHealthScorecardToLastMessage(json.deployment_health_scorecard as import("@/lib/types").DeploymentHealthScorecardResult)
-              } else if (json.type === "confidence_band" && json.confidence_band) {
-                attachConfidenceBandToLastMessage(json.confidence_band as import("@/lib/types").ConfidenceBandResult)
-              } else if (json.type === "retrain_complete_notify" && json.retrain_complete_notify) {
-                attachRetrainCompleteNotifyToLastMessage(json.retrain_complete_notify as import("@/lib/types").RetrainCompleteNotifyResult)
-              } else if (json.type === "outcome_calibration" && json.outcome_calibration) {
-                attachOutcomeCalibrationToLastMessage(json.outcome_calibration as import("@/lib/types").OutcomeCalibrationResult)
-              } else if (json.type === "batch_job_history" && json.batch_job_history) {
-                attachBatchJobHistoryToLastMessage(json.batch_job_history as import("@/lib/types").BatchJobHistoryResult)
-              } else if (json.type === "performance_decay_rate" && json.performance_decay_rate) {
-                attachPerformanceDecayRateToLastMessage(json.performance_decay_rate as import("@/lib/types").PerformanceDecayResult)
-              } else if (json.type === "uptime_summary" && json.uptime_summary) {
-                attachUptimeSummaryToLastMessage(json.uptime_summary as import("@/lib/types").ApiUptimeSummaryResult)
-              } else if (json.type === "cost_sensitive_threshold" && json.cost_sensitive_threshold) {
-                attachCostSensitiveThresholdToLastMessage(json.cost_sensitive_threshold as import("@/lib/types").CostSensitiveThresholdResult)
-              } else if (json.type === "onboarding_guide" && json.onboarding_guide) {
-                attachOnboardingGuideToLastMessage(json.onboarding_guide as import("@/lib/types").OnboardingGuideResult)
-              } else if (json.type === "version_history" && json.version_history) {
-                attachVersionHistoryToLastMessage(json.version_history as import("@/lib/types").DataVersionHistoryResult)
-              } else if (json.type === "learning_curve" && json.learning_curve) {
-                attachLearningCurveToLastMessage(json.learning_curve as import("@/lib/types").LearningCurveResult)
-              } else if (json.type === "template_saved" && json.template) {
-                attachTemplateSavedToLastMessage(json.template as import("@/lib/types").TemplateSavedInfo)
-              } else if (json.type === "template_list" && json.template_list) {
-                attachTemplateListToLastMessage(json.template_list as import("@/lib/types").TemplateListInfo)
-              } else if (json.type === "template_replay" && json.template_replay) {
-                attachTemplateReplayToLastMessage(json.template_replay as import("@/lib/types").TemplateReplayInfo)
-              } else if (json.type === "preset_saved" && json.preset) {
-                attachPresetSavedToLastMessage(json.preset as import("@/lib/types").PresetSavedInfo)
-              } else if (json.type === "preset_list" && json.preset_list) {
-                attachPresetListToLastMessage(json.preset_list as import("@/lib/types").PresetListInfo)
-              } else if (json.type === "sdk_download" && json.sdk_download) {
-                attachSdkDownloadToLastMessage(json.sdk_download as import("@/lib/types").SdkDownloadInfo)
-              } else if (json.type === "portfolio" && json.portfolio) {
-                attachPortfolioToLastMessage(json.portfolio as import("@/lib/types").PortfolioResult)
-              } else if (json.type === "rate_limit" && json.rate_limit) {
-                attachRateLimitToLastMessage(json.rate_limit as import("@/lib/types").RateLimitInfo)
-              } else if (json.type === "partial_dependence" && json.partial_dependence) {
-                attachPartialDependenceToLastMessage(json.partial_dependence as import("@/lib/types").PartialDependenceResult)
-              } else if (json.type === "calibration_check" && json.calibration_check) {
-                attachCalibrationCheckToLastMessage(json.calibration_check as import("@/lib/types").CalibrationCheckResult)
-              } else if (json.type === "sla_metrics" && json.sla_metrics) {
-                attachSlaMetricsToLastMessage(json.sla_metrics as import("@/lib/types").SlaData)
-              } else if (json.type === "quota_alert_config" && json.quota_alert_config) {
-                attachQuotaAlertConfigToLastMessage(json.quota_alert_config as import("@/lib/types").QuotaAlertConfig)
-              } else if (json.type === "schedule_set" && json.schedule_set) {
-                attachScheduleSetToLastMessage(json.schedule_set as import("@/lib/types").ScheduleSetResult)
-              } else if (json.type === "ab_test_result" && json.ab_test_result) {
-                attachABTestResultToLastMessage(json.ab_test_result as import("@/lib/types").ABTestChatResult)
-              } else if (json.type === "webhook_history" && json.webhook_history) {
-                attachWebhookHistoryToLastMessage(json.webhook_history as import("@/lib/types").WebhookHistoryResult)
-              } else if (json.type === "class_imbalance_check" && json.class_imbalance_check) {
-                attachClassImbalanceCheckToLastMessage(json.class_imbalance_check as import("@/lib/types").ClassImbalanceResult)
-              } else if (json.type === "webhook_health_summary" && json.webhook_health_summary) {
-                attachWebhookHealthSummaryToLastMessage(json.webhook_health_summary as import("@/lib/types").WebhookHealthSummaryResult)
-              } else if (json.type === "executive_briefing" && json.executive_briefing) {
-                attachExecutiveBriefingToLastMessage(json.executive_briefing as import("@/lib/types").ExecutiveBriefingResult)
-              } else if (json.type === "service_export" && json.service_export) {
-                attachServiceExportToLastMessage(json.service_export as import("@/lib/types").ServiceExportChatResult)
-              } else if (json.type === "version_comparison" && json.version_comparison) {
-                attachVersionComparisonToLastMessage(json.version_comparison as import("@/lib/types").DeploymentVersionComparisonResult)
-              } else if (json.type === "ensemble_recommendation" && json.ensemble_recommendation) {
-                attachEnsembleRecommendationToLastMessage(json.ensemble_recommendation as import("@/lib/types").EnsembleRecommendationResult)
-              } else if (json.type === "tune_chat" && json.tune_chat) {
-                attachTuneChatToLastMessage(json.tune_chat as import("@/lib/types").TuningChatResult)
-              } else if (json.type === "cv_score_distribution" && json.cv_score_distribution) {
-                attachCvScoreDistributionToLastMessage(json.cv_score_distribution as import("@/lib/types").CvScoreDistributionResult)
-              } else if (json.type === "prediction_analytics_chat" && json.prediction_analytics_chat) {
-                attachPredictionAnalyticsChatToLastMessage(json.prediction_analytics_chat as import("@/lib/types").PredictionAnalyticsChatResult)
-              } else if (json.type === "confusion_matrix_chat" && json.confusion_matrix_chat) {
-                attachConfusionMatrixChatToLastMessage(json.confusion_matrix_chat as import("@/lib/types").ConfusionMatrixChatResult)
-              } else if (json.type === "local_explanation" && json.local_explanation) {
-                attachLocalExplanationToLastMessage(json.local_explanation as import("@/lib/types").LocalExplanationResult)
-              } else if (json.type === "prod_input_dist" && json.prod_input_dist) {
-                attachProdInputDistToLastMessage(json.prod_input_dist as import("@/lib/types").ProductionInputDistributionResult)
-              } else if (json.type === "covariate_drift_alert" && json.covariate_drift_alert) {
-                attachCovariateDriftAlertToLastMessage(json.covariate_drift_alert as import("@/lib/types").CovariateDriftAlertResult)
-              } else if (json.type === "quota_runway" && json.quota_runway) {
-                attachQuotaRunwayToLastMessage(json.quota_runway as import("@/lib/types").QuotaRunwayResult)
-              } else if (json.type === "cost_estimate" && json.cost_estimate) {
-                attachCostEstimateToLastMessage(json.cost_estimate as import("@/lib/types").CostEstimateResult)
-              } else if (json.type === "usage_pattern" && json.usage_pattern) {
-                attachUsagePatternToLastMessage(json.usage_pattern as import("@/lib/types").UsagePatternResult)
-              } else if (json.type === "prediction_log_export" && json.prediction_log_export) {
-                attachPredictionLogExportToLastMessage(json.prediction_log_export as import("@/lib/types").PredictionLogExportResult)
-              } else if (json.type === "recent_predictions" && json.recent_predictions) {
-                attachRecentPredictionsToLastMessage(json.recent_predictions as import("@/lib/types").RecentPredictionsResult)
-              } else if (json.type === "prediction_audit" && json.prediction_audit) {
-                attachPredictionAuditToLastMessage(json.prediction_audit as import("@/lib/types").PredictionAuditResult)
-              } else if (json.type === "confidence_trend" && json.confidence_trend) {
-                attachConfidenceTrendToLastMessage(json.confidence_trend as import("@/lib/types").ConfidenceTrendResult)
-              } else if (json.type === "feedback_accuracy_report" && json.feedback_accuracy_report) {
-                attachFeedbackAccuracyReportToLastMessage(json.feedback_accuracy_report as import("@/lib/types").FeedbackAccuracyReportResult)
-              } else if (json.type === "fairness_check" && json.fairness_check) {
-                attachFairnessCheckToLastMessage(json.fairness_check as import("@/lib/types").FairnessCheckResult)
-              } else if (json.type === "batch_job_results" && json.batch_job_results) {
-                attachBatchJobResultsToLastMessage(json.batch_job_results as import("@/lib/types").BatchJobResultsResult)
-              } else if (json.type === "prod_prediction_explanation" && json.prod_prediction_explanation) {
-                attachProdPredictionExplanationToLastMessage(json.prod_prediction_explanation as import("@/lib/types").ProdPredictionExplanationResult)
-              } else if (json.type === "aggregate_explanation" && json.aggregate_explanation) {
-                attachAggregateExplanationToLastMessage(json.aggregate_explanation as import("@/lib/types").AggregateExplanationResult)
-              } else if (json.type === "webhook_registered" && json.webhook_registered) {
-                attachWebhookRegisteredToLastMessage(json.webhook_registered as import("@/lib/types").WebhookRegisteredInfo)
-              } else if (json.type === "webhook_list_chat" && json.webhook_list_chat) {
-                attachWebhookListChatToLastMessage(json.webhook_list_chat as import("@/lib/types").WebhookListChatResult)
-              } else if (json.type === "webhook_removed_chat" && json.webhook_removed_chat) {
-                attachWebhookRemovedChatToLastMessage(json.webhook_removed_chat as import("@/lib/types").WebhookRemovedChatInfo)
-              } else if (json.type === "webhook_test_chat" && json.webhook_test_chat) {
-                attachWebhookTestChatToLastMessage(json.webhook_test_chat as import("@/lib/types").WebhookTestChatResult)
-              } else if (json.type === "alert_rule" && json.alert_rule) {
-                attachAlertRuleToLastMessage(json.alert_rule as import("@/lib/types").AlertRuleEventResult)
-              } else if (json.type === "api_key_result" && json.api_key_result) {
-                attachApiKeyResultToLastMessage(json.api_key_result as import("@/lib/types").ApiKeyResultInfo)
-              } else if (json.type === "deployments_overview" && json.deployments_overview) {
-                attachDeploymentsOverviewToLastMessage(json.deployments_overview as import("@/lib/types").DeploymentsOverviewResult)
-              } else if (json.type === "prod_performance" && json.prod_performance) {
-                attachProdPerformanceToLastMessage(json.prod_performance as import("@/lib/types").ProdPerformanceResult)
-              } else if (json.type === "error_distribution" && json.error_distribution) {
-                attachErrorDistributionToLastMessage(json.error_distribution as import("@/lib/types").ErrorDistributionResult)
-              } else if (json.type === "model_card_export" && json.model_card_export) {
-                attachModelCardExportToLastMessage(json.model_card_export as import("@/lib/types").ModelCardExportInfo)
-              } else if (json.type === "model_comparison_summary" && json.model_comparison_summary) {
-                attachModelComparisonSummaryToLastMessage(json.model_comparison_summary as import("@/lib/types").ModelComparisonSummaryResult)
-              } else if (json.type === "cross_model_features" && json.cross_model_features) {
-                attachCrossModelFeaturesToLastMessage(json.cross_model_features as import("@/lib/types").CrossModelFeatureResult)
-              } else if (json.type === "accuracy_alert_config" && json.accuracy_alert_config) {
-                attachAccuracyAlertConfigToLastMessage(json.accuracy_alert_config as import("@/lib/types").AccuracyAlertConfig)
-              } else if (json.type === "rollback_chat" && json.rollback_chat) {
-                attachRollbackChatToLastMessage(json.rollback_chat as import("@/lib/types").RollbackChatResult)
-              } else if (json.type === "confidence_threshold_config" && json.confidence_threshold_config) {
-                attachConfidenceThresholdConfigToLastMessage(json.confidence_threshold_config as import("@/lib/types").ConfidenceThresholdConfig)
-              } else if (json.type === "input_validation_rule" && json.input_validation_rule) {
-                attachInputValidationRuleToLastMessage(json.input_validation_rule as import("@/lib/types").InputValidationRuleResult)
-              } else if (json.type === "dashboard_config" && json.dashboard_config) {
-                attachDashboardConfigToLastMessage(json.dashboard_config as import("@/lib/types").DashboardConfigResult)
-              } else if (json.type === "dashboard_metadata" && json.dashboard_metadata) {
-                attachDashboardMetadataToLastMessage(json.dashboard_metadata as import("@/lib/types").DashboardMetadataResult)
-              } else if (json.type === "embed_code" && json.embed_code) {
-                attachEmbedCodeToLastMessage(json.embed_code as import("@/lib/types").EmbedCodeResult)
-              } else if (json.type === "share_link" && json.share_link) {
-                attachShareLinkToLastMessage(json.share_link as import("@/lib/types").ShareLinkResult)
-              } else if (json.type === "weekly_usage_report" && json.weekly_usage_report) {
-                attachWeeklyUsageReportToLastMessage(json.weekly_usage_report as import("@/lib/types").WeeklyUsageReportResult)
-              } else if (json.type === "cross_project_comparison" && json.cross_project_comparison) {
-                attachCrossProjectComparisonToLastMessage(json.cross_project_comparison as import("@/lib/types").CrossProjectComparisonResult)
-              } else if (json.type === "what_next" && json.what_next) {
-                attachWhatNextToLastMessage(json.what_next as import("@/lib/types").WhatNextResult)
-              } else if (json.type === "milestone" && json.milestone) {
-                attachMilestoneToLastMessage(json.milestone as import("@/lib/types").MilestoneResult)
-              } else if (json.type === "auto_insight" && json.auto_insight) {
-                attachAutoInsightToLastMessage(json.auto_insight as import("@/lib/types").AutoInsightResult)
-              } else if (json.type === "column_type_suggestions" && json.column_type_suggestions) {
-                attachColumnTypeSuggestionsToLastMessage(json.column_type_suggestions as import("@/lib/types").ColumnTypeSuggestionResult)
-              } else if (json.type === "goal_seek" && json.goal_seek) {
-                attachGoalSeekToLastMessage(json.goal_seek as import("@/lib/types").GoalSeekResult)
-              } else if (json.type === "goal_seek_history" && json.goal_seek_history) {
-                attachGoalSeekHistoryToLastMessage(json.goal_seek_history as import("@/lib/types").GoalSeekHistoryResult)
-              } else if (json.type === "deployment_changelog" && json.deployment_changelog) {
-                attachDeploymentChangelogToLastMessage(json.deployment_changelog as import("@/lib/types").DeploymentChangelogResult)
-              } else if (json.type === "cross_deploy_prediction" && json.cross_deploy_prediction) {
-                attachCrossDeployPredictionToLastMessage(json.cross_deploy_prediction as import("@/lib/types").CrossDeployPredictionResult)
-              } else if (json.type === "low_accuracy_guidance" && json.low_accuracy_guidance) {
-                attachLowAccuracyGuidanceToLastMessage(json.low_accuracy_guidance as import("@/lib/types").LowAccuracyGuidanceResult)
-              } else if (json.type === "prediction_delta" && json.prediction_delta) {
-                attachPredictionDeltaToLastMessage(json.prediction_delta as import("@/lib/types").PredictionDeltaResult)
-              } else if (json.type === "cohort_evolution" && json.cohort_evolution) {
-                attachCohortEvolutionToLastMessage(json.cohort_evolution as import("@/lib/types").CohortEvolutionResult)
-              } else if (json.type === "counterfactual" && json.counterfactual) {
-                attachCounterfactualToLastMessage(json.counterfactual as import("@/lib/types").CounterfactualResult)
-              } else if (json.type === "population_counterfactual" && json.population_counterfactual) {
-                attachPopulationCounterfactualToLastMessage(json.population_counterfactual as import("@/lib/types").PopulationCounterfactualResult)
-              } else if (json.type === "similar_records" && json.similar_records) {
-                attachSimilarRecordsToLastMessage(json.similar_records as import("@/lib/types").SimilarRecordsResult)
-              } else if (json.type === "fe_impact" && json.fe_impact) {
-                attachFeEngineeringImpactToLastMessage(json.fe_impact as import("@/lib/types").FeatureEngineeringImpactResult)
-              } else if (json.type === "data_quality_impact" && json.data_quality_impact) {
-                attachDataQualityImpactToLastMessage(json.data_quality_impact as import("@/lib/types").DataQualityImpactResult)
-              } else if (json.type === "overfitting_analysis" && json.overfitting_analysis) {
-                attachOverfittingAnalysisToLastMessage(json.overfitting_analysis as import("@/lib/types").OverfittingAnalysisResult)
-              } else if (json.type === "feature_redundancy" && json.feature_redundancy) {
-                attachFeatureRedundancyToLastMessage(json.feature_redundancy as import("@/lib/types").FeatureRedundancyResult)
-              } else if (json.type === "target_leakage" && json.target_leakage) {
-                attachTargetLeakageToLastMessage(json.target_leakage as import("@/lib/types").TargetLeakageResult)
-              } else if (json.type === "threshold_analysis" && json.threshold_analysis) {
-              } else if (json.type === "per_class_threshold" && json.per_class_threshold) {
-                attachPerClassThresholdToLastMessage(json.per_class_threshold as import("@/lib/types").PerClassThresholdResult)
-                attachThresholdAnalysisToLastMessage(json.threshold_analysis as import("@/lib/types").ThresholdAnalysisResult)
-              } else if (json.type === "confidence_distribution" && json.confidence_distribution) {
-                attachConfidenceDistributionToLastMessage(json.confidence_distribution as import("@/lib/types").ConfidenceDistributionResult)
-              } else if (json.type === "sample_size_adequacy" && json.sample_size_adequacy) {
-                attachSampleSizeAdequacyToLastMessage(json.sample_size_adequacy as import("@/lib/types").SampleSizeAdequacyResult)
-              } else if (json.type === "class_feature_importance" && json.class_feature_importance) {
-                attachClassFeatureImportanceToLastMessage(json.class_feature_importance as import("@/lib/types").ClassFeatureImportanceResult)
-              } else if (json.type === "error_correlation" && json.error_correlation) {
-                attachErrorCorrelationToLastMessage(json.error_correlation as import("@/lib/types").ErrorCorrelationResult)
-              } else if (json.type === "output_anomalies" && json.output_anomalies) {
-                attachOutputAnomaliesToLastMessage(json.output_anomalies as import("@/lib/types").PredictionOutputAnomalyResult)
-              } else if (json.type === "output_distribution_shift" && json.output_distribution_shift) {
-                attachOutputDistributionShiftToLastMessage(json.output_distribution_shift as import("@/lib/types").PredictionOutputDistributionShiftResult)
-              } else if (json.type === "feature_psi" && json.feature_psi) {
-                attachFeaturePsiToLastMessage(json.feature_psi as import("@/lib/types").FeaturePsiResult)
-              } else if (json.type === "min_feature_set" && json.min_feature_set) {
-                attachMinFeatureSetToLastMessage(json.min_feature_set as import("@/lib/types").MinFeatureSetResult)
-              } else if (json.type === "retraining_readiness" && json.retraining_readiness) {
-                attachRetrainingReadinessToLastMessage(json.retraining_readiness as import("@/lib/types").RetrainingReadinessResult)
-              } else if (json.type === "prediction_value_trend" && json.prediction_value_trend) {
-                attachPredictionValueTrendToLastMessage(json.prediction_value_trend as import("@/lib/types").PredictionValueTrendResult)
-              } else if (json.type === "monitoring_digest" && json.monitoring_digest) {
-                attachMonitoringDigestToLastMessage(json.monitoring_digest as import("@/lib/types").MonitoringDigestResult)
-              } else if (json.type === "model_status_report" && json.model_status_report) {
-                attachModelStatusReportToLastMessage(json.model_status_report as import("@/lib/types").ModelStatusReportInfo)
-              } else if (json.type === "production_threshold_optimizer" && json.production_threshold_optimizer) {
-                attachProductionThresholdOptimizerToLastMessage(json.production_threshold_optimizer as import("@/lib/types").ProductionThresholdOptimizerResult)
-              } else if (json.type === "deploy_pred_dist_compare" && json.deploy_pred_dist_compare) {
-                attachDeployPredDistCompareToLastMessage(json.deploy_pred_dist_compare as import("@/lib/types").DeploymentPredictionComparisonResult)
-              } else if (json.type === "weekly_digest_config" && json.weekly_digest_config) {
-                attachWeeklyDigestConfigToLastMessage(json.weekly_digest_config as import("@/lib/types").WeeklyDigestConfigResult)
-              } else if (json.type === "promotion_readiness" && json.promotion_readiness) {
-                attachPromotionReadinessToLastMessage(json.promotion_readiness as import("@/lib/types").PromotionReadinessResult)
-              } else if (json.type === "deployment_scorecard" && json.deployment_scorecard) {
-                attachDeploymentScorecardToLastMessage(json.deployment_scorecard as import("@/lib/types").DeploymentScorecardResult)
-              } else if (json.type === "throughput_assessment" && json.throughput_assessment) {
-                attachThroughputAssessmentToLastMessage(json.throughput_assessment as import("@/lib/types").DeploymentThroughputResult)
-              } else if (json.type === "drift_importance_ranking" && json.drift_importance_ranking) {
-                attachDriftImportanceRankingToLastMessage(json.drift_importance_ranking as import("@/lib/types").DriftImportanceRankingResult)
-              } else if (json.type === "feature_drift_alert_config" && json.feature_drift_alert_config) {
-                attachFeatureDriftAlertConfigToLastMessage(json.feature_drift_alert_config as import("@/lib/types").FeatureDriftAlertConfig)
-              } else if (json.type === "input_dist_drift_alert_config" && json.input_dist_drift_alert_config) {
-                attachInputDistDriftAlertConfigToLastMessage(json.input_dist_drift_alert_config as import("@/lib/types").InputDistDriftAlertConfig)
-              } else if (json.type === "low_activity_alert_config" && json.low_activity_alert_config) {
-                attachLowActivityAlertConfigToLastMessage(json.low_activity_alert_config as import("@/lib/types").LowActivityAlertConfig)
-              } else if (json.type === "high_activity_burst_config" && json.high_activity_burst_config) {
-                attachHighActivityBurstConfigToLastMessage(json.high_activity_burst_config as import("@/lib/types").HighActivityBurstConfig)
-              } else if (json.type === "latency_alert_config" && json.latency_alert_config) {
-                attachLatencyAlertConfigToLastMessage(json.latency_alert_config as import("@/lib/types").LatencyAlertConfig)
-              } else if (json.type === "auto_rollback_config" && json.auto_rollback_config) {
-                attachAutoRollbackConfigToLastMessage(json.auto_rollback_config as import("@/lib/types").AutoRollbackConfig)
-              } else if (json.type === "pred_value_alert_config" && json.pred_value_alert_config) {
-                attachPredValueAlertConfigToLastMessage(json.pred_value_alert_config as import("@/lib/types").PredValueAlertConfig)
-              } else if (json.type === "degradation_retrain_config" && json.degradation_retrain_config) {
-                attachDegradationRetrainConfigToLastMessage(json.degradation_retrain_config as import("@/lib/types").DegradationRetrainConfig)
-              } else if (json.type === "segment_drift" && json.segment_drift) {
-                attachSegmentDriftToLastMessage(json.segment_drift as import("@/lib/types").SegmentDriftResult)
-              } else if (json.type === "segment_pred_trend" && json.segment_pred_trend) {
-                attachSegmentPredTrendToLastMessage(json.segment_pred_trend as import("@/lib/types").SegmentPredTrendResult)
-              } else if (json.type === "segment_conf_trend" && json.segment_conf_trend) {
-                attachSegmentConfTrendToLastMessage(json.segment_conf_trend as import("@/lib/types").SegmentConfTrendResult)
-              } else if (json.type === "conf_heatmap" && json.conf_heatmap) {
-                attachConfHeatmapToLastMessage(json.conf_heatmap as import("@/lib/types").ConfidenceHeatmapResult)
-              } else if (json.type === "feature_sweep" && json.feature_sweep) {
-                attachFeatureSweepToLastMessage(json.feature_sweep as import("@/lib/types").FeatureSweepResult)
-              } else if (json.type === "interaction" && json.interaction) {
-                attachInteractionToLastMessage(json.interaction as import("@/lib/types").InteractionResult)
-              } else if (json.type === "saved_scenarios" && json.saved_scenarios) {
-                attachSavedScenariosToLastMessage(json.saved_scenarios as import("@/lib/types").SavedScenariosResult)
-              } else if (json.type === "canary_status" && json.canary_status) {
-                attachCanaryStatusToLastMessage(json.canary_status as import("@/lib/types").CanaryStatusResult)
-              } else if (json.type === "deployment_health_scorecard" && json.deployment_health_scorecard) {
-                attachDeploymentHealthScorecardToLastMessage(json.deployment_health_scorecard as import("@/lib/types").DeploymentHealthScorecardResult)
-              } else if (json.type === "confidence_band" && json.confidence_band) {
-                attachConfidenceBandToLastMessage(json.confidence_band as import("@/lib/types").ConfidenceBandResult)
-              } else if (json.type === "retrain_complete_notify" && json.retrain_complete_notify) {
-                attachRetrainCompleteNotifyToLastMessage(json.retrain_complete_notify as import("@/lib/types").RetrainCompleteNotifyResult)
-              } else if (json.type === "outcome_calibration" && json.outcome_calibration) {
-                attachOutcomeCalibrationToLastMessage(json.outcome_calibration as import("@/lib/types").OutcomeCalibrationResult)
-              } else if (json.type === "batch_job_history" && json.batch_job_history) {
-                attachBatchJobHistoryToLastMessage(json.batch_job_history as import("@/lib/types").BatchJobHistoryResult)
-              } else if (json.type === "performance_decay_rate" && json.performance_decay_rate) {
-                attachPerformanceDecayRateToLastMessage(json.performance_decay_rate as import("@/lib/types").PerformanceDecayResult)
-              } else if (json.type === "uptime_summary" && json.uptime_summary) {
-                attachUptimeSummaryToLastMessage(json.uptime_summary as import("@/lib/types").ApiUptimeSummaryResult)
-              } else if (json.type === "cost_sensitive_threshold" && json.cost_sensitive_threshold) {
-                attachCostSensitiveThresholdToLastMessage(json.cost_sensitive_threshold as import("@/lib/types").CostSensitiveThresholdResult)
-              } else if (json.type === "done") {
-                setStreaming(false)
+              const handler = sseHandlers[json.type]
+              if (handler) {
+                handler(json)
+              } else if (process.env.NODE_ENV !== "production") {
+                // Surfaces SSE contract drift in dev: a backend event with no
+                // frontend handler (the #17 silent-drop bug) instead of nothing.
+                console.warn(`[sse] unhandled event type: ${json.type}`)
               }
             } catch {
               // skip malformed JSON
@@ -1381,6 +1072,7 @@ function ProjectWorkspaceInner() {
     attachWhatNextToLastMessage,
     attachMilestoneToLastMessage,
     attachAutoInsightToLastMessage,
+    attachMonitoringNoteToLastMessage,
     attachColumnTypeSuggestionsToLastMessage,
     attachGoalSeekToLastMessage,
     attachGoalSeekHistoryToLastMessage,
@@ -1589,6 +1281,21 @@ function ProjectWorkspaceInner() {
             <div className="h-24 w-full animate-pulse rounded bg-muted" />
           </div>
         </div>
+      </div>
+    )
+  }
+
+  if (projectLoadError) {
+    return (
+      <div className="mx-auto max-w-2xl px-6 py-16">
+        <ErrorDisplay
+          variant="full-page"
+          message={projectLoadError}
+          onRetry={() => {
+            setLoadingProject(true)
+            setReloadKey((k) => k + 1)
+          }}
+        />
       </div>
     )
   }
@@ -2054,6 +1761,9 @@ function ProjectWorkspaceInner() {
                           setChatInput(prompt)
                         }}
                       />
+                    )}
+                    {msg.monitoring_note && (
+                      <MonitoringNoteCard note={msg.monitoring_note} />
                     )}
                     {msg.auto_insight && (
                       <AutoInsightCard
