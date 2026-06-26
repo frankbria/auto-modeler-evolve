@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import os
-import tempfile
+
+from tests._artifact_tmp import data_tmpdir
 
 import joblib
 import numpy as np
@@ -66,7 +67,7 @@ class TestComputeSimilarRecords:
         self.pipeline, self.model, self.X, self.y, self.df, self.feature_names = (
             _build_pipeline_and_model()
         )
-        self.tmp = tempfile.mkdtemp()
+        self.tmp = data_tmpdir()
         self.pipeline_path = os.path.join(self.tmp, "model_pipeline.joblib")
         self.model_path = os.path.join(self.tmp, "model_model.joblib")
         joblib.dump(self.pipeline, self.pipeline_path)
@@ -354,7 +355,7 @@ class TestSimilarRecordsBDDScenarios:
         self.pipeline, self.model, self.X, self.y, self.df, self.feature_names = (
             _build_pipeline_and_model()
         )
-        self.tmp = tempfile.mkdtemp()
+        self.tmp = data_tmpdir()
         self.pipeline_path = os.path.join(self.tmp, "bdd_pipeline.joblib")
         self.model_path = os.path.join(self.tmp, "bdd_model.joblib")
         joblib.dump(self.pipeline, self.pipeline_path)

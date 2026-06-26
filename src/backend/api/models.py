@@ -14,7 +14,6 @@ import queue
 import threading
 from pathlib import Path
 
-import joblib
 import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse, Response, StreamingResponse
@@ -683,7 +682,7 @@ def get_feature_selection(run_id: str, session: Session = Depends(get_session)):
     target_col = feature_set.target_column
     feature_cols = [c for c in df.columns if c in df.columns and c != target_col]
 
-    model = joblib.load(model_file)
+    model = storage.safe_load(model_file)
     result = identify_weak_features(model, feature_cols)
 
     return {
@@ -755,7 +754,7 @@ def get_feature_engineering_impact(
     target_col = feature_set.target_column
     feature_cols = [c for c in df.columns if c != target_col]
 
-    model = joblib.load(model_file)
+    model = storage.safe_load(model_file)
     importances = compute_feature_importance(model, feature_cols)
     if not importances:
         raise HTTPException(
@@ -1609,7 +1608,7 @@ def download_report(model_run_id: str, session: Session = Depends(get_session)):
             target_col = feature_set.target_column or ""
             feature_cols = [c for c in df.columns if c != target_col]
             X, y, _ = prepare_features(df, feature_cols, target_col, problem_type)
-            pipeline = joblib.load(run.model_path)
+            pipeline = storage.safe_load(run.model_path)
             model = pipeline.get("model") if isinstance(pipeline, dict) else pipeline
             fi_result = compute_feature_importance(model, feature_cols)
             feature_importances = fi_result.get("features", [])
@@ -2369,7 +2368,7 @@ def get_model_card(project_id: str, session: Session = Depends(get_session)):
     top_features: list[dict] = []
     if selected.model_path and Path(selected.model_path).exists():
         try:
-            pipeline = joblib.load(selected.model_path)
+            pipeline = storage.safe_load(selected.model_path)
             fitted_model = pipeline.get("model")
             pipe_features = pipeline.get("feature_names", feature_names)
             if fitted_model and pipe_features:
@@ -2459,7 +2458,7 @@ def export_model_card(run_id: str, session: Session = Depends(get_session)):
     top_features: list[dict] = []
     if run.model_path and Path(run.model_path).exists():
         try:
-            pipeline = joblib.load(run.model_path)
+            pipeline = storage.safe_load(run.model_path)
             fitted_model = pipeline.get("model")
             pipe_features = pipeline.get("feature_names", feature_names)
             if fitted_model and pipe_features:
@@ -2620,10 +2619,9 @@ def get_improvement_suggestions(
     n_weak = 0
     if selected.model_path and Path(selected.model_path).exists() and feature_set:
         try:
-            import joblib as _jl
             from core.trainer import identify_weak_features as _iwf
 
-            _model = _jl.load(selected.model_path)
+            _model = storage.safe_load(selected.model_path)
             _df_full = pd.read_csv(dataset.file_path)
             transforms = json.loads(feature_set.transformations or "[]")
             if transforms:
@@ -2841,7 +2839,6 @@ def get_learning_curve(project_id: str, session: Session = Depends(get_session))
 @router.get("/api/models/{project_id}/cross-model-features")
 def get_cross_model_features(project_id: str, session: Session = Depends(get_session)):
     """Compare feature importances across all completed model runs."""
-    import joblib
 
     from core.advisor import compute_cross_model_feature_importance
     from core.explainer import compute_feature_importance
@@ -2885,7 +2882,7 @@ def get_cross_model_features(project_id: str, session: Session = Depends(get_ses
         if not run.model_path:
             continue
         try:
-            model = joblib.load(run.model_path)
+            model = storage.safe_load(run.model_path)
             imps = compute_feature_importance(model, feat_cols)
             runs_wi.append(
                 {

@@ -1,0 +1,80 @@
+name: Security Audit
+
+# Dependency-vulnerability gate (#21). Kept separate from ci.yml so the weekly
+# cron and the audit-only permissions don't entangle the gated build/test job.
+# Fails on a known HIGH+ advisory against the committed lockfiles; the weekly
+# run re-checks the same pins so a newly-disclosed CVE surfaces without a push.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+  schedule:
+    - cron: '17 4 * * 1' # Mondays 04:17 UTC
+
+# Reads lockfiles + queries advisory DBs; never needs write access.
+permissions:
+  contents: read
+
+concurrency:
+  group: security-audit-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      # Mirror ci.yml's fork-PR gate (issue #2): fail (don't skip) untrusted fork
+      # PRs until a maintainer reviews the head commit and (re)adds 'ci-approved'.
+      # The schedule/push events bypass this (event_name != pull_request).
+      - name: Require approval for fork PRs
+        if: >-
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name != github.repository &&
+          (
+            github.event.action == 'synchronize' ||
+            !contains(github.event.pull_request.labels.*.name, 'ci-approved')
+          )
+        run: |
+          echo "::error::Dependency audit is gated for fork PRs. A maintainer must review the current head commit and (re)add the 'ci-approved' label."
+          exit 1
+
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12'
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4.2.0
+        with:
+          version: "latest"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+
+      # Audit the exact locked dependency set, then run pip-audit over the
+      # resolved environment. Non-zero exit (a known advisory) fails the job.
+      - name: Audit Python dependencies (pip-audit)
+        working-directory: src/backend
+        run: |
+          uv sync --locked
+          uv run --with pip-audit pip-audit
+
+      # Advisory until #48: the remaining HIGH advisories only clear via a
+      # breaking Next.js 15->16 upgrade, and even a "non-breaking" npm audit fix
+      # skews the jest toolchain. Findings still surface in the log; this step is
+      # continue-on-error so it never fails the job. Flip to blocking after #48.
+      - name: Audit Node dependencies (npm audit, advisory — see #48)
+        continue-on-error: true
+        working-directory: src/frontend
+        run: npm audit --audit-level=high

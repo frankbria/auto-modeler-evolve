@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import os
 import re
-import tempfile
+
+from tests._artifact_tmp import data_tmpdir
 
 import joblib
 import numpy as np
@@ -99,7 +100,7 @@ def _save(pipeline, model, tmp_dir: str, name: str = "test"):
 
 class TestComputePopulationCounterfactual:
     def setup_method(self):
-        self.tmp = tempfile.mkdtemp()
+        self.tmp = data_tmpdir()
         self.pipeline, self.model, self.X = _build_classification_pipeline_and_model()
         self.pipeline_path, self.model_path = _save(self.pipeline, self.model, self.tmp)
 

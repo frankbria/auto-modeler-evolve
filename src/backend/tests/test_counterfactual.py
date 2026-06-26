@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import os
-import tempfile
 
 import joblib
 import numpy as np
 import pytest
 from sklearn.linear_model import LogisticRegression
+
+from tests._artifact_tmp import data_tmpdir as _data_tmpdir
 
 # ---------------------------------------------------------------------------
 # Helpers to build a minimal PredictionPipeline + model
@@ -63,7 +64,7 @@ def _build_pipeline_and_model(n_samples: int = 80, n_numeric: int = 3):
 class TestComputeCounterfactual:
     def setup_method(self):
         self.pipeline, self.model, self.X, self.y = _build_pipeline_and_model()
-        self.tmp = tempfile.mkdtemp()
+        self.tmp = _data_tmpdir()
         self.pipeline_path = os.path.join(self.tmp, "pipe_pipeline.joblib")
         self.model_path = os.path.join(self.tmp, "pipe_model.joblib")
         joblib.dump(self.pipeline, self.pipeline_path)
@@ -201,7 +202,7 @@ class TestComputeCounterfactual:
         reg_model = LinearRegression()
         reg_model.fit(X_reg, y_reg)
 
-        tmp = tempfile.mkdtemp()
+        tmp = _data_tmpdir()
         p_path = os.path.join(tmp, "r_pipeline.joblib")
         m_path = os.path.join(tmp, "r_model.joblib")
         joblib.dump(reg_pipeline, p_path)

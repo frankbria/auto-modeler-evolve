@@ -18,6 +18,7 @@ from chat.orchestrator import (
     generate_suggestions,
     get_next_step_chips,
 )
+from core import storage
 from core.query_engine import generate_chart_for_message
 from db import get_session
 from models.conversation import Conversation
@@ -6657,8 +6658,6 @@ def send_message(
                     _cmf_df, _ = _apply_cmf(_cmf_df, _cmf_tfms)
                 _cmf_feat_cols = [c for c in _cmf_df.columns if c != _cmf_target]
 
-                import joblib as _jl_cmf
-
                 from api.models import _algorithm_plain_name as _apn_cmf
 
                 _runs_wi: list[dict] = []
@@ -6666,7 +6665,7 @@ def send_message(
                     if not _cmf_run.model_path:
                         continue
                     try:
-                        _cmf_model = _jl_cmf.load(_cmf_run.model_path)
+                        _cmf_model = storage.safe_load(_cmf_run.model_path)
                         _imps = _cfi(_cmf_model, _cmf_feat_cols)
                         _runs_wi.append(
                             {
@@ -8844,9 +8843,8 @@ def send_message(
                             _feat_cols_fs = [
                                 c for c in _df_fs.columns if c != _fset_fs.target_column
                             ]
-                            import joblib as _jl_fs
 
-                            _model_fs = _jl_fs.load(_best_run.model_path)
+                            _model_fs = storage.safe_load(_best_run.model_path)
                             _fs_result = _iwf(_model_fs, _feat_cols_fs)
                             feature_sel_event = {
                                 "run_id": _best_run.id,
@@ -8919,9 +8917,8 @@ def send_message(
                                 for c in _df_fei.columns
                                 if c != _fset_fei.target_column
                             ]
-                            import joblib as _jl_fei
 
-                            _model_fei = _jl_fei.load(_best_run_fei.model_path)
+                            _model_fei = storage.safe_load(_best_run_fei.model_path)
                             _imps_fei = _cfi_fei(_model_fei, _feat_cols_fei)
                             if _imps_fei:
                                 _fei_result = _cfei(
@@ -9219,7 +9216,6 @@ def send_message(
         try:
             from core.validator import compute_threshold_analysis as _cta
 
-            import joblib as _jl_ta
             import numpy as _np_ta
 
             _done_cls_ta = [
@@ -9264,7 +9260,7 @@ def send_message(
                         _df_ta, _feat_cols_ta, _target_ta, "classification"
                     )
 
-                    _model_ta = _jl_ta.load(_sel_ta.model_path)
+                    _model_ta = storage.safe_load(_sel_ta.model_path)
                     if hasattr(_model_ta, "predict_proba"):
                         _proba_ta = _model_ta.predict_proba(_X_ta)
                         _classes_ta = [str(c) for c in _model_ta.classes_.tolist()]
@@ -9309,7 +9305,6 @@ def send_message(
         try:
             from core.validator import compute_per_class_threshold_analysis as _cpct
 
-            import joblib as _jl_pct
             import numpy as _np_pct
 
             _done_cls_pct = [
@@ -9353,7 +9348,7 @@ def send_message(
                         _df_pct, _feat_cols_pct, _target_pct, "classification"
                     )
 
-                    _model_pct = _jl_pct.load(_sel_pct.model_path)
+                    _model_pct = storage.safe_load(_sel_pct.model_path)
                     if hasattr(_model_pct, "predict_proba"):
                         _proba_pct = _model_pct.predict_proba(_X_pct)
                         _classes_pct = [str(c) for c in _model_pct.classes_.tolist()]
@@ -9404,7 +9399,6 @@ def send_message(
         try:
             from core.validator import compute_confidence_distribution as _ccd
 
-            import joblib as _jl_cd
             import numpy as _np_cd
 
             _done_cls_cd = [
@@ -9448,7 +9442,7 @@ def send_message(
                         _df_cd, _feat_cols_cd, _target_cd, "classification"
                     )
 
-                    _model_cd = _jl_cd.load(_sel_cd.model_path)
+                    _model_cd = storage.safe_load(_sel_cd.model_path)
                     if hasattr(_model_cd, "predict_proba"):
                         _proba_cd = _model_cd.predict_proba(_X_cd)
                         _y_proba_cd = _proba_cd.max(axis=1)
@@ -9621,7 +9615,6 @@ def send_message(
                     and _fset_cfi
                     and Path(_ds_cfi.file_path).exists()
                 ):
-                    import joblib as _jl_cfi
                     import pandas as _pd_cfi
 
                     _df_cfi = _pd_cfi.read_csv(Path(_ds_cfi.file_path))
@@ -9636,7 +9629,7 @@ def send_message(
                     )
 
                     if _sel_cfi.model_path and Path(_sel_cfi.model_path).exists():
-                        _model_cfi = _jl_cfi.load(_sel_cfi.model_path)
+                        _model_cfi = storage.safe_load(_sel_cfi.model_path)
                         _y_pred_cfi = _model_cfi.predict(_X_cfi)
 
                         _class_names_cfi: list[str] | None = None
@@ -9686,7 +9679,6 @@ def send_message(
             from core.trainer import prepare_features as _pf_cal
 
             import json as _json_cal
-            import joblib as _jl_cal
 
             _done_cal = [
                 r
@@ -9725,7 +9717,7 @@ def send_message(
                         _df_cal, _feat_cols_cal, _target_cal, "classification"
                     )
 
-                    _model_cal = _jl_cal.load(_sel_cal.model_path)
+                    _model_cal = storage.safe_load(_sel_cal.model_path)
                     if hasattr(_model_cal, "predict_proba"):
                         _proba_cal = _model_cal.predict_proba(_X_cal)
                         _class_names_cal = [
@@ -9933,8 +9925,6 @@ def send_message(
             import queue as _queue
             import threading as _threading
 
-            import joblib as _jl_wfr
-
             from api.models import (
                 MODELS_DIR as _MODELS_DIR,
                 _lock as _train_lock,
@@ -9981,7 +9971,7 @@ def send_message(
                         break
 
                 if _best_wfr:
-                    _model_wfr = _jl_wfr.load(_best_wfr.model_path)
+                    _model_wfr = storage.safe_load(_best_wfr.model_path)
                     _fs_result_wfr = _iwf_wfr(_model_wfr, _feat_cols_all)
                     _weak_names: list[str] = [
                         f["name"]
@@ -10811,9 +10801,8 @@ def send_message(
                                 _sp_target,
                                 _sp_problem,
                             )
-                            import joblib as _jl
 
-                            _sp_model = _jl.load(_best_run.model_path)
+                            _sp_model = storage.safe_load(_best_run.model_path)
                             _sp_y_pred = _sp_model.predict(_sp_X)
                             _sp_group_vals = _sp_df_raw[_sp_col].tolist()[: len(_sp_y)]
                             _sp_result = _csp(
@@ -10994,9 +10983,8 @@ def send_message(
                     _pe_X, _pe_y, _ = _pe_pf(
                         _pe_df_t, _pe_feat_cols, _pe_target, _pe_problem
                     )
-                    import joblib as _pe_jl
 
-                    _pe_model = _pe_jl.load(_pe_best_run.model_path)
+                    _pe_model = storage.safe_load(_pe_best_run.model_path)
                     _pe_y_pred = _pe_model.predict(_pe_X)
 
                     # Build display rows from the raw (pre-transform) CSV
@@ -11103,9 +11091,8 @@ def send_message(
                     _ed_X, _ed_y, _ = _ed_pf(
                         _ed_df_t, _ed_feat_cols, _ed_target, _ed_problem
                     )
-                    import joblib as _ed_jl
 
-                    _ed_model = _ed_jl.load(_ed_best_run.model_path)
+                    _ed_model = storage.safe_load(_ed_best_run.model_path)
                     _ed_y_pred = _ed_model.predict(_ed_X)
 
                     # Resolve class labels from pipeline if available
@@ -12049,7 +12036,6 @@ def send_message(
         try:
             import json as _json
 
-            import joblib as _jl
             import numpy as _np
 
             from core.explainer import compute_partial_dependence as _cpd
@@ -12112,14 +12098,14 @@ def send_message(
                         )
                         if Path(_pdp_pipeline_path).exists():
                             try:
-                                _pdp_pipe = _jl.load(_pdp_pipeline_path)
+                                _pdp_pipe = storage.safe_load(_pdp_pipeline_path)
                                 _pdp_class_names = getattr(
                                     _pdp_pipe, "target_classes", None
                                 )
                             except Exception:  # noqa: BLE001
                                 pass
 
-                        _pdp_model = _jl.load(_pdp_run.model_path)
+                        _pdp_model = storage.safe_load(_pdp_run.model_path)
                         _pdp_result = _cpd(
                             model=_pdp_model,
                             X_train=_pdp_X,
@@ -12237,7 +12223,6 @@ def send_message(
     error_correlation_event: dict | None = None
     if _ERROR_CORRELATION_PATTERNS.search(body.message) and ctx.get("model_runs"):
         try:
-            import joblib as _jl_ec
 
             from core.feature_engine import apply_transformations as _at_ec
             from core.trainer import prepare_features as _pf_ec
@@ -12262,7 +12247,7 @@ def send_message(
                     _ec_X, _ec_y, _ = _pf_ec(
                         _ec_df, _ec_feat_cols, _ec_target, _ec_problem
                     )
-                    _ec_model = _jl_ec.load(_ec_run.model_path)
+                    _ec_model = storage.safe_load(_ec_run.model_path)
                     _ec_y_pred = _ec_model.predict(_ec_X)
                     _ec_result = _cpec(
                         X=_ec_X,
@@ -12364,7 +12349,6 @@ def send_message(
     output_dist_shift_event: dict | None = None
     if _OUTPUT_DIST_SHIFT_PATTERNS.search(body.message) and ctx.get("deployment"):
         try:
-            import joblib as _jl_ods
             import pandas as _pd_ods
             from pathlib import Path as _Path_ods
 
@@ -12421,8 +12405,8 @@ def send_message(
                     and _ods_run.model_path
                     and _Path_ods(_ods_run.model_path).exists()
                 ):
-                    _ods_pipeline = _jl_ods.load(_ods_dep.pipeline_path)
-                    _ods_model = _jl_ods.load(_ods_run.model_path)
+                    _ods_pipeline = storage.safe_load(_ods_dep.pipeline_path)
+                    _ods_model = storage.safe_load(_ods_run.model_path)
                     _ods_df = _pd_ods.read_csv(_ods_dataset.file_path)
                     _ods_target = getattr(_ods_pipeline, "target_col", None)
                     if _ods_target and _ods_target in _ods_df.columns:
@@ -12976,7 +12960,6 @@ def send_message(
                 try:
                     from pathlib import Path as _mdPath
 
-                    import joblib as _md_jl
                     import pandas as _md_pd
                     import json as _md_json
                     from core.analyzer import (
@@ -13002,7 +12985,7 @@ def send_message(
                         _md_target = _md_fs.target_column
                         _md_feats = [c for c in _md_df_train.columns if c != _md_target]
                         _md_X = _md_df_train[_md_feats].fillna(0)
-                        _md_pipeline = _md_jl.load(_md_run.model_path)
+                        _md_pipeline = storage.safe_load(_md_run.model_path)
                         _md_train_preds = _md_pipeline.predict(_md_X).tolist()
                         _md_prod_preds = [
                             lg.prediction_numeric
@@ -13254,7 +13237,6 @@ def send_message(
         try:
             import json as _json_le
 
-            import joblib as _jl_le
             import pandas as _pd_le
 
             from core.explainer import explain_single_prediction as _esp
@@ -13289,7 +13271,7 @@ def send_message(
                     _le_row_idx = _extract_row_index(body.message)
                     _le_row_idx = max(0, min(_le_row_idx, len(_le_X) - 1))
 
-                    _le_model = _jl_le.load(_le_run.model_path)
+                    _le_model = storage.safe_load(_le_run.model_path)
                     _le_x_row = _le_X[_le_row_idx]
                     _le_actual = _le_y[_le_row_idx]
 
@@ -13300,7 +13282,7 @@ def send_message(
                     )
                     if Path(_le_pipeline_path).exists():
                         try:
-                            _le_pipe = _jl_le.load(_le_pipeline_path)
+                            _le_pipe = storage.safe_load(_le_pipeline_path)
                             _le_target_classes = getattr(
                                 _le_pipe, "target_classes", None
                             )
@@ -13905,7 +13887,6 @@ def send_message(
     confusion_matrix_event: dict | None = None
     if _CONFUSION_MATRIX_PATTERNS.search(body.message) and ctx.get("model_runs"):
         try:
-            import joblib as _cm_jl
 
             from core.feature_engine import apply_transformations as _cm_at
             from core.trainer import prepare_features as _cm_pf
@@ -13947,7 +13928,7 @@ def send_message(
                         _cm_X, _cm_y, _cm_feat_names = _cm_pf(
                             _cm_df, _cm_feat_cols, _cm_target, "classification"
                         )
-                        _cm_model = _cm_jl.load(_cm_run.model_path)
+                        _cm_model = storage.safe_load(_cm_run.model_path)
                         _cm_y_pred = _cm_model.predict(_cm_X)
 
                         # Resolve class names from pipeline if available
@@ -13957,7 +13938,7 @@ def send_message(
                         )
                         if Path(_cm_pipeline_path).exists():
                             try:
-                                _cm_pipe = _cm_jl.load(_cm_pipeline_path)
+                                _cm_pipe = storage.safe_load(_cm_pipeline_path)
                                 _cm_class_names = getattr(
                                     _cm_pipe, "target_classes", None
                                 )
@@ -17658,7 +17639,6 @@ def send_message(
     if _DRIFT_IMPORTANCE_PATTERNS.search(body.message) and ctx["deployment"]:
         try:
             import json as _json_dir
-            import joblib as _jl_dir
 
             from core.analyzer import (
                 compute_drift_importance_ranking as _compute_dir,
@@ -17713,7 +17693,7 @@ def send_message(
                         _dir_feat_cols = list(_dir_feature_ranges.keys())
                     if _dir_feat_cols:
                         try:
-                            _dir_model = _jl_dir.load(_dir_run.model_path)
+                            _dir_model = storage.safe_load(_dir_run.model_path)
                             _dir_iwf = _iwf_dir(_dir_model, _dir_feat_cols)
                             if _dir_iwf.get("has_importances", False):
                                 _dir_feature_importances = _dir_iwf.get(
@@ -19324,7 +19304,6 @@ def send_message(
     cost_sensitive_event: dict | None = None
     if _COST_SENSITIVE_PATTERNS.search(body.message) and ctx["model_runs"]:
         try:
-            import joblib as _jl_cst
             import numpy as _np_cst
 
             from core.validator import compute_cost_sensitive_threshold as _ccst
@@ -19380,7 +19359,7 @@ def send_message(
                         _cst_X, _cst_y, _ = _pf_cst(
                             _cst_df, _cst_feat_cols, _cst_target, "classification"
                         )
-                        _cst_model = _jl_cst.load(_cst_sel.model_path)
+                        _cst_model = storage.safe_load(_cst_sel.model_path)
 
                         if hasattr(_cst_model, "predict_proba"):
                             _cst_classes = [
@@ -20482,9 +20461,7 @@ def send_message(
                             _fm_df, _fm_feat_cols, _fm_target, _fm_problem_type
                         )
 
-                        import joblib as _jl_fm
-
-                        _fm_model = _jl_fm.load(_fm_run.model_path)
+                        _fm_model = storage.safe_load(_fm_run.model_path)
                         _fm_y_pred = _fm_model.predict(_fm_X)
 
                         # Align sensitive column with post-dropna rows

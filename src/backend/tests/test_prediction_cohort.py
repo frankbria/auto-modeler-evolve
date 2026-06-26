@@ -9,6 +9,8 @@ Covers:
 import io
 import json
 import tempfile
+
+from tests._artifact_tmp import models_base
 import time
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -135,7 +137,7 @@ def test_cohort_returns_required_fields():
     from core.deployer import compute_prediction_cohort
 
     pipeline, model, df = _make_regression_setup()
-    with tempfile.TemporaryDirectory() as tmpdir:
+    with tempfile.TemporaryDirectory(dir=models_base()) as tmpdir:
         pp = str(Path(tmpdir) / "pipeline.joblib")
         mp = str(Path(tmpdir) / "model.joblib")
         joblib.dump(pipeline, pp)
@@ -160,7 +162,7 @@ def test_cohort_n_matches_request():
     from core.deployer import compute_prediction_cohort
 
     pipeline, model, df = _make_regression_setup()
-    with tempfile.TemporaryDirectory() as tmpdir:
+    with tempfile.TemporaryDirectory(dir=models_base()) as tmpdir:
         pp = str(Path(tmpdir) / "pipeline.joblib")
         mp = str(Path(tmpdir) / "model.joblib")
         joblib.dump(pipeline, pp)
@@ -176,7 +178,7 @@ def test_cohort_target_column():
     from core.deployer import compute_prediction_cohort
 
     pipeline, model, df = _make_regression_setup()
-    with tempfile.TemporaryDirectory() as tmpdir:
+    with tempfile.TemporaryDirectory(dir=models_base()) as tmpdir:
         pp = str(Path(tmpdir) / "pipeline.joblib")
         mp = str(Path(tmpdir) / "model.joblib")
         joblib.dump(pipeline, pp)
@@ -192,7 +194,7 @@ def test_cohort_total_scored():
     from core.deployer import compute_prediction_cohort
 
     pipeline, model, df = _make_regression_setup()
-    with tempfile.TemporaryDirectory() as tmpdir:
+    with tempfile.TemporaryDirectory(dir=models_base()) as tmpdir:
         pp = str(Path(tmpdir) / "pipeline.joblib")
         mp = str(Path(tmpdir) / "model.joblib")
         joblib.dump(pipeline, pp)
@@ -208,7 +210,7 @@ def test_cohort_categorical_profile_populated():
     from core.deployer import compute_prediction_cohort
 
     pipeline, model, df = _make_regression_setup()
-    with tempfile.TemporaryDirectory() as tmpdir:
+    with tempfile.TemporaryDirectory(dir=models_base()) as tmpdir:
         pp = str(Path(tmpdir) / "pipeline.joblib")
         mp = str(Path(tmpdir) / "model.joblib")
         joblib.dump(pipeline, pp)
@@ -224,7 +226,7 @@ def test_cohort_categorical_profile_has_percentages():
     from core.deployer import compute_prediction_cohort
 
     pipeline, model, df = _make_regression_setup()
-    with tempfile.TemporaryDirectory() as tmpdir:
+    with tempfile.TemporaryDirectory(dir=models_base()) as tmpdir:
         pp = str(Path(tmpdir) / "pipeline.joblib")
         mp = str(Path(tmpdir) / "model.joblib")
         joblib.dump(pipeline, pp)
@@ -247,7 +249,7 @@ def test_cohort_numeric_profile_populated():
     from core.deployer import compute_prediction_cohort
 
     pipeline, model, df = _make_regression_setup()
-    with tempfile.TemporaryDirectory() as tmpdir:
+    with tempfile.TemporaryDirectory(dir=models_base()) as tmpdir:
         pp = str(Path(tmpdir) / "pipeline.joblib")
         mp = str(Path(tmpdir) / "model.joblib")
         joblib.dump(pipeline, pp)
@@ -265,7 +267,7 @@ def test_cohort_numeric_profile_has_means():
     from core.deployer import compute_prediction_cohort
 
     pipeline, model, df = _make_regression_setup()
-    with tempfile.TemporaryDirectory() as tmpdir:
+    with tempfile.TemporaryDirectory(dir=models_base()) as tmpdir:
         pp = str(Path(tmpdir) / "pipeline.joblib")
         mp = str(Path(tmpdir) / "model.joblib")
         joblib.dump(pipeline, pp)
@@ -284,7 +286,7 @@ def test_cohort_characterization_is_string():
     from core.deployer import compute_prediction_cohort
 
     pipeline, model, df = _make_regression_setup()
-    with tempfile.TemporaryDirectory() as tmpdir:
+    with tempfile.TemporaryDirectory(dir=models_base()) as tmpdir:
         pp = str(Path(tmpdir) / "pipeline.joblib")
         mp = str(Path(tmpdir) / "model.joblib")
         joblib.dump(pipeline, pp)
@@ -300,7 +302,7 @@ def test_cohort_characterization_mentions_target():
     from core.deployer import compute_prediction_cohort
 
     pipeline, model, df = _make_regression_setup()
-    with tempfile.TemporaryDirectory() as tmpdir:
+    with tempfile.TemporaryDirectory(dir=models_base()) as tmpdir:
         pp = str(Path(tmpdir) / "pipeline.joblib")
         mp = str(Path(tmpdir) / "model.joblib")
         joblib.dump(pipeline, pp)
@@ -315,7 +317,7 @@ def test_cohort_classification_returns_correct_type():
     from core.deployer import compute_prediction_cohort
 
     pipeline, model, df = _make_classification_setup()
-    with tempfile.TemporaryDirectory() as tmpdir:
+    with tempfile.TemporaryDirectory(dir=models_base()) as tmpdir:
         pp = str(Path(tmpdir) / "pipeline.joblib")
         mp = str(Path(tmpdir) / "model.joblib")
         joblib.dump(pipeline, pp)
@@ -331,7 +333,7 @@ def test_cohort_lowest_direction():
     from core.deployer import compute_prediction_cohort
 
     pipeline, model, df = _make_regression_setup()
-    with tempfile.TemporaryDirectory() as tmpdir:
+    with tempfile.TemporaryDirectory(dir=models_base()) as tmpdir:
         pp = str(Path(tmpdir) / "pipeline.joblib")
         mp = str(Path(tmpdir) / "model.joblib")
         joblib.dump(pipeline, pp)
