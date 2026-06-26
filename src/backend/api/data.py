@@ -1,5 +1,6 @@
 import io
 import json
+import logging
 import math
 import os
 import re
@@ -85,6 +86,8 @@ from auth.scoping import (
     get_owned_project,
 )
 from models.user import User
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/api/data",
@@ -1400,9 +1403,8 @@ def get_boxplot(
     try:
         df = pd.read_csv(dataset.file_path)
     except Exception as exc:  # noqa: BLE001
-        raise HTTPException(
-            status_code=500, detail=f"Could not read dataset: {exc}"
-        ) from exc
+        logger.exception("Could not read dataset")
+        raise HTTPException(status_code=500, detail="Could not read dataset") from exc
 
     if column not in df.columns:
         raise HTTPException(
@@ -1924,9 +1926,8 @@ def get_crosstab(
     try:
         df = pd.read_csv(dataset.file_path)
     except Exception as exc:  # noqa: BLE001
-        raise HTTPException(
-            status_code=500, detail=f"Could not read dataset: {exc}"
-        ) from exc
+        logger.exception("Could not read dataset")
+        raise HTTPException(status_code=500, detail="Could not read dataset") from exc
 
     try:
         result = build_crosstab(
@@ -1974,9 +1975,8 @@ def compute_column(
     try:
         df = pd.read_csv(file_path)
     except Exception as exc:  # noqa: BLE001
-        raise HTTPException(
-            status_code=500, detail=f"Could not read dataset: {exc}"
-        ) from exc
+        logger.exception("Could not read dataset")
+        raise HTTPException(status_code=500, detail="Could not read dataset") from exc
 
     try:
         updated_df, result = add_computed_column(df, body.name, body.expression)
@@ -2040,9 +2040,8 @@ def compare_dataset_segments(
     try:
         df = pd.read_csv(file_path)
     except Exception as exc:  # noqa: BLE001
-        raise HTTPException(
-            status_code=500, detail=f"Could not read dataset: {exc}"
-        ) from exc
+        logger.exception("Could not read dataset")
+        raise HTTPException(status_code=500, detail="Could not read dataset") from exc
 
     if col not in df.columns:
         raise HTTPException(
@@ -2088,9 +2087,8 @@ def get_target_correlations(
     try:
         df = pd.read_csv(file_path)
     except Exception as exc:  # noqa: BLE001
-        raise HTTPException(
-            status_code=500, detail=f"Could not read dataset: {exc}"
-        ) from exc
+        logger.exception("Could not read dataset")
+        raise HTTPException(status_code=500, detail="Could not read dataset") from exc
 
     result = analyze_target_correlations(df, target, top_n=max(1, min(top_n, 50)))
 
@@ -2131,9 +2129,8 @@ def get_group_stats(
     try:
         df = pd.read_csv(file_path)
     except Exception as exc:  # noqa: BLE001
-        raise HTTPException(
-            status_code=500, detail=f"Could not read dataset: {exc}"
-        ) from exc
+        logger.exception("Could not read dataset")
+        raise HTTPException(status_code=500, detail="Could not read dataset") from exc
 
     value_cols: list[str] | None = None
     if metrics:
@@ -2183,9 +2180,8 @@ def rename_column(
     try:
         df = pd.read_csv(file_path)
     except Exception as exc:  # noqa: BLE001
-        raise HTTPException(
-            status_code=500, detail=f"Could not read dataset: {exc}"
-        ) from exc
+        logger.exception("Could not read dataset")
+        raise HTTPException(status_code=500, detail="Could not read dataset") from exc
 
     columns = list(df.columns)
 

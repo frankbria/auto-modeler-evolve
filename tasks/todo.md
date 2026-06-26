@@ -1,47 +1,37 @@
-# Issue #20 — [P6.1] Medium correctness/security hardening
+# Issue #23 — [P7.1] Repo hygiene, docs drift & a11y follow-ups
 
-8 sub-items, grouped in 3 phases. Backend only. TDD: targeted test per item.
-Line numbers verified live.
+Self-authored plan (no plan in issue). LOW severity. Mostly deletions + docs.
 
-All 8 items implemented + tested. Also fixed a latent report bug: report read
-`confidence_level`/`strengths` but the validator emits `overall_confidence`/
-`limitations` — aligned the report to the real shape (the section never rendered
-before because #7's call always raised).
+## A. Remove tracked artifacts
+- [x] `git rm --cached` 7 `src/backend/models/__pycache__/*.pyc` (already gitignored)
+- [x] Delete `src/backend/tests/debug_imbalance.py`
+- [x] Delete `src/frontend/__tests__/check_textdecoder.test.ts`
+- [x] Delete `src/frontend/components/deploy/feature-interaction-heatmap-card.tsx` (2-line stub, unreferenced)
+- [x] Delete unused create-next-app SVGs in `src/frontend/public/` (file/globe/next/vercel/window — confirmed unreferenced)
+- [x] Replace boilerplate `src/frontend/README.md` with a 2-line pointer to root README
+- [x] Add `/data` to `src/frontend/.gitignore` (no joblib currently tracked — belt & suspenders)
 
-## Phase 1 — HTTP layer (main.py, api/data.py)
-- [x] **1. CORS** (`main.py:77-83`) — env-driven `CORS_ORIGINS` (comma-sep) allow-list;
-      default `http://localhost:3000`. Per owner comment (auth is Bearer, not cookie):
-      `allow_credentials=False`. Test asserts configured origins, no wildcard+creds.
-- [x] **5. Upload size limit** — `MAX_UPLOAD_SIZE_MB` env (default 100). Helper checks
-      `Content-Length` → 413 before read; also length-check bytes after read (header is
-      spoofable/absent). Apply to `/upload` (160), `/upload-db` (1184), `/{id}/refresh`
-      (1624), `/upload-url` (after fetch). Test: oversized → 413.
-- [x] **6. SQLite leak** — try/finally close in `/upload-db` (1187-1193) and
-      `/extract-db` (1261-1263). Test: failing query still closes conn.
+## B. lucide-react
+- [x] Remove `lucide-react` from `package.json` (zero usages); update lockfile
+- [x] Add `no-restricted-imports` eslint rule banning lucide-react (Hugeicons-only)
 
-## Phase 2 — Persistence (models/, api/models.py)
-- [x] **2. Dataset ordering** (`api/models.py:91-93`) — add
-      `.order_by(Dataset.uploaded_at.desc())`. Test: latest dataset returned.
-- [x] **3. DeploymentVersion UNIQUE** (`models/deployment_version.py`) — add
-      `UniqueConstraint("deployment_id","version_number")`. Counter increment
-      (`deploy.py:339`) is read-modify-write; SQLite write-lock serializes, UNIQUE
-      enforces integrity. Test: duplicate (dep_id, ver) raises IntegrityError.
-- [x] **4. Webhook secret at rest** — DEVIATION: secret signs OUTBOUND HMAC
-      (`core/webhook.py:71`), so it must be REVERSIBLE → encrypt (Fernet, cryptography
-      41 already installed), key from `WEBHOOK_SECRET_KEY`/derived from `AUTH_SECRET`.
-      NOT hash (would break signing). API already returns secret once at creation;
-      `list_webhooks` excludes it (done). Store ciphertext w/ marker prefix for
-      plaintext back-compat; decrypt at dispatch. Test: stored value != plaintext,
-      signing still verifies.
-- [x] **7. assess_confidence_limitations call** (`api/models.py:1627`) — real bug:
-      fn takes `(metrics, problem_type, n_rows, n_features, cv_std)` (5 args), call
-      passes 3 with a dict 3rd → TypeError swallowed → section dropped. Fix:
-      `(metrics, problem_type, dataset_rows, dataset_columns, metrics.get("cv_std"))`.
-      Narrow except. Regression test: section present.
+## C. Docs drift
+- [x] README: `Next.js 15` → `Next.js 16`
+- [x] README: drop hard-coded test counts (3 spots) → link to CI Actions page
+- [x] Add `LICENSE` file (MIT) to back the README claim
+- [x] README API table: `GET /api/data/{id}/query` → `POST`
+- [x] CLAUDE.md scripts tree: add `demo.py` + `run_evolve_cron.sh`
 
-## Phase 3 — PDF (core/report_generator.py, api/models.py)
-- [x] **8. ReportLab injection** — `xml_escape = html_escape` alias; escape
-      `project_name` (118,136), `summary` (163), `level/strengths/limitations`
-      (191,197,203), feature names (180). Wrap `generate_model_report()` in
-      `download_report` (1633) try/except → 422 + log. Test: `<>` in project name
-      generates OK; failure → graceful error.
+## D. Exception-detail leak (data.py)
+- [x] Genericize the 7 `status_code=500, detail="Could not read dataset: {exc}"` sites
+      → generic client message + `logger.exception` server-side. (TDD: one test asserting
+      500 body carries no raw exception text.)
+
+## E. a11y / error boundary
+- [x] Add `app/error.tsx` + `app/global-error.tsx` (cheap, real win)
+- [x] Open follow-up issue tracking heavier a11y (form-validation feedback, native
+      `confirm()` → modal, heatmap ARIA) — acceptance criterion is "tracked", not "done" → #65
+
+## Out of scope (deliberate, ponytail)
+- 400-level parse-error messages left as-is: they are user-actionable CSV/SQL feedback,
+  not internal-state leaks.
