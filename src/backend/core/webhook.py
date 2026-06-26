@@ -188,12 +188,15 @@ def dispatch_webhooks(
             **payload,
         }
 
+        from core.secret_box import decrypt
+
         for hook in hooks:
             event_types_list: list[str] = json.loads(hook.event_types or "[]")
             if event_type in event_types_list:
+                # Secret is stored encrypted; sign with its cleartext form.
                 t = threading.Thread(
                     target=_dispatch_in_thread,
-                    args=(hook.id, hook.url, hook.secret, full_payload),
+                    args=(hook.id, hook.url, decrypt(hook.secret), full_payload),
                     daemon=True,
                 )
                 t.start()

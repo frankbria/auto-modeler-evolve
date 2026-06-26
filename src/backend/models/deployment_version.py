@@ -2,6 +2,7 @@ from datetime import UTC, datetime
 from typing import Optional
 from uuid import uuid4
 
+from sqlalchemy import UniqueConstraint
 from sqlmodel import Field, SQLModel
 
 
@@ -17,6 +18,17 @@ class DeploymentVersion(SQLModel, table=True):
     increasing per deployment_id. is_current=True marks the version the
     deployment is actively serving.
     """
+
+    # The version counter is bumped via a read-modify-write on
+    # Deployment.current_version_number; SQLite serializes writers, and this
+    # constraint is the integrity backstop that makes a duplicate (from any
+    # concurrent redeploy / auto-rollback race) fail loudly instead of creating
+    # two rows with the same version number.
+    __table_args__ = (
+        UniqueConstraint(
+            "deployment_id", "version_number", name="uq_deployment_version_number"
+        ),
+    )
 
     id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
     deployment_id: str = Field(index=True)

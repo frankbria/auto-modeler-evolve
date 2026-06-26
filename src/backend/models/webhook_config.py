@@ -24,7 +24,8 @@ class WebhookConfig(SQLModel, table=True):
     id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
     deployment_id: str = Field(index=True)
     url: str
-    # Random 32-byte hex secret for HMAC-SHA256 signing; shown once at registration
+    # Random 32-byte hex secret for HMAC-SHA256 signing, encrypted at rest
+    # (core.secret_box) and shown in cleartext only once at registration.
     secret: str = Field(default_factory=lambda: secrets_token())
     # JSON-serialised list of event type strings
     event_types: str = Field(
@@ -37,6 +38,11 @@ class WebhookConfig(SQLModel, table=True):
 
 
 def secrets_token() -> str:
+    """Encrypted-at-rest default secret. Used only when a WebhookConfig is built
+    without an explicit secret; the create endpoint sets its own so it can return
+    the cleartext once."""
     import secrets
 
-    return secrets.token_hex(32)
+    from core.secret_box import encrypt
+
+    return encrypt(secrets.token_hex(32))

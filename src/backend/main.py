@@ -1,4 +1,5 @@
 import logging
+import os
 import threading
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
@@ -74,10 +75,20 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Explicit, env-driven origin allow-list. Auth is Bearer-token (not cookie), so
+# credentials are not needed cross-origin — keep allow_credentials=False, which
+# also makes a wildcard origin valid where '*' + credentials was not (and was an
+# CORS misconfiguration). Set CORS_ORIGINS to a comma-separated list in prod.
+_cors_origins = [
+    o.strip()
+    for o in os.environ.get("CORS_ORIGINS", "http://localhost:3000").split(",")
+    if o.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=_cors_origins,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )

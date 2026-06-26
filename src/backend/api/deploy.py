@@ -4683,8 +4683,10 @@ class WebhookCreateBody(BaseModel):
     ]
 
 
-def _webhook_response(wh: WebhookConfig, include_secret: bool = False) -> dict:
-    data = {
+def _webhook_response(wh: WebhookConfig) -> dict:
+    # The stored secret is ciphertext and never returned; create_webhook adds the
+    # cleartext secret to its own response exactly once.
+    return {
         "id": wh.id,
         "deployment_id": wh.deployment_id,
         "url": wh.url,
@@ -4694,9 +4696,6 @@ def _webhook_response(wh: WebhookConfig, include_secret: bool = False) -> dict:
         "last_fired_at": wh.last_fired_at.isoformat() if wh.last_fired_at else None,
         "last_status_code": wh.last_status_code,
     }
-    if include_secret:
-        data["secret"] = wh.secret
-    return data
 
 
 @router.post("/api/deploy/{deployment_id}/webhooks", status_code=201)
@@ -4744,15 +4743,23 @@ def create_webhook(
             detail=f"Unknown event types: {sorted(unknown)}. Valid: {sorted(ALL_EVENTS)}",
         )
 
+    # Generate the signing secret here so we can return it in cleartext once;
+    # only its encrypted form is persisted.
+    from core.secret_box import encrypt
+
+    plaintext_secret = secrets.token_hex(32)
     wh = WebhookConfig(
         deployment_id=deployment_id,
         url=body.url,
         event_types=json.dumps(body.event_types),
+        secret=encrypt(plaintext_secret),
     )
     session.add(wh)
     session.commit()
     session.refresh(wh)
-    return _webhook_response(wh, include_secret=True)
+    resp = _webhook_response(wh)
+    resp["secret"] = plaintext_secret  # shown once; never stored in cleartext
+    return resp
 
 
 @router.get("/api/deploy/{deployment_id}/webhooks")
@@ -4806,6 +4813,7 @@ def test_webhook(
     if not wh or wh.deployment_id != deployment_id:
         raise HTTPException(status_code=404, detail="Webhook not found")
 
+    from core.secret_box import decrypt
     from core.webhook import _do_dispatch
 
     test_payload = {
@@ -4814,7 +4822,7 @@ def test_webhook(
         "fired_at": datetime.now(UTC).isoformat(),
         "message": "AutoModeler webhook test — if you received this, your webhook is working correctly.",
     }
-    status_code = _do_dispatch(wh.id, wh.url, wh.secret, test_payload)
+    status_code = _do_dispatch(wh.id, wh.url, decrypt(wh.secret), test_payload)
 
     # Update stats
     wh.last_fired_at = datetime.now(UTC).replace(tzinfo=None)

@@ -59,7 +59,7 @@ def generate_model_report(
     summary:                Plain-English metric summary from trainer.
     training_duration_ms:   Training wall-clock time.
     feature_importances:    Optional list of {feature, importance, rank} dicts.
-    confidence_assessment:  Optional {confidence_level, strengths, limitations} dict.
+    confidence_assessment:  Optional {overall_confidence, limitations, summary} dict.
     created_at:             Model creation timestamp.
     """
     buffer = io.BytesIO()
@@ -115,7 +115,9 @@ def generate_model_report(
 
     # ── Header ──────────────────────────────────────────────────────────────
     elements.append(Paragraph("AutoModeler", caption_style))
-    elements.append(Paragraph(f"Model Report — {project_name}", title_style))
+    elements.append(
+        Paragraph(f"Model Report — {xml_escape(project_name)}", title_style)
+    )
     report_date = (created_at or datetime.now(UTC).replace(tzinfo=None)).strftime(
         "%B %d, %Y"
     )
@@ -160,7 +162,7 @@ def generate_model_report(
     if summary:
         elements.append(Spacer(1, 0.3 * cm))
         elements.append(Paragraph("Summary", section_style))
-        elements.append(Paragraph(summary, body_style))
+        elements.append(Paragraph(xml_escape(summary), body_style))
 
     # ── Feature Importance ───────────────────────────────────────────────────
     if feature_importances:
@@ -184,23 +186,24 @@ def generate_model_report(
         elements.append(_make_table(fi_data, header=True))
 
     # ── Confidence Assessment ────────────────────────────────────────────────
+    # Keys match core.validator.assess_confidence_limitations, the only producer:
+    # {overall_confidence, limitations, summary}.
     if confidence_assessment:
         elements.append(Paragraph("Confidence & Limitations", section_style))
-        level = confidence_assessment.get("confidence_level", "")
+        level = confidence_assessment.get("overall_confidence", "")
         if level:
-            elements.append(Paragraph(f"<b>Confidence level:</b> {level}", body_style))
-        strengths = confidence_assessment.get("strengths", [])
-        if strengths:
-            elements.append(Spacer(1, 0.15 * cm))
-            elements.append(Paragraph("<b>Strengths</b>", body_style))
-            for s in strengths:
-                elements.append(Paragraph(f"• {s}", body_style))
+            elements.append(
+                Paragraph(
+                    f"<b>Confidence level:</b> {xml_escape(str(level).title())}",
+                    body_style,
+                )
+            )
         limitations = confidence_assessment.get("limitations", [])
         if limitations:
             elements.append(Spacer(1, 0.15 * cm))
             elements.append(Paragraph("<b>Limitations</b>", body_style))
             for lim in limitations:
-                elements.append(Paragraph(f"• {lim}", body_style))
+                elements.append(Paragraph(f"• {xml_escape(lim)}", body_style))
 
     # ── Footer ───────────────────────────────────────────────────────────────
     elements.append(Spacer(1, 0.8 * cm))
@@ -403,9 +406,7 @@ def generate_model_card_html(
         score_color = (
             "#059669"
             if brier_score < 0.1
-            else "#d97706"
-            if brier_score < 0.2
-            else "#dc2626"
+            else "#d97706" if brier_score < 0.2 else "#dc2626"
         )
         cal_html = f"""<h2 style="font-size:1rem;font-weight:600;color:#1e40af;margin:1.5rem 0 0.5rem">
             Calibration
@@ -557,6 +558,12 @@ def html_escape(text: str) -> str:
         .replace(">", "&gt;")
         .replace('"', "&quot;")
     )
+
+
+# ReportLab's Paragraph parses an HTML-like mini-markup, so the same escaping that
+# makes a string safe for HTML makes it safe to interpolate into a Paragraph.
+# Aliased for clarity at the (many) PDF call sites.
+xml_escape = html_escape
 
 
 def generate_model_status_report_html(
