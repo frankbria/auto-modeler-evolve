@@ -70,11 +70,10 @@ jobs:
           uv sync --locked
           uv run --with pip-audit pip-audit
 
-      # Advisory until #48: the remaining HIGH advisories only clear via a
-      # breaking Next.js 15->16 upgrade, and even a "non-breaking" npm audit fix
-      # skews the jest toolchain. Findings still surface in the log; this step is
-      # continue-on-error so it never fails the job. Flip to blocking after #48.
-      - name: Audit Node dependencies (npm audit, advisory — see #48)
-        continue-on-error: true
+      # Blocking as of #48: the frontend HIGH advisories were cleared (next
+      # bumped to 16.2.9 within v16, the unused `shadcn` scaffolding CLI removed
+      # from runtime deps, and ws/flatted/picomatch/qs pinned via npm overrides).
+      # A non-zero exit (any new HIGH+ advisory) now fails the job.
+      - name: Audit Node dependencies (npm audit)
         working-directory: src/frontend
         run: npm audit --audit-level=high
