@@ -133,6 +133,12 @@ jobs:
               # argv array and run shell=False so no string is ever shell-evaluated.
               for cmd_name in ('build', 'test', 'lint'):
                   cmd = s.get(cmd_name, '')
+                  # The heavy Python suite (~6.7k tests) runs sharded in
+                  # backend-tests.yml — keep this job a fast build+lint smoke.
+                  # Frontend tests stay here (jest is quick). (CI sharding split.)
+                  if cmd_name == 'test' and s['stack'] == 'python':
+                      print(f\"Skipping {s['name']} tests here - sharded in backend-tests.yml\")
+                      continue
                   if cmd:
                       print(f'Running {cmd_name}: {cmd}')
                       result = subprocess.run(shlex.split(cmd), cwd=subdir)
