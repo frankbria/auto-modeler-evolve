@@ -294,11 +294,17 @@ payload. Defense-in-depth confines every load to the data root:
   and `safe_load` will reject it. Use `tests/_artifact_tmp.py` (`data_tmpdir()` /
   `models_base()`), which roots the temp dir under `storage.models_dir()`.
 - **CI enforces deps.** `.github/workflows/security-audit.yml` runs `pip-audit`
-  (blocking) + `npm audit --audit-level=high` (advisory until the Next 16 upgrade,
-  #48) on push/PR + a weekly cron. Installs are lockfile-pinned (`uv sync --locked`,
-  `npm ci` with no `|| npm install` fallback); actions are SHA-pinned and Dependabot
+  and `npm audit --audit-level=high` — **both blocking** (the frontend HIGHs were
+  cleared in #48; npm-audit was flipped from advisory to blocking). On push/PR + a
+  weekly cron. Installs are lockfile-pinned (`uv sync --locked`, `npm ci` with no
+  `|| npm install` fallback); actions are SHA-pinned and Dependabot
   (`.github/dependabot.yml`) keeps the pins + lockfiles fresh. A new backend dep that
-  trips pip-audit must be bumped (or the lock updated) before merge.
+  trips pip-audit — or a new frontend dep that trips npm-audit — must be bumped (or
+  the lock/`overrides` updated) before merge. Frontend transitive HIGHs are pinned
+  via `package.json` `overrides` (NOT `npm audit fix --force`, which skews the jest
+  toolchain). `shadcn` is a scaffolding CLI — run it with `npx shadcn@latest`, never
+  add it to deps (it drags in HIGH-CVE transitives); its base CSS is vendored at
+  `src/frontend/app/shadcn-tailwind.css`.
 
 ## UX North Star
 
