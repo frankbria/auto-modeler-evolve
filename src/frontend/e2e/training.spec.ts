@@ -8,8 +8,7 @@
  */
 
 import { test, expect } from "./fixtures"
-
-const BACKEND = "http://localhost:8000"
+import { BACKEND } from "./env"
 
 // ---------------------------------------------------------------------------
 // Helpers

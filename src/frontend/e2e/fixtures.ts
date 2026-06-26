@@ -16,8 +16,9 @@
  * surfaces should import from "@playwright/test" directly instead.
  */
 import { test as base, expect } from "@playwright/test"
+import { BACKEND } from "./env"
 
-export const BACKEND = "http://localhost:8000"
+export { BACKEND }
 export const AUTH_TOKEN_KEY = "automodeler_auth_token"
 // Dummy login secret for tests (backend requires >= 8 chars). Named off the
 // repo secret-scan regex which flags credential-labelled quoted literals.

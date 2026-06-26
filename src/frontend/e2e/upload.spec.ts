@@ -7,9 +7,8 @@
  */
 
 import { test, expect } from "./fixtures"
+import { BACKEND } from "./env"
 import path from "path"
-
-const BACKEND = "http://localhost:8000"
 const SAMPLE_CSV = path.join(
   __dirname,
   "../../backend/data/sample/sample_sales.csv"
