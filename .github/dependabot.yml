@@ -1,0 +1,24 @@
+# Dependabot keeps the pinned deps + SHA-pinned actions fresh (#21). It bumps
+# the action SHAs (and their `# vX.Y.Z` comments) and opens lockfile-update PRs,
+# which the Security Audit workflow then gates.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: npm
+    directory: /src/frontend
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: uv
+    directory: /src/backend
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5

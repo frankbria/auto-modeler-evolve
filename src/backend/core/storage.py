@@ -85,3 +85,20 @@ def project_artifact_dirs(project_id: str) -> list[Path]:
         project_db_uploads_dir(project_id),
         project_models_dir(project_id),
     ]
+
+
+def safe_load(path: str | Path):
+    """``joblib.load`` confined to the data root (defense-in-depth, #21).
+
+    Model/pipeline artifacts are pickles, so ``joblib.load`` executes arbitrary
+    code on the payload. Every load path comes from a server-generated DB column
+    and already lives under the data root, but we refuse to load anything that
+    resolves outside it before touching joblib — a path that escapes raises
+    ``UnsafePathError`` (mapped to HTTP 400) instead of deserializing.
+    """
+    import joblib
+
+    from core.path_safety import assert_within
+
+    resolved = assert_within(data_root(), Path(path))
+    return joblib.load(resolved)

@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Optional
 
 import joblib
+from core import storage
 import numpy as np
 import pandas as pd
 from sklearn.preprocessing import LabelEncoder
@@ -196,7 +197,7 @@ def save_pipeline(pipeline: PredictionPipeline, path: Path) -> None:
 
 
 def load_pipeline(path: str | Path) -> PredictionPipeline:
-    return joblib.load(path)
+    return storage.safe_load(path)
 
 
 # ---------------------------------------------------------------------------
@@ -211,7 +212,7 @@ def load_pipeline(path: str | Path) -> PredictionPipeline:
 
 @lru_cache(maxsize=32)
 def _load_joblib_cached(path: str, _mtime: float):
-    return joblib.load(path)
+    return storage.safe_load(path)
 
 
 def load_model_cached(path: str | Path):
@@ -404,7 +405,7 @@ def predict_batch(
     Returns CSV bytes with a 'prediction' column appended.
     """
     pipeline = load_pipeline(pipeline_path)
-    model = joblib.load(model_path)
+    model = storage.safe_load(model_path)
 
     df = pd.read_csv(io.BytesIO(csv_bytes))
 
@@ -493,7 +494,7 @@ def explain_prediction(
     from core.explainer import compute_feature_importance
 
     pipeline = load_pipeline(pipeline_path)
-    model = joblib.load(model_path)
+    model = storage.safe_load(model_path)
 
     x_vec = pipeline.transform(input_data).flatten()  # shape (n_features,)
 
@@ -633,7 +634,7 @@ def compute_aggregate_explanations(
     from core.explainer import compute_feature_importance
 
     pipeline = load_pipeline(pipeline_path)
-    model = joblib.load(model_path)
+    model = storage.safe_load(model_path)
 
     feature_names = pipeline.feature_names
     importance_list = compute_feature_importance(model, feature_names)
@@ -744,10 +745,9 @@ def run_sensitivity_analysis(
           summary
         }
     """
-    import joblib as _jl
 
     pipeline = load_pipeline(pipeline_path)
-    model = _jl.load(model_path)
+    model = storage.safe_load(model_path)
 
     if feature_name not in pipeline.feature_names:
         raise ValueError(f"Feature '{feature_name}' not found in model.")
@@ -861,11 +861,10 @@ def run_feature_interaction(
           summary: str
         }
     """
-    import joblib as _jl
     import numpy as _np
 
     pipeline = load_pipeline(pipeline_path)
-    model = _jl.load(model_path)
+    model = storage.safe_load(model_path)
 
     for feat in (feature1, feature2):
         if feat not in pipeline.feature_names:
@@ -1100,10 +1099,9 @@ def run_feature_sweep(
           summary: str,
         }
     """
-    import joblib as _jl
 
     pipeline = load_pipeline(pipeline_path)
-    model = _jl.load(model_path)
+    model = storage.safe_load(model_path)
 
     # Build base dict — hold these while sweeping each feature
     base: dict = {}
@@ -1283,7 +1281,7 @@ def run_dataset_ranking(
          class_names}
     """
     pipeline = load_pipeline(pipeline_path)
-    model = joblib.load(model_path)
+    model = storage.safe_load(model_path)
 
     if len(df) == 0:
         raise ValueError("Dataset is empty — cannot rank predictions.")
@@ -1761,10 +1759,8 @@ def run_goal_seek(
     """
     from scipy.optimize import minimize as _sp_minimize  # optional import
 
-    import joblib as _jl
-
     pipeline = load_pipeline(pipeline_path)
-    model = _jl.load(model_path)
+    model = storage.safe_load(model_path)
     fixed = fixed_features or {}
 
     # Separate features into: optimize (free numeric), fixed (explicit), categorical (baseline)
@@ -2016,9 +2012,9 @@ def compute_prediction_delta(
     from core.explainer import compute_feature_importance  # noqa: PLC0415
 
     pipeline_new = load_pipeline(pipeline_path_new)
-    model_new = joblib.load(model_path_new)
+    model_new = storage.safe_load(model_path_new)
     pipeline_old = load_pipeline(pipeline_path_old)
-    model_old = joblib.load(model_path_old)
+    model_old = storage.safe_load(model_path_old)
 
     target_col = pipeline_new.target_column
     problem_type = pipeline_new.problem_type
@@ -2184,10 +2180,9 @@ def compute_counterfactual(
     Raises:
         ValueError: if the model is not a classifier or has no predict_proba.
     """
-    import joblib as _jl
 
     pipeline = load_pipeline(pipeline_path)
-    model = _jl.load(model_path)
+    model = storage.safe_load(model_path)
 
     if pipeline.problem_type != "classification":
         raise ValueError(
@@ -2445,14 +2440,13 @@ def compute_population_counterfactual(
     Raises:
         ValueError: if model is not a classifier, or fewer than 2 input rows.
     """
-    import joblib as _jl
     from collections import defaultdict as _dd
 
     if len(input_features_list) < 2:
         raise ValueError("Population counterfactual requires at least 2 rows.")
 
     pipeline = load_pipeline(pipeline_path)
-    model = _jl.load(model_path)
+    model = storage.safe_load(model_path)
 
     if pipeline.problem_type != "classification":
         raise ValueError(
@@ -2721,8 +2715,8 @@ def compute_similar_records(
     if not Path(model_path).exists():
         raise FileNotFoundError(f"Model not found: {model_path}")
 
-    pipeline: PredictionPipeline = joblib.load(pipeline_path)
-    model = joblib.load(model_path)
+    pipeline: PredictionPipeline = storage.safe_load(pipeline_path)
+    model = storage.safe_load(model_path)
 
     # ── Build feature matrix from dataset ────────────────────────────────────
     feat_cols = [c for c in dataset_df.columns if c != target_column]

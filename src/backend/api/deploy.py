@@ -223,9 +223,8 @@ def _build_pipeline_for_run(
         _prep_path = _prep_path.with_name(f"{_prep_path.stem}.prep.joblib")
         if _prep_path.exists():
             try:
-                import joblib as _joblib
 
-                _preprocessor = _joblib.load(str(_prep_path))
+                _preprocessor = storage.safe_load(str(_prep_path))
             except Exception:  # noqa: BLE001
                 _preprocessor = None
     if _is_leakfree_run and _preprocessor is None:
@@ -244,10 +243,9 @@ def _build_pipeline_for_run(
     # Compute residual std for regression prediction intervals
     if problem_type == "regression" and target_col in df.columns:
         try:
-            import joblib as _joblib
             import numpy as _np
 
-            model = _joblib.load(run.model_path)
+            model = storage.safe_load(run.model_path)
             df_clean = df[feature_names + [target_col]].dropna(subset=[target_col])
             X_train = pipeline.transform_df(df_clean[feature_names])
             y_true = df_clean[target_col].values.astype(float)
@@ -6745,7 +6743,6 @@ def get_output_distribution_shift(
     using a KS test. Works without labeled feedback — only raw prediction values.
     Returns verdict, KS statistics, per-distribution stats, and aligned histograms.
     """
-    import joblib as _joblib
     import pandas as _pd
     from pathlib import Path as _Path
 
@@ -6821,8 +6818,8 @@ def get_output_distribution_shift(
         raise HTTPException(status_code=404, detail="Model file not found.")
 
     try:
-        pipeline = _joblib.load(dep.pipeline_path)
-        model = _joblib.load(run.model_path)
+        pipeline = storage.safe_load(dep.pipeline_path)
+        model = storage.safe_load(run.model_path)
         df = _pd.read_csv(dataset.file_path)
 
         target_col = pipeline.target_col if hasattr(pipeline, "target_col") else None
@@ -7497,7 +7494,6 @@ def get_monitoring_digest(
                     and Path(ds.file_path).exists()
                     and Path(run.model_path).exists()
                 ):
-                    import joblib as _jl
                     import pandas as _pd
                     import json as _json
 
@@ -7510,7 +7506,7 @@ def get_monitoring_digest(
                     _target = fs.target_column
                     _features = [c for c in _df_train.columns if c != _target]
                     _X_train = _df_train[_features].fillna(0)
-                    _pipeline = _jl.load(run.model_path)
+                    _pipeline = storage.safe_load(run.model_path)
                     training_preds = _pipeline.predict(_X_train).tolist()
                     production_preds = [
                         lg.prediction_numeric
@@ -8227,11 +8223,10 @@ def get_drift_importance_ranking(
             feat_cols = list(feature_ranges.keys())
         if feat_cols:
             try:
-                import joblib as _jl_dir
 
                 from core.trainer import identify_weak_features as _iwf_dir
 
-                _model_dir = _jl_dir.load(run.model_path)
+                _model_dir = storage.safe_load(run.model_path)
                 _iwf_result = _iwf_dir(_model_dir, feat_cols)
                 if _iwf_result.get("has_importances", False):
                     feature_importances = _iwf_result.get("feature_importances", [])

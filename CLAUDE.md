@@ -281,6 +281,25 @@ hand-roll checks (that is how P1.3 happened):
   `main.py`; for confinement-as-not-found cases catch `UnsafePathError` and raise 404.
 - Negative tests live in `tests/test_ingestion_security.py`.
 
+### Guarded Model Loading & Dependency-Audit Gate (#21)
+Model/pipeline artifacts are pickles, so `joblib.load` runs arbitrary code on the
+payload. Defense-in-depth confines every load to the data root:
+- **Never call `joblib.load` directly on a model/pipeline path.** Route it through
+  `core.storage.safe_load(path)`, which `assert_within(data_root(), path)`-confines
+  before deserializing (escape → `UnsafePathError` → HTTP 400). Every runtime load
+  site (api/chat, api/deploy, api/models, api/validation, core/deployer) uses it; a
+  new load that bypasses it is the #21 footgun. `joblib.dump` is unaffected.
+- **Tests that dump a model must write it under the data root.** conftest points
+  `DATA_DIR` at the per-test `tmp_path`; a bare `tempfile.mkdtemp()` lands outside it
+  and `safe_load` will reject it. Use `tests/_artifact_tmp.py` (`data_tmpdir()` /
+  `models_base()`), which roots the temp dir under `storage.models_dir()`.
+- **CI enforces deps.** `.github/workflows/security-audit.yml` runs `pip-audit`
+  (blocking) + `npm audit --audit-level=high` (advisory until the Next 16 upgrade,
+  #48) on push/PR + a weekly cron. Installs are lockfile-pinned (`uv sync --locked`,
+  `npm ci` with no `|| npm install` fallback); actions are SHA-pinned and Dependabot
+  (`.github/dependabot.yml`) keeps the pins + lockfiles fresh. A new backend dep that
+  trips pip-audit must be bumped (or the lock updated) before merge.
+
 ## UX North Star
 
 This is built for **business analysts**, not data scientists. Every interaction should

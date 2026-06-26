@@ -21,20 +21,20 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '22'
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: '3.12'
 
       - name: Setup uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4.2.0
         with:
           version: "latest"
 
@@ -113,13 +113,14 @@ jobs:
 
               # Install dependencies (fixed argv, shell=False). A failed install
               # fails the substack so the check never goes green on broken deps.
+              # Lockfile-enforcing installs (#21): a lock/manifest mismatch FAILS
+              # the build instead of silently re-resolving to unpinned versions.
               install_ok = True
               if s['stack'] in ('typescript', 'javascript', 'nextjs'):
-                  if run(['npm', 'ci'], subdir).returncode != 0:
-                      install_ok = run(['npm', 'install'], subdir).returncode == 0
+                  install_ok = run(['npm', 'ci'], subdir).returncode == 0
               elif s['stack'] == 'python':
                   if os.path.exists(os.path.join(subdir, 'uv.lock')):
-                      install_ok = run(['uv', 'sync'], subdir).returncode == 0
+                      install_ok = run(['uv', 'sync', '--locked'], subdir).returncode == 0
                   elif run(['pip', 'install', '-e', '.'], subdir).returncode != 0:
                       install_ok = run(['pip', 'install', '-r', 'requirements.txt'], subdir).returncode == 0
 
@@ -148,8 +149,9 @@ jobs:
 
             cd src/
 
+            # npm ci (no install fallback) enforces package-lock.json (#21).
             case "$STACK" in
-              typescript|javascript|nextjs) npm ci || npm install ;;
+              typescript|javascript|nextjs) npm ci ;;
               python) pip install -e . 2>/dev/null || pip install -r requirements.txt 2>/dev/null || true ;;
               rust) ;;
             esac

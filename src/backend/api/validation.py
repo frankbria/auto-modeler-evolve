@@ -11,12 +11,12 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import joblib
 import numpy as np
 import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
 
+from core import storage
 from core.explainer import (
     compute_class_conditional_importance,
     compute_feature_importance,
@@ -197,7 +197,7 @@ def _build_eval_Xy(
         # Guard against frame drift (dataset edited after training).
         valid = [i for i in test_idx if 0 <= i < len(X_raw) and i < len(kept)]
         if len(valid) >= _MIN_HELDOUT_EVAL_ROWS:
-            prep = joblib.load(str(prep_path))
+            prep = storage.safe_load(str(prep_path))
             X = prep.transform(X_raw.iloc[valid])
             eval_df = df.iloc[kept[valid]].reset_index(drop=True)
             return X, np.asarray(y)[valid], feature_cols, "held_out", eval_df
@@ -294,7 +294,7 @@ def get_validation_metrics(
     X, y, feature_cols, evaluation, _eval_df = _build_eval_Xy(
         run, file_path, feature_set
     )
-    fitted_model = joblib.load(run.model_path)
+    fitted_model = storage.safe_load(run.model_path)
     y_pred = fitted_model.predict(X)
 
     if problem_type == "classification":
@@ -343,7 +343,7 @@ def get_global_explanation(
     problem_type = feature_set.problem_type or "regression"
     X, y, feature_cols = _build_Xy(file_path, feature_set)
 
-    fitted_model = joblib.load(run.model_path)
+    fitted_model = storage.safe_load(run.model_path)
     importance = compute_feature_importance(fitted_model, feature_cols)
 
     top_3 = [item["feature"] for item in importance[:3]]
@@ -385,7 +385,7 @@ def get_row_explanation(
             detail=f"row_index {row_index} out of range (dataset has {len(X)} rows).",
         )
 
-    fitted_model = joblib.load(run.model_path)
+    fitted_model = storage.safe_load(run.model_path)
     x_row = X[row_index]
 
     explanation = explain_single_prediction(
@@ -453,7 +453,7 @@ def get_segment_performance(
         run, file_path, feature_set
     )
 
-    fitted_model = joblib.load(run.model_path)
+    fitted_model = storage.safe_load(run.model_path)
     y_pred = fitted_model.predict(X)
 
     # Group values must come from ``eval_df`` (aligned 1:1 with the scored rows).
@@ -515,7 +515,7 @@ def get_prediction_errors(
         run, file_path, feature_set
     )
 
-    fitted_model = joblib.load(run.model_path)
+    fitted_model = storage.safe_load(run.model_path)
     y_pred = fitted_model.predict(X)
 
     # Build display rows from ``eval_df`` (aligned 1:1 with the scored rows) so
@@ -590,7 +590,7 @@ def get_error_distribution(
         run, file_path, feature_set
     )
 
-    fitted_model = joblib.load(run.model_path)
+    fitted_model = storage.safe_load(run.model_path)
     y_pred = fitted_model.predict(X)
 
     # Resolve class labels from pipeline if available
@@ -675,14 +675,14 @@ def get_partial_dependence(
         grid = np.linspace(p5, p95, steps)
 
     problem_type = feature_set.problem_type or "regression"
-    fitted_model = joblib.load(run.model_path)
+    fitted_model = storage.safe_load(run.model_path)
 
     # Resolve class names for multiclass classification
     class_names: list[str] | None = None
     pipeline_path = run.model_path.replace("_model.joblib", "_pipeline.joblib")
     if Path(pipeline_path).exists():
         try:
-            _pipe = joblib.load(pipeline_path)
+            _pipe = storage.safe_load(pipeline_path)
             class_names = getattr(_pipe, "target_classes", None)
         except Exception:  # noqa: BLE001
             pass
@@ -764,7 +764,7 @@ def get_fairness_metrics(
         run, file_path, feature_set
     )
 
-    fitted_model = joblib.load(run.model_path)
+    fitted_model = storage.safe_load(run.model_path)
     y_pred = fitted_model.predict(X)
 
     # Sensitive column must come from ``eval_df`` (aligned 1:1 with scored rows);
@@ -826,7 +826,7 @@ def get_threshold_analysis(
         run, file_path, feature_set
     )
 
-    fitted_model = joblib.load(run.model_path)
+    fitted_model = storage.safe_load(run.model_path)
 
     if not hasattr(fitted_model, "predict_proba"):
         raise HTTPException(
@@ -897,7 +897,7 @@ def get_per_class_threshold(
         run, file_path, feature_set
     )
 
-    fitted_model = joblib.load(run.model_path)
+    fitted_model = storage.safe_load(run.model_path)
 
     if not hasattr(fitted_model, "predict_proba"):
         raise HTTPException(
@@ -960,7 +960,7 @@ def get_confidence_distribution(
         run, file_path, feature_set
     )
 
-    fitted_model = joblib.load(run.model_path)
+    fitted_model = storage.safe_load(run.model_path)
 
     if not hasattr(fitted_model, "predict_proba"):
         raise HTTPException(
@@ -1017,7 +1017,7 @@ async def get_class_feature_importance(
 
     X, y, feature_cols = _build_Xy(file_path, feature_set)
 
-    fitted_model = joblib.load(run.model_path)
+    fitted_model = storage.safe_load(run.model_path)
     y_pred = fitted_model.predict(X)
 
     class_names: list[str] | None = None
@@ -1073,7 +1073,7 @@ async def get_calibration_check(
         run, file_path, feature_set
     )
 
-    fitted_model = joblib.load(run.model_path)
+    fitted_model = storage.safe_load(run.model_path)
 
     if not hasattr(fitted_model, "predict_proba"):
         raise HTTPException(
@@ -1130,7 +1130,7 @@ def get_error_correlation(
         run, file_path, feature_set
     )
 
-    fitted_model = joblib.load(run.model_path)
+    fitted_model = storage.safe_load(run.model_path)
     y_pred = fitted_model.predict(X)
 
     try:

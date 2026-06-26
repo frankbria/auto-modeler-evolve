@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from sqlmodel import SQLModel, create_engine
 
 import db as db_module
+from tests._artifact_tmp import models_base
 
 SAMPLE_CSV = b"""date,product,region,revenue,units
 2024-01-01,Widget A,North,1200.50,10
@@ -252,7 +253,7 @@ def test_predict_single_returns_guard_rail_warnings():
     )
     pipeline = build_prediction_pipeline(df, ["units"], "revenue", "regression")
 
-    with tempfile.TemporaryDirectory() as tmpdir:
+    with tempfile.TemporaryDirectory(dir=models_base()) as tmpdir:
         pipeline_path = Path(tmpdir) / "pipeline.joblib"
         model_path = Path(tmpdir) / "model.joblib"
 
@@ -300,7 +301,7 @@ def test_predict_single_no_warnings_when_provided_features_none():
     )
     pipeline = build_prediction_pipeline(df, ["units"], "revenue", "regression")
 
-    with tempfile.TemporaryDirectory() as tmpdir:
+    with tempfile.TemporaryDirectory(dir=models_base()) as tmpdir:
         pipeline_path = Path(tmpdir) / "pipeline.joblib"
         model_path = Path(tmpdir) / "model.joblib"
         save_pipeline(pipeline, pipeline_path)
