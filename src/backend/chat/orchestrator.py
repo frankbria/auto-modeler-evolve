@@ -298,26 +298,40 @@ def build_system_prompt(
             parts.append(f"\n## Proactive Insight\n{regression_insight}")
 
     # Multi-turn conversation context (last few turns for continuity)
-    if recent_messages:
-        # Include up to the last 4 messages (2 user + 2 assistant exchanges)
-        # to help Claude reason across turns without bloating the prompt
-        snippet_messages = recent_messages[-4:]
-        context_lines = []
-        for msg in snippet_messages:
-            role = msg.get("role", "user").capitalize()
-            content = str(msg.get("content", ""))[:300]  # Cap at 300 chars per msg
-            if len(str(msg.get("content", ""))) > 300:
-                content += "…"
-            context_lines.append(f"  [{role}]: {content}")
-        if context_lines:
-            parts.append(
-                "\n## Recent Conversation Context\n"
-                "Use this to maintain continuity — reference earlier insights, "
-                "avoid repeating yourself, and build on what was already discussed:\n"
-                + "\n".join(context_lines)
-            )
+    recent_block = format_recent_context(recent_messages)
+    if recent_block:
+        parts.append(recent_block)
 
     return "\n\n".join(parts)
+
+
+def format_recent_context(recent_messages: Optional[list[dict]]) -> str:
+    """Format the last few conversation turns as a system-prompt context block.
+
+    Returns "" when there is nothing to include. Kept separate from the static
+    project context so callers can place it in an *uncached* prompt block — it
+    changes every turn, unlike the stable project/dataset/model context (#19).
+    """
+    if not recent_messages:
+        return ""
+    # Include up to the last 4 messages (2 user + 2 assistant exchanges)
+    # to help Claude reason across turns without bloating the prompt
+    snippet_messages = recent_messages[-4:]
+    context_lines = []
+    for msg in snippet_messages:
+        role = msg.get("role", "user").capitalize()
+        content = str(msg.get("content", ""))[:300]  # Cap at 300 chars per msg
+        if len(str(msg.get("content", ""))) > 300:
+            content += "…"
+        context_lines.append(f"  [{role}]: {content}")
+    if not context_lines:
+        return ""
+    return (
+        "\n## Recent Conversation Context\n"
+        "Use this to maintain continuity — reference earlier insights, "
+        "avoid repeating yourself, and build on what was already discussed:\n"
+        + "\n".join(context_lines)
+    )
 
 
 # ---------------------------------------------------------------------------

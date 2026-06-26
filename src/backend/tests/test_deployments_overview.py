@@ -412,6 +412,34 @@ async def test_overview_endpoint_mixed_environments(ac):
 
 
 @pytest.mark.asyncio
+async def test_overview_endpoint_no_n_plus_one(ac):
+    """Overview issues ONE prediction-log query regardless of deployment count (#19)."""
+    await _create_deployment(ac, "Proj one")
+    await _create_deployment(ac, "Proj two")
+
+    from sqlalchemy import event
+
+    pred_log_queries: list[str] = []
+
+    def _track(conn, cursor, statement, params, context, executemany):
+        if "predictionlog" in statement.lower() and statement.lstrip().lower().startswith(
+            "select"
+        ):
+            pred_log_queries.append(statement)
+
+    event.listen(db_module.engine, "before_cursor_execute", _track)
+    try:
+        resp = await ac.get("/api/deploy/overview")
+    finally:
+        event.remove(db_module.engine, "before_cursor_execute", _track)
+
+    assert resp.status_code == 200
+    assert resp.json()["total_deployments"] == 2
+    # One grouped query — NOT one-per-deployment (the old N+1).
+    assert len(pred_log_queries) == 1, pred_log_queries
+
+
+@pytest.mark.asyncio
 async def test_overview_endpoint_inactive_deployments_excluded(ac):
     dep_id = await _create_deployment(ac, "Deactivated")
     await ac.delete(f"/api/deploy/{dep_id}")

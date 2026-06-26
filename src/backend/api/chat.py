@@ -14,6 +14,7 @@ from sqlmodel import Session, select
 from chat.orchestrator import (
     build_system_prompt,
     detect_state,
+    format_recent_context,
     generate_suggestions,
     get_next_step_chips,
 )
@@ -38,6 +39,44 @@ router = APIRouter(
 )
 MODEL = "claude-haiku-4-5-20251001"
 MAX_TOKENS = 1024
+# Cap how many prior turns we re-send to the LLM each message (#19). Cost/latency
+# grew unbounded with conversation length; the system prompt carries the durable
+# project context, so older raw turns add little. Tail-windowed below.
+CHAT_HISTORY_WINDOW = 30
+
+
+def _build_system_blocks(
+    base_system: str, full_system: str, recent_messages: list[dict] | None
+) -> list[dict]:
+    """Split the system prompt into a cached static block + a dynamic block (#19).
+
+    Block 0 is the stable project/dataset/model context (identical across turns
+    within a conversation) marked for Anthropic prompt caching. Block 1 holds the
+    per-turn additions (analytics cards appended after ``base_system``) plus the
+    recent-conversation context, which both change every turn and must not be cached.
+    """
+    # Cards only ever append to system_prompt, so base_system is a strict prefix
+    # and `dynamic` is everything appended after it. Guard the invariant: if a
+    # future edit ever prepends, keep the whole prompt (cards included) in the
+    # cached block rather than silently dropping content from the split.
+    if full_system.startswith(base_system):
+        dynamic = full_system[len(base_system) :]
+    else:
+        base_system, dynamic = full_system, ""
+    blocks: list[dict] = [
+        {
+            "type": "text",
+            "text": base_system,
+            "cache_control": {"type": "ephemeral"},
+        }
+    ]
+    recent_block = format_recent_context(recent_messages)
+    if recent_block:
+        dynamic = f"{dynamic}\n\n{recent_block}" if dynamic.strip() else recent_block
+    if dynamic.strip():
+        blocks.append({"type": "text", "text": dynamic})
+    return blocks
+
 
 # Keywords that trigger an inline model readiness assessment
 _READINESS_PATTERNS = re.compile(
@@ -6060,16 +6099,25 @@ def send_message(
     # Exclude the just-appended user message (last item) — Claude already gets
     # the full message list; we only want the preceding turns for the system prompt
     recent_for_context = messages[:-1][-6:]  # up to 3 exchanges before this message
-    system_prompt = build_system_prompt(
+    # Stable base (no per-turn recent context) so it can be prompt-cached (#19);
+    # the recent-conversation context goes in the dynamic block via _build_system_blocks.
+    base_system = build_system_prompt(
         project,
         dataset=ctx["dataset"],
         feature_set=ctx["feature_set"],
         model_runs=ctx["model_runs"],
         deployment=ctx["deployment"],
-        recent_messages=recent_for_context if recent_for_context else None,
+        recent_messages=None,
     )
+    system_prompt = base_system  # analytics-card context appends to this below
 
-    api_messages = [{"role": m["role"], "content": m["content"]} for m in messages]
+    # Window the history we re-send to the LLM (#19). Tail-slice keeps the new
+    # user message last; trim any leading assistant turn so the window still
+    # starts on a user message (Anthropic requires it).
+    window = messages[-CHAT_HISTORY_WINDOW:]
+    while window and window[0]["role"] != "user":
+        window = window[1:]
+    api_messages = [{"role": m["role"], "content": m["content"]} for m in window]
 
     client = anthropic.Anthropic()
 
@@ -21864,7 +21912,9 @@ def send_message(
             with client.messages.stream(
                 model=MODEL,
                 max_tokens=MAX_TOKENS,
-                system=system_prompt,
+                system=_build_system_blocks(
+                    base_system, system_prompt, recent_for_context
+                ),
                 messages=api_messages,
             ) as stream:
                 for text in stream.text_stream:

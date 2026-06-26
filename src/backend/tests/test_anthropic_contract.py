@@ -24,7 +24,7 @@ import pytest
 from anthropic.resources import Messages
 from unittest.mock import create_autospec
 
-from api.chat import MAX_TOKENS, MODEL
+from api.chat import CHAT_HISTORY_WINDOW, MAX_TOKENS, MODEL
 
 
 async def test_chat_invokes_llm_with_contract(client, mock_anthropic):
@@ -43,7 +43,15 @@ async def test_chat_invokes_llm_with_contract(client, mock_anthropic):
     # Pinned model id — guards against a silent model swap.
     assert kwargs["model"] == MODEL == "claude-haiku-4-5-20251001"
     assert kwargs["max_tokens"] == MAX_TOKENS
-    assert isinstance(kwargs["system"], str) and kwargs["system"].strip()
+    # system is now a list of text blocks (#19); block 0 is the static, prompt-
+    # cached project context. Every block must be a non-empty text block.
+    system = kwargs["system"]
+    assert isinstance(system, list) and system, "system must be a non-empty block list"
+    for block in system:
+        assert block["type"] == "text"
+        assert isinstance(block["text"], str)
+    assert system[0]["text"].strip(), "the cached base block must be non-empty"
+    assert system[0]["cache_control"] == {"type": "ephemeral"}
 
     messages = kwargs["messages"]
     assert isinstance(messages, list) and messages, "messages payload must be non-empty"
@@ -53,6 +61,40 @@ async def test_chat_invokes_llm_with_contract(client, mock_anthropic):
         assert isinstance(m["content"], str)
     # The turn's user message must be the final entry handed to the model.
     assert messages[-1] == {"role": "user", "content": "hello there"}
+
+
+async def test_chat_windows_long_history(client, mock_anthropic):
+    """A long conversation is tail-windowed before being sent to the LLM (#19)."""
+    import json as _json
+
+    import db
+    from models.conversation import Conversation
+    from sqlmodel import Session
+
+    proj = await client.post("/api/projects", json={"name": "Window"})
+    project_id = proj.json()["id"]
+
+    # Seed a conversation far longer than the window, alternating roles.
+    seeded = [
+        {
+            "role": "user" if i % 2 == 0 else "assistant",
+            "content": f"m{i}",
+            "timestamp": "2026-01-01T00:00:00",
+        }
+        for i in range(40)
+    ]
+    with Session(db.engine) as s:
+        s.add(Conversation(project_id=project_id, messages=_json.dumps(seeded)))
+        s.commit()
+
+    resp = await client.post(f"/api/chat/{project_id}", json={"message": "newest"})
+    assert resp.status_code == 200
+
+    sent = mock_anthropic.messages.stream.call_args.kwargs["messages"]
+    assert len(sent) <= CHAT_HISTORY_WINDOW, "history must be windowed"
+    # Anthropic requires the first message to be a user turn.
+    assert sent[0]["role"] == "user"
+    assert sent[-1] == {"role": "user", "content": "newest"}
 
 
 def test_autospec_enforces_method_and_signature():
