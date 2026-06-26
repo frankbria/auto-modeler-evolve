@@ -1,6 +1,7 @@
 import io
 import json
 import math
+import os
 import re
 import shutil
 import sqlite3
@@ -9,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
-from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 from sqlmodel import Session, select
@@ -96,6 +97,38 @@ router = APIRouter(
 UPLOAD_DIR = storage.uploads_dir()
 SAMPLE_CSV = Path(__file__).parent.parent / "data" / "sample" / "sample_sales.csv"
 
+# Cap upload size to prevent memory-exhaustion DoS. Generous default (100 MB);
+# override with MAX_UPLOAD_SIZE_MB. Enforced both up-front via Content-Length
+# (fail fast, before reading) and after read as a backstop (the header is
+# client-supplied and can be absent or wrong).
+MAX_UPLOAD_SIZE_MB = int(os.environ.get("MAX_UPLOAD_SIZE_MB", "100"))
+_MAX_UPLOAD_BYTES = MAX_UPLOAD_SIZE_MB * 1024 * 1024
+
+
+def _too_large() -> HTTPException:
+    return HTTPException(
+        status_code=413,
+        detail=f"Upload exceeds the {MAX_UPLOAD_SIZE_MB} MB limit.",
+    )
+
+
+def _enforce_content_length(request: Request) -> None:
+    """Reject oversized uploads up front using the Content-Length header."""
+    cl = request.headers.get("content-length")
+    if cl is not None:
+        try:
+            if int(cl) > _MAX_UPLOAD_BYTES:
+                raise _too_large()
+        except ValueError:
+            pass  # malformed header — fall through to the post-read backstop
+
+
+def _enforce_size(contents: bytes) -> None:
+    """Backstop check on the actual bytes read."""
+    if len(contents) > _MAX_UPLOAD_BYTES:
+        raise _too_large()
+
+
 _ACCEPTED_EXTENSIONS = {".csv", ".xlsx", ".xls"}
 _ACCEPTED_MIME_TYPES = {
     "text/csv",
@@ -137,11 +170,13 @@ def _sanitize_rows(rows: list[dict]) -> list[dict[str, Any]]:
 
 @router.post("/upload", status_code=201)
 def upload_csv(
+    request: Request,
     file: UploadFile,
     project_id: str = Form(...),
     session: Session = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ):
+    _enforce_content_length(request)
     assert_project_not_foreign(project_id, current_user, session)
     if not file.filename or not _is_accepted_file(file.filename):
         raise HTTPException(
@@ -158,6 +193,7 @@ def upload_csv(
 
     original_path = project_upload_dir / safe_filename
     contents = file.file.read()
+    _enforce_size(contents)
     original_path.write_bytes(contents)
 
     try:
@@ -1019,6 +1055,7 @@ def upload_from_url(
             status_code=400,
             detail=f"Failed to fetch data from {source_label}: {exc}",
         ) from exc
+    _enforce_size(raw_bytes)
 
     # Derive a filename
     if body.filename:
@@ -1157,6 +1194,7 @@ def _open_readonly_sqlite(db_path: Path) -> sqlite3.Connection:
 
 @router.post("/upload-db", status_code=201)
 async def upload_sqlite_db(
+    request: Request,
     project_id: str = Form(...),
     file: UploadFile = Form(...),
     session: Session = Depends(get_session),
@@ -1168,6 +1206,7 @@ async def upload_sqlite_db(
     table to extract as a Dataset.  The file is stored temporarily under
     data/db_uploads/{project_id}/.
     """
+    _enforce_content_length(request)
     get_owned_project(project_id, current_user, session)
 
     filename = sanitize_filename(file.filename or "database.db")
@@ -1181,16 +1220,20 @@ async def upload_sqlite_db(
     db_dir = _DB_UPLOADS_DIR / project_id
     db_dir.mkdir(parents=True, exist_ok=True)
     db_path = resolve_within(db_dir, filename)
-    db_path.write_bytes(await file.read())
+    contents = await file.read()
+    _enforce_size(contents)
+    db_path.write_bytes(contents)
 
     try:
         conn = sqlite3.connect(str(db_path))
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
-        )
-        tables = [row[0] for row in cursor.fetchall()]
-        conn.close()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
+            )
+            tables = [row[0] for row in cursor.fetchall()]
+        finally:
+            conn.close()
     except sqlite3.DatabaseError as exc:
         db_path.unlink(missing_ok=True)
         raise HTTPException(
@@ -1259,8 +1302,10 @@ def extract_db_table(
         # Read-only + no extension loading + ATTACH denied (see helper) so a
         # crafted SQLite file cannot write, load a library, or read other files.
         conn = _open_readonly_sqlite(db_path)
-        df = pd.read_sql_query(query, conn)
-        conn.close()
+        try:
+            df = pd.read_sql_query(query, conn)
+        finally:
+            conn.close()
     except HTTPException:
         raise
     except Exception as exc:  # noqa: BLE001
@@ -1586,6 +1631,7 @@ def clean_dataset(
 
 @router.post("/{dataset_id}/refresh")
 def refresh_dataset(
+    request: Request,
     dataset_id: str,
     file: UploadFile,
     session: Session = Depends(get_session),
@@ -1610,6 +1656,7 @@ def refresh_dataset(
         preview, column_stats
     }
     """
+    _enforce_content_length(request)
     dataset = session.get(Dataset, dataset_id)
     if not dataset:
         raise HTTPException(status_code=404, detail="Dataset not found")
@@ -1622,6 +1669,7 @@ def refresh_dataset(
 
     # Load the new file into a DataFrame
     contents = file.file.read()
+    _enforce_size(contents)
     try:
         ext = Path(file.filename).suffix.lower()
         if ext in (".xlsx", ".xls"):

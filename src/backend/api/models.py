@@ -89,7 +89,9 @@ def _get_project_context(
         raise HTTPException(status_code=404, detail="Project not found")
 
     dataset = session.exec(
-        select(Dataset).where(Dataset.project_id == project_id)
+        select(Dataset)
+        .where(Dataset.project_id == project_id)
+        .order_by(Dataset.uploaded_at.desc())
     ).first()
     if not dataset:
         raise HTTPException(
@@ -1617,33 +1619,42 @@ def download_report(model_run_id: str, session: Session = Depends(get_session)):
     # Confidence assessment (best-effort)
     confidence_assessment = None
     if metrics and feature_set:
-        try:
-            from core.validator import assess_confidence_limitations
+        # Signature is (metrics, problem_type, n_rows, n_features, cv_std). Passing
+        # a dict for n_rows used to raise a TypeError swallowed below, silently
+        # dropping the whole Confidence & Limitations section from the report.
+        cv_std_raw = metrics.get("cv_std")
+        cv_std = float(cv_std_raw) if cv_std_raw is not None else None
+        from core.validator import assess_confidence_limitations
 
-            dataset_info = {
-                "row_count": dataset_rows,
-                "column_count": dataset_columns,
-            }
-            confidence_assessment = assess_confidence_limitations(
-                metrics, problem_type, dataset_info
-            )
-        except Exception:  # noqa: BLE001
-            confidence_assessment = None
+        confidence_assessment = assess_confidence_limitations(
+            metrics, problem_type, dataset_rows, dataset_columns, cv_std
+        )
 
-    pdf_bytes = generate_model_report(
-        project_name=project_name,
-        dataset_filename=dataset_filename,
-        dataset_rows=dataset_rows,
-        dataset_columns=dataset_columns,
-        algorithm=run.algorithm,
-        problem_type=problem_type,
-        metrics=metrics,
-        summary=run.summary,
-        training_duration_ms=run.training_duration_ms,
-        feature_importances=feature_importances,
-        confidence_assessment=confidence_assessment,
-        created_at=run.created_at,
-    )
+    # Guard PDF rendering: a bad project name / summary could trip ReportLab's
+    # markup parser (now escaped — see report_generator) or some other edge case;
+    # return a clean 422 instead of a bare 500 stack trace.
+    try:
+        pdf_bytes = generate_model_report(
+            project_name=project_name,
+            dataset_filename=dataset_filename,
+            dataset_rows=dataset_rows,
+            dataset_columns=dataset_columns,
+            algorithm=run.algorithm,
+            problem_type=problem_type,
+            metrics=metrics,
+            summary=run.summary,
+            training_duration_ms=run.training_duration_ms,
+            feature_importances=feature_importances,
+            confidence_assessment=confidence_assessment,
+            created_at=run.created_at,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("PDF report generation failed for model run %s", run.id)
+        raise HTTPException(
+            status_code=422,
+            detail="Could not generate the PDF report for this model. "
+            "Please try again or contact support if it persists.",
+        ) from exc
 
     safe_algo = run.algorithm.lower().replace(" ", "_")
     filename = f"automodeler_report_{safe_algo}_{run.id[:8]}.pdf"

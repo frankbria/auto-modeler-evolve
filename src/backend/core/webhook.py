@@ -188,12 +188,24 @@ def dispatch_webhooks(
             **payload,
         }
 
+        from core.secret_box import decrypt
+
         for hook in hooks:
             event_types_list: list[str] = json.loads(hook.event_types or "[]")
             if event_type in event_types_list:
+                # Secret is stored encrypted; sign with its cleartext form. A
+                # None means the key was rotated and we can't recover it — skip
+                # rather than send an unverifiable signature.
+                secret = decrypt(hook.secret)
+                if secret is None:
+                    logger.warning(
+                        "Webhook %s secret could not be decrypted; skipping dispatch",
+                        hook.id,
+                    )
+                    continue
                 t = threading.Thread(
                     target=_dispatch_in_thread,
-                    args=(hook.id, hook.url, hook.secret, full_payload),
+                    args=(hook.id, hook.url, secret, full_payload),
                     daemon=True,
                 )
                 t.start()

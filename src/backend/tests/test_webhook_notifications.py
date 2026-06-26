@@ -134,13 +134,18 @@ async def deployment_id(ac, model_run_id):
 
 
 def test_webhook_config_generates_secret():
-    """Each WebhookConfig row gets a unique random secret."""
+    """Each WebhookConfig row gets a unique secret, encrypted at rest (#20)."""
+    from core.secret_box import decrypt
     from models.webhook_config import WebhookConfig
 
     wh1 = WebhookConfig(deployment_id="a", url="http://x.com")
     wh2 = WebhookConfig(deployment_id="a", url="http://x.com")
-    assert len(wh1.secret) == 64  # 32 bytes hex
+    # Stored form is ciphertext, not the raw 64-hex secret.
+    assert wh1.secret.startswith("enc:")
     assert wh1.secret != wh2.secret
+    # Decrypts back to a unique 32-byte hex signing secret.
+    assert len(decrypt(wh1.secret)) == 64
+    assert decrypt(wh1.secret) != decrypt(wh2.secret)
 
 
 def test_sign_payload_deterministic():

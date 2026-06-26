@@ -1,52 +1,47 @@
-# Issue #19 — Fix performance hazards in prediction analytics & chat hot paths
+# Issue #20 — [P6.1] Medium correctness/security hardening
 
-**Source:** issue body (Phase 5.2, HIGH). Plan adapted to current codebase (line numbers verified live; issue's audit line numbers were stale).
+8 sub-items, grouped in 3 phases. Backend only. TDD: targeted test per item.
+Line numbers verified live.
 
-## Adapted Plan
+All 8 items implemented + tested. Also fixed a latent report bug: report read
+`confidence_level`/`strengths` but the validator emits `overall_confidence`/
+`limitations` — aligned the report to the real shape (the section never rendered
+before because #7's call always raised).
 
-### Step 1 — Composite index `(deployment_id, created_at)` on PredictionLog
-- `models/prediction_log.py`: add `__table_args__ = (Index("ix_predictionlog_dep_created", "deployment_id", "created_at"),)`.
-  Drop the standalone `deployment_id` index (composite covers it as a left-prefix).
-- `db.py`: add a `CREATE INDEX IF NOT EXISTS ...` step for existing SQLite DBs (current `_apply_migrations` only does ADD COLUMN). Idempotent.
-- Test: assert the index exists via `PRAGMA index_list`.
+## Phase 1 — HTTP layer (main.py, api/data.py)
+- [x] **1. CORS** (`main.py:77-83`) — env-driven `CORS_ORIGINS` (comma-sep) allow-list;
+      default `http://localhost:3000`. Per owner comment (auth is Bearer, not cookie):
+      `allow_credentials=False`. Test asserts configured origins, no wildcard+creds.
+- [x] **5. Upload size limit** — `MAX_UPLOAD_SIZE_MB` env (default 100). Helper checks
+      `Content-Length` → 413 before read; also length-check bytes after read (header is
+      spoofable/absent). Apply to `/upload` (160), `/upload-db` (1184), `/{id}/refresh`
+      (1624), `/upload-url` (after fetch). Test: oversized → 413.
+- [x] **6. SQLite leak** — try/finally close in `/upload-db` (1187-1193) and
+      `/extract-db` (1261-1263). Test: failing query still closes conn.
 
-### Step 2 — LRU model/pipeline cache keyed by `(path, mtime)` in the predict hot path
-- `core/deployer.py`: add `load_pipeline_cached(path)` / `load_model_cached(path)` using
-  `functools.lru_cache` keyed by `(path, os.path.getmtime(path))`. mtime keying = automatic
-  invalidation: redeploy points the deployment at a new artifact path (or rewrites the file →
-  new mtime), so the next load misses. No explicit invalidation hook needed.
-- Use them in `predict_single` (deployer.py:316-317). Leave batch/explain/sweep loaders alone (not per-request).
-- Test: patch `joblib.load`, assert 2 predictions on same artifact load once; a new path reloads.
+## Phase 2 — Persistence (models/, api/models.py)
+- [x] **2. Dataset ordering** (`api/models.py:91-93`) — add
+      `.order_by(Dataset.uploaded_at.desc())`. Test: latest dataset returned.
+- [x] **3. DeploymentVersion UNIQUE** (`models/deployment_version.py`) — add
+      `UniqueConstraint("deployment_id","version_number")`. Counter increment
+      (`deploy.py:339`) is read-modify-write; SQLite write-lock serializes, UNIQUE
+      enforces integrity. Test: duplicate (dep_id, ver) raises IntegrityError.
+- [x] **4. Webhook secret at rest** — DEVIATION: secret signs OUTBOUND HMAC
+      (`core/webhook.py:71`), so it must be REVERSIBLE → encrypt (Fernet, cryptography
+      41 already installed), key from `WEBHOOK_SECRET_KEY`/derived from `AUTH_SECRET`.
+      NOT hash (would break signing). API already returns secret once at creation;
+      `list_webhooks` excludes it (done). Store ciphertext w/ marker prefix for
+      plaintext back-compat; decrypt at dispatch. Test: stored value != plaintext,
+      signing still verifies.
+- [x] **7. assess_confidence_limitations call** (`api/models.py:1627`) — real bug:
+      fn takes `(metrics, problem_type, n_rows, n_features, cv_std)` (5 args), call
+      passes 3 with a dict 3rd → TypeError swallowed → section dropped. Fix:
+      `(metrics, problem_type, dataset_rows, dataset_columns, metrics.get("cv_std"))`.
+      Narrow except. Regression test: section present.
 
-### Step 3 — SQL pagination/sort: `get_prediction_logs` (deploy.py ~1746)
-- Replace full `.all()` + Python `sorted()` + slice with `func.count` total +
-  `order_by(created_at.desc()).offset(offset).limit(limit)`. Response shape unchanged.
-
-### Step 4 — SQL aggregation: `get_deployment_analytics` (deploy.py ~1658)
-- day counts → `GROUP BY func.date(created_at)`; total → `func.count`; recent_avg → `func.avg`;
-  class_counts → `GROUP BY prediction`; histogram min/max → `func.min/max` + ONE bounded fetch for the
-  10-bucket pass. Apply a bounded time window. Response shape unchanged.
-
-### Step 5 — Kill N+1 in `deployments_overview` (deploy.py ~481)
-- One grouped query for 7d/today counts over all owned deployment ids (replaces N count queries).
-- One `select(Project).where(id.in_(...))` (replaces N `session.get`).
-
-### Step 6 — Chat: window history + Anthropic prompt caching (chat.py)
-- Window `api_messages` to the last ~30 turns (tail slice keeps last=user → contract preserved).
-- `system` becomes a 2-block list: block 0 = stable base (`build_system_prompt(..., recent_messages=None)`,
-  marked `cache_control={"type":"ephemeral"}`); block 1 = per-turn additions (cards + recent-conversation context).
-  Factor recent-context formatting out of `build_system_prompt` so it lives in block 1.
-  # ponytail: caches the largest stable prefix; hits only above Anthropic's min-cacheable floor.
-- Update `test_anthropic_contract.py`: `system` is now `list[block]`, block 0 has `cache_control`, last msg still user.
-
-## Acceptance Criteria
-- [ ] Sort/pagination/aggregation pushed into SQL (LIMIT/OFFSET, COUNT/GROUP BY/AVG, bounded windows) — Steps 3,4
-- [ ] N+1 replaced with a single grouped query — Step 5
-- [ ] LRU model/pipeline cache keyed by `(path, mtime)`, invalidated on redeploy — Step 2
-- [ ] Chat history windowed + prompt caching on the static system prompt — Step 6
-- [ ] Composite index on `(deployment_id, created_at)` — Step 1
-
-## Known limitations (deferred — not in acceptance criteria)
-- Other analytics endpoints (drift, audit, confidence-trend, value-trend, covariate, usage) share the
-  "materialize + Python-aggregate" pattern; several already cap their fetch. Full SQL rewrite of their
-  per-feature/JSON statistics is out of scope. Noted as PR follow-up.
+## Phase 3 — PDF (core/report_generator.py, api/models.py)
+- [x] **8. ReportLab injection** — `xml_escape = html_escape` alias; escape
+      `project_name` (118,136), `summary` (163), `level/strengths/limitations`
+      (191,197,203), feature names (180). Wrap `generate_model_report()` in
+      `download_report` (1633) try/except → 422 + log. Test: `<>` in project name
+      generates OK; failure → graceful error.
