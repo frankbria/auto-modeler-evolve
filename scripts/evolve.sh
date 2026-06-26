@@ -63,7 +63,7 @@ DATE=$(date +%Y-%m-%d)
 SESSION_TIME=$(date +%H:%M)
 
 # Security nonce for content boundary markers
-BOUNDARY_NONCE=$(python3 -c "import os; print(os.urandom(16).hex())" 2>/dev/null || echo "fallback-$(date +%s)")
+BOUNDARY_NONCE=$(python3 -c "import os; print(os.urandom(16).hex())" 2>/dev/null) || { echo "FATAL: cannot generate secure boundary nonce" >&2; exit 1; }
 BOUNDARY_BEGIN="[BOUNDARY-${BOUNDARY_NONCE}-BEGIN]"
 BOUNDARY_END="[BOUNDARY-${BOUNDARY_NONCE}-END]"
 
@@ -287,7 +287,11 @@ SESSION_START_SHA=$(git rev-parse HEAD)
 echo "-> Starting evolution session..."
 echo ""
 
-# Build verification instructions based on detected stack
+# Build verification instructions from the current detected-stack globals.
+# Called once up front (for the main prompt) and AGAIN after Step 6 re-detects
+# the stack, so a bootstrap session's fix-loop prompt carries the freshly
+# discovered commands, not the stale "No build system detected" text (issue #22).
+build_verify_instructions() {
 VERIFY_INSTRUCTIONS=""
 if [ "$STACK" = "monorepo" ]; then
     VERIFY_INSTRUCTIONS=$(echo "$SUBSTACKS_JSON" | python3 -c "
@@ -324,6 +328,8 @@ No build system detected yet. If this is the bootstrap session, set up the proje
 with appropriate build tooling as specified in spec.md. After creating the project,
 verify it builds and tests pass before committing."
 fi
+}
+build_verify_instructions
 
 # Use timeout if available
 TIMEOUT_CMD="timeout"
@@ -469,6 +475,7 @@ STACK=$(echo "$STACK_JSON" | python3 -c "import sys,json; print(json.load(sys.st
 BUILD_CMD=$(echo "$STACK_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['build'])" 2>/dev/null || echo "")
 TEST_CMD=$(echo "$STACK_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['test'])" 2>/dev/null || echo "")
 LINT_CMD=$(echo "$STACK_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['lint'])" 2>/dev/null || echo "")
+FORMAT_CMD=$(echo "$STACK_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['format'])" 2>/dev/null || echo "")
 
 # Helper: verify a single substack directory, append errors to ERRORS_FILE
 verify_single_stack() {
@@ -484,23 +491,34 @@ verify_single_stack() {
         fi
     fi
 
-    # Collect errors
+    # Collect errors. Capture the exit code and never write a blank diagnostic:
+    # a command that fails with no output still reports "(exit N) <no output>"
+    # so the fix-loop agent isn't handed an empty error string.
+    local bout tout lout rc
     if [ -n "$sbuild" ]; then
-        local bout
-        bout=$( (cd "$subpath" && run_cmd "$sbuild") 2>&1) || echo "[$label build] $bout" >> "$ERRORS_FILE"
+        rc=0
+        bout=$( (cd "$subpath" && run_cmd "$sbuild") 2>&1) || rc=$?
+        [ "$rc" -ne 0 ] && echo "[$label build] (exit $rc) ${bout:-<no output>}" >> "$ERRORS_FILE"
     fi
     if [ -n "$stest" ]; then
-        local tout
-        tout=$( (cd "$subpath" && run_cmd "$stest") 2>&1) || echo "[$label test] $tout" >> "$ERRORS_FILE"
+        rc=0
+        tout=$( (cd "$subpath" && run_cmd "$stest") 2>&1) || rc=$?
+        [ "$rc" -ne 0 ] && echo "[$label test] (exit $rc) ${tout:-<no output>}" >> "$ERRORS_FILE"
     fi
     if [ -n "$slint" ]; then
-        local lout
-        lout=$( (cd "$subpath" && run_cmd "$slint") 2>&1) || echo "[$label lint] $lout" >> "$ERRORS_FILE"
+        rc=0
+        lout=$( (cd "$subpath" && run_cmd "$slint") 2>&1) || rc=$?
+        [ "$rc" -ne 0 ] && echo "[$label lint] (exit $rc) ${lout:-<no output>}" >> "$ERRORS_FILE"
     fi
 }
 
 if [ "$STACK" = "monorepo" ] || [ -n "$BUILD_CMD" ]; then
     SUBSTACKS_JSON=$(echo "$STACK_JSON" | python3 -c "import sys,json; print(json.dumps(json.load(sys.stdin).get('substacks',[])))" 2>/dev/null || echo "[]")
+
+    # Rebuild verification instructions from the re-detected stack so the
+    # fix-loop prompt below reflects the current commands, not the pre-session
+    # ones (matters when a bootstrap session just created the project) — issue #22.
+    build_verify_instructions
 
     FIX_ATTEMPTS=3
     for FIX_ROUND in $(seq 1 $FIX_ATTEMPTS); do
@@ -536,6 +554,8 @@ Your code has errors. Fix them NOW. Do not add features — only fix these error
 
 $ERRORS
 
+$VERIFY_INSTRUCTIONS
+
 Steps:
 1. Read the failing files
 2. Fix the errors above
@@ -548,7 +568,7 @@ FIXEOF
             rm -f "$FIX_PROMPT"
         else
             echo "  Build: FAIL after $FIX_ATTEMPTS fix attempts — reverting to pre-session state"
-            git checkout "$SESSION_START_SHA" -- "$PROJECT_DIR/"
+            git checkout "$SESSION_START_SHA" -- "$PROJECT_DIR/" spec.md
             git add -A && git commit -m "Day $DAY ($SESSION_TIME): revert session changes (could not fix build)" || true
         fi
     done
