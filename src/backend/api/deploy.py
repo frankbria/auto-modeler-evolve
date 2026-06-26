@@ -4816,13 +4816,25 @@ def test_webhook(
     from core.secret_box import decrypt
     from core.webhook import _do_dispatch
 
+    secret = decrypt(wh.secret)
+    if secret is None:
+        # Key rotated/misconfigured: we can't produce a verifiable signature.
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "This webhook's signing secret can no longer be decrypted "
+                "(the server signing key changed). Recreate the webhook to "
+                "issue a fresh secret."
+            ),
+        )
+
     test_payload = {
         "deployment_id": deployment_id,
         "event_type": "test",
         "fired_at": datetime.now(UTC).isoformat(),
         "message": "AutoModeler webhook test — if you received this, your webhook is working correctly.",
     }
-    status_code = _do_dispatch(wh.id, wh.url, decrypt(wh.secret), test_payload)
+    status_code = _do_dispatch(wh.id, wh.url, secret, test_payload)
 
     # Update stats
     wh.last_fired_at = datetime.now(UTC).replace(tzinfo=None)

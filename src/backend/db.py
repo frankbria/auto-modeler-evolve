@@ -1,9 +1,10 @@
+import logging
 import sqlite3
 from pathlib import Path
 
 from sqlalchemy import event, text
 from sqlalchemy.engine import Engine
-from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlmodel import Session, SQLModel, create_engine
 
 DATA_DIR = Path(__file__).parent / "data"
@@ -185,6 +186,38 @@ def _apply_migrations(target_engine=None, migrations=None):
                 continue
             conn.execute(text(f"CREATE INDEX IF NOT EXISTS {name} ON {table} {cols}"))
             conn.commit()
+
+        # Unique-index migrations: the model's UniqueConstraint only applies to
+        # tables create_all() builds fresh; existing DBs need the index added
+        # explicitly (issue #20 — deployment version-number race). Created as a
+        # UNIQUE INDEX (idempotent via IF NOT EXISTS) rather than rebuilding the
+        # table. If a legacy DB already holds duplicate rows the CREATE fails;
+        # log and continue instead of bricking startup — fresh writes are still
+        # guarded by the table constraint, and an operator can dedup + re-run.
+        unique_index_migrations = [
+            (
+                "uq_deployment_version_number",
+                "deploymentversion",
+                "(deployment_id, version_number)",
+            ),
+        ]
+        for name, table, cols in unique_index_migrations:
+            if table not in tables:
+                continue
+            try:
+                conn.execute(
+                    text(f"CREATE UNIQUE INDEX IF NOT EXISTS {name} ON {table} {cols}")
+                )
+                conn.commit()
+            except (OperationalError, IntegrityError) as exc:
+                conn.rollback()
+                logging.getLogger(__name__).warning(
+                    "Could not create unique index %s on %s (existing duplicate "
+                    "rows?): %s. Dedupe and restart to enforce it.",
+                    name,
+                    table,
+                    exc,
+                )
 
 
 def get_session():

@@ -133,6 +133,9 @@ def test_secret_box_round_trip_and_passthrough():
     assert decrypt(ct) == "hunter2"
     # Legacy plaintext (no prefix) passes through unchanged for back-compat.
     assert decrypt("legacy-plaintext") == "legacy-plaintext"
+    # Prefixed-but-undecryptable (key rotated) → None, so callers skip signing
+    # rather than sign with raw ciphertext a receiver can't verify.
+    assert decrypt("enc:not-a-valid-fernet-token") is None
 
 
 def test_webhook_config_secret_encrypted_but_signable():

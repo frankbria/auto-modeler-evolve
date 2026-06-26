@@ -44,15 +44,19 @@ def encrypt(plaintext: str) -> str:
     return _PREFIX + _fernet().encrypt(plaintext.encode()).decode()
 
 
-def decrypt(stored: str) -> str:
-    """Recover a secret. Pass plaintext (un-prefixed legacy) values through.
+def decrypt(stored: str) -> str | None:
+    """Recover a secret.
 
-    Returns ``stored`` unchanged if it isn't our ciphertext or can't be
-    decrypted (wrong key), so dispatch degrades rather than crashing.
+    - Un-prefixed legacy plaintext passes through unchanged.
+    - ``enc:`` ciphertext is decrypted.
+    - Ciphertext that won't decrypt (the key was rotated / misconfigured)
+      returns ``None`` — callers must treat that as "no usable secret" and skip
+      signing rather than sign with the raw ciphertext (which would produce a
+      signature no receiver can verify).
     """
     if not stored.startswith(_PREFIX):
         return stored
     try:
         return _fernet().decrypt(stored[len(_PREFIX) :].encode()).decode()
     except InvalidToken:
-        return stored
+        return None
