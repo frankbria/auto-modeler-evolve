@@ -55,6 +55,14 @@ def _build_system_blocks(
     per-turn additions (analytics cards appended after ``base_system``) plus the
     recent-conversation context, which both change every turn and must not be cached.
     """
+    # Cards only ever append to system_prompt, so base_system is a strict prefix
+    # and `dynamic` is everything appended after it. Guard the invariant: if a
+    # future edit ever prepends, keep the whole prompt (cards included) in the
+    # cached block rather than silently dropping content from the split.
+    if full_system.startswith(base_system):
+        dynamic = full_system[len(base_system) :]
+    else:
+        base_system, dynamic = full_system, ""
     blocks: list[dict] = [
         {
             "type": "text",
@@ -62,8 +70,6 @@ def _build_system_blocks(
             "cache_control": {"type": "ephemeral"},
         }
     ]
-    # Everything appended to system_prompt after the stable base (the cards).
-    dynamic = full_system[len(base_system) :]
     recent_block = format_recent_context(recent_messages)
     if recent_block:
         dynamic = f"{dynamic}\n\n{recent_block}" if dynamic.strip() else recent_block
