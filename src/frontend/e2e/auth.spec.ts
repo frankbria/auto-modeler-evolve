@@ -8,8 +8,8 @@
  * login UI and exercise the unauthenticated state directly.
  */
 import { test, expect } from "@playwright/test"
+import { BACKEND } from "./env"
 
-const BACKEND = "http://localhost:8000"
 const AUTH_TOKEN_KEY = "automodeler_auth_token"
 // Dummy login secret for tests (backend requires >= 8 chars). Named off the
 // repo secret-scan regex which flags credential-labelled quoted literals.

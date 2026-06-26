@@ -1,6 +1,5 @@
 import { test, expect } from "./fixtures"
-
-const BACKEND = "http://localhost:8000";
+import { BACKEND } from "./env"
 
 // Helper: delete all projects via API before each test so state is clean
 async function cleanProjects(request: import("@playwright/test").APIRequestContext) {
