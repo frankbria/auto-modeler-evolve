@@ -11,7 +11,9 @@ Design principles:
 from __future__ import annotations
 
 import io
+import os
 from dataclasses import dataclass, field
+from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 
@@ -198,6 +200,31 @@ def load_pipeline(path: str | Path) -> PredictionPipeline:
 
 
 # ---------------------------------------------------------------------------
+# Cached loaders for the prediction hot path (issue #19)
+#
+# predict_single deserialized the model + pipeline from disk on EVERY request.
+# Cache keyed by (path, mtime): a redeploy points the deployment at a new
+# artifact path (or rewrites the file → new mtime), so the next load misses the
+# cache automatically — no explicit invalidation hook needed.
+# ---------------------------------------------------------------------------
+
+
+@lru_cache(maxsize=32)
+def _load_joblib_cached(path: str, _mtime: float):
+    return joblib.load(path)
+
+
+def load_model_cached(path: str | Path):
+    p = str(path)
+    return _load_joblib_cached(p, os.path.getmtime(p))
+
+
+def load_pipeline_cached(path: str | Path) -> PredictionPipeline:
+    p = str(path)
+    return _load_joblib_cached(p, os.path.getmtime(p))
+
+
+# ---------------------------------------------------------------------------
 # Input validation
 # ---------------------------------------------------------------------------
 
@@ -313,8 +340,8 @@ def predict_single(
         dict with prediction, problem_type, target_column, feature_names, and
         optionally: probabilities, confidence, confidence_interval, guard_rail_warnings.
     """
-    pipeline = load_pipeline(pipeline_path)
-    model = joblib.load(model_path)
+    pipeline = load_pipeline_cached(pipeline_path)
+    model = load_model_cached(model_path)
 
     X = pipeline.transform(input_data)
     raw = model.predict(X)[0]

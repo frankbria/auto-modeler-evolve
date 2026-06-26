@@ -162,6 +162,29 @@ def _apply_migrations(target_engine=None, migrations=None):
                 raise RuntimeError(
                     f"Migration failed adding column {table}.{col}: {exc}"
                 ) from exc
+        # Index migrations: create_all() makes these on fresh DBs, but existing
+        # DBs need an explicit CREATE INDEX. IF NOT EXISTS keeps it idempotent
+        # (issue #19 — composite index for prediction-log time-window queries).
+        index_migrations = [
+            (
+                "ix_predictionlog_dep_created",
+                "predictionlog",
+                "(deployment_id, created_at)",
+            ),
+        ]
+        tables = {
+            r[0]
+            for r in conn.execute(
+                text("SELECT name FROM sqlite_master WHERE type='table'")
+            )
+        }
+        for name, table, cols in index_migrations:
+            # create_all() always makes the table before this runs in production;
+            # skip when absent so partial/minimal engines (some tests) don't trip.
+            if table not in tables:
+                continue
+            conn.execute(text(f"CREATE INDEX IF NOT EXISTS {name} ON {table} {cols}"))
+            conn.commit()
 
 
 def get_session():

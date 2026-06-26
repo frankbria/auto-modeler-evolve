@@ -500,26 +500,46 @@ def deployments_overview(
         ).all()
     )
 
+    from sqlalchemy import case
+    from sqlalchemy import func as _func
+    from models.project import Project as _Project
+
+    cutoff_7d = now - timedelta(days=7)
+    cutoff_today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    dep_ids = [dep.id for dep in active_deployments]
+
+    # One grouped query for per-deployment 7-day + today counts (was N+1).
+    counts_by_dep: dict[str, tuple[int, int]] = {}
+    if dep_ids:
+        count_rows = session.exec(
+            select(
+                PredictionLog.deployment_id,
+                _func.count(),
+                _func.sum(case((PredictionLog.created_at >= cutoff_today, 1), else_=0)),
+            )
+            .where(
+                PredictionLog.deployment_id.in_(dep_ids),
+                PredictionLog.created_at >= cutoff_7d,
+            )
+            .group_by(PredictionLog.deployment_id)
+        ).all()
+        counts_by_dep = {
+            dep_id: (last_7d, today or 0) for dep_id, last_7d, today in count_rows
+        }
+
+    # One query for project names (was a session.get per deployment).
+    project_names: dict[str, str] = {}
+    proj_ids = list({dep.project_id for dep in active_deployments})
+    if proj_ids:
+        for proj in session.exec(
+            select(_Project).where(_Project.id.in_(proj_ids))
+        ).all():
+            project_names[proj.id] = proj.name
+
     deployment_summaries: list[dict] = []
     for dep in active_deployments:
-        cutoff_7d = now - timedelta(days=7)
-        cutoff_today = now.replace(hour=0, minute=0, second=0, microsecond=0)
-
-        all_logs = list(
-            session.exec(
-                select(PredictionLog).where(
-                    PredictionLog.deployment_id == dep.id,
-                    PredictionLog.created_at >= cutoff_7d,
-                )
-            ).all()
-        )
-        predictions_last_7d = len(all_logs)
-        predictions_today = sum(1 for lg in all_logs if lg.created_at >= cutoff_today)
-
-        from models.project import Project as _Project
-
-        proj = session.get(_Project, dep.project_id)
-        project_name = proj.name if proj else "Unknown"
+        predictions_last_7d, predictions_today = counts_by_dep.get(dep.id, (0, 0))
+        project_name = project_names.get(dep.project_id, "Unknown")
 
         health_item = compute_deployment_health_item(
             deployment_id=dep.id,
@@ -1673,36 +1693,46 @@ def get_deployment_analytics(
     if not deployment:
         raise HTTPException(status_code=404, detail="Deployment not found")
 
-    logs = session.exec(
-        select(PredictionLog).where(PredictionLog.deployment_id == deployment_id)
+    # Aggregate in SQL rather than materializing the whole PredictionLog table
+    # and looping in Python (issue #19). The composite (deployment_id, created_at)
+    # index backs the time-window scans.
+    from datetime import UTC, datetime
+    from sqlalchemy import func as _func
+
+    _pn = PredictionLog.prediction_numeric
+    _dep = PredictionLog.deployment_id == deployment_id
+
+    # --- Predictions by day (bounded to the last N days) ---
+    cutoff = datetime.now(UTC).replace(tzinfo=None) - timedelta(days=days)
+    day_col = _func.strftime("%Y-%m-%d", PredictionLog.created_at)
+    day_rows = session.exec(
+        select(day_col, _func.count())
+        .where(_dep, PredictionLog.created_at >= cutoff)
+        .group_by(day_col)
+        .order_by(day_col)
     ).all()
+    predictions_by_day = [{"date": d, "count": c} for d, c in day_rows]
 
-    # --- Predictions by day (last N days) ---
-    day_counts: dict[str, int] = defaultdict(int)
-    for log in logs:
-        day_key = log.created_at.strftime("%Y-%m-%d")
-        day_counts[day_key] += 1
+    # --- Numeric prediction distribution (regression) ---
+    n_numeric, avg_v, min_val, max_val = session.exec(
+        select(_func.count(), _func.avg(_pn), _func.min(_pn), _func.max(_pn)).where(
+            _dep, _pn.is_not(None)
+        )
+    ).one()
 
-    predictions_by_day = [
-        {"date": date, "count": count} for date, count in sorted(day_counts.items())
-    ]
-
-    # --- Prediction distribution ---
-    numeric_vals = [
-        log.prediction_numeric for log in logs if log.prediction_numeric is not None
-    ]
     prediction_distribution: list[dict] = []
     recent_avg: float | None = None
 
-    if numeric_vals:
-        recent_avg = round(sum(numeric_vals) / len(numeric_vals), 4)
-        # Build histogram with up to 10 buckets
-        min_val, max_val = min(numeric_vals), max(numeric_vals)
+    if n_numeric:
+        recent_avg = round(avg_v, 4)
         if min_val == max_val:
             prediction_distribution = [
-                {"bucket": str(round(min_val, 3)), "count": len(numeric_vals)}
+                {"bucket": str(round(min_val, 3)), "count": n_numeric}
             ]
         else:
+            # Bucket the numeric column only (a bounded, light fetch — not the
+            # full rows with their JSON blobs) into up to 10 histogram buckets.
+            numeric_vals = session.exec(select(_pn).where(_dep, _pn.is_not(None))).all()
             bucket_size = (max_val - min_val) / 10
             buckets: dict[int, int] = defaultdict(int)
             for v in numeric_vals:
@@ -1717,15 +1747,18 @@ def get_deployment_analytics(
                 if buckets[i] > 0
             ]
 
-    # --- Classification class counts ---
+    # --- Classification class counts (GROUP BY in SQL) ---
     class_counts: dict[str, int] = defaultdict(int)
-    for log in logs:
-        if log.prediction_numeric is None:
-            try:
-                label = str(json.loads(log.prediction))
-                class_counts[label] += 1
-            except (json.JSONDecodeError, TypeError):
-                pass
+    class_rows = session.exec(
+        select(PredictionLog.prediction, _func.count())
+        .where(_dep, _pn.is_(None))
+        .group_by(PredictionLog.prediction)
+    ).all()
+    for raw_pred, cnt in class_rows:
+        try:
+            class_counts[str(json.loads(raw_pred))] += cnt
+        except (json.JSONDecodeError, TypeError):
+            pass
 
     return {
         "deployment_id": deployment_id,
@@ -1755,17 +1788,27 @@ def get_prediction_logs(
     if not deployment:
         raise HTTPException(status_code=404, detail="Deployment not found")
 
-    all_logs = session.exec(
-        select(PredictionLog).where(PredictionLog.deployment_id == deployment_id)
-    ).all()
+    # Count + page in SQL — do not materialize the whole table to slice in
+    # Python (issue #19). The id tiebreak keeps pagination deterministic when
+    # several rows share a created_at timestamp.
+    from sqlalchemy import func as _func
 
-    # Sort by most recent first
-    sorted_logs = sorted(all_logs, key=lambda log: log.created_at, reverse=True)
-    page = sorted_logs[offset : offset + limit]
+    total = session.exec(
+        select(_func.count(PredictionLog.id)).where(
+            PredictionLog.deployment_id == deployment_id
+        )
+    ).one()
+    page = session.exec(
+        select(PredictionLog)
+        .where(PredictionLog.deployment_id == deployment_id)
+        .order_by(PredictionLog.created_at.desc(), PredictionLog.id.desc())
+        .offset(offset)
+        .limit(limit)
+    ).all()
 
     return {
         "deployment_id": deployment_id,
-        "total": len(all_logs),
+        "total": total,
         "offset": offset,
         "limit": limit,
         "logs": [
