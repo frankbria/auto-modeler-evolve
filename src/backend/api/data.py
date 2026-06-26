@@ -1049,11 +1049,7 @@ def upload_from_url(
             headers={"User-Agent": "AutoModeler/1.0"},
         )
         with safe_urlopen(req, timeout=30, allow_unresolved=False) as resp:
-            # Read at most the limit (+1 to detect overflow) so a huge remote
-            # file can't exhaust memory.
-            raw_bytes = resp.read(_MAX_UPLOAD_BYTES + 1)
-    except HTTPException:
-        raise
+            raw_bytes = resp.read()
     except Exception as exc:
         raise HTTPException(
             status_code=400,
