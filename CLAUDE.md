@@ -34,7 +34,7 @@ auto-modeler-evolve/
 │   ├── evolve.sh          # Master orchestrator (DO NOT MODIFY)
 │   ├── format_issues.py   # Issue sanitization (DO NOT MODIFY)
 │   └── detect_stack.sh    # Stack detection for build verification
-├── skills/                # Agent behavior definitions
+├── skills/                # Reference/design docs only — NOT loaded at runtime (see note below)
 │   ├── evolve/            # Build features from spec
 │   ├── self-assess/       # Gap analysis: spec vs implementation
 │   ├── communicate/       # Journal and issue responses
@@ -47,6 +47,13 @@ auto-modeler-evolve/
     ├── backend/           # FastAPI (Python, uv)
     └── frontend/          # Next.js (TypeScript, npm)
 ```
+
+> **`skills/` is reference material, not wired runtime behavior.** `evolve.sh`
+> builds its agent prompt inline and never reads any `SKILL.md`. The `tools:`
+> frontmatter in those files describes conceptual capabilities, not literal
+> tool API names. The `research` skill's curl-based web search is unreliable
+> (returns bot-CAPTCHA pages) and should be treated as deprecated. Edit a
+> `SKILL.md` to document intent; it will not change what the orchestrator does.
 
 ## Tech Stack
 

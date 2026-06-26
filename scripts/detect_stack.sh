@@ -103,7 +103,7 @@ detect_single_stack() {
         BUILD_CMD="go build ./..."
         TEST_CMD="go test ./..."
         LINT_CMD="go vet ./..."
-        FORMAT_CMD="gofmt -l ."
+        FORMAT_CMD="gofmt -w ."
 
     elif [ -f "$dir/Makefile" ]; then
         STACK="make"
