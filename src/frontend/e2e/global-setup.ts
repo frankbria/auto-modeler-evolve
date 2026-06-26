@@ -6,12 +6,18 @@ import { BACKEND } from "./env"
  * `reuseExistingServer` (on locally) makes Playwright bind to ANY process that
  * answers on the port, and a generic `/health` check passes for foreign apps
  * too — that's how a stray dev server silently hijacked the run and produced 30+
- * cryptic "could not obtain a token" failures. `POST /api/auth/login` is
- * AutoModeler-specific: it returns 401/422 for junk credentials, but 404 (or
- * refuses to connect) when the port holds something else or nothing. Fail loud
- * here, once, with an actionable message.
+ * cryptic "could not obtain a token" failures. `POST /api/auth/login` with junk
+ * credentials is AutoModeler-specific: it returns 401 (bad creds) or 422
+ * (validation). Anything else — 404/405 from a foreign route, 5xx from another
+ * app, or a refused connection — means the port is NOT our backend. Allowlist
+ * the expected statuses and fail loud, once, with an actionable message.
  */
+const EXPECTED = new Set([401, 422])
+
 export default async function globalSetup(): Promise<void> {
+  const relocate =
+    "Stop it, or relocate E2E to free ports: " +
+    "E2E_BACKEND_URL=http://localhost:8100 E2E_BASE_URL=http://localhost:3100"
   let status: number
   try {
     const res = await fetch(`${BACKEND}/api/auth/login`, {
@@ -27,12 +33,11 @@ export default async function globalSetup(): Promise<void> {
         `E2E_BACKEND_URL=http://localhost:8100 E2E_BASE_URL=http://localhost:3100`,
     )
   }
-  if (status === 404) {
+  if (!EXPECTED.has(status)) {
     throw new Error(
-      `E2E preflight: a server is listening on ${BACKEND} but it is NOT ` +
-        `AutoModeler (POST /api/auth/login -> 404). Another dev process is ` +
-        `probably holding the port. Stop it, or relocate E2E to free ports: ` +
-        `E2E_BACKEND_URL=http://localhost:8100 E2E_BASE_URL=http://localhost:3100`,
+      `E2E preflight: the server on ${BACKEND} is NOT AutoModeler — ` +
+        `POST /api/auth/login returned ${status}, expected 401/422. Another ` +
+        `dev process is probably holding the port. ${relocate}`,
     )
   }
 }
