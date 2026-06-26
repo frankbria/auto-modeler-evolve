@@ -1,0 +1,87 @@
+name: Backend Tests
+
+# The backend pytest suite (~6.7k tests) is too large for the single ci.yml
+# `verify` job — it brushed the 30-min cap and intermittently got cancelled.
+# It runs here instead, split into parallel shards via pytest-split so each
+# shard finishes well under the cap. ci.yml `verify` stays a fast build+lint
+# smoke; e2e.yml owns the browser workflow. (CI sharding follow-up to #48/#62.)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+    # Mirror ci.yml: 'labeled'/'unlabeled' so (re)approving a fork PR via the
+    # 'ci-approved' label re-evaluates the gate below; 'synchronize' so each new
+    # fork commit must be re-approved (issue #2).
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+# Least privilege: running tests never needs write access to the repo.
+permissions:
+  contents: read
+
+# A new push supersedes in-flight runs for the same ref.
+concurrency:
+  group: backend-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      # Report every shard's result even if one fails — don't cancel siblings.
+      fail-fast: false
+      matrix:
+        # Shard count. MUST equal --splits below; add/remove groups in lockstep.
+        group: [1, 2, 3, 4]
+
+    steps:
+      # Fork PRs run untrusted code (the test suite imports and exercises the
+      # whole app). Fail (don't skip) until a maintainer reviews the current head
+      # commit and (re)adds the 'ci-approved' label — a skipped step would leave a
+      # required check green and mergeable (issue #2). Adding the label re-runs
+      # this workflow (see `types: [..., labeled]`).
+      - name: Require approval for fork PRs
+        if: >-
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name != github.repository &&
+          (
+            github.event.action == 'synchronize' ||
+            !contains(github.event.pull_request.labels.*.name, 'ci-approved')
+          )
+        run: |
+          echo "::error::Backend tests are gated for fork PRs. A maintainer must review the current head commit and (re)add the 'ci-approved' label — approval is rechecked on every new commit. CI stays red until then."
+          exit 1
+
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          # Nothing here pushes; don't leave GITHUB_TOKEN in .git/config while
+          # running (approved) fork code. Defense in depth on top of
+          # `permissions: contents: read`.
+          persist-credentials: false
+
+      - name: Setup Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12'
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4.2.0
+        with:
+          version: "latest"
+
+      # Lockfile-enforced (#21): a lock/manifest mismatch fails instead of
+      # silently re-resolving. Installs pytest-split (the dev group is synced
+      # by default).
+      - name: Install backend deps
+        working-directory: src/backend
+        run: uv sync --locked
+
+      # pytest-split deselects every test outside this group, so each runner runs
+      # a disjoint ~1/4 of the suite as its own clean session. Keep --splits equal
+      # to the matrix length above.
+      - name: Run backend tests (shard ${{ matrix.group }}/4)
+        working-directory: src/backend
+        run: uv run pytest --splits 4 --group ${{ matrix.group }}
