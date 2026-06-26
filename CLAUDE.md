@@ -33,7 +33,9 @@ auto-modeler-evolve/
 ├── scripts/
 │   ├── evolve.sh          # Master orchestrator (DO NOT MODIFY)
 │   ├── format_issues.py   # Issue sanitization (DO NOT MODIFY)
-│   └── detect_stack.sh    # Stack detection for build verification
+│   ├── detect_stack.sh    # Stack detection for build verification
+│   ├── demo.py            # Demo/walkthrough generator
+│   └── run_evolve_cron.sh # Cron wrapper for scheduled evolution runs
 ├── skills/                # Reference/design docs only — NOT loaded at runtime (see note below)
 │   ├── evolve/            # Build features from spec
 │   ├── self-assess/       # Gap analysis: spec vs implementation

@@ -22,7 +22,7 @@ Built for **business analysts** who know their data but don't write code.
 | Backend | Python 3.12+, FastAPI, SQLModel (SQLite) |
 | ML | scikit-learn, pandas, numpy |
 | LLM | Anthropic SDK (Claude) for chat orchestration |
-| Frontend | Next.js 15, React 19, TypeScript |
+| Frontend | Next.js 16, React 19, TypeScript |
 | UI | Shadcn/UI (Nova), Tailwind CSS, Hugeicons |
 | Charts | Recharts |
 | State | Zustand |
@@ -78,11 +78,11 @@ The frontend runs on `http://localhost:3000` and expects the backend at `http://
 ### Running Tests
 
 ```bash
-# Backend (1557 tests)
+# Backend
 cd src/backend
 uv run pytest
 
-# Frontend (680 tests)
+# Frontend
 cd src/frontend
 npm test
 ```
@@ -94,7 +94,7 @@ npm test
 | `POST /api/chat/{project_id}` | Streamed chat (SSE) |
 | `POST /api/data/upload` | CSV upload + auto-profiling |
 | `GET /api/data/{id}/profile` | Data quality report |
-| `GET /api/data/{id}/query` | Natural language data queries |
+| `POST /api/data/{id}/query` | Natural language data queries |
 | `GET /api/features/{id}/suggestions` | AI feature suggestions |
 | `POST /api/features/{id}/apply` | Apply transformations |
 | `POST /api/models/{id}/train` | Train models |
@@ -134,7 +134,8 @@ See `spec.md` for the full feature checklist and `JOURNAL.md` for the build log.
 ## Current Status
 
 **Phases 1-8 in progress** (foundation through advanced conversational features).
-2,237 tests passing (1,557 backend + 680 frontend).
+Backend and frontend suites run in CI — see the
+[Actions tab](https://github.com/frankbria/auto-modeler-evolve/actions) for current pass counts.
 
 Recently shipped:
 - **Model performance by segment** — ask "how does my model perform by region?" for a per-group breakdown with gap analysis and retraining recommendations
@@ -145,4 +146,4 @@ Phase 9 (onboarding, project management, export, responsive design) is next.
 
 ## License
 
-MIT
+[MIT](LICENSE)
