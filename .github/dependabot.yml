@@ -4,6 +4,11 @@
 version: 2
 updates:
   - package-ecosystem: github-actions
+    cooldown:
+      default-days: 14
+      semver-major-days: 14
+      semver-minor-days: 7
+      semver-patch-days: 7
     directory: /
     schedule:
       interval: weekly
@@ -12,12 +17,19 @@ updates:
         patterns: ["*"]
 
   - package-ecosystem: npm
+    cooldown:
+      default-days: 14
+      semver-major-days: 14
+      semver-minor-days: 7
+      semver-patch-days: 7
     directory: /src/frontend
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
 
   - package-ecosystem: uv
+    cooldown:
+      default-days: 14
     directory: /src/backend
     schedule:
       interval: weekly
