@@ -1,0 +1,10 @@
+name: Check workflow calls
+on:
+  pull_request:
+    paths: [".github/workflows/**"]
+
+jobs:
+  check:
+    uses: frankbria/glm-review/.github/workflows/check-workflow-calls.yml@main
+    permissions:
+      contents: read
