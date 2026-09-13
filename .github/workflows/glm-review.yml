@@ -8,16 +8,32 @@ on:
 
 jobs:
   review:
-    # Only review substantial changes (5+ files, or 20+ additions, or 20+ deletions)
+    # Skip bot-authored PRs: claude-code-action refuses any run whose actor is
+    # not a User and fails the step to say so, painting a PR red that was never
+    # reviewed. Its `allowed_bots` input would not help — GitHub runs
+    # Dependabot-triggered pull_request workflows with a read-only token and the
+    # separate Dependabot secret store, so ZHIPU_API_KEY would arrive empty.
+    # `user.type` covers every bot rather than naming one.
+    #
+    # Both `user` and `sender` are tested, because they are different accounts
+    # and the action keys off the second. claude-code-action resolves
+    # `github.actor` — the PR *author* on `opened`, but the **pusher** on
+    # `synchronize`. Gating on the author alone still goes red on a
+    # human-authored PR that a bot pushed to (an autofix job, a rebase app,
+    # `github-actions[bot]`), and the size gate cannot save it: `changed_files`
+    # and `additions` are cumulative PR totals, so a one-line bot push to an
+    # already-qualifying PR re-fires the trigger. A null `sender` compares false
+    # and skips, so this fails closed.
+    # Then: only review substantial changes (5+ files, or 20+ additions/deletions).
     if: |
-      github.event.pull_request.changed_files >= 5 ||
-      github.event.pull_request.additions >= 20 ||
-      github.event.pull_request.deletions >= 20
+      github.event.pull_request.user.type == 'User' &&
+      github.event.sender.type == 'User' &&
+      (github.event.pull_request.changed_files >= 5 ||
+       github.event.pull_request.additions >= 20 ||
+       github.event.pull_request.deletions >= 20)
     uses: frankbria/glm-review/.github/workflows/review.yml@main
     permissions:
       contents: read
       pull-requests: write
-      issues: write
-      id-token: write
     secrets:
       ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY }}
