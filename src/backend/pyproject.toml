@@ -29,7 +29,7 @@ dev = [
     "pytest-asyncio>=0.23.0",
     "pytest-bdd>=7.0.0",
     "httpx>=0.27.0",
-    "ruff>=0.4.0",
+    "ruff>=0.17.1",
     "black>=24.0.0",
 ]
 
@@ -42,6 +42,10 @@ packages = ["."]
 
 [tool.ruff]
 line-length = 88
+
+# Pin the pre-0.17 default rule set; ruff 0.17 widened the defaults (2.9k new hits).
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
@@ -63,6 +67,6 @@ dev = [
     # matrix (`pytest --splits N --group G`). Inactive on a bare `uv run pytest`,
     # so evolve.sh's local full-suite verification is unaffected.
     "pytest-split>=0.9.0",
-    "ruff>=0.4.0",
+    "ruff>=0.17.1",
     "black>=24.0.0",
 ]
