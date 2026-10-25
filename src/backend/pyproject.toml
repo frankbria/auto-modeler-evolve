@@ -43,6 +43,10 @@ packages = ["."]
 [tool.ruff]
 line-length = 88
 
+# Pin the pre-0.17 default rule set; ruff 0.17 widened the defaults (2.9k new hits).
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 # -rs: report skip reasons; --strict-markers: unknown @pytest.mark.* is an error.
