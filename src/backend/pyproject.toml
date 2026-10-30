@@ -26,7 +26,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0.0",
-    "pytest-asyncio>=0.23.0",
+    "pytest-asyncio>=1.4.1",
     "pytest-bdd>=7.0.0",
     "httpx>=0.27.0",
     "ruff>=0.17.1",
@@ -60,7 +60,7 @@ markers = [
 
 [dependency-groups]
 dev = [
-    "pytest-asyncio>=1.3.0",
+    "pytest-asyncio>=1.4.1",
     "pytest-bdd>=8.1.0",
     "pytest-cov>=7.1.0",
     # Splits the suite into balanced shards for the parallel backend-tests.yml
